@@ -10,8 +10,8 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
-import type { Agent, AttentionDetailImage, AttentionItem } from "@paperclipai/shared";
-import { Link } from "@/lib/router";
+import type { AttentionDetailImage, AttentionItem, CompanyBoardRouteTarget } from "@paperclipai/shared";
+import { CompanyBoardLink } from "./CompanyBoardLink";
 import { accessApi } from "../api/access";
 import { approvalsApi } from "../api/approvals";
 import { useToastActions } from "../context/ToastContext";
@@ -88,9 +88,6 @@ interface AttentionQueueRowProps {
   onRestore?: (item: AttentionItem) => void;
   /** "active" renders the live queue row; "hidden" renders a curtain row. */
   variant?: "active" | "hidden";
-  agentMap?: Map<string, Agent>;
-  currentUserId?: string | null;
-  userLabelMap?: ReadonlyMap<string, string> | null;
   selected?: boolean;
 }
 
@@ -110,9 +107,6 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   onSnooze,
   onRestore,
   variant = "active",
-  agentMap,
-  currentUserId,
-  userLabelMap,
   selected = false,
 }: AttentionQueueRowProps) {
   const meta = sourceMeta(item.sourceKind);
@@ -123,14 +117,18 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   const Icon = meta.icon;
   const isHidden = variant === "hidden";
   const inline = !isHidden && isInlineResolvable(item);
-  const href = item.subject.href;
+  const routeTarget = item.subject.routeTarget;
   const snoozedUntil = item.dismissal?.kind === "snooze" ? item.dismissal.snoozedUntil : null;
   const detailLine = attentionDetailLine(item) ?? item.whyNow;
   const images = attentionDetailImages(item);
   const hasImages = images.length > 0;
   // The task (or source) this row points at — used as the target for the
   // "n more" affordance in the expanded gallery.
-  const taskHref = item.relatedTask?.href ?? href;
+  const imageTaskTarget = item.relatedTask?.routeTarget?.kind === "task"
+    ? item.relatedTask.routeTarget
+    : routeTarget?.kind === "task"
+      ? routeTarget
+      : null;
   // Inline-resolvable active rows expand to reveal their resolver; rows with
   // images expand to reveal a larger gallery (PAP-13544). Either case gives a
   // header/thumbnail click somewhere to go. Non-inline, image-less rows keep the
@@ -151,7 +149,7 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   // verbs; deep-link rows carry an Open button; curtain rows carry Restore.
   const compactActions = !isHidden ? collectCompactActions(item) : [];
   const showCompact = !expanded && compactActions.length > 0;
-  const showOpen = !inline && !!href;
+  const showOpen = !inline && !!routeTarget;
   const showRestore = isHidden && !!onRestore;
   const showActionBar = showCompact || showOpen || showRestore;
   // Left gutter width (chevron + gap) so the stacked content aligns under the
@@ -216,15 +214,15 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                   {sevBadge.label}
                 </span>
               )}
-              {item.relatedTask?.identifier && (
-                <Link
-                  to={item.relatedTask.href ?? "#"}
+              {item.relatedTask?.identifier && item.relatedTask.routeTarget ? (
+                <CompanyBoardLink
+                  routeTarget={item.relatedTask.routeTarget}
                   className="font-mono text-(length:--text-nano) text-muted-foreground hover:text-foreground"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {item.relatedTask.identifier}
-                </Link>
-              )}
+                </CompanyBoardLink>
+              ) : null}
             </div>
 
             <div className="flex shrink-0 items-center gap-1" data-attention-menu="true">
@@ -238,7 +236,7 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
               ) : (
                 <span className="text-(length:--text-nano) text-muted-foreground">{relativeTime(item.activityAt)}</span>
               )}
-              {!isHidden && (dismissHandler || snoozeHandler || href) && (
+              {!isHidden && (dismissHandler || snoozeHandler || routeTarget) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -258,11 +256,13 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                         Dismiss
                       </DropdownMenuItem>
                     )}
-                    {href && (
+                    {routeTarget && (
                       <>
                         {(dismissHandler || snoozeHandler) && <DropdownMenuSeparator />}
                         <DropdownMenuItem asChild>
-                          <Link to={href}>Open source</Link>
+                          <CompanyBoardLink routeTarget={routeTarget}>
+                            Open source
+                          </CompanyBoardLink>
                         </DropdownMenuItem>
                       </>
                     )}
@@ -320,14 +320,14 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                 />
               )}
 
-              {showOpen && (
+              {showOpen && routeTarget ? (
                 <Button asChild variant="outline" size="xs" className={cn(ACTION_BTN, "w-full @xl:w-auto")}>
-                  <Link to={href!}>
+                  <CompanyBoardLink routeTarget={routeTarget}>
                     Open
                     <ExternalLink className="h-3 w-3" data-icon="inline-end" />
-                  </Link>
+                  </CompanyBoardLink>
                 </Button>
-              )}
+              ) : null}
 
               {showRestore && (
                 <Button
@@ -348,14 +348,16 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
 
       {expanded && (hasImages || inline) && (
         <div className="space-y-3 border-t border-border/60 bg-muted/20 px-4 py-3 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-200">
-          {hasImages && <ExpandedImages images={images} taskHref={taskHref} />}
+          {hasImages && (
+            <ExpandedImages
+              images={images}
+              taskRouteTarget={imageTaskTarget}
+            />
+          )}
           {inline && (
             <InlineResolver
               item={item}
               companyId={companyId}
-              agentMap={agentMap}
-              currentUserId={currentUserId}
-              userLabelMap={userLabelMap}
             />
           )}
         </div>
@@ -521,7 +523,13 @@ function ThumbnailStack({ images }: { images: AttentionDetailImage[] }) {
  * first three screenshots at a readable size; if more exist, an "n more" tile
  * links through to the task where the full set lives.
  */
-function ExpandedImages({ images, taskHref }: { images: AttentionDetailImage[]; taskHref: string | null }) {
+function ExpandedImages({
+  images,
+  taskRouteTarget,
+}: {
+  images: AttentionDetailImage[];
+  taskRouteTarget: Extract<CompanyBoardRouteTarget, { kind: "task" }> | null;
+}) {
   const visible = images.slice(0, 3);
   const extra = images.length - visible.length;
   return (
@@ -538,24 +546,24 @@ function ExpandedImages({ images, taskHref }: { images: AttentionDetailImage[]; 
             className="h-32 w-44 rounded-md border border-border bg-muted object-cover shadow-sm"
           />
         );
-        return taskHref ? (
-          <Link
+        return taskRouteTarget ? (
+          <CompanyBoardLink
             key={key}
-            to={taskHref}
+            routeTarget={taskRouteTarget}
             className="block rounded-md focus-visible:ring-ring focus-visible:ring-(length:--rad-3) focus-visible:outline-none"
             onClick={(e) => e.stopPropagation()}
           >
             {image}
-          </Link>
+          </CompanyBoardLink>
         ) : (
           <span key={key} className="block">
             {image}
           </span>
         );
       })}
-      {extra > 0 && (taskHref ? (
-        <Link
-          to={taskHref}
+      {extra > 0 && (taskRouteTarget ? (
+        <CompanyBoardLink
+          routeTarget={taskRouteTarget}
           onClick={(e) => e.stopPropagation()}
           className="flex h-32 w-24 flex-col items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-ring focus-visible:ring-(length:--rad-3) focus-visible:outline-none"
         >
@@ -564,7 +572,7 @@ function ExpandedImages({ images, taskHref }: { images: AttentionDetailImage[]; 
             View task
             <ExternalLink className="h-3 w-3" />
           </span>
-        </Link>
+        </CompanyBoardLink>
       ) : (
         <span className="flex h-32 w-24 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-sm font-semibold text-muted-foreground">
           {extra} more
@@ -644,15 +652,9 @@ function reappearLabel(snoozedUntil: string): string {
 function InlineResolver({
   item,
   companyId,
-  agentMap,
-  currentUserId,
-  userLabelMap,
 }: {
   item: AttentionItem;
   companyId: string;
-  agentMap?: Map<string, Agent>;
-  currentUserId?: string | null;
-  userLabelMap?: ReadonlyMap<string, string> | null;
 }) {
   if (item.sourceKind === "approval") {
     return <ApprovalResolver item={item} companyId={companyId} />;

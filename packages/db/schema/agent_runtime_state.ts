@@ -26,7 +26,6 @@ export const agentRuntimeState = pgTable(
   {
     agentId: uuid("agent_id").primaryKey(),
     companyId: uuid("company_id").notNull(),
-    adapterType: text("adapter_type").notNull(),
     lastRunId: uuid("last_run_id"),
     lastRunStatus: text("last_run_status").$type<TaskExecutionRunStatus>(),
     lastContextUsedTokens: bigint("last_context_used_tokens", {
@@ -57,10 +56,6 @@ export const agentRuntimeState = pgTable(
       .defaultNow(),
   },
   (table) => [
-    check(
-      "agent_runtime_state_adapter_type_check",
-      sql`length(btrim(${table.adapterType})) between 1 and 200`,
-    ),
     check(
       "agent_runtime_state_last_run_check",
       sql`(

@@ -8,7 +8,6 @@ import {
   Search,
   SquarePen,
   Network,
-  Boxes,
   Repeat,
   Package,
   Settings,
@@ -21,13 +20,13 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { NavLink } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarAgents } from "./SidebarAgents";
 import { SidebarStarredProjects } from "./SidebarStarredProjects";
 import { useDialogActions } from "../context/DialogContext";
-import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import {
   ACTIVE_TASK_EXECUTION_RUN_STATUSES,
@@ -37,63 +36,45 @@ import { attentionApi } from "../api/attention";
 import { attentionBadgeCount } from "../lib/attention";
 import { queryKeys } from "../lib/queryKeys";
 import { useInboxBadge } from "../hooks/useInboxBadge";
-import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
+import { SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 
 export function Sidebar() {
+  const companyId = useCompanyRouteId();
   const { openNewTask } = useDialogActions();
   // Every labeled section is collapsible (session-scoped, default open) —
   // one policy across static nav groups and the data-driven sections.
   const [workOpen, setWorkOpen] = useState(true);
   const [companyOpen, setCompanyOpen] = useState(true);
-  const { selectedCompanyId, selectedCompany } = useCompany();
   const { isMobile, collapsed, collapseLocked, peeking, toggleCollapsed, setCollapsed } = useSidebar();
   const rail = collapsed && !peeking;
-  const inboxBadge = useInboxBadge(selectedCompanyId);
+  const inboxBadge = useInboxBadge(companyId);
   const activeRunStatuses = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
-  const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, {
+  const activeRunsQueryKey = queryKeys.runs(companyId, {
     status: activeRunStatuses,
   });
-  const sharedLiveRuns = useSharedPollingQuery({
-    companyId: selectedCompanyId,
-    resourceKey: "active-runs",
+  const { data: activeRunPage } = useQuery({
     queryKey: activeRunsQueryKey,
-    enabled: !!selectedCompanyId,
-    // Event-sourced via LiveUpdatesProvider plus reconnect reconciliation — no
-    // interval poll needed. Polling here also re-armed React Query's timer on
-    // every live-event cache write, a major source of steady-state churn.
-    refetchInterval: false,
-    leaderOnly: true,
-  });
-  const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
-    queryKey: activeRunsQueryKey,
-    queryFn: () => runsApi.listForCompany(selectedCompanyId!, {
+    queryFn: () => runsApi.listForCompany(companyId, {
       status: activeRunStatuses,
       limit: 200,
     }),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
   });
-  usePublishSharedQueryData(sharedLiveRuns, activeRunPage, activeRunsUpdatedAt);
   const liveRunCount = activeRunPage?.items.length ?? 0;
   const { data: attentionFeed } = useQuery({
-    queryKey: queryKeys.attention(selectedCompanyId!),
-    queryFn: () => attentionApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-    refetchInterval: 60_000,
+    queryKey: queryKeys.attention(companyId),
+    queryFn: () => attentionApi.list(companyId),
   });
   const showDecisions =
     attentionFeed?.items.some((item) => item.sourceKind === "mention_board") === true;
   const attentionCount = attentionBadgeCount(attentionFeed);
 
   const pluginContext = {
-    companyId: selectedCompanyId,
-    companyPrefix: selectedCompany?.taskPrefix ?? null,
+    companyId,
   };
 
   return (
@@ -116,9 +97,12 @@ export function Sidebar() {
               aria-label="Open search"
               title="Open search"
             >
-              <NavLink to="/search">
+              <Link
+                to="/$companyId/search"
+                params={{ companyId }}
+              >
                 <Search className="h-4 w-4" />
-              </NavLink>
+              </Link>
             </Button>
             {/* Desktop-only collapse/expand affordance. While peeking (hover flyout
                 over the collapsed rail) it becomes a Pin that promotes the peek to a
@@ -180,8 +164,14 @@ export function Sidebar() {
               newTaskButton
             );
           })()}
-          <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
-          <SidebarNavItem to="/inbox"
+          <SidebarNavItem
+            linkOptions={{ to: "/$companyId/dashboard", params: { companyId } }}
+            label="Dashboard"
+            icon={LayoutDashboard}
+            liveCount={liveRunCount}
+          />
+          <SidebarNavItem
+            linkOptions={{ to: "/$companyId/inbox", params: { companyId } }}
             label="Inbox"
             icon={Inbox}
             badge={inboxBadge.inbox}
@@ -191,7 +181,7 @@ export function Sidebar() {
           />
           {showDecisions ? (
             <SidebarNavItem
-              to="/decisions"
+              linkOptions={{ to: "/$companyId/decisions", params: { companyId } }}
               label="Decisions"
               icon={ListChecks}
               badge={attentionCount}
@@ -201,12 +191,11 @@ export function Sidebar() {
         </div>
 
         <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
-          <SidebarNavItem to="/tasks" label="Tasks" icon={CircleDot} />
-          <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />
-          <SidebarNavItem to="/goals" label="Goals" icon={Target} />
-          <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
-          <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-          <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
+          <SidebarNavItem linkOptions={{ to: "/$companyId/tasks", params: { companyId } }} label="Tasks" icon={CircleDot} />
+          <SidebarNavItem linkOptions={{ to: "/$companyId/routines", params: { companyId } }} label="Routines" icon={Repeat} />
+          <SidebarNavItem linkOptions={{ to: "/$companyId/goals", params: { companyId } }} label="Goals" icon={Target} />
+          <SidebarNavItem linkOptions={{ to: "/$companyId/artifacts", params: { companyId } }} label="Artifacts" icon={Package} />
+          <SidebarNavItem linkOptions={{ to: "/$companyId/projects", params: { companyId } }} label="Projects" icon={FolderOpen} />
           <SidebarStarredProjects />
           <PluginSlotOutlet
             slotTypes={["sidebar"]}
@@ -226,11 +215,11 @@ export function Sidebar() {
         <SidebarAgents />
 
         <SidebarSection label="Company" collapsible={{ open: companyOpen, onOpenChange: setCompanyOpen }}>
-          <SidebarNavItem to="/org" label="Org" icon={Network} />
-          <SidebarNavItem to="/timeline" label="Timeline" icon={GanttChartSquare} />
-          <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
-          <SidebarNavItem to="/activity" label="Activity" icon={History} />
-          <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
+          <SidebarNavItem linkOptions={{ to: "/$companyId/org", params: { companyId } }} label="Org" icon={Network} />
+          <SidebarNavItem linkOptions={{ to: "/$companyId/timeline", params: { companyId } }} label="Timeline" icon={GanttChartSquare} />
+          <SidebarNavItem linkOptions={{ to: "/$companyId/costs", params: { companyId } }} label="Costs" icon={DollarSign} />
+          <SidebarNavItem linkOptions={{ to: "/$companyId/activity", params: { companyId } }} label="Activity" icon={History} />
+          <SidebarNavItem linkOptions={{ to: "/$companyId/company/settings", params: { companyId } }} label="Settings" icon={Settings} />
         </SidebarSection>
 
         <PluginSlotOutlet

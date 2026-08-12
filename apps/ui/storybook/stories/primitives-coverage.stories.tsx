@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { Link } from "@tanstack/react-router";
 import { FileText, FolderOpen, Settings, Users } from "lucide-react";
 import {
   AlertDialog,
@@ -126,7 +127,9 @@ export const BreadcrumbTrail: Story = {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="#">Paperclip</BreadcrumbLink>
+            <BreadcrumbLink asChild>
+              <Link to="/$companyId" params={{ companyId: "11111111-1111-4111-8111-111111111111" }}>Paperclip</Link>
+            </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
@@ -134,7 +137,9 @@ export const BreadcrumbTrail: Story = {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbLink href="#">Projects</BreadcrumbLink>
+            <BreadcrumbLink asChild>
+              <Link to="/$companyId/projects" params={{ companyId: "11111111-1111-4111-8111-111111111111" }}>Projects</Link>
+            </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>

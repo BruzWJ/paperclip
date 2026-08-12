@@ -79,7 +79,10 @@ interface CachedAwsCredentialProvider {
   pending: Promise<AwsCredentialIdentity> | null;
 }
 
-type ManagedSecretNamespaceContext = Pick<SecretProviderWriteContext, "companyId" | "secretKey">;
+type ManagedSecretNamespaceContext = Pick<
+  SecretProviderWriteContext,
+  "companyId" | "secretKey"
+>;
 
 const awsCredentialProviders = new Map<string, CachedAwsCredentialProvider>();
 
@@ -128,7 +131,14 @@ interface AwsSecretsManagerGateway {
     MaxResults?: number;
     NextToken?: string;
     Filters?: Array<{
-      Key: "all" | "name" | "description" | "tag-key" | "tag-value" | "primary-region" | "owning-service";
+      Key:
+        | "all"
+        | "name"
+        | "description"
+        | "tag-key"
+        | "tag-value"
+        | "primary-region"
+        | "owning-service";
       Values: string[];
     }>;
     IncludePlannedDeletion?: boolean;
@@ -202,7 +212,9 @@ function signAwsSecretsManagerRequest(input: {
   const regionKey = hmac(dateKey, input.region);
   const serviceKey = hmac(regionKey, "secretsmanager");
   const signingKey = hmac(serviceKey, "aws4_request");
-  const signature = createHmac("sha256", signingKey).update(stringToSign).digest("hex");
+  const signature = createHmac("sha256", signingKey)
+    .update(stringToSign)
+    .digest("hex");
 
   return {
     ...headers,
@@ -212,7 +224,9 @@ function signAwsSecretsManagerRequest(input: {
   };
 }
 
-async function loadAwsCredentials(region: string): Promise<AwsCredentialIdentity> {
+async function loadAwsCredentials(
+  region: string,
+): Promise<AwsCredentialIdentity> {
   const now = Date.now();
   let cached = awsCredentialProviders.get(region);
   if (!cached) {
@@ -232,22 +246,29 @@ async function loadAwsCredentials(region: string): Promise<AwsCredentialIdentity
 
   cached.pending = (async () => {
     const credentialSource = cached.client.config.credentials;
-    const credentials = typeof credentialSource === "function"
-      ? await credentialSource()
-      : await credentialSource;
+    const credentials =
+      typeof credentialSource === "function"
+        ? await credentialSource()
+        : await credentialSource;
     if (!credentials?.accessKeyId || !credentials.secretAccessKey) {
-      throw new Error("AWS SDK default credential provider chain did not return credentials");
+      throw new Error(
+        "AWS SDK default credential provider chain did not return credentials",
+      );
     }
     const resolved = {
       accessKeyId: credentials.accessKeyId,
       secretAccessKey: credentials.secretAccessKey,
       sessionToken: credentials.sessionToken,
     };
-    const expiration = (credentials as { expiration?: Date }).expiration?.getTime();
+    const expiration = (
+      credentials as { expiration?: Date }
+    ).expiration?.getTime();
     cached.credentials = resolved;
     cached.expiresAt = Math.min(
       now + AWS_CREDENTIAL_CACHE_TTL_MS,
-      expiration ? expiration - AWS_CREDENTIAL_EXPIRATION_SKEW_MS : Number.POSITIVE_INFINITY,
+      expiration
+        ? expiration - AWS_CREDENTIAL_EXPIRATION_SKEW_MS
+        : Number.POSITIVE_INFINITY,
     );
     return resolved;
   })().finally(() => {
@@ -273,26 +294,72 @@ function canLoadAwsSecretsManagerConfig() {
 }
 
 function asOptionalNonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
 }
 
-function readProviderVaultConfig(input: SecretProviderVaultRuntimeConfig): AwsSecretsManagerConfig {
+function requireExactAwsIdentity(value: unknown, label: string): string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.trim() !== value
+  ) {
+    throw unprocessable(
+      `${label} must be a non-empty exact value without surrounding whitespace`,
+    );
+  }
+  return value;
+}
+
+function requireOptionalExactAwsIdentity(
+  value: unknown,
+  label: string,
+): string | null {
+  return value == null ? null : requireExactAwsIdentity(value, label);
+}
+
+function assertExactAwsConfig(config: AwsSecretsManagerConfig) {
+  requireExactAwsIdentity(config.region, "AWS region");
+  requireOptionalExactAwsIdentity(config.kmsKeyId, "AWS KMS key ID");
+  return config;
+}
+
+function readProviderVaultConfig(
+  input: SecretProviderVaultRuntimeConfig,
+): AwsSecretsManagerConfig {
   if (input.provider !== "aws_secrets_manager") {
-    throw unprocessable("AWS Secrets Manager provider received a mismatched provider vault");
+    throw unprocessable(
+      "AWS Secrets Manager provider received a mismatched provider vault",
+    );
   }
   if (input.status === "disabled") {
     throw unprocessable("AWS Secrets Manager provider vault is disabled");
   }
   if (input.status === "coming_soon") {
-    throw unprocessable("AWS Secrets Manager provider vault runtime is locked while coming soon");
+    throw unprocessable(
+      "AWS Secrets Manager provider vault runtime is locked while coming soon",
+    );
   }
-  const region = asOptionalNonEmptyString(input.config.region);
-  if (!region) {
-    throw unprocessable("AWS Secrets Manager provider vault requires non-secret config: region");
+  const region = requireExactAwsIdentity(
+    input.config.region,
+    "AWS Secrets Manager provider vault region",
+  );
+  if (!/^[a-z]{2}(?:-gov)?-[a-z]+-\d+$/.test(region)) {
+    throw unprocessable(
+      "AWS Secrets Manager provider vault requires non-secret config: region",
+    );
   }
-  const recoveryWindowRaw = process.env.PAPERCLIP_SECRETS_AWS_DELETE_RECOVERY_DAYS?.trim();
-  const recoveryWindow = recoveryWindowRaw ? Number(recoveryWindowRaw) : DEFAULT_DELETE_RECOVERY_WINDOW_DAYS;
-  if (!Number.isFinite(recoveryWindow) || recoveryWindow < 7 || recoveryWindow > 30) {
+  const recoveryWindowRaw =
+    process.env.PAPERCLIP_SECRETS_AWS_DELETE_RECOVERY_DAYS?.trim();
+  const recoveryWindow = recoveryWindowRaw
+    ? Number(recoveryWindowRaw)
+    : DEFAULT_DELETE_RECOVERY_WINDOW_DAYS;
+  if (
+    !Number.isFinite(recoveryWindow) ||
+    recoveryWindow < 7 ||
+    recoveryWindow > 30
+  ) {
     throw unprocessable(
       "PAPERCLIP_SECRETS_AWS_DELETE_RECOVERY_DAYS must be an integer between 7 and 30",
     );
@@ -309,7 +376,10 @@ function readProviderVaultConfig(input: SecretProviderVaultRuntimeConfig): AwsSe
     prefix: sanitizePathSegment(
       asOptionalNonEmptyString(input.config.secretNamePrefix) || DEFAULT_PREFIX,
     ),
-    kmsKeyId: asOptionalNonEmptyString(input.config.kmsKeyId),
+    kmsKeyId: requireOptionalExactAwsIdentity(
+      input.config.kmsKeyId,
+      "AWS Secrets Manager provider vault KMS key ID",
+    ),
     environmentTag:
       asOptionalNonEmptyString(input.config.environmentTag) ||
       process.env.NODE_ENV?.trim() ||
@@ -331,7 +401,9 @@ function getAwsConfigReadiness() {
   const missingConfig: string[] = [];
 
   if (!region) {
-    missingConfig.push("PAPERCLIP_SECRETS_AWS_REGION or AWS_REGION/AWS_DEFAULT_REGION");
+    missingConfig.push(
+      "PAPERCLIP_SECRETS_AWS_REGION or AWS_REGION/AWS_DEFAULT_REGION",
+    );
   }
   if (!deploymentId) {
     missingConfig.push("PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID");
@@ -351,11 +423,20 @@ function getAwsConfigReadiness() {
 
 function describeDetectedAwsCredentialSources() {
   const sources: string[] = [];
-  if (process.env.AWS_PROFILE?.trim()) sources.push("AWS_PROFILE/shared config");
-  if (process.env.AWS_ACCESS_KEY_ID?.trim() && process.env.AWS_SECRET_ACCESS_KEY?.trim()) {
-    sources.push("temporary AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY environment credentials");
+  if (process.env.AWS_PROFILE?.trim())
+    sources.push("AWS_PROFILE/shared config");
+  if (
+    process.env.AWS_ACCESS_KEY_ID?.trim() &&
+    process.env.AWS_SECRET_ACCESS_KEY?.trim()
+  ) {
+    sources.push(
+      "temporary AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY environment credentials",
+    );
   }
-  if (process.env.AWS_WEB_IDENTITY_TOKEN_FILE?.trim() && process.env.AWS_ROLE_ARN?.trim()) {
+  if (
+    process.env.AWS_WEB_IDENTITY_TOKEN_FILE?.trim() &&
+    process.env.AWS_ROLE_ARN?.trim()
+  ) {
     sources.push("AWS web identity token");
   }
   if (
@@ -364,7 +445,10 @@ function describeDetectedAwsCredentialSources() {
   ) {
     sources.push("AWS container credentials endpoint");
   }
-  if (process.env.AWS_SHARED_CREDENTIALS_FILE?.trim() || process.env.AWS_CONFIG_FILE?.trim()) {
+  if (
+    process.env.AWS_SHARED_CREDENTIALS_FILE?.trim() ||
+    process.env.AWS_CONFIG_FILE?.trim()
+  ) {
     sources.push("custom AWS shared credentials/config file");
   }
   return sources;
@@ -400,9 +484,16 @@ function loadAwsSecretsManagerConfig(): AwsSecretsManagerConfig {
     );
   }
 
-  const recoveryWindowRaw = process.env.PAPERCLIP_SECRETS_AWS_DELETE_RECOVERY_DAYS?.trim();
-  const recoveryWindow = recoveryWindowRaw ? Number(recoveryWindowRaw) : DEFAULT_DELETE_RECOVERY_WINDOW_DAYS;
-  if (!Number.isFinite(recoveryWindow) || recoveryWindow < 7 || recoveryWindow > 30) {
+  const recoveryWindowRaw =
+    process.env.PAPERCLIP_SECRETS_AWS_DELETE_RECOVERY_DAYS?.trim();
+  const recoveryWindow = recoveryWindowRaw
+    ? Number(recoveryWindowRaw)
+    : DEFAULT_DELETE_RECOVERY_WINDOW_DAYS;
+  if (
+    !Number.isFinite(recoveryWindow) ||
+    recoveryWindow < 7 ||
+    recoveryWindow > 30
+  ) {
     throw unprocessable(
       "PAPERCLIP_SECRETS_AWS_DELETE_RECOVERY_DAYS must be an integer between 7 and 30",
     );
@@ -414,14 +505,17 @@ function loadAwsSecretsManagerConfig(): AwsSecretsManagerConfig {
       process.env.PAPERCLIP_SECRETS_AWS_ENDPOINT?.trim() ||
       `https://secretsmanager.${region}.amazonaws.com`,
     deploymentId,
-    prefix: sanitizePathSegment(process.env.PAPERCLIP_SECRETS_AWS_PREFIX?.trim() || DEFAULT_PREFIX),
+    prefix: sanitizePathSegment(
+      process.env.PAPERCLIP_SECRETS_AWS_PREFIX?.trim() || DEFAULT_PREFIX,
+    ),
     kmsKeyId,
     environmentTag:
       process.env.PAPERCLIP_SECRETS_AWS_ENVIRONMENT?.trim() ||
       process.env.NODE_ENV?.trim() ||
       "unknown",
     providerOwnerTag:
-      process.env.PAPERCLIP_SECRETS_AWS_PROVIDER_OWNER?.trim() || DEFAULT_OWNER_TAG,
+      process.env.PAPERCLIP_SECRETS_AWS_PROVIDER_OWNER?.trim() ||
+      DEFAULT_OWNER_TAG,
     deleteRecoveryWindowDays: recoveryWindow,
   };
 }
@@ -439,7 +533,9 @@ function buildManagedSecretName(
   context: ManagedSecretNamespaceContext | undefined,
 ) {
   if (!context) {
-    throw unprocessable("AWS Secrets Manager provider requires secret context for managed values");
+    throw unprocessable(
+      "AWS Secrets Manager provider requires secret context for managed values",
+    );
   }
   return [
     sanitizePathSegment(config.prefix),
@@ -463,9 +559,11 @@ function escapeRegExp(value: string) {
 }
 
 function extractAwsSecretName(externalRef: string) {
-  const trimmed = externalRef.trim();
-  const arnMatch = /^arn:[^:]+:secretsmanager:[^:]*:[^:]*:secret:(.+)$/i.exec(trimmed);
-  return arnMatch?.[1] ?? trimmed;
+  const exactRef = requireExactAwsIdentity(externalRef, "AWS secret reference");
+  const arnMatch = /^arn:[^:]+:secretsmanager:[^:]*:[^:]*:secret:(.+)$/i.exec(
+    exactRef,
+  );
+  return arnMatch?.[1] ?? exactRef;
 }
 
 function isManagedSecretRefForContext(
@@ -473,17 +571,21 @@ function isManagedSecretRefForContext(
   context: ManagedSecretNamespaceContext | undefined,
   externalRef: string | null | undefined,
 ) {
-  if (!externalRef?.trim()) return false;
+  if (externalRef == null) return false;
+  requireExactAwsIdentity(externalRef, "AWS secret reference");
   const expectedName = buildManagedSecretName(config, context);
   const actualName = extractAwsSecretName(externalRef);
-  return new RegExp(`^${escapeRegExp(expectedName)}(?:-[A-Za-z0-9]{6})?$`).test(actualName);
+  return new RegExp(`^${escapeRegExp(expectedName)}(?:-[A-Za-z0-9]{6})?$`).test(
+    actualName,
+  );
 }
 
 function isManagedSecretNamespaceRef(
   config: AwsSecretsManagerConfig,
   externalRef: string | null | undefined,
 ) {
-  if (!externalRef?.trim()) return false;
+  if (externalRef == null) return false;
+  requireExactAwsIdentity(externalRef, "AWS secret reference");
   const namespacePrefix = [
     sanitizePathSegment(config.prefix),
     sanitizePathSegment(config.deploymentId),
@@ -492,7 +594,10 @@ function isManagedSecretNamespaceRef(
     .join("/");
   if (!namespacePrefix) return false;
   const actualName = extractAwsSecretName(externalRef);
-  return actualName === namespacePrefix || actualName.startsWith(`${namespacePrefix}/`);
+  return (
+    actualName === namespacePrefix ||
+    actualName.startsWith(`${namespacePrefix}/`)
+  );
 }
 
 function assertNotManagedNamespaceExternalRef(
@@ -512,11 +617,14 @@ function resolveManagedSecretRef(input: {
 }) {
   let sawNonEmptyExternalRef = false;
   for (const externalRef of input.externalRefs) {
-    if (externalRef?.trim()) {
-      sawNonEmptyExternalRef = true;
-    }
-    if (externalRef?.trim() && isManagedSecretRefForContext(input.config, input.context, externalRef)) {
-      return externalRef.trim();
+    if (externalRef == null) continue;
+    const exactRef = requireExactAwsIdentity(
+      externalRef,
+      "AWS secret reference",
+    );
+    sawNonEmptyExternalRef = true;
+    if (isManagedSecretRefForContext(input.config, input.context, exactRef)) {
+      return exactRef;
     }
   }
   if (sawNonEmptyExternalRef) {
@@ -546,41 +654,57 @@ function createExternalReferenceMaterial(
   externalRef: string,
   providerVersionRef: string | null,
 ): PreparedSecretVersion {
-  const normalizedExternalRef = externalRef.trim();
-  const normalizedProviderVersionRef = providerVersionRef?.trim() || null;
+  const exactExternalRef = requireExactAwsIdentity(
+    externalRef,
+    "AWS secret reference",
+  );
+  const exactProviderVersionRef = requireOptionalExactAwsIdentity(
+    providerVersionRef,
+    "AWS secret version reference",
+  );
   const fingerprint = sha256Hex(
-    `${AWS_SECRETS_MANAGER_SCHEME}:${normalizedExternalRef}:${normalizedProviderVersionRef ?? ""}`,
+    `${AWS_SECRETS_MANAGER_SCHEME}:${exactExternalRef}:${exactProviderVersionRef ?? ""}`,
   );
   return {
     material: {
       scheme: AWS_SECRETS_MANAGER_SCHEME,
-      secretId: normalizedExternalRef,
-      versionId: normalizedProviderVersionRef,
+      secretId: exactExternalRef,
+      versionId: exactProviderVersionRef,
       source: "external_reference",
     },
     valueSha256: fingerprint,
     fingerprintSha256: fingerprint,
-    externalRef: normalizedExternalRef,
-    providerVersionRef: normalizedProviderVersionRef,
+    externalRef: exactExternalRef,
+    providerVersionRef: exactProviderVersionRef,
   };
 }
 
-function createManagedMaterial(secretId: string, versionId: string | null): AwsSecretsManagerMaterial {
+function createManagedMaterial(
+  secretId: string,
+  versionId: string | null,
+): AwsSecretsManagerMaterial {
   return {
     scheme: AWS_SECRETS_MANAGER_SCHEME,
-    secretId,
-    versionId,
+    secretId: requireExactAwsIdentity(secretId, "AWS secret reference"),
+    versionId: requireOptionalExactAwsIdentity(
+      versionId,
+      "AWS secret version reference",
+    ),
     source: "managed",
   };
 }
 
-function serializeAwsDate(value: string | number | Date | undefined): string | null {
+function serializeAwsDate(
+  value: string | number | Date | undefined,
+): string | null {
   if (value === undefined) return null;
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function createRemoteSecretMetadata(entry: AwsSecretsManagerListSecretEntry): Record<string, unknown> {
+function createRemoteSecretMetadata(
+  entry: AwsSecretsManagerListSecretEntry,
+): Record<string, unknown> {
   return {
     createdDate: serializeAwsDate(entry.CreatedDate),
     lastAccessedDate: serializeAwsDate(entry.LastAccessedDate),
@@ -611,25 +735,38 @@ function normalizeAwsTags(tags: AwsSecretsManagerTag[] | undefined) {
 }
 
 function commonValue(values: Array<string | null | undefined>) {
-  const nonEmpty = values.filter((value): value is string => Boolean(value?.trim()));
+  const nonEmpty = values.filter((value): value is string =>
+    Boolean(value?.trim()),
+  );
   if (nonEmpty.length === 0) return null;
   const first = nonEmpty[0];
   return nonEmpty.every((value) => value === first) ? first : null;
 }
 
 function uniqueValues(values: Array<string | null | undefined>) {
-  return [...new Set(values.filter((value): value is string => Boolean(value?.trim())))];
+  return [
+    ...new Set(
+      values.filter((value): value is string => Boolean(value?.trim())),
+    ),
+  ];
 }
 
 function pathSegments(name: string) {
-  return name.split("/").map((segment) => segment.trim()).filter(Boolean);
+  return name
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
 }
 
-function inferPathSignals(entry: AwsSecretsManagerListSecretEntry, tags: Map<string, string>) {
+function inferPathSignals(
+  entry: AwsSecretsManagerListSecretEntry,
+  tags: Map<string, string>,
+) {
   const name = entry.Name?.trim() || entry.ARN?.trim() || "";
   const segments = pathSegments(name);
   const paperclipDeploymentId = tagValue(tags, ["paperclip:deployment-id"]);
-  const paperclipManaged = tagValue(tags, ["paperclip:managed-by"])?.toLowerCase() === "paperclip";
+  const paperclipManaged =
+    tagValue(tags, ["paperclip:managed-by"])?.toLowerCase() === "paperclip";
 
   if (paperclipDeploymentId || paperclipManaged) {
     return {
@@ -694,7 +831,8 @@ function discoverAwsProviderConfigCandidates(input: {
     const name = entry.Name?.trim() || entry.ARN?.trim();
     if (!name) continue;
     const tags = normalizeAwsTags(entry.Tags);
-    const paperclipManaged = tagValue(tags, ["paperclip:managed-by"])?.toLowerCase() === "paperclip";
+    const paperclipManaged =
+      tagValue(tags, ["paperclip:managed-by"])?.toLowerCase() === "paperclip";
     const paperclipCompanyId = tagValue(tags, ["paperclip:company-id"]);
     if (paperclipManaged && paperclipCompanyId !== input.companyId) {
       skippedForeignPaperclipSampleCount += 1;
@@ -707,8 +845,19 @@ function discoverAwsProviderConfigCandidates(input: {
       tags,
       prefix: path.prefix,
       namespace: path.namespace,
-      environmentTag: tagValue(tags, ["paperclip:environment", "environment", "env", "stage"]),
-      ownerTag: tagValue(tags, ["paperclip:provider-owner", "owner", "team", "service", "application"]),
+      environmentTag: tagValue(tags, [
+        "paperclip:environment",
+        "environment",
+        "env",
+        "stage",
+      ]),
+      ownerTag: tagValue(tags, [
+        "paperclip:provider-owner",
+        "owner",
+        "team",
+        "service",
+        "application",
+      ]),
       kmsKeyId: asOptionalNonEmptyString(entry.KmsKeyId),
       paperclipManaged,
       paperclipCompanyId,
@@ -722,9 +871,13 @@ function discoverAwsProviderConfigCandidates(input: {
   }
 
   const draftNamespace = asOptionalNonEmptyString(input.draftConfig.namespace);
-  const draftPrefix = asOptionalNonEmptyString(input.draftConfig.secretNamePrefix);
+  const draftPrefix = asOptionalNonEmptyString(
+    input.draftConfig.secretNamePrefix,
+  );
   const draftKmsKeyId = asOptionalNonEmptyString(input.draftConfig.kmsKeyId);
-  const draftEnvironmentTag = asOptionalNonEmptyString(input.draftConfig.environmentTag);
+  const draftEnvironmentTag = asOptionalNonEmptyString(
+    input.draftConfig.environmentTag,
+  );
   const draftOwnerTag = asOptionalNonEmptyString(input.draftConfig.ownerTag);
   const groups = new Map<string, DiscoverySample[]>();
 
@@ -740,29 +893,54 @@ function discoverAwsProviderConfigCandidates(input: {
     .sort((a, b) => b.length - a.length)
     .slice(0, PROVIDER_CONFIG_DISCOVERY_CANDIDATE_LIMIT)
     .map((group) => {
-      const prefix = draftPrefix ?? commonValue(group.map((sample) => sample.prefix)) ?? input.config.prefix;
-      const namespace = draftNamespace ?? commonValue(group.map((sample) => sample.namespace)) ?? null;
-      const environmentTag = draftEnvironmentTag ?? commonValue(group.map((sample) => sample.environmentTag));
-      const ownerTag = draftOwnerTag ?? commonValue(group.map((sample) => sample.ownerTag));
+      const prefix =
+        draftPrefix ??
+        commonValue(group.map((sample) => sample.prefix)) ??
+        input.config.prefix;
+      const namespace =
+        draftNamespace ??
+        commonValue(group.map((sample) => sample.namespace)) ??
+        null;
+      const environmentTag =
+        draftEnvironmentTag ??
+        commonValue(group.map((sample) => sample.environmentTag));
+      const ownerTag =
+        draftOwnerTag ?? commonValue(group.map((sample) => sample.ownerTag));
       const kmsKeys = uniqueValues(group.map((sample) => sample.kmsKeyId));
       const commonKmsKey = commonValue(group.map((sample) => sample.kmsKeyId));
       const kmsKeyId = draftKmsKeyId ?? commonKmsKey;
       const candidateWarnings: string[] = [];
 
       if (!namespace) {
-        candidateWarnings.push("No stable namespace signal was found in the sampled AWS secret names or tags.");
+        candidateWarnings.push(
+          "No stable namespace signal was found in the sampled AWS secret names or tags.",
+        );
       }
       if (!environmentTag) {
-        candidateWarnings.push("No common environment tag was found in the sampled AWS secrets.");
+        candidateWarnings.push(
+          "No common environment tag was found in the sampled AWS secrets.",
+        );
       }
       if (!ownerTag) {
-        candidateWarnings.push("No common owner/team tag was found in the sampled AWS secrets.");
+        candidateWarnings.push(
+          "No common owner/team tag was found in the sampled AWS secrets.",
+        );
       }
       if (kmsKeys.length > 1 && !draftKmsKeyId) {
-        candidateWarnings.push("Sampled AWS secrets use multiple KMS keys; choose the intended KMS key before saving.");
+        candidateWarnings.push(
+          "Sampled AWS secrets use multiple KMS keys; choose the intended KMS key before saving.",
+        );
       }
-      if (group.some((sample) => sample.paperclipManaged && sample.paperclipCompanyId === input.companyId)) {
-        candidateWarnings.push("Sample includes Paperclip-managed secrets for this company; do not import them as external references.");
+      if (
+        group.some(
+          (sample) =>
+            sample.paperclipManaged &&
+            sample.paperclipCompanyId === input.companyId,
+        )
+      ) {
+        candidateWarnings.push(
+          "Sample includes Paperclip-managed secrets for this company; do not import them as external references.",
+        );
       }
 
       return {
@@ -782,11 +960,13 @@ function discoverAwsProviderConfigCandidates(input: {
           environmentTag,
         },
         sampleCount: group.length,
-        samples: group.slice(0, PROVIDER_CONFIG_DISCOVERY_SAMPLE_LIMIT).map((sample) => ({
-          name: sample.name,
-          hasKmsKey: Boolean(sample.kmsKeyId),
-          tagKeys: [...sample.tags.keys()].sort(),
-        })),
+        samples: group
+          .slice(0, PROVIDER_CONFIG_DISCOVERY_SAMPLE_LIMIT)
+          .map((sample) => ({
+            name: sample.name,
+            hasKmsKey: Boolean(sample.kmsKeyId),
+            tagKeys: [...sample.tags.keys()].sort(),
+          })),
         signals: {
           namespace,
           secretNamePrefix: prefix,
@@ -795,7 +975,9 @@ function discoverAwsProviderConfigCandidates(input: {
           kmsKeyId: kmsKeyId ?? null,
           hasKmsKey: kmsKeys.length > 0,
           sampleCount: group.length,
-          paperclipManagedSampleCount: group.filter((sample) => sample.paperclipManaged).length,
+          paperclipManagedSampleCount: group.filter(
+            (sample) => sample.paperclipManaged,
+          ).length,
           skippedForeignPaperclipSampleCount,
         },
         warnings: candidateWarnings,
@@ -804,10 +986,14 @@ function discoverAwsProviderConfigCandidates(input: {
 
   const warnings = [...skippedWarnings];
   if (samples.length === 0) {
-    warnings.push("AWS Secrets Manager returned no metadata samples for this draft provider vault config.");
+    warnings.push(
+      "AWS Secrets Manager returned no metadata samples for this draft provider vault config.",
+    );
   }
   if (groups.size > PROVIDER_CONFIG_DISCOVERY_CANDIDATE_LIMIT) {
-    warnings.push("Additional AWS secret name groups were omitted from this preview; refine the query to inspect them.");
+    warnings.push(
+      "Additional AWS secret name groups were omitted from this preview; refine the query to inspect them.",
+    );
   }
 
   return {
@@ -820,7 +1006,9 @@ function discoverAwsProviderConfigCandidates(input: {
   };
 }
 
-function asAwsSecretsManagerMaterial(value: StoredSecretVersionMaterial): AwsSecretsManagerMaterial {
+function asAwsSecretsManagerMaterial(
+  value: StoredSecretVersionMaterial,
+): AwsSecretsManagerMaterial {
   if (
     value &&
     typeof value === "object" &&
@@ -829,20 +1017,37 @@ function asAwsSecretsManagerMaterial(value: StoredSecretVersionMaterial): AwsSec
     (typeof value.versionId === "string" || value.versionId === null) &&
     (value.source === "managed" || value.source === "external_reference")
   ) {
-    return value as AwsSecretsManagerMaterial;
+    const material = value as AwsSecretsManagerMaterial;
+    requireExactAwsIdentity(material.secretId, "AWS secret reference");
+    requireOptionalExactAwsIdentity(
+      material.versionId,
+      "AWS secret version reference",
+    );
+    return material;
   }
   throw unprocessable("Invalid AWS Secrets Manager material");
 }
 
-function classifyAwsProviderError(message: string): SecretProviderClientErrorCode {
+function classifyAwsProviderError(
+  message: string,
+): SecretProviderClientErrorCode {
   if (/ResourceExistsException|AlreadyExists/i.test(message)) return "conflict";
   if (/ResourceNotFoundException|NotFound/i.test(message)) return "not_found";
-  if (/AccessDeniedException|AccessDenied|UnrecognizedClientException|InvalidClientTokenId|not authorized/i.test(message)) {
+  if (
+    /AccessDeniedException|AccessDenied|UnrecognizedClientException|InvalidClientTokenId|not authorized/i.test(
+      message,
+    )
+  ) {
     return "access_denied";
   }
-  if (/Throttl|TooManyRequests|RequestLimitExceeded|Rate exceeded/i.test(message)) return "throttled";
-  if (/ValidationException|InvalidParameter|InvalidRequest/i.test(message)) return "invalid_request";
-  if (/fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|network|timeout/i.test(message)) return "provider_unavailable";
+  if (
+    /Throttl|TooManyRequests|RequestLimitExceeded|Rate exceeded/i.test(message)
+  )
+    return "throttled";
+  if (/ValidationException|InvalidParameter|InvalidRequest/i.test(message))
+    return "invalid_request";
+  if (/fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|network|timeout/i.test(message))
+    return "provider_unavailable";
   return "provider_error";
 }
 
@@ -925,10 +1130,7 @@ class AwsSecretsManagerJsonGateway implements AwsSecretsManagerGateway {
     }>("GetSecretValue", input);
   }
 
-  deleteSecret(input: {
-    SecretId: string;
-    RecoveryWindowInDays: number;
-  }) {
+  deleteSecret(input: { SecretId: string; RecoveryWindowInDays: number }) {
     return this.call("DeleteSecret", input);
   }
 
@@ -945,7 +1147,14 @@ class AwsSecretsManagerJsonGateway implements AwsSecretsManagerGateway {
     MaxResults?: number;
     NextToken?: string;
     Filters?: Array<{
-      Key: "all" | "name" | "description" | "tag-key" | "tag-value" | "primary-region" | "owning-service";
+      Key:
+        | "all"
+        | "name"
+        | "description"
+        | "tag-key"
+        | "tag-value"
+        | "primary-region"
+        | "owning-service";
       Values: string[];
     }>;
     IncludePlannedDeletion?: boolean;
@@ -956,7 +1165,10 @@ class AwsSecretsManagerJsonGateway implements AwsSecretsManagerGateway {
     }>("ListSecrets", input);
   }
 
-  private async call<T>(operation: string, payload: Record<string, unknown>): Promise<T> {
+  private async call<T>(
+    operation: string,
+    payload: Record<string, unknown>,
+  ): Promise<T> {
     const body = JSON.stringify(payload);
     const credentials = await loadAwsCredentials(this.config.region);
     const headers = signAwsSecretsManagerRequest({
@@ -976,7 +1188,13 @@ class AwsSecretsManagerJsonGateway implements AwsSecretsManagerGateway {
     const parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
 
     if (!response.ok) {
-      const code = String(parsed.__type ?? parsed.code ?? parsed.Code ?? response.statusText ?? "UnknownError");
+      const code = String(
+        parsed.__type ??
+          parsed.code ??
+          parsed.Code ??
+          response.statusText ??
+          "UnknownError",
+      );
       const message = String(parsed.message ?? parsed.Message ?? code);
       const rawMessage = `${code}: ${message}`;
       const clientCode = classifyAwsProviderError(rawMessage);
@@ -993,44 +1211,45 @@ class AwsSecretsManagerJsonGateway implements AwsSecretsManagerGateway {
   }
 }
 
-export function createAwsSecretsManagerProvider(
-  options?: {
-    config?: AwsSecretsManagerConfig;
-    gateway?: AwsSecretsManagerGateway;
-  },
-): SecretProviderModule {
-  function resolveConfig(providerConfig?: SecretProviderVaultRuntimeConfig | null) {
-    if (providerConfig) return readProviderVaultConfig(providerConfig);
-    return options?.config ?? loadAwsSecretsManagerConfig();
+export function createAwsSecretsManagerProvider(options?: {
+  config?: AwsSecretsManagerConfig;
+  gateway?: AwsSecretsManagerGateway;
+}): SecretProviderModule {
+  function resolveConfig(
+    providerConfig?: SecretProviderVaultRuntimeConfig | null,
+  ) {
+    return assertExactAwsConfig(
+      providerConfig
+        ? readProviderVaultConfig(providerConfig)
+        : (options?.config ?? loadAwsSecretsManagerConfig()),
+    );
   }
 
   function resolveGateway(config: AwsSecretsManagerConfig) {
     return options?.gateway ?? new AwsSecretsManagerJsonGateway(config);
   }
 
-  async function validateConfig(
-    input?: {
-      strictMode?: boolean;
-      providerConfig?: SecretProviderVaultRuntimeConfig | null;
-    },
-  ): Promise<SecretProviderValidationResult> {
+  async function validateConfig(input?: {
+    strictMode?: boolean;
+    providerConfig?: SecretProviderVaultRuntimeConfig | null;
+  }): Promise<SecretProviderValidationResult> {
     const warnings: string[] = [];
     if (input?.strictMode === false) {
       warnings.push("Strict secret mode is disabled");
     }
     const config = resolveConfig(input?.providerConfig);
     if (!config.prefix) {
-      warnings.push("PAPERCLIP_SECRETS_AWS_PREFIX should be set to a deployment-scoped prefix");
+      warnings.push(
+        "PAPERCLIP_SECRETS_AWS_PREFIX should be set to a deployment-scoped prefix",
+      );
     }
     return { ok: true, warnings };
   }
 
-  async function healthCheck(
-    input?: {
-      strictMode?: boolean;
-      providerConfig?: SecretProviderVaultRuntimeConfig | null;
-    },
-  ): Promise<SecretProviderHealthCheck> {
+  async function healthCheck(input?: {
+    strictMode?: boolean;
+    providerConfig?: SecretProviderVaultRuntimeConfig | null;
+  }): Promise<SecretProviderHealthCheck> {
     try {
       const validation = await validateConfig(input);
       const config = resolveConfig(input?.providerConfig);
@@ -1065,10 +1284,17 @@ export function createAwsSecretsManagerProvider(
       };
     } catch (error) {
       const readiness = getAwsConfigReadiness();
-      const providerConfigMissing = input?.providerConfig && !asOptionalNonEmptyString(input.providerConfig.config.region)
-        ? ["region"]
-        : [];
-      const missingConfig = input?.providerConfig ? providerConfigMissing : readiness.missingConfig;
+      const providerConfigMissing =
+        input?.providerConfig &&
+        (typeof input.providerConfig.config.region !== "string" ||
+          input.providerConfig.config.region.length === 0 ||
+          input.providerConfig.config.region.trim() !==
+            input.providerConfig.config.region)
+          ? ["region"]
+          : [];
+      const missingConfig = input?.providerConfig
+        ? providerConfigMissing
+        : readiness.missingConfig;
       return {
         provider: "aws_secrets_manager",
         status: "warn",
@@ -1080,7 +1306,9 @@ export function createAwsSecretsManagerProvider(
               : String(error),
         warnings: [
           ...(missingConfig.length > 0
-            ? [`Missing required non-secret AWS provider config: ${missingConfig.join(", ")}.`]
+            ? [
+                `Missing required non-secret AWS provider config: ${missingConfig.join(", ")}.`,
+              ]
             : []),
           AWS_RUNTIME_CREDENTIAL_WARNING,
           AWS_CREDENTIAL_CUSTODY_WARNING,
@@ -1126,19 +1354,28 @@ export function createAwsSecretsManagerProvider(
           Name: secretId,
           SecretString: input.value,
           ...(config.kmsKeyId ? { KmsKeyId: config.kmsKeyId } : {}),
-          Description: input.context ? `Paperclip secret ${input.context.secretName}` : undefined,
+          Description: input.context
+            ? `Paperclip secret ${input.context.secretName}`
+            : undefined,
           Tags: buildManagedSecretTags(config, input.context),
         };
         const created = await gateway.createSecret({
           ...createInput,
         });
-        const normalizedSecretId = created.ARN ?? created.Name ?? secretId;
+        const createdSecretId = requireExactAwsIdentity(
+          created.ARN ?? created.Name ?? secretId,
+          "AWS secret reference",
+        );
+        const createdVersionId = requireOptionalExactAwsIdentity(
+          created.VersionId,
+          "AWS secret version reference",
+        );
         return {
-          material: createManagedMaterial(normalizedSecretId, created.VersionId ?? null),
+          material: createManagedMaterial(createdSecretId, createdVersionId),
           valueSha256,
           fingerprintSha256: valueSha256,
-          externalRef: normalizedSecretId,
-          providerVersionRef: created.VersionId ?? null,
+          externalRef: createdSecretId,
+          providerVersionRef: createdVersionId,
         };
       } catch (error) {
         normalizeAwsError("createSecret", error);
@@ -1160,13 +1397,20 @@ export function createAwsSecretsManagerProvider(
           SecretString: input.value,
           VersionStages: [PAPERCLIP_PENDING_VERSION_STAGE],
         });
-        const normalizedSecretId = created.ARN ?? created.Name ?? secretId;
+        const createdSecretId = requireExactAwsIdentity(
+          created.ARN ?? created.Name ?? secretId,
+          "AWS secret reference",
+        );
+        const createdVersionId = requireOptionalExactAwsIdentity(
+          created.VersionId,
+          "AWS secret version reference",
+        );
         return {
-          material: createManagedMaterial(normalizedSecretId, created.VersionId ?? null),
+          material: createManagedMaterial(createdSecretId, createdVersionId),
           valueSha256,
           fingerprintSha256: valueSha256,
-          externalRef: normalizedSecretId,
-          providerVersionRef: created.VersionId ?? null,
+          externalRef: createdSecretId,
+          providerVersionRef: createdVersionId,
         };
       } catch (error) {
         normalizeAwsError("createVersion", error);
@@ -1175,7 +1419,10 @@ export function createAwsSecretsManagerProvider(
     async linkExternalSecret(input) {
       const config = resolveConfig(input.providerConfig);
       assertNotManagedNamespaceExternalRef(config, input.externalRef);
-      return createExternalReferenceMaterial(input.externalRef, input.providerVersionRef ?? null);
+      return createExternalReferenceMaterial(
+        input.externalRef,
+        input.providerVersionRef ?? null,
+      );
     },
     async listRemoteSecrets(input): Promise<RemoteSecretListResult> {
       const config = resolveConfig(input.providerConfig);
@@ -1201,7 +1448,10 @@ export function createAwsSecretsManagerProvider(
           secrets: (listed.SecretList ?? [])
             .filter((entry) => Boolean(entry.ARN ?? entry.Name))
             .map((entry) => ({
-              externalRef: entry.ARN ?? entry.Name ?? "",
+              externalRef: requireExactAwsIdentity(
+                entry.ARN ?? entry.Name,
+                "AWS secret reference",
+              ),
               name: entry.Name ?? entry.ARN ?? "",
               providerVersionRef: null,
               metadata: createRemoteSecretMetadata(entry),
@@ -1211,7 +1461,9 @@ export function createAwsSecretsManagerProvider(
         normalizeAwsError("listSecrets", error);
       }
     },
-    async discoverProviderConfigs(input): Promise<SecretProviderConfigDiscoveryPreviewResult> {
+    async discoverProviderConfigs(
+      input,
+    ): Promise<SecretProviderConfigDiscoveryPreviewResult> {
       const config = resolveConfig(input.providerConfig);
       const gateway = resolveGateway(config);
       const query = input.query?.trim();
@@ -1245,21 +1497,31 @@ export function createAwsSecretsManagerProvider(
       const config = resolveConfig(input.providerConfig);
       const gateway = resolveGateway(config);
       const material = asAwsSecretsManagerMaterial(input.material);
+      const externalRef = requireOptionalExactAwsIdentity(
+        input.externalRef,
+        "AWS secret reference",
+      );
+      const providerVersionRef = requireOptionalExactAwsIdentity(
+        input.providerVersionRef,
+        "AWS secret version reference",
+      );
       const secretId =
         material.source === "managed"
           ? resolveManagedSecretRef({
               config,
               context: input.context,
-              externalRefs: [input.externalRef, material.secretId],
+              externalRefs: [externalRef, material.secretId],
             })
-          : (input.externalRef ?? material.secretId);
+          : (externalRef ?? material.secretId);
 
       try {
         const resolved = await gateway.getSecretValue({
           SecretId: secretId,
-          VersionId: input.providerVersionRef ?? material.versionId ?? undefined,
+          VersionId: providerVersionRef ?? material.versionId ?? undefined,
           VersionStage:
-            input.providerVersionRef || material.versionId ? undefined : DEFAULT_VERSION_STAGE,
+            providerVersionRef || material.versionId
+              ? undefined
+              : DEFAULT_VERSION_STAGE,
         });
         if (typeof resolved.SecretString !== "string") {
           throw new Error("SecretString was empty");
@@ -1279,10 +1541,14 @@ export function createAwsSecretsManagerProvider(
 
       const config = resolveConfig(input.providerConfig);
       const gateway = resolveGateway(config);
+      const externalRef = requireOptionalExactAwsIdentity(
+        input.externalRef,
+        "AWS secret reference",
+      );
       const secretId = resolveManagedSecretRef({
         config,
         context: input.context,
-        externalRefs: [input.externalRef, material.secretId],
+        externalRefs: [externalRef, material.secretId],
       });
 
       try {
@@ -1301,7 +1567,12 @@ export function createAwsSecretsManagerProvider(
           RecoveryWindowInDays: config.deleteRecoveryWindowDays,
         });
       } catch (error) {
-        normalizeAwsError(input.mode === "archive" ? "updateSecretVersionStage" : "deleteSecret", error);
+        normalizeAwsError(
+          input.mode === "archive"
+            ? "updateSecretVersionStage"
+            : "deleteSecret",
+          error,
+        );
       }
     },
     healthCheck,

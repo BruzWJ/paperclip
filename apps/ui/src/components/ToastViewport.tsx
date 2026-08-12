@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import { Toast } from "radix-ui";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { CompanyBoardLink } from "@/components/CompanyBoardLink";
 import { X } from "lucide-react";
 import {
   useToastActions,
   useToastState,
   type ToastItem,
+  type ToastNavigationTarget,
   type ToastTone,
 } from "../context/ToastContext";
 import { cn } from "../lib/utils";
+import { resolvePluginNavigationHref } from "@paperclipai/shared";
 
 const toneClasses: Record<ToastTone, string> = {
   info: "border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-500/25 dark:bg-sky-950/60 dark:text-sky-100",
@@ -24,6 +28,28 @@ const toneDotClasses: Record<ToastTone, string> = {
   error: "bg-red-500 dark:bg-red-400",
 };
 
+function ToastNavigationLink({
+  target,
+  companyId,
+  onClick,
+  children,
+}: {
+  target: ToastNavigationTarget;
+  companyId: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const className = "mt-2 inline-flex text-xs font-medium underline underline-offset-4 hover:opacity-90";
+  if (target.kind === "plugin") {
+    return <Link to={resolvePluginNavigationHref(target.href, companyId)} onClick={onClick} className={className}>{children}</Link>;
+  }
+  return (
+    <CompanyBoardLink routeTarget={target} onClick={onClick} className={className}>
+      {children}
+    </CompanyBoardLink>
+  );
+}
+
 function AnimatedToast({
   toast,
   onDismiss,
@@ -31,6 +57,7 @@ function AnimatedToast({
   toast: ToastItem;
   onDismiss: (id: string) => void;
 }) {
+  const companyId = useCompanyRouteId();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -76,15 +103,15 @@ function AnimatedToast({
                   {toast.action.label}
                 </button>
               </Toast.Action>
-            ) : toast.action.href ? (
+            ) : toast.action.target ? (
               <Toast.Action altText={toast.action.label} asChild>
-                <Link
-                  to={toast.action.href}
+                <ToastNavigationLink
+                  target={toast.action.target}
+                  companyId={companyId}
                   onClick={() => onDismiss(toast.id)}
-                  className="mt-2 inline-flex text-xs font-medium underline underline-offset-4 hover:opacity-90"
                 >
                   {toast.action.label}
-                </Link>
+                </ToastNavigationLink>
               </Toast.Action>
             ) : null)}
         </div>

@@ -11,11 +11,11 @@ const windowStart = new Date("2026-04-01T00:00:00.000Z");
 const windowEnd = new Date("2026-05-01T00:00:00.000Z");
 
 const policy: BudgetPolicySummary = {
-  policyId: "policy-storybook",
-  companyId: "company-storybook",
+  policyId: "b3000000-0000-4000-8000-000000000001",
+  companyId: "11111111-1111-4111-8111-111111111111",
   budgetCurrency: "USD",
   scopeType: "project",
-  scopeId: "project-storybook",
+  scopeId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
   scopeName: "Canonical runtime",
   windowKind: "calendar_month_utc",
   limitAmount: canonicalizeMoneyAmount("1200.000000001"),
@@ -34,12 +34,12 @@ const policy: BudgetPolicySummary = {
 };
 
 const incident: BudgetIncident = {
-  id: "incident-storybook",
-  companyId: "company-storybook",
+  id: "b4000000-0000-4000-8000-000000000001",
+  companyId: "11111111-1111-4111-8111-111111111111",
   budgetCurrency: "USD",
   policyId: policy.policyId,
   scopeType: "agent",
-  scopeId: "agent-storybook",
+  scopeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7",
   scopeName: "Implementation agent",
   windowKind: "calendar_month_utc",
   windowStart,
@@ -48,7 +48,7 @@ const incident: BudgetIncident = {
   limitAmount: canonicalizeMoneyAmount("400"),
   observedAmount: canonicalizeMoneyAmount("432.000000001"),
   status: "open",
-  approvalId: "approval-storybook",
+  approvalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4",
   approvalStatus: "pending",
   resolvedAt: null,
   createdAt: new Date("2026-04-20T11:00:00.000Z"),

@@ -16,6 +16,7 @@ import {
   resolveCommandContext,
   type BaseClientOptions,
 } from "./common.js";
+import { parseExactCanonicalUuidList } from "./exact-uuid-list.js";
 
 interface ApprovalListOptions extends BaseClientOptions {
   companyId?: string;
@@ -124,7 +125,7 @@ export function registerApprovalCommands(program: Command): void {
             type: opts.type,
             payload: payloadJson,
             requestedByAgentId: opts.requestedByAgentId,
-            taskIds: parseCsv(opts.taskIds),
+            taskIds: parseExactCanonicalUuidList(opts.taskIds, "--task-ids"),
           });
           const created = await ctx.api.post<Approval>(apiPath`/api/companies/${ctx.companyId}/approvals`, payload);
           printOutput(created, { json: ctx.json });
@@ -239,12 +240,6 @@ export function registerApprovalCommands(program: Command): void {
         }
       }),
   );
-}
-
-function parseCsv(value: string | undefined): string[] | undefined {
-  if (!value) return undefined;
-  const rows = value.split(",").map((v) => v.trim()).filter(Boolean);
-  return rows.length > 0 ? rows : undefined;
 }
 
 function parseJsonObject(value: string, name: string): Record<string, unknown> {

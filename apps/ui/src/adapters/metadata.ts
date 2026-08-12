@@ -12,10 +12,6 @@ export interface AdapterOptionMetadata {
   label: string;
 }
 
-export function listKnownAdapterTypes(): string[] {
-  return listUIAdapters().map((adapter) => adapter.type);
-}
-
 /**
  * Only exact entries in the server-admitted UI catalog are enabled.
  */
@@ -50,18 +46,4 @@ export function listAdapterOptions(
     value: adapter.type,
     label: labelFor ? labelFor(adapter.type) : adapter.label,
   }));
-}
-
-/**
- * List exact server-admitted UI adapters.
- */
-export function listVisibleUIAdapters(): UIAdapterModule[] {
-  return listUIAdapters();
-}
-
-/**
- * List visible adapter types (for non-React contexts like module-level constants).
- */
-export function listVisibleAdapterTypes(): string[] {
-  return listVisibleUIAdapters().map((a) => a.type);
 }

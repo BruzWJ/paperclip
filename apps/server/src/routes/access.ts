@@ -1,6 +1,17 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  sql,
+} from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   assets,
@@ -28,16 +39,20 @@ import {
   archiveCompanyMemberSchema,
   updateMemberPermissionsSchema,
   updateUserCompanyAccessSchema,
-  isUuidLike,
+  isCanonicalUuid,
 } from "@paperclipai/shared";
-import type { DeploymentExposure, HumanCompanyMembershipRole, PermissionKey } from "@paperclipai/shared";
+import type {
+  DeploymentExposure,
+  UserCompanyMembershipRole,
+  PermissionKey,
+} from "@paperclipai/shared";
 import {
   forbidden,
   conflict,
   notFound,
   unauthorized,
   badRequest,
-  tooManyRequests
+  tooManyRequests,
 } from "../errors.js";
 import {
   createInviteRateLimiter,
@@ -47,30 +62,30 @@ import { logger } from "../middleware/logger.js";
 import { validate } from "../middleware/validate.js";
 import {
   accessService,
-  agentService,
   boardAuthService,
   createJoinRequestApprovalService,
-  logActivity
+  logActivity,
 } from "../services/index.js";
 import {
-  normalizeHumanRole,
-  resolveHumanInviteRole,
+  requireUserRole,
+  resolveUserInviteRole,
 } from "../services/company-member-roles.js";
 import {
   createCompanyInvite,
   hashInviteToken,
 } from "../services/company-invite-creation.js";
-import { humanJoinGrantsFromDefaults } from "../services/invite-grants.js";
+import { userJoinGrantsFromDefaults } from "../services/invite-grants.js";
 import {
-  collapseDuplicatePendingHumanJoinRequests,
-  findReusableHumanJoinRequest,
+  collapseDuplicatePendingUserJoinRequests,
+  findReusableUserJoinRequest,
 } from "../lib/join-request-dedupe.js";
 import {
-  assertAuthenticated,
   assertBoard,
   assertCompanyAccess,
+  assertCurrentBoardUser,
   getBoardUserId,
 } from "./authz.js";
+import { assertExactQueryKeys, parseExactBooleanQuery } from "./exact-query.js";
 import { claimFirstInstanceAdmin } from "../first-admin-claim.js";
 import { getStorageService } from "../storage/index.js";
 import { requireRequestAuthority } from "../http/request-authority.js";
@@ -92,30 +107,6 @@ function toJoinRequestResponse(row: typeof joinRequests.$inferSelect) {
   return row;
 }
 
-type JoinDiagnostic = {
-  code: string;
-  level: "info" | "warn";
-  message: string;
-  hint?: string;
-};
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function normalizeAgentDefaultsForJoin(input: {
-  defaultsPayload: unknown;
-}) {
-  const normalized = isPlainObject(input.defaultsPayload)
-    ? (input.defaultsPayload as Record<string, unknown>)
-    : null;
-  return {
-    normalized,
-    diagnostics: [] as JoinDiagnostic[],
-    fatalErrors: [] as string[],
-  };
-}
-
 function toInviteSummaryResponse(
   req: Request,
   token: string,
@@ -123,20 +114,18 @@ function toInviteSummaryResponse(
   company:
     | string
     | {
-      name: string | null;
-      brandColor: string | null;
-      logoUrl: string | null;
-    }
-    | null = null
+        name: string | null;
+        brandColor: string | null;
+        logoUrl: string | null;
+      }
+    | null = null,
 ) {
-  const companyInfo = typeof company === "string"
-    ? { name: company, brandColor: null, logoUrl: null }
-    : company;
+  const companyInfo =
+    typeof company === "string"
+      ? { name: company, brandColor: null, logoUrl: null }
+      : company;
   const baseUrl = requestBaseUrl(req);
   const invitePath = `/invite/${token}`;
-  const onboardingPath = `/api/invites/${token}/onboarding`;
-  const onboardingTextPath = `/api/invites/${token}/onboarding.txt`;
-  const inviteMessage = extractInviteMessage(invite);
   return {
     id: invite.id,
     companyId: invite.companyId,
@@ -144,18 +133,10 @@ function toInviteSummaryResponse(
     companyLogoUrl: companyInfo?.logoUrl ?? null,
     companyBrandColor: companyInfo?.brandColor ?? null,
     inviteType: invite.inviteType,
-    allowedJoinTypes: invite.allowedJoinTypes,
-    humanRole: extractInviteHumanRole(invite),
+    userRole: extractInviteUserRole(invite),
     expiresAt: invite.expiresAt,
     invitePath,
     inviteUrl: baseUrl ? `${baseUrl}${invitePath}` : invitePath,
-    onboardingPath,
-    onboardingUrl: baseUrl ? `${baseUrl}${onboardingPath}` : onboardingPath,
-    onboardingTextPath,
-    onboardingTextUrl: baseUrl
-      ? `${baseUrl}${onboardingTextPath}`
-      : onboardingTextPath,
-    inviteMessage
   };
 }
 
@@ -172,7 +153,8 @@ function actorHasActiveUserMembership(req: Request, companyId: string) {
 }
 
 async function loadUsersById(db: Db, userIds: string[]) {
-  if (userIds.length === 0) return new Map<string, ReturnType<typeof toUserProfile>>();
+  if (userIds.length === 0)
+    return new Map<string, ReturnType<typeof toUserProfile>>();
   const rows = await db
     .select({
       id: authUsers.id,
@@ -199,8 +181,9 @@ async function loadCompanyAccessSummary(
     };
   }
   const userId = req.actor.userId;
-  const membership =
-    userId ? await access.getMembership(companyId, "user", userId) : null;
+  const membership = userId
+    ? await access.getMembership(companyId, "user", userId)
+    : null;
   const [canManageMembers, canInviteUsers, canApproveJoinRequests] =
     await Promise.all([
       access.canUser(companyId, userId, "users:manage_permissions"),
@@ -211,7 +194,7 @@ async function loadCompanyAccessSummary(
   return {
     currentUserRole:
       membership?.status === "active" && membership.membershipRole
-        ? normalizeHumanRole(membership.membershipRole, "operator")
+        ? requireUserRole(membership.membershipRole)
         : null,
     canManageMembers,
     canInviteUsers,
@@ -231,16 +214,20 @@ async function loadCompanyMemberRecords(
       and(
         eq(companyMemberships.companyId, companyId),
         eq(companyMemberships.principalType, "user"),
-        options.includeArchived ? undefined : ne(companyMemberships.status, "archived"),
+        options.includeArchived
+          ? undefined
+          : ne(companyMemberships.status, "archived"),
       ),
     )
     .orderBy(desc(companyMemberships.updatedAt));
 
-  const userIds = [...new Set(
-    members
-      .map((member) => member.principalUserId)
-      .filter((userId): userId is string => typeof userId === "string"),
-  )];
+  const userIds = [
+    ...new Set(
+      members
+        .map((member) => member.principalUserId)
+        .filter((userId): userId is string => typeof userId === "string"),
+    ),
+  ];
   const [userMap, grants] = await Promise.all([
     loadUsersById(db, userIds),
     userIds.length > 0
@@ -260,8 +247,7 @@ async function loadCompanyMemberRecords(
   const grantsByPrincipalId = new Map<string, typeof grants>();
   for (const grant of grants) {
     if (!grant.principalUserId) continue;
-    const existing =
-      grantsByPrincipalId.get(grant.principalUserId) ?? [];
+    const existing = grantsByPrincipalId.get(grant.principalUserId) ?? [];
     existing.push(grant);
     grantsByPrincipalId.set(grant.principalUserId, existing);
   }
@@ -274,63 +260,72 @@ async function loadCompanyMemberRecords(
       principalAgentId: _principalAgentId,
       ...publicMember
     } = member;
-    return [{
-      ...publicMember,
-      principalId,
-      principalType: "user" as const,
-      membershipRole: member.membershipRole
-        ? normalizeHumanRole(member.membershipRole, "operator")
-        : null,
-      user: userMap.get(principalId) ?? null,
-      grants: (grantsByPrincipalId.get(principalId) ?? []).map((grant) => {
-        const {
-          principalUserId: _grantPrincipalUserId,
-          principalAgentId: _grantPrincipalAgentId,
-          ...publicGrant
-        } = grant;
-        return { ...publicGrant, principalId };
-      }),
-    }];
+    return [
+      {
+        ...publicMember,
+        principalId,
+        principalType: "user" as const,
+        membershipRole: requireUserRole(member.membershipRole),
+        user: userMap.get(principalId) ?? null,
+        grants: (grantsByPrincipalId.get(principalId) ?? []).map((grant) => {
+          const {
+            principalUserId: _grantPrincipalUserId,
+            principalAgentId: _grantPrincipalAgentId,
+            ...publicGrant
+          } = grant;
+          return { ...publicGrant, principalId };
+        }),
+      },
+    ];
   });
 }
 
-type CompanyMemberRecord = Awaited<ReturnType<typeof loadCompanyMemberRecords>>[number];
+type CompanyMemberRecord = Awaited<
+  ReturnType<typeof loadCompanyMemberRecords>
+>[number];
 
-const humanRoleRank: Record<HumanCompanyMembershipRole, number> = {
+const userRoleRank: Record<UserCompanyMembershipRole, number> = {
   viewer: 1,
   operator: 2,
   admin: 3,
   owner: 4,
 };
 
-async function resolveActorHumanRole(
+async function resolveActorUserRole(
   req: Request,
   access: ReturnType<typeof accessService>,
   companyId: string,
-): Promise<HumanCompanyMembershipRole | null> {
+): Promise<UserCompanyMembershipRole | null> {
   if (req.actor.type !== "board") return null;
   if (req.actor.isInstanceAdmin) return "owner";
   const userId = req.actor.userId;
   if (!userId) return null;
   const membership = await access.getMembership(companyId, "user", userId);
-  if (membership?.status !== "active" || !membership.membershipRole) return null;
-  return normalizeHumanRole(membership.membershipRole, "operator");
+  if (membership?.status !== "active") return null;
+  return requireUserRole(membership.membershipRole);
 }
 
 async function getProtectedMemberReason(
   req: Request,
   access: ReturnType<typeof accessService>,
   companyId: string,
-  member: { principalId: string; principalType: string; membershipRole: string | null },
+  member: {
+    principalId: string;
+    principalType: "user";
+    membershipRole: UserCompanyMembershipRole;
+  },
   opts?: {
-    actorRole?: HumanCompanyMembershipRole | null;
+    actorRole?: UserCompanyMembershipRole | null;
     instanceAdminUserIds?: ReadonlySet<string>;
     operation?: "archive" | "update";
   },
 ): Promise<string | null> {
-  if (member.principalType !== "user") return "Only human company members can be removed.";
-  if (req.actor.type !== "board") return "Board access is required to remove members.";
-  if (member.principalId === req.actor.userId) return "You cannot remove yourself.";
+  if (member.principalType !== "user")
+    return "Only user company members can be removed.";
+  if (req.actor.type !== "board")
+    return "Board access is required to remove members.";
+  if (member.principalId === req.actor.userId)
+    return "You cannot remove yourself.";
   const isTargetInstanceAdmin = opts?.instanceAdminUserIds
     ? opts.instanceAdminUserIds.has(member.principalId)
     : await access.isInstanceAdmin(member.principalId);
@@ -338,17 +333,18 @@ async function getProtectedMemberReason(
     return "Instance admins cannot be removed from company access.";
   }
 
-  const targetRole = member.membershipRole
-    ? normalizeHumanRole(member.membershipRole, "operator")
-    : "operator";
+  const targetRole = requireUserRole(member.membershipRole);
   if (opts?.operation === "archive") {
-    if (targetRole === "owner") return "Board owners cannot be removed from company access.";
-    if (targetRole === "admin") return "Company admins cannot be removed from company access.";
+    if (targetRole === "owner")
+      return "Board owners cannot be removed from company access.";
+    if (targetRole === "admin")
+      return "Company admins cannot be removed from company access.";
   }
 
-  const actorRole = opts?.actorRole ?? await resolveActorHumanRole(req, access, companyId);
+  const actorRole =
+    opts?.actorRole ?? (await resolveActorUserRole(req, access, companyId));
   if (!actorRole) return "Only active company members can remove users.";
-  if (humanRoleRank[targetRole] >= humanRoleRank[actorRole]) {
+  if (userRoleRank[targetRole] >= userRoleRank[actorRole]) {
     return "You can only remove users below your company role.";
   }
 
@@ -359,10 +355,20 @@ async function assertCanManageCompanyMember(
   req: Request,
   access: ReturnType<typeof accessService>,
   companyId: string,
-  member: { principalId: string; principalType: string; membershipRole: string | null },
+  member: {
+    principalId: string;
+    principalType: "user";
+    membershipRole: UserCompanyMembershipRole;
+  },
   operation: "archive" | "update" = "update",
 ) {
-  const reason = await getProtectedMemberReason(req, access, companyId, member, { operation });
+  const reason = await getProtectedMemberReason(
+    req,
+    access,
+    companyId,
+    member,
+    { operation },
+  );
   if (reason) throw forbidden(reason);
 }
 
@@ -373,26 +379,42 @@ async function addCompanyMemberRemovalAccess(
   companyId: string,
   members: CompanyMemberRecord[],
 ) {
-  const actorRole = await resolveActorHumanRole(req, access, companyId);
-  const userIds = [...new Set(members
-    .filter((member) => member.principalType === "user")
-    .map((member) => member.principalId))];
-  const instanceAdminUserIds = userIds.length > 0
-    ? new Set(
-      await db
-        .select({ userId: instanceUserRoles.userId })
-        .from(instanceUserRoles)
-        .where(and(inArray(instanceUserRoles.userId, userIds), eq(instanceUserRoles.role, "instance_admin")))
-        .then((rows) => rows.map((row) => row.userId)),
-    )
-    : new Set<string>();
+  const actorRole = await resolveActorUserRole(req, access, companyId);
+  const userIds = [
+    ...new Set(
+      members
+        .filter((member) => member.principalType === "user")
+        .map((member) => member.principalId),
+    ),
+  ];
+  const instanceAdminUserIds =
+    userIds.length > 0
+      ? new Set(
+          await db
+            .select({ userId: instanceUserRoles.userId })
+            .from(instanceUserRoles)
+            .where(
+              and(
+                inArray(instanceUserRoles.userId, userIds),
+                eq(instanceUserRoles.role, "instance_admin"),
+              ),
+            )
+            .then((rows) => rows.map((row) => row.userId)),
+        )
+      : new Set<string>();
   return Promise.all(
     members.map(async (member) => {
-      const reason = await getProtectedMemberReason(req, access, companyId, member, {
-        actorRole,
-        instanceAdminUserIds,
-        operation: "archive",
-      });
+      const reason = await getProtectedMemberReason(
+        req,
+        access,
+        companyId,
+        member,
+        {
+          actorRole,
+          instanceAdminUserIds,
+          operation: "archive",
+        },
+      );
       return {
         ...member,
         removal: {
@@ -420,20 +442,24 @@ async function loadCompanyUserDirectory(db: Db, companyId: string) {
     )
     .orderBy(desc(companyMemberships.updatedAt));
 
-  const userIds = [...new Set(
-    members
-      .map((member) => member.principalId)
-      .filter((userId): userId is string => typeof userId === "string"),
-  )];
+  const userIds = [
+    ...new Set(
+      members
+        .map((member) => member.principalId)
+        .filter((userId): userId is string => typeof userId === "string"),
+    ),
+  ];
   const userMap = await loadUsersById(db, userIds);
 
   return members.flatMap((member) =>
     member.principalId
-      ? [{
-          principalId: member.principalId,
-          status: "active" as const,
-          user: userMap.get(member.principalId) ?? null,
-        }]
+      ? [
+          {
+            principalId: member.principalId,
+            status: "active" as const,
+            user: userMap.get(member.principalId) ?? null,
+          },
+        ]
       : [],
   );
 }
@@ -477,7 +503,11 @@ async function loadCompanyInviteRecords(
   const rows = await db
     .select()
     .from(invites)
-    .where(whereClause ? and(eq(invites.companyId, companyId), whereClause) : eq(invites.companyId, companyId))
+    .where(
+      whereClause
+        ? and(eq(invites.companyId, companyId), whereClause)
+        : eq(invites.companyId, companyId),
+    )
     .orderBy(desc(invites.createdAt))
     .limit(options.limit + 1)
     .offset(options.offset);
@@ -513,18 +543,20 @@ async function loadCompanyInviteRecords(
       .then((companyRows) => companyRows[0]?.name ?? null),
   ]);
   const joinRequestIdByInviteId = new Map(
-    joinRows.map((row: { inviteId: string; id: string }) => [row.inviteId, row.id]),
+    joinRows.map((row: { inviteId: string; id: string }) => [
+      row.inviteId,
+      row.id,
+    ]),
   );
 
   return {
     invites: visibleRows.map((invite) => ({
       ...invite,
       companyName,
-      humanRole: extractInviteHumanRole(invite),
-      inviteMessage: extractInviteMessage(invite),
+      userRole: extractInviteUserRole(invite),
       state: inviteState(invite),
       invitedByUser: invite.invitedByUserId
-        ? userMap.get(invite.invitedByUserId) ?? null
+        ? (userMap.get(invite.invitedByUserId) ?? null)
         : null,
       relatedJoinRequestId: joinRequestIdByInviteId.get(invite.id) ?? null,
     })),
@@ -533,19 +565,16 @@ async function loadCompanyInviteRecords(
 }
 
 async function loadJoinRequestRecords(db: Db, companyId: string) {
-  const rows = collapseDuplicatePendingHumanJoinRequests(
+  const rows = collapseDuplicatePendingUserJoinRequests(
     await db
       .select()
       .from(joinRequests)
       .where(eq(joinRequests.companyId, companyId))
-      .orderBy(desc(joinRequests.createdAt))
+      .orderBy(desc(joinRequests.createdAt)),
   );
   const inviteIds = [...new Set(rows.map((row) => row.inviteId))];
   const inviteRows = inviteIds.length
-    ? await db
-        .select()
-        .from(invites)
-        .where(inArray(invites.id, inviteIds))
+    ? await db.select().from(invites).where(inArray(invites.id, inviteIds))
     : [];
   const userIds = [
     ...new Set(
@@ -565,27 +594,25 @@ async function loadJoinRequestRecords(db: Db, companyId: string) {
     return {
       ...toJoinRequestResponse(row),
       requesterUser: row.requestingUserId
-        ? userMap.get(row.requestingUserId) ?? null
+        ? (userMap.get(row.requestingUserId) ?? null)
         : null,
       approvedByUser: row.approvedByUserId
-        ? userMap.get(row.approvedByUserId) ?? null
+        ? (userMap.get(row.approvedByUserId) ?? null)
         : null,
       rejectedByUser: row.rejectedByUserId
-        ? userMap.get(row.rejectedByUserId) ?? null
+        ? (userMap.get(row.rejectedByUserId) ?? null)
         : null,
       invite: invite
         ? {
             id: invite.id,
             inviteType: invite.inviteType,
-            allowedJoinTypes: invite.allowedJoinTypes,
-            humanRole: extractInviteHumanRole(invite),
-            inviteMessage: extractInviteMessage(invite),
+            userRole: extractInviteUserRole(invite),
             createdAt: invite.createdAt,
             expiresAt: invite.expiresAt,
             revokedAt: invite.revokedAt,
             acceptedAt: invite.acceptedAt,
             invitedByUser: invite.invitedByUserId
-              ? userMap.get(invite.invitedByUserId) ?? null
+              ? (userMap.get(invite.invitedByUserId) ?? null)
               : null,
           }
         : null,
@@ -612,7 +639,9 @@ async function loadUserCompanyAccessResponse(
       .then((rows) => rows[0] ?? null),
     access.isInstanceAdmin(userId),
   ]);
-  const companyIds = [...new Set(memberships.map((membership) => membership.companyId))];
+  const companyIds = [
+    ...new Set(memberships.map((membership) => membership.companyId)),
+  ];
   const companyRows = companyIds.length
     ? await db
         .select({
@@ -623,7 +652,9 @@ async function loadUserCompanyAccessResponse(
         .from(companies)
         .where(inArray(companies.id, companyIds))
     : [];
-  const companyMap = new Map(companyRows.map((company) => [company.id, company]));
+  const companyMap = new Map(
+    companyRows.map((company) => [company.id, company]),
+  );
 
   return {
     user: user
@@ -642,174 +673,6 @@ async function loadUserCompanyAccessResponse(
       };
     }),
   };
-}
-
-function buildInviteOnboardingManifest(
-  req: Request,
-  token: string,
-  invite: typeof invites.$inferSelect,
-  opts: {
-    companyName?: string | null;
-  }
-) {
-  const baseUrl = requestBaseUrl(req);
-  const registrationEndpointPath = `/api/invites/${token}/accept`;
-  const registrationEndpointUrl = baseUrl
-    ? `${baseUrl}${registrationEndpointPath}`
-    : registrationEndpointPath;
-  const onboardingTextPath = `/api/invites/${token}/onboarding.txt`;
-  const onboardingTextUrl = baseUrl
-    ? `${baseUrl}${onboardingTextPath}`
-    : onboardingTextPath;
-
-  return {
-    invite: toInviteSummaryResponse(
-      req,
-      token,
-      invite,
-      opts.companyName ?? null
-    ),
-    onboarding: {
-      instructions:
-        "Submit an agent-configuration proposal and wait for board approval. Use requestType='agent', include agentName and capabilities, and propose a currently registered Paperclip adapter for the existing Paperclip worker. Put only provider-native settings in agentDefaultsPayload. Approval persists an ordinary agent configuration for that worker and never mints a generic Paperclip API credential.",
-      inviteMessage: extractInviteMessage(invite),
-      recommendedAdapterType: null,
-      requiredFields: {
-        requestType: "agent",
-        agentName: "Display name for this agent",
-        adapterType:
-          "A currently registered Paperclip adapter type for the existing Paperclip worker to execute.",
-        capabilities: "Optional capability summary",
-        agentDefaultsPayload:
-          "Provider-native adapter config. Approval validates it against the selected adapter's closed canonical configuration schema."
-      },
-      registrationEndpoint: {
-        method: "POST",
-        path: registrationEndpointPath,
-        url: registrationEndpointUrl
-      },
-      textInstructions: {
-        path: onboardingTextPath,
-        url: onboardingTextUrl,
-        contentType: "text/plain"
-      },
-    }
-  };
-}
-
-export function buildInviteOnboardingTextDocument(
-  req: Request,
-  token: string,
-  invite: typeof invites.$inferSelect,
-  opts: {
-    companyName?: string | null;
-  }
-) {
-  const manifest = buildInviteOnboardingManifest(req, token, invite, opts);
-  const onboarding = manifest.onboarding as {
-    inviteMessage?: string | null;
-    registrationEndpoint: { method: string; path: string; url: string };
-    textInstructions: { path: string; url: string };
-  };
-
-  const lines: string[] = [];
-  const appendBlock = (block: string) => {
-    const trimmed = block.replace(/^\n/, "").replace(/\n\s*$/, "");
-    const lineIndentation = trimmed
-      .split("\n")
-      .filter((line) => line.trim().length > 0)
-      .map((line) => line.match(/^(\s*)/)?.[0].length ?? 0);
-    const minIndent =
-      lineIndentation.length > 0 ? Math.min(...lineIndentation) : 0;
-    for (const line of trimmed.split("\n")) {
-      lines.push(line.slice(minIndent));
-    }
-  };
-
-  appendBlock(`
-    # Paperclip Agent Onboarding
-
-    This document is meant to be readable by both humans and agents.
-
-    ## Invite
-    - inviteType: ${invite.inviteType}
-    - allowedJoinTypes: ${invite.allowedJoinTypes}
-    - expiresAt: ${invite.expiresAt.toISOString()}
-  `);
-
-  if (manifest.invite.companyName) {
-    lines.push(`- companyName: ${manifest.invite.companyName}`);
-  }
-
-  if (onboarding.inviteMessage) {
-    appendBlock(`
-      ## Message from inviter
-      ${onboarding.inviteMessage}
-    `);
-  }
-
-  appendBlock(`
-    ## Step 0
-
-    Propose which registered Paperclip adapter the existing Paperclip worker should use for this agent.
-
-    Use adapterType only when there is a matching Paperclip adapter. Put only provider-native adapter settings in agentDefaultsPayload.
-
-    ## Step 1: Submit an agent-configuration proposal
-    ${onboarding.registrationEndpoint.method} ${
-    onboarding.registrationEndpoint.url
-  }
-
-    Body (JSON):
-    {
-      "requestType": "agent",
-      "agentName": "My Agent",
-      "adapterType": "registered_adapter_type",
-      "capabilities": "Short summary of what this agent can do",
-      "agentDefaultsPayload": {}
-    }
-
-    Expected response includes:
-    - request id
-
-    ## Step 2: Wait for board approval
-    The board reviews the proposal, chooses the final configuration, and
-    persists an ordinary Paperclip agent for the existing Paperclip worker.
-    Approval never mints a generic Paperclip REST credential. The worker
-    executes the approved adapter configuration and Paperclip supplies the
-    run-scoped compiled tool interface for each invocation.
-
-    ## Text onboarding URL
-    ${onboarding.textInstructions.url}
-  `);
-
-  appendBlock(`
-
-    ## Helpful endpoints
-    ${onboarding.registrationEndpoint.path}
-    ${manifest.invite.onboardingPath}
-  `);
-
-  return `${lines.join("\n")}\n`;
-}
-
-function extractInviteMessage(
-  invite: typeof invites.$inferSelect
-): string | null {
-  const rawDefaults = invite.defaultsPayload;
-  if (
-    !rawDefaults ||
-    typeof rawDefaults !== "object" ||
-    Array.isArray(rawDefaults)
-  ) {
-    return null;
-  }
-  const rawMessage = (rawDefaults as Record<string, unknown>).agentMessage;
-  if (typeof rawMessage !== "string") {
-    return null;
-  }
-  const trimmed = rawMessage.trim();
-  return trimmed.length ? trimmed : null;
 }
 
 function requestIp(req: Request) {
@@ -832,9 +695,11 @@ function inviteState(invite: typeof invites.$inferSelect) {
   return "active" as const;
 }
 
-function extractInviteHumanRole(invite: typeof invites.$inferSelect) {
-  if (invite.allowedJoinTypes === "agent") return null;
-  return resolveHumanInviteRole(
+function extractInviteUserRole(invite: typeof invites.$inferSelect) {
+  if (invite.inviteType === "bootstrap_admin") {
+    return null;
+  }
+  return resolveUserInviteRole(
     invite.defaultsPayload as Record<string, unknown> | null | undefined,
   );
 }
@@ -842,11 +707,11 @@ function extractInviteHumanRole(invite: typeof invites.$inferSelect) {
 function toUserProfile(
   user:
     | {
-      id: string;
-      email: string | null;
-      name: string | null;
-      image?: string | null;
-    }
+        id: string;
+        email: string | null;
+        name: string | null;
+        image?: string | null;
+      }
     | null
     | undefined,
 ) {
@@ -879,7 +744,6 @@ async function resolveAcceptedInviteJoinRequest(
 
   const directJoinRequest = await db
     .select({
-      requestType: joinRequests.requestType,
       status: joinRequests.status,
       requestingUserId: joinRequests.requestingUserId,
       requestEmailSnapshot: joinRequests.requestEmailSnapshot,
@@ -895,22 +759,16 @@ async function resolveAcceptedInviteJoinRequest(
   const actorEmail = await resolveActorEmail(db, req);
   if (!actorRequestingUserId && !actorEmail) return null;
 
-  return findReusableHumanJoinRequest(
+  return findReusableUserJoinRequest(
     await db
       .select({
         id: joinRequests.id,
-        requestType: joinRequests.requestType,
         status: joinRequests.status,
         requestingUserId: joinRequests.requestingUserId,
         requestEmailSnapshot: joinRequests.requestEmailSnapshot,
       })
       .from(joinRequests)
-      .where(
-        and(
-          eq(joinRequests.companyId, invite.companyId),
-          eq(joinRequests.requestType, "human"),
-        ),
-      )
+      .where(eq(joinRequests.companyId, invite.companyId))
       .orderBy(desc(joinRequests.createdAt)),
     {
       requestingUserId: actorRequestingUserId,
@@ -924,12 +782,11 @@ export function accessRoutes(
   opts: {
     deploymentExposure: DeploymentExposure;
     inviteRateLimiter?: InviteRateLimiter;
-  }
+  },
 ) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const access = accessService(db);
   const boardAuth = boardAuthService(db);
-  const agents = agentService(db);
   const joinRequestApprovals = createJoinRequestApprovalService(db);
 
   // Per-IP rate limit for the public, unauthenticated invite-token endpoints
@@ -978,7 +835,9 @@ export function accessRoutes(
       req.actor.source !== "session" ||
       !req.actor.userId
     ) {
-      throw unauthorized("Sign in from a browser session before claiming first admin");
+      throw unauthorized(
+        "Sign in from a browser session before claiming first admin",
+      );
     }
 
     const claimed = await claimFirstInstanceAdmin(db, {
@@ -1015,10 +874,16 @@ export function accessRoutes(
   );
 
   router.get("/cli-auth/challenges/:id", async (req, res) => {
-    const id = (req.params.id as string).trim();
-    const token =
-      typeof req.query.token === "string" ? req.query.token.trim() : "";
-    if (!id || !token) throw notFound("CLI auth challenge not found");
+    const id = req.params.id as string;
+    assertExactQueryKeys(req.query, ["token"]);
+    const token = req.query.token;
+    if (
+      !isCanonicalUuid(id) ||
+      typeof token !== "string" ||
+      token.length === 0
+    ) {
+      throw notFound("CLI auth challenge not found");
+    }
     const challenge = await boardAuth.describeCliAuthChallenge(id, token);
     if (!challenge) throw notFound("CLI auth challenge not found");
 
@@ -1043,11 +908,8 @@ export function accessRoutes(
     "/cli-auth/challenges/:id/approve",
     validate(resolveCliAuthChallengeSchema),
     async (req, res) => {
-      const id = (req.params.id as string).trim();
-      if (
-        req.actor.type !== "board" ||
-        !req.actor.userId
-      ) {
+      const id = req.params.id as string;
+      if (req.actor.type !== "board" || !req.actor.userId) {
         throw unauthorized("Sign in before approving CLI access");
       }
 
@@ -1096,8 +958,11 @@ export function accessRoutes(
     "/cli-auth/challenges/:id/cancel",
     validate(resolveCliAuthChallengeSchema),
     async (req, res) => {
-      const id = (req.params.id as string).trim();
-      const cancelled = await boardAuth.cancelCliAuthChallenge(id, req.body.token);
+      const id = req.params.id as string;
+      const cancelled = await boardAuth.cancelCliAuthChallenge(
+        id,
+        req.body.token,
+      );
       res.json({
         status: cancelled.status,
         cancelled: cancelled.status === "cancelled",
@@ -1105,19 +970,19 @@ export function accessRoutes(
     },
   );
 
-  router.get("/cli-auth/me", async (req, res) => {
-    if (req.actor.type !== "board" || !req.actor.userId) {
-      throw unauthorized("Board authentication required");
-    }
-    const accessSnapshot = await boardAuth.resolveBoardAccess(req.actor.userId);
+  router.get("/cli-auth/users/:userId", async (req, res) => {
+    const userId = req.params.userId as string;
+    assertCurrentBoardUser(req, userId);
+    const accessSnapshot = await boardAuth.resolveBoardAccess(userId);
     res.json({
       user: accessSnapshot.user,
-      userId: req.actor.userId,
+      userId,
       isInstanceAdmin: accessSnapshot.isInstanceAdmin,
       companyIds: accessSnapshot.companyIds,
       memberships: accessSnapshot.memberships,
       source: req.actor.source,
-      keyId: req.actor.source === "board_key" ? req.actor.keyId ?? null : null,
+      keyId:
+        req.actor.source === "board_key" ? (req.actor.keyId ?? null) : null,
     });
   });
 
@@ -1125,8 +990,12 @@ export function accessRoutes(
     if (req.actor.type !== "board" || !req.actor.userId) {
       throw unauthorized("Board authentication required");
     }
+    assertExactQueryKeys(req.query, ["includeInactive"]);
     const keys = await boardAuth.listBoardApiKeys(req.actor.userId, {
-      includeInactive: req.query.includeInactive === "true",
+      includeInactive: parseExactBooleanQuery(
+        req.query.includeInactive,
+        "includeInactive",
+      ),
     });
     res.json(keys);
   });
@@ -1146,7 +1015,8 @@ export function accessRoutes(
       const key = await boardAuth.createNamedBoardApiKey({
         userId: req.actor.userId,
         name: req.body.name,
-        expiresAt: req.body.expiresAt === undefined ? undefined : req.body.expiresAt,
+        expiresAt:
+          req.body.expiresAt === undefined ? undefined : req.body.expiresAt,
       });
       const companyIds = await boardAuth.resolveBoardActivityCompanyIds({
         userId: req.actor.userId,
@@ -1178,8 +1048,8 @@ export function accessRoutes(
     if (req.actor.type !== "board" || !req.actor.userId) {
       throw unauthorized("Board authentication required");
     }
-    const keyId = (req.params.keyId as string).trim();
-    if (!isUuidLike(keyId)) {
+    const keyId = req.params.keyId as string;
+    if (!isCanonicalUuid(keyId)) {
       throw badRequest("Invalid board API key ID");
     }
     const key = await boardAuth.getBoardApiKeyForUser(keyId, req.actor.userId);
@@ -1250,26 +1120,23 @@ export function accessRoutes(
     const allowed = await access.canUser(
       companyId,
       req.actor.userId,
-      permissionKey
+      permissionKey,
     );
     if (!allowed) throw forbidden("Permission denied");
     return req.actor.userId;
   }
 
-  async function approveHumanJoinRequestFromInvite(input: {
+  async function approveUserJoinRequestFromInvite(input: {
     req: Request;
     invite: typeof invites.$inferSelect;
     joinRequest: typeof joinRequests.$inferSelect;
     companyId: string;
   }) {
-    if (input.joinRequest.requestType !== "human") {
-      throw badRequest("Only human join requests can be approved through a human invite");
-    }
     if (!input.joinRequest.requestingUserId) {
       throw conflict("Join request missing user identity");
     }
 
-    const membershipRole = resolveHumanInviteRole(
+    const membershipRole = resolveUserInviteRole(
       input.invite.defaultsPayload as Record<string, unknown> | null,
     );
     await access.ensureMembership(
@@ -1279,9 +1146,8 @@ export function accessRoutes(
       membershipRole,
       "active",
     );
-    const grants = humanJoinGrantsFromDefaults(
+    const grants = userJoinGrantsFromDefaults(
       input.invite.defaultsPayload as Record<string, unknown> | null,
-      membershipRole,
     );
     await access.setPrincipalGrants(
       input.companyId,
@@ -1317,19 +1183,20 @@ export function accessRoutes(
       entityType: "join_request",
       entityId: input.joinRequest.id,
       details: {
-        requestType: "human",
         inviteId: input.invite.id,
-        source: "human_invite_accept",
+        source: "user_invite_accept",
       },
     });
 
-    return approved ?? {
-      ...input.joinRequest,
-      status: "approved",
-      approvedByUserId,
-      approvedAt,
-      updatedAt: approvedAt,
-    };
+    return (
+      approved ?? {
+        ...input.joinRequest,
+        status: "approved",
+        approvedByUserId,
+        approvedAt,
+        updatedAt: approvedAt,
+      }
+    );
   }
 
   async function getInviteCompanyBranding(
@@ -1360,7 +1227,10 @@ export function accessRoutes(
       if (logoAsset?.companyId) {
         try {
           const storage = getStorageService();
-          const logoObject = await storage.headObject(logoAsset.companyId, logoAsset.objectKey);
+          const logoObject = await storage.headObject(
+            logoAsset.companyId,
+            logoAsset.objectKey,
+          );
           if (logoObject.exists) {
             logoUrl = `/api/invites/${inviteToken}/logo`;
           }
@@ -1422,16 +1292,16 @@ export function accessRoutes(
     validate(createCompanyInviteSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
-      const invitedByUserId = await assertCompanyPermission(req, companyId, "users:invite");
-      const { token, invite: created, normalizedAgentMessage } =
-        await createCompanyInvite(db, {
-          companyId,
-          provenance: { source: "board_api", invitedByUserId },
-          allowedJoinTypes: req.body.allowedJoinTypes,
-          humanRole: req.body.humanRole ?? null,
-          defaultsPayload: req.body.defaultsPayload ?? null,
-          agentMessage: req.body.agentMessage ?? null
-        });
+      const invitedByUserId = await assertCompanyPermission(
+        req,
+        companyId,
+        "users:invite",
+      );
+      const { token, invite: created } = await createCompanyInvite(db, {
+        companyId,
+        provenance: { source: "board_api", invitedByUserId },
+        userRole: req.body.userRole ?? null,
+      });
 
       await logActivity(db, {
         companyId,
@@ -1442,19 +1312,20 @@ export function accessRoutes(
         entityId: created.id,
         details: {
           inviteType: created.inviteType,
-          allowedJoinTypes: created.allowedJoinTypes,
           expiresAt: created.expiresAt.toISOString(),
-          humanRole: extractInviteHumanRole(created),
-          hasAgentMessage: Boolean(normalizedAgentMessage)
-        }
+          userRole: extractInviteUserRole(created),
+        },
       });
 
-      const companyBranding = await getInviteCompanyBranding(created.companyId, token);
+      const companyBranding = await getInviteCompanyBranding(
+        created.companyId,
+        token,
+      );
       const inviteSummary = toInviteSummaryResponse(
         req,
         token,
         created,
-        companyBranding
+        companyBranding,
       );
       res.status(201).json({
         ...created,
@@ -1462,22 +1333,23 @@ export function accessRoutes(
         invitePath: inviteSummary.invitePath,
         inviteUrl: inviteSummary.inviteUrl,
         companyName: companyBranding.name,
-        onboardingTextPath: inviteSummary.onboardingTextPath,
-        onboardingTextUrl: inviteSummary.onboardingTextUrl,
-        inviteMessage: inviteSummary.inviteMessage
       });
-    }
+    },
   );
 
   router.get("/invites/:token", async (req, res) => {
-    const token = (req.params.token as string).trim();
+    const token = req.params.token as string;
     if (!token) throw notFound("Invite not found");
     const invite = await db
       .select()
       .from(invites)
       .where(eq(invites.tokenHash, hashInviteToken(token)))
       .then((rows) => rows[0] ?? null);
-    const inviteJoinRequest = await resolveAcceptedInviteJoinRequest(db, req, invite);
+    const inviteJoinRequest = await resolveAcceptedInviteJoinRequest(
+      db,
+      req,
+      invite,
+    );
     if (
       !invite ||
       invite.revokedAt ||
@@ -1487,29 +1359,35 @@ export function accessRoutes(
       throw notFound("Invite not found");
     }
 
-    const companyBranding = await getInviteCompanyBranding(invite.companyId, token);
+    const companyBranding = await getInviteCompanyBranding(
+      invite.companyId,
+      token,
+    );
     const inviterName = invite.invitedByUserId
       ? await loadUsersById(db, [invite.invitedByUserId]).then(
-          (m) => m.get(invite.invitedByUserId!)?.name ?? null
+          (m) => m.get(invite.invitedByUserId!)?.name ?? null,
         )
       : null;
     res.json({
       ...toInviteSummaryResponse(req, token, invite, companyBranding),
       invitedByUserName: inviterName,
       joinRequestStatus: inviteJoinRequest?.status ?? null,
-      joinRequestType: inviteJoinRequest?.requestType ?? null,
     });
   });
 
   router.get("/invites/:token/logo", async (req, res, next) => {
-    const token = (req.params.token as string).trim();
+    const token = req.params.token as string;
     if (!token) throw notFound("Invite not found");
     const invite = await db
       .select()
       .from(invites)
       .where(eq(invites.tokenHash, hashInviteToken(token)))
       .then((rows) => rows[0] ?? null);
-    const inviteJoinRequest = await resolveAcceptedInviteJoinRequest(db, req, invite);
+    const inviteJoinRequest = await resolveAcceptedInviteJoinRequest(
+      db,
+      req,
+      invite,
+    );
     if (
       !invite ||
       invite.revokedAt ||
@@ -1539,15 +1417,26 @@ export function accessRoutes(
     res.setHeader("Content-Type", responseContentType);
     res.setHeader(
       "Content-Length",
-      String(logoAsset.byteSize || logoHead.contentLength || object.contentLength || 0),
+      String(
+        logoAsset.byteSize ||
+          logoHead.contentLength ||
+          object.contentLength ||
+          0,
+      ),
     );
     res.setHeader("Cache-Control", "private, max-age=60");
     res.setHeader("X-Content-Type-Options", "nosniff");
     if (responseContentType === "image/svg+xml") {
-      res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
+      res.setHeader(
+        "Content-Security-Policy",
+        "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
+      );
     }
     const filename = logoAsset.originalFilename ?? "company-logo";
-    res.setHeader("Content-Disposition", `inline; filename=\"${filename.replaceAll("\"", "")}\"`);
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename=\"${filename.replaceAll('"', "")}\"`,
+    );
 
     object.stream.on("error", (err) => {
       next(err);
@@ -1555,51 +1444,11 @@ export function accessRoutes(
     object.stream.pipe(res);
   });
 
-  router.get("/invites/:token/onboarding", async (req, res) => {
-    const token = (req.params.token as string).trim();
-    if (!token) throw notFound("Invite not found");
-    const invite = await db
-      .select()
-      .from(invites)
-      .where(eq(invites.tokenHash, hashInviteToken(token)))
-      .then((rows) => rows[0] ?? null);
-    if (!invite || invite.revokedAt || inviteExpired(invite)) {
-      throw notFound("Invite not found");
-    }
-
-    const companyBranding = await getInviteCompanyBranding(invite.companyId);
-    res.json(buildInviteOnboardingManifest(req, token, invite, {
-      companyName: companyBranding.name
-    }));
-  });
-
-  router.get("/invites/:token/onboarding.txt", async (req, res) => {
-    const token = (req.params.token as string).trim();
-    if (!token) throw notFound("Invite not found");
-    const invite = await db
-      .select()
-      .from(invites)
-      .where(eq(invites.tokenHash, hashInviteToken(token)))
-      .then((rows) => rows[0] ?? null);
-    if (!invite || invite.revokedAt || inviteExpired(invite)) {
-      throw notFound("Invite not found");
-    }
-
-    const companyBranding = await getInviteCompanyBranding(invite.companyId);
-    res
-      .type("text/plain; charset=utf-8")
-      .send(
-        buildInviteOnboardingTextDocument(req, token, invite, {
-          companyName: companyBranding.name
-        })
-      );
-  });
-
   router.post(
     "/invites/:token/accept",
     validate(acceptInviteSchema),
     async (req, res) => {
-      const token = (req.params.token as string).trim();
+      const token = req.params.token as string;
       if (!token) throw notFound("Invite not found");
 
       const invite = await db
@@ -1621,15 +1470,9 @@ export function accessRoutes(
 
       if (invite.inviteType === "bootstrap_admin") {
         if (inviteAlreadyAccepted) throw notFound("Invite not found");
-        if (req.body.requestType !== "human") {
-          throw badRequest("Bootstrap invite requires human request type");
-        }
-        if (
-          req.actor.type !== "board" ||
-          !req.actor.userId
-        ) {
+        if (req.actor.type !== "board" || !req.actor.userId) {
           throw unauthorized(
-            "Authenticated user required for bootstrap acceptance"
+            "Authenticated user required for bootstrap acceptance",
           );
         }
         const userId = req.actor.userId;
@@ -1643,8 +1486,8 @@ export function accessRoutes(
                 and(
                   eq(invites.id, invite.id),
                   isNull(invites.acceptedAt),
-                  isNull(invites.revokedAt)
-                )
+                  isNull(invites.revokedAt),
+                ),
               )
               .returning()
               .then((rows) => rows[0] ?? null);
@@ -1662,116 +1505,54 @@ export function accessRoutes(
           inviteId: updatedInvite.id,
           inviteType: updatedInvite.inviteType,
           bootstrapAccepted: true,
-          userId
+          userId,
         });
         return;
       }
 
-      const requestType = req.body.requestType as "human" | "agent";
       const companyId = invite.companyId;
       if (!companyId) throw conflict("Invite is missing company scope");
-      if (
-        invite.allowedJoinTypes !== "both" &&
-        invite.allowedJoinTypes !== requestType
-      ) {
-        throw badRequest(`Invite does not allow ${requestType} joins`);
-      }
-
-      if (requestType === "human" && req.actor.type !== "board") {
-        throw unauthorized(
-          "Human invite acceptance requires authenticated user"
-        );
-      }
-      if (
-        requestType === "human" &&
-        !req.actor.userId
-      ) {
+      if (req.actor.type !== "board" || !req.actor.userId) {
         throw unauthorized("Authenticated user is required");
       }
-      if (
-        requestType === "human" &&
-        actorHasActiveUserMembership(req, companyId)
-      ) {
+      if (actorHasActiveUserMembership(req, companyId)) {
         throw conflict("You already belong to this company");
       }
-      if (requestType === "agent" && !req.body.agentName) {
-        if (
-          !inviteAlreadyAccepted ||
-          !existingJoinRequestForInvite?.agentName
-        ) {
-          throw badRequest("agentName is required for agent join requests");
-        }
-      }
 
-      const actorEmail =
-        requestType === "human" ? await resolveActorEmail(db, req) : null;
-      const actorRequestingUserId =
-        requestType === "human"
-          ? req.actor.userId
-          : null;
-      const canReplayHumanInviteAccept =
+      const actorEmail = await resolveActorEmail(db, req);
+      const actorRequestingUserId = req.actor.userId;
+      const canReplayUserInviteAccept =
         inviteAlreadyAccepted &&
-        requestType === "human" &&
-        existingJoinRequestForInvite?.requestType === "human" &&
         Boolean(
-          findReusableHumanJoinRequest([existingJoinRequestForInvite], {
+          existingJoinRequestForInvite &&
+          findReusableUserJoinRequest([existingJoinRequestForInvite], {
             requestingUserId: actorRequestingUserId,
             requestEmailSnapshot: actorEmail,
-          })
+          }),
         );
-      const adapterType = req.body.adapterType ?? null;
-      if (
-        inviteAlreadyAccepted &&
-        !canReplayHumanInviteAccept
-      ) {
+      if (inviteAlreadyAccepted && !canReplayUserInviteAccept) {
         throw notFound("Invite not found");
       }
       const replayJoinRequestId = inviteAlreadyAccepted
-        ? existingJoinRequestForInvite?.id ?? null
+        ? (existingJoinRequestForInvite?.id ?? null)
         : null;
       if (inviteAlreadyAccepted && !replayJoinRequestId) {
         throw conflict("Join request not found");
       }
 
-      const joinDefaults =
-        requestType === "agent"
-          ? normalizeAgentDefaultsForJoin({
-              defaultsPayload: req.body.agentDefaultsPayload ?? null,
-            })
-          : {
-              normalized: null as Record<string, unknown> | null,
-              diagnostics: [] as JoinDiagnostic[],
-              fatalErrors: [] as string[]
-            };
-
-      if (requestType === "agent" && joinDefaults.fatalErrors.length > 0) {
-        throw badRequest(joinDefaults.fatalErrors.join("; "));
-      }
-
-      const persistedJoinDefaultsPayload =
-        requestType === "agent" ? joinDefaults.normalized : null;
-
-      const existingHumanJoinRequest =
-        requestType === "human"
-          ? findReusableHumanJoinRequest(
-              await db
-                .select()
-                .from(joinRequests)
-                .where(
-                  and(
-                    eq(joinRequests.companyId, companyId),
-                    eq(joinRequests.requestType, "human")
-                  )
-                )
-                .orderBy(desc(joinRequests.createdAt)),
-              {
-                requestingUserId: actorRequestingUserId,
-                requestEmailSnapshot: actorEmail
-              }
-            )
-          : null;
+      const existingUserJoinRequest = findReusableUserJoinRequest(
+        await db
+          .select()
+          .from(joinRequests)
+          .where(eq(joinRequests.companyId, companyId))
+          .orderBy(desc(joinRequests.createdAt)),
+        {
+          requestingUserId: actorRequestingUserId,
+          requestEmailSnapshot: actorEmail,
+        },
+      );
       let created = !inviteAlreadyAccepted
-        ? existingHumanJoinRequest
+        ? existingUserJoinRequest
           ? await db.transaction(async (tx) => {
               await tx
                 .update(invites)
@@ -1780,10 +1561,10 @@ export function accessRoutes(
                   and(
                     eq(invites.id, invite.id),
                     isNull(invites.acceptedAt),
-                    isNull(invites.revokedAt)
-                  )
+                    isNull(invites.revokedAt),
+                  ),
                 );
-              return existingHumanJoinRequest;
+              return existingUserJoinRequest;
             })
           : await db.transaction(async (tx) => {
               await tx
@@ -1793,8 +1574,8 @@ export function accessRoutes(
                   and(
                     eq(invites.id, invite.id),
                     isNull(invites.acceptedAt),
-                    isNull(invites.revokedAt)
-                  )
+                    isNull(invites.revokedAt),
+                  ),
                 );
 
               const row = await tx
@@ -1802,24 +1583,10 @@ export function accessRoutes(
                 .values({
                   inviteId: invite.id,
                   companyId,
-                  requestType,
                   status: "pending_approval",
                   requestIp: requestIp(req),
-                  requestingUserId:
-                    requestType === "human"
-                      ? actorRequestingUserId
-                      : null,
-                  requestEmailSnapshot:
-                    requestType === "human" ? actorEmail : null,
-                  agentName:
-                    requestType === "agent" ? req.body.agentName : null,
-                  adapterType: requestType === "agent" ? adapterType : null,
-                  capabilities:
-                    requestType === "agent"
-                      ? req.body.capabilities ?? null
-                      : null,
-                  agentDefaultsPayload:
-                    requestType === "agent" ? persistedJoinDefaultsPayload : null
+                  requestingUserId: actorRequestingUserId,
+                  requestEmailSnapshot: actorEmail,
                 })
                 .returning()
                 .then((rows) => rows[0]);
@@ -1829,22 +1596,7 @@ export function accessRoutes(
             .update(joinRequests)
             .set({
               requestIp: requestIp(req),
-              agentName:
-                requestType === "agent"
-                  ? req.body.agentName ??
-                    existingJoinRequestForInvite?.agentName ??
-                    null
-                  : null,
-              capabilities:
-                requestType === "agent"
-                  ? req.body.capabilities ??
-                    existingJoinRequestForInvite?.capabilities ??
-                    null
-                  : null,
-              adapterType: requestType === "agent" ? adapterType : null,
-              agentDefaultsPayload:
-                requestType === "agent" ? persistedJoinDefaultsPayload : null,
-              updatedAt: new Date()
+              updatedAt: new Date(),
             })
             .where(eq(joinRequests.id, replayJoinRequestId as string))
             .returning()
@@ -1854,62 +1606,36 @@ export function accessRoutes(
         throw conflict("Join request not found");
       }
 
-      const activityActor = req.actor.type === "board"
-        ? { actorType: "user" as const, actorId: req.actor.userId }
-        : {
-            actorType: "system" as const,
-            actorId: `invite-join-request:${created.id}`,
-          };
       await logActivity(db, {
         companyId,
-        ...activityActor,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: inviteAlreadyAccepted
           ? "join.request_replayed"
           : "join.requested",
         entityType: "join_request",
         entityId: created.id,
         details: {
-          requestType,
           requestIp: requestIp(req),
           inviteReplay: inviteAlreadyAccepted,
           reusedExistingJoinRequest:
-            Boolean(existingHumanJoinRequest) && !inviteAlreadyAccepted
-        }
+            Boolean(existingUserJoinRequest) && !inviteAlreadyAccepted,
+        },
       });
 
-      if (requestType === "human") {
-        created = await approveHumanJoinRequestFromInvite({
-          req,
-          invite,
-          joinRequest: created,
-          companyId,
-        });
-      }
-
-      const response = toJoinRequestResponse(created);
-      if (requestType === "agent") {
-        const companyBranding = await getInviteCompanyBranding(invite.companyId);
-        const onboardingManifest = buildInviteOnboardingManifest(req, token, invite, {
-          companyName: companyBranding.name
-        });
-        res.status(202).json({
-          ...response,
-          onboarding: onboardingManifest.onboarding,
-          diagnostics: joinDefaults.diagnostics
-        });
-        return;
-      }
-      res.status(202).json({
-        ...response,
-        ...(joinDefaults.diagnostics.length > 0
-          ? { diagnostics: joinDefaults.diagnostics }
-          : {})
+      created = await approveUserJoinRequestFromInvite({
+        req,
+        invite,
+        joinRequest: created,
+        companyId,
       });
-    }
+      res.status(202).json(toJoinRequestResponse(created));
+    },
   );
 
   router.post("/invites/:inviteId/revoke", async (req, res) => {
     const id = req.params.inviteId as string;
+    if (!isCanonicalUuid(id)) throw notFound("Invite not found");
     const invite = await db
       .select()
       .from(invites)
@@ -1939,7 +1665,7 @@ export function accessRoutes(
         actorId: getBoardUserId(req),
         action: "invite.revoked",
         entityType: "invite",
-        entityId: id
+        entityId: id,
       });
     }
 
@@ -1950,7 +1676,11 @@ export function accessRoutes(
     const companyId = req.params.companyId as string;
     await assertCompanyPermission(req, companyId, "users:invite");
     const query = listCompanyInvitesQuerySchema.parse(req.query);
-    const invitesForCompany = await loadCompanyInviteRecords(db, companyId, query);
+    const invitesForCompany = await loadCompanyInviteRecords(
+      db,
+      companyId,
+      query,
+    );
     res.json(invitesForCompany);
   });
 
@@ -1961,8 +1691,6 @@ export function accessRoutes(
     const all = await loadJoinRequestRecords(db, companyId);
     const filtered = all.filter((row) => {
       if (query.status && row.status !== query.status) return false;
-      if (query.requestType && row.requestType !== query.requestType)
-        return false;
       return true;
     });
     res.json(filtered);
@@ -1973,8 +1701,15 @@ export function accessRoutes(
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const requestId = req.params.requestId as string;
-      const actorId = await assertCompanyPermission(req, companyId, "joins:approve");
-      const input = approveJoinRequestSchema.parse(req.body);
+      if (!isCanonicalUuid(requestId)) {
+        throw notFound("Join request not found");
+      }
+      const actorId = await assertCompanyPermission(
+        req,
+        companyId,
+        "joins:approve",
+      );
+      approveJoinRequestSchema.parse(req.body);
       assertBoard(req);
       const approved = await joinRequestApprovals.approve({
         companyId,
@@ -1986,7 +1721,7 @@ export function accessRoutes(
         },
       });
       res.json(toJoinRequestResponse(approved));
-    }
+    },
   );
 
   router.post(
@@ -1994,7 +1729,14 @@ export function accessRoutes(
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const requestId = req.params.requestId as string;
-      const actorId = await assertCompanyPermission(req, companyId, "joins:approve");
+      if (!isCanonicalUuid(requestId)) {
+        throw notFound("Join request not found");
+      }
+      const actorId = await assertCompanyPermission(
+        req,
+        companyId,
+        "joins:approve",
+      );
 
       const existing = await db
         .select()
@@ -2002,8 +1744,8 @@ export function accessRoutes(
         .where(
           and(
             eq(joinRequests.companyId, companyId),
-            eq(joinRequests.id, requestId)
-          )
+            eq(joinRequests.id, requestId),
+          ),
         )
         .then((rows) => rows[0] ?? null);
       if (!existing) throw notFound("Join request not found");
@@ -2016,7 +1758,7 @@ export function accessRoutes(
           status: "rejected",
           rejectedByUserId: actorId,
           rejectedAt: new Date(),
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(joinRequests.id, requestId))
         .returning()
@@ -2029,11 +1771,11 @@ export function accessRoutes(
         action: "join.rejected",
         entityType: "join_request",
         entityId: requestId,
-        details: { requestType: existing.requestType }
+        details: null,
       });
 
       res.json(toJoinRequestResponse(rejected));
-    }
+    },
   );
 
   router.get("/companies/:companyId/members", async (req, res) => {
@@ -2044,7 +1786,13 @@ export function accessRoutes(
       loadCompanyAccessSummary(req, access, companyId),
     ]);
     res.json({
-      members: await addCompanyMemberRemovalAccess(req, db, access, companyId, members),
+      members: await addCompanyMemberRemovalAccess(
+        req,
+        db,
+        access,
+        companyId,
+        members,
+      ),
       access: currentAccess,
     });
   });
@@ -2063,9 +1811,12 @@ export function accessRoutes(
   ) {
     const companyId = req.params.companyId as string;
     const memberId = req.params.memberId as string;
+    if (!isCanonicalUuid(memberId)) throw notFound("Member not found");
     await assertCompanyPermission(req, companyId, "users:manage_permissions");
     const memberToUpdate = await access.getMemberById(companyId, memberId);
-    if (!memberToUpdate) throw notFound("Member not found");
+    if (!memberToUpdate || memberToUpdate.principalType !== "user") {
+      throw notFound("Member not found");
+    }
     await assertCanManageCompanyMember(req, access, companyId, memberToUpdate);
 
     const updated = await db.transaction(async (tx) => {
@@ -2090,11 +1841,8 @@ export function accessRoutes(
         )
         .then((rows) => rows[0] ?? null);
       if (!existing) return null;
-      if (
-        existing.principalType !== "user"
-        || !existing.principalUserId
-      ) {
-        throw conflict("Only human company members can be updated");
+      if (existing.principalType !== "user" || !existing.principalUserId) {
+        throw conflict("Only user company members can be updated");
       }
       const principalUserId = existing.principalUserId;
 
@@ -2146,10 +1894,7 @@ export function accessRoutes(
             and(
               eq(principalPermissionGrants.companyId, companyId),
               eq(principalPermissionGrants.principalType, "user"),
-              eq(
-                principalPermissionGrants.principalUserId,
-                principalUserId,
-              ),
+              eq(principalPermissionGrants.principalUserId, principalUserId),
             ),
           );
 
@@ -2205,7 +1950,7 @@ export function accessRoutes(
     validate(updateCompanyMemberSchema),
     async (req, res) => {
       await handleUpdateCompanyMember(req, res, { withGrants: false });
-    }
+    },
   );
 
   router.patch(
@@ -2213,7 +1958,7 @@ export function accessRoutes(
     validate(updateCompanyMemberWithPermissionsSchema),
     async (req, res) => {
       await handleUpdateCompanyMember(req, res, { withGrants: true });
-    }
+    },
   );
 
   router.post(
@@ -2222,10 +1967,19 @@ export function accessRoutes(
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const memberId = req.params.memberId as string;
+      if (!isCanonicalUuid(memberId)) throw notFound("Member not found");
       await assertCompanyPermission(req, companyId, "users:manage_permissions");
       const memberToArchive = await access.getMemberById(companyId, memberId);
-      if (!memberToArchive) throw notFound("Member not found");
-      await assertCanManageCompanyMember(req, access, companyId, memberToArchive, "archive");
+      if (!memberToArchive || memberToArchive.principalType !== "user") {
+        throw notFound("Member not found");
+      }
+      await assertCanManageCompanyMember(
+        req,
+        access,
+        companyId,
+        memberToArchive,
+        "archive",
+      );
 
       const result = await access.archiveMember(companyId, memberId);
       if (!result) throw notFound("Member not found");
@@ -2242,12 +1996,12 @@ export function accessRoutes(
         },
       });
 
-      const member = (await loadCompanyMemberRecords(db, companyId, { includeArchived: true })).find(
-        (entry) => entry.id === memberId,
-      );
+      const member = (
+        await loadCompanyMemberRecords(db, companyId, { includeArchived: true })
+      ).find((entry) => entry.id === memberId);
       if (!member) throw notFound("Member not found");
       res.json({ member });
-    }
+    },
   );
 
   router.patch(
@@ -2256,15 +2010,23 @@ export function accessRoutes(
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const memberId = req.params.memberId as string;
+      if (!isCanonicalUuid(memberId)) throw notFound("Member not found");
       await assertCompanyPermission(req, companyId, "users:manage_permissions");
       const memberToUpdate = await access.getMemberById(companyId, memberId);
-      if (!memberToUpdate) throw notFound("Member not found");
-      await assertCanManageCompanyMember(req, access, companyId, memberToUpdate);
+      if (!memberToUpdate || memberToUpdate.principalType !== "user") {
+        throw notFound("Member not found");
+      }
+      await assertCanManageCompanyMember(
+        req,
+        access,
+        companyId,
+        memberToUpdate,
+      );
       const updated = await access.setMemberPermissions(
         companyId,
         memberId,
         req.body.grants ?? [],
-        getBoardUserId(req)
+        getBoardUserId(req),
       );
       if (!updated) throw notFound("Member not found");
       await logActivity(db, {
@@ -2283,7 +2045,7 @@ export function accessRoutes(
       );
       if (!member) throw notFound("Member not found");
       res.json(member);
-    }
+    },
   );
 
   router.post(
@@ -2293,13 +2055,13 @@ export function accessRoutes(
       const userId = req.params.userId as string;
       const result = await access.promoteInstanceAdmin(userId);
       res.status(201).json(result);
-    }
+    },
   );
 
   router.get("/admin/users", async (req, res) => {
     await assertInstanceAdmin(req);
     const query = searchAdminUsersQuerySchema.parse(req.query);
-    const needle = query.query.trim().toLowerCase();
+    const needle = query.query.toLowerCase();
     const users = await db
       .select({
         id: authUsers.id,
@@ -2344,15 +2106,16 @@ export function accessRoutes(
         userIds.map(async (userId) =>
           (await access.isInstanceAdmin(userId)) ? userId : null,
         ),
-      ).then((values) => values.filter((value): value is string => Boolean(value))),
+      ).then((values) =>
+        values.filter((value): value is string => Boolean(value)),
+      ),
     );
 
     res.json(
       filteredUsers.slice(0, 50).map((user) => ({
         ...toUserProfile(user),
         isInstanceAdmin: adminIds.has(user.id),
-        activeCompanyMembershipCount:
-          membershipCountByUserId.get(user.id) ?? 0,
+        activeCompanyMembershipCount: membershipCountByUserId.get(user.id) ?? 0,
       })),
     );
   });
@@ -2365,7 +2128,7 @@ export function accessRoutes(
       const removed = await access.demoteInstanceAdmin(userId);
       if (!removed) throw notFound("Instance admin role not found");
       res.json(removed);
-    }
+    },
   );
 
   router.get("/admin/users/:userId/company-access", async (req, res) => {
@@ -2380,13 +2143,11 @@ export function accessRoutes(
     async (req, res) => {
       await assertInstanceAdmin(req);
       const userId = req.params.userId as string;
-      await access.setUserCompanyAccess(
-        userId,
-        req.body.companyIds ?? [],
-        { actorUserId: getBoardUserId(req) },
-      );
+      await access.setUserCompanyAccess(userId, req.body.companyIds ?? [], {
+        actorUserId: getBoardUserId(req),
+      });
       res.json(await loadUserCompanyAccessResponse(db, access, userId));
-    }
+    },
   );
 
   return router;

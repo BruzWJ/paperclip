@@ -2,22 +2,12 @@ import * as React from "react";
 import { StrictMode } from "react";
 import * as ReactDOM from "react-dom";
 import * as ReactDOMClient from "react-dom/client";
-import { BrowserRouter } from "@/lib/router";
+import { RouterProvider } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { App } from "./App";
-import { CompanyProvider, useCompany } from "./context/CompanyContext";
-import { LiveUpdatesProvider } from "./context/LiveUpdatesProvider";
-import { BreadcrumbProvider } from "./context/BreadcrumbContext";
-import { PanelProvider } from "./context/PanelContext";
-import { SidebarProvider } from "./context/SidebarContext";
-import { DialogProvider } from "./context/DialogContext";
-import { EditorAutocompleteProvider } from "./context/EditorAutocompleteContext";
-import { ToastProvider } from "./context/ToastContext";
 import { ThemeProvider } from "./context/ThemeContext";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { initPluginBridge } from "./plugins/bridge-init";
-import { PluginLauncherProvider } from "./plugins/launchers";
 import { startPerfMeasureReaper } from "./lib/perf-measure-reaper";
+import { createAppRouter } from "./router";
 import "./index.css";
 
 initPluginBridge(React, ReactDOM, ReactDOMClient);
@@ -27,66 +17,27 @@ initPluginBridge(React, ReactDOM, ReactDOMClient);
 // accumulate into millions of native objects (GBs). Reap them periodically.
 startPerfMeasureReaper();
 
-if (import.meta.env.PROD && "serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js");
-  });
-} else if ("serviceWorker" in navigator) {
-  // Dev: clean up any service worker left installed by a previous prod-mode
-  // visit so it can't interfere with the Vite dev server.
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      registrations.forEach((registration) => registration.unregister());
-    });
-  });
-}
-
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      // Explicit so cross-tab-published cache entries for resources this tab
-      // isn't observing get collected promptly rather than lingering. Single
-      // tuning point if we need to trim the cache footprint further.
+      // Keep inactive REST snapshots bounded in long-lived operator sessions.
       gcTime: 5 * 60_000,
-      refetchOnWindowFocus: true,
+      // Socket.IO owns domain freshness and reconciles active REST projections
+      // after reconnects; browser focus/network listeners are not a second path.
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
     },
   },
 });
-
-function CompanyAwareBreadcrumbProvider({ children }: { children: React.ReactNode }) {
-  const { selectedCompany } = useCompany();
-  return <BreadcrumbProvider companyName={selectedCompany?.name ?? null}>{children}</BreadcrumbProvider>;
-}
+const router = createAppRouter(queryClient);
 
 ReactDOMClient.createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <BrowserRouter>
-          <CompanyProvider>
-            <EditorAutocompleteProvider>
-              <ToastProvider>
-                <LiveUpdatesProvider>
-                  <TooltipProvider>
-                    <CompanyAwareBreadcrumbProvider>
-                      <SidebarProvider>
-                        <PanelProvider>
-                          <PluginLauncherProvider>
-                            <DialogProvider>
-                              <App />
-                            </DialogProvider>
-                          </PluginLauncherProvider>
-                        </PanelProvider>
-                      </SidebarProvider>
-                    </CompanyAwareBreadcrumbProvider>
-                  </TooltipProvider>
-                </LiveUpdatesProvider>
-              </ToastProvider>
-            </EditorAutocompleteProvider>
-          </CompanyProvider>
-        </BrowserRouter>
+        <RouterProvider router={router} />
       </ThemeProvider>
     </QueryClientProvider>
-  </StrictMode>
+  </StrictMode>,
 );

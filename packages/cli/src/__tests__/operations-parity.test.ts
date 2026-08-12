@@ -118,18 +118,16 @@ describe("operations parity commands", () => {
     ).toEqual({ budgetMonthlyAmount: "250" });
   });
 
-  it("wraps org and agent configuration endpoints", async () => {
+  it("wraps organization chart endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
 
     await run(["org", "get", "--company-id", COMPANY_ID]);
     await run(["org", "svg", "--company-id", COMPANY_ID]);
-    await run(["agent-config", "list", "--company-id", COMPANY_ID]);
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/org`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/org.svg`],
-      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/agent-configurations`],
     ]);
   });
 });

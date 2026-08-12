@@ -1,172 +1,63 @@
-import type { AdapterImplementationIdentity } from "@paperclipai/shared";
-import type { AcpxAdapterDefinition } from "@paperclipai/adapter-utils";
 import { describe, expect, it } from "vitest";
-import {
-  deriveAgentAdapterConfigRevision,
-  type AgentAdapterRuntimeMetadata,
-} from "./agent-adapter-config-revisions.js";
+import { deriveAgentAdapterConfigRevision } from "./agent-adapter-config-revisions.js";
 
 const FIXTURE_AGENT = "fixture-agent";
 
-const implementationIdentity: AdapterImplementationIdentity = Object.freeze({
-  adapterType: FIXTURE_AGENT,
-  definitionVersion: "acpx-runtime/v1",
-  protocolVersion: 1,
-  packageName: "acpx",
-  packageVersion: "runtime",
-  buildIdentity: `acpx-runtime:${FIXTURE_AGENT}`,
-  artifactDigest: "a".repeat(64),
-});
-
-const fixtureDefinition: AcpxAdapterDefinition = Object.freeze({
-  version: "acpx-runtime/v1",
-  launchProfile: Object.freeze({ registryName: FIXTURE_AGENT }),
-  environment: Object.freeze({
-    cwd: "execution-workspace",
-    additionalDirectories: "authorized-workspace-only",
-    environmentKeys: Object.freeze([]),
-  }),
-  runtime: Object.freeze({
-    controls: Object.freeze(["session/status", "session/set_config_option"]),
-  }),
-  ui: Object.freeze({
-    label: FIXTURE_AGENT,
-    description: "Fixture emitted by ACPX discovery.",
-  }),
-  configSchema: Object.freeze({
-    fields: Object.freeze([
-      Object.freeze({
-        key: "model",
-        label: "Model",
-        type: "select" as const,
-        options: Object.freeze([
-          Object.freeze({ label: "Fixture model one", value: "model-1" }),
-          Object.freeze({ label: "Fixture model two", value: "model-2" }),
-        ]),
-        required: true,
-      }),
-      Object.freeze({
-        key: "reasoning_effort",
-        label: "Reasoning effort",
-        type: "select" as const,
-        options: Object.freeze([
-          Object.freeze({ label: "Low", value: "low" }),
-          Object.freeze({ label: "High", value: "high" }),
-        ]),
-        required: true,
-      }),
-    ]),
-  }),
-  configOptions: Object.freeze([
-    Object.freeze({
-      id: "model",
-      configKey: "model",
-      label: "Model",
-      required: true as const,
-      values: Object.freeze([
-        Object.freeze({ label: "Fixture model one", value: "model-1" }),
-        Object.freeze({ label: "Fixture model two", value: "model-2" }),
-      ]),
-    }),
-    Object.freeze({
-      id: "reasoning_effort",
-      configKey: "reasoning_effort",
-      label: "Reasoning effort",
-      required: true as const,
-      values: Object.freeze([
-        Object.freeze({ label: "Low", value: "low" }),
-        Object.freeze({ label: "High", value: "high" }),
-      ]),
-    }),
-  ]),
-  modelConfigOptionId: "model",
-  models: Object.freeze([
-    Object.freeze({
-      id: "model-1",
-      label: "Fixture model one",
-      value: "model-1",
-      limits: null,
-    }),
-    Object.freeze({
-      id: "model-2",
-      label: "Fixture model two",
-      value: "model-2",
-      limits: null,
-    }),
-  ]),
-  modelProfiles: Object.freeze([]),
-  configurationDoc: "Supplied by the fixture ACPX discovery result.",
-});
-
-const runtimeMetadata: AgentAdapterRuntimeMetadata = Object.freeze({
-  implementationIdentity,
-  definition: fixtureDefinition,
-});
-
-function derive(model = "model-1", reasoningEffort = "high") {
-  return deriveAgentAdapterConfigRevision({
-    adapterType: FIXTURE_AGENT,
-    adapterConfig: { model, reasoning_effort: reasoningEffort },
-    companySkillPins: [
-      {
-        key: "review",
-        versionId: "00000000-0000-4000-8000-000000000003",
-      },
+function acpConfiguration(model = "model-1") {
+  return {
+    contractVersion: "acpx-runtime/v1" as const,
+    launchProfile: { registryName: FIXTURE_AGENT },
+    sessionConfigSelections: [
+      { configId: "model", value: model },
+      { configId: "reasoning_effort", value: "high" },
     ],
-    runtimeMetadata,
-  });
+    model: {
+      value: model,
+      label: model === "model-1" ? "Fixture model one" : "Fixture model two",
+    },
+  };
 }
 
-describe("canonical ACP adapter configuration revision", () => {
-  it("persists ACPX model and reasoning selections in the immutable JSON configuration", () => {
-    const revision = derive();
-    expect(revision).toMatchObject({
-      adapterType: FIXTURE_AGENT,
-      adapterConfigSchemaVersion: "paperclip.acp-adapter-config/v1",
-      normalizedConfig: { model: "model-1", reasoning_effort: "high" },
-      acpConfiguration: {
-        contractVersion: "acpx-runtime/v1",
-        launchProfile: {
-          registryName: FIXTURE_AGENT,
-        },
-        sessionConfigSelections: [
-          { configId: "model", value: "model-1" },
-          { configId: "reasoning_effort", value: "high" },
-        ],
-        model: {
-          id: "model-1",
-          limits: null,
-        },
-        workspaceSelector: {
-          kind: "task_execution_workspace",
-        },
-        companySkillPins: [
-          {
-            key: "review",
-            versionId: "00000000-0000-4000-8000-000000000003",
-          },
-        ],
-      },
+describe("canonical ACPX adapter configuration revision", () => {
+  it("persists one immutable ACPX configuration and its digest", () => {
+    const revision = deriveAgentAdapterConfigRevision({
+      acpConfiguration: acpConfiguration(),
     });
+
+    expect(revision).toEqual({
+      acpConfiguration: acpConfiguration(),
+      digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(Object.isFrozen(revision.acpConfiguration)).toBe(true);
+    expect(Object.isFrozen(revision.acpConfiguration.sessionConfigSelections)).toBe(true);
   });
 
-  it("derives a stable digest from immutable ACP facts", () => {
-    expect(derive().digest).toBe(derive().digest);
-    expect(derive("model-2").digest).not.toBe(derive().digest);
+  it("derives a stable digest exclusively from immutable ACPX facts", () => {
+    const first = deriveAgentAdapterConfigRevision({
+      acpConfiguration: acpConfiguration(),
+    });
+    const same = deriveAgentAdapterConfigRevision({
+      acpConfiguration: acpConfiguration(),
+    });
+    const changed = deriveAgentAdapterConfigRevision({
+      acpConfiguration: acpConfiguration("model-2"),
+    });
+
+    expect(first.digest).toBe(same.digest);
+    expect(changed.digest).not.toBe(first.digest);
   });
 
-  it("fails closed for undeclared config", () => {
+  it("rejects duplicate or unsorted ACPX session option ids", () => {
     expect(() =>
       deriveAgentAdapterConfigRevision({
-        adapterType: FIXTURE_AGENT,
-        adapterConfig: {
-          model: "model-1",
-          reasoning_effort: "high",
-          apiKey: "must-not-exist",
+        acpConfiguration: {
+          ...acpConfiguration(),
+          sessionConfigSelections: [
+            { configId: "reasoning_effort", value: "high" },
+            { configId: "model", value: "model-1" },
+          ],
         },
-        companySkillPins: [],
-        runtimeMetadata,
       }),
-    ).toThrow(/unknown field apiKey/);
+    ).toThrow("Invalid immutable ACPX adapter configuration");
   });
 });

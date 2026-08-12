@@ -1,69 +1,83 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTaskReferenceHref,
-  extractTaskReferenceIdentifiers,
+  extractTaskReferenceIds,
   findTaskReferenceMatches,
-  normalizeTaskIdentifier,
   parseTaskReferenceHref,
 } from "./task-references.js";
 
+const TASK_1 = "123e4567-e89b-42d3-a456-426614174000";
+const TASK_2 = "22222222-2222-4222-8222-222222222222";
+const TASK_3 = "33333333-3333-4333-8333-333333333333";
+
 describe("task references", () => {
-  it("normalizes identifiers to uppercase", () => {
-    expect(normalizeTaskIdentifier("pap-123")).toBe("PAP-123");
-    expect(normalizeTaskIdentifier("pc1a2-7")).toBe("PC1A2-7");
-    expect(normalizeTaskIdentifier("not-a-task")).toBeNull();
+  it("parses UUID task URIs", () => {
+    expect(parseTaskReferenceHref(`task://${TASK_1}`)).toEqual({ taskId: TASK_1 });
   });
 
-  it("parses relative and absolute task hrefs", () => {
-    expect(parseTaskReferenceHref("/tasks/PAP-123")).toEqual({ identifier: "PAP-123" });
-    expect(parseTaskReferenceHref("/PAP/tasks/pap-456")).toEqual({ identifier: "PAP-456" });
-    expect(parseTaskReferenceHref("https://paperclip.ing/PAP/tasks/pap-789#comment-1")).toEqual({
-      identifier: "PAP-789",
-    });
-    expect(parseTaskReferenceHref("https://paperclip.ing/projects/PAP-789")).toBeNull();
+  it("builds only exact canonical UUID task URIs", () => {
+    expect(buildTaskReferenceHref(TASK_1)).toBe(`task://${TASK_1}`);
+    expect(() => buildTaskReferenceHref(TASK_1.toUpperCase())).toThrow();
+    expect(() => buildTaskReferenceHref("PAP-123")).toThrow(
+      "Cannot build a task reference href without a canonical task UUID",
+    );
   });
 
-  it("builds canonical task hrefs", () => {
-    expect(buildTaskReferenceHref("pap-123")).toBe("/tasks/PAP-123");
+  it("rejects identifier, HTTP/path, and noncanonical compatibility formats", () => {
+    expect(parseTaskReferenceHref("task://PAP-123")).toBeNull();
+    expect(parseTaskReferenceHref(`/PAP/tasks/PAP-123`)).toBeNull();
+    expect(parseTaskReferenceHref(`/tasks/${TASK_1}`)).toBeNull();
+    expect(parseTaskReferenceHref(`/PAP/tasks/${TASK_1}`)).toBeNull();
+    expect(parseTaskReferenceHref(`https://paperclip.ing/PAP/tasks/${TASK_1}`)).toBeNull();
+    expect(parseTaskReferenceHref(`task://${TASK_1.toUpperCase()}`)).toBeNull();
+    expect(parseTaskReferenceHref(` task://${TASK_1} `)).toBeNull();
+    expect(parseTaskReferenceHref("task://%zz")).toBeNull();
+    expect(parseTaskReferenceHref(`task://%31${TASK_1.slice(1)}`)).toBeNull();
   });
 
-  it("finds identifiers and task paths in plain text", () => {
-    expect(findTaskReferenceMatches("See PAP-1, /tasks/PC1A2-2, and https://x.test/PAP/tasks/pc1a2-3.")).toEqual([
-      { index: 4, length: 5, identifier: "PAP-1", matchedText: "PAP-1" },
-      { index: 11, length: 14, identifier: "PC1A2-2", matchedText: "/tasks/PC1A2-2" },
+  it("finds only explicit UUID task URIs", () => {
+    const uri = `task://${TASK_1}`;
+    const route = `https://x.test/PAP/tasks/${TASK_2}`;
+    const text = `Ignore PAP-1, ${TASK_3}, and ${route}; see ${uri}.`;
+
+    expect(findTaskReferenceMatches(text)).toEqual([
       {
-        index: 31,
-        length: 32,
-        identifier: "PC1A2-3",
-        matchedText: "https://x.test/PAP/tasks/pc1a2-3",
+        index: text.indexOf(uri),
+        length: uri.length,
+        taskId: TASK_1,
+        matchedText: uri,
       },
     ]);
   });
 
-  it("trims unmatched square brackets from task path tokens", () => {
-    expect(findTaskReferenceMatches("See /tasks/PAP-123] for context.")).toEqual([
-      { index: 4, length: 14, identifier: "PAP-123", matchedText: "/tasks/PAP-123" },
+  it("trims unmatched square brackets from task reference tokens", () => {
+    const uri = `task://${TASK_1}`;
+    expect(findTaskReferenceMatches(`See ${uri}] for context.`)).toEqual([
+      { index: 4, length: uri.length, taskId: TASK_1, matchedText: uri },
     ]);
   });
 
-  it("extracts and dedupes references from markdown", () => {
-    expect(extractTaskReferenceIdentifiers("PAP-1 [again](/tasks/pap-1) PAP-2")).toEqual(["PAP-1", "PAP-2"]);
+  it("extracts and dedupes UUID references from markdown", () => {
+    expect(
+      extractTaskReferenceIds(
+        `PAP-1 [first](task://${TASK_1}) task://${TASK_1} task://${TASK_2}`,
+      ),
+    ).toEqual([TASK_1, TASK_2]);
   });
 
   it("ignores inline code and fenced code blocks", () => {
     const markdown = [
-      "Use PAP-1 here.",
+      `Use task://${TASK_1} here.`,
       "",
-      "`PAP-2` should not count.",
+      `\`task://${TASK_2}\` should not count.`,
       "",
       "```md",
-      "PAP-3",
-      "/tasks/PAP-4",
+      `task://${TASK_2}`,
       "```",
       "",
-      "Final /tasks/PAP-5 mention.",
+      `Final task://${TASK_3} mention.`,
     ].join("\n");
 
-    expect(extractTaskReferenceIdentifiers(markdown)).toEqual(["PAP-1", "PAP-5"]);
+    expect(extractTaskReferenceIds(markdown)).toEqual([TASK_1, TASK_3]);
   });
 });

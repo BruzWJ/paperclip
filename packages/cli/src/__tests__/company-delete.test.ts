@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { Command } from "commander";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalizeMoneyAmount, type Company } from "@paperclipai/shared";
-import { assertDeleteConfirmation, resolveCompanyForDeletion } from "../commands/client/company.js";
+import {
+  assertDeleteConfirmation,
+  registerCompanyCommands,
+} from "../commands/client/company.js";
 
 function makeCompany(overrides: Partial<Company>): Company {
   return {
@@ -27,68 +31,95 @@ function makeCompany(overrides: Partial<Company>): Company {
   };
 }
 
-describe("resolveCompanyForDeletion", () => {
-  const companies: Company[] = [
-    makeCompany({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Alpha",
-      taskPrefix: "ALP",
-    }),
-    makeCompany({
-      id: "22222222-2222-2222-2222-222222222222",
-      name: "Paperclip",
-      taskPrefix: "PAP",
-    }),
-  ];
-
-  it("resolves by ID in auto mode", () => {
-    const result = resolveCompanyForDeletion(companies, "22222222-2222-2222-2222-222222222222", "auto");
-    expect(result.taskPrefix).toBe("PAP");
-  });
-
-  it("resolves by prefix in auto mode", () => {
-    const result = resolveCompanyForDeletion(companies, "pap", "auto");
-    expect(result.id).toBe("22222222-2222-2222-2222-222222222222");
-  });
-
-  it("throws when selector is not found", () => {
-    expect(() => resolveCompanyForDeletion(companies, "MISSING", "auto")).toThrow(/No company found/);
-  });
-
-  it("respects explicit id mode", () => {
-    expect(() => resolveCompanyForDeletion(companies, "PAP", "id")).toThrow(/No company found by ID/);
-  });
-
-  it("respects explicit prefix mode", () => {
-    expect(() => resolveCompanyForDeletion(companies, "22222222-2222-2222-2222-222222222222", "prefix"))
-      .toThrow(/No company found by shortname/);
-  });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("assertDeleteConfirmation", () => {
-  const company = makeCompany({
-    id: "22222222-2222-2222-2222-222222222222",
-    taskPrefix: "PAP",
-  });
+  const companyId = "abcdef12-3456-4789-8abc-def012345678";
 
   it("requires --yes", () => {
-    expect(() => assertDeleteConfirmation(company, { confirm: "PAP" })).toThrow(/requires --yes/);
+    expect(() => assertDeleteConfirmation(companyId, { confirm: companyId })).toThrow(/requires --yes/);
   });
 
-  it("accepts matching prefix confirmation", () => {
-    expect(() => assertDeleteConfirmation(company, { yes: true, confirm: "pap" })).not.toThrow();
+  it("accepts the exact matching UUID confirmation", () => {
+    expect(() => assertDeleteConfirmation(companyId, { yes: true, confirm: companyId })).not.toThrow();
   });
 
-  it("accepts matching id confirmation", () => {
-    expect(() =>
-      assertDeleteConfirmation(company, {
-        yes: true,
-        confirm: "22222222-2222-2222-2222-222222222222",
-      })).not.toThrow();
+  it("rejects UUID case and whitespace variants", () => {
+    expect(() => assertDeleteConfirmation(companyId, { yes: true, confirm: companyId.toUpperCase() }))
+      .toThrow(/does not match exact/);
+    expect(() => assertDeleteConfirmation(companyId, { yes: true, confirm: `${companyId} ` }))
+      .toThrow(/does not match exact/);
   });
 
   it("rejects mismatched confirmation", () => {
-    expect(() => assertDeleteConfirmation(company, { yes: true, confirm: "nope" }))
-      .toThrow(/does not match target company/);
+    expect(() => assertDeleteConfirmation(companyId, { yes: true, confirm: "nope" }))
+      .toThrow(/does not match exact/);
+  });
+
+  it("rejects a non-canonical company selector", () => {
+    expect(() => assertDeleteConfirmation("PAP", { yes: true, confirm: "PAP" }))
+      .toThrow(/canonical company UUID/);
   });
 });
+
+describe("company delete help", () => {
+  it("exposes only the exact canonical UUID selector", () => {
+    const program = new Command();
+    registerCompanyCommands(program);
+    const companyCommand = program.commands.find((command) => command.name() === "company");
+    const deleteCommand = companyCommand?.commands.find((command) => command.name() === "delete");
+    const help = deleteCommand?.helpInformation() ?? "";
+
+    expect(help).toContain("<company-id>");
+    expect(help).toContain("canonical UUID");
+    expect(help).not.toContain("--by");
+    expect(help).not.toContain("task prefix");
+    expect(help).not.toContain("shortname");
+  });
+
+  it("fetches and deletes only by the exact canonical UUID", async () => {
+    const target = makeCompany({
+      id: "abcdef12-3456-4789-8abc-def012345678",
+      taskPrefix: "PAP",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(target))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const program = new Command();
+    program.exitOverride();
+    registerCompanyCommands(program);
+    await program.parseAsync([
+      "company",
+      "delete",
+      target.id,
+      "--yes",
+      "--confirm",
+      target.id,
+      "--api-base",
+      "http://paperclip.test",
+      "--api-key",
+      "board-token",
+      "--json",
+    ], { from: "user" });
+
+    expect(fetchMock.mock.calls.map(([url, init]) => [String(url), init?.method ?? "GET"]))
+      .toEqual([
+        [`http://paperclip.test/api/companies/${target.id}`, "GET"],
+        [`http://paperclip.test/api/companies/${target.id}`, "DELETE"],
+      ]);
+  });
+});
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}

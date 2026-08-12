@@ -3,10 +3,13 @@ import type { PreparedSecretVersion, SecretProviderModule } from "./types.js";
 import { createHash } from "node:crypto";
 
 function unavailableProvider(
-  id: "aws_secrets_manager" | "gcp_secret_manager" | "vault",
+  id: "gcp_secret_manager" | "vault",
   label: string,
 ): SecretProviderModule {
-  function externalFingerprint(externalRef: string, providerVersionRef: string | null): string {
+  function externalFingerprint(
+    externalRef: string,
+    providerVersionRef: string | null,
+  ): string {
     return createHash("sha256")
       .update(`${id}:${externalRef}:${providerVersionRef ?? ""}`)
       .digest("hex");
@@ -16,8 +19,25 @@ function unavailableProvider(
     externalRef: string;
     providerVersionRef?: string | null;
   }): PreparedSecretVersion {
-    const externalRef = input.externalRef.trim();
-    const providerVersionRef = input.providerVersionRef?.trim() || null;
+    if (
+      input.externalRef.length === 0 ||
+      input.externalRef.trim() !== input.externalRef
+    ) {
+      throw unprocessable(
+        "Provider secret reference must be a non-empty exact value without surrounding whitespace",
+      );
+    }
+    if (
+      input.providerVersionRef != null &&
+      (input.providerVersionRef.length === 0 ||
+        input.providerVersionRef.trim() !== input.providerVersionRef)
+    ) {
+      throw unprocessable(
+        "Provider secret version reference must be a non-empty exact value without surrounding whitespace",
+      );
+    }
+    const externalRef = input.externalRef;
+    const providerVersionRef = input.providerVersionRef ?? null;
     const fingerprint = externalFingerprint(externalRef, providerVersionRef);
     return {
       material: {
@@ -46,19 +66,28 @@ function unavailableProvider(
       };
     },
     async validateConfig() {
-      return { ok: false, warnings: [`${id} provider is not configured in this deployment`] };
+      return {
+        ok: false,
+        warnings: [`${id} provider is not configured in this deployment`],
+      };
     },
     async createSecret() {
-      throw unprocessable(`${id} provider is not configured for Paperclip-managed values`);
+      throw unprocessable(
+        `${id} provider is not configured for Paperclip-managed values`,
+      );
     },
     async createVersion() {
-      throw unprocessable(`${id} provider is not configured for Paperclip-managed values`);
+      throw unprocessable(
+        `${id} provider is not configured for Paperclip-managed values`,
+      );
     },
     async linkExternalSecret(input) {
       return prepareExternalReference(input);
     },
     async resolveVersion() {
-      throw unprocessable(`${id} provider is not configured in this deployment`);
+      throw unprocessable(
+        `${id} provider is not configured in this deployment`,
+      );
     },
     async deleteOrArchive() {
       // External references are metadata-only in Paperclip for unconfigured providers.
@@ -76,10 +105,6 @@ function unavailableProvider(
   };
 }
 
-export const awsSecretsManagerProvider = unavailableProvider(
-  "aws_secrets_manager",
-  "AWS Secrets Manager",
-);
 export const gcpSecretManagerProvider = unavailableProvider(
   "gcp_secret_manager",
   "GCP Secret Manager",

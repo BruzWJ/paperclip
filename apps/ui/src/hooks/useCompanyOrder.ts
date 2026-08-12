@@ -43,13 +43,15 @@ type UseCompanyOrderParams = {
 export function useCompanyOrder({ companies, userId }: UseCompanyOrderParams) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(
-    () => queryKeys.sidebarPreferences.companyOrder(userId ?? "__anon__"),
+    () => userId
+      ? queryKeys.sidebarPreferences.companyOrder(userId)
+      : ["sidebar-preferences", "company-order", null] as const,
     [userId],
   );
 
   const { data } = useQuery({
     queryKey,
-    queryFn: () => sidebarPreferencesApi.getCompanyOrder(),
+    queryFn: () => sidebarPreferencesApi.getCompanyOrder(userId!),
     enabled: Boolean(userId),
   });
 
@@ -80,7 +82,7 @@ export function useCompanyOrder({ companies, userId }: UseCompanyOrderParams) {
         orderedIds: filtered,
         updatedAt: current?.updatedAt ?? null,
       }));
-      void sidebarPreferencesApi.updateCompanyOrder({ orderedIds: filtered })
+      void sidebarPreferencesApi.updateCompanyOrder(userId, { orderedIds: filtered })
         .then((preference) => {
           queryClient.setQueryData(queryKey, preference);
         })

@@ -1,13 +1,16 @@
-import type { TaskPriority, TaskStatus } from "../constants.js";
+import type {
+  UserCompanyMembershipRole,
+  TaskPriority,
+  TaskStatus,
+} from "../constants.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export interface UserProfileIdentity {
   id: string;
-  slug: string;
   name: string | null;
   email: string | null;
   image: string | null;
-  membershipRole: string | null;
+  membershipRole: UserCompanyMembershipRole;
   membershipStatus: string;
   joinedAt: Date;
 }
@@ -37,7 +40,8 @@ export interface UserProfileDailyPoint {
 
 export interface UserProfileTaskSummary {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: TaskStatus;
   priority: TaskPriority;

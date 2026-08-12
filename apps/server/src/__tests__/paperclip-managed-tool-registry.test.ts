@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { AGENT_CONTEXT_GRANT_KEYS } from "@paperclipai/shared";
 import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import {
+  BOARD_MANAGED_TOOLS,
   PAPERCLIP_CONTEXT_TOOL_NAMES,
   PAPERCLIP_MANAGED_TOOL_METADATA,
-  BOARD_MANAGED_TOOLS,
+  parseBoardManagedTool,
   projectPaperclipManagedTools,
 } from "../services/paperclip-managed-tool-registry.js";
 import { compileRuntimeInterface } from "../services/runtime-interface-compiler.js";
 import type { ContextDial } from "../services/context-dial-resolver.js";
 
-const companyId = "00000000-0000-4000-8000-000000000001";
 const agentId = "00000000-0000-4000-8000-000000000002";
 const taskId = "00000000-0000-4000-8000-000000000003";
 
@@ -19,6 +19,22 @@ const fullContextDial = Object.fromEntries(
 ) as ContextDial;
 
 describe("Paperclip managed-tool registry", () => {
+  it("publishes a distinct Board catalog without mention_board", () => {
+    const names = BOARD_MANAGED_TOOLS.map((tool) => tool.name);
+    expect(names).toContain("mention_agent");
+    expect(names).not.toContain("mention_board");
+  });
+
+  it("rejects noncanonical Board UUIDs and unknown fields", () => {
+    expect(() => parseBoardManagedTool("list_agents", {
+      companyId: "AAAAAAAA-0000-4000-8000-000000000001",
+    })).toThrow("Expected an exact lowercase canonical UUID");
+    expect(() => parseBoardManagedTool("list_agents", {
+      companyId: "aaaaaaaa-0000-4000-8000-000000000001",
+      company_id: "aaaaaaaa-0000-4000-8000-000000000001",
+    })).toThrow("Unrecognized key");
+  });
+
   it("projects the same context tool identities through the ACPX compiler", () => {
     const descriptors = projectPaperclipManagedTools({
       mode: "owner",
@@ -43,34 +59,6 @@ describe("Paperclip managed-tool registry", () => {
       )).toBe(true);
       expect(descriptor.availability).toBe("work");
     }
-  });
-
-  it("keeps Board MCP as the full-control projection without mention_board", () => {
-    const names = BOARD_MANAGED_TOOLS.map((tool) => tool.name);
-
-    expect(names).toEqual([
-      "list_company_tasks",
-      "list_sub_tasks",
-      "read_task_comments",
-      "read_task_agent_run",
-      "task_create",
-      "task_assign",
-      "task_update",
-      "mention_agent",
-      "agent_hire",
-      "agent_configure",
-      "list_agents",
-      "agent_read",
-    ]);
-    expect(names).not.toContain("mention_board");
-    expect(
-      BOARD_MANAGED_TOOLS.find((tool) => tool.name === "task_create")
-        ?.inputSchema.safeParse({
-          companyId,
-          request: "Implement the board task",
-          ownerAgentId: agentId,
-        }).success,
-    ).toBe(true);
   });
 
   it("uses canonical metadata for the ACPX action projection too", () => {

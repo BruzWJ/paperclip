@@ -11,10 +11,22 @@ import { ToastViewport } from "./ToastViewport";
 import { ToastProvider } from "../context/ToastContext";
 import { AttentionQueueRow } from "./AttentionQueueRow";
 
-vi.mock("@/lib/router", () => ({
-  Link: ({ children, to, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string }) => (
-    <a href={to} {...props}>{children}</a>
-  ),
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to, params, hash, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & {
+    to: string;
+    params?: Record<string, string>;
+    hash?: string;
+  }) => {
+    const pathname = Object.entries(params ?? {}).reduce(
+      (path, [key, value]) => path.replace(`$${key}`, value),
+      to,
+    );
+    return <a href={`${pathname}${hash ? `#${hash}` : ""}`} {...props}>{children}</a>;
+  },
 }));
 
 vi.mock("../api/approvals", () => ({
@@ -82,9 +94,10 @@ function buildItem(overrides: Partial<AttentionItem> = {}): AttentionItem {
       id: "approval-1",
       companyId: "c1",
       title: "Hire agent: Research Analyst",
+      taskNumber: null,
       identifier: null,
       status: "pending",
-      href: "/PAP/approvals/approval-1",
+      routeTarget: { kind: "approval", id: "22222222-2222-4222-8222-222222222222" },
       metadata: {},
     },
     whyNow: "Approval is pending a board decision.",
@@ -139,9 +152,10 @@ describe("AttentionQueueRow", () => {
             id: "task-1",
             companyId: "c1",
             title: "PR ready for review",
-            identifier: null,
+            taskNumber: 1,
+            identifier: "PAP-1",
             status: "in_review",
-            href: "/PAP/tasks/PAP-1",
+            routeTarget: { kind: "task", taskNumber: 1, hash: null },
             metadata: {},
           },
         })}
@@ -233,7 +247,7 @@ describe("AttentionQueueRow", () => {
     render(
       <AttentionQueueRow
         item={buildItem({
-          project: { id: "project-1", name: "Alpha", urlKey: "alpha", color: null, icon: "rocket" },
+          project: { id: "project-1", name: "Alpha", color: null, icon: "rocket" },
         })}
         companyId="c1"
         expanded={false}
@@ -429,9 +443,10 @@ describe("AttentionQueueRow", () => {
             id: "task-1",
             companyId: "c1",
             title: "Idle task",
+            taskNumber: 1,
             identifier: "PAP-1",
             status: "in_progress",
-            href: "/PAP/tasks/PAP-1",
+            routeTarget: { kind: "task", taskNumber: 1, hash: null },
             metadata: {},
           },
         })}
@@ -486,9 +501,10 @@ describe("AttentionQueueRow", () => {
             id: "task-1",
             companyId: "c1",
             title: "Ship it",
+            taskNumber: 42,
             identifier: "PAP-42",
             status: "in_progress",
-            href: "/PAP/tasks/PAP-42",
+            routeTarget: { kind: "task", taskNumber: 42, hash: null },
             metadata: {},
           },
           detail: {
@@ -518,7 +534,9 @@ describe("AttentionQueueRow", () => {
       a.textContent?.includes("2 more"),
     );
     expect(moreLink).toBeDefined();
-    expect(moreLink?.getAttribute("href")).toBe("/PAP/tasks/PAP-42");
+    expect(moreLink?.getAttribute("href")).toBe(
+      "/11111111-1111-4111-8111-111111111111/tasks/42",
+    );
   });
 
   it("shows the remaining image count when no task link is available", () => {
@@ -528,13 +546,14 @@ describe("AttentionQueueRow", () => {
           sourceKind: "review" as AttentionSourceKind,
           inlineResolvable: false,
           subject: {
-            kind: "task",
-            id: "task-1",
+            kind: "approval",
+            id: "approval-1",
             companyId: "c1",
             title: "Unlinked review",
+            taskNumber: null,
             identifier: null,
-            status: "in_review",
-            href: null,
+            status: "pending",
+            routeTarget: null,
             metadata: {},
           },
           detail: {

@@ -54,7 +54,12 @@ function fixtureRoot(): string {
   ].join("\n"));
   write(root, "apps/server/src/services/task-session/message-updater.ts", 'case "session.next.step.ended": if (event.data.tokens !== undefined) message.tokens = event.data.tokens;\n');
   write(root, "apps/server/src/services/task-session/projector.ts", "canonicalJson(assistant.tokens) !== canonicalJson(event.data.tokens);\n");
-  write(root, "apps/server/src/services/task-execution-acp-events-postgres.ts", 'if (input.event.kind === "usage") { return; }\n');
+  write(root, "apps/server/src/services/task-execution-acp-events-postgres.ts", [
+    'if (input.event.kind === "message_chunk") return;',
+    'if (input.event.kind !== "tool_call" && input.event.kind !== "tool_call_update") {',
+    '  reject("unsupported ACP productive session update");',
+    '}',
+  ].join("\n"));
   write(root, "apps/server/src/services/acp-prompt-settlement.ts", [
     "contextUsedTokens: settlement.occupancy.used,",
     "contextWindowTokens: settlement.occupancy.size,",
@@ -124,10 +129,14 @@ test("rejects zero-hostile donor storage", () => {
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("tokensInput")));
 });
 
-test("rejects mapping stable ACP usage into Session events", () => {
+test("rejects reviving a stable ACP usage event branch", () => {
   const root = fixtureRoot();
   const path = "apps/server/src/services/task-execution-acp-events-postgres.ts";
-  write(root, path, readFileSync(join(root, path), "utf8").replace('input.event.kind === "usage"', 'input.event.kind === "never"'));
+  write(
+    root,
+    path,
+    `${readFileSync(join(root, path), "utf8")}\nif (input.event.kind === "usage") return;\n`,
+  );
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("usage")));
 });
 

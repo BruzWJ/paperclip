@@ -6,36 +6,37 @@ import {
 import { probeAcpxRuntimeReadiness } from "./acpx-runtime-readiness.js";
 
 export interface AcpxDiscoveredConfigOptionValue {
-  readonly kind: "value";
   readonly value: string;
   readonly name: string;
   readonly description?: string;
 }
 
-interface AcpxDiscoveredConfigOptionGroup {
-  readonly kind: "group";
-  readonly group: string;
+interface AcpxDiscoveredConfigOptionBase {
+  readonly id: string;
   readonly name: string;
-  readonly options: readonly AcpxDiscoveredConfigOptionValue[];
+  readonly description?: string;
+  readonly category?: string;
 }
 
 /**
  * A generic ACP session option advertised after session creation. The helper
- * deliberately preserves no provider-specific metadata: callers render or
- * select from ACP's id, type, category, current value, and choices only.
+ * deliberately exposes only the closed ACPX option types Paperclip can apply
+ * without provider-specific interpretation.
  */
-export interface AcpxDiscoveredConfigOption {
-  readonly id: string;
-  readonly name: string;
-  readonly type: string;
-  readonly description?: string;
-  readonly category?: string;
-  readonly currentValue?: string | boolean;
-  readonly options: readonly (
-    | AcpxDiscoveredConfigOptionValue
-    | AcpxDiscoveredConfigOptionGroup
-  )[];
-}
+export type AcpxDiscoveredConfigOption =
+  | (AcpxDiscoveredConfigOptionBase & {
+    readonly type: "select";
+    readonly currentValue: string;
+    readonly options: readonly AcpxDiscoveredConfigOptionValue[];
+  })
+  | (AcpxDiscoveredConfigOptionBase & {
+    readonly type: "boolean";
+    readonly currentValue: boolean;
+  })
+  | (AcpxDiscoveredConfigOptionBase & {
+    readonly type: "text";
+    readonly currentValue?: string;
+  });
 
 export interface AcpxAgentDiscovery {
   /** Exact ACPX registry name that was probed. */
@@ -75,22 +76,6 @@ function exactNonEmptyString(value: unknown): string | undefined {
   return value;
 }
 
-function displayString(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const normalized = value.trim();
-  return normalized.length > 0 ? normalized : undefined;
-}
-
-/**
- * ACPX option identifiers and selected values are execution inputs, so they
- * must remain exact. Display names are presentation metadata only: normalize
- * them generically and, when absent, expose the exact ACPX identifier/value
- * rather than inventing a provider-specific label.
- */
-function displayName(value: unknown, fallback: string): string {
-  return displayString(value) ?? fallback;
-}
-
 function distinctStrings(value: unknown): readonly string[] {
   if (!Array.isArray(value)) return Object.freeze([]);
   const values = new Set<string>();
@@ -106,11 +91,13 @@ function parseConfigOptionValue(
 ): AcpxDiscoveredConfigOptionValue | undefined {
   if (!isRecord(value)) return undefined;
   const optionValue = exactNonEmptyString(value.value);
-  if (!optionValue) return undefined;
-  const name = displayName(value.name, optionValue);
-  const description = displayString(value.description);
+  const name = exactNonEmptyString(value.name);
+  if (!optionValue || !name) return undefined;
+  const description = value.description === undefined
+    ? undefined
+    : exactNonEmptyString(value.description);
+  if (value.description !== undefined && !description) return undefined;
   return Object.freeze({
-    kind: "value",
     value: optionValue,
     name,
     ...(description ? { description } : {}),
@@ -119,70 +106,106 @@ function parseConfigOptionValue(
 
 function parseConfigOptionValues(
   value: unknown,
-): readonly (
-  | AcpxDiscoveredConfigOptionValue
-  | AcpxDiscoveredConfigOptionGroup
-)[] {
-  if (!Array.isArray(value)) return Object.freeze([]);
-  const parsed: Array<
-    AcpxDiscoveredConfigOptionValue | AcpxDiscoveredConfigOptionGroup
-  > = [];
+): readonly AcpxDiscoveredConfigOptionValue[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("ACPX select option values must be a non-empty array");
+  }
+  const parsed: AcpxDiscoveredConfigOptionValue[] = [];
   for (const entry of value) {
-    if (!isRecord(entry)) continue;
-    const group = exactNonEmptyString(entry.group);
-    if (group && Array.isArray(entry.options)) {
-      const groupName = displayName(entry.name, group);
-      const options = entry.options
-        .map((candidate) => parseConfigOptionValue(candidate))
-        .filter(
-          (candidate): candidate is AcpxDiscoveredConfigOptionValue =>
-            candidate !== undefined,
-        );
-      parsed.push(
-        Object.freeze({
-          kind: "group",
-          group,
-          name: groupName,
-          options: Object.freeze(options),
-        }),
-      );
-      continue;
-    }
     const option = parseConfigOptionValue(entry);
-    if (option) parsed.push(option);
+    if (!option) {
+      throw new Error("ACPX select option value must use exact value and name strings");
+    }
+    parsed.push(option);
+  }
+  if (new Set(parsed.map((entry) => entry.value)).size !== parsed.length) {
+    throw new Error("ACPX select option values must be unique");
   }
   return Object.freeze(parsed);
 }
 
 function parseConfigOptions(value: unknown): readonly AcpxDiscoveredConfigOption[] {
-  if (!Array.isArray(value)) return Object.freeze([]);
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value)) {
+    throw new Error("ACPX config options must be an array");
+  }
   const seenIds = new Set<string>();
   const parsed: AcpxDiscoveredConfigOption[] = [];
   for (const entry of value) {
-    if (!isRecord(entry)) continue;
+    if (!isRecord(entry)) {
+      throw new Error("ACPX config option must be an object");
+    }
     const id = exactNonEmptyString(entry.id);
     const type = exactNonEmptyString(entry.type);
-    if (!id || !type || seenIds.has(id)) continue;
-    const name = displayName(entry.name, id);
+    const name = exactNonEmptyString(entry.name);
+    if (!id || !type || !name) {
+      throw new Error("ACPX config option id, name, and type must be exact strings");
+    }
+    if (seenIds.has(id)) {
+      throw new Error(`ACPX config option id ${id} is duplicated`);
+    }
     seenIds.add(id);
-    const description = displayString(entry.description);
-    const category = displayString(entry.category);
-    const currentValue =
-      typeof entry.currentValue === "string" ||
-      typeof entry.currentValue === "boolean"
-        ? entry.currentValue
-        : undefined;
-    parsed.push(
-      Object.freeze({
-        id,
-        name,
+    const description = entry.description === undefined
+      ? undefined
+      : exactNonEmptyString(entry.description);
+    const category = entry.category === undefined
+      ? undefined
+      : exactNonEmptyString(entry.category);
+    if (entry.description !== undefined && !description) {
+      throw new Error(`ACPX config option ${id} has an invalid description`);
+    }
+    if (entry.category !== undefined && !category) {
+      throw new Error(`ACPX config option ${id} has an invalid category`);
+    }
+    const base = {
+      id,
+      name,
+      ...(description ? { description } : {}),
+      ...(category ? { category } : {}),
+    };
+    if (type === "select") {
+      const currentValue = exactNonEmptyString(entry.currentValue);
+      if (!currentValue) {
+        throw new Error(`ACPX select option ${id} must have an exact current value`);
+      }
+      const options = parseConfigOptionValues(entry.options);
+      if (!options.some((option) => option.value === currentValue)) {
+        throw new Error(`ACPX select option ${id} current value is not declared`);
+      }
+      parsed.push(Object.freeze({
+        ...base,
         type,
-        ...(description ? { description } : {}),
-        ...(category ? { category } : {}),
-        ...(currentValue !== undefined ? { currentValue } : {}),
-        options: parseConfigOptionValues(entry.options),
-      }),
-    );
+        currentValue,
+        options,
+      }));
+      continue;
+    }
+    if (type === "boolean") {
+      if (typeof entry.currentValue !== "boolean") {
+        throw new Error(`ACPX boolean option ${id} must have a boolean current value`);
+      }
+      parsed.push(Object.freeze({
+        ...base,
+        type,
+        currentValue: entry.currentValue,
+      }));
+      continue;
+    }
+    if (type === "text") {
+      const currentValue = entry.currentValue === undefined
+        ? undefined
+        : exactNonEmptyString(entry.currentValue);
+      if (entry.currentValue !== undefined && !currentValue) {
+        throw new Error(`ACPX text option ${id} must have an exact string current value`);
+      }
+      parsed.push(Object.freeze({
+        ...base,
+        type,
+        ...(currentValue ? { currentValue } : {}),
+      }));
+      continue;
+    }
+    throw new Error(`ACPX config option ${id} has unsupported type ${type}`);
   }
   return Object.freeze(parsed);
 }

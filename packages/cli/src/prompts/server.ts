@@ -1,11 +1,21 @@
 import * as p from "@clack/prompts";
-import { isLoopbackHost, normalizePublicOrigin, type BindMode } from "@paperclipai/shared";
+import {
+  isAllInterfacesHost,
+  isLoopbackHost,
+  parseExactHostnameCsv,
+  parseExactPublicOrigin,
+  resolveServerPort,
+  type BindMode,
+} from "@paperclipai/shared";
 import type { AuthConfig, ServerConfig } from "../config/schema.js";
-import { parseHostnameCsv } from "../config/hostnames.js";
-import { buildCustomServerConfig, buildPresetServerConfig, inferConfiguredBind } from "../config/server-bind.js";
+import {
+  buildCustomServerConfig,
+  buildPresetServerConfig,
+  detectTailnetBindHost,
+} from "../config/server-bind.js";
 
 const TAILNET_BIND_WARNING =
-  "No Tailscale address was detected during setup. The saved config will stay on loopback until Tailscale is available or PAPERCLIP_TAILNET_BIND_HOST is set.";
+  "No Tailscale address was detected. Startup requires Tailscale or PAPERCLIP_TAILNET_BIND_HOST.";
 
 function cancelled(): never {
   p.cancel("Setup cancelled.");
@@ -18,7 +28,7 @@ export async function promptServer(opts?: {
 }): Promise<{ server: ServerConfig; auth: AuthConfig }> {
   const currentServer = opts?.currentServer;
   const currentAuth = opts?.currentAuth;
-  const currentBind = inferConfiguredBind(currentServer);
+  const currentBind = currentServer?.bind ?? "loopback";
 
   const bindSelection = await p.select({
     message: "Reachability",
@@ -55,15 +65,16 @@ export async function promptServer(opts?: {
     defaultValue: String(currentServer?.port ?? 3100),
     placeholder: "3100",
     validate: (val) => {
-      const n = Number(val);
-      if (isNaN(n) || n < 1 || n > 65535 || !Number.isInteger(n)) {
-        return "Must be an integer between 1 and 65535";
+      try {
+        resolveServerPort({ environmentValue: val });
+      } catch (error) {
+        return error instanceof Error ? error.message : "Invalid server port";
       }
     },
   });
 
   if (p.isCancel(portStr)) cancelled();
-  const port = Number(portStr) || 3100;
+  const port = resolveServerPort({ environmentValue: portStr });
   const serveUi = currentServer?.serveUi ?? true;
 
   if (bind === "loopback") {
@@ -77,14 +88,14 @@ export async function promptServer(opts?: {
   if (bind === "lan" || bind === "tailnet") {
     const allowedHostnamesInput = await p.text({
       message: "Allowed private hostnames (comma-separated, optional)",
-      defaultValue: (currentServer?.allowedHostnames ?? []).join(", "),
+      defaultValue: (currentServer?.allowedHostnames ?? []).join(","),
       placeholder:
         bind === "tailnet"
           ? "your-machine.tailnet.ts.net"
-          : "dotta-macbook-pro, host.docker.internal",
+          : "dotta-macbook-pro,host.docker.internal",
       validate: (val) => {
         try {
-          parseHostnameCsv(val);
+          parseExactHostnameCsv(val);
           return;
         } catch (err) {
           return err instanceof Error ? err.message : "Invalid hostname list";
@@ -96,10 +107,10 @@ export async function promptServer(opts?: {
 
     const preset = buildPresetServerConfig(bind, {
       port,
-      allowedHostnames: parseHostnameCsv(allowedHostnamesInput),
+      allowedHostnames: parseExactHostnameCsv(allowedHostnamesInput),
       serveUi,
     });
-    if (bind === "tailnet" && isLoopbackHost(preset.server.host)) {
+    if (bind === "tailnet" && !detectTailnetBindHost()) {
       p.log.warn(TAILNET_BIND_WARNING);
     }
     return preset;
@@ -125,16 +136,20 @@ export async function promptServer(opts?: {
   if (p.isCancel(exposureSelection)) cancelled();
   const exposure = exposureSelection as ServerConfig["exposure"];
 
-  const defaultHost =
-    currentServer?.customBindHost ??
-    currentServer?.host ??
-    (exposure === "public" ? "0.0.0.0" : "127.0.0.1");
+  const defaultHost = currentServer?.customBindHost ?? "";
   const host = await p.text({
     message: "Bind host",
     defaultValue: defaultHost,
-    placeholder: defaultHost,
+    placeholder: "192.168.1.10",
     validate: (val) => {
       if (!val.trim()) return "Host is required";
+      if (val !== val.trim()) {
+        return "Custom bind host must not contain surrounding whitespace";
+      }
+      if (isLoopbackHost(val))
+        return "Choose the loopback bind mode for this host";
+      if (isAllInterfacesHost(val))
+        return "Choose the lan bind mode for this host";
     },
   });
 
@@ -144,11 +159,11 @@ export async function promptServer(opts?: {
   if (exposure === "private") {
     const allowedHostnamesInput = await p.text({
       message: "Allowed private hostnames (comma-separated, optional)",
-      defaultValue: (currentServer?.allowedHostnames ?? []).join(", "),
-      placeholder: "dotta-macbook-pro, your-host.tailnet.ts.net",
+      defaultValue: (currentServer?.allowedHostnames ?? []).join(","),
+      placeholder: "dotta-macbook-pro,your-host.tailnet.ts.net",
       validate: (val) => {
         try {
-          parseHostnameCsv(val);
+          parseExactHostnameCsv(val);
           return;
         } catch (err) {
           return err instanceof Error ? err.message : "Invalid hostname list";
@@ -157,7 +172,7 @@ export async function promptServer(opts?: {
     });
 
     if (p.isCancel(allowedHostnamesInput)) cancelled();
-    allowedHostnames = parseHostnameCsv(allowedHostnamesInput);
+    allowedHostnames = parseExactHostnameCsv(allowedHostnamesInput);
   }
 
   let publicBaseUrl: string | undefined;
@@ -167,23 +182,24 @@ export async function promptServer(opts?: {
       defaultValue: currentAuth?.publicBaseUrl ?? "",
       placeholder: "https://paperclip.example.com",
       validate: (val) => {
-        const candidate = val.trim();
-        if (!candidate) return "Public HTTPS origin is required for public exposure";
+        if (!val) return "Public HTTPS origin is required for public exposure";
         try {
-          normalizePublicOrigin(candidate);
+          parseExactPublicOrigin(val);
           return;
         } catch (error) {
-          return error instanceof Error ? error.message : "Enter a valid origin";
+          return error instanceof Error
+            ? error.message
+            : "Enter a valid origin";
         }
       },
     });
     if (p.isCancel(urlInput)) cancelled();
-    publicBaseUrl = normalizePublicOrigin(urlInput);
+    publicBaseUrl = parseExactPublicOrigin(urlInput);
   }
 
   return buildCustomServerConfig({
     exposure,
-    host: host.trim(),
+    customBindHost: host,
     port,
     allowedHostnames,
     serveUi,

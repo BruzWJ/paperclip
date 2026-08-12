@@ -4,7 +4,7 @@ Status: Proposed
 Date: 2026-04-06
 Audience: Product and engineering
 Related:
-- `apps/ui/src/pages/TaskDetail.tsx`
+- `apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx`
 - `apps/ui/src/components/TaskProperties.tsx`
 - `apps/ui/src/components/NewTaskDialog.tsx`
 - `apps/ui/src/context/DialogContext.tsx`
@@ -28,7 +28,7 @@ This is a UI-first change. The backend already supports child task creation with
 
 ### 2.1 Existing child task display
 
-`apps/ui/src/pages/TaskDetail.tsx` already derives `childTasks` by filtering the company task list on `parentId === task.id`.
+`apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx` already derives `childTasks` by filtering the company task list on `parentId === task.id`.
 
 Current limitation:
 
@@ -73,7 +73,7 @@ This keeps the dialog self-contained and avoids re-fetching parent context purel
 
 ## 3.2 Add task-detail entry points
 
-Use `openNewTask(...)` from `apps/ui/src/pages/TaskDetail.tsx` in two places:
+Use `openNewTask(...)` from `apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx` in two places:
 
 1. `Sub-tasks` tab
 2. properties pane via props passed into `TaskProperties`

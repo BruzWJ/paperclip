@@ -118,7 +118,7 @@ describe("dynamic ACPX registry and dependency pins", () => {
     expectViolation(mutation, "dependency", "patched ACPX");
   });
 
-  it("rejects runtime values outside the registry/discovery owners", () => {
+  it("rejects runtime values outside the canonical runtime owners", () => {
     const mutation = addFile(canonicalFiles, {
       path: "apps/server/src/services/acpx-escape.ts",
       source: 'import { createAcpRuntime } from "acpx/runtime";',

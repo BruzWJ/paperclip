@@ -8,27 +8,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
 
 const mockAttentionList = vi.hoisted(() => vi.fn());
+const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
 
 vi.mock("../api/attention", () => ({
   attentionApi: { list: mockAttentionList },
 }));
 
-vi.mock("@/lib/router", () => ({
-  NavLink: ({ to, children, className, ...props }: {
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => COMPANY_ID,
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ to, params, children, activeProps: _activeProps, inactiveProps: _inactiveProps, activeOptions: _activeOptions, state: _state, ...props }: {
     to: string;
+    params?: Record<string, string>;
     children: ReactNode;
-    className?: string | ((state: { isActive: boolean }) => string);
+    activeProps?: unknown;
+    inactiveProps?: unknown;
+    activeOptions?: unknown;
+    state?: unknown;
   }) => (
-    <a
-      href={to}
-      className={typeof className === "function" ? className({ isActive: false }) : className}
-      {...props}
-    >
-      {children}
-    </a>
-  ),
-  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
-    <a href={to} {...props}>{children}</a>
+    <a href={to.replace("$companyId", params?.companyId ?? "")} {...props}>{children}</a>
   ),
 }));
 
@@ -38,8 +38,7 @@ vi.mock("../context/DialogContext", () => ({
 
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({
-    selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", taskPrefix: "PAP", name: "Paperclip" },
+    selectedCompany: { id: COMPANY_ID, taskPrefix: "PAP", name: "Paperclip" },
   }),
 }));
 
@@ -57,16 +56,6 @@ vi.mock("../context/SidebarContext", () => ({
 
 vi.mock("../hooks/useInboxBadge", () => ({
   useInboxBadge: () => ({ inbox: 0, failedRuns: 0 }),
-}));
-
-vi.mock("../hooks/useSharedPolling", () => ({
-  useSharedPollingQuery: () => ({
-    enabled: false,
-    refetchInterval: false,
-    isLeader: false,
-    publish: vi.fn(),
-  }),
-  usePublishSharedQueryData: () => undefined,
 }));
 
 vi.mock("@/plugins/slots", () => ({ PluginSlotOutlet: () => null }));
@@ -103,18 +92,18 @@ describe("Sidebar Decisions navigation", () => {
         </QueryClientProvider>,
       );
     });
-    await vi.waitFor(() => expect(mockAttentionList).toHaveBeenCalledWith("company-1"));
+    await vi.waitFor(() => expect(mockAttentionList).toHaveBeenCalledWith(COMPANY_ID));
   }
 
   it("shows Decisions for a canonical Board mention without any feature setting", async () => {
     await renderWithItems([{ sourceKind: "mention_board" }]);
     await vi.waitFor(() => {
-      expect(container.querySelector('a[href="/decisions"]')?.textContent).toContain("Decisions");
+      expect(container.querySelector(`a[href="/${COMPANY_ID}/decisions"]`)?.textContent).toContain("Decisions");
     });
   });
 
   it("keeps Decisions hidden when the attention feed has no Board mention", async () => {
     await renderWithItems([{ sourceKind: "approval" }]);
-    expect(container.querySelector('a[href="/decisions"]')).toBeNull();
+    expect(container.querySelector(`a[href="/${COMPANY_ID}/decisions"]`)).toBeNull();
   });
 });

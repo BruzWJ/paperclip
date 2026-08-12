@@ -146,16 +146,9 @@ function createTransaction(input: {
                   { configId: "model", value: "fixture/model" },
                 ],
                 model: {
-                  id: "fixture/model",
-                  label: "Fixture model",
                   value: "fixture/model",
-                  limits: {
-                    contextTokenLimit: 128_000,
-                    outputTokenLimit: 32_000,
-                  },
+                  label: "Fixture model",
                 },
-                workspaceSelector: { kind: "task_execution_workspace" },
-                companySkillPins: [],
               },
             }]);
           }

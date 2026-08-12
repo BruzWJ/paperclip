@@ -12,6 +12,7 @@ import type {
   ResourceMemberships,
   ResourceMembershipUpdateResult,
 } from "@paperclipai/shared";
+import { isCanonicalUuid } from "@paperclipai/shared";
 import { forbidden, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 
@@ -233,6 +234,14 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
       starred?: boolean;
       actor: BoardActor;
     }): Promise<MembershipUpdateResult> {
+      if (
+        !isCanonicalUuid(input.companyId) ||
+        !isCanonicalUuid(input.projectId) ||
+        input.userId.length === 0 ||
+        input.userId.trim() !== input.userId
+      ) {
+        throw notFound("Project not found");
+      }
       const project = await db.query.projects.findFirst({
         where: and(
           eq(projects.id, input.projectId),
@@ -326,6 +335,14 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
       starred?: boolean;
       actor: BoardActor;
     }): Promise<MembershipUpdateResult> {
+      if (
+        !isCanonicalUuid(input.companyId) ||
+        !isCanonicalUuid(input.agentId) ||
+        input.userId.length === 0 ||
+        input.userId.trim() !== input.userId
+      ) {
+        throw notFound("Agent not found");
+      }
       const agent = await db.query.agents.findFirst({
         where: and(
           eq(agents.id, input.agentId),

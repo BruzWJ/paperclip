@@ -15,21 +15,29 @@ const sidebarState = vi.hoisted(() => ({
   peeking: false,
 }));
 
-vi.mock("@/lib/router", () => ({
-  NavLink: ({ children, to, className, ...props }: {
-    children: ReactNode | ((state: { isActive: boolean }) => ReactNode);
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to, params: _params, className, activeProps: _activeProps, inactiveProps, activeOptions: _activeOptions, state: _state, ...props }: {
+    children: ReactNode;
     to: string;
-    className?: string | ((state: { isActive: boolean }) => string);
+    params?: Record<string, string>;
+    className?: string;
+    activeProps?: { className?: string };
+    inactiveProps?: { className?: string };
+    activeOptions?: unknown;
+    state?: unknown;
   }) => {
-    const resolvedClassName = typeof className === "function" ? className({ isActive: false }) : className;
-    const resolvedChildren = typeof children === "function" ? children({ isActive: false }) : children;
     return (
-      <a href={to} className={resolvedClassName} {...props}>
-        {resolvedChildren}
+      <a href={to} className={[className, inactiveProps?.className].filter(Boolean).join(" ")} {...props}>
+        {children}
       </a>
     );
   },
 }));
+
+const inboxLinkOptions = {
+  to: "/$companyId/inbox",
+  params: { companyId: "11111111-1111-4111-8111-111111111111" },
+} as const;
 
 vi.mock("../context/SidebarContext", () => ({
   useSidebar: () => sidebarState,
@@ -73,7 +81,7 @@ describe("SidebarNavItem", () => {
   }
 
   it("shows the full label and numeric badge when expanded", () => {
-    render(<SidebarNavItem to="/inbox" label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />);
+    render(<SidebarNavItem linkOptions={inboxLinkOptions} label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />);
 
     const label = Array.from(container.querySelectorAll("span")).find((el) => el.textContent === "Inbox");
     expect(label?.className).not.toContain("sr-only");
@@ -84,7 +92,7 @@ describe("SidebarNavItem", () => {
 
   it("clips the label (kept in flow for 1:1 row height) and collapses the badge to a dot in the rail", () => {
     sidebarState.collapsed = true;
-    render(<SidebarNavItem to="/inbox" label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />);
+    render(<SidebarNavItem linkOptions={inboxLinkOptions} label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />);
 
     // The label stays in the DOM/a11y tree (not display:none) so screen readers
     // still announce it. Unlike sr-only it is kept IN FLOW (zero-width, clipped,
@@ -101,7 +109,7 @@ describe("SidebarNavItem", () => {
     expect(container.textContent).not.toContain("28 ");
     expect(link().getAttribute("aria-label")).toBe("Inbox, 28 unread");
 
-    // Tooltip wraps the row; the trigger is the wrapper element so the NavLink's
+    // Tooltip wraps the row; the trigger is the wrapper element so the Link's
     // own flex className is preserved (PAP-10676), with the <a> nested inside it.
     expect(link().parentElement?.getAttribute("data-slot")).toBe("tooltip-trigger");
   });
@@ -110,7 +118,10 @@ describe("SidebarNavItem", () => {
     sidebarState.collapsed = true;
     render(
       <SidebarNavItem
-        to="/agents/codexcoder"
+        linkOptions={{
+          to: "/$companyId/agents/$agentId",
+          params: { companyId: "11111111-1111-4111-8111-111111111111", agentId: "codexcoder" },
+        }}
         label="CodexCoder"
         icon={Inbox}
         trailing={<span aria-label="Invalid reporting chain" />}
@@ -126,7 +137,7 @@ describe("SidebarNavItem", () => {
   it("keeps the full presentation while peeking even when collapsed", () => {
     sidebarState.collapsed = true;
     sidebarState.peeking = true;
-    render(<SidebarNavItem to="/inbox" label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />);
+    render(<SidebarNavItem linkOptions={inboxLinkOptions} label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />);
 
     const label = Array.from(container.querySelectorAll("span")).find((el) => el.textContent === "Inbox");
     expect(label?.className).not.toContain("sr-only");
@@ -141,7 +152,7 @@ describe("SidebarNavItem", () => {
     sidebarState.collapsed = true;
     render(
       <SidebarNavExpandedProvider>
-        <SidebarNavItem to="/inbox" label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />
+        <SidebarNavItem linkOptions={inboxLinkOptions} label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />
       </SidebarNavExpandedProvider>,
     );
 
@@ -156,7 +167,14 @@ describe("SidebarNavItem", () => {
 
   it("surfaces the live count in the rail aria-label", () => {
     sidebarState.collapsed = true;
-    render(<SidebarNavItem to="/dashboard" label="Dashboard" icon={Inbox} liveCount={3} />);
+    render(
+      <SidebarNavItem
+        linkOptions={{ to: "/$companyId/dashboard", params: { companyId: "11111111-1111-4111-8111-111111111111" } }}
+        label="Dashboard"
+        icon={Inbox}
+        liveCount={3}
+      />,
+    );
 
     expect(link().getAttribute("aria-label")).toBe("Dashboard, 3 live");
   });

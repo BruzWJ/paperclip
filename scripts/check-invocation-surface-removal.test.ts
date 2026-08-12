@@ -75,20 +75,6 @@ for (const token of [
   });
 }
 
-test("rejects a model-producing adapter readiness module by path", () => {
-  const root = fixtureRoot();
-  write(
-    root,
-    "packages/adapters/codex/src/server/test.ts",
-    "export async function probe() {}\n",
-  );
-  assert.ok(
-    invocationSurfaceRemovalViolations(root).some((violation) =>
-      violation.includes("model-producing adapter readiness module"),
-    ),
-  );
-});
-
 for (const effect of [
   ".insert(",
   ".update(",

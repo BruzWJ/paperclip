@@ -8,6 +8,7 @@ import {
   companyPortabilityExportSchema,
   companyPortabilityImportSchema,
   companyPortabilityPreviewSchema,
+  canonicalUuidSchema,
   createCompanySchema,
   updateCompanyBrandingSchema,
   updateCompanySchema,
@@ -16,7 +17,6 @@ import { badRequest, forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import {
   accessService,
-  agentService,
   companyArtifactsService,
   companyPortabilityService,
   companyService,
@@ -25,57 +25,69 @@ import {
 } from "../services/index.js";
 import type { StorageService } from "../storage/types.js";
 import type { OrdinaryTaskRuntime } from "../services/ordinary-task-runtime.js";
-import { assertBoard, assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
+import {
+  assertBoard,
+  assertCompanyAccess,
+  assertInstanceAdmin,
+} from "./authz.js";
 import { COMPANY_IMPORTS_ROUTE_PATH } from "./company-import-paths.js";
+import type { SecretsRuntimeConfig } from "../secrets/types.js";
 
 export function companyRoutes(
   db: Db,
   storage: StorageService | undefined,
   ordinaryTasks: OrdinaryTaskRuntime,
+  secretsRuntime: SecretsRuntimeConfig,
 ) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = companyService(db);
-  const agents = agentService(db);
-  const portability = companyPortabilityService(db, storage, ordinaryTasks);
+  const portability = companyPortabilityService(
+    db,
+    storage,
+    ordinaryTasks,
+    secretsRuntime,
+  );
   const access = accessService(db);
   const artifacts = companyArtifactsService(db, storage);
 
-  function parseBooleanQuery(value: unknown) {
-    return value === true || value === "true" || value === "1";
-  }
-
   function parseDateQuery(value: unknown, field: string) {
-    if (typeof value !== "string" || value.trim().length === 0) return undefined;
+    if (value === undefined) return undefined;
+    if (typeof value !== "string" || value.length === 0 || value.trim() !== value)
+      throw badRequest(`Invalid ${field} query value`);
     const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString() !== value) {
       throw badRequest(`Invalid ${field} query value`);
     }
     return parsed;
   }
 
   function parseIntegerQuery(value: unknown, field: string) {
-    if (value === undefined || value === null || value === "") return undefined;
-    const parsed = typeof value === "string" ? Number(value) : NaN;
-    if (!Number.isFinite(parsed)) {
+    if (value === undefined) return undefined;
+    if (typeof value !== "string" || !/^(?:0|[1-9]\d*)$/.test(value)) {
       throw badRequest(`Invalid ${field} query value`);
     }
-    return Math.floor(parsed);
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed)) throw badRequest(`Invalid ${field} query value`);
+    return parsed;
   }
 
-  const timelineQuerySchema = z.object({
-    from: z.string().optional(),
-    to: z.string().optional(),
-    userId: z.string().min(1).optional(),
-    goalId: z.string().uuid().optional(),
-    projectId: z.string().uuid().optional(),
-    taskId: z.string().uuid().optional(),
-    limit: z.string().optional(),
-    offset: z.string().optional(),
-  }).passthrough();
+  const timelineQuerySchema = z
+    .object({
+      from: z.string().optional(),
+      to: z.string().optional(),
+      userId: z.string().min(1).refine((value) => value.trim() === value).optional(),
+      goalId: canonicalUuidSchema.optional(),
+      projectId: canonicalUuidSchema.optional(),
+      taskId: canonicalUuidSchema.optional(),
+      limit: z.string().optional(),
+      offset: z.string().optional(),
+    })
+    .strict();
 
   function assertImportTargetAccess(
     req: Request,
-    target: { mode: "new_company" } | { mode: "existing_company"; companyId: string },
+    target:
+      { mode: "new_company" } | { mode: "existing_company"; companyId: string },
   ) {
     if (target.mode === "new_company") {
       assertInstanceAdmin(req);
@@ -110,7 +122,9 @@ export function companyRoutes(
       res.json(stats);
       return;
     }
-    const filtered = Object.fromEntries(Object.entries(stats).filter(([companyId]) => allowed.has(companyId)));
+    const filtered = Object.fromEntries(
+      Object.entries(stats).filter(([companyId]) => allowed.has(companyId)),
+    );
     res.json(filtered);
   });
 
@@ -131,7 +145,11 @@ export function companyRoutes(
       resource: { type: "company", companyId },
     });
     if (!companyScopeDecision.allowed) {
-      res.status(403).json({ error: "Timeline is outside this actor's authorization boundary" });
+      res
+        .status(403)
+        .json({
+          error: "Timeline is outside this actor's authorization boundary",
+        });
       return;
     }
 
@@ -199,14 +217,21 @@ export function companyRoutes(
     const rawImportBody: unknown = req.body;
     const importBody = companyPortabilityImportSchema.parse(rawImportBody);
     assertImportTargetAccess(req, importBody.target);
-    const activity = importedCompanyActivityContext(req.actor.userId, importBody.include ?? null);
-    const result = await portability.importBundle(importBody, req.actor.userId, {
-      authorizationActor: req.actor,
-      secretMutationActor: {
-        type: "user",
-        userId: req.actor.userId,
+    const activity = importedCompanyActivityContext(
+      req.actor.userId,
+      importBody.include ?? null,
+    );
+    const result = await portability.importBundle(
+      importBody,
+      req.actor.userId,
+      {
+        authorizationActor: req.actor,
+        secretMutationActor: {
+          type: "user",
+          userId: req.actor.userId,
+        },
       },
-    });
+    );
     await logImportedCompanyActivity(db, activity, result);
     res.json(result);
   });
@@ -231,11 +256,16 @@ export function companyRoutes(
     const companyId = req.params.companyId as string;
     assertBoardCompanyManagement(req, companyId);
     const body = companyPortabilityPreviewSchema.parse(req.body);
-    if (body.target.mode === "existing_company" && body.target.companyId !== companyId) {
+    if (
+      body.target.mode === "existing_company" &&
+      body.target.companyId !== companyId
+    ) {
       throw forbidden("Safe import route can only target the route company");
     }
     if (body.collisionStrategy === "replace") {
-      throw forbidden("Safe import route does not allow replace collision strategy");
+      throw forbidden(
+        "Safe import route does not allow replace collision strategy",
+      );
     }
     const preview = await portability.previewImport(body, {
       mode: "agent_safe",
@@ -249,11 +279,16 @@ export function companyRoutes(
     assertBoardCompanyManagement(req, companyId);
     assertBoard(req);
     const body = companyPortabilityImportSchema.parse(req.body);
-    if (body.target.mode === "existing_company" && body.target.companyId !== companyId) {
+    if (
+      body.target.mode === "existing_company" &&
+      body.target.companyId !== companyId
+    ) {
       throw forbidden("Safe import route can only target the route company");
     }
     if (body.collisionStrategy === "replace") {
-      throw forbidden("Safe import route does not allow replace collision strategy");
+      throw forbidden(
+        "Safe import route does not allow replace collision strategy",
+      );
     }
     const result = await portability.importBundle(body, req.actor.userId, {
       mode: "agent_safe",
@@ -299,7 +334,13 @@ export function companyRoutes(
       },
       req.actor.userId,
     );
-    await access.ensureMembership(company.id, "user", ownerPrincipalId, "owner", "active");
+    await access.ensureMembership(
+      company.id,
+      "user",
+      ownerPrincipalId,
+      "owner",
+      "active",
+    );
     await access.stampRoleGrants(
       company.id,
       ownerPrincipalId,
@@ -340,11 +381,13 @@ export function companyRoutes(
       const [archivedPausedCount] = await db
         .select({ value: countFn() })
         .from(agentsTable)
-        .where(and(
-          eq(agentsTable.companyId, companyId),
-          eq(agentsTable.status, "paused"),
-          eq(agentsTable.pauseReason, "company_archived"),
-        ));
+        .where(
+          and(
+            eq(agentsTable.companyId, companyId),
+            eq(agentsTable.status, "paused"),
+            eq(agentsTable.pauseReason, "company_archived"),
+          ),
+        );
       transitionsPausedToActiveWithArchivePausedAgents =
         Number(archivedPausedCount?.value ?? 0) > 0;
     }

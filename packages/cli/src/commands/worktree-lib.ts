@@ -23,11 +23,6 @@ export type WorktreeLocalPaths = {
   storageDir: string;
 };
 
-export type WorktreeUiBranding = {
-  name: string;
-  color: string;
-};
-
 function nonEmpty(value: string | null | undefined): string | null {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
@@ -60,7 +55,7 @@ function componentToHex(value: number): string {
 function hslToHex(hue: number, saturation: number, lightness: number): string {
   const s = saturation / 100;
   const l = lightness / 100;
-  const c = (1 - Math.abs((2 * l) - 1)) * s;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
   const h = ((hue % 360) + 360) % 360;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = l - c / 2;
@@ -103,11 +98,7 @@ export function resolveWorktreeLocalPaths(input: {
     expandHomePrefix(input.homeDir ?? DEFAULT_WORKTREE_HOME),
   );
   const repoConfigDir = path.resolve(cwd, ".paperclip");
-  const instanceRoot = path.resolve(
-    homeDir,
-    "instances",
-    input.instanceId,
-  );
+  const instanceRoot = path.resolve(homeDir, "instances", input.instanceId);
   return {
     cwd,
     repoConfigDir,
@@ -122,11 +113,7 @@ export function resolveWorktreeLocalPaths(input: {
     instanceId: input.instanceId,
     instanceRoot,
     logDir: path.resolve(instanceRoot, "logs"),
-    secretsKeyFilePath: path.resolve(
-      instanceRoot,
-      "secrets",
-      "master.key",
-    ),
+    secretsKeyFilePath: path.resolve(instanceRoot, "secrets", "master.key"),
     storageDir: path.resolve(instanceRoot, "data", "storage"),
   };
 }
@@ -150,7 +137,6 @@ export function buildWorktreeConfig(input: {
     server: {
       exposure: "private",
       bind: "loopback",
-      host: "127.0.0.1",
       port: input.serverPort,
       allowedHostnames: [],
       serveUi: true,
@@ -180,9 +166,7 @@ export function buildWorktreeConfig(input: {
 }
 
 function formatEnvValue(value: string): string {
-  return /^[A-Za-z0-9_./:@-]+$/.test(value)
-    ? value
-    : JSON.stringify(value);
+  return /^[A-Za-z0-9_./:@-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
 export function renderPinnedWorktreeEnv(input: {

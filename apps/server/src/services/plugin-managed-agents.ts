@@ -23,7 +23,11 @@ import {
   type AgentLifecyclePostCommit,
   type AgentSuspensionService,
 } from "./agents.js";
-import { logActivity } from "./activity-log.js";
+import {
+  persistActivityLog,
+  publishCommittedActivity,
+  type PersistedActivityLog,
+} from "./activity-log.js";
 import {
   createRuntimeAgentConfigurationService,
   RuntimeAgentConfigurationDenied,
@@ -34,14 +38,11 @@ import {
   type HireRejectionAgentTerminationInput,
 } from "./approvals.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
-import type {
-  RequestedAgentRunCancellations,
-} from "./task-execution-cancellation.js";
+import type { RequestedAgentRunCancellations } from "./task-execution-cancellation.js";
 import { lockCompanyAgentGraph } from "./agent-org-graph-lock.js";
 
 const MANAGED_AGENT_ENTITY_TYPE = "managed_agent";
-type PluginManagedAgentBinding =
-  typeof pluginManagedResources.$inferSelect;
+type PluginManagedAgentBinding = typeof pluginManagedResources.$inferSelect;
 
 async function lockPairedManagedAgentEntity(
   tx: TaskSessionDbTransaction,
@@ -94,6 +95,7 @@ interface PausePluginManagedAgentsIntoTriageInput {
 interface PausePluginManagedAgentsIntoTriageResult {
   triagePausedAgentIds: string[];
   suspensionRequests: RequestedAgentRunCancellations[];
+  activities: PersistedActivityLog[];
 }
 
 export async function getPluginManagedAgentBinding(
@@ -115,9 +117,7 @@ export async function getPluginManagedAgentBinding(
       .limit(2)
       .for("share");
     if (rows.length > 1) {
-      throw conflict(
-        "Agent has multiple plugin-managed lifecycle bindings",
-      );
+      throw conflict("Agent has multiple plugin-managed lifecycle bindings");
     }
     const binding = rows[0] ?? null;
     if (binding) {
@@ -135,7 +135,7 @@ export async function adoptPluginManagedAgentFromBoard(
     actorUserId: string;
   },
 ) {
-  return db.transaction(async (tx) => {
+  const committed = await db.transaction(async (tx) => {
     const now = new Date();
     const graph = await lockCompanyAgentGraph(tx, input.companyId);
     const bindingRows = await tx
@@ -178,9 +178,12 @@ export async function adoptPluginManagedAgentFromBoard(
       });
     }
     if (agent.status !== "paused") {
-      throw conflict("Plugin-managed agent must remain paused during adoption", {
-        code: "plugin_managed_agent_triage_state_conflict",
-      });
+      throw conflict(
+        "Plugin-managed agent must remain paused during adoption",
+        {
+          code: "plugin_managed_agent_triage_state_conflict",
+        },
+      );
     }
 
     const audit = {
@@ -215,7 +218,9 @@ export async function adoptPluginManagedAgentFromBoard(
       .returning()
       .then((rows) => rows[0] ?? null);
     if (!adopted) {
-      throw conflict("Plugin-managed agent adoption lost its locked transition");
+      throw conflict(
+        "Plugin-managed agent adoption lost its locked transition",
+      );
     }
     const adoptedEntity = await tx
       .update(pluginEntities)
@@ -233,7 +238,7 @@ export async function adoptPluginManagedAgentFromBoard(
         "Plugin-managed agent adoption lost its managed-entity transition",
       );
     }
-    await logActivity(tx as unknown as Db, {
+    const activity = await persistActivityLog(tx as unknown as Db, {
       companyId: binding.companyId,
       actorType: "user",
       actorId: input.actorUserId,
@@ -242,8 +247,10 @@ export async function adoptPluginManagedAgentFromBoard(
       entityId: binding.resourceId,
       details: audit,
     });
-    return adopted;
+    return { adopted, activity };
   });
+  publishCommittedActivity(committed.activity);
+  return committed.adopted;
 }
 
 async function recordPluginManagedAgentTerminationInTransaction(
@@ -317,7 +324,7 @@ async function recordPluginManagedAgentTerminationInTransaction(
       "Plugin-managed agent termination lost its managed-entity transition",
     );
   }
-  await logActivity(tx as unknown as Db, {
+  const activity = await persistActivityLog(tx as unknown as Db, {
     companyId: input.binding.companyId,
     actorType: "user",
     actorId: input.actorUserId,
@@ -326,7 +333,7 @@ async function recordPluginManagedAgentTerminationInTransaction(
     entityId: input.binding.resourceId,
     details: audit,
   });
-  return terminatedBinding;
+  return { terminatedBinding, activity };
 }
 
 export async function terminateAgentForHireRejectionInTransaction(
@@ -373,14 +380,18 @@ export async function terminateAgentForHireRejectionInTransaction(
   );
   const binding = bindingRows[0];
   if (termination && binding) {
-    await recordPluginManagedAgentTerminationInTransaction(tx, {
-      binding,
-      previousAgentStatus: previousAgent?.status ?? "missing",
-      actorUserId: input.decidedByUserId,
-      event: "plugin_managed_agent_terminated_by_hire_rejection",
-      sourceId: input.sourceId,
-      now: input.now,
-    });
+    const recorded = await recordPluginManagedAgentTerminationInTransaction(
+      tx,
+      {
+        binding,
+        previousAgentStatus: previousAgent?.status ?? "missing",
+        actorUserId: input.decidedByUserId,
+        event: "plugin_managed_agent_terminated_by_hire_rejection",
+        sourceId: input.sourceId,
+        now: input.now,
+      },
+    );
+    termination.activities.push(recorded.activity);
   }
   return termination;
 }
@@ -421,6 +432,7 @@ export async function terminatePluginManagedAgentFromBoard(
         dispatchRefIds: [] as string[],
         cancellationRequests: [] as RequestedAgentRunCancellations[],
         suspensionRequests: [] as RequestedAgentRunCancellations[],
+        activities: [] as PersistedActivityLog[],
       };
     }
 
@@ -429,8 +441,7 @@ export async function terminatePluginManagedAgentFromBoard(
     );
     if (!agent) throw notFound("Agent not found");
 
-    const sourceId =
-      `plugin-managed-agent-board-termination:${binding.id}:${agent.id}`;
+    const sourceId = `plugin-managed-agent-board-termination:${binding.id}:${agent.id}`;
     const withdrawn = await withdrawOpenHireApprovalForAgentInTransaction(
       tx,
       {
@@ -463,17 +474,19 @@ export async function terminatePluginManagedAgentFromBoard(
       );
     }
 
-    const terminatedBinding =
-      await recordPluginManagedAgentTerminationInTransaction(tx, {
+    const recorded = await recordPluginManagedAgentTerminationInTransaction(
+      tx,
+      {
         binding,
         previousAgentStatus: agent.status,
         actorUserId: input.actorUserId,
         event: "plugin_managed_agent_terminated_by_board",
         sourceId,
         now,
-      });
+      },
+    );
     return {
-      terminatedBinding,
+      terminatedBinding: recorded.terminatedBinding,
       dispatchRefIds: termination.dispatchRefIds,
       cancellationRequests: termination.cancellationRequests
         ? [termination.cancellationRequests]
@@ -481,15 +494,21 @@ export async function terminatePluginManagedAgentFromBoard(
       suspensionRequests: termination.suspensionRequests
         ? [termination.suspensionRequests]
         : [],
+      activities: [...termination.activities, recorded.activity],
     };
   });
+  for (const activity of committed.activities) {
+    publishCommittedActivity(activity);
+  }
   for (const cancellationRequests of committed.cancellationRequests) {
-    await postCommit.taskExecutionCancellation
-      .reconcileRequestedCancellations(cancellationRequests);
+    await postCommit.taskExecutionCancellation.reconcileRequestedCancellations(
+      cancellationRequests,
+    );
   }
   for (const suspensionRequests of committed.suspensionRequests) {
-    await postCommit.taskExecutionCancellation
-      .reconcileRequestedCancellations(suspensionRequests);
+    await postCommit.taskExecutionCancellation.reconcileRequestedCancellations(
+      suspensionRequests,
+    );
   }
   for (const refId of committed.dispatchRefIds) {
     await postCommit.dispatchRef(refId);
@@ -508,157 +527,154 @@ export async function pausePluginManagedAgentsIntoTriageInTransaction(
   suspension: AgentSuspensionService,
   now = new Date(),
 ): Promise<PausePluginManagedAgentsIntoTriageResult> {
-    if (input.actorType === "user" && !input.actorId) {
+  if (input.actorType === "user" && !input.actorId) {
+    throw conflict("Board triage requires the exact authenticated user actor");
+  }
+  const candidateCompanies = await tx
+    .select({ companyId: pluginManagedResources.companyId })
+    .from(pluginManagedResources)
+    .where(
+      and(
+        eq(pluginManagedResources.pluginId, input.pluginId),
+        eq(pluginManagedResources.resourceKind, "agent"),
+        eq(pluginManagedResources.lifecycleState, "active"),
+      ),
+    )
+    .orderBy(asc(pluginManagedResources.companyId));
+  const lockedGraphs = new Map<
+    string,
+    Awaited<ReturnType<typeof lockCompanyAgentGraph>>
+  >();
+  for (const companyId of [
+    ...new Set(candidateCompanies.map((row) => row.companyId)),
+  ]) {
+    lockedGraphs.set(companyId, await lockCompanyAgentGraph(tx, companyId));
+  }
+  const bindings = await tx
+    .select()
+    .from(pluginManagedResources)
+    .where(
+      and(
+        eq(pluginManagedResources.pluginId, input.pluginId),
+        eq(pluginManagedResources.resourceKind, "agent"),
+        eq(pluginManagedResources.lifecycleState, "active"),
+      ),
+    )
+    .orderBy(
+      asc(pluginManagedResources.companyId),
+      asc(pluginManagedResources.resourceId),
+      asc(pluginManagedResources.id),
+    )
+    .for("update");
+  const triagePausedAgentIds: string[] = [];
+  const suspensionRequests: RequestedAgentRunCancellations[] = [];
+  const activities: PersistedActivityLog[] = [];
+
+  for (const binding of bindings) {
+    if (binding.pluginKey !== input.pluginKey) {
       throw conflict(
-        "Board triage requires the exact authenticated user actor",
+        "Plugin-managed binding crossed its immutable plugin installation key",
       );
     }
-    const candidateCompanies = await tx
-      .select({ companyId: pluginManagedResources.companyId })
-      .from(pluginManagedResources)
+    const lockedGraph = lockedGraphs.get(binding.companyId);
+    if (!lockedGraph) {
+      throw conflict(
+        "Plugin-managed agent binding changed companies during lifecycle locking",
+      );
+    }
+    const agent = lockedGraph.agents.find(
+      (candidate) => candidate.id === binding.resourceId,
+    );
+    if (!agent || agent.status === "terminated") {
+      throw conflict(
+        "Active plugin-managed binding has no live agent target to move into board triage",
+      );
+    }
+    const pairedEntity = await lockPairedManagedAgentEntity(tx, binding);
+    const actorType = input.actorType ?? "system";
+    const actorId = input.actorId ?? input.pluginId;
+    const audit = {
+      event: "plugin_managed_agent_moved_to_board_triage",
+      pluginInstallationId: input.pluginId,
+      pluginKey: input.pluginKey,
+      resourceKey: binding.resourceKey,
+      resourceId: binding.resourceId,
+      previousAgentStatus: agent.status,
+      previousPauseReason: agent.pauseReason,
+      reason: input.reason,
+      actorType,
+      actorId,
+      occurredAt: now.toISOString(),
+    };
+
+    const pausedAgent = await tx
+      .update(agents)
+      .set({
+        status: "paused",
+        pauseReason: "system",
+        pausedAt: now,
+        errorReason: null,
+        updatedAt: now,
+      })
       .where(
         and(
-          eq(pluginManagedResources.pluginId, input.pluginId),
-          eq(pluginManagedResources.resourceKind, "agent"),
+          eq(agents.id, agent.id),
+          eq(agents.companyId, binding.companyId),
+          ne(agents.status, "terminated"),
+        ),
+      )
+      .returning({ id: agents.id })
+      .then((rows) => rows[0] ?? null);
+    if (!pausedAgent) {
+      throw conflict(
+        "Plugin-managed agent triage lost its locked agent transition",
+      );
+    }
+    const pausedResource = await tx
+      .update(pluginManagedResources)
+      .set({
+        lifecycleState: "triage_paused",
+        lifecycleReason: input.reason,
+        triagePausedAt: now,
+        lifecycleActorType: actorType,
+        lifecycleActorId: actorId,
+        lifecycleAudit: audit,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(pluginManagedResources.id, binding.id),
           eq(pluginManagedResources.lifecycleState, "active"),
         ),
       )
-      .orderBy(asc(pluginManagedResources.companyId));
-    const lockedGraphs = new Map<
-      string,
-      Awaited<ReturnType<typeof lockCompanyAgentGraph>>
-    >();
-    for (const companyId of [
-      ...new Set(candidateCompanies.map((row) => row.companyId)),
-    ]) {
-      lockedGraphs.set(
-        companyId,
-        await lockCompanyAgentGraph(tx, companyId),
+      .returning({ id: pluginManagedResources.id })
+      .then((rows) => rows[0] ?? null);
+    if (!pausedResource) {
+      throw conflict(
+        "Plugin-managed agent triage lost its locked binding transition",
       );
     }
-    const bindings = await tx
-      .select()
-      .from(pluginManagedResources)
+    const pausedEntity = await tx
+      .update(pluginEntities)
+      .set({
+        status: "triage_paused",
+        updatedAt: now,
+      })
       .where(
         and(
-          eq(pluginManagedResources.pluginId, input.pluginId),
-          eq(pluginManagedResources.resourceKind, "agent"),
-          eq(pluginManagedResources.lifecycleState, "active"),
+          eq(pluginEntities.id, pairedEntity.id),
+          eq(pluginEntities.status, "active"),
         ),
       )
-      .orderBy(
-        asc(pluginManagedResources.companyId),
-        asc(pluginManagedResources.resourceId),
-        asc(pluginManagedResources.id),
-      )
-      .for("update");
-    const triagePausedAgentIds: string[] = [];
-    const suspensionRequests: RequestedAgentRunCancellations[] = [];
-
-    for (const binding of bindings) {
-      if (binding.pluginKey !== input.pluginKey) {
-        throw conflict(
-          "Plugin-managed binding crossed its immutable plugin installation key",
-        );
-      }
-      const lockedGraph = lockedGraphs.get(binding.companyId);
-      if (!lockedGraph) {
-        throw conflict(
-          "Plugin-managed agent binding changed companies during lifecycle locking",
-        );
-      }
-      const agent = lockedGraph.agents.find(
-        (candidate) => candidate.id === binding.resourceId,
+      .returning({ id: pluginEntities.id })
+      .then((rows) => rows[0] ?? null);
+    if (!pausedEntity) {
+      throw conflict(
+        "Plugin-managed agent triage lost its managed-entity transition",
       );
-      if (!agent || agent.status === "terminated") {
-        throw conflict(
-          "Active plugin-managed binding has no live agent target to move into board triage",
-        );
-      }
-      const pairedEntity = await lockPairedManagedAgentEntity(tx, binding);
-      const actorType = input.actorType ?? "system";
-      const actorId = input.actorId ?? input.pluginId;
-      const audit = {
-        event: "plugin_managed_agent_moved_to_board_triage",
-        pluginInstallationId: input.pluginId,
-        pluginKey: input.pluginKey,
-        resourceKey: binding.resourceKey,
-        resourceId: binding.resourceId,
-        previousAgentStatus: agent.status,
-        previousPauseReason: agent.pauseReason,
-        reason: input.reason,
-        actorType,
-        actorId,
-        occurredAt: now.toISOString(),
-      };
-
-      const pausedAgent = await tx
-        .update(agents)
-        .set({
-          status: "paused",
-          pauseReason: "system",
-          pausedAt: now,
-          errorReason: null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(agents.id, agent.id),
-            eq(agents.companyId, binding.companyId),
-            ne(agents.status, "terminated"),
-          ),
-        )
-        .returning({ id: agents.id })
-        .then((rows) => rows[0] ?? null);
-      if (!pausedAgent) {
-        throw conflict(
-          "Plugin-managed agent triage lost its locked agent transition",
-        );
-      }
-      const pausedResource = await tx
-        .update(pluginManagedResources)
-        .set({
-          lifecycleState: "triage_paused",
-          lifecycleReason: input.reason,
-          triagePausedAt: now,
-          lifecycleActorType: actorType,
-          lifecycleActorId: actorId,
-          lifecycleAudit: audit,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(pluginManagedResources.id, binding.id),
-            eq(pluginManagedResources.lifecycleState, "active"),
-          ),
-        )
-        .returning({ id: pluginManagedResources.id })
-        .then((rows) => rows[0] ?? null);
-      if (!pausedResource) {
-        throw conflict(
-          "Plugin-managed agent triage lost its locked binding transition",
-        );
-      }
-      const pausedEntity = await tx
-        .update(pluginEntities)
-        .set({
-          status: "triage_paused",
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(pluginEntities.id, pairedEntity.id),
-            eq(pluginEntities.status, "active"),
-          ),
-        )
-        .returning({ id: pluginEntities.id })
-        .then((rows) => rows[0] ?? null);
-      if (!pausedEntity) {
-        throw conflict(
-          "Plugin-managed agent triage lost its managed-entity transition",
-        );
-      }
-      await logActivity(tx as unknown as Db, {
+    }
+    activities.push(
+      await persistActivityLog(tx as unknown as Db, {
         companyId: binding.companyId,
         actorType,
         actorId,
@@ -666,35 +682,38 @@ export async function pausePluginManagedAgentsIntoTriageInTransaction(
         entityType: "agent",
         entityId: agent.id,
         details: audit,
-      });
-      triagePausedAgentIds.push(agent.id);
-    }
+      }),
+    );
+    triagePausedAgentIds.push(agent.id);
+  }
 
-    const pausedByCompany = new Map<string, string[]>();
-    for (const binding of bindings) {
-      if (!triagePausedAgentIds.includes(binding.resourceId)) continue;
-      const agentIds = pausedByCompany.get(binding.companyId) ?? [];
-      agentIds.push(binding.resourceId);
-      pausedByCompany.set(binding.companyId, agentIds);
-    }
-    for (const [companyId, agentIds] of pausedByCompany) {
-      suspensionRequests.push(
-        await suspension.requestAgentSuspensionsInTransaction(tx, {
-          companyId,
-          agentIds,
-          reason: input.reason,
-          actor: input.actorType === "user" && input.actorId
+  const pausedByCompany = new Map<string, string[]>();
+  for (const binding of bindings) {
+    if (!triagePausedAgentIds.includes(binding.resourceId)) continue;
+    const agentIds = pausedByCompany.get(binding.companyId) ?? [];
+    agentIds.push(binding.resourceId);
+    pausedByCompany.set(binding.companyId, agentIds);
+  }
+  for (const [companyId, agentIds] of pausedByCompany) {
+    suspensionRequests.push(
+      await suspension.requestAgentSuspensionsInTransaction(tx, {
+        companyId,
+        agentIds,
+        reason: input.reason,
+        actor:
+          input.actorType === "user" && input.actorId
             ? { kind: "user", userId: input.actorId }
             : { kind: "system" },
-          now,
-        }),
-      );
-    }
+        now,
+      }),
+    );
+  }
 
-    return {
-      triagePausedAgentIds,
-      suspensionRequests,
-    };
+  return {
+    triagePausedAgentIds,
+    suspensionRequests,
+    activities,
+  };
 }
 
 interface PluginManagedAgentServiceOptions {
@@ -756,7 +775,9 @@ export function pluginManagedAgentService(
   });
 
   function declarationFor(agentKey: string) {
-    const declaration = options.manifest.agents?.find((agent) => agent.agentKey === agentKey);
+    const declaration = options.manifest.agents?.find(
+      (agent) => agent.agentKey === agentKey,
+    );
     if (!declaration) {
       throw notFound(`Managed agent declaration not found: ${agentKey}`);
     }
@@ -985,8 +1006,12 @@ export function pluginManagedAgentService(
     };
   }
 
-  async function createManagedAgent(companyId: string, declaration: PluginManagedAgentDeclaration) {
+  async function createManagedAgent(
+    companyId: string,
+    declaration: PluginManagedAgentDeclaration,
+  ) {
     const committed = await db.transaction(async (tx) => {
+      const activities: PersistedActivityLog[] = [];
       const company = await tx
         .select()
         .from(companies)
@@ -1003,8 +1028,7 @@ export function pluginManagedAgentService(
           pluginInstallationId: options.pluginId,
         },
         source: "plugin_control",
-        idempotencyKey:
-          `plugin_managed_agent:${options.pluginId}:${companyId}:${declaration.agentKey}`,
+        idempotencyKey: `plugin_managed_agent:${options.pluginId}:${companyId}:${declaration.agentKey}`,
         configuration: {
           name: declaration.displayName,
           title: declaration.title ?? null,
@@ -1046,21 +1070,23 @@ export function pluginManagedAgentService(
       }
       const approvalId = createdResult.approvalId;
       if (approvalId && !createdResult.retried) {
-        await logActivity(tx as unknown as Db, {
-          companyId,
-          actorType: "plugin",
-          actorId: options.pluginId,
-          action: "approval.created",
-          entityType: "approval",
-          entityId: approvalId,
-          details: {
-            type: "hire_agent",
-            linkedAgentId: created.id,
-            runtimeAgentConfigurationAuditId: createdResult.auditId,
-            sourcePluginKey: pluginKey,
-            managedResourceKey: declaration.agentKey,
-          },
-        });
+        activities.push(
+          await persistActivityLog(tx as unknown as Db, {
+            companyId,
+            actorType: "plugin",
+            actorId: options.pluginId,
+            action: "approval.created",
+            entityType: "approval",
+            entityId: approvalId,
+            details: {
+              type: "hire_agent",
+              linkedAgentId: created.id,
+              runtimeAgentConfigurationAuditId: createdResult.auditId,
+              sourcePluginKey: pluginKey,
+              managedResourceKey: declaration.agentKey,
+            },
+          }),
+        );
       }
       await upsertBinding(
         companyId,
@@ -1073,28 +1099,36 @@ export function pluginManagedAgentService(
         tx as unknown as Db,
       );
       if (!createdResult.retried) {
-        await logActivity(tx as unknown as Db, {
-          companyId,
-          actorType: "plugin",
-          actorId: options.pluginId,
-          action: "plugin.managed_agent.created",
-          entityType: "agent",
-          entityId: created.id,
-          details: {
-            sourcePluginKey: pluginKey,
-            managedResourceKey: declaration.agentKey,
-            runtimeAgentConfigurationAuditId: createdResult.auditId,
-            requiresApproval: company.requireBoardApprovalForNewAgents,
-            approvalId,
-          },
-        });
+        activities.push(
+          await persistActivityLog(tx as unknown as Db, {
+            companyId,
+            actorType: "plugin",
+            actorId: options.pluginId,
+            action: "plugin.managed_agent.created",
+            entityType: "agent",
+            entityId: created.id,
+            details: {
+              sourcePluginKey: pluginKey,
+              managedResourceKey: declaration.agentKey,
+              runtimeAgentConfigurationAuditId: createdResult.auditId,
+              requiresApproval: company.requireBoardApprovalForNewAgents,
+              approvalId,
+            },
+          }),
+        );
       }
       return {
         agentId: created.id,
         approvalId,
-        status: createdResult.retried ? "resolved" as const : "created" as const,
+        activities,
+        status: createdResult.retried
+          ? ("resolved" as const)
+          : ("created" as const),
       };
     });
+    for (const activity of committed.activities) {
+      publishCommittedActivity(activity);
+    }
     const created = await agentSvc.getById(committed.agentId);
     if (!created) {
       throw notFound("Managed agent was not persisted");
@@ -1168,7 +1202,8 @@ export function pluginManagedAgentService(
           current.agent!.id,
           {},
           tx as unknown as Db,
-        ));
+        ),
+      );
       return current;
     }
     return createManagedAgent(companyId, declaration);

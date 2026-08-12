@@ -1,9 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
-import { type Agent, type Project, type RoutineVariable } from "@paperclipai/shared";
+import {
+  type Agent,
+  type Project,
+  type RoutineVariable,
+} from "@paperclipai/shared";
 import { AgentIcon } from "./AgentIconPicker";
-import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
-import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
-import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
+import {
+  InlineEntitySelector,
+  type InlineEntityOption,
+} from "./InlineEntitySelector";
+import {
+  getRecentAssigneeIds,
+  sortAgentsByRecency,
+  trackRecentAssignee,
+} from "../lib/recent-assignees";
+import {
+  getRecentProjectIds,
+  trackRecentProject,
+} from "../lib/recent-projects";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,7 +39,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 function buildInitialValues(variables: RoutineVariable[]) {
-  return Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue ?? ""]));
+  return Object.fromEntries(
+    variables.map((variable) => [variable.name, variable.defaultValue ?? ""]),
+  );
 }
 
 function buildInitialRunSelection(input: {
@@ -39,15 +55,13 @@ function buildInitialRunSelection(input: {
 }
 
 function isMissingRequiredValue(value: unknown) {
-  return value == null || (typeof value === "string" && value.trim().length === 0);
+  return (
+    value == null || (typeof value === "string" && value.trim().length === 0)
+  );
 }
 
 function shouldUseDateInput(variable: RoutineVariable) {
   return variable.type === "date";
-}
-
-export function routineRunNeedsConfiguration(input: { variables: RoutineVariable[] }) {
-  return input.variables.length > 0;
 }
 
 export interface RoutineRunDialogSubmitData {
@@ -80,12 +94,15 @@ export function RoutineRunVariablesDialog({
   onSubmit: (data: RoutineRunDialogSubmitData) => void;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
-  const [selection, setSelection] = useState(() => buildInitialRunSelection({
-    defaultAssigneeAgentId,
-    defaultProjectId,
-  }));
+  const [selection, setSelection] = useState(() =>
+    buildInitialRunSelection({
+      defaultAssigneeAgentId,
+      defaultProjectId,
+    }),
+  );
   const selectedProject = useMemo(
-    () => projects.find((project) => project.id === selection.projectId) ?? null,
+    () =>
+      projects.find((project) => project.id === selection.projectId) ?? null,
     [projects, selection.projectId],
   );
   const recentAssigneeIds = useMemo(() => getRecentAssigneeIds(), [open]);
@@ -103,20 +120,24 @@ export function RoutineRunVariablesDialog({
     [agents, recentAssigneeIds],
   );
   const projectOptions = useMemo<InlineEntityOption[]>(
-    () => projects.map((project) => ({
-      id: project.id,
-      label: project.name,
-      searchText: project.description ?? "",
-    })),
+    () =>
+      projects.map((project) => ({
+        id: project.id,
+        label: project.name,
+        searchText: project.description ?? "",
+      })),
     [projects],
   );
   const currentAssignee = selection.assigneeAgentId
-    ? agents.find((agent) => agent.id === selection.assigneeAgentId) ?? null
+    ? (agents.find((agent) => agent.id === selection.assigneeAgentId) ?? null)
     : null;
   useEffect(() => {
     if (!open) return;
     setValues(buildInitialValues(variables));
-    const nextSelection = buildInitialRunSelection({ defaultAssigneeAgentId, defaultProjectId });
+    const nextSelection = buildInitialRunSelection({
+      defaultAssigneeAgentId,
+      defaultProjectId,
+    });
     setSelection(nextSelection);
   }, [defaultAssigneeAgentId, defaultProjectId, open, variables]);
 
@@ -130,11 +151,13 @@ export function RoutineRunVariablesDialog({
   );
 
   const canSubmit =
-    selection.assigneeAgentId.trim().length > 0 &&
-    missingRequired.length === 0;
+    selection.assigneeAgentId.trim().length > 0 && missingRequired.length === 0;
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !isPending && onOpenChange(next)}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => !isPending && onOpenChange(next)}
+    >
       <DialogContent className="flex h-(--sz-calc-18) max-h-(--sz-calc-18) max-w-xl flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-(--sz-calc-20)">
         <DialogHeader className="shrink-0 border-b border-border/60 px-6 pb-4 pr-12 pt-6">
           {routineName && (
@@ -142,7 +165,8 @@ export function RoutineRunVariablesDialog({
           )}
           <DialogTitle>Run routine</DialogTitle>
           <DialogDescription>
-            Choose the agent and optional project for this one run. Routine defaults are prefilled and won&apos;t be changed.
+            Choose the agent and optional project for this one run. Routine
+            defaults are prefilled and won&apos;t be changed.
           </DialogDescription>
         </DialogHeader>
 
@@ -167,22 +191,35 @@ export function RoutineRunVariablesDialog({
                   option ? (
                     currentAssignee ? (
                       <>
-                        <AgentIcon icon={currentAssignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <AgentIcon
+                          icon={currentAssignee.icon}
+                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        />
                         <span className="truncate">{option.label}</span>
                       </>
                     ) : (
                       <span className="truncate">{option.label}</span>
                     )
                   ) : (
-                    <span className="text-muted-foreground">Select an agent</span>
+                    <span className="text-muted-foreground">
+                      Select an agent
+                    </span>
                   )
                 }
                 renderOption={(option) => {
-                  if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const assignee = agents.find((agent) => agent.id === option.id);
+                  if (!option.id)
+                    return <span className="truncate">{option.label}</span>;
+                  const assignee = agents.find(
+                    (agent) => agent.id === option.id,
+                  );
                   return (
                     <>
-                      {assignee ? <AgentIcon icon={assignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                      {assignee ? (
+                        <AgentIcon
+                          icon={assignee.icon}
+                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        />
+                      ) : null}
                       <span className="truncate">{option.label}</span>
                     </>
                   );
@@ -209,7 +246,10 @@ export function RoutineRunVariablesDialog({
                     <>
                       <span
                         className="h-3.5 w-3.5 shrink-0 rounded-sm"
-                        style={{ backgroundColor: selectedProject.color ?? "var(--project-none)" }}
+                        style={{
+                          backgroundColor:
+                            selectedProject.color ?? "var(--project-none)",
+                        }}
                       />
                       <span className="truncate">{option.label}</span>
                     </>
@@ -218,13 +258,19 @@ export function RoutineRunVariablesDialog({
                   )
                 }
                 renderOption={(option) => {
-                  if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const project = projects.find((entry) => entry.id === option.id);
+                  if (!option.id)
+                    return <span className="truncate">{option.label}</span>;
+                  const project = projects.find(
+                    (entry) => entry.id === option.id,
+                  );
                   return (
                     <>
                       <span
                         className="h-3.5 w-3.5 shrink-0 rounded-sm"
-                        style={{ backgroundColor: project?.color ?? "var(--project-none)" }}
+                        style={{
+                          backgroundColor:
+                            project?.color ?? "var(--project-none)",
+                        }}
                       />
                       <span className="truncate">{option.label}</span>
                     </>
@@ -248,16 +294,34 @@ export function RoutineRunVariablesDialog({
                   <Textarea
                     id={fieldId}
                     rows={4}
-                    value={typeof values[variable.name] === "string" ? values[variable.name] as string : ""}
-                    onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
+                    value={
+                      typeof values[variable.name] === "string"
+                        ? (values[variable.name] as string)
+                        : ""
+                    }
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        [variable.name]: event.target.value,
+                      }))
+                    }
                   />
                 ) : variable.type === "boolean" ? (
                   <Select
-                    value={values[variable.name] === true ? "true" : values[variable.name] === false ? "false" : "__unset__"}
-                    onValueChange={(next) => setValues((current) => ({
-                      ...current,
-                      [variable.name]: next === "__unset__" ? "" : next === "true",
-                    }))}
+                    value={
+                      values[variable.name] === true
+                        ? "true"
+                        : values[variable.name] === false
+                          ? "false"
+                          : "__unset__"
+                    }
+                    onValueChange={(next) =>
+                      setValues((current) => ({
+                        ...current,
+                        [variable.name]:
+                          next === "__unset__" ? "" : next === "true",
+                      }))
+                    }
                   >
                     <SelectTrigger id={fieldId} aria-label={fieldLabel}>
                       <SelectValue />
@@ -270,11 +334,18 @@ export function RoutineRunVariablesDialog({
                   </Select>
                 ) : variable.type === "select" ? (
                   <Select
-                    value={typeof values[variable.name] === "string" && values[variable.name] ? values[variable.name] as string : "__unset__"}
-                    onValueChange={(next) => setValues((current) => ({
-                      ...current,
-                      [variable.name]: next === "__unset__" ? "" : next,
-                    }))}
+                    value={
+                      typeof values[variable.name] === "string" &&
+                      values[variable.name]
+                        ? (values[variable.name] as string)
+                        : "__unset__"
+                    }
+                    onValueChange={(next) =>
+                      setValues((current) => ({
+                        ...current,
+                        [variable.name]: next === "__unset__" ? "" : next,
+                      }))
+                    }
                   >
                     <SelectTrigger id={fieldId} aria-label={fieldLabel}>
                       <SelectValue placeholder="Choose a value" />
@@ -282,7 +353,9 @@ export function RoutineRunVariablesDialog({
                     <SelectContent>
                       <SelectItem value="__unset__">No value</SelectItem>
                       {variable.options.map((option) => (
-                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -290,21 +363,38 @@ export function RoutineRunVariablesDialog({
                   <Input
                     id={fieldId}
                     type="date"
-                    value={values[variable.name] == null ? "" : String(values[variable.name])}
-                    onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
+                    value={
+                      values[variable.name] == null
+                        ? ""
+                        : String(values[variable.name])
+                    }
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        [variable.name]: event.target.value,
+                      }))
+                    }
                   />
                 ) : (
                   <Input
                     id={fieldId}
                     type={variable.type === "number" ? "number" : "text"}
-                    value={values[variable.name] == null ? "" : String(values[variable.name])}
-                    onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
+                    value={
+                      values[variable.name] == null
+                        ? ""
+                        : String(values[variable.name])
+                    }
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        [variable.name]: event.target.value,
+                      }))
+                    }
                   />
                 )}
               </div>
             );
           })}
-
         </div>
 
         <DialogFooter
@@ -312,9 +402,13 @@ export function RoutineRunVariablesDialog({
           className="shrink-0 border-t border-border/60 bg-background px-6 pb-(--sz-calc-19) pt-4"
         >
           {isPending ? (
-            <p role="status" className="mr-auto text-xs text-muted-foreground">Starting routine run…</p>
+            <p role="status" className="mr-auto text-xs text-muted-foreground">
+              Starting routine run…
+            </p>
           ) : !selection.assigneeAgentId ? (
-            <p className="mr-auto text-xs text-amber-600">Default agent required for this run.</p>
+            <p className="mr-auto text-xs text-amber-600">
+              Default agent required for this run.
+            </p>
           ) : missingRequired.length > 0 ? (
             <p className="mr-auto text-xs text-amber-600">
               Missing: {missingRequired.join(", ")}
@@ -322,12 +416,17 @@ export function RoutineRunVariablesDialog({
           ) : (
             <span className="mr-auto" />
           )}
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={isPending}
+          >
             Cancel
           </Button>
           <Button
             onClick={() => {
-              const nextVariables: Record<string, string | number | boolean> = {};
+              const nextVariables: Record<string, string | number | boolean> =
+                {};
               for (const variable of variables) {
                 const rawValue = values[variable.name];
                 if (isMissingRequiredValue(rawValue)) continue;

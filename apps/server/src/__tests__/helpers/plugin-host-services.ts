@@ -6,6 +6,7 @@ import type {
   PluginRunTaskContextReader,
   PluginRuntimeRecordsReader,
 } from "../../services/plugin-host-services.js";
+import { testSecretsRuntimeConfig } from "./secrets-runtime.js";
 
 function unexpectedHostCall(name: string): Promise<never> {
   return Promise.reject(new Error(`Unexpected plugin host test call: ${name}`));
@@ -44,7 +45,8 @@ export function createPluginRuntimeRecordsReaderFake(
   return {
     readSession: () => unexpectedHostCall("runtime.records.readSession"),
     readRun: () => unexpectedHostCall("runtime.records.readRun"),
-    readTaskComments: () => unexpectedHostCall("runtime.records.readTaskComments"),
+    readTaskComments: () =>
+      unexpectedHostCall("runtime.records.readTaskComments"),
     ...overrides,
   };
 }
@@ -75,6 +77,7 @@ export function createPluginHostServicesTestOptions(
     pluginRunTaskContextReader: createPluginRunTaskContextReaderFake(),
     pluginRuntimeRecordsReader: createPluginRuntimeRecordsReaderFake(),
     ordinaryTasks: {} as PluginHostServicesOptions["ordinaryTasks"],
+    secretsRuntime: testSecretsRuntimeConfig(),
     taskExecutionCancellation:
       {} as PluginHostServicesOptions["taskExecutionCancellation"],
     ...overrides,

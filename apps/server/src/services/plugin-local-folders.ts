@@ -31,7 +31,9 @@ function problem(
 
 function assertPluginLocalFolderKey(folderKey: string) {
   if (!LOCAL_FOLDER_KEY_PATTERN.test(folderKey)) {
-    throw badRequest("folderKey must start with a lowercase alphanumeric and contain only lowercase letters, digits, dots, colons, underscores, or hyphens");
+    throw badRequest(
+      "folderKey must start with a lowercase alphanumeric and contain only lowercase letters, digits, dots, colons, underscores, or hyphens",
+    );
   }
 }
 
@@ -40,9 +42,13 @@ export function requireLocalFolderDeclaration(
   folderKey: string,
 ) {
   assertPluginLocalFolderKey(folderKey);
-  const declaration = declarations.find((candidate) => candidate.folderKey === folderKey);
+  const declaration = declarations.find(
+    (candidate) => candidate.folderKey === folderKey,
+  );
   if (!declaration) {
-    throw badRequest("Local folder key is not declared by this plugin manifest");
+    throw badRequest(
+      "Local folder key is not declared by this plugin manifest",
+    );
   }
   return declaration;
 }
@@ -52,9 +58,13 @@ function normalizeRelativePath(relativePath: string): string {
     !relativePath ||
     path.isAbsolute(relativePath) ||
     relativePath.includes("\\") ||
-    relativePath.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+    relativePath
+      .split("/")
+      .some((segment) => segment === "" || segment === "." || segment === "..")
   ) {
-    throw forbidden("Local folder relative paths must stay inside the configured root");
+    throw forbidden(
+      "Local folder relative paths must stay inside the configured root",
+    );
   }
   return relativePath;
 }
@@ -63,25 +73,44 @@ function validateRequiredPath(pathValue: string, label: string): string {
   try {
     return normalizeRelativePath(pathValue);
   } catch {
-    throw badRequest(`${label} must contain only relative paths without traversal, empty segments, or backslashes`);
+    throw badRequest(
+      `${label} must contain only relative paths without traversal, empty segments, or backslashes`,
+    );
   }
 }
 
-function normalizeListRelativePath(relativePath: string | null | undefined): string | null {
-  const trimmed = relativePath?.trim();
-  if (!trimmed) return null;
-  return normalizeRelativePath(trimmed);
+function parseListRelativePath(
+  relativePath: string | null | undefined,
+): string | null {
+  if (relativePath === undefined || relativePath === null) return null;
+  if (relativePath.length === 0 || relativePath.trim() !== relativePath) {
+    throw badRequest(
+      "Local folder list relativePath must be exact and non-empty",
+    );
+  }
+  return normalizeRelativePath(relativePath);
 }
 
-function normalizeMaxEntries(value: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 1000;
-  return Math.max(1, Math.min(5000, Math.floor(value)));
+function parseMaxEntries(value: number | undefined): number {
+  if (value === undefined) return 100;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 100) {
+    throw badRequest(
+      "Local folder maxEntries must be an exact integer between 1 and 100",
+    );
+  }
+  return value;
 }
 
-export function getStoredLocalFolders(settingsJson: Record<string, unknown> | null | undefined) {
+export function getStoredLocalFolders(
+  settingsJson: Record<string, unknown> | null | undefined,
+) {
   const folders = settingsJson?.localFolders;
   if (folders === undefined) return {};
-  if (typeof folders !== "object" || folders === null || Array.isArray(folders)) {
+  if (
+    typeof folders !== "object" ||
+    folders === null ||
+    Array.isArray(folders)
+  ) {
     throw new Error("Stored plugin local folders must be an object");
   }
 
@@ -89,14 +118,25 @@ export function getStoredLocalFolders(settingsJson: Record<string, unknown> | nu
   for (const [folderKey, value] of Object.entries(folders)) {
     assertPluginLocalFolderKey(folderKey);
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      throw new Error(`Stored plugin local folder '${folderKey}' must be an object`);
+      throw new Error(
+        `Stored plugin local folder '${folderKey}' must be an object`,
+      );
     }
     const keys = Object.keys(value);
     if (keys.some((key) => key !== "path")) {
-      throw new Error(`Stored plugin local folder '${folderKey}' contains undeclared fields`);
+      throw new Error(
+        `Stored plugin local folder '${folderKey}' contains undeclared fields`,
+      );
     }
-    if (!("path" in value) || typeof value.path !== "string" || value.path.trim().length === 0) {
-      throw new Error(`Stored plugin local folder '${folderKey}' must contain a non-empty path`);
+    if (
+      !("path" in value) ||
+      typeof value.path !== "string" ||
+      value.path.length === 0 ||
+      value.path.trim() !== value.path
+    ) {
+      throw new Error(
+        `Stored plugin local folder '${folderKey}' must contain a non-empty path`,
+      );
     }
     result[folderKey] = { path: value.path };
   }
@@ -109,8 +149,8 @@ export function setStoredLocalFolder(
   folderPath: string,
 ): PluginLocalFolderSettingsJson {
   assertPluginLocalFolderKey(folderKey);
-  if (folderPath.trim().length === 0) {
-    throw badRequest("Local folder path must be a non-empty string");
+  if (folderPath.length === 0 || folderPath.trim() !== folderPath) {
+    throw badRequest("Local folder path must be exact and non-empty");
   }
   return {
     ...(settingsJson ?? {}),
@@ -127,8 +167,8 @@ export async function inspectPluginLocalFolder(input: {
 }): Promise<PluginLocalFolderStatus> {
   assertPluginLocalFolderKey(input.declaration.folderKey);
   const access = input.declaration.access ?? "readWrite";
-  const requiredDirectories = (input.declaration.requiredDirectories ?? []).map((item) =>
-    validateRequiredPath(item, "requiredDirectories"),
+  const requiredDirectories = (input.declaration.requiredDirectories ?? []).map(
+    (item) => validateRequiredPath(item, "requiredDirectories"),
   );
   const requiredFiles = (input.declaration.requiredFiles ?? []).map((item) =>
     validateRequiredPath(item, "requiredFiles"),
@@ -149,7 +189,9 @@ export async function inspectPluginLocalFolder(input: {
       missingDirectories: requiredDirectories,
       missingFiles: requiredFiles,
       healthy: false,
-      problems: [problem("not_configured", "No local folder path is configured.")],
+      problems: [
+        problem("not_configured", "No local folder path is configured."),
+      ],
       checkedAt,
     };
   }
@@ -167,13 +209,25 @@ export async function inspectPluginLocalFolder(input: {
   let writable = false;
 
   if (!path.isAbsolute(input.path)) {
-    problems.push(problem("not_absolute", "Local folder path must be absolute.", input.path));
+    problems.push(
+      problem(
+        "not_absolute",
+        "Local folder path must be absolute.",
+        input.path,
+      ),
+    );
   }
 
   try {
     const stat = await fs.stat(configuredPath);
     if (!stat.isDirectory()) {
-      problems.push(problem("not_directory", "Configured local folder path is not a directory.", configuredPath));
+      problems.push(
+        problem(
+          "not_directory",
+          "Configured local folder path is not a directory.",
+          configuredPath,
+        ),
+      );
       markRequiredPathsMissing();
     } else {
       realPath = await fs.realpath(configuredPath);
@@ -181,50 +235,114 @@ export async function inspectPluginLocalFolder(input: {
         await fs.access(realPath, fsConstants.R_OK);
         readable = true;
       } catch {
-        problems.push(problem("not_readable", "Configured local folder is not readable.", configuredPath));
+        problems.push(
+          problem(
+            "not_readable",
+            "Configured local folder is not readable.",
+            configuredPath,
+          ),
+        );
       }
 
       if (access === "readWrite") {
         try {
           await fs.access(realPath, fsConstants.W_OK);
-          const probePath = path.join(realPath, `.paperclip-local-folder-probe-${process.pid}-${Date.now()}`);
+          const probePath = path.join(
+            realPath,
+            `.paperclip-local-folder-probe-${process.pid}-${Date.now()}`,
+          );
           await fs.writeFile(probePath, "");
           await fs.rm(probePath, { force: true });
           writable = true;
         } catch {
-          problems.push(problem("not_writable", "Configured local folder is not writable.", configuredPath));
+          problems.push(
+            problem(
+              "not_writable",
+              "Configured local folder is not writable.",
+              configuredPath,
+            ),
+          );
         }
       }
 
       for (const requiredDir of requiredDirectories) {
-        const requiredStatus = await inspectChildPath(realPath, requiredDir, "directory");
+        const requiredStatus = await inspectChildPath(
+          realPath,
+          requiredDir,
+          "directory",
+        );
         if (!requiredStatus.exists) {
           missingDirectories.push(requiredDir);
-          problems.push(problem("missing_directory", "Required directory is missing.", requiredDir));
+          problems.push(
+            problem(
+              "missing_directory",
+              "Required directory is missing.",
+              requiredDir,
+            ),
+          );
         } else if (!requiredStatus.contained) {
-          problems.push(problem("symlink_escape", "Required directory escapes the configured root.", requiredDir));
+          problems.push(
+            problem(
+              "symlink_escape",
+              "Required directory escapes the configured root.",
+              requiredDir,
+            ),
+          );
         } else if (!requiredStatus.matchesKind) {
           missingDirectories.push(requiredDir);
-          problems.push(problem("missing_directory", "Required path is not a directory.", requiredDir));
+          problems.push(
+            problem(
+              "missing_directory",
+              "Required path is not a directory.",
+              requiredDir,
+            ),
+          );
         }
       }
 
       for (const requiredFile of requiredFiles) {
-        const requiredStatus = await inspectChildPath(realPath, requiredFile, "file");
+        const requiredStatus = await inspectChildPath(
+          realPath,
+          requiredFile,
+          "file",
+        );
         if (!requiredStatus.exists) {
           missingFiles.push(requiredFile);
-          problems.push(problem("missing_file", "Required file is missing.", requiredFile));
+          problems.push(
+            problem("missing_file", "Required file is missing.", requiredFile),
+          );
         } else if (!requiredStatus.contained) {
-          problems.push(problem("symlink_escape", "Required file escapes the configured root.", requiredFile));
+          problems.push(
+            problem(
+              "symlink_escape",
+              "Required file escapes the configured root.",
+              requiredFile,
+            ),
+          );
         } else if (!requiredStatus.matchesKind) {
           missingFiles.push(requiredFile);
-          problems.push(problem("missing_file", "Required path is not a file.", requiredFile));
+          problems.push(
+            problem(
+              "missing_file",
+              "Required path is not a file.",
+              requiredFile,
+            ),
+          );
         }
       }
     }
   } catch (error) {
-    const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code) : "";
-    problems.push(problem(code === "ENOENT" ? "missing" : "not_readable", "Configured local folder cannot be inspected.", configuredPath));
+    const code =
+      typeof error === "object" && error && "code" in error
+        ? String((error as { code?: unknown }).code)
+        : "";
+    problems.push(
+      problem(
+        code === "ENOENT" ? "missing" : "not_readable",
+        "Configured local folder cannot be inspected.",
+        configuredPath,
+      ),
+    );
     if (code === "ENOENT") {
       markRequiredPathsMissing();
     }
@@ -243,9 +361,7 @@ export async function inspectPluginLocalFolder(input: {
     missingDirectories,
     missingFiles,
     healthy:
-      problems.length === 0 &&
-      readable &&
-      (access === "read" || writable),
+      problems.length === 0 && readable && (access === "read" || writable),
     problems,
     checkedAt,
   };
@@ -253,17 +369,26 @@ export async function inspectPluginLocalFolder(input: {
 
 function isInsideRoot(rootRealPath: string, candidateRealPath: string) {
   const relative = path.relative(rootRealPath, candidateRealPath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
 }
 
-async function assertPathInsideRoot(rootRealPath: string, candidatePath: string) {
+async function assertPathInsideRoot(
+  rootRealPath: string,
+  candidatePath: string,
+) {
   const candidateRealPath = await fs.realpath(candidatePath);
   if (!isInsideRoot(rootRealPath, candidateRealPath)) {
     throw forbidden("Local folder symlink escape is not allowed");
   }
 }
 
-async function ensureDirectoryInsideRoot(rootRealPath: string, relativePath: string) {
+async function ensureDirectoryInsideRoot(
+  rootRealPath: string,
+  relativePath: string,
+) {
   const normalized = normalizeRelativePath(relativePath);
   const segments = normalized.split("/");
   let currentRealPath = rootRealPath;
@@ -273,10 +398,15 @@ async function ensureDirectoryInsideRoot(rootRealPath: string, relativePath: str
     try {
       const stat = await fs.stat(nextPath);
       if (!stat.isDirectory()) {
-        throw badRequest("Required directory path exists but is not a directory");
+        throw badRequest(
+          "Required directory path exists but is not a directory",
+        );
       }
     } catch (error) {
-      const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code) : "";
+      const code =
+        typeof error === "object" && error && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : "";
       if (code !== "ENOENT") throw error;
       await fs.mkdir(nextPath);
     }
@@ -294,14 +424,18 @@ export async function preparePluginLocalFolder(input: {
   path: string;
 }) {
   assertPluginLocalFolderKey(input.declaration.folderKey);
-  if (input.declaration.access === "read" || !path.isAbsolute(input.path)) return;
+  if (input.declaration.access === "read" || !path.isAbsolute(input.path))
+    return;
 
   const configuredPath = path.resolve(input.path);
   try {
     const stat = await fs.stat(configuredPath);
     if (!stat.isDirectory()) return;
   } catch (error) {
-    const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code) : "";
+    const code =
+      typeof error === "object" && error && "code" in error
+        ? String((error as { code?: unknown }).code)
+        : "";
     if (code !== "ENOENT") return;
     try {
       await fs.mkdir(configuredPath, { recursive: true });
@@ -312,7 +446,10 @@ export async function preparePluginLocalFolder(input: {
   const rootRealPath = await fs.realpath(configuredPath);
 
   for (const requiredDir of input.declaration.requiredDirectories ?? []) {
-    await ensureDirectoryInsideRoot(rootRealPath, validateRequiredPath(requiredDir, "requiredDirectories"));
+    await ensureDirectoryInsideRoot(
+      rootRealPath,
+      validateRequiredPath(requiredDir, "requiredDirectories"),
+    );
   }
 }
 
@@ -332,10 +469,14 @@ async function inspectChildPath(
 ) {
   let resolvedPath: Awaited<ReturnType<typeof resolvePluginLocalFolderPath>>;
   try {
-    resolvedPath = await resolvePluginLocalFolderPath(rootRealPath, relativePath, {
-      mustExist: true,
-      allowMissingLeaf: true,
-    });
+    resolvedPath = await resolvePluginLocalFolderPath(
+      rootRealPath,
+      relativePath,
+      {
+        mustExist: true,
+        allowMissingLeaf: true,
+      },
+    );
   } catch {
     return { exists: true, contained: false, matchesKind: false };
   }
@@ -371,7 +512,10 @@ export async function resolvePluginLocalFolderPath(
     }
     return { absolutePath, realPath, exists: true };
   } catch (error) {
-    const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code) : "";
+    const code =
+      typeof error === "object" && error && "code" in error
+        ? String((error as { code?: unknown }).code)
+        : "";
     if (code !== "ENOENT" || options?.mustExist) {
       if (options?.allowMissingLeaf && code === "ENOENT") {
         return { absolutePath, realPath: absolutePath, exists: false };
@@ -388,8 +532,13 @@ export async function resolvePluginLocalFolderPath(
   }
 }
 
-export async function readPluginLocalFolderText(rootPath: string, relativePath: string) {
-  const resolved = await resolvePluginLocalFolderPath(rootPath, relativePath, { mustExist: true });
+export async function readPluginLocalFolderText(
+  rootPath: string,
+  relativePath: string,
+) {
+  const resolved = await resolvePluginLocalFolderPath(rootPath, relativePath, {
+    mustExist: true,
+  });
   const stat = await fs.stat(resolved.realPath);
   if (!stat.isFile()) {
     throw badRequest("Local folder read target must be a file");
@@ -399,25 +548,36 @@ export async function readPluginLocalFolderText(rootPath: string, relativePath: 
 
 export async function listPluginLocalFolderEntries(
   rootPath: string,
-  options: { relativePath?: string | null; recursive?: boolean; maxEntries?: number } = {},
+  options: {
+    relativePath?: string | null;
+    recursive?: boolean;
+    maxEntries?: number;
+  } = {},
 ): Promise<PluginLocalFolderListing> {
   const rootRealPath = await fs.realpath(rootPath);
-  const relativePath = normalizeListRelativePath(options.relativePath);
+  const relativePath = parseListRelativePath(options.relativePath);
   const target = relativePath
-    ? await resolvePluginLocalFolderPath(rootRealPath, relativePath, { mustExist: true })
+    ? await resolvePluginLocalFolderPath(rootRealPath, relativePath, {
+        mustExist: true,
+      })
     : { absolutePath: rootRealPath, realPath: rootRealPath, exists: true };
   const targetStat = await fs.stat(target.realPath);
   if (!targetStat.isDirectory()) {
     throw badRequest("Local folder list target must be a directory");
   }
 
-  const maxEntries = normalizeMaxEntries(options.maxEntries);
+  const maxEntries = parseMaxEntries(options.maxEntries);
   const entries: PluginLocalFolderEntry[] = [];
   let truncated = false;
 
-  const visit = async (directoryRealPath: string, directoryRelativePath: string | null) => {
+  const visit = async (
+    directoryRealPath: string,
+    directoryRelativePath: string | null,
+  ) => {
     if (truncated) return;
-    const dirents = await fs.readdir(directoryRealPath, { withFileTypes: true });
+    const dirents = await fs.readdir(directoryRealPath, {
+      withFileTypes: true,
+    });
     dirents.sort((a, b) => a.name.localeCompare(b.name));
 
     for (const dirent of dirents) {
@@ -426,17 +586,29 @@ export async function listPluginLocalFolderEntries(
         return;
       }
 
-      const childRelativePath = directoryRelativePath ? `${directoryRelativePath}/${dirent.name}` : dirent.name;
-      let resolvedChild: Awaited<ReturnType<typeof resolvePluginLocalFolderPath>>;
+      const childRelativePath = directoryRelativePath
+        ? `${directoryRelativePath}/${dirent.name}`
+        : dirent.name;
+      let resolvedChild: Awaited<
+        ReturnType<typeof resolvePluginLocalFolderPath>
+      >;
       try {
-        resolvedChild = await resolvePluginLocalFolderPath(rootRealPath, childRelativePath, { mustExist: true });
+        resolvedChild = await resolvePluginLocalFolderPath(
+          rootRealPath,
+          childRelativePath,
+          { mustExist: true },
+        );
       } catch {
         continue;
       }
 
       const stat = await fs.stat(resolvedChild.realPath).catch(() => null);
       if (!stat) continue;
-      const kind = stat.isDirectory() ? "directory" : stat.isFile() ? "file" : null;
+      const kind = stat.isDirectory()
+        ? "directory"
+        : stat.isFile()
+          ? "file"
+          : null;
       if (!kind) continue;
 
       entries.push({
@@ -501,7 +673,9 @@ export async function writePluginLocalFolderTextAtomic(
   try {
     await resolvePluginLocalFolderPath(rootRealPath, relativePath);
     await fs.rename(tempPath, resolved.absolutePath);
-    await resolvePluginLocalFolderPath(rootRealPath, relativePath, { mustExist: true });
+    await resolvePluginLocalFolderPath(rootRealPath, relativePath, {
+      mustExist: true,
+    });
   } catch (error) {
     await fs.rm(tempPath, { force: true });
     throw error;
@@ -522,10 +696,14 @@ export async function deletePluginLocalFolderFile(
   relativePath: string,
 ) {
   const rootRealPath = await fs.realpath(rootPath);
-  const resolved = await resolvePluginLocalFolderPath(rootRealPath, relativePath, {
-    mustExist: true,
-    allowMissingLeaf: true,
-  });
+  const resolved = await resolvePluginLocalFolderPath(
+    rootRealPath,
+    relativePath,
+    {
+      mustExist: true,
+      allowMissingLeaf: true,
+    },
+  );
 
   if (resolved.exists) {
     const stat = await fs.lstat(resolved.absolutePath);
@@ -553,15 +731,17 @@ export function assertConfiguredLocalFolder(status: PluginLocalFolderStatus) {
   }
 }
 
-export function assertWritableConfiguredLocalFolder(status: PluginLocalFolderStatus) {
+export function assertWritableConfiguredLocalFolder(
+  status: PluginLocalFolderStatus,
+) {
   if (!status.configured || !status.realPath || !status.readable) {
     throw notFound("Local folder is not configured or readable");
   }
   if (status.access !== "readWrite" || !status.writable) {
     throw forbidden("Local folder is not configured for writes");
   }
-  const onlyMissingRequiredPaths = status.problems.every((item) =>
-    item.code === "missing_directory" || item.code === "missing_file"
+  const onlyMissingRequiredPaths = status.problems.every(
+    (item) => item.code === "missing_directory" || item.code === "missing_file",
   );
   if (!status.healthy && !onlyMissingRequiredPaths) {
     throw badRequest("Local folder is not healthy");

@@ -302,12 +302,10 @@ Coming-soon and disabled vaults cannot be marked default; attempting to do so
 returns a validation error. Setting a new default automatically clears the
 previous default for that provider.
 
-If a secret is created without any `providerConfigId` (no vaults exist yet, or
-the operator clears the selector), runtime resolution falls back to the
-deployment-level provider configuration — the same path existing installs use.
-This keeps secrets created before any provider vault was configured working
-without migration. Picking the default in the UI is an explicit selection, not
-a runtime fallback: the create call still sends an explicit `providerConfigId`.
+The UI exposes two explicit provider modes. Selecting a company vault sends its
+exact `providerConfigId`. Selecting **Deployment default** sends `null`, which
+selects only the deployment-configured provider and fails closed when that
+provider is unavailable. Paperclip does not try another vault or provider.
 
 ### Multiple Vaults Per Provider
 

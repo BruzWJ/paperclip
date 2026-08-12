@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FolderListResult } from "@paperclipai/shared";
 import {
   AllUnfiledBanner,
-  BulkBar,
   DeleteFolderDialog,
   FolderFormDialog,
   FolderRail,
@@ -63,64 +62,6 @@ const folderResult: FolderListResult = {
       itemCount: 3,
       createdAt: new Date("2026-07-01T00:00:00.000Z"),
       updatedAt: new Date("2026-07-01T00:00:00.000Z"),
-    },
-  ],
-};
-
-const skillFolderResult: FolderListResult = {
-  kind: "skill",
-  allCount: 8,
-  unfiledCount: 1,
-  folders: [
-    {
-      ...folderResult.folders[0]!,
-      id: "my",
-      kind: "skill",
-      name: "my",
-      slug: "my",
-      systemKey: "my",
-      path: "my",
-      itemCount: 1,
-    },
-    {
-      ...folderResult.folders[0]!,
-      id: "engineering",
-      kind: "skill",
-      name: "Engineering",
-      slug: "engineering",
-      path: "engineering",
-      itemCount: 3,
-    },
-    {
-      ...folderResult.folders[0]!,
-      id: "code-review",
-      kind: "skill",
-      parentId: "engineering",
-      name: "Code Review",
-      slug: "code-review",
-      path: "engineering/code-review",
-      depth: 2,
-      itemCount: 2,
-    },
-    {
-      ...folderResult.folders[0]!,
-      id: "projects",
-      kind: "skill",
-      name: "projects",
-      slug: "projects",
-      systemKey: "projects",
-      path: "projects",
-      itemCount: 2,
-    },
-    {
-      ...folderResult.folders[0]!,
-      id: "bundled",
-      kind: "skill",
-      name: "bundled",
-      slug: "bundled",
-      systemKey: "bundled",
-      path: "bundled",
-      itemCount: 1,
     },
   ],
 };
@@ -319,7 +260,6 @@ describe("FolderControls", () => {
       root?.render(
         <FolderFormDialog
           open
-          kind="routine"
           folder={null}
           onOpenChange={vi.fn()}
           onSubmit={onSubmit}
@@ -406,32 +346,6 @@ describe("FolderControls", () => {
 
     expect(onSelect).toHaveBeenCalledWith("folder-reporting");
     expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-
-  it("preserves skill root grouping and child hierarchy in the mobile sheet", () => {
-    root = createRoot(container);
-    act(() => {
-      root?.render(
-        <MobileFolderSheet
-          open
-          onOpenChange={vi.fn()}
-          result={skillFolderResult}
-          selection="all"
-          allLabel="All skills"
-          itemLabelPlural="Skills"
-          onSelect={vi.fn()}
-          onCreate={vi.fn()}
-        />,
-      );
-    });
-
-    const body = document.body.textContent ?? "";
-    expect(body.indexOf("My Skills")).toBeLessThan(body.indexOf("Company"));
-    expect(body.indexOf("Company")).toBeLessThan(body.indexOf("Engineering"));
-    expect(body.indexOf("Engineering")).toBeLessThan(body.indexOf("Code Review"));
-    expect(body.indexOf("Code Review")).toBeLessThan(body.indexOf("Projects"));
-    expect(body.indexOf("Projects")).toBeLessThan(body.indexOf("Bundled"));
-    expect(document.querySelector('[data-folder-id="engineering"] > .pl-3 [data-folder-id="code-review"]')).not.toBeNull();
   });
 
   it("persists AllUnfiledBanner dismissal across mounts", () => {

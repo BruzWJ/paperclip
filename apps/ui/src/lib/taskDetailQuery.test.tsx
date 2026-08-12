@@ -32,15 +32,13 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 function TaskDetailQueryHarness({
-  taskRef,
-  placeholderTask,
+  taskId,
 }: {
-  taskRef: string;
-  placeholderTask?: Pick<Task, "id" | "identifier"> | null;
+  taskId: string;
 }) {
   const queryClient = useQueryClient();
   const query = useQuery({
-    ...getTaskDetailQueryOptions(queryClient, taskRef, { placeholderTask }),
+    ...getTaskDetailQueryOptions(queryClient, taskId),
   });
 
   return <div>{query.data?.request ?? "EMPTY"}</div>;
@@ -74,16 +72,14 @@ describe("getTaskDetailQueryOptions", () => {
     const partialTask = makeTask({ request: "" });
     const fullTask = makeTask({ request: "GitHub Security Advisory body" });
 
-    queryClient.setQueryData(queryKeys.tasks.detail("task-1"), partialTask);
-    queryClient.setQueryData(queryKeys.tasks.detail("PAP-1442"), partialTask);
+    queryClient.setQueryData(queryKeys.tasks.detail(partialTask.id), partialTask);
     vi.mocked(tasksApi.get).mockResolvedValue(fullTask);
 
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
           <TaskDetailQueryHarness
-            taskRef="PAP-1442"
-            placeholderTask={{ id: partialTask.id, identifier: partialTask.identifier }}
+            taskId={partialTask.id}
           />
         </QueryClientProvider>,
       );
@@ -91,7 +87,7 @@ describe("getTaskDetailQueryOptions", () => {
 
     await flush();
 
-    expect(tasksApi.get).toHaveBeenCalledWith("PAP-1442", {
+    expect(tasksApi.get).toHaveBeenCalledWith(partialTask.id, {
       signal: expect.any(AbortSignal),
     });
     expect(container.textContent).toContain("GitHub Security Advisory body");

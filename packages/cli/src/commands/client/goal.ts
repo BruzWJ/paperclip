@@ -173,5 +173,5 @@ export function registerGoalCommands(program: Command): void {
 
 function parseNullableString(value: string | undefined): string | null | undefined {
   if (value === undefined) return undefined;
-  return value.trim().toLowerCase() === "null" ? null : value;
+  return value === "null" ? null : value;
 }

@@ -1,0 +1,836 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { JoinRequest } from "@paperclipai/shared";
+import { Button } from "@/components/ui/button";
+import { CompanyPatternIcon } from "@/components/CompanyPatternIcon";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { accessApi } from "@/api/access";
+import { authApi } from "@/api/auth";
+import { companiesListQueryOptions } from "@/api/companies-query";
+import { healthApi } from "@/api/health";
+import {
+  clearPendingInviteToken,
+  rememberPendingInviteToken,
+} from "@/lib/invite-memory";
+import { queryKeys } from "@/lib/queryKeys";
+import { formatDate } from "@/lib/utils";
+
+export const Route = createFileRoute("/invite/$token/")({
+  component: InviteLandingPage,
+});
+
+type AuthMode = "sign_in" | "sign_up";
+
+type AuthFeedback = { tone: "error" | "info"; message: string };
+
+const fieldClassName =
+  "w-full border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-zinc-500";
+
+const panelClassName = "border border-zinc-800 bg-zinc-950/95 p-6";
+
+const modeButtonBaseClassName =
+  "flex-1 border px-3 py-2 text-sm transition-colors";
+
+function formatUserRole(role: string | null | undefined) {
+  if (!role) return null;
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function getAuthErrorCode(error: unknown) {
+  if (!error || typeof error !== "object") return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && code.trim().length > 0 ? code : null;
+}
+
+function getAuthErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) return null;
+  const message = error.message.trim();
+  return message.length > 0 ? message : null;
+}
+
+function mapInviteAuthFeedback(
+  error: unknown,
+  authMode: AuthMode,
+  email: string,
+): AuthFeedback {
+  const code = getAuthErrorCode(error);
+  const message = getAuthErrorMessage(error);
+  const emailLabel = email.trim().length > 0 ? email.trim() : "that email";
+
+  if (code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
+    return {
+      tone: "info",
+      message: `An account already exists for ${emailLabel}. Sign in below to continue with this invite.`,
+    };
+  }
+
+  if (code === "INVALID_EMAIL_OR_PASSWORD") {
+    return {
+      tone: "error",
+      message:
+        "That email and password did not match an existing Paperclip account. Check both fields, or create an account first if you are new here.",
+    };
+  }
+
+  if (authMode === "sign_in" && message === "Request failed: 401") {
+    return {
+      tone: "error",
+      message:
+        "That email and password did not match an existing Paperclip account. Check both fields, or create an account first if you are new here.",
+    };
+  }
+
+  if (authMode === "sign_up" && message === "Request failed: 422") {
+    return {
+      tone: "info",
+      message: `An account may already exist for ${emailLabel}. Try signing in instead.`,
+    };
+  }
+
+  return {
+    tone: "error",
+    message: message ?? "Authentication failed",
+  };
+}
+
+function isBootstrapAcceptancePayload(payload: unknown) {
+  return Boolean(
+    payload &&
+    typeof payload === "object" &&
+    "bootstrapAccepted" in (payload as Record<string, unknown>),
+  );
+}
+
+function isApprovedUserJoinPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return false;
+  const status = (payload as { status?: unknown }).status;
+  return status === "approved";
+}
+
+type AwaitingJoinApprovalPanelProps = {
+  companyDisplayName: string;
+  companyLogoUrl: string | null;
+  companyBrandColor: string | null;
+  invitedByUserName: string | null;
+};
+
+function InviteCompanyLogo({
+  companyDisplayName,
+  companyLogoUrl,
+  companyBrandColor,
+  className,
+}: {
+  companyDisplayName: string;
+  companyLogoUrl: string | null;
+  companyBrandColor: string | null;
+  className?: string;
+}) {
+  return (
+    <CompanyPatternIcon
+      companyName={companyDisplayName}
+      logoUrl={companyLogoUrl}
+      brandColor={companyBrandColor}
+      logoFit="contain"
+      className={className}
+    />
+  );
+}
+
+function AwaitingJoinApprovalPanel({
+  companyDisplayName,
+  companyLogoUrl,
+  companyBrandColor,
+  invitedByUserName,
+}: AwaitingJoinApprovalPanelProps) {
+  const approverLabel = invitedByUserName ?? "A company admin";
+
+  return (
+    <div className="min-h-screen bg-zinc-950 px-6 py-12 text-zinc-100">
+      <div
+        className="mx-auto max-w-md border border-zinc-800 bg-zinc-950 p-6"
+        data-testid="invite-pending-approval"
+      >
+        <div className="flex items-center gap-3">
+          <InviteCompanyLogo
+            companyDisplayName={companyDisplayName}
+            companyLogoUrl={companyLogoUrl}
+            companyBrandColor={companyBrandColor}
+            className="h-12 w-12 border border-zinc-800 rounded-none"
+          />
+          <h1 className="text-lg font-semibold">
+            Request to join {companyDisplayName}
+          </h1>
+        </div>
+        <div className="mt-4 space-y-3">
+          <p className="text-sm text-zinc-400">
+            Your request is still awaiting approval. {approverLabel} must
+            approve your request to join.
+          </p>
+          <div className="border border-zinc-800 p-3">
+            <p className="text-xs text-zinc-500 mb-1">Approval page</p>
+            <p className="text-sm text-zinc-200">Company Settings → Members</p>
+          </div>
+          <p className="text-sm text-zinc-400">
+            Ask them to visit{" "}
+            <span className="text-zinc-200">Company Settings → Members</span> to
+            approve your request.
+          </p>
+          <p className="text-xs text-zinc-500">
+            Refresh this page after you've been approved — you'll be redirected
+            automatically.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function InviteLandingPage() {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const params = useParams({ from: "/invite/$token/" });
+  const token = params.token ?? "";
+  const hasToken = /\S/.test(token);
+  const [authMode, setAuthMode] = useState<AuthMode>("sign_up");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [result, setResult] = useState<{
+    kind: "bootstrap" | "join";
+    payload: unknown;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [authFeedback, setAuthFeedback] = useState<AuthFeedback | null>(null);
+  const [autoAcceptStarted, setAutoAcceptStarted] = useState(false);
+  const authErrorId = "invite-auth-error";
+
+  const healthQuery = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => healthApi.get(),
+    retry: false,
+  });
+  const sessionQuery = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+    retry: false,
+  });
+  const inviteQuery = useQuery({
+    queryKey: queryKeys.access.invite(token),
+    queryFn: () => accessApi.getInvite(token),
+    enabled: hasToken,
+    retry: false,
+  });
+
+  const companiesQuery = useQuery({
+    ...companiesListQueryOptions,
+    enabled: !!sessionQuery.data && !!inviteQuery.data?.companyId,
+  });
+  const companyList = companiesQuery.data?.companies ?? [];
+
+  useEffect(() => {
+    if (hasToken) rememberPendingInviteToken(token);
+  }, [hasToken, token]);
+
+  useEffect(() => {
+    setAutoAcceptStarted(false);
+  }, [token]);
+
+  useEffect(() => {
+    const list = companiesQuery.data?.companies;
+    if (!list || !inviteQuery.data?.companyId) return;
+    if (list.some((c) => c.id === inviteQuery.data!.companyId)) {
+      clearPendingInviteToken(token);
+    }
+  }, [companiesQuery.data, inviteQuery.data, token]);
+
+  const invite = inviteQuery.data;
+  const isCheckingExistingMembership =
+    Boolean(sessionQuery.data) &&
+    Boolean(invite?.companyId) &&
+    companiesQuery.isLoading;
+  const isCurrentMember =
+    Boolean(invite?.companyId) &&
+    companyList.some((company) => company.id === invite?.companyId);
+  const companyName = invite?.companyName?.trim() || null;
+  const companyDisplayName = companyName || "this Paperclip company";
+  const companyLogoUrl = invite?.companyLogoUrl?.trim() || null;
+  const companyBrandColor = invite?.companyBrandColor?.trim() || null;
+  const invitedByUserName = invite?.invitedByUserName?.trim() || null;
+  const requestedUserRole = formatUserRole(invite?.userRole);
+  const inviteJoinRequestStatus = invite?.joinRequestStatus ?? null;
+  const canCompleteAcceptedUserInvite =
+    inviteJoinRequestStatus === "pending_approval" ||
+    inviteJoinRequestStatus === "approved";
+  const requiresUserAccount = !sessionQuery.data;
+  const shouldAutoAcceptUserInvite =
+    Boolean(sessionQuery.data) &&
+    invite?.inviteType !== "bootstrap_admin" &&
+    (!inviteJoinRequestStatus || canCompleteAcceptedUserInvite) &&
+    !isCheckingExistingMembership &&
+    !isCurrentMember &&
+    !result &&
+    error === null;
+  const sessionLabel =
+    sessionQuery.data?.user.name?.trim() ||
+    sessionQuery.data?.user.email?.trim() ||
+    "this account";
+
+  const authCanSubmit =
+    email.trim().length > 0 &&
+    password.trim().length > 0 &&
+    (authMode === "sign_in" ||
+      (name.trim().length > 0 && password.trim().length >= 8));
+
+  const acceptMutation = useMutation({
+    mutationFn: async () => {
+      if (!invite) throw new Error("Invite not found");
+      if (isCheckingExistingMembership) {
+        throw new Error("Checking your company access. Try again in a moment.");
+      }
+      if (isCurrentMember) {
+        throw new Error("This account already belongs to the company.");
+      }
+      return accessApi.acceptInvite(token);
+    },
+    onSuccess: async (payload) => {
+      setError(null);
+      clearPendingInviteToken(token);
+      const asBootstrap = isBootstrapAcceptancePayload(payload);
+      setResult({ kind: asBootstrap ? "bootstrap" : "join", payload });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.auth.session });
+      await queryClient.invalidateQueries({
+        queryKey: ["access", "current-board-access"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.companies.all,
+      });
+      if (invite?.companyId && isApprovedUserJoinPayload(payload)) {
+        void navigate({
+          to: "/$companyId/dashboard",
+          params: { companyId: invite.companyId },
+          replace: true,
+        });
+      }
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to accept invite");
+    },
+  });
+
+  useEffect(() => {
+    if (
+      !shouldAutoAcceptUserInvite ||
+      autoAcceptStarted ||
+      acceptMutation.isPending
+    )
+      return;
+    setAutoAcceptStarted(true);
+    setError(null);
+    acceptMutation.mutate();
+  }, [acceptMutation, autoAcceptStarted, shouldAutoAcceptUserInvite]);
+
+  const authMutation = useMutation({
+    mutationFn: async () => {
+      if (authMode === "sign_in") {
+        await authApi.signInEmail({ email: email.trim(), password });
+        return;
+      }
+      await authApi.signUpEmail({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+      });
+    },
+    onSuccess: async () => {
+      setAuthFeedback(null);
+      rememberPendingInviteToken(token);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.auth.session });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.health });
+      await queryClient.invalidateQueries({
+        queryKey: ["access", "current-board-access"],
+      });
+      const { companies: freshCompanies } = await queryClient.fetchQuery(
+        companiesListQueryOptions,
+      );
+
+      if (
+        invite?.companyId &&
+        freshCompanies.some((company) => company.id === invite.companyId)
+      ) {
+        clearPendingInviteToken(token);
+        void navigate({
+          to: "/$companyId/dashboard",
+          params: { companyId: invite.companyId },
+          replace: true,
+        });
+        return;
+      }
+
+      if (!invite || invite.inviteType !== "bootstrap_admin") {
+        return;
+      }
+
+      try {
+        const payload = await acceptMutation.mutateAsync();
+        if (isBootstrapAcceptancePayload(payload)) {
+          void navigate({ to: "/", replace: true });
+        }
+      } catch {
+        return;
+      }
+    },
+    onError: (err) => {
+      const nextFeedback = mapInviteAuthFeedback(err, authMode, email);
+      if (getAuthErrorCode(err) === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
+        setAuthMode("sign_in");
+        setPassword("");
+      }
+      setAuthFeedback(nextFeedback);
+    },
+  });
+
+  const joinButtonLabel = useMemo(() => {
+    if (!invite) return "Continue";
+    if (isCurrentMember) return "Open company";
+    if (invite.inviteType === "bootstrap_admin") return "Accept invite";
+    return sessionQuery.data ? "Accept invite" : "Continue";
+  }, [invite, isCurrentMember, sessionQuery.data]);
+
+  if (!hasToken) {
+    return (
+      <div className="mx-auto max-w-xl py-10 text-sm text-destructive">
+        Invalid invite token.
+      </div>
+    );
+  }
+
+  if (
+    inviteQuery.isLoading ||
+    healthQuery.isLoading ||
+    sessionQuery.isLoading
+  ) {
+    return (
+      <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
+        Loading invite...
+      </div>
+    );
+  }
+
+  if (isCheckingExistingMembership) {
+    return (
+      <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
+        Checking your access...
+      </div>
+    );
+  }
+
+  if (inviteQuery.error || !invite) {
+    return (
+      <div className="mx-auto max-w-xl py-10">
+        <div
+          className="border border-border bg-card p-6"
+          data-testid="invite-error"
+        >
+          <h1 className="text-lg font-semibold">Invite not available</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This invite may be expired, revoked, or already used.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (inviteJoinRequestStatus === "approved" && isCurrentMember) {
+    return (
+      <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
+        Opening company...
+      </div>
+    );
+  }
+
+  if (
+    inviteJoinRequestStatus === "pending_approval" &&
+    !canCompleteAcceptedUserInvite
+  ) {
+    return (
+      <AwaitingJoinApprovalPanel
+        companyDisplayName={companyDisplayName}
+        companyLogoUrl={companyLogoUrl}
+        companyBrandColor={companyBrandColor}
+        invitedByUserName={invitedByUserName}
+      />
+    );
+  }
+
+  if (inviteJoinRequestStatus && !canCompleteAcceptedUserInvite) {
+    return (
+      <div className="mx-auto max-w-xl py-10">
+        <div
+          className="border border-border bg-card p-6"
+          data-testid="invite-error"
+        >
+          <h1 className="text-lg font-semibold">Invite not available</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {inviteJoinRequestStatus === "rejected"
+              ? "This join request was not approved."
+              : "This invite has already been used."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (result?.kind === "bootstrap") {
+    return (
+      <div className="min-h-screen bg-zinc-950 px-6 py-12 text-zinc-100">
+        <div className="mx-auto max-w-md border border-zinc-800 bg-zinc-950 p-6">
+          <h1 className="text-lg font-semibold">Bootstrap complete</h1>
+          <div className="mt-4">
+            <Button asChild className="rounded-none">
+              <Link to="/">Open board</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (result?.kind === "join") {
+    const payload = result.payload as JoinRequest;
+    const joinedNow = payload.status === "approved";
+
+    return joinedNow ? (
+      <div className="min-h-screen bg-zinc-950 px-6 py-12 text-zinc-100">
+        <div className="mx-auto max-w-md border border-zinc-800 bg-zinc-950 p-6">
+          <div className="flex items-center gap-3">
+            <InviteCompanyLogo
+              companyDisplayName={companyDisplayName}
+              companyLogoUrl={companyLogoUrl}
+              companyBrandColor={companyBrandColor}
+              className="h-12 w-12 border border-zinc-800 rounded-none"
+            />
+            <h1 className="text-lg font-semibold">You joined the company</h1>
+          </div>
+          <div className="mt-4">
+            <Button asChild className="w-full rounded-none">
+              <Link to="/">Open board</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    ) : (
+      <AwaitingJoinApprovalPanel
+        companyDisplayName={companyDisplayName}
+        companyLogoUrl={companyLogoUrl}
+        companyBrandColor={companyBrandColor}
+        invitedByUserName={invitedByUserName}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-zinc-950 px-6 py-12 text-zinc-100">
+      <div className="mx-auto max-w-5xl">
+        <div className="grid gap-6 lg:grid-cols-(--gtc-36)">
+          <section className={`${panelClassName} space-y-6`}>
+            <div className="flex items-start gap-4">
+              <InviteCompanyLogo
+                companyDisplayName={companyDisplayName}
+                companyLogoUrl={companyLogoUrl}
+                companyBrandColor={companyBrandColor}
+                className="h-16 w-16 rounded-none border border-zinc-800"
+              />
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-(--tracking-caps) text-zinc-500">
+                  You&apos;ve been invited to join Paperclip
+                </p>
+                <h1 className="mt-2 text-2xl font-semibold">
+                  {invite.inviteType === "bootstrap_admin"
+                    ? "Set up Paperclip"
+                    : `Join ${companyDisplayName}`}
+                </h1>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-300">
+                  {requiresUserAccount
+                    ? "Create your Paperclip account first. If you already have one, switch to sign in and continue the invite with the same email."
+                    : "Your account is ready. Review the invite details, then accept it to continue."}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="border border-zinc-800 p-3">
+                <div className="text-xs uppercase tracking-(--tracking-caps) text-zinc-500">
+                  Company
+                </div>
+                <div className="mt-1 text-sm text-zinc-100">
+                  {companyDisplayName}
+                </div>
+              </div>
+              <div className="border border-zinc-800 p-3">
+                <div className="text-xs uppercase tracking-(--tracking-caps) text-zinc-500">
+                  Invited by
+                </div>
+                <div className="mt-1 text-sm text-zinc-100">
+                  {invitedByUserName ?? "Paperclip board"}
+                </div>
+              </div>
+              <div className="border border-zinc-800 p-3">
+                <div className="text-xs uppercase tracking-(--tracking-caps) text-zinc-500">
+                  Requested access
+                </div>
+                <div className="mt-1 text-sm text-zinc-100">
+                  {requestedUserRole ?? "Company access"}
+                </div>
+              </div>
+              <div className="border border-zinc-800 p-3">
+                <div className="text-xs uppercase tracking-(--tracking-caps) text-zinc-500">
+                  Invite expires
+                </div>
+                <div className="mt-1 text-sm text-zinc-100">
+                  {formatDate(invite.expiresAt)}
+                </div>
+              </div>
+            </div>
+
+            {sessionQuery.data ? (
+              <div className="border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-50">
+                Signed in as <span className="font-medium">{sessionLabel}</span>
+                .
+              </div>
+            ) : null}
+          </section>
+
+          <section className={`${panelClassName} h-fit`}>
+            {requiresUserAccount ? (
+              <div className="space-y-5">
+                <div>
+                  <h2 className="text-lg font-semibold">
+                    {authMode === "sign_up"
+                      ? "Create your account"
+                      : "Sign in to continue"}
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    {authMode === "sign_up"
+                      ? `Start with a Paperclip account. After that, you'll come right back here to accept the invite for ${companyDisplayName}.`
+                      : "Use the Paperclip account that already matches this invite. If you do not have one yet, switch back to create account."}
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className={`${modeButtonBaseClassName} ${
+                      authMode === "sign_up"
+                        ? "border-zinc-100 bg-zinc-100 text-zinc-950"
+                        : "border-zinc-800 text-zinc-300 hover:border-zinc-600"
+                    }`}
+                    onClick={() => {
+                      setAuthFeedback(null);
+                      setAuthMode("sign_up");
+                    }}
+                  >
+                    Create account
+                  </button>
+                  <button
+                    type="button"
+                    className={`${modeButtonBaseClassName} ${
+                      authMode === "sign_in"
+                        ? "border-zinc-100 bg-zinc-100 text-zinc-950"
+                        : "border-zinc-800 text-zinc-300 hover:border-zinc-600"
+                    }`}
+                    onClick={() => {
+                      setAuthFeedback(null);
+                      setAuthMode("sign_in");
+                    }}
+                  >
+                    I already have an account
+                  </button>
+                </div>
+
+                <form
+                  className="space-y-4"
+                  method="post"
+                  action={
+                    authMode === "sign_up"
+                      ? "/api/auth/sign-up/email"
+                      : "/api/auth/sign-in/email"
+                  }
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (authMutation.isPending) return;
+                    if (!authCanSubmit) {
+                      setAuthFeedback({
+                        tone: "error",
+                        message: "Please fill in all required fields.",
+                      });
+                      return;
+                    }
+                    authMutation.mutate();
+                  }}
+                  data-testid="invite-inline-auth"
+                >
+                  {authMode === "sign_up" ? (
+                    <label className="block text-sm" htmlFor="invite-name">
+                      <span className="mb-1 block text-zinc-400">Name</span>
+                      <input
+                        id="invite-name"
+                        name="name"
+                        className={fieldClassName}
+                        value={name}
+                        onChange={(event) => {
+                          setName(event.target.value);
+                          setAuthFeedback(null);
+                        }}
+                        autoComplete="name"
+                        required
+                        aria-required="true"
+                        aria-invalid={
+                          authFeedback?.tone === "error" ? true : undefined
+                        }
+                        aria-describedby={
+                          authFeedback ? authErrorId : undefined
+                        }
+                        autoFocus
+                      />
+                    </label>
+                  ) : null}
+                  <label className="block text-sm" htmlFor="invite-email">
+                    <span className="mb-1 block text-zinc-400">Email</span>
+                    <input
+                      id="invite-email"
+                      name="email"
+                      type="email"
+                      className={fieldClassName}
+                      value={email}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                        setAuthFeedback(null);
+                      }}
+                      autoComplete="email"
+                      required
+                      aria-required="true"
+                      aria-invalid={
+                        authFeedback?.tone === "error" ? true : undefined
+                      }
+                      aria-describedby={authFeedback ? authErrorId : undefined}
+                      autoFocus={authMode === "sign_in"}
+                    />
+                  </label>
+                  <label className="block text-sm" htmlFor="invite-password">
+                    <span className="mb-1 block text-zinc-400">Password</span>
+                    <input
+                      id="invite-password"
+                      name="password"
+                      type="password"
+                      className={fieldClassName}
+                      value={password}
+                      onChange={(event) => {
+                        setPassword(event.target.value);
+                        setAuthFeedback(null);
+                      }}
+                      autoComplete={
+                        authMode === "sign_in"
+                          ? "current-password"
+                          : "new-password"
+                      }
+                      required
+                      aria-required="true"
+                      aria-invalid={
+                        authFeedback?.tone === "error" ? true : undefined
+                      }
+                      aria-describedby={authFeedback ? authErrorId : undefined}
+                    />
+                  </label>
+                  {authFeedback ? (
+                    <p
+                      id={authErrorId}
+                      role="alert"
+                      className={`text-xs ${
+                        authFeedback.tone === "info"
+                          ? "text-amber-300"
+                          : "text-red-400"
+                      }`}
+                    >
+                      {authFeedback.message}
+                    </p>
+                  ) : null}
+                  <Button
+                    type="submit"
+                    className="w-full rounded-none"
+                    disabled={authMutation.isPending}
+                    aria-disabled={!authCanSubmit || authMutation.isPending}
+                  >
+                    {authMutation.isPending
+                      ? "Working..."
+                      : authMode === "sign_in"
+                        ? "Sign in and continue"
+                        : "Create account and continue"}
+                  </Button>
+                </form>
+
+                <p className="text-xs leading-5 text-zinc-500">
+                  {authMode === "sign_up"
+                    ? "Already signed up before? Use the existing-account option instead so the invite lands on the right Paperclip user."
+                    : "No account yet? Switch back to create account so you can accept the invite with a new login."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold">
+                    {isCurrentMember
+                      ? "Already in this company"
+                      : shouldAutoAcceptUserInvite
+                        ? "Completing company access"
+                        : invite.inviteType === "bootstrap_admin"
+                          ? "Accept bootstrap invite"
+                          : "Accept company invite"}
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    {shouldAutoAcceptUserInvite
+                      ? `Granting your access to ${companyDisplayName}.`
+                      : isCurrentMember
+                        ? `This account already belongs to ${companyDisplayName}.`
+                        : `This will ${
+                            invite.inviteType === "bootstrap_admin"
+                              ? "finish setting up Paperclip"
+                              : `grant or complete your access to ${companyDisplayName}`
+                          }.`}
+                  </p>
+                </div>
+                {error ? <p className="text-xs text-red-400">{error}</p> : null}
+                {shouldAutoAcceptUserInvite ? (
+                  <div className="text-sm text-zinc-400">
+                    {acceptMutation.isPending
+                      ? "Submitting request..."
+                      : "Finishing sign-in..."}
+                  </div>
+                ) : (
+                  <Button
+                    className="w-full rounded-none"
+                    disabled={acceptMutation.isPending}
+                    onClick={() => {
+                      if (isCurrentMember && invite.companyId) {
+                        clearPendingInviteToken(token);
+                        void navigate({
+                          to: "/$companyId/dashboard",
+                          params: { companyId: invite.companyId },
+                          replace: true,
+                        });
+                        return;
+                      }
+                      acceptMutation.mutate();
+                    }}
+                  >
+                    {acceptMutation.isPending ? "Working..." : joinButtonLabel}
+                  </Button>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}

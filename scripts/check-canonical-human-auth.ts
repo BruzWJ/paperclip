@@ -73,10 +73,7 @@ const SKIPPED_DIRECTORY_NAMES = new Set([
   "releases",
 ]);
 
-const ARCHIVED_DOCUMENT_PREFIXES = [
-  "doc/logs/",
-  "doc/plans/",
-] as const;
+const ARCHIVED_DOCUMENT_PREFIXES = ["doc/logs/", "doc/plans/"] as const;
 
 const AUTH_TABLES = new Set([
   "authAccounts",
@@ -85,8 +82,8 @@ const AUTH_TABLES = new Set([
   "authVerifications",
 ]);
 
-type AuthTable = "authAccounts" | "authSessions" | "authUsers"
-  | "authVerifications";
+type AuthTable =
+  "authAccounts" | "authSessions" | "authUsers" | "authVerifications";
 
 const ROUTE_METHODS = new Set([
   "all",
@@ -109,10 +106,7 @@ const FORBIDDEN_RULES = [
   ["deploymentMode", /\bdeploymentMode\b/g],
   ["DeploymentMode", /\bDeploymentMode\b/g],
   ["DEPLOYMENT_MODES", /\bDEPLOYMENT_MODES\b/g],
-  [
-    "PAPERCLIP_DEPLOYMENT_MODE",
-    /\bPAPERCLIP_DEPLOYMENT_MODE\b/g,
-  ],
+  ["PAPERCLIP_DEPLOYMENT_MODE", /\bPAPERCLIP_DEPLOYMENT_MODE\b/g],
   [
     "retired auth/public URL alias",
     /\b(?:BETTER_AUTH_(?:BASE_)?URL|BETTER_AUTH_TRUSTED_ORIGINS|NEXT_PUBLIC_BETTER_AUTH_URL|PUBLIC_BETTER_AUTH_URL|NUXT_PUBLIC_BETTER_AUTH_URL|NUXT_PUBLIC_AUTH_URL|PAPERCLIP_AUTH_PUBLIC_BASE_URL|NEXT_PUBLIC_URL)\b/g,
@@ -133,16 +127,10 @@ const FORBIDDEN_RULES = [
     "retired Cloud identity environment variable",
     /\bPAPERCLIP_CLOUD_(?:STACK|TENANT|USER)_[A-Z0-9_]+\b/g,
   ],
-  [
-    "ensureLocalTrustedBoardPrincipal",
-    /\bensureLocalTrustedBoardPrincipal\b/g,
-  ],
+  ["ensureLocalTrustedBoardPrincipal", /\bensureLocalTrustedBoardPrincipal\b/g],
   ["resolveCloudTenantActor", /\bresolveCloudTenantActor\b/g],
   ["isCloudManagedInstance", /\bisCloudManagedInstance\b/g],
-  [
-    "Board Claim",
-    /\b(?:BoardClaim|board_claim|board-claim|Board Claim)\b/g,
-  ],
+  ["Board Claim", /\b(?:BoardClaim|board_claim|board-claim|Board Claim)\b/g],
   [
     "synthetic paperclip auth session",
     /paperclip:(?:\$\{\s*(?:actor\.source|authSource|source|userId)\b|(?:board|cloud_tenant|local_implicit|local_trusted|session):)/g,
@@ -155,10 +143,7 @@ const FORBIDDEN_RULES = [
     "legacy bootstrap invitation helper",
     /\b(?:createAuthBootstrapInvite|create-auth-bootstrap-invite)\b/g,
   ],
-  [
-    "fake system inviter",
-    /\binvitedByUserId\s*[:=]\s*["'`]system["'`]/g,
-  ],
+  ["fake system inviter", /\binvitedByUserId\s*[:=]\s*["'`]system["'`]/g],
   [
     "fake system inviter SQL",
     /\binvited_by_user_id\b[^\n]{0,80}["'`]system["'`]/gi,
@@ -177,42 +162,12 @@ const CANONICAL_RETIRED_INPUT_REJECTION_LINES = new Map<
     ]),
   ],
 ]);
-const CANONICAL_RETIRED_INPUT_REJECTION_BLOCKS = new Map<
-  string,
-  RegExp
->([
+const CANONICAL_RETIRED_INPUT_REJECTION_BLOCKS = new Map<string, RegExp>([
   [
     "packages/cli/src/commands/onboard.ts:PAPERCLIP_DEPLOYMENT_MODE",
     /if\s*\(\s*process\.env\.PAPERCLIP_DEPLOYMENT_MODE\s*!==\s*undefined\s*\)\s*\{\s*throw\s+new\s+Error\s*\(\s*"PAPERCLIP_DEPLOYMENT_MODE is unsupported\. Configure PAPERCLIP_BIND and PAPERCLIP_DEPLOYMENT_EXPOSURE instead\."\s*,?\s*\)\s*;?\s*\}/g,
   ],
 ]);
-
-/**
- * The direct TradingGoose MCP installer port emits a shell-local BASE_URL
- * constant from the server's explicit canonical URL. This is not an ambient
- * Better Auth origin or environment read; keep the exception exact and local
- * to the generated installer owner.
- */
-function isCanonicalGeneratedMcpInstallerBaseUrlAssignment(input: {
-  filePath: string;
-  label: string;
-  matchedText: string;
-  matchIndex: number;
-  source: string;
-}): boolean {
-  return (
-    input.filePath === "apps/server/src/services/board-mcp-install-script.ts"
-    && input.label === "ambient Better Auth BASE_URL"
-    // The ambient-origin matcher ends at `=`, so prove the emitted shell
-    // assignment's exact right-hand side from the original source.
-    && input.matchedText.trim() === "BASE_URL="
-    && input.source.startsWith(
-      "${shellSingleQuote(normalizedBaseUrl)}",
-      input.matchIndex + input.matchedText.length,
-    )
-    && input.source.split("BASE_URL=").length === 2
-  );
-}
 
 export interface CanonicalHumanAuthFile {
   path: string;
@@ -293,34 +248,26 @@ export function isTestSourcePath(file: string): boolean {
   if (isE2ePath(value)) return false;
   const basename = path.posix.basename(value);
   return (
-    /(?:^|\/)(?:__tests__|fixtures?|tests?|testing)(?:\/|$)/.test(
-      value,
-    )
-    || /\.(?:spec|test)\.[cm]?[jt]sx?$/.test(basename)
-    || /^(?:test-|.*-test-fixture\.)/.test(basename)
+    /(?:^|\/)(?:__tests__|fixtures?|tests?|testing)(?:\/|$)/.test(value) ||
+    /\.(?:spec|test)\.[cm]?[jt]sx?$/.test(basename) ||
+    /^(?:test-|.*-test-fixture\.)/.test(basename)
   );
 }
 
 function shouldScanRetiredTokens(file: string): boolean {
   const value = normalized(file);
   if (CHECKER_FILES.has(value)) return false;
-  if (
-    /^scripts\/check-[^/]+\.(?:[cm]?[jt]s)$/.test(value)
-  ) {
+  if (/^scripts\/check-[^/]+\.(?:[cm]?[jt]s)$/.test(value)) {
     return false;
   }
-  if (
-    ARCHIVED_DOCUMENT_PREFIXES.some((prefix) =>
-      value.startsWith(prefix)
-    )
-  ) {
+  if (ARCHIVED_DOCUMENT_PREFIXES.some((prefix) => value.startsWith(prefix))) {
     return false;
   }
   const extension = path.posix.extname(value);
   return (
-    SCANNED_TEXT_EXTENSIONS.has(extension)
-    || path.posix.basename(value) === ".env.example"
-    || path.posix.basename(value) === "Dockerfile"
+    SCANNED_TEXT_EXTENSIONS.has(extension) ||
+    path.posix.basename(value) === ".env.example" ||
+    path.posix.basename(value) === "Dockerfile"
   );
 }
 
@@ -354,17 +301,36 @@ function addViolation(
   input: CanonicalHumanAuthViolation,
 ): void {
   if (
-    violations.some((entry) =>
-      entry.path === input.path
-      && entry.line === input.line
-      && entry.column === input.column
-      && entry.kind === input.kind
-      && entry.message === input.message
+    violations.some(
+      (entry) =>
+        entry.path === input.path &&
+        entry.line === input.line &&
+        entry.column === input.column &&
+        entry.kind === input.kind &&
+        entry.message === input.message,
     )
   ) {
     return;
   }
   violations.push(input);
+}
+
+function isCanonicalGeneratedMcpInstallerBaseUrlAssignment(input: {
+  filePath: string;
+  label: string;
+  matchedText: string;
+  matchIndex: number;
+  source: string;
+}): boolean {
+  return (
+    input.filePath === "apps/server/src/services/board-mcp-install-script.ts" &&
+    input.label === "ambient Better Auth BASE_URL" &&
+    input.matchedText.trim() === "BASE_URL=" &&
+    input.source.startsWith(
+      "${shellSingleQuote(normalizedBaseUrl)}",
+      input.matchIndex + input.matchedText.length,
+    )
+  );
 }
 
 export function scanRetiredHumanIdentityTokens(
@@ -390,27 +356,31 @@ export function scanRetiredHumanIdentityTokens(
         const rejectionBlock =
           CANONICAL_RETIRED_INPUT_REJECTION_BLOCKS.get(rejectionKey);
         const canonicalRetiredInputRejection =
-          CANONICAL_RETIRED_INPUT_REJECTION_LINES.get(
-            rejectionKey,
-          )?.has(lineText.trim()) === true
-          && rejectionBlock !== undefined
-          && [...file.source.matchAll(
-            new RegExp(rejectionBlock.source, rejectionBlock.flags),
-          )].length === 1;
+          CANONICAL_RETIRED_INPUT_REJECTION_LINES.get(rejectionKey)?.has(
+            lineText.trim(),
+          ) === true &&
+          rejectionBlock !== undefined &&
+          [
+            ...file.source.matchAll(
+              new RegExp(rejectionBlock.source, rejectionBlock.flags),
+            ),
+          ].length === 1;
         const removalProof =
-          isTestSourcePath(filePath)
-          && lineText.includes(REMOVAL_PROOF_MARKER);
-        const canonicalGeneratedMcpInstallerBaseUrl =
+          isTestSourcePath(filePath) && lineText.includes(REMOVAL_PROOF_MARKER);
+        if (canonicalRetiredInputRejection) {
+          // A retired environment input is named only to reject it before
+          // configuration is read. Every other spelling or call site fails.
+        } else if (
           isCanonicalGeneratedMcpInstallerBaseUrlAssignment({
             filePath,
             label,
             matchedText: match[0],
             matchIndex: match.index,
             source: file.source,
-          });
-        if (canonicalRetiredInputRejection || canonicalGeneratedMcpInstallerBaseUrl) {
-          // A retired environment input is named only to reject it before
-          // configuration is read. Every other spelling or call site fails.
+          })
+        ) {
+          // This is a generated shell-local variable containing the already
+          // authority-validated Paperclip origin, not an ambient auth input.
         } else if (removalProof) {
           usedRemovalProofLines.add(location.line);
         } else {
@@ -464,11 +434,7 @@ function isGeneratedOrPlaceholderSecret(value: string): boolean {
   if (/^\$[A-Za-z_][A-Za-z0-9_]*$/.test(normalizedValue)) {
     return true;
   }
-  if (
-    /^\$\{[A-Za-z_][A-Za-z0-9_]*(?::\?[^}]*)?\}$/.test(
-      normalizedValue,
-    )
-  ) {
+  if (/^\$\{[A-Za-z_][A-Za-z0-9_]*(?::\?[^}]*)?\}$/.test(normalizedValue)) {
     return true;
   }
   if (/^\$\(\s*openssl\s+rand\s+-hex\s+32\s*\)$/.test(normalizedValue)) {
@@ -490,11 +456,9 @@ export function scanBetterAuthSecretBoundary(
   for (const file of files) {
     const filePath = normalized(file.path);
     if (
-      CHECKER_FILES.has(filePath)
-      || isTestSourcePath(filePath)
-      || ARCHIVED_DOCUMENT_PREFIXES.some((prefix) =>
-        filePath.startsWith(prefix)
-      )
+      CHECKER_FILES.has(filePath) ||
+      isTestSourcePath(filePath) ||
+      ARCHIVED_DOCUMENT_PREFIXES.some((prefix) => filePath.startsWith(prefix))
     ) {
       continue;
     }
@@ -504,9 +468,7 @@ export function scanBetterAuthSecretBoundary(
       ? [
           /\b(?:process\.env\.)?(?:DEFAULT_BETTER_AUTH_SECRET|BETTER_AUTH_SECRET(?:_DEFAULT)?)\s*(?:\?\?=|\|\|=|\?\?|\|\||=(?!=))\s*(["'`])([^"'`\r\n]+)\1/g,
         ]
-      : [
-          /\bBETTER_AUTH_SECRET[\t ]*=(?!=)[\t ]*([^\r\n#]*)/g,
-        ];
+      : [/\bBETTER_AUTH_SECRET[\t ]*=(?!=)[\t ]*([^\r\n#]*)/g];
     if (/\.(?:jsonc?|ya?ml)$/.test(filePath)) {
       patterns.push(
         /^[\t ]*["']?BETTER_AUTH_SECRET["']?[\t ]*:[\t ]*([^\r\n#]*)/gm,
@@ -520,7 +482,7 @@ export function scanBetterAuthSecretBoundary(
         match;
         match = matcher.exec(file.source)
       ) {
-        const candidate = codeFile ? match[2] ?? "" : match[1] ?? "";
+        const candidate = codeFile ? (match[2] ?? "") : (match[1] ?? "");
         if (isGeneratedOrPlaceholderSecret(candidate)) continue;
         addViolation(violations, {
           path: filePath,
@@ -579,10 +541,10 @@ function addHttpActorViolation(
 function unwrappedExpression(node: ts.Expression): ts.Expression {
   let current = node;
   while (
-    ts.isParenthesizedExpression(current)
-    || ts.isAsExpression(current)
-    || ts.isTypeAssertionExpression(current)
-    || ts.isNonNullExpression(current)
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    ts.isNonNullExpression(current)
   ) {
     current = current.expression;
   }
@@ -596,9 +558,9 @@ function propertyChain(node: ts.Expression): string[] {
     return [...propertyChain(current.expression), current.name.text];
   }
   if (
-    ts.isElementAccessExpression(current)
-    && current.argumentExpression
-    && ts.isStringLiteralLike(current.argumentExpression)
+    ts.isElementAccessExpression(current) &&
+    current.argumentExpression &&
+    ts.isStringLiteralLike(current.argumentExpression)
   ) {
     return [
       ...propertyChain(current.expression),
@@ -622,11 +584,7 @@ function isRequestActorExpression(
     return actorObjectAliases.has(current.text);
   }
   const chain = propertyChain(current);
-  return (
-    chain.length === 2
-    && chain[0] === "req"
-    && chain[1] === "actor"
-  );
+  return chain.length === 2 && chain[0] === "req" && chain[1] === "actor";
 }
 
 function isActorDiscriminant(
@@ -640,11 +598,8 @@ function isActorDiscriminant(
   }
   if (!ts.isPropertyAccessExpression(current)) return false;
   return (
-    (current.name.text === "type" || current.name.text === "actorType")
-    && isRequestActorExpression(
-      current.expression,
-      actorObjectAliases,
-    )
+    (current.name.text === "type" || current.name.text === "actorType") &&
+    isRequestActorExpression(current.expression, actorObjectAliases)
   );
 }
 
@@ -652,9 +607,9 @@ function objectProperty(
   node: ts.ObjectLiteralExpression,
   name: string,
 ): ts.PropertyAssignment | undefined {
-  return node.properties.find((property) =>
-    ts.isPropertyAssignment(property)
-    && propertyName(property.name) === name
+  return node.properties.find(
+    (property) =>
+      ts.isPropertyAssignment(property) && propertyName(property.name) === name,
   ) as ts.PropertyAssignment | undefined;
 }
 
@@ -674,18 +629,18 @@ function scanGenericHttpActorAst(
 
   const collectActorObjectAliases = (node: ts.Node) => {
     if (
-      ts.isVariableDeclaration(node)
-      && ts.isIdentifier(node.name)
-      && node.initializer
-      && isRequestActorExpression(node.initializer, actorObjectAliases)
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      isRequestActorExpression(node.initializer, actorObjectAliases)
     ) {
       actorObjectAliases.add(node.name.text);
     }
     if (
-      ts.isParameter(node)
-      && ts.isIdentifier(node.name)
-      && node.type
-      && /(?:\bRequestActor\b|Request\s*\[\s*["'`]actor["'`]\s*\])/.test(
+      ts.isParameter(node) &&
+      ts.isIdentifier(node.name) &&
+      node.type &&
+      /(?:\bRequestActor\b|Request\s*\[\s*["'`]actor["'`]\s*\])/.test(
         node.type.getText(sourceFile),
       )
     ) {
@@ -697,10 +652,10 @@ function scanGenericHttpActorAst(
 
   const collectActorTypeAliases = (node: ts.Node) => {
     if (
-      ts.isVariableDeclaration(node)
-      && ts.isIdentifier(node.name)
-      && node.initializer
-      && isActorDiscriminant(
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      isActorDiscriminant(
         node.initializer,
         actorTypeAliases,
         actorObjectAliases,
@@ -709,15 +664,15 @@ function scanGenericHttpActorAst(
       actorTypeAliases.add(node.name.text);
     }
     if (
-      ts.isVariableDeclaration(node)
-      && ts.isObjectBindingPattern(node.name)
-      && node.initializer
-      && isRequestActorExpression(node.initializer, actorObjectAliases)
+      ts.isVariableDeclaration(node) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.initializer &&
+      isRequestActorExpression(node.initializer, actorObjectAliases)
     ) {
       for (const element of node.name.elements) {
         if (
-          ts.isIdentifier(element.name)
-          && propertyName(element.propertyName ?? element.name) === "type"
+          ts.isIdentifier(element.name) &&
+          propertyName(element.propertyName ?? element.name) === "type"
         ) {
           actorTypeAliases.add(element.name.text);
         }
@@ -728,18 +683,10 @@ function scanGenericHttpActorAst(
   collectActorTypeAliases(sourceFile);
 
   const report = (node: ts.Node, message: string) => {
-    addHttpActorViolation(
-      violations,
-      file,
-      node.getStart(sourceFile),
-      message,
-    );
+    addHttpActorViolation(violations, file, node.getStart(sourceFile), message);
   };
   const visit = (node: ts.Node) => {
-    if (
-      ts.isIdentifier(node)
-      && node.text === "getActorInfo"
-    ) {
+    if (ts.isIdentifier(node) && node.text === "getActorInfo") {
       report(
         node,
         "generic REST route retains the obsolete mixed HTTP actor compatibility wrapper",
@@ -748,30 +695,24 @@ function scanGenericHttpActorAst(
     if (ts.isBinaryExpression(node)) {
       const operator = node.operatorToken.kind;
       const equality =
-        operator === ts.SyntaxKind.EqualsEqualsEqualsToken
-        || operator === ts.SyntaxKind.ExclamationEqualsEqualsToken
-        || operator === ts.SyntaxKind.EqualsEqualsToken
-        || operator === ts.SyntaxKind.ExclamationEqualsToken;
+        operator === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+        operator === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+        operator === ts.SyntaxKind.EqualsEqualsToken ||
+        operator === ts.SyntaxKind.ExclamationEqualsToken;
       if (
-        equality
-        && (
-          (
-            isAgentLiteral(node.right)
-            && isActorDiscriminant(
-              node.left,
-              actorTypeAliases,
-              actorObjectAliases,
-            )
-          )
-          || (
-            isAgentLiteral(node.left)
-            && isActorDiscriminant(
+        equality &&
+        ((isAgentLiteral(node.right) &&
+          isActorDiscriminant(
+            node.left,
+            actorTypeAliases,
+            actorObjectAliases,
+          )) ||
+          (isAgentLiteral(node.left) &&
+            isActorDiscriminant(
               node.right,
               actorTypeAliases,
               actorObjectAliases,
-            )
-          )
-        )
+            )))
       ) {
         report(
           node,
@@ -780,10 +721,10 @@ function scanGenericHttpActorAst(
       }
     }
     if (
-      ts.isCaseClause(node)
-      && isAgentLiteral(node.expression)
-      && ts.isSwitchStatement(node.parent.parent)
-      && isActorDiscriminant(
+      ts.isCaseClause(node) &&
+      isAgentLiteral(node.expression) &&
+      ts.isSwitchStatement(node.parent.parent) &&
+      isActorDiscriminant(
         node.parent.parent.expression,
         actorTypeAliases,
         actorObjectAliases,
@@ -795,12 +736,9 @@ function scanGenericHttpActorAst(
       );
     }
     if (
-      ts.isPropertyAccessExpression(node)
-      && (node.name.text === "agentId" || node.name.text === "runId")
-      && isRequestActorExpression(
-        node.expression,
-        actorObjectAliases,
-      )
+      ts.isPropertyAccessExpression(node) &&
+      (node.name.text === "agentId" || node.name.text === "runId") &&
+      isRequestActorExpression(node.expression, actorObjectAliases)
     ) {
       report(
         node,
@@ -810,19 +748,14 @@ function scanGenericHttpActorAst(
     if (ts.isObjectLiteralExpression(node)) {
       const actorType = objectProperty(node, "actorType");
       const hasUserActorType =
-        actorType !== undefined
-        && ts.isStringLiteralLike(
-          unwrappedExpression(actorType.initializer),
-        )
-        && (
-          unwrappedExpression(actorType.initializer) as ts.StringLiteral
-        ).text === "user";
+        actorType !== undefined &&
+        ts.isStringLiteralLike(unwrappedExpression(actorType.initializer)) &&
+        (unwrappedExpression(actorType.initializer) as ts.StringLiteral)
+          .text === "user";
       if (
-        hasUserActorType
-        && (
-          objectProperty(node, "agentId") !== undefined
-          || objectProperty(node, "runId") !== undefined
-        )
+        hasUserActorType &&
+        (objectProperty(node, "agentId") !== undefined ||
+          objectProperty(node, "runId") !== undefined)
       ) {
         report(
           node,
@@ -837,23 +770,22 @@ function scanGenericHttpActorAst(
 
 /**
  * Enforces the closed HTTP actor contract separately from domain-level
- * user/board owner kinds. The runtime agent variant exists only so the app can
- * reject it at the boundary after the isolated run-tools mount.
+ * user/board owner kinds. Generic HTTP actor resolution can produce only a
+ * board actor or the unauthenticated actor; productive agents exist only
+ * behind the isolated run-tools capability boundary.
  */
 export function scanHttpActorBoundary(
   files: readonly CanonicalHumanAuthFile[],
 ): CanonicalHumanAuthViolation[] {
   const violations: CanonicalHumanAuthViolation[] = [];
-  const byPath = new Map(
-    files.map((file) => [normalized(file.path), file]),
-  );
+  const byPath = new Map(files.map((file) => [normalized(file.path), file]));
 
   for (const file of files) {
     const filePath = normalized(file.path);
     if (
-      !isCodeFile(filePath)
-      || isTestSourcePath(filePath)
-      || CHECKER_FILES.has(filePath)
+      !isCodeFile(filePath) ||
+      isTestSourcePath(filePath) ||
+      CHECKER_FILES.has(filePath)
     ) {
       continue;
     }
@@ -874,11 +806,8 @@ export function scanHttpActorBoundary(
       }
     }
     const genericHttpOwner =
-      (
-        filePath.startsWith("apps/server/src/routes/")
-        || filePath.startsWith("apps/server/src/middleware/")
-      )
-      && filePath !== "apps/server/src/routes/compiled-interface-only.ts";
+      filePath.startsWith("apps/server/src/routes/") ||
+      filePath.startsWith("apps/server/src/middleware/");
     if (genericHttpOwner) {
       for (const [label, pattern] of GENERIC_ROUTE_AGENT_ACTOR_RULES) {
         const matcher = new RegExp(pattern.source, pattern.flags);
@@ -898,22 +827,6 @@ export function scanHttpActorBoundary(
       }
       scanGenericHttpActorAst(file, violations);
     }
-    const retiredInviteAgentSource =
-      /(?:\bsource\b|\binviteSources\b|\bINVITE_SOURCES\b)[^\n]{0,120}\bagent_api\b|\bagent_api\b[^\n]{0,120}(?:\bsource\b|\binviteSources\b|\bINVITE_SOURCES\b)/.exec(
-        file.source,
-      );
-    if (
-      filePath !== "packages/db/migrations"
-      && !filePath.startsWith("packages/db/migrations/")
-      && retiredInviteAgentSource
-    ) {
-      addHttpActorViolation(
-        violations,
-        file,
-        retiredInviteAgentSource.index,
-        "retired agent_api invite provenance remains outside historical migration artifacts",
-      );
-    }
   }
 
   for (const ownerPath of [
@@ -923,8 +836,9 @@ export function scanHttpActorBoundary(
     const owner = byPath.get(ownerPath);
     if (!owner) continue;
     const genericConsentRequest =
-      /(?:router|registerCurrentRoute)[\s\S]{0,180}\bpost\b[\s\S]{0,180}\/(?:api\/)?companies\/(?::companyId|\{companyId\})\/change-consents["'`]/g
-        .exec(owner.source);
+      /(?:router|registerCurrentRoute)[\s\S]{0,180}\bpost\b[\s\S]{0,180}\/(?:api\/)?companies\/(?::companyId|\{companyId\})\/change-consents["'`]/g.exec(
+        owner.source,
+      );
     if (genericConsentRequest) {
       addHttpActorViolation(
         violations,
@@ -939,16 +853,12 @@ export function scanHttpActorBoundary(
     "apps/server/src/services/runtime-agent-action-port.ts",
   );
   if (
-    runtimeAgentActionPort
-    && (
-      !/\bRuntimeAgentConfigurationConsentRequired\b/.test(
-        runtimeAgentActionPort.source,
-      )
-      || !/\brequestChangeConsent\b/.test(runtimeAgentActionPort.source)
-      || !/\bchange_consent_requested\b/.test(
-        runtimeAgentActionPort.source,
-      )
-    )
+    runtimeAgentActionPort &&
+    (!/\bRuntimeAgentConfigurationConsentRequired\b/.test(
+      runtimeAgentActionPort.source,
+    ) ||
+      !/\brequestChangeConsent\b/.test(runtimeAgentActionPort.source) ||
+      !/\bchange_consent_requested\b/.test(runtimeAgentActionPort.source))
   ) {
     addHttpActorViolation(
       violations,
@@ -960,11 +870,9 @@ export function scanHttpActorBoundary(
 
   const serverEntry = byPath.get("apps/server/src/index.ts");
   if (
-    serverEntry
-    && (
-      !/\bchangeConsentGateService\s*\(/.test(serverEntry.source)
-      || !/\brequestChangeConsent\s*\(/.test(serverEntry.source)
-    )
+    serverEntry &&
+    (!/\bchangeConsentGateService\s*\(/.test(serverEntry.source) ||
+      !/\brequestChangeConsent\s*\(/.test(serverEntry.source))
   ) {
     addHttpActorViolation(
       violations,
@@ -976,8 +884,8 @@ export function scanHttpActorBoundary(
 
   const declaration = byPath.get("apps/server/src/types/express.d.ts");
   if (
-    declaration
-    && !/\bactor\s*:\s*RequestActor\s*;/.test(declaration.source)
+    declaration &&
+    !/\bactor\s*:\s*RequestActor\s*;/.test(declaration.source)
   ) {
     addHttpActorViolation(
       violations,
@@ -995,12 +903,9 @@ export function scanHttpActorBoundary(
       /\bsessionId\s*:\s*string\s*;/,
       /\bsource\s*:\s*"board_key"\s*;/,
       /\bkeyId\s*:\s*string\s*;/,
-      /\btype\s*:\s*"agent"\s*;/,
-      /\bagentId\s*:\s*string\s*;/,
-      /\bcompanyId\s*:\s*string\s*;/,
-      /\brunId\s*:\s*string\s*;/,
       /\btype\s*:\s*"none"\s*;/,
       /\bsource\s*:\s*"none"\s*;/,
+      /export\s+type\s+RequestActor\s*=\s*BoardActor\s*\|\s*UnauthenticatedActor\s*;/,
     ];
     for (const fragment of requiredFragments) {
       if (fragment.test(contract.source)) continue;
@@ -1009,6 +914,18 @@ export function scanHttpActorBoundary(
         contract,
         0,
         `canonical RequestActor is missing required fragment ${fragment.source}`,
+      );
+    }
+    const retiredAgentVariant =
+      /\bRuntimeAgentActor\b|\btype\s*:\s*["'`]agent["'`]|\bagentId\b|\brunId\b|\bonBehalfOf(?:UserId|Memberships)\b/.exec(
+        contract.source,
+      );
+    if (retiredAgentVariant) {
+      addHttpActorViolation(
+        violations,
+        contract,
+        retiredAgentVariant.index,
+        "canonical RequestActor must not retain a runtime-agent variant or delegation fields",
       );
     }
   }
@@ -1030,85 +947,81 @@ export function scanHttpActorBoundary(
   }
 
   const liveEvents = byPath.get(
-    "apps/server/src/realtime/live-events-ws.ts",
+    "apps/server/src/realtime/live-events-socket.ts",
   );
   if (liveEvents) {
     const authorizeStart = liveEvents.source.indexOf(
-      "async function authorizeUpgrade(",
+      "async function authorizeSocket(",
     );
     const authorizeEnd = liveEvents.source.indexOf(
-      "export function setupLiveEventsWebSocketServer(",
+      "export function setupLiveEventsSocketServer(",
     );
-    const authorizeSource = (
-      authorizeStart >= 0
-      && authorizeEnd > authorizeStart
-    )
-      ? liveEvents.source.slice(authorizeStart, authorizeEnd)
-      : "";
+    const authorizeSource =
+      authorizeStart >= 0 && authorizeEnd > authorizeStart
+        ? liveEvents.source.slice(authorizeStart, authorizeEnd)
+        : "";
     const exactSessionBindingGuard =
       /if\s*\(\s*!\s*\(\s*isNonEmptyActorId\s*\(\s*session\?\.user\?\.id\s*\)\s*&&\s*isNonEmptyActorId\s*\(\s*session\.session\?\.id\s*\)\s*&&\s*isNonEmptyActorId\s*\(\s*session\.session\.userId\s*\)\s*&&\s*session\.session\.userId\s*===\s*session\.user\.id\s*\)\s*\)\s*\{\s*return\s+null\s*;?\s*\}/m;
     const guard = exactSessionBindingGuard.exec(authorizeSource);
-    const authorizationRead = authorizeSource.indexOf(
-      "const [roleRow, memberships] = await Promise.all([",
-    );
-    if (
-      !guard
-      || authorizationRead < 0
-      || guard.index >= authorizationRead
-    ) {
+    const authorizationRead = (() => {
+      const directRead =
+        /const\s+\[\s*roleRow\s*,\s*memberships?\s*\]\s*=\s*await\s+Promise\.all\s*\(\s*\[/m.exec(
+          authorizeSource,
+        )?.index ?? -1;
+      if (directRead >= 0) return directRead;
+      return (
+        /return\s+loadSocketAuthorization\s*\(\s*db\s*,\s*\{/m.exec(
+          authorizeSource,
+        )?.index ?? -1
+      );
+    })();
+    if (!guard || authorizationRead < 0 || guard.index >= authorizationRead) {
       addHttpActorViolation(
         violations,
         liveEvents,
         Math.max(authorizeStart, 0),
-        "live-events WebSocket authorization must reject unless nonblank session.session.userId exactly equals session.user.id before role or membership reads",
+        "live-events Socket.IO authorization must reject unless nonblank session.session.userId exactly equals session.user.id before role or membership reads",
       );
     }
   }
 
   const app = byPath.get("apps/server/src/app.ts");
   if (app) {
-    const runTools = app.source.indexOf(
-      'app.use("/api", runToolsRoutes(',
-    );
-    const runBearerWall = app.source.indexOf(
-      'app.use("/api", rejectRunInterfaceBearerFromGenericApi());',
-    );
+    const runTools = app.source.indexOf('app.use("/api", runToolsRoutes(');
     const boardMcpActor = app.source.search(
-      /app\.use\(\s*["']\/api\/mcp["']\s*,\s*actorMiddleware\(db,\s*\{/s,
+      /app\.use\(\s*["']\/api\/mcp["']\s*,\s*canonicalRequestTarget\(\)\s*,\s*actorMiddleware\(db,\s*\{/s,
     );
     const boardMcpRoute = app.source.search(
       /app\.use\(\s*["']\/api["']\s*,\s*boardMcpRoutes\(\s*\{/s,
     );
-    const genericActorMiddleware = runBearerWall < 0
-      ? -1
-      : app.source.indexOf("actorMiddleware(db, {", runBearerWall);
+    const runBearerWall = app.source.indexOf(
+      'app.use("/api", rejectRunInterfaceBearerFromGenericApi());',
+    );
+    const genericActorMiddleware =
+      runBearerWall < 0
+        ? -1
+        : app.source.indexOf("actorMiddleware(db, {", runBearerWall);
     const authOwner = app.source.indexOf(
       'app.all("/api/auth/{*authPath}", opts.betterAuthHandler);',
     );
-    const genericAgentDeny = app.source.indexOf(
-      'app.use("/api", denyGenericAgentRest("REST"));',
-    );
     if (
-      runTools < 0
-      || runBearerWall < 0
-      || boardMcpActor < 0
-      || boardMcpRoute < 0
-      || genericActorMiddleware < 0
-      || authOwner < 0
-      || genericAgentDeny < 0
-      || !(runTools < runBearerWall)
-      || !(runTools < boardMcpActor)
-      || !(boardMcpActor < boardMcpRoute)
-      || !(boardMcpRoute < runBearerWall)
-      || !(runBearerWall < genericActorMiddleware)
-      || !(genericActorMiddleware < authOwner)
-      || !(authOwner < genericAgentDeny)
+      runTools < 0 ||
+      boardMcpActor < 0 ||
+      boardMcpRoute < 0 ||
+      runBearerWall < 0 ||
+      genericActorMiddleware < 0 ||
+      authOwner < 0 ||
+      !(runTools < boardMcpActor) ||
+      !(boardMcpActor < boardMcpRoute) ||
+      !(boardMcpRoute < runBearerWall) ||
+      !(runBearerWall < genericActorMiddleware) ||
+      !(genericActorMiddleware < authOwner)
     ) {
       addHttpActorViolation(
         violations,
         app,
         0,
-        "run tools must mount before the generic run-bearer wall; Board MCP must use its isolated board-key actor before its route; generic actor then follows the wall with Better Auth followed by the generic-agent REST denial",
+        "run tools must mount first; the isolated Board MCP board-key actor and route must precede the generic run-bearer wall; generic board-or-none actor resolution and Better Auth must follow that wall",
       );
     }
   }
@@ -1118,9 +1031,9 @@ export function scanHttpActorBoundary(
 
 function propertyName(node: ts.Node): string | null {
   if (
-    ts.isIdentifier(node)
-    || ts.isStringLiteral(node)
-    || ts.isNumericLiteral(node)
+    ts.isIdentifier(node) ||
+    ts.isStringLiteral(node) ||
+    ts.isNumericLiteral(node)
   ) {
     return node.text;
   }
@@ -1129,10 +1042,7 @@ function propertyName(node: ts.Node): string | null {
 
 function callPropertyName(node: ts.Expression): string | null {
   if (ts.isPropertyAccessExpression(node)) return node.name.text;
-  if (
-    ts.isElementAccessExpression(node)
-    && node.argumentExpression
-  ) {
+  if (ts.isElementAccessExpression(node) && node.argumentExpression) {
     return propertyName(node.argumentExpression);
   }
   return null;
@@ -1155,15 +1065,13 @@ function collectWorkspacePackages(
       const packageRoot = path.posix.dirname(filePath);
       const packageExports: Record<string, string> = {};
       if (
-        parsed.exports
-        && typeof parsed.exports === "object"
-        && !Array.isArray(parsed.exports)
+        parsed.exports &&
+        typeof parsed.exports === "object" &&
+        !Array.isArray(parsed.exports)
       ) {
-        for (
-          const [key, value] of Object.entries(
-            parsed.exports as Record<string, unknown>,
-          )
-        ) {
+        for (const [key, value] of Object.entries(
+          parsed.exports as Record<string, unknown>,
+        )) {
           if (typeof value === "string") packageExports[key] = value;
         }
       } else if (typeof parsed.main === "string") {
@@ -1199,9 +1107,7 @@ function candidateSourcePaths(base: string): string[] {
   } else {
     for (const sourceExtensionValue of SOURCE_EXTENSIONS) {
       candidates.push(`${value}${sourceExtensionValue}`);
-      candidates.push(
-        `${value}/index${sourceExtensionValue}`,
-      );
+      candidates.push(`${value}/index${sourceExtensionValue}`);
     }
   }
   return [...new Set(candidates)];
@@ -1229,8 +1135,9 @@ function resolveModuleSpecifier(
       let target = packageInfo.exports[exportKey];
       if (!target) {
         const wildcard = Object.entries(packageInfo.exports).find(
-          ([key]) => key.includes("*")
-          && exportKey.startsWith(key.slice(0, key.indexOf("*"))),
+          ([key]) =>
+            key.includes("*") &&
+            exportKey.startsWith(key.slice(0, key.indexOf("*"))),
         );
         if (wildcard) {
           const [key, pattern] = wildcard;
@@ -1242,18 +1149,14 @@ function resolveModuleSpecifier(
         }
       }
       if (target) {
-        base = path.posix.join(
-          packageInfo.root,
-          target.replace(/^\.\//, ""),
-        );
+        base = path.posix.join(packageInfo.root, target.replace(/^\.\//, ""));
       }
     }
   }
   if (!base) return null;
   return (
-    candidateSourcePaths(base).find((candidate) =>
-      knownPaths.has(candidate)
-    ) ?? null
+    candidateSourcePaths(base).find((candidate) => knownPaths.has(candidate)) ??
+    null
   );
 }
 
@@ -1263,25 +1166,21 @@ function moduleSpecifiers(
   const imports: Array<{ node: ts.Node; specifier: string }> = [];
   const visit = (node: ts.Node) => {
     if (
-      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
-      && node.moduleSpecifier
-      && ts.isStringLiteral(node.moduleSpecifier)
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
     ) {
       imports.push({
         node,
         specifier: node.moduleSpecifier.text,
       });
     } else if (
-      ts.isCallExpression(node)
-      && (
-        node.expression.kind === ts.SyntaxKind.ImportKeyword
-        || (
-          ts.isIdentifier(node.expression)
-          && node.expression.text === "require"
-        )
-      )
-      && node.arguments.length === 1
-      && ts.isStringLiteral(node.arguments[0]!)
+      ts.isCallExpression(node) &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) &&
+          node.expression.text === "require")) &&
+      node.arguments.length === 1 &&
+      ts.isStringLiteral(node.arguments[0]!)
     ) {
       imports.push({
         node,
@@ -1297,13 +1196,12 @@ function moduleSpecifiers(
 function parseModules(
   files: readonly CanonicalHumanAuthFile[],
 ): Map<string, ParsedModule> {
-  const codeFiles = files.filter((file) =>
-    isCodeFile(normalized(file.path))
-    && !CHECKER_FILES.has(normalized(file.path))
+  const codeFiles = files.filter(
+    (file) =>
+      isCodeFile(normalized(file.path)) &&
+      !CHECKER_FILES.has(normalized(file.path)),
   );
-  const knownPaths = new Set(
-    files.map((file) => normalized(file.path)),
-  );
+  const knownPaths = new Set(files.map((file) => normalized(file.path)));
   const workspacePackages = collectWorkspacePackages(files);
   const modules = new Map<string, ParsedModule>();
 
@@ -1322,8 +1220,8 @@ function parseModules(
 
     for (const statement of sourceFile.statements) {
       if (
-        ts.isImportDeclaration(statement)
-        && statement.importClause?.namedBindings
+        ts.isImportDeclaration(statement) &&
+        statement.importClause?.namedBindings
       ) {
         const target = ts.isStringLiteral(statement.moduleSpecifier)
           ? resolveModuleSpecifier(
@@ -1341,10 +1239,7 @@ function parseModules(
             const importedName =
               element.propertyName?.text ?? element.name.text;
             if (AUTH_TABLES.has(importedName)) {
-              bindings.set(
-                element.name.text,
-                importedName as AuthTable,
-              );
+              bindings.set(element.name.text, importedName as AuthTable);
             }
           }
         }
@@ -1352,8 +1247,8 @@ function parseModules(
       if (ts.isVariableStatement(statement)) {
         for (const declaration of statement.declarationList.declarations) {
           if (
-            ts.isIdentifier(declaration.name)
-            && AUTH_TABLES.has(declaration.name.text)
+            ts.isIdentifier(declaration.name) &&
+            AUTH_TABLES.has(declaration.name.text)
           ) {
             bindings.set(
               declaration.name.text,
@@ -1361,14 +1256,10 @@ function parseModules(
             );
           }
           if (
-            ts.isIdentifier(declaration.name)
-            && declaration.initializer
-            && (
-              ts.isStringLiteral(declaration.initializer)
-              || ts.isNoSubstitutionTemplateLiteral(
-                declaration.initializer,
-              )
-            )
+            ts.isIdentifier(declaration.name) &&
+            declaration.initializer &&
+            (ts.isStringLiteral(declaration.initializer) ||
+              ts.isNoSubstitutionTemplateLiteral(declaration.initializer))
           ) {
             stringBindings.set(
               declaration.name.text,
@@ -1410,8 +1301,8 @@ function parseModules(
       return module.bindings.get(expression.text);
     }
     if (
-      ts.isPropertyAccessExpression(expression)
-      || ts.isElementAccessExpression(expression)
+      ts.isPropertyAccessExpression(expression) ||
+      ts.isElementAccessExpression(expression)
     ) {
       const member = ts.isPropertyAccessExpression(expression)
         ? expression.name.text
@@ -1434,25 +1325,14 @@ function parseModules(
       for (const statement of module.sourceFile.statements) {
         if (ts.isImportDeclaration(statement)) {
           const target = ts.isStringLiteral(statement.moduleSpecifier)
-            ? module.imports.find((entry) =>
-                entry.node === statement
-              )?.target
+            ? module.imports.find((entry) => entry.node === statement)?.target
             : null;
-          const namedBindings =
-            statement.importClause?.namedBindings;
-          if (
-            target
-            && namedBindings
-            && ts.isNamedImports(namedBindings)
-          ) {
+          const namedBindings = statement.importClause?.namedBindings;
+          if (target && namedBindings && ts.isNamedImports(namedBindings)) {
             for (const element of namedBindings.elements) {
-              const imported =
-                element.propertyName?.text ?? element.name.text;
+              const imported = element.propertyName?.text ?? element.name.text;
               const origin = modules.get(target)?.exports.get(imported);
-              if (
-                origin
-                && module.bindings.get(element.name.text) !== origin
-              ) {
+              if (origin && module.bindings.get(element.name.text) !== origin) {
                 module.bindings.set(element.name.text, origin);
                 changed = true;
               }
@@ -1461,60 +1341,51 @@ function parseModules(
         }
 
         if (ts.isVariableStatement(statement)) {
-          for (
-            const declaration of statement.declarationList.declarations
-          ) {
+          for (const declaration of statement.declarationList.declarations) {
             if (!declaration.initializer) continue;
             if (ts.isIdentifier(declaration.name)) {
-              const origin = resolveOrigin(
-                module,
-                declaration.initializer,
-              );
+              const origin = resolveOrigin(module, declaration.initializer);
               if (
-                origin
-                && module.bindings.get(declaration.name.text) !== origin
+                origin &&
+                module.bindings.get(declaration.name.text) !== origin
               ) {
                 module.bindings.set(declaration.name.text, origin);
                 changed = true;
               }
               if (
-                ts.isIdentifier(declaration.initializer)
-                && module.namespaceTargets.has(
-                  declaration.initializer.text,
-                )
-                && !module.namespaceTargets.has(declaration.name.text)
+                ts.isIdentifier(declaration.initializer) &&
+                module.namespaceTargets.has(declaration.initializer.text) &&
+                !module.namespaceTargets.has(declaration.name.text)
               ) {
                 module.namespaceTargets.set(
                   declaration.name.text,
-                  module.namespaceTargets.get(
-                    declaration.initializer.text,
-                  ) ?? null,
+                  module.namespaceTargets.get(declaration.initializer.text) ??
+                    null,
                 );
                 changed = true;
               }
             } else if (
-              ts.isObjectBindingPattern(declaration.name)
-              && ts.isIdentifier(declaration.initializer)
-              && module.namespaceTargets.has(
-                declaration.initializer.text,
-              )
+              ts.isObjectBindingPattern(declaration.name) &&
+              ts.isIdentifier(declaration.initializer) &&
+              module.namespaceTargets.has(declaration.initializer.text)
             ) {
               const target = module.namespaceTargets.get(
                 declaration.initializer.text,
               );
               for (const element of declaration.name.elements) {
                 if (!ts.isIdentifier(element.name)) continue;
-                const imported =
-                  propertyName(element.propertyName ?? element.name);
+                const imported = propertyName(
+                  element.propertyName ?? element.name,
+                );
                 if (!imported) continue;
                 const origin = AUTH_TABLES.has(imported)
-                  ? imported as AuthTable
+                  ? (imported as AuthTable)
                   : target
                     ? modules.get(target)?.exports.get(imported)
                     : undefined;
                 if (
-                  origin
-                  && module.bindings.get(element.name.text) !== origin
+                  origin &&
+                  module.bindings.get(element.name.text) !== origin
                 ) {
                   module.bindings.set(element.name.text, origin);
                   changed = true;
@@ -1526,28 +1397,20 @@ function parseModules(
 
         if (ts.isExportDeclaration(statement)) {
           const target = statement.moduleSpecifier
-            ? module.imports.find((entry) =>
-                entry.node === statement
-              )?.target
+            ? module.imports.find((entry) => entry.node === statement)?.target
             : null;
           if (
-            statement.exportClause
-            && ts.isNamedExports(statement.exportClause)
+            statement.exportClause &&
+            ts.isNamedExports(statement.exportClause)
           ) {
             for (const element of statement.exportClause.elements) {
-              const localName =
-                element.propertyName?.text ?? element.name.text;
+              const localName = element.propertyName?.text ?? element.name.text;
               const origin = target
-                ? (
-                    AUTH_TABLES.has(localName)
-                      ? localName as AuthTable
-                      : modules.get(target)?.exports.get(localName)
-                  )
+                ? AUTH_TABLES.has(localName)
+                  ? (localName as AuthTable)
+                  : modules.get(target)?.exports.get(localName)
                 : module.bindings.get(localName);
-              if (
-                origin
-                && module.exports.get(element.name.text) !== origin
-              ) {
+              if (origin && module.exports.get(element.name.text) !== origin) {
                 module.exports.set(element.name.text, origin);
                 changed = true;
               }
@@ -1556,10 +1419,8 @@ function parseModules(
             if (!module.exportStars.includes(target)) {
               module.exportStars.push(target);
             }
-            for (
-              const [exportName, origin] of
-              modules.get(target)?.exports ?? []
-            ) {
+            for (const [exportName, origin] of modules.get(target)?.exports ??
+              []) {
               if (module.exports.get(exportName) !== origin) {
                 module.exports.set(exportName, origin);
                 changed = true;
@@ -1569,20 +1430,17 @@ function parseModules(
         }
 
         if (
-          ts.isVariableStatement(statement)
-          && statement.modifiers?.some(
-            (modifier) =>
-              modifier.kind === ts.SyntaxKind.ExportKeyword,
+          ts.isVariableStatement(statement) &&
+          statement.modifiers?.some(
+            (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
           )
         ) {
-          for (
-            const declaration of statement.declarationList.declarations
-          ) {
+          for (const declaration of statement.declarationList.declarations) {
             if (!ts.isIdentifier(declaration.name)) continue;
             const origin = module.bindings.get(declaration.name.text);
             if (
-              origin
-              && module.exports.get(declaration.name.text) !== origin
+              origin &&
+              module.exports.get(declaration.name.text) !== origin
             ) {
               module.exports.set(declaration.name.text, origin);
               changed = true;
@@ -1607,8 +1465,8 @@ function expressionOrigin(
     return module.bindings.get(expression.text);
   }
   if (
-    ts.isPropertyAccessExpression(expression)
-    || ts.isElementAccessExpression(expression)
+    ts.isPropertyAccessExpression(expression) ||
+    ts.isElementAccessExpression(expression)
   ) {
     const member = ts.isPropertyAccessExpression(expression)
       ? expression.name.text
@@ -1619,9 +1477,7 @@ function expressionOrigin(
       return undefined;
     }
     if (AUTH_TABLES.has(member)) return member as AuthTable;
-    const target = module.namespaceTargets.get(
-      expression.expression.text,
-    );
+    const target = module.namespaceTargets.get(expression.expression.text);
     return target ? modules.get(target)?.exports.get(member) : undefined;
   }
   return undefined;
@@ -1630,16 +1486,16 @@ function expressionOrigin(
 function enclosingFunctionName(node: ts.Node): string | null {
   for (let current = node.parent; current; current = current.parent) {
     if (
-      ts.isFunctionDeclaration(current)
-      || ts.isMethodDeclaration(current)
-      || ts.isFunctionExpression(current)
+      ts.isFunctionDeclaration(current) ||
+      ts.isMethodDeclaration(current) ||
+      ts.isFunctionExpression(current)
     ) {
       return current.name ? propertyName(current.name) : null;
     }
     if (
-      ts.isArrowFunction(current)
-      && ts.isVariableDeclaration(current.parent)
-      && ts.isIdentifier(current.parent.name)
+      ts.isArrowFunction(current) &&
+      ts.isVariableDeclaration(current.parent) &&
+      ts.isIdentifier(current.parent.name)
     ) {
       return current.parent.name.text;
     }
@@ -1647,10 +1503,7 @@ function enclosingFunctionName(node: ts.Node): string | null {
   return null;
 }
 
-function isAllowedAuthWriterOwner(
-  file: string,
-  _node: ts.Node,
-): boolean {
+function isAllowedAuthWriterOwner(file: string, _node: ts.Node): boolean {
   return file === "apps/server/src/auth/better-auth.ts";
 }
 
@@ -1673,8 +1526,8 @@ function sqlStringBindings(module: ParsedModule): Set<string> {
     if (ts.isCallExpression(node)) {
       const callName = sqlCallName(node.expression);
       if (
-        callName
-        && ["execute", "query", "raw", "unsafe"].includes(callName)
+        callName &&
+        ["execute", "query", "raw", "unsafe"].includes(callName)
       ) {
         for (const argument of node.arguments) {
           if (ts.isIdentifier(argument)) bindings.add(argument.text);
@@ -1700,19 +1553,18 @@ function isSqlTextNode(
     return tagName === "sql" || tagName === "raw";
   }
   if (
-    ts.isCallExpression(node.parent)
-    && node.parent.arguments.includes(node)
+    ts.isCallExpression(node.parent) &&
+    node.parent.arguments.includes(node)
   ) {
     const callName = sqlCallName(node.parent.expression);
     return Boolean(
-      callName
-      && ["execute", "query", "raw", "unsafe"].includes(callName),
+      callName && ["execute", "query", "raw", "unsafe"].includes(callName),
     );
   }
   return Boolean(
-    ts.isVariableDeclaration(node.parent)
-    && ts.isIdentifier(node.parent.name)
-    && referencedSqlStrings.has(node.parent.name.text),
+    ts.isVariableDeclaration(node.parent) &&
+    ts.isIdentifier(node.parent.name) &&
+    referencedSqlStrings.has(node.parent.name.text),
   );
 }
 
@@ -1726,33 +1578,26 @@ function collectAuthMutations(
     if (ts.isCallExpression(node)) {
       const operation = callPropertyName(node.expression);
       if (
-        operation
-        && ["delete", "insert", "update", "upsert"].includes(operation)
-        && node.arguments[0]
-        && ts.isExpression(node.arguments[0])
+        operation &&
+        ["delete", "insert", "update", "upsert"].includes(operation) &&
+        node.arguments[0] &&
+        ts.isExpression(node.arguments[0])
       ) {
-        const table = expressionOrigin(
-          modules,
-          module,
-          node.arguments[0],
-        );
+        const table = expressionOrigin(modules, module, node.arguments[0]);
         if (table) {
           mutations.push({
             node,
-            message:
-              `direct ${operation}(${table}) bypasses Better Auth`,
+            message: `direct ${operation}(${table}) bypasses Better Auth`,
           });
         }
       }
     }
 
     if (
-      ts.isStringLiteral(node)
-      || (
-        ts.isNoSubstitutionTemplateLiteral(node)
-        && !ts.isTaggedTemplateExpression(node.parent)
-      )
-      || ts.isTaggedTemplateExpression(node)
+      ts.isStringLiteral(node) ||
+      (ts.isNoSubstitutionTemplateLiteral(node) &&
+        !ts.isTaggedTemplateExpression(node.parent)) ||
+      ts.isTaggedTemplateExpression(node)
     ) {
       if (!isSqlTextNode(module, node, referencedSqlStrings)) {
         ts.forEachChild(node, visit);
@@ -1772,8 +1617,7 @@ function collectAuthMutations(
       ) {
         mutations.push({
           node,
-          message:
-            `raw SQL ${match[1]!.toLowerCase()} of Better Auth table ${match[2]!.toLowerCase()} bypasses Better Auth`,
+          message: `raw SQL ${match[1]!.toLowerCase()} of Better Auth table ${match[2]!.toLowerCase()} bypasses Better Auth`,
         });
         if (match[0].length === 0) matcher.lastIndex += 1;
       }
@@ -1812,9 +1656,10 @@ export function scanProductionImportsOfTestSetup(
   const violations: CanonicalHumanAuthViolation[] = [];
   const authSetupFiles = new Set(
     [...modules.values()]
-      .filter((module) =>
-        isTestSourcePath(module.file.path)
-        && collectAuthMutations(modules, module).length > 0
+      .filter(
+        (module) =>
+          isTestSourcePath(module.file.path) &&
+          collectAuthMutations(modules, module).length > 0,
       )
       .map((module) => module.file.path),
   );
@@ -1846,8 +1691,7 @@ export function scanProductionImportsOfTestSetup(
         path: module.file.path,
         ...nodeLocation(module.sourceFile, imported.node),
         kind: "production_test_import",
-        message:
-          `shipped code imports test-local account setup ${authSetup} through ${imported.specifier}`,
+        message: `shipped code imports test-local account setup ${authSetup} through ${imported.specifier}`,
       });
     }
   }
@@ -1860,8 +1704,8 @@ function routePath(
 ): string | null {
   if (!expression) return null;
   if (
-    ts.isStringLiteral(expression)
-    || ts.isNoSubstitutionTemplateLiteral(expression)
+    ts.isStringLiteral(expression) ||
+    ts.isNoSubstitutionTemplateLiteral(expression)
   ) {
     return expression.text;
   }
@@ -1872,8 +1716,10 @@ function routePath(
 }
 
 function isAuthNamespacePath(value: string): boolean {
-  return /^\/api\/auth(?:\/|$|\{|\*)/.test(value)
-    || /^\/auth(?:\/|$|\{|\*)/.test(value);
+  return (
+    /^\/api\/auth(?:\/|$|\{|\*)/.test(value) ||
+    /^\/auth(?:\/|$|\{|\*)/.test(value)
+  );
 }
 
 function isBetterAuthHandlerExpression(
@@ -1892,27 +1738,20 @@ function isBetterAuthHandlerExpression(
 function hasConditionalAncestor(node: ts.Node): boolean {
   for (let current = node.parent; current; current = current.parent) {
     if (
-      ts.isIfStatement(current)
-      || ts.isConditionalExpression(current)
-      || (
-        ts.isBinaryExpression(current)
-        && (
-          current.operatorToken.kind
-            === ts.SyntaxKind.AmpersandAmpersandToken
-          || current.operatorToken.kind
-            === ts.SyntaxKind.BarBarToken
-          || current.operatorToken.kind
-            === ts.SyntaxKind.QuestionQuestionToken
-        )
-      )
+      ts.isIfStatement(current) ||
+      ts.isConditionalExpression(current) ||
+      (ts.isBinaryExpression(current) &&
+        (current.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+          current.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+          current.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken))
     ) {
       return true;
     }
     if (
-      ts.isFunctionDeclaration(current)
-      || ts.isFunctionExpression(current)
-      || ts.isArrowFunction(current)
-      || ts.isMethodDeclaration(current)
+      ts.isFunctionDeclaration(current) ||
+      ts.isFunctionExpression(current) ||
+      ts.isArrowFunction(current) ||
+      ts.isMethodDeclaration(current)
     ) {
       return false;
     }
@@ -1933,13 +1772,13 @@ function betterAuthHandlerFactoryCount(
   let count = 0;
   const visit = (node: ts.Node) => {
     if (
-      ts.isVariableDeclaration(node)
-      && ts.isIdentifier(node.name)
-      && node.name.text === "betterAuthHandler"
-      && node.initializer
-      && ts.isCallExpression(node.initializer)
-      && ts.isIdentifier(node.initializer.expression)
-      && node.initializer.expression.text === "createBetterAuthHandler"
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === "betterAuthHandler" &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      node.initializer.expression.text === "createBetterAuthHandler"
     ) {
       count += 1;
     }
@@ -1957,22 +1796,22 @@ function betterAuthHandlerInjectionCount(
   let count = 0;
   const visit = (node: ts.Node) => {
     if (
-      ts.isCallExpression(node)
-      && ts.isIdentifier(node.expression)
-      && node.expression.text === "createApp"
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "createApp"
     ) {
       for (const argument of node.arguments) {
         if (!ts.isObjectLiteralExpression(argument)) continue;
         for (const property of argument.properties) {
           if (
-            ts.isShorthandPropertyAssignment(property)
-            && property.name.text === "betterAuthHandler"
+            ts.isShorthandPropertyAssignment(property) &&
+            property.name.text === "betterAuthHandler"
           ) {
             count += 1;
           } else if (
-            ts.isPropertyAssignment(property)
-            && propertyName(property.name) === "betterAuthHandler"
-            && isBetterAuthHandlerExpression(property.initializer)
+            ts.isPropertyAssignment(property) &&
+            propertyName(property.name) === "betterAuthHandler" &&
+            isBetterAuthHandlerExpression(property.initializer)
           ) {
             count += 1;
           }
@@ -2000,8 +1839,8 @@ export function scanAuthNamespaceOwnership(
 
   for (const module of modules.values()) {
     if (
-      isTestSourcePath(module.file.path)
-      || !module.file.path.startsWith("apps/server/src/")
+      isTestSourcePath(module.file.path) ||
+      !module.file.path.startsWith("apps/server/src/")
     ) {
       continue;
     }
@@ -2010,10 +1849,10 @@ export function scanAuthNamespaceOwnership(
         const method = callPropertyName(node.expression);
         const route = routePath(module, node.arguments[0]);
         if (
-          method
-          && ROUTE_METHODS.has(method)
-          && route
-          && isAuthNamespacePath(route)
+          method &&
+          ROUTE_METHODS.has(method) &&
+          route &&
+          isAuthNamespacePath(route)
         ) {
           registrations.push({
             file: module.file.path,
@@ -2021,11 +1860,11 @@ export function scanAuthNamespaceOwnership(
             method,
             route,
             canonical:
-              module.file.path === "apps/server/src/app.ts"
-              && method === "all"
-              && route === "/api/auth/{*authPath}"
-              && isBetterAuthHandlerExpression(node.arguments[1])
-              && !hasConditionalAncestor(node),
+              module.file.path === "apps/server/src/app.ts" &&
+              method === "all" &&
+              route === "/api/auth/{*authPath}" &&
+              isBetterAuthHandlerExpression(node.arguments[1]) &&
+              !hasConditionalAncestor(node),
           });
         }
       }
@@ -2041,8 +1880,7 @@ export function scanAuthNamespaceOwnership(
       path: registration.file,
       ...nodeLocation(module.sourceFile, registration.node),
       kind: "auth_namespace_owner",
-      message:
-        `${registration.method}(${JSON.stringify(registration.route)}) competes with the Better Auth namespace owner`,
+      message: `${registration.method}(${JSON.stringify(registration.route)}) competes with the Better Auth namespace owner`,
     });
   }
 
@@ -2053,8 +1891,7 @@ export function scanAuthNamespaceOwnership(
       line: 1,
       column: 1,
       kind: "auth_namespace_owner",
-      message:
-        `expected exactly one unconditional /api/auth/* registration owned by app.all("/api/auth/{*authPath}", betterAuthHandler); found ${registrations.length} registration(s), ${canonical.length} canonical`,
+      message: `expected exactly one unconditional /api/auth/* registration owned by app.all("/api/auth/{*authPath}", betterAuthHandler); found ${registrations.length} registration(s), ${canonical.length} canonical`,
     });
   }
   const factoryCount = betterAuthHandlerFactoryCount(modules);
@@ -2065,8 +1902,7 @@ export function scanAuthNamespaceOwnership(
       line: 1,
       column: 1,
       kind: "auth_namespace_owner",
-      message:
-        `expected one createBetterAuthHandler(auth) owner imported from ./auth/better-auth.js and one createApp injection; found ${factoryCount} factory assignment(s), ${injectionCount} injection(s)`,
+      message: `expected one createBetterAuthHandler(auth) owner imported from ./auth/better-auth.js and one createApp injection; found ${factoryCount} factory assignment(s), ${injectionCount} injection(s)`,
     });
   }
   return violations;
@@ -2082,23 +1918,22 @@ export function scanCanonicalHumanAuthFiles(
     ...scanBetterAuthTableWriters(files),
     ...scanProductionImportsOfTestSetup(files),
     ...scanAuthNamespaceOwnership(files),
-  ].sort((left, right) =>
-    left.path.localeCompare(right.path)
-    || left.line - right.line
-    || left.column - right.column
-    || left.kind.localeCompare(right.kind)
-    || left.message.localeCompare(right.message)
+  ].sort(
+    (left, right) =>
+      left.path.localeCompare(right.path) ||
+      left.line - right.line ||
+      left.column - right.column ||
+      left.kind.localeCompare(right.kind) ||
+      left.message.localeCompare(right.message),
   );
 }
 
 function shouldSkipDirectory(relativePath: string, name: string): boolean {
   const value = normalized(relativePath);
   return (
-    SKIPPED_DIRECTORY_NAMES.has(name)
-    || value === "packages/db/migrations"
-    || ARCHIVED_DOCUMENT_PREFIXES.some((prefix) =>
-      `${value}/`.startsWith(prefix)
-    )
+    SKIPPED_DIRECTORY_NAMES.has(name) ||
+    value === "packages/db/migrations" ||
+    ARCHIVED_DOCUMENT_PREFIXES.some((prefix) => `${value}/`.startsWith(prefix))
   );
 }
 
@@ -2125,8 +1960,8 @@ async function walkRepository(
     }
     if (!entry.isFile()) continue;
     if (
-      !SCANNED_TEXT_EXTENSIONS.has(path.extname(entry.name))
-      && entry.name !== "Dockerfile"
+      !SCANNED_TEXT_EXTENSIONS.has(path.extname(entry.name)) &&
+      entry.name !== "Dockerfile"
     ) {
       continue;
     }
@@ -2159,9 +1994,7 @@ export async function listCanonicalHumanAuthFiles(
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
-  return files.sort((left, right) =>
-    left.path.localeCompare(right.path)
-  );
+  return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 export async function checkCanonicalHumanAuth(
@@ -2172,9 +2005,7 @@ export async function checkCanonicalHumanAuth(
   );
 }
 
-const invokedPath = process.argv[1]
-  ? path.resolve(process.argv[1])
-  : null;
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
 if (invokedPath === fileURLToPath(import.meta.url)) {
   const violations = await checkCanonicalHumanAuth();
   if (violations.length > 0) {
@@ -2185,8 +2016,6 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
     }
     process.exitCode = 1;
   } else {
-    console.log(
-      "Canonical Better Auth human-account boundary check passed.",
-    );
+    console.log("Canonical Better Auth human-account boundary check passed.");
   }
 }

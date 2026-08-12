@@ -17,6 +17,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import {
   PLUGIN_LAUNCHER_BOUNDS,
+  resolvePluginNavigationHref,
 } from "@paperclipai/shared";
 import type {
   PluginLauncherBounds,
@@ -29,7 +30,7 @@ import { pluginsApi } from "@/api/plugins";
 import { authApi } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { useOptionalToastActions } from "@/context/ToastContext";
-import { useNavigate, useLocation } from "@/lib/router";
+import { useNavigate, useLocation } from "@tanstack/react-router";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 import {
@@ -57,7 +58,6 @@ type ResolvedPluginLauncher = PluginLauncherDeclaration & {
 type UsePluginLaunchersFilters = {
   placementZones: PluginLauncherPlacementZone[];
   entityType?: PluginUiSlotEntityType | null;
-  companyId?: string | null;
   enabled?: boolean;
 };
 
@@ -127,9 +127,7 @@ function buildLauncherHostContext(
 ): PluginHostContext {
   return {
     companyId: context.companyId ?? null,
-    companyPrefix: context.companyPrefix ?? null,
     projectId: context.projectId ?? (context.entityType === "project" ? context.entityId ?? null : null),
-    projectRef: context.projectRef ?? null,
     entityId: context.entityId ?? null,
     entityType: context.entityType ?? null,
     userId,
@@ -145,17 +143,6 @@ function focusFirstElement(container: HTMLElement | null): void {
     return;
   }
   container.focus();
-}
-
-function resolveLauncherNavigationTarget(target: string, hostContext: PluginMountContext): string {
-  if (/^[a-z][a-z\d+.-]*:/i.test(target) || target.startsWith("//")) {
-    throw new Error("Plugin navigate launchers cannot target an absolute URL.");
-  }
-  if (target.startsWith("/") || target.startsWith("#") || target.startsWith(".") || target.startsWith("?")) {
-    return target;
-  }
-  const companyPrefix = hostContext.companyPrefix?.trim();
-  return companyPrefix ? `/${companyPrefix}/${target}` : target;
 }
 
 function trapFocus(container: HTMLElement, event: KeyboardEvent): void {
@@ -412,7 +399,7 @@ function LauncherRenderContent({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
   });
-  const userId = session?.user?.id ?? session?.session?.userId ?? null;
+  const userId = session?.user.id ?? null;
   const hostContext = useMemo(
     () => buildLauncherHostContext(instance.hostContext, renderEnvironment, userId),
     [instance.hostContext, renderEnvironment, userId],
@@ -595,7 +582,7 @@ export function PluginLauncherProvider({ children }: { children: ReactNode }) {
     );
     // Only react to navigation changes, not stack churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.key]);
+  }, [location.state.__TSR_key]);
 
   const requestBounds = useCallback(
     async (key: string, request: PluginModalBoundsRequest) => {
@@ -630,7 +617,12 @@ export function PluginLauncherProvider({ children }: { children: ReactNode }) {
       }
       switch (launcher.action.type) {
         case "navigate":
-          navigate(resolveLauncherNavigationTarget(launcher.action.target, hostContext));
+          void navigate({
+            href: resolvePluginNavigationHref(
+              launcher.action.target,
+              hostContext.companyId,
+            ),
+          });
           return;
         case "deepLink":
           if (!/^https?:\/\//.test(launcher.action.target)) {
@@ -747,7 +739,6 @@ export function PluginLauncherOutlet({
   const { launchers, contributionsByPluginId, errorMessage } = usePluginLaunchers({
     placementZones,
     entityType,
-    companyId: context.companyId,
     enabled: !!context.companyId,
   });
 

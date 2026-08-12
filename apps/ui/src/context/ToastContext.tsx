@@ -9,16 +9,17 @@ import {
   type ReactNode,
 } from "react";
 import { Toast } from "radix-ui";
+import type { CompanyBoardRouteTarget } from "@paperclipai/shared";
 
 export type ToastTone = "info" | "success" | "warn" | "error";
 
-export interface ToastAction {
-  label: string;
-  /** Navigate on click (mutually exclusive with `onClick`). */
-  href?: string;
-  /** Run a callback on click, e.g. an undo (mutually exclusive with `href`). */
-  onClick?: () => void;
-}
+export type ToastNavigationTarget =
+  | CompanyBoardRouteTarget
+  | { kind: "plugin"; href: string };
+
+export type ToastAction =
+  | { label: string; target: ToastNavigationTarget; onClick?: never }
+  | { label: string; onClick: () => void; target?: never };
 
 export interface ToastInput {
   id?: string;
@@ -110,7 +111,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const tone = input.tone ?? "info";
       const ttlMs = normalizeTtl(input.ttlMs, tone);
       const dedupeKey =
-        input.dedupeKey ?? input.id ?? `${tone}|${input.title}|${input.body ?? ""}|${input.action?.href ?? ""}`;
+        input.dedupeKey ?? input.id ?? `${tone}|${input.title}|${input.body ?? ""}|${JSON.stringify(input.action?.target ?? "")}`;
 
       for (const [key, ts] of dedupeRef.current.entries()) {
         if (now - ts > DEDUPE_MAX_AGE_MS) {

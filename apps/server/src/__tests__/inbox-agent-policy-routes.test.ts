@@ -80,7 +80,7 @@ describe("inbox agent policy routes", () => {
     const app = appFor(harness.db, boardActor(companyId, userId));
 
     await request(app)
-      .get(`/companies/${companyId}/users/me/inbox-agent-policy`)
+      .get(`/companies/${companyId}/users/${userId}/inbox-agent-policy`)
       .expect(200)
       .expect(({ body }) => expect(body).toMatchObject({
         companyId,
@@ -91,7 +91,7 @@ describe("inbox agent policy routes", () => {
       }));
 
     await request(app)
-      .put(`/companies/${companyId}/users/me/inbox-agent-policy`)
+      .put(`/companies/${companyId}/users/${userId}/inbox-agent-policy`)
       .send({ mode: "allowlist", allowedAgentIds: [agentId] })
       .expect(200)
       .expect(({ body }) => expect(body).toMatchObject({
@@ -184,7 +184,7 @@ describe("inbox agent policy routes", () => {
     const harness = createMockDb();
 
     await request(appFor(harness.db, boardActor(companyId, userId)))
-      .put(`/companies/${companyId}/users/me/inbox-agent-policy`)
+      .put(`/companies/${companyId}/users/${userId}/inbox-agent-policy`)
       .send({ mode: "disabled", allowedAgentIds: [randomUUID()] })
       .expect(400);
 
@@ -197,7 +197,7 @@ describe("inbox agent policy routes", () => {
     const harness = createMockDb({ select: [[], []] });
 
     await request(appFor(harness.db, boardActor(companyId, userId)))
-      .put(`/companies/${companyId}/users/me/inbox-agent-policy`)
+      .put(`/companies/${companyId}/users/${userId}/inbox-agent-policy`)
       .send({ mode: "allowlist", allowedAgentIds: [randomUUID()] })
       .expect(422)
       .expect(({ body }) => expect(body.code).toBe("inbox_agent_policy_invalid_agents"));

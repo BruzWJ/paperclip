@@ -1,8 +1,15 @@
 import { type KeyboardEvent, type ReactNode } from "react";
-import { Link } from "@/lib/router";
+import {
+  Link,
+  type RegisteredRouter,
+  type ValidateLinkOptions,
+} from "@tanstack/react-router";
 import { cn } from "../lib/utils";
 
-interface EntityRowProps {
+interface EntityRowProps<
+  TRouter extends RegisteredRouter = RegisteredRouter,
+  TOptions = unknown,
+> {
   leading?: ReactNode;
   identifier?: string;
   title: string;
@@ -16,7 +23,7 @@ interface EntityRowProps {
   metaSpacerClassName?: string;
   trailing?: ReactNode;
   selected?: boolean;
-  to?: string;
+  linkOptions?: ValidateLinkOptions<TRouter, TOptions>;
   onClick?: () => void;
   className?: string;
   titleClassName?: string;
@@ -40,6 +47,10 @@ interface EntityRowProps {
   secondaryRow?: ReactNode;
 }
 
+export function EntityRow<
+  TRouter extends RegisteredRouter,
+  TOptions,
+>(props: EntityRowProps<TRouter, TOptions>): ReactNode;
 export function EntityRow({
   leading,
   identifier,
@@ -49,7 +60,7 @@ export function EntityRow({
   metaSpacerClassName,
   trailing,
   selected,
-  to,
+  linkOptions,
   onClick,
   className,
   titleClassName,
@@ -59,7 +70,7 @@ export function EntityRow({
   titlePriority,
   secondaryRow,
 }: EntityRowProps) {
-  const isClickable = !!(to || onClick);
+  const isClickable = !!(linkOptions || onClick);
   const shellClasses = cn(
     // When a secondaryRow is present the shell stacks (main line + secondary
     // line); otherwise the shell itself is the single flex row.
@@ -143,9 +154,9 @@ export function EntityRow({
     }
   };
 
-  if (to) {
+  if (linkOptions) {
     return (
-      <Link to={to} className={cn("no-underline text-inherit", shellClasses)} onClick={onClick}>
+      <Link {...linkOptions} className={cn("no-underline text-inherit", shellClasses)} onClick={onClick}>
         {body}
       </Link>
     );

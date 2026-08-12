@@ -3,18 +3,19 @@
 import { act } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewAgentDialog } from "./NewAgentDialog";
 
-const createCompanyInviteMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const closeNewAgentMock = vi.hoisted(() => vi.fn());
 const openNewTaskMock = vi.hoisted(() => vi.fn());
-const pushToastMock = vi.hoisted(() => vi.fn());
-const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
+const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
 
-vi.mock("@/lib/router", () => ({
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => COMPANY_ID,
+}));
+
+vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigateMock,
 }));
 
@@ -26,32 +27,23 @@ vi.mock("../context/DialogContext", () => ({
   }),
 }));
 
-vi.mock("../context/CompanyContext", () => ({
-  useCompany: () => ({
-    selectedCompanyId: "company-1",
-  }),
-}));
-
-vi.mock("../context/ToastContext", () => ({
-  useToast: () => ({ pushToast: pushToastMock }),
-}));
-
-vi.mock("../api/access", () => ({
-  accessApi: {
-    createCompanyInvite: (companyId: string, input: unknown) =>
-      createCompanyInviteMock(companyId, input),
-  },
-}));
-
 vi.mock("@/components/ui/dialog", () => ({
   Dialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
     open ? <div>{children}</div> : null,
-  DialogContent: ({ children, className }: { children: ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  ),
-  DialogTitle: ({ children, className }: { children: ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  ),
+  DialogContent: ({
+    children,
+    className,
+  }: {
+    children: ReactNode;
+    className?: string;
+  }) => <div className={className}>{children}</div>,
+  DialogTitle: ({
+    children,
+    className,
+  }: {
+    children: ReactNode;
+    className?: string;
+  }) => <div className={className}>{children}</div>,
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,20 +62,6 @@ describe("NewAgentDialog", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
-
-    createCompanyInviteMock.mockResolvedValue({
-      id: "invite-1",
-      token: "agent-token",
-      inviteUrl: "https://paperclip.local/invite/agent-token",
-      expiresAt: "2026-04-20T00:00:00.000Z",
-      allowedJoinTypes: "agent",
-      humanRole: null,
-      onboardingTextUrl: "https://paperclip.local/api/invites/agent-token/onboarding.txt",
-    });
-    Object.defineProperty(globalThis.navigator, "clipboard", {
-      configurable: true,
-      value: { writeText: clipboardWriteTextMock },
-    });
   });
 
   afterEach(() => {
@@ -94,114 +72,51 @@ describe("NewAgentDialog", () => {
 
   it("opens manual configuration directly on the new-agent page", async () => {
     const root = createRoot(container);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
 
     await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <NewAgentDialog />
-        </QueryClientProvider>,
-      );
+      root.render(<NewAgentDialog />);
     });
     await flushReact();
 
-    const configureButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.startsWith("Configure a runtime manually"),
+    const configureButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) =>
+      button.textContent?.startsWith("Configure an ACPX runtime manually"),
     );
     expect(configureButton).toBeTruthy();
 
     await act(async () => {
-      configureButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      configureButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
 
     expect(closeNewAgentMock).toHaveBeenCalledOnce();
-    expect(navigateMock).toHaveBeenCalledWith("/agents/new");
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/$companyId/agents/new",
+      params: { companyId: COMPANY_ID },
+    });
 
     await act(async () => {
       root.unmount();
     });
   });
 
-  it("generates an external agent onboarding prompt inside the add-agent modal", async () => {
+  it("offers only canonical ACPX-backed creation choices", async () => {
     const root = createRoot(container);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
 
     await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <NewAgentDialog />
-        </QueryClientProvider>,
-      );
+      root.render(<NewAgentDialog />);
     });
     await flushReact();
 
     expect(container.textContent).toContain("Add a new agent");
-    expect(container.textContent).toContain("Invite an external agent");
-
-    const inviteButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.startsWith("Invite an external agent"),
+    expect(container.textContent).toContain(
+      "Configure an ACPX runtime manually",
     );
-
-    await act(async () => {
-      inviteButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain("Generate a one-time prompt");
-    expect(container.textContent).not.toContain("Company Invites");
-
-    const generateButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Generate onboarding prompt",
-    );
-
-    await act(async () => {
-      generateButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-    await flushReact();
-
-    expect(createCompanyInviteMock).toHaveBeenCalledWith("company-1", {
-      allowedJoinTypes: "agent",
-      humanRole: null,
-      agentMessage: null,
-    });
-    expect(clipboardWriteTextMock).toHaveBeenCalledWith(
-      expect.stringContaining("You're invited to propose an agent configuration for a Paperclip company."),
-    );
-    expect(clipboardWriteTextMock).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "https://paperclip.local/api/invites/agent-token/onboarding.txt",
-      ),
-    );
-    expect(clipboardWriteTextMock.mock.calls[0]?.[0]).not.toContain("ACPX");
-    expect(container.textContent).toContain("Agent onboarding prompt");
-    expect(container.textContent).toContain("Send this prompt to the external agent");
-    expect(container.textContent).not.toContain("Optional message for the agent");
-    expect(container.textContent).not.toContain("Generate onboarding prompt");
-    expect(pushToastMock).toHaveBeenCalledWith({
-      title: "Agent invite created",
-      body: "Agent onboarding prompt ready below and copied to clipboard.",
-      tone: "success",
-    });
-
-    const backButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Back",
-    );
-
-    await act(async () => {
-      backButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-
-    expect(container.textContent).toContain("Optional message for the agent");
-    expect(container.textContent).toContain("Generate onboarding prompt");
 
     await act(async () => {
       root.unmount();
     });
   });
-
 });

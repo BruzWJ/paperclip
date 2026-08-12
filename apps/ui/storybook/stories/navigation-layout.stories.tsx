@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { BreadcrumbBar } from "@/components/BreadcrumbBar";
 import { CommandPalette } from "@/components/CommandPalette";
-import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { KeyboardShortcutsCheatsheetContent } from "@/components/KeyboardShortcutsCheatsheet";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { PageTabBar } from "@/components/PageTabBar";
@@ -36,7 +35,7 @@ import {
   useBreadcrumbs,
   type Breadcrumb,
 } from "@/context/BreadcrumbContext";
-import { useNavigate } from "@/lib/router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import {
   storybookAgents,
@@ -65,12 +64,19 @@ function Section({
   );
 }
 
-function RouteSetter({ to }: { to: string }) {
+function ProjectTasksRouteSetter() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    navigate(to, { replace: true });
-  }, [navigate, to]);
+    void navigate({
+      to: "/$companyId/projects/$projectId/tasks",
+      params: {
+        companyId: "11111111-1111-4111-8111-111111111111",
+        projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      },
+      replace: true,
+    });
+  }, [navigate]);
 
   return null;
 }
@@ -252,7 +258,7 @@ function CommandEmptySurface() {
 function NavigationLayoutStories() {
   return (
     <div className="paperclip-story">
-      <RouteSetter to="/PAP/projects/board-ui/tasks" />
+      <ProjectTasksRouteSetter />
       <main className="paperclip-story__inner max-w-[1320px] space-y-6">
         <section className="paperclip-story__frame p-6">
           <div className="flex flex-wrap items-start justify-between gap-5">
@@ -286,9 +292,9 @@ function NavigationLayoutStories() {
 
         <Section
           eyebrow="Menus"
-          title="Account, company, and switcher menus in open state"
+          title="Account and company menus in open state"
         >
-          <div className="grid gap-5 xl:grid-cols-3">
+          <div className="grid gap-5 xl:grid-cols-2">
             <div className="relative h-[440px] overflow-hidden border border-border bg-background">
               <div className="absolute bottom-0 left-0 w-72">
                 <SidebarAccountMenu
@@ -301,10 +307,6 @@ function NavigationLayoutStories() {
             <div className="h-[260px] overflow-hidden border border-border bg-background p-3">
               <SidebarCompanyMenu open onOpenChange={() => undefined} />
             </div>
-
-            <div className="h-[320px] overflow-hidden border border-border bg-background p-4">
-              <CompanySwitcher open onOpenChange={() => undefined} />
-            </div>
           </div>
         </Section>
 
@@ -314,20 +316,60 @@ function NavigationLayoutStories() {
         >
           <div className="grid gap-4">
             <BreadcrumbSnapshot
-              breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }]}
+              breadcrumbs={[{ label: "Dashboard" }]}
             />
             <BreadcrumbSnapshot
               breadcrumbs={[
-                { label: "Projects", href: "/projects" },
-                { label: "Board UI", href: "/projects/board-ui/tasks" },
+                {
+                  label: "Projects",
+                  renderLink: (content) => (
+                    <Link to="/$companyId/projects" params={{ companyId: "11111111-1111-4111-8111-111111111111" }}>
+                      {content}
+                    </Link>
+                  ),
+                },
+                {
+                  label: "Board UI",
+                  renderLink: (content) => (
+                    <Link
+                      to="/$companyId/projects/$projectId/tasks"
+                      params={{
+                        companyId: "11111111-1111-4111-8111-111111111111",
+                        projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+                      }}
+                    >
+                      {content}
+                    </Link>
+                  ),
+                },
                 { label: "PAP-1641" },
               ]}
             />
             <BreadcrumbSnapshot
               breadcrumbs={[
-                { label: "Agents", href: "/agents" },
-                { label: "CodexCoder", href: "/agents/codexcoder" },
-                { label: "Run run-storybook" },
+                {
+                  label: "Agents",
+                  renderLink: (content) => (
+                    <Link to="/$companyId/agents" params={{ companyId: "11111111-1111-4111-8111-111111111111" }}>
+                      {content}
+                    </Link>
+                  ),
+                },
+                {
+                  label: "CodexCoder",
+                  renderLink: (content) => (
+                    <Link
+                      to="/$companyId/agents/$agentId"
+                      params={{
+                        companyId: "11111111-1111-4111-8111-111111111111",
+                        agentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+                      }}
+                    >
+                      {content}
+                    </Link>
+                  ),
+                },
+                { label: "Run 90000000-0000-4000-8000-000000000001" },
               ]}
             />
           </div>
@@ -426,7 +468,7 @@ function SidebarIconAlignmentHarness() {
   return (
     <PluginLauncherProvider>
       <div className="paperclip-story">
-        <RouteSetter to="/PAP/projects/board-ui/tasks" />
+        <ProjectTasksRouteSetter />
         <div className="flex min-h-[760px] items-start justify-center bg-muted/30 p-8">
           <div
             data-testid="sidebar-align-frame"

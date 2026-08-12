@@ -3,11 +3,10 @@ import type { InvalidateQueryFilters, QueryClient } from "@tanstack/react-query"
 /**
  * Coalesces React Query invalidations triggered by the live-events stream.
  *
- * `LiveUpdatesProvider` used to call `queryClient.invalidateQueries(...)`
- * synchronously for every websocket event. During an active agent run these
- * fire many times per second, and each invalidation cascades into refetches
- * and re-renders — the dominant source of steady-state CPU churn (and, over a
- * long-lived tab, off-heap allocation growth).
+ * `LiveUpdatesProvider` receives bursts of Socket.IO invalidation hints during
+ * active agent runs. Applying each hint immediately would cascade into excess
+ * refetches and re-renders, so this batcher coalesces them before touching the
+ * TanStack Query cache.
  *
  * The batcher collects invalidation filters over a short window, de-duplicates
  * identical ones, and flushes them in a single pass at most once per interval.

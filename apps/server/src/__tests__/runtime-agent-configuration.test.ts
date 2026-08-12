@@ -119,7 +119,7 @@ describe("runtime-agent configuration canonical contracts", () => {
       mentionReachGrants: { mention_any_ancestor: true },
     });
     expect(JSON.stringify(parsed)).not.toMatch(
-      /adapter|provider|runtimeConfig|skill|icon|environment|budget|cost/i,
+      /adapter|provider|runtimeConfig|icon|environment|budget|cost/i,
     );
   });
 
@@ -128,7 +128,7 @@ describe("runtime-agent configuration canonical contracts", () => {
     ["adapterConfig", { name: "Unsafe", adapterConfig: { model: "forbidden" } }],
     ["provider", { name: "Unsafe", provider: "forbidden" }],
     ["runtimeConfig", { name: "Unsafe", runtimeConfig: {} }],
-    ["skills", { name: "Unsafe", skills: ["forbidden"] }],
+    ["catalog", { name: "Unsafe", catalog: ["forbidden"] }],
   ])("rejects the non-canonical %s field", (_field, value) => {
     expect(() => parseRuntimeAgentCreateConfiguration(value))
       .toThrow(RuntimeAgentConfigurationInvalid);

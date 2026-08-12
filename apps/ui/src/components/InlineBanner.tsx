@@ -33,7 +33,7 @@ export interface InlineBannerProps {
  * rounded-lg p-4`) but centralizes the color recipe in `brandBanner` so
  * feature surfaces don't hand-roll `bg-yellow-*`/`bg-blue-*` variants.
  *
- * See `/design-guide` for tone examples.
+ * Tone and layout examples live in Storybook.
  */
 export function InlineBanner({
   tone = "info",

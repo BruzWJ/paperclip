@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { taskExecutionPolicySchema } from "@paperclipai/shared";
+import {
+  taskExecutionPolicySchema,
+  type TaskExecutionPolicy,
+} from "@paperclipai/shared";
 import { buildExecutionPolicy } from "./task-execution-policy";
 
 const AGENT_ID = "00000000-0000-4000-8000-000000000001";
@@ -36,5 +39,37 @@ describe("buildExecutionPolicy", () => {
       expect(stage.participants).toHaveLength(1);
       expect(stage.participants[0]?.id).toMatch(UUID_PATTERN);
     }
+  });
+
+  it("preserves the canonical low-trust policy while editing review stages", () => {
+    const existingPolicy: TaskExecutionPolicy = {
+      mode: "normal",
+      commentRequired: true,
+      stages: [],
+      reviewPreset: {
+        id: "low_trust_review",
+        version: 1,
+        rawOutputDisposition: "quarantine",
+      },
+      authorizationPolicy: {
+        managedBy: "permissions-extension",
+        trustBoundary: {
+          mode: "low_trust_review",
+          rootTaskId: "00000000-0000-4000-8000-000000000003",
+        },
+      },
+    };
+
+    const policy = buildExecutionPolicy({
+      existingPolicy,
+      reviewerValues: [`agent:${AGENT_ID}`],
+      approverValues: [],
+    });
+
+    expect(policy?.reviewPreset).toEqual(existingPolicy.reviewPreset);
+    expect(policy?.authorizationPolicy).toEqual(
+      existingPolicy.authorizationPolicy,
+    );
+    expect(taskExecutionPolicySchema.safeParse(policy).success).toBe(true);
   });
 });

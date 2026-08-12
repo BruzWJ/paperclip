@@ -38,7 +38,7 @@ function tsxTest(name, ...relativePaths) {
   ]);
 }
 
-export const PRODUCTION_BOUNDARY_GATE_STEPS = Object.freeze([
+const PRODUCTION_BOUNDARY_GATE_STEPS = Object.freeze([
   tsxScript("check:opencode-session-donor", "scripts/check-opencode-session-donor.ts"),
   tsxScript("check:native-correlation-boundary", "scripts/check-native-correlation-boundary.ts"),
   tsxScript("check:no-embedded-postgres", EXTERNAL_DATABASE_GATE_PATH),
@@ -63,7 +63,6 @@ export const PRODUCTION_BOUNDARY_GATE_STEPS = Object.freeze([
   tsxScript("check:plugin-run-context-boundary", "scripts/check-plugin-run-context-boundary.ts"),
   tsxScript("check:plugin-managed-agent-boundary", "scripts/check-plugin-managed-agent-boundary.ts"),
   tsxScript("check:invocation-surface-removal", "scripts/check-invocation-surface-removal.ts"),
-  tsxScript("check:skill-channel-boundary", "scripts/check-skill-channel-boundary.ts"),
   tsxScript(
     "check:runtime-interface-compiler-boundary",
     "scripts/check-runtime-interface-compiler-boundary.ts",
@@ -77,7 +76,7 @@ export const PRODUCTION_BOUNDARY_GATE_STEPS = Object.freeze([
   tsxScript("check:canonical-human-auth", "scripts/check-canonical-human-auth.ts"),
 ]);
 
-export const PRODUCTION_BOUNDARY_SELF_TEST_STEPS = Object.freeze([
+const PRODUCTION_BOUNDARY_SELF_TEST_STEPS = Object.freeze([
   tsxTest("test:opencode-session-donor-gate", "scripts/check-opencode-session-donor.test.ts"),
   tsxTest(
     "test:native-correlation-boundary-gate",
@@ -102,7 +101,6 @@ export const PRODUCTION_BOUNDARY_SELF_TEST_STEPS = Object.freeze([
   tsxTest("test:plugin-run-context-boundary", "scripts/check-plugin-run-context-boundary.test.ts"),
   tsxTest("test:plugin-managed-agent-boundary", "scripts/check-plugin-managed-agent-boundary.test.ts"),
   tsxTest("test:invocation-surface-removal", "scripts/check-invocation-surface-removal.test.ts"),
-  tsxTest("test:skill-channel-boundary", "scripts/check-skill-channel-boundary.test.ts"),
   tsxTest(
     "test:runtime-interface-compiler-boundary",
     "scripts/check-runtime-interface-compiler-boundary.test.ts",
@@ -119,22 +117,14 @@ export const PRODUCTION_BOUNDARY_STEPS = Object.freeze([
   ...PRODUCTION_BOUNDARY_GATE_STEPS,
   ...PRODUCTION_BOUNDARY_SELF_TEST_STEPS,
 ]);
-export const PRODUCTION_BOUNDARY_GATES = Object.freeze(
-  PRODUCTION_BOUNDARY_GATE_STEPS.map(({ name }) => name),
-);
-export const PRODUCTION_BOUNDARY_SELF_TESTS = Object.freeze(
-  PRODUCTION_BOUNDARY_SELF_TEST_STEPS.map(({ name }) => name),
-);
-export const PRODUCTION_BOUNDARY_COMMANDS = Object.freeze(
-  PRODUCTION_BOUNDARY_STEPS.map(({ name }) => name),
-);
 
 function assertCanonicalManifest() {
-  if (PRODUCTION_BOUNDARY_COMMANDS[0] !== "check:opencode-session-donor") {
+  const commandNames = PRODUCTION_BOUNDARY_STEPS.map(({ name }) => name);
+  if (commandNames[0] !== "check:opencode-session-donor") {
     throw new Error("The pinned Session donor gate must remain the first production boundary");
   }
-  const unique = new Set(PRODUCTION_BOUNDARY_COMMANDS);
-  if (unique.size !== PRODUCTION_BOUNDARY_COMMANDS.length) {
+  const unique = new Set(commandNames);
+  if (unique.size !== commandNames.length) {
     throw new Error("Each production boundary command must appear exactly once");
   }
   for (const boundary of PRODUCTION_BOUNDARY_STEPS) {

@@ -132,6 +132,21 @@ describe("normalizeTaskExecutionPolicy", () => {
       },
     });
   });
+
+  it("rejects padded monitor identities rather than aliasing them", () => {
+    for (const monitor of [
+      { serviceName: " deployments" },
+      { externalRef: "deploy-42 " },
+    ]) {
+      expect(() => normalizeTaskExecutionPolicy({
+        monitor: {
+          nextCheckAt: "2026-04-11T12:30:00.000Z",
+          ...monitor,
+        },
+        stages: [],
+      })).toThrow("Invalid execution policy");
+    }
+  });
 });
 
 describe("parseTaskExecutionState", () => {

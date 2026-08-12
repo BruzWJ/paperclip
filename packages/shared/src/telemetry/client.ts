@@ -11,10 +11,7 @@ import type {
 import { type ResolvedTelemetryCaps, resolveCaps } from "./config.js";
 import { PAPERCLIP_EVENTS } from "./generated/paperclip-telemetry.js";
 
-const DEFAULT_ENDPOINTS = [
-  "https://telemetry.paperclip.ing/ingest",
-  "https://rusqrrg391.execute-api.us-east-1.amazonaws.com/ingest",
-] as const;
+const DEFAULT_ENDPOINT = "https://telemetry.paperclip.ing/ingest";
 // Queue-pressure valve: auto-flush once this many events are buffered. This is
 // an in-memory backpressure trigger, independent of the wire caps that
 // `chunkForSend` enforces on each POST.
@@ -388,53 +385,30 @@ export class TelemetryClient {
     }
   }
 
-  /**
-   * POSTs a serialized envelope, trying each endpoint in order. Returns the
-   * definitive outcome: `ok` on a 2xx; the HTTP `status` on a definitive non-2xx
-   * response (4xx incl. 429, which the shared API gateway fronts for every
-   * endpoint, so it is authoritative — stop here); or `network` when every
-   * endpoint threw. A transient upstream 5xx (502/503/504) does NOT stop the
-   * loop: a sibling endpoint may be healthy, so we fall through to it and only
-   * surface the last transient status if every endpoint returns one — matching
-   * the pre-retry loop's endpoint-fallback behavior.
-   */
+  /** POSTs a serialized envelope to the one configured telemetry endpoint. */
   private async postEnvelope(
     body: string,
   ): Promise<{ kind: "ok" } | { kind: "status"; status: number; retryAfterMs?: number } | { kind: "network" }> {
-    const endpoints = this.resolveEndpoints();
-    let lastTransient: { kind: "status"; status: number; retryAfterMs?: number } | undefined;
-    for (const endpoint of endpoints) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
-      try {
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-          signal: controller.signal,
-        });
-        if (response.ok) return { kind: "ok" };
-        const status = { kind: "status" as const, status: response.status, retryAfterMs: parseRetryAfterMs(response) };
-        // Transient upstream 5xx: remember it and try the next endpoint.
-        if (this.isTransientServerStatus(response.status)) {
-          lastTransient = status;
-          continue;
-        }
-        return status;
-      } catch {
-        // Network/timeout on this endpoint — try the next built-in endpoint.
-      } finally {
-        clearTimeout(timer);
-      }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+    try {
+      const response = await fetch(this.resolveEndpoint(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        signal: controller.signal,
+      });
+      if (response.ok) return { kind: "ok" };
+      return {
+        kind: "status",
+        status: response.status,
+        retryAfterMs: parseRetryAfterMs(response),
+      };
+    } catch {
+      return { kind: "network" };
+    } finally {
+      clearTimeout(timer);
     }
-    // Every endpoint failed: surface the last transient status (still retryable)
-    // if we saw one, otherwise report a pure network failure.
-    return lastTransient ?? { kind: "network" };
-  }
-
-  /** Upstream 5xx that a healthy sibling endpoint may still be able to serve. */
-  private isTransientServerStatus(status: number): boolean {
-    return status === 502 || status === 503 || status === 504;
   }
 
   private warn(message: string): void {
@@ -478,8 +452,7 @@ export class TelemetryClient {
     return this.state;
   }
 
-  private resolveEndpoints(): readonly string[] {
-    const configured = this.config.endpoint?.trim();
-    return configured ? [configured] : DEFAULT_ENDPOINTS;
+  private resolveEndpoint(): string {
+    return this.config.endpoint ?? DEFAULT_ENDPOINT;
   }
 }

@@ -2,6 +2,97 @@ import { describe, expect, it } from "vitest";
 import { paperclipConfigSchema } from "./config-schema.js";
 
 describe("paperclip config schema", () => {
+  it("rejects non-canonical and duplicate private hostname configuration", () => {
+    const config = {
+      $meta: {
+        version: 1,
+        updatedAt: "2026-08-12T00:00:00.000Z",
+        source: "configure",
+      },
+      database: {},
+      logging: { mode: "file" },
+      server: {
+        bind: "lan",
+        allowedHostnames: ["paperclip.test", "paperclip.test"],
+      },
+    } as const;
+    expect(() => paperclipConfigSchema.parse(config)).toThrow(/duplicates/);
+    expect(() =>
+      paperclipConfigSchema.parse({
+        ...config,
+        server: { ...config.server, allowedHostnames: ["Paperclip.test"] },
+      }),
+    ).toThrow(/exact lowercase hostname/);
+  });
+
+  it("rejects storage identity aliases instead of rewriting them", () => {
+    const base = {
+      $meta: {
+        version: 1,
+        updatedAt: "2026-08-12T00:00:00.000Z",
+        source: "configure",
+      },
+      database: {},
+      logging: { mode: "file" },
+      server: {},
+      storage: {
+        provider: "s3",
+        localDisk: { baseDir: "/tmp/paperclip" },
+        s3: {
+          bucket: "paperclip",
+          region: "us-east-1",
+          prefix: "company/assets",
+          forcePathStyle: false,
+        },
+      },
+    } as const;
+    expect(paperclipConfigSchema.parse(base).storage.s3.prefix).toBe(
+      "company/assets",
+    );
+    expect(() =>
+      paperclipConfigSchema.parse({
+        ...base,
+        storage: {
+          ...base.storage,
+          s3: { ...base.storage.s3, bucket: " paperclip" },
+        },
+      }),
+    ).toThrow(/exact and non-empty/);
+    expect(() =>
+      paperclipConfigSchema.parse({
+        ...base,
+        storage: {
+          ...base.storage,
+          s3: { ...base.storage.s3, prefix: "company/" },
+        },
+      }),
+    ).toThrow(/exact slash-separated/);
+    expect(() =>
+      paperclipConfigSchema.parse({
+        ...base,
+        storage: {
+          ...base.storage,
+          s3: { ...base.storage.s3, endpoint: "https://S3.example.test" },
+        },
+      }),
+    ).toThrow(/exact HTTP\(S\) origin/);
+  });
+
+  it("rejects the retired server.host compatibility field", () => {
+    expect(() =>
+      paperclipConfigSchema.parse({
+        $meta: {
+          version: 1,
+          updatedAt: "2026-08-11T00:00:00.000Z",
+          source: "configure",
+        },
+        database: {},
+        logging: { mode: "file" },
+        server: { host: "127.0.0.1" },
+      }),
+    ).toThrow(/unrecognized key/i);
+  });
+
   it("rejects the retired global LLM credential configuration", () => {
     expect(() =>
       paperclipConfigSchema.parse({
@@ -15,7 +106,8 @@ describe("paperclip config schema", () => {
           apiKey: "retired-global-key",
         },
         database: {
-          connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+          connectionString:
+            "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
         },
         logging: {
           mode: "file",
@@ -33,7 +125,8 @@ describe("paperclip config schema", () => {
         source: "configure",
       },
       database: {
-        connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+        connectionString:
+          "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
       },
       logging: {
         mode: "file",
@@ -46,8 +139,12 @@ describe("paperclip config schema", () => {
     );
     expect(parsed.database).not.toHaveProperty("backup");
     expect(parsed.logging.logDir).toBe("~/.paperclip/instances/default/logs");
-    expect(parsed.storage.localDisk.baseDir).toBe("~/.paperclip/instances/default/data/storage");
-    expect(parsed.secrets.localEncrypted.keyFilePath).toBe("~/.paperclip/instances/default/secrets/master.key");
+    expect(parsed.storage.localDisk.baseDir).toBe(
+      "~/.paperclip/instances/default/data/storage",
+    );
+    expect(parsed.secrets.localEncrypted.keyFilePath).toBe(
+      "~/.paperclip/instances/default/secrets/master.key",
+    );
     expect(() =>
       paperclipConfigSchema.parse({
         $meta: {
@@ -75,7 +172,8 @@ describe("paperclip config schema", () => {
           source: "configure",
         },
         database: {
-          connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+          connectionString:
+            "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
           backup: {
             enabled: true,
             intervalMinutes: 60,
@@ -97,7 +195,8 @@ describe("paperclip config schema", () => {
         source: "configure",
       },
       database: {
-        connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+        connectionString:
+          "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
       },
       logging: {
         mode: "file",
@@ -124,7 +223,8 @@ describe("paperclip config schema", () => {
           source: "configure",
         },
         database: {
-          connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+          connectionString:
+            "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
         },
         logging: {
           mode: "file",
@@ -145,7 +245,8 @@ describe("paperclip config schema", () => {
           source: "configure",
         },
         database: {
-          connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+          connectionString:
+            "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
         },
         logging: {
           mode: "file",
@@ -158,7 +259,9 @@ describe("paperclip config schema", () => {
           publicBaseUrl: "https://paperclip.example.test",
         },
       }),
-    ).toThrow(/server\.bind=tailnet is only supported when server\.exposure=private/);
+    ).toThrow(
+      /server\.bind=tailnet is only supported when server\.exposure=private/,
+    );
 
     const parsed = paperclipConfigSchema.parse({
       $meta: {
@@ -167,7 +270,8 @@ describe("paperclip config schema", () => {
         source: "configure",
       },
       database: {
-        connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+        connectionString:
+          "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
       },
       logging: {
         mode: "file",
@@ -196,7 +300,8 @@ describe("paperclip config schema", () => {
           source: "configure",
         },
         database: {
-          connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+          connectionString:
+            "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
         },
         logging: { mode: "file" },
         server: { exposure: "private" },
@@ -215,7 +320,8 @@ describe("paperclip config schema", () => {
         source: "configure" as const,
       },
       database: {
-        connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+        connectionString:
+          "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
       },
       logging: { mode: "file" as const },
     };
@@ -236,7 +342,7 @@ describe("paperclip config schema", () => {
     ).toThrow(/auth\.publicBaseUrl is only valid when server\.exposure=public/);
   });
 
-  it("normalizes the persisted HTTPS public origin and rejects HTTP or URL paths", () => {
+  it("accepts only the exact persisted HTTPS public origin", () => {
     const base = {
       $meta: {
         version: 1 as const,
@@ -244,25 +350,39 @@ describe("paperclip config schema", () => {
         source: "configure" as const,
       },
       database: {
-        connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+        connectionString:
+          "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
       },
       logging: { mode: "file" as const },
       server: { exposure: "public" as const, bind: "lan" as const },
     };
 
-    expect(paperclipConfigSchema.parse({
-      ...base,
-      auth: { publicBaseUrl: "HTTPS://Paperclip.Example:443/" },
-    }).auth.publicBaseUrl).toBe("https://paperclip.example");
+    expect(
+      paperclipConfigSchema.parse({
+        ...base,
+        auth: { publicBaseUrl: "https://paperclip.example" },
+      }).auth.publicBaseUrl,
+    ).toBe("https://paperclip.example");
 
-    expect(() => paperclipConfigSchema.parse({
-      ...base,
-      auth: { publicBaseUrl: "https://paperclip.example/subpath" },
-    })).toThrow(/must not contain a path/);
+    expect(() =>
+      paperclipConfigSchema.parse({
+        ...base,
+        auth: { publicBaseUrl: "HTTPS://Paperclip.Example:443/" },
+      }),
+    ).toThrow(/exact canonical HTTPS origin/);
 
-    expect(() => paperclipConfigSchema.parse({
-      ...base,
-      auth: { publicBaseUrl: "http://paperclip.example" },
-    })).toThrow(/must use https:\/\//);
+    expect(() =>
+      paperclipConfigSchema.parse({
+        ...base,
+        auth: { publicBaseUrl: "https://paperclip.example/subpath" },
+      }),
+    ).toThrow(/must not contain a path/);
+
+    expect(() =>
+      paperclipConfigSchema.parse({
+        ...base,
+        auth: { publicBaseUrl: "http://paperclip.example" },
+      }),
+    ).toThrow(/must use https:\/\//);
   });
 });

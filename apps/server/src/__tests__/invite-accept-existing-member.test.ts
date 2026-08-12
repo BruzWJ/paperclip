@@ -29,7 +29,6 @@ vi.mock("../services/index.js", () => ({
   createAgentAdapterConfigurationService: () => ({}),
   createAgentOperationalConfigurationService: () => ({}),
   createJoinRequestApprovalService: () => ({ approve: vi.fn() }),
-  deduplicateAgentName: vi.fn(),
   logActivity: logActivityMock,
 }));
 
@@ -52,7 +51,10 @@ function createQuery(rows: unknown[], hooks: QueryHooks = {}) {
       return query;
     }),
     returning: vi.fn(() => query),
-    then(resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) {
+    then(
+      resolve: (value: unknown[]) => unknown,
+      reject?: (reason: unknown) => unknown,
+    ) {
       return Promise.resolve(rows).then(resolve, reject);
     },
   };
@@ -66,9 +68,8 @@ function createDbStub() {
     companyId: "company-1",
     inviteType: "company_join",
     source: "board_api",
-    allowedJoinTypes: "human",
     tokenHash: "hash",
-    defaultsPayload: { humanRole: "viewer" },
+    defaultsPayload: { user: { role: "viewer", grants: [] } },
     expiresAt: new Date("2027-03-10T00:00:00.000Z"),
     invitedByUserId: "user-1",
     revokedAt: null,
@@ -111,20 +112,26 @@ function createDbStub() {
 }
 
 function createApp(db: Record<string, unknown>) {
-  return createAppWithActor(db, testBoardSessionActor({
-    userId: "user-1",
-    companyIds: ["company-1"],
-    memberships: [
-      {
-        companyId: "company-1",
-        membershipRole: "owner",
-        status: "active",
-      },
-    ],
-  }));
+  return createAppWithActor(
+    db,
+    testBoardSessionActor({
+      userId: "user-1",
+      companyIds: ["company-1"],
+      memberships: [
+        {
+          companyId: "company-1",
+          membershipRole: "owner",
+          status: "active",
+        },
+      ],
+    }),
+  );
 }
 
-function createAppWithActor(db: Record<string, unknown>, actor: Record<string, unknown>) {
+function createAppWithActor(
+  db: Record<string, unknown>,
+  actor: Record<string, unknown>,
+) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -141,7 +148,7 @@ function createAppWithActor(db: Record<string, unknown>, actor: Record<string, u
   return app;
 }
 
-function createDirectHumanInviteDbStub() {
+function createDirectUserInviteDbStub() {
   const insertedValues: unknown[] = [];
   const updateValues: unknown[] = [];
   const invite = {
@@ -149,9 +156,19 @@ function createDirectHumanInviteDbStub() {
     companyId: "company-1",
     inviteType: "company_join",
     source: "board_api",
-    allowedJoinTypes: "human",
     tokenHash: "hash",
-    defaultsPayload: { human: { role: "owner" } },
+    defaultsPayload: {
+      user: {
+        role: "owner",
+        grants: [
+          { permissionKey: "agents:create", scope: null },
+          { permissionKey: "agents:configure", scope: null },
+          { permissionKey: "users:invite", scope: null },
+          { permissionKey: "users:manage_permissions", scope: null },
+          { permissionKey: "joins:approve", scope: null },
+        ],
+      },
+    },
     expiresAt: new Date("2027-03-10T00:00:00.000Z"),
     invitedByUserId: "inviter-user",
     revokedAt: null,
@@ -163,16 +180,10 @@ function createDirectHumanInviteDbStub() {
     id: "join-1",
     inviteId: "invite-1",
     companyId: "company-1",
-    requestType: "human",
     status: "pending_approval",
     requestIp: "::ffff:127.0.0.1",
     requestingUserId: "invitee-user",
     requestEmailSnapshot: "invitee@example.com",
-    agentName: null,
-    adapterType: null,
-    capabilities: null,
-    agentDefaultsPayload: null,
-    createdAgentId: null,
     approvedByUserId: null,
     approvedAt: null,
     rejectedByUserId: null,
@@ -187,11 +198,7 @@ function createDirectHumanInviteDbStub() {
     approvedAt: new Date("2026-03-07T00:02:00.000Z"),
     updatedAt: new Date("2026-03-07T00:02:00.000Z"),
   };
-  const selectResponses = [
-    [invite],
-    [{ email: "invitee@example.com" }],
-    [],
-  ];
+  const selectResponses = [[invite], [{ email: "invitee@example.com" }], []];
   const updateResponses = [[], [approvedJoinRequest]];
   const insertResponses = [[createdJoinRequest]];
 
@@ -217,16 +224,15 @@ function createDirectHumanInviteDbStub() {
   return { db, insertedValues, updateValues };
 }
 
-function createAcceptedHumanInviteReplayDbStub() {
+function createAcceptedUserInviteReplayDbStub() {
   const updateValues: unknown[] = [];
   const invite = {
     id: "invite-1",
     companyId: "company-1",
     inviteType: "company_join",
     source: "board_api",
-    allowedJoinTypes: "human",
     tokenHash: "hash",
-    defaultsPayload: { human: { role: "operator" } },
+    defaultsPayload: { user: { role: "operator", grants: [] } },
     expiresAt: new Date("2027-03-10T00:00:00.000Z"),
     invitedByUserId: "inviter-user",
     revokedAt: null,
@@ -238,16 +244,10 @@ function createAcceptedHumanInviteReplayDbStub() {
     id: "join-1",
     inviteId: "invite-1",
     companyId: "company-1",
-    requestType: "human",
     status: "pending_approval",
     requestIp: "::ffff:127.0.0.1",
     requestingUserId: "invitee-user",
     requestEmailSnapshot: "invitee@example.com",
-    agentName: null,
-    adapterType: null,
-    capabilities: null,
-    agentDefaultsPayload: null,
-    createdAgentId: null,
     approvedByUserId: null,
     approvedAt: null,
     rejectedByUserId: null,
@@ -298,30 +298,33 @@ describe("POST /invites/:token/accept", () => {
     vi.clearAllMocks();
   });
 
-  it("does not consume a human invite when the signed-in user is already a company member", async () => {
+  it("does not consume a user invite when the signed-in user is already a company member", async () => {
     const { db, updateMock } = createDbStub();
     const app = createApp(db);
 
     const res = await request(app)
       .post("/api/invites/pcp_invite_test/accept")
-      .send({ requestType: "human" });
+      .send({});
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("You already belong to this company");
     expect(updateMock).not.toHaveBeenCalled();
   });
 
-  it("grants company access immediately for a human invite", async () => {
-    const { db, insertedValues, updateValues } = createDirectHumanInviteDbStub();
-    const app = createAppWithActor(db, testBoardSessionActor({
-      userId: "invitee-user",
-      companyIds: [],
-      memberships: [],
-    }));
+  it("grants company access immediately for a user invite", async () => {
+    const { db, insertedValues, updateValues } = createDirectUserInviteDbStub();
+    const app = createAppWithActor(
+      db,
+      testBoardSessionActor({
+        userId: "invitee-user",
+        companyIds: [],
+        memberships: [],
+      }),
+    );
 
     const res = await request(app)
       .post("/api/invites/pcp_invite_test/accept")
-      .send({ requestType: "human" });
+      .send({});
 
     expect(res.status).toBe(202);
     expect(res.body.status).toBe("approved");
@@ -329,7 +332,6 @@ describe("POST /invites/:token/accept", () => {
       expect.objectContaining({
         inviteId: "invite-1",
         companyId: "company-1",
-        requestType: "human",
         status: "pending_approval",
         requestingUserId: "invitee-user",
         requestEmailSnapshot: "invitee@example.com",
@@ -369,22 +371,25 @@ describe("POST /invites/:token/accept", () => {
       expect.objectContaining({
         action: "join.approved",
         entityId: "join-1",
-        details: expect.objectContaining({ source: "human_invite_accept" }),
+        details: expect.objectContaining({ source: "user_invite_accept" }),
       }),
     );
   });
 
-  it("replays a consumed human invite for the same user and repairs company access", async () => {
-    const { db, updateValues } = createAcceptedHumanInviteReplayDbStub();
-    const app = createAppWithActor(db, testBoardSessionActor({
-      userId: "invitee-user",
-      companyIds: [],
-      memberships: [],
-    }));
+  it("replays a consumed user invite for the same user and repairs company access", async () => {
+    const { db, updateValues } = createAcceptedUserInviteReplayDbStub();
+    const app = createAppWithActor(
+      db,
+      testBoardSessionActor({
+        userId: "invitee-user",
+        companyIds: [],
+        memberships: [],
+      }),
+    );
 
     const res = await request(app)
       .post("/api/invites/pcp_invite_test/accept")
-      .send({ requestType: "human" });
+      .send({});
 
     expect(res.status).toBe(202);
     expect(res.body.status).toBe("approved");
@@ -402,7 +407,9 @@ describe("POST /invites/:token/accept", () => {
       ]),
     );
     expect(updateValues).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ acceptedAt: expect.any(Date) })]),
+      expect.arrayContaining([
+        expect.objectContaining({ acceptedAt: expect.any(Date) }),
+      ]),
     );
     expect(accessServiceMock.ensureMembership).toHaveBeenCalledWith(
       "company-1",
@@ -424,7 +431,7 @@ describe("POST /invites/:token/accept", () => {
       expect.objectContaining({
         action: "join.approved",
         entityId: "join-1",
-        details: expect.objectContaining({ source: "human_invite_accept" }),
+        details: expect.objectContaining({ source: "user_invite_accept" }),
       }),
     );
   });

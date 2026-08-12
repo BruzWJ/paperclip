@@ -8,7 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxAgentPolicyControl } from "./InboxAgentPolicyControl";
 
 const mockAgentsApi = vi.hoisted(() => ({ list: vi.fn() }));
-const mockInboxAgentPolicyApi = vi.hoisted(() => ({ getMine: vi.fn(), updateMine: vi.fn() }));
+const mockInboxAgentPolicyApi = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn() }));
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const GARDENER_AGENT_ID = "22222222-2222-4222-8222-222222222222";
+const CODER_AGENT_ID = "33333333-3333-4333-8333-333333333333";
+const RETIRED_AGENT_ID = "44444444-4444-4444-8444-444444444444";
 
 vi.mock("@/api/agents", () => ({ agentsApi: mockAgentsApi }));
 vi.mock("@/api/inbox-agent-policy", () => ({ inboxAgentPolicyApi: mockInboxAgentPolicyApi }));
@@ -47,7 +51,7 @@ async function waitForAssertion(assertion: () => void, attempts = 20) {
 
 function policy(overrides: Partial<InboxAgentPolicy> = {}): InboxAgentPolicy {
   return {
-    companyId: "company-1",
+    companyId: COMPANY_ID,
     userId: "user-1",
     mode: "open",
     allowedAgentIds: [],
@@ -64,7 +68,7 @@ function render(container: HTMLDivElement) {
   act(() => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <InboxAgentPolicyControl companyId="company-1" />
+        <InboxAgentPolicyControl companyId={COMPANY_ID} userId="user-1" />
       </QueryClientProvider>,
     );
   });
@@ -84,12 +88,12 @@ describe("InboxAgentPolicyControl", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     mockAgentsApi.list.mockResolvedValue([
-      { id: "agent-1", name: "Gardener", status: "active", icon: null },
-      { id: "agent-2", name: "Coder", status: "active", icon: null },
-      { id: "agent-3", name: "Retired", status: "terminated", icon: null },
+      { id: GARDENER_AGENT_ID, name: "Gardener", status: "idle", icon: null },
+      { id: CODER_AGENT_ID, name: "Coder", status: "idle", icon: null },
+      { id: RETIRED_AGENT_ID, name: "Retired", status: "terminated", icon: null },
     ]);
-    mockInboxAgentPolicyApi.getMine.mockResolvedValue(policy());
-    mockInboxAgentPolicyApi.updateMine.mockImplementation((_companyId: string, input) =>
+    mockInboxAgentPolicyApi.get.mockResolvedValue(policy());
+    mockInboxAgentPolicyApi.update.mockImplementation((_companyId: string, _userId: string, input) =>
       Promise.resolve(policy({ ...input, materialized: true })),
     );
   });
@@ -100,7 +104,7 @@ describe("InboxAgentPolicyControl", () => {
   });
 
   it("surfaces policy load failures instead of staying on loading", async () => {
-    mockInboxAgentPolicyApi.getMine.mockRejectedValue(new Error("Policy endpoint failed"));
+    mockInboxAgentPolicyApi.get.mockRejectedValue(new Error("Policy endpoint failed"));
     const root = render(container);
     await flush();
 
@@ -113,7 +117,7 @@ describe("InboxAgentPolicyControl", () => {
   });
 
   it("renders all three policy states with the persisted mode selected", async () => {
-    mockInboxAgentPolicyApi.getMine.mockResolvedValue(policy({ mode: "disabled" }));
+    mockInboxAgentPolicyApi.get.mockResolvedValue(policy({ mode: "disabled" }));
     const root = render(container);
     await flush();
 
@@ -160,9 +164,9 @@ describe("InboxAgentPolicyControl", () => {
     await act(async () => saveButton.click());
     await flush();
 
-    expect(mockInboxAgentPolicyApi.updateMine).toHaveBeenCalledWith("company-1", {
+    expect(mockInboxAgentPolicyApi.update).toHaveBeenCalledWith(COMPANY_ID, "user-1", {
       mode: "allowlist",
-      allowedAgentIds: ["agent-1"],
+      allowedAgentIds: [GARDENER_AGENT_ID],
     });
 
     await waitForAssertion(() => {
@@ -175,7 +179,11 @@ describe("InboxAgentPolicyControl", () => {
   });
 
   it("clears the allowlist when switching to Off before saving", async () => {
-    mockInboxAgentPolicyApi.getMine.mockResolvedValue(policy({ mode: "allowlist", allowedAgentIds: ["agent-1"], materialized: true }));
+    mockInboxAgentPolicyApi.get.mockResolvedValue(policy({
+      mode: "allowlist",
+      allowedAgentIds: [GARDENER_AGENT_ID],
+      materialized: true,
+    }));
     const root = render(container);
     await flush();
 
@@ -191,7 +199,7 @@ describe("InboxAgentPolicyControl", () => {
     await act(async () => saveButton.click());
     await flush();
 
-    expect(mockInboxAgentPolicyApi.updateMine).toHaveBeenCalledWith("company-1", {
+    expect(mockInboxAgentPolicyApi.update).toHaveBeenCalledWith(COMPANY_ID, "user-1", {
       mode: "disabled",
       allowedAgentIds: [],
     });

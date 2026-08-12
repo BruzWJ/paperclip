@@ -33,6 +33,7 @@ describe("home path resolution", () => {
     const home = resolvePaperclipHomeDir();
     expect(home).toBe(path.resolve(os.homedir(), "paperclip-home"));
     expect(resolvePaperclipInstanceId("dev_1")).toBe("dev_1");
+    expect(() => resolvePaperclipInstanceId(" dev_1 ")).toThrow(/Invalid PAPERCLIP_INSTANCE_ID/);
   });
 
   it("rejects invalid instance ids", () => {

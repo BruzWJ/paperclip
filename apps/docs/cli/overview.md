@@ -20,11 +20,16 @@ All commands support:
 | `--data-dir <path>` | Local Paperclip data root (isolates from `~/.paperclip`) |
 | `--api-base <url>` | API base URL |
 | `--api-key <token>` | API authentication token |
+| `--user-id <id>` | Exact board user ID for user-scoped routes |
 | `--context <path>` | Context file path |
 | `--profile <name>` | Context profile name |
 | `--json` | Output as JSON |
 
 Company-scoped commands also accept `--company-id <id>`.
+Interactive `auth login` stores the exact board user ID with its credential.
+When supplying `--api-key` directly to a user-scoped command, also supply its
+matching opaque `--user-id`; Paperclip requires the route identity to match the
+authenticated token owner exactly.
 
 For clean local instances, pass `--data-dir` on the command you run:
 

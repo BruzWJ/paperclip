@@ -5,25 +5,15 @@ import {
   userSidebarPreferences,
 } from "@paperclipai/db";
 import type { SidebarOrderPreference } from "@paperclipai/shared";
+import { upsertSidebarOrderPreferenceSchema } from "@paperclipai/shared";
 
-function normalizeOrderedIds(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-
-  const orderedIds: string[] = [];
-  const seen = new Set<string>();
-  for (const item of value) {
-    if (typeof item !== "string") continue;
-    const trimmed = item.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    orderedIds.push(trimmed);
-  }
-  return orderedIds;
+function requireOrderedIds(value: unknown): string[] {
+  return upsertSidebarOrderPreferenceSchema.shape.orderedIds.parse(value);
 }
 
 function toPreference(orderedIds: unknown, updatedAt: Date | null): SidebarOrderPreference {
   return {
-    orderedIds: normalizeOrderedIds(orderedIds),
+    orderedIds: requireOrderedIds(orderedIds),
     updatedAt,
   };
 }
@@ -39,23 +29,23 @@ export function sidebarPreferenceService(db: Db) {
 
     async upsertCompanyOrder(userId: string, orderedIds: string[]): Promise<SidebarOrderPreference> {
       const now = new Date();
-      const normalized = normalizeOrderedIds(orderedIds);
+      const exactOrderedIds = requireOrderedIds(orderedIds);
       const [row] = await db
         .insert(userSidebarPreferences)
         .values({
           userId,
-          companyOrder: normalized,
+          companyOrder: exactOrderedIds,
           updatedAt: now,
         })
         .onConflictDoUpdate({
           target: [userSidebarPreferences.userId],
           set: {
-            companyOrder: normalized,
+            companyOrder: exactOrderedIds,
             updatedAt: now,
           },
         })
         .returning();
-      return toPreference(row?.companyOrder ?? normalized, row?.updatedAt ?? now);
+      return toPreference(row?.companyOrder ?? exactOrderedIds, row?.updatedAt ?? now);
     },
 
     async getProjectOrder(companyId: string, userId: string): Promise<SidebarOrderPreference> {
@@ -74,24 +64,24 @@ export function sidebarPreferenceService(db: Db) {
       orderedIds: string[],
     ): Promise<SidebarOrderPreference> {
       const now = new Date();
-      const normalized = normalizeOrderedIds(orderedIds);
+      const exactOrderedIds = requireOrderedIds(orderedIds);
       const [row] = await db
         .insert(companyUserSidebarPreferences)
         .values({
           companyId,
           userId,
-          projectOrder: normalized,
+          projectOrder: exactOrderedIds,
           updatedAt: now,
         })
         .onConflictDoUpdate({
           target: [companyUserSidebarPreferences.companyId, companyUserSidebarPreferences.userId],
           set: {
-            projectOrder: normalized,
+            projectOrder: exactOrderedIds,
             updatedAt: now,
           },
         })
         .returning();
-      return toPreference(row?.projectOrder ?? normalized, row?.updatedAt ?? now);
+      return toPreference(row?.projectOrder ?? exactOrderedIds, row?.updatedAt ?? now);
     },
   };
 }

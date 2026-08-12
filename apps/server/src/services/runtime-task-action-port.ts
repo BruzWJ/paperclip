@@ -14,7 +14,6 @@ import {
   taskExecutionLanes,
   taskExecutionPromptCapabilities,
   taskExecutionRefs,
-  taskExecutionWorkspaceBindings,
   taskSessionContextEpochs,
   taskSessionEvents,
   taskSessions,
@@ -28,9 +27,9 @@ import {
   type AgentVisibleTaskStatus,
   type PaperclipActionKey,
   type PaperclipRuntimeActionKey,
-  isUuidLike,
+  isCanonicalUuid,
 } from "@paperclipai/shared";
-import { and, asc, desc, eq, inArray, max, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, max, or, sql } from "drizzle-orm";
 import {
   evaluateAgentInvokability,
   InvokableTaskOwnerRejected,
@@ -45,7 +44,10 @@ import {
 } from "./task-session/admission.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 import { admitTaskExecutionInTransaction } from "./task-execution-initial-start-admission.js";
-import { persistCanonicalTaskAggregateInTx } from "./canonical-task-aggregate.js";
+import {
+  allocateCanonicalTaskIdentityInTx,
+  persistCanonicalTaskAggregateInTx,
+} from "./canonical-task-aggregate.js";
 import { type AgentRunNonAgentActionPort } from "./runtime-agent-action-port.js";
 import type {
   AgentRunManagedActionInvocation,
@@ -56,7 +58,6 @@ import {
 } from "./runtime-interface-compiler.js";
 import {
   promptCapabilityGenerationIdentity,
-  type PromptCapabilityBinding,
 } from "./prompt-capability-gateway.js";
 import { lockActivePromptCapabilityBinding } from "./prompt-capability-gateway-postgres.js";
 import { terminalizeCreatorEdgeInTransaction } from "./system-escalation-postgres.js";
@@ -1413,7 +1414,7 @@ async function loadUpdateRetry(
   return { update, comment, ref, retried: true as const };
 }
 
-type CanonicalNonterminalFormUpdate =
+export type CanonicalCreatorFormUpdate =
   | {
       message: string;
       status?: undefined;
@@ -1426,7 +1427,7 @@ type CanonicalNonterminalFormUpdate =
     };
 
 export type CanonicalOwnerFormUpdate =
-  | CanonicalNonterminalFormUpdate
+  | CanonicalCreatorFormUpdate
   | {
       message: string;
       status: "done" | "cancelled";
@@ -1438,8 +1439,6 @@ export type CanonicalOwnerFormUpdate =
  * or blocked, but terminal disposition remains current-owner authority because
  * it ends the receiving owner's execution epoch.
  */
-export type CanonicalCreatorFormUpdate = CanonicalNonterminalFormUpdate;
-
 export type CanonicalOwnerFormAuthority =
   | {
       kind: "agent-execution";
@@ -3401,11 +3400,12 @@ export function createPostgresRuntimeTaskActionService(
             "execution_authority_invalid",
           );
         }
-        const taskCounter = authorized.company.taskCounter + 1;
-        await tx
-          .update(companies)
-          .set({ taskCounter, updatedAt: now })
-          .where(eq(companies.id, input.capability.companyId));
+        const { taskNumber, identifier } =
+          await allocateCanonicalTaskIdentityInTx(
+            tx,
+            input.capability.companyId,
+            now,
+          );
 
         const taskId = deterministicUuid("runtime-task-create", key);
         const sessionId = stableSessionId(`runtime-task-create:${key}`);
@@ -3437,8 +3437,8 @@ export function createPostgresRuntimeTaskActionService(
               creatorAuthorityId: input.capability.taskExecutionAuthorityId,
               creatorAdapterConfigRevisionId:
                 input.capability.adapterConfigIdentity,
-              taskNumber: taskCounter,
-              identifier: `${authorized.company.taskPrefix}-${taskCounter}`,
+              taskNumber,
+              identifier,
               originKind: "agent_task_create",
               originId: input.capability.taskId,
               originRunId: input.capability.runId,
@@ -3962,11 +3962,6 @@ export function createPostgresRuntimeTaskActionService(
     },
 
     async listAgents(input) {
-      const key = runtimeInvocationKey(
-        "list-agents",
-        promptCapabilityGenerationIdentity(input.capability),
-        input.invocationId,
-      );
       return db.transaction(async (tx) => {
         const now = clock();
         await lockRuntimeActionAuthority(
@@ -3991,9 +3986,7 @@ export function createPostgresRuntimeTaskActionService(
               and(
                 eq(agents.companyId, input.capability.companyId),
                 or(
-                  eq(agents.status, "active"),
                   eq(agents.status, "idle"),
-                  eq(agents.status, "running"),
                   eq(agents.status, "paused"),
                   eq(agents.status, "pending_approval"),
                 ),
@@ -4182,7 +4175,7 @@ export function createPostgresRuntimeTaskActionService(
       if (
         input.runInterfaceToolCallId.length === 0 ||
         input.runInterfaceToolCallId !== input.runInterfaceToolCallId.trim() ||
-        !isUuidLike(input.runInterfaceToolCallId)
+        !isCanonicalUuid(input.runInterfaceToolCallId)
       ) {
         throw new RuntimeTaskActionConflict(
           "Mention admission requires its exact run-interface tool-call identity",

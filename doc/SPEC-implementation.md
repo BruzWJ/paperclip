@@ -29,8 +29,7 @@ The schema owns:
   reset generations
 - creator edges and ordered deliveries
 - context/action/mention grants
-- installed plugin manifests and exact plugin tool-call bindings, and genuine
-  company skills
+- installed plugin manifests and exact plugin tool-call bindings
 
 Company, task, run, Session, authority, reference, and grant relations remain
 company-scoped with database uniqueness and foreign-key enforcement.
@@ -59,7 +58,7 @@ Adapters receive a split request:
 
 - server-only control data for budgets, target, cancellation, and accounting
 - provider invocation data containing lowered messages, resolved local `cwd`,
-  opaque operator-native configuration, optional
+  exact ACPX session configuration selections, optional
   validated native correlation, and compiled run-tools transport
 
 Provider invocation scrubbers reject caller identity, general Paperclip
@@ -137,27 +136,28 @@ exposes false-grant surfaces.
 
 ### Canonical managed-tool surface
 
-Paperclip-managed tools are one first-class control-plane surface, not a Board
-MCP feature layered beside a provider-runtime feature:
+Paperclip-managed tools are one first-class control-plane surface with two
+explicit authorities: the bounded ACPX execution authority and the
+authenticated Board MCP user authority:
 
 - `paperclip-managed-tool-registry.ts` is the sole schema/compiler contract.
-  It owns the closed vocabulary, metadata, Board Zod schemas, dynamic provider
-  projections, normalization into one canonical command, and ledger metadata.
+  It owns the closed vocabulary, metadata, exact Board input schemas, dynamic
+  ACPX projections, normalization into one canonical command, and ledger
+  metadata.
 - `paperclip-managed-tool-router.ts` is the sole authority-aware executor and
-  `routeExecution` entrypoint. Board MCP supplies a board-user authority and
-  raw Board input; ACPX supplies the descriptor-normalized command and run
-  authority. Both invoke the same command executor. Its lower task and agent
-  ports enforce domain transactions; they are not alternate tool surfaces.
+  `routeExecution` entrypoint. ACPX supplies a descriptor-normalized command
+  and run authority; Board MCP supplies exact public input and a board-user
+  authority derived from an existing board API key. Both use the same lower
+  domain transactions rather than alternate implementations.
 
 The runtime compiler only selects the registry's provider projections for a
 leased execution, then adds host-owned recovery and plugin descriptors. The
 ACPX gateway only validates the selected descriptor, maintains the call ledger,
-and passes the canonical command to the shared router. Board MCP only
-authenticates the existing board key, lists the visible registry tools, and
-passes raw calls to that same router. A Board authority is full-control inside
-its active company memberships: it bypasses agent grants, context dials, and
-mention reach, while tenancy and canonical task-integrity rules remain in
-force.
+and passes the canonical command to the shared router. Board MCP exposes the
+Board projection of that registry through stateless Streamable HTTP. Its
+authority is full-control only within the authenticated user's active company
+memberships and it never enters a provider execution. The request-scoped ACPX
+interface remains the only provider invocation and tool-injection surface.
 
 ### Run directories
 
@@ -196,7 +196,8 @@ Board/user REST routes provide:
 - run inspection/cancellation
 - company, project, goal, routine, plugin, approval, and audit control
 
-Every task route rejects a provider actor. There is no generic
+Every task route requires a board actor; generic HTTP authentication never
+constructs a provider actor. There is no generic
 description/status/assignee patch, checkout/release protocol, comment reopen,
 arbitrary wake/invoke, general agent credential, agent-self/context route,
 agent-wide conversation reset, interaction operation, or selector-session tool
@@ -209,16 +210,51 @@ invitation contains nullable inviter identity and
 `source = bootstrap_admin_cli`; redemption requires a signed-in Better Auth
 user.
 
+### Board navigation and live data
+
+The board is a client-rendered Vite application. Native TanStack Router file
+routes under `apps/ui/src/routes/` compile into the checked-in
+`routeTree.gen.ts`; route parameters, validated search state, guards, lazy page
+loading, and navigation all use TanStack Router directly. Express serves the
+built SPA through one canonical document handler. There is no server-rendering
+runtime. The board tenant root is the canonical company UUID. Agent, project,
+routine, and approval route parameters use UUIDs; task detail uses only
+`/<company-uuid>/tasks/<task-number>`, with the exact positive per-company task
+counter. There is no name, URL-key, task-identifier, task-UUID board URL,
+alias, or resolver path. Markdown task references use only
+`task://<task-uuid>`.
+
+Each screen implementation is its owning route branch's actual `index.tsx`
+module and exports the corresponding `createFileRoute(...)` definition. There
+is no intermediate page/component directory and no parallel global pages tree
+or Next.js-style `app/` router. Route-specific tests are colocated and ignored
+by the Router plugin's test-file pattern; reusable UI remains in
+`apps/ui/src/components/`.
+
+REST remains the canonical board data and mutation boundary. TanStack Query
+owns client snapshots and cache reconciliation. Socket.IO attaches to the same
+Node HTTP server at `/api/live/socket.io`, authenticates the same-origin Better
+Auth browser session, requires instance-admin access or an active membership
+for the selected company, and emits typed `live:event:v1` notifications only
+to that company's room. The UI treats those notifications as invalidation
+hints and refreshes the relevant REST-backed queries; a socket payload is never
+an independent source of record. Domain freshness has no polling or cross-tab
+cache-broadcast path alongside Socket.IO.
+
 ## UI and CLI
 
 The UI and CLI are board/operator clients. They:
 
 - use Better Auth signup/sign-in/profile/sign-out for every human
+- use native client-side TanStack Router navigation and validated file-route
+  search state in the board UI
+- reconcile company-scoped Socket.IO notifications through TanStack Query
+  against canonical REST resources
 - create tasks with immutable request, explicit eligible owner, and
   idempotency key
 - show owner/creator/lifecycle terminology
 - expose distinct title/reassign/reopen/comment controls
-- configure the context matrix and independent action/mention/skill selections,
+- configure the context matrix and independent action/mention selections,
   with create-and-assign as one action grant and relationship-derived lifecycle
   updates
 - inspect structured transcripts without provider-native handles
@@ -226,7 +262,7 @@ The UI and CLI are board/operator clients. They:
 
 They do not emulate provider behavior or retain alternate commands for generic
 task mutation, provider credentials, arbitrary wake/invoke, generic managed
-instructions/skills, or agent-wide conversations. Board users may edit the
+provider instructions, or agent-wide conversations. Board users may edit the
 optional canonical agent instruction through operational configuration.
 
 ## Plugins, routines, and company lifecycle

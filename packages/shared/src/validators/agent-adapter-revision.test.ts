@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   agentAdapterAcpConfigurationSchema,
-  projectAgentAdapterAcpConfiguration,
-  publicAgentAdapterAcpConfigurationSchema,
 } from "./agent-adapter-revision.js";
-
-const SKILL_VERSION_A = "00000000-0000-4000-8000-000000000002";
-const SKILL_VERSION_B = "00000000-0000-4000-8000-000000000003";
 
 function configuration() {
   return {
@@ -19,22 +14,9 @@ function configuration() {
       { configId: "reasoning_effort", value: "high" },
     ],
     model: {
-      id: "runtime-model",
-      label: "Runtime model",
       value: "runtime-model",
-      limits: {
-        contextTokenLimit: 1_050_000,
-        inputTokenLimit: 922_000,
-        outputTokenLimit: 128_000,
-      },
+      label: "Runtime model",
     },
-    workspaceSelector: {
-      kind: "task_execution_workspace" as const,
-    },
-    companySkillPins: [
-      { key: "code-review", versionId: SKILL_VERSION_A },
-      { key: "research", versionId: SKILL_VERSION_B },
-    ],
   };
 }
 
@@ -45,14 +27,6 @@ describe("agent adapter ACP revision configuration", () => {
     );
   });
 
-  it("redacts internal execution selectors from the board projection", () => {
-    const projected = projectAgentAdapterAcpConfiguration(configuration());
-    expect(publicAgentAdapterAcpConfigurationSchema.parse(projected)).toEqual(
-      projected,
-    );
-    expect(projected).not.toHaveProperty("workspaceSelector");
-  });
-
   it("allows a target with no selected model", () => {
     const expected = {
       ...configuration(),
@@ -61,19 +35,11 @@ describe("agent adapter ACP revision configuration", () => {
     expect(agentAdapterAcpConfigurationSchema.parse(expected)).toEqual(expected);
   });
 
-  it("preserves explicitly unknown ACP model limits as null", () => {
-    const expected = {
-      ...configuration(),
-      model: {
-        ...configuration().model,
-        limits: null,
-      },
-    };
-    expect(agentAdapterAcpConfigurationSchema.parse(expected)).toEqual(expected);
+  it("rejects retired model limit metadata", () => {
     expect(
       agentAdapterAcpConfigurationSchema.safeParse({
-        ...expected,
-        model: { ...expected.model, limits: undefined },
+        ...configuration(),
+        model: { ...configuration().model, limits: null },
       }).success,
     ).toBe(false);
   });
@@ -105,18 +71,8 @@ describe("agent adapter ACP revision configuration", () => {
     ).toBe(false);
   });
 
-  it("rejects missing selectors, unsorted pins, aliases, and extra fields", () => {
+  it("rejects aliases and extra fields", () => {
     const base = configuration();
-    const { workspaceSelector: _workspaceSelector, ...withoutWorkspace } = base;
-    expect(
-      agentAdapterAcpConfigurationSchema.safeParse(withoutWorkspace).success,
-    ).toBe(false);
-    expect(
-      agentAdapterAcpConfigurationSchema.safeParse({
-        ...base,
-        companySkillPins: [...base.companySkillPins].reverse(),
-      }).success,
-    ).toBe(false);
     for (const [key, value] of [
       ["nativeCorrelationKind", "native/v1"],
       ["modelRef", "provider/model"],
@@ -148,21 +104,15 @@ describe("agent adapter ACP revision configuration", () => {
         },
       }).success,
     ).toBe(false);
-  });
-
-  it("rejects invalid model limits", () => {
-    const base = configuration();
     expect(
       agentAdapterAcpConfigurationSchema.safeParse({
         ...base,
         model: {
           ...base.model,
-          limits: {
-            ...base.model.limits,
-            outputTokenLimit: base.model.limits.contextTokenLimit + 1,
-          },
+          id: base.model.value,
         },
       }).success,
     ).toBe(false);
   });
+
 });

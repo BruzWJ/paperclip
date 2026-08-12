@@ -29,7 +29,9 @@ Review the gallery, iterate ("the dark red is too soft", "two different greens o
 > Good conditions: "rg finds zero palette classes in apps/ui/src/components", "the snapshot suite passes against the pinned external baseline", "pnpm check:token-gates reports 3/3 CLEAN".
 > Bad conditions: "the UI feels cleaner", "design is more consistent".
 
-See `doc/design/GOAL-PROMPT.md` for a complete worked example (the run that built this system), including the phase structure and guardrails worth copying: work in a worktree, commit per phase, never re-baseline without human review, stop-and-report over partial application.
+Use the phase structure and guardrails in this guide directly: work in a
+worktree, commit per phase, never re-baseline without human review, and prefer
+stopping with a precise report over applying a partial design change.
 
 ## What to demand from the agent (your checklist)
 

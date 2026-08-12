@@ -19,6 +19,7 @@ vi.mock("@/api/tasks", () => ({
 
 function createTask(overrides: Partial<Task> = {}): Task {
   return createTestTask({
+    id: "123e4567-e89b-42d3-a456-426614174000",
     identifier: "PAP-1",
     title: "Fast link target",
     request: "Open the linked task detail.",
@@ -38,37 +39,32 @@ describe("taskDetailCache", () => {
 
   beforeEach(() => {
     queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
+      defaultOptions: { queries: { retry: false } },
     });
     vi.clearAllMocks();
   });
 
-  it("seeds and resolves task detail by both identifier and id", () => {
+  it("stores detail under the task UUID only", () => {
     const task = createTask();
 
-    seedTaskDetailCache(queryClient, task, { taskRef: task.identifier });
+    seedTaskDetailCache(queryClient, task);
 
-    expect(getCachedTaskDetail(queryClient, task.identifier)).toEqual(task);
     expect(getCachedTaskDetail(queryClient, task.id)).toEqual(task);
-    expect(queryClient.getQueryData(queryKeys.tasks.detail(task.identifier!))).toEqual(task);
+    expect(getCachedTaskDetail(queryClient, task.identifier)).toBeUndefined();
     expect(queryClient.getQueryData(queryKeys.tasks.detail(task.id))).toEqual(task);
+    expect(queryClient.getQueryData(queryKeys.tasks.detail(task.identifier!))).toBeUndefined();
   });
 
-  it("prefetches with the provided task snapshot without forcing a fresh fetch", async () => {
+  it("prefetches a complete snapshot without forcing a fresh fetch", async () => {
     const task = createTask();
 
-    await prefetchTaskDetail(queryClient, task.identifier!, { task });
+    await prefetchTaskDetail(queryClient, task.id, { task });
 
-    expect(getCachedTaskDetail(queryClient, task.identifier)).toEqual(task);
     expect(getCachedTaskDetail(queryClient, task.id)).toEqual(task);
     expect(tasksApi.get).not.toHaveBeenCalled();
   });
 
-  it("does not seed partial task snapshots during prefetch", async () => {
+  it("fetches partial snapshots by UUID and never creates an identifier alias", async () => {
     const task = createTask();
     const partialTask = {
       id: task.id,
@@ -79,10 +75,11 @@ describe("taskDetailCache", () => {
     } as Task;
     vi.mocked(tasksApi.get).mockResolvedValue(task);
 
-    await prefetchTaskDetail(queryClient, task.identifier!, { task: partialTask });
+    await prefetchTaskDetail(queryClient, task.id, { task: partialTask });
 
-    expect(tasksApi.get).toHaveBeenCalledWith(task.identifier);
-    expect(getCachedTaskDetail(queryClient, task.identifier)).toEqual(task);
+    expect(tasksApi.get).toHaveBeenCalledWith(task.id);
+    expect(getCachedTaskDetail(queryClient, task.id)).toEqual(task);
+    expect(getCachedTaskDetail(queryClient, task.identifier)).toBeUndefined();
   });
 
   it("does not write partial task snapshots into the detail cache", () => {
@@ -95,20 +92,21 @@ describe("taskDetailCache", () => {
       priority: task.priority,
     } as Task;
 
-    seedTaskDetailCache(queryClient, partialTask, { taskRef: task.identifier });
+    seedTaskDetailCache(queryClient, partialTask);
 
-    expect(queryClient.getQueryData(queryKeys.tasks.detail(task.identifier!))).toBeUndefined();
-    expect(getCachedTaskDetail(queryClient, task.identifier)).toBeUndefined();
+    expect(getCachedTaskDetail(queryClient, task.id)).toBeUndefined();
   });
 
-  it("hydrates both cache aliases from a fetched task detail response", async () => {
+  it("hydrates the UUID cache from a canonical detail fetch", async () => {
     const task = createTask();
     vi.mocked(tasksApi.get).mockResolvedValue(task);
 
-    const result = await fetchTaskDetail(queryClient, task.identifier!);
+    const result = await fetchTaskDetail(queryClient, task.id);
 
     expect(result).toEqual(task);
-    expect(queryClient.getQueryData(queryKeys.tasks.detail(task.identifier!))).toEqual(task);
+    expect(tasksApi.get).toHaveBeenCalledWith(task.id);
     expect(queryClient.getQueryData(queryKeys.tasks.detail(task.id))).toEqual(task);
+    expect(queryClient.getQueryData(queryKeys.tasks.detail(task.identifier!))).toBeUndefined();
   });
+
 });

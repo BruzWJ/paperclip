@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { LOW_TRUST_REVIEW_PRESET } from "@paperclipai/shared";
+import {
+  LOW_TRUST_REVIEW_PRESET,
+  LOW_TRUST_REVIEW_RAW_OUTPUT_DISPOSITION,
+} from "@paperclipai/shared";
 import {
   LOW_TRUST_QUARANTINED_BODY,
   buildPromotedSourceTrust,
@@ -90,6 +93,11 @@ describe("resolveActorSourceTrustForTask", () => {
 
   function lowTrustExecutionPolicy(rootTaskId: string) {
     return {
+      reviewPreset: {
+        id: LOW_TRUST_REVIEW_PRESET,
+        version: 1 as const,
+        rawOutputDisposition: LOW_TRUST_REVIEW_RAW_OUTPUT_DISPOSITION,
+      },
       authorizationPolicy: {
         trustBoundary: {
           mode: LOW_TRUST_REVIEW_PRESET,

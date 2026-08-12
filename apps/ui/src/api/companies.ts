@@ -7,7 +7,6 @@ import type {
   CompanyPortabilityImportResult,
   CompanyPortabilityPreviewRequest,
   CompanyPortabilityPreviewResult,
-  UpdateCompanyBranding,
   BudgetCurrency,
   MoneyAmount,
 } from "@paperclipai/shared";
@@ -41,8 +40,6 @@ export const companiesApi = {
       >
     >,
   ) => api.patch<Company>(`/companies/${companyId}`, data),
-  updateBranding: (companyId: string, data: UpdateCompanyBranding) =>
-    api.patch<Company>(`/companies/${companyId}/branding`, data),
   archive: (companyId: string) => api.post<Company>(`/companies/${companyId}/archive`, {}),
   remove: (companyId: string) => api.delete<{ ok: true }>(`/companies/${companyId}`),
   exportBundle: (

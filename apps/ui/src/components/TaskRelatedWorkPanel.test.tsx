@@ -3,8 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { TaskRelatedWorkPanel } from "./TaskRelatedWorkPanel";
 
-vi.mock("@/lib/router", () => ({
-  Link: ({ children, to, ...props }: ComponentProps<"a"> & { to: string }) => <a href={to} {...props}>{children}</a>,
+vi.mock("./TaskLinkQuicklook", () => ({
+  TaskLinkQuicklook: ({ children, taskId: _taskId, taskNumber, ...props }: ComponentProps<"a"> & {
+    taskId: string;
+    taskNumber: number | null;
+  }) => <a href={`/11111111-1111-4111-8111-111111111111/tasks/${taskNumber}`} {...props}>{children}</a>,
 }));
 
 describe("TaskRelatedWorkPanel", () => {
@@ -16,6 +19,7 @@ describe("TaskRelatedWorkPanel", () => {
             {
               task: {
                 id: "task-2",
+                taskNumber: 22,
                 identifier: "PAP-22",
                 title: "Downstream task",
                 boardPresentationStatus: "todo",
@@ -34,6 +38,7 @@ describe("TaskRelatedWorkPanel", () => {
             {
               task: {
                 id: "task-3",
+                taskNumber: 33,
                 identifier: "PAP-33",
                 title: "Upstream task",
                 boardPresentationStatus: "in_progress",
@@ -70,6 +75,7 @@ describe("TaskRelatedWorkPanel", () => {
             {
               task: {
                 id: "task-4",
+                taskNumber: 44,
                 identifier: "PAP-44",
                 title: "Chatty inbound",
                 boardPresentationStatus: "in_progress",

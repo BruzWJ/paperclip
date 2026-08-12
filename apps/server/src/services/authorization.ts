@@ -26,12 +26,7 @@ export type AuthorizationActor =
   | {
       type: "board";
       userId: string;
-      /**
-       * `board_mcp` is constructed only by the dedicated Board MCP ingress
-       * after a board API key has been resolved to a persisted user. It is a
-       * trusted board-operator surface, not a value accepted by generic REST
-       * request parsing.
-       */
+      /** Constructed only after Board MCP resolves an existing board API key. */
       source?: "session" | "board_key" | "board_mcp";
     }
   | {
@@ -51,7 +46,6 @@ export type AuthorizationAction =
   | PermissionKey
   | "agent_config:read"
   | "agent_config:update"
-  | "skill_config:update"
   | "agent:read"
   | "company_scope:read"
   | "task:comment"
@@ -160,7 +154,6 @@ function permissionForAction(action: AuthorizationAction): PermissionKey | null 
   if (
     action === "agent_config:read" ||
     action === "agent_config:update" ||
-    action === "skill_config:update" ||
     action === "agent:read" ||
     action === "company_scope:read" ||
     action === "task:comment" ||
@@ -188,11 +181,15 @@ function scopeBoolean(scope: Record<string, unknown> | null | undefined, key: st
 }
 
 function scopeValues(value: unknown): string[] {
-  if (typeof value === "string" && value.trim()) return [value.trim()];
+  if (typeof value === "string") {
+    return value.length > 0 && value.trim() === value ? [value] : [];
+  }
   if (!Array.isArray(value)) return [];
   return value
-    .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-    .map((entry) => entry.trim());
+    .filter(
+      (entry): entry is string =>
+        typeof entry === "string" && entry.length > 0 && entry.trim() === entry,
+    );
 }
 
 function singularScopeKey(key: string) {
@@ -236,9 +233,12 @@ function responsibleUserSnapshotTtlMs() {
 }
 
 export function responsibleUserAuthzShadowMode() {
-  const mode = process.env.PAPERCLIP_RESPONSIBLE_USER_AUTHZ_MODE?.trim().toLowerCase();
-  const shadow = process.env.PAPERCLIP_RESPONSIBLE_USER_AUTHZ_SHADOW?.trim().toLowerCase();
-  return mode === "shadow" || shadow === "1" || shadow === "true" || shadow === "yes";
+  const mode = process.env.PAPERCLIP_RESPONSIBLE_USER_AUTHZ_MODE;
+  if (mode === undefined || mode === "enforce") return false;
+  if (mode === "shadow") return true;
+  throw new Error(
+    'PAPERCLIP_RESPONSIBLE_USER_AUTHZ_MODE must be exactly "enforce" or "shadow"',
+  );
 }
 
 function activeResponsibleUserCanAuthorizeAgentChange(
@@ -260,10 +260,7 @@ function activeResponsibleUserCanAuthorizeAgentChange(
     return true;
   }
 
-  if (
-    action !== "agent_config:update" &&
-    action !== "skill_config:update"
-  ) {
+  if (action !== "agent_config:update") {
     return false;
   }
 
@@ -274,9 +271,7 @@ function activeResponsibleUserCanAuthorizeAgentChange(
     agentDecision.grant.principalId === actorAgentId &&
     (
       agentDecision.grant.permissionKey === "agents:configure" ||
-      agentDecision.grant.permissionKey === "agents:suggest-changes" ||
-      agentDecision.grant.permissionKey === "skills:create" ||
-      agentDecision.grant.permissionKey === "skills:suggest-changes"
+      agentDecision.grant.permissionKey === "agents:suggest-changes"
     ),
   );
 }
@@ -637,12 +632,6 @@ export function authorizationService(db: Db) {
           explanation: "Board authorization requires an existing Better Auth user.",
         });
       }
-      // A Board MCP bearer is a deliberate full-control board surface. Its
-      // authentication and company membership boundary were already resolved
-      // at ingress, and this branch ensures the canonical control-plane
-      // services do not reintroduce per-action grants or viewer restrictions.
-      // Keep the persisted active-membership check: it is tenant isolation,
-      // rather than a grant or action-level access dial.
       if (input.actor.source === "board_mcp") {
         const membership = await getActiveMembership(
           companyId,
@@ -690,13 +679,6 @@ export function authorizationService(db: Db) {
           targetAgentId: exactAgentConfigTarget!.id,
         });
       }
-      if (input.action === "skill_config:update") {
-        return decideWithProtectedChangeGrants("user", boardUserId, {
-          direct: "skills:create",
-          suggest: "skills:suggest-changes",
-        });
-      }
-
       if (!permissionKey) {
         const membership = await getActiveMembership(companyId, "user", boardUserId);
         if (!membership) {
@@ -755,19 +737,24 @@ export function authorizationService(db: Db) {
       });
     }
 
-    const actorAgentId = input.actor.agentId?.trim() || null;
+    const actorAgentId =
+      typeof input.actor.agentId === "string" &&
+      input.actor.agentId.length > 0 &&
+      input.actor.agentId.trim() === input.actor.agentId
+        ? input.actor.agentId
+        : null;
     if (!actorAgentId) {
       return deny({
         action: input.action,
         reason: "deny_unauthenticated",
-        explanation: "Agent authentication required.",
+        explanation: "Internal agent execution authority required.",
       });
     }
     if (input.actor.companyId !== companyId) {
       return deny({
         action: input.action,
         reason: "deny_company_boundary",
-        explanation: "Agent credentials cannot access another company.",
+        explanation: "Agent execution authority cannot cross company boundaries.",
       });
     }
 
@@ -788,10 +775,44 @@ export function authorizationService(db: Db) {
           explanation: "Actor agent is not active in the target company.",
         });
       }
-      const responsibleUserId = input.actor.onBehalfOfUserId?.trim() || null;
-      const explicitTargetUserId = typeof input.scope?.userId === "string"
-        ? input.scope.userId.trim() || null
-        : null;
+      if (
+        input.actor.onBehalfOfUserId !== undefined &&
+        input.actor.onBehalfOfUserId !== null &&
+        (typeof input.actor.onBehalfOfUserId !== "string" ||
+          input.actor.onBehalfOfUserId.length === 0 ||
+          input.actor.onBehalfOfUserId.trim() !== input.actor.onBehalfOfUserId)
+      ) {
+        return deny({
+          action: input.action,
+          reason: "inbox_target_user_unresolved",
+          explanation: "Responsible-user context must contain an exact user ID.",
+        });
+      }
+      if (
+        input.scope?.userId !== undefined &&
+        input.scope.userId !== null &&
+        (typeof input.scope.userId !== "string" ||
+          input.scope.userId.length === 0 ||
+          input.scope.userId.trim() !== input.scope.userId)
+      ) {
+        return deny({
+          action: input.action,
+          reason: "inbox_target_user_unresolved",
+          explanation: "Inbox scope must contain an exact user ID.",
+        });
+      }
+      const responsibleUserId =
+        typeof input.actor.onBehalfOfUserId === "string" &&
+        input.actor.onBehalfOfUserId.length > 0 &&
+        input.actor.onBehalfOfUserId.trim() === input.actor.onBehalfOfUserId
+          ? input.actor.onBehalfOfUserId
+          : null;
+      const explicitTargetUserId =
+        typeof input.scope?.userId === "string" &&
+        input.scope.userId.length > 0 &&
+        input.scope.userId.trim() === input.scope.userId
+          ? input.scope.userId
+          : null;
       const targetUserId = explicitTargetUserId ?? responsibleUserId;
       if (!targetUserId) {
         return deny({
@@ -892,7 +913,7 @@ export function authorizationService(db: Db) {
         action: input.action,
         reason: "deny_unsupported_action",
         explanation:
-          "Agent credentials cannot use generic REST content or control surfaces; use the run-scoped compiled interface.",
+          "Internal agent execution authority cannot use generic REST content or control surfaces; use the run-scoped compiled interface.",
       });
     }
 
@@ -929,13 +950,6 @@ export function authorizationService(db: Db) {
       }, targetScope);
     }
 
-    if (input.action === "skill_config:update") {
-      return decideWithProtectedChangeGrants("agent", actorAgentId, {
-        direct: "skills:create",
-        suggest: "skills:suggest-changes",
-      });
-    }
-
     if (permissionKey) {
       return decidePrincipalGrant({
         companyId,
@@ -966,7 +980,19 @@ export function authorizationService(db: Db) {
     if (input.actor.type !== "agent") {
       return agentDecision;
     }
-    const responsibleUserId = input.actor.onBehalfOfUserId?.trim();
+    const responsibleUserId = input.actor.onBehalfOfUserId;
+    if (
+      responsibleUserId !== undefined &&
+      responsibleUserId !== null &&
+      (responsibleUserId.length === 0 || responsibleUserId.trim() !== responsibleUserId)
+    ) {
+      return deny({
+        action: input.action,
+        reason: "deny_missing_membership",
+        code: "RESPONSIBLE_USER_UNAVAILABLE",
+        explanation: "Responsible-user context must contain an exact user ID.",
+      });
+    }
     if (
       input.action === "inbox:manage" ||
       !responsibleUserId ||

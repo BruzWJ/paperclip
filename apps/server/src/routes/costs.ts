@@ -2,7 +2,6 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   createFinanceEventSchema,
-  normalizeTaskIdentifier,
   resolveBudgetIncidentSchema,
   updateCompanyBudgetSchema,
   upsertBudgetPolicySchema,
@@ -21,25 +20,36 @@ import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz
 import { badRequest } from "../errors.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import type { TaskExecutionCancellationService } from "../services/task-execution-cancellation.js";
+import {
+  assertExactQueryKeys,
+  parseExactBooleanQuery,
+  parseExactPositiveIntegerQuery,
+} from "./exact-query.js";
 
 export function parseCostDateRange(query: Record<string, unknown>) {
-  const fromRaw = query.from as string | undefined;
-  const toRaw = query.to as string | undefined;
-  const from = fromRaw ? new Date(fromRaw) : undefined;
-  const to = toRaw ? new Date(toRaw) : undefined;
-  if (from && isNaN(from.getTime())) throw badRequest("invalid 'from' date");
-  if (to && isNaN(to.getTime())) throw badRequest("invalid 'to' date");
+  const fromRaw = query.from;
+  const toRaw = query.to;
+  const parseDate = (value: unknown, field: "from" | "to") => {
+    if (value === undefined) return undefined;
+    if (typeof value !== "string" || value.length === 0 || value.trim() !== value) {
+      throw badRequest(`invalid '${field}' date`);
+    }
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime()) || parsed.toISOString() !== value) {
+      throw badRequest(`invalid '${field}' date`);
+    }
+    return parsed;
+  };
+  const from = parseDate(fromRaw, "from");
+  const to = parseDate(toRaw, "to");
   return (from || to) ? { from, to } : undefined;
 }
 
 export function parseCostLimit(query: Record<string, unknown>) {
-  const raw = Array.isArray(query.limit) ? query.limit[0] : query.limit;
-  if (raw == null || raw === "") return 100;
-  const limit = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
-  if (!Number.isFinite(limit) || limit <= 0 || limit > 500) {
-    throw badRequest("invalid 'limit' value");
-  }
-  return limit;
+  return parseExactPositiveIntegerQuery(query.limit, "limit", {
+    defaultValue: 100,
+    max: 500,
+  });
 }
 
 export function costRoutes(
@@ -52,7 +62,7 @@ export function costRoutes(
     >;
   },
 ) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const budgetHooks = {
     suspendWorkForScope:
       options.taskExecutionCancellation.suspendBudgetScopeWork,
@@ -64,14 +74,6 @@ export function costRoutes(
     createAgentOperationalConfigurationService(db, budgetHooks);
   const tasks = taskService(db);
   const access = accessService(db);
-
-  async function resolveTaskByRef(rawId: string) {
-    const identifier = normalizeTaskIdentifier(rawId);
-    if (identifier) {
-      return tasks.getByIdentifier(identifier);
-    }
-    return tasks.getById(rawId);
-  }
 
   async function assertCompanyCostReadAllowed(req: Parameters<typeof assertCompanyAccess>[0], res: any, companyId: string) {
     const decision = await access.decide({
@@ -144,17 +146,19 @@ export function costRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    assertExactQueryKeys(req.query, ["from", "to"]);
     const range = parseCostDateRange(req.query);
     const summary = await costs.summary(companyId, range);
     res.json(summary);
   });
 
   router.get("/tasks/:id/cost-summary", async (req, res) => {
-    const rawId = req.params.id as string;
-    const task = await getAccessibleResource(req, res, resolveTaskByRef(rawId), "Task not found");
+    const taskId = req.params.id as string;
+    const task = await getAccessibleResource(req, res, tasks.getById(taskId), "Task not found");
     if (!task) return;
     if (!(await assertTaskCostReadAllowed(req, res, task))) return;
-    const excludeRoot = req.query.excludeRoot === "true" || req.query.excludeRoot === "1";
+    assertExactQueryKeys(req.query, ["excludeRoot"]);
+    const excludeRoot = parseExactBooleanQuery(req.query.excludeRoot, "excludeRoot");
     const summary = await costs.taskTreeSummary(task.companyId, task.id, { excludeRoot });
     res.json(summary);
   });
@@ -163,6 +167,7 @@ export function costRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    assertExactQueryKeys(req.query, ["from", "to"]);
     const range = parseCostDateRange(req.query);
     const rows = await costs.byAgent(companyId, range);
     res.json(rows);
@@ -172,6 +177,7 @@ export function costRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    assertExactQueryKeys(req.query, ["from", "to", "limit"]);
     const range = parseCostDateRange(req.query);
     const limit = parseCostLimit(req.query);
     res.json(await costs.listEvents(companyId, range, limit));
@@ -181,6 +187,7 @@ export function costRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    assertExactQueryKeys(req.query, ["from", "to"]);
     const range = parseCostDateRange(req.query);
     const summary = await finance.summary(companyId, range);
     res.json(summary);
@@ -190,6 +197,7 @@ export function costRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    assertExactQueryKeys(req.query, ["from", "to"]);
     const range = parseCostDateRange(req.query);
     const rows = await finance.byBiller(companyId, range);
     res.json(rows);
@@ -199,6 +207,7 @@ export function costRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    assertExactQueryKeys(req.query, ["from", "to"]);
     const range = parseCostDateRange(req.query);
     const rows = await finance.byKind(companyId, range);
     res.json(rows);
@@ -208,6 +217,7 @@ export function costRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    assertExactQueryKeys(req.query, ["from", "to", "limit"]);
     const range = parseCostDateRange(req.query);
     const limit = parseCostLimit(req.query);
     const rows = await finance.list(companyId, range, limit);
@@ -274,6 +284,7 @@ export function costRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    assertExactQueryKeys(req.query, ["from", "to"]);
     const range = parseCostDateRange(req.query);
     const rows = await costs.byProject(companyId, range);
     res.json(rows);

@@ -22,7 +22,6 @@ const ORIGINAL_SECRET = process.env.BETTER_AUTH_SECRET;
 function config(overrides?: {
   exposure?: PaperclipConfig["server"]["exposure"];
   bind?: PaperclipConfig["server"]["bind"];
-  host?: string;
   publicBaseUrl?: string;
 }): PaperclipConfig {
   return {
@@ -41,7 +40,6 @@ function config(overrides?: {
     server: {
       exposure: overrides?.exposure ?? "private",
       bind: overrides?.bind ?? "loopback",
-      host: overrides?.host ?? "127.0.0.1",
       port: 3100,
       allowedHostnames: [],
       serveUi: true,
@@ -104,7 +102,6 @@ describe("canonical Better Auth diagnostics", () => {
         config({
           exposure: "public",
           bind: "lan",
-          host: "0.0.0.0",
         }),
       ),
     ).toMatchObject({
@@ -121,7 +118,6 @@ describe("canonical Better Auth diagnostics", () => {
         config({
           exposure: "public",
           bind: "lan",
-          host: "0.0.0.0",
           publicBaseUrl: "http://paperclip.example",
         }),
       ),

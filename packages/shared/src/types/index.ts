@@ -1,4 +1,5 @@
 export type { Company } from "./company.js";
+export type { CompanyBoardRouteTarget } from "./board-navigation.js";
 export type { AgentRuntimeState } from "./agent-runtime-state.js";
 export {
   TASK_EXECUTION_FINALIZATION_ACTIONS,
@@ -45,7 +46,6 @@ export type {
 } from "./attention.js";
 export type {
   InstanceGeneralSettings,
-  InstanceSettings,
 } from "./instance.js";
 export type {
   ServerGitInfo,
@@ -67,77 +67,6 @@ export {
   type TrustAuthorizationPolicy,
 } from "../trust-policy.js";
 export type {
-  CompanySkillSourceType,
-  CompanySkillTrustLevel,
-  CompanySkillCompatibility,
-  CompanySkillSourceBadge,
-  CompanySkillSharingScope,
-  CompanySkillListSort,
-  CompanySkillListInclude,
-  CompanySkillLastEditor,
-  CompanySkillFileInventoryEntry,
-  CompanySkillVersionFileInventoryEntry,
-  CompanySkill,
-  CompanySkillListItem,
-  CompanySkillUsageAgent,
-  CompanySkillDetail,
-  CompanySkillListQuery,
-  CompanySkillCategoryCount,
-  CompanySkillVersion,
-  CompanySkillVersionCreateRequest,
-  CompanySkillStarResult,
-  CompanySkillComment,
-  CompanySkillCommentCreateRequest,
-  CompanySkillCommentUpdateRequest,
-  CompanySkillForkRequest,
-  CompanySkillOriginalSummary,
-  CompanySkillForkSummary,
-  CompanySkillForkReassignment,
-  CompanySkillForkResult,
-  CompanySkillForkPrecheckResult,
-  CompanySkillUpdateRequest,
-  CompanySkillUpdateStatus,
-  CompanySkillAuditSeverity,
-  CompanySkillAuditVerdict,
-  CompanySkillUpdateHoldReason,
-  CompanySkillAuditFinding,
-  CompanySkillAuditResult,
-  CompanySkillInstallUpdateRequest,
-  CompanySkillResetRequest,
-  CompanySkillImportRequest,
-  CompanySkillImportResult,
-  CompanySkillCreateRequest,
-  CompanySkillFileDetail,
-  CompanySkillFileUpdateRequest,
-  CompanySkillFileDeleteRequest,
-  CompanySkillFileDeleteResult,
-  CompanySkillTestRunStatus,
-  CompanySkillTestInput,
-  CompanySkillTestInputCreateRequest,
-  CompanySkillTestInputUpdateRequest,
-  CompanySkillTestRunTemplate,
-  CompanySkillTestRunTemplateCreateRequest,
-  CompanySkillTestRunTemplateUpdateRequest,
-  CompanySkillTestRunTemplateSnapshot,
-  CompanySkillTestRunCostSummary,
-  CompanySkillTestRun,
-  CompanySkillTestRunCreateRequest,
-  CompanySkillTestRunListQuery,
-  CompanySkillTestRunHarnessContentUnavailableReason,
-  CompanySkillTestRunHarnessContent,
-  CompanySkillTestRunDetail,
-  CatalogSkillKind,
-  CatalogSkillFileKind,
-  CatalogSkillFile,
-  CatalogSkillGitHubSource,
-  CatalogSkillSource,
-  CatalogSkill,
-  CatalogSkillListQuery,
-  CatalogSkillFileDetail,
-  CompanySkillInstallCatalogRequest,
-  CompanySkillInstallCatalogResult,
-} from "./company-skill.js";
-export type {
   FolderKind,
   Folder,
   FolderListItem,
@@ -146,7 +75,6 @@ export type {
   UpdateFolderRequest,
   MoveFolderRequest,
   MoveFolderItemRequest,
-  EnsureMySkillFolderRequest,
 } from "./folder.js";
 export type {
   Agent,
@@ -154,13 +82,8 @@ export type {
   AgentChainOfCommandEntry,
   AgentPluginManagementBinding,
   AgentDetail,
-  ClearAgentErrorResponse,
-  AgentModelProfileConfig,
-  AgentRuntimeConfig,
-  AgentConfigRevision,
   AgentAdapterConfigRevision,
   AgentAdapterAcpConfiguration,
-  PublicAgentAdapterAcpConfiguration,
   InvokableTaskOwnerCatalogEntry,
 } from "./agent.js";
 export type {
@@ -246,6 +169,7 @@ export type {
   CompanyArtifactAgentSummary,
   CompanyArtifactGroup,
   CompanyArtifactGroupBy,
+  CompanyArtifactGroupTaskSummary,
   CompanyArtifactTaskSummary,
   CompanyArtifactMediaKind,
   CompanyArtifactProjectSummary,
@@ -254,7 +178,6 @@ export type {
 } from "./artifact.js";
 
 export type {
-  CanonicalTask,
   CompactTask,
   Task,
   TaskWorkMode,
@@ -396,7 +319,6 @@ export type {
   RoutineRevisionSnapshotRoutineV1,
   RoutineRevisionSnapshotTriggerV1,
   RoutineRevisionSnapshotV1,
-  RoutineRevisionSnapshot,
   RoutineRevision,
   RoutineTrigger,
   RoutineRun,
@@ -428,9 +350,13 @@ export type {
   GitWorktreeInProgressOperation,
 } from "./workspace-recovery.js";
 export type {
+  ActivityLoggedLiveEventPayload,
   LiveEvent,
   LiveEventOf,
   LiveEventPayloadMap,
+  LiveEventSocketAuth,
+  LiveEventServerToClientEvents,
+  LiveEventClientToServerEvents,
 } from "./live.js";
 export type { DashboardRunActivityDay, DashboardSummary } from "./dashboard.js";
 export type {
@@ -488,8 +414,8 @@ export type {
   CompanyPortabilityFileEntry,
   CompanyPortabilityCompanyManifestEntry,
   CompanyPortabilitySidebarOrder,
+  CompanyPortabilityExportSidebarOrder,
   CompanyPortabilityAgentManifestEntry,
-  CompanyPortabilitySkillManifestEntry,
   CompanyPortabilityProjectManifestEntry,
   CompanyPortabilityTaskRoutineTriggerManifestEntry,
   CompanyPortabilityTaskRoutineManifestEntry,
@@ -521,15 +447,12 @@ export type {
   PluginManagedAgentDeclaration,
   PluginManagedProjectDeclaration,
   PluginManagedRoutineDeclaration,
-  PluginManagedSkillDeclaration,
-  PluginManagedSkillFileDeclaration,
   PluginLocalFolderDeclaration,
   PluginLocalFolderProblem,
   PluginLocalFolderStatus,
   PluginManagedAgentResolution,
   PluginManagedProjectResolution,
   PluginManagedRoutineResolution,
-  PluginManagedSkillResolution,
   PluginManagedResourceKind,
   PluginManagedResourceRef,
   PluginUiSlotDeclaration,

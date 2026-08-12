@@ -14,11 +14,8 @@ const sidebarState = vi.hoisted(() => ({
   peeking: false,
 }));
 
-vi.mock("@/lib/router", () => ({
+vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
-    <a href={to} {...props}>{children}</a>
-  ),
-  NavLink: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
     <a href={to} {...props}>{children}</a>
   ),
 }));
@@ -52,6 +49,8 @@ async function openSectionMenu(container: HTMLElement) {
   });
   await flushReact();
 }
+
+const renderProjectsLink = (content: ReactNode) => <a href="/projects">{content}</a>;
 
 describe("SidebarSection", () => {
   let container: HTMLDivElement;
@@ -119,7 +118,7 @@ describe("SidebarSection", () => {
           collapsible={{ open: true, onOpenChange }}
           menu={{
             ariaLabel: "Projects section actions",
-            actions: [{ type: "item", label: "Browse projects", href: "/projects" }],
+            actions: [{ type: "item", label: "Browse projects", renderLink: renderProjectsLink }],
           }}
         >
           <a href="/projects">Projects</a>
@@ -198,7 +197,7 @@ describe("SidebarSection", () => {
           label="Projects"
           menu={{
             ariaLabel: "Projects section actions",
-            actions: [{ type: "item", label: "Browse projects", href: "/projects" }],
+            actions: [{ type: "item", label: "Browse projects", renderLink: renderProjectsLink }],
           }}
           headerAction={{
             ariaLabel: "New project",
@@ -246,7 +245,7 @@ describe("SidebarSection", () => {
             ariaLabel: "Projects section actions",
             actions: [
               { type: "item", label: "New project", onSelect: onAction },
-              { type: "item", label: "Browse projects", href: "/projects" },
+              { type: "item", label: "Browse projects", renderLink: renderProjectsLink },
               { type: "separator" },
             ],
             radioChoices: [
@@ -303,7 +302,7 @@ describe("SidebarSection", () => {
           collapsible={{ open: true, onOpenChange: vi.fn() }}
           menu={{
             ariaLabel: "Projects section actions",
-            actions: [{ type: "item", label: "Browse projects", href: "/projects" }],
+            actions: [{ type: "item", label: "Browse projects", renderLink: renderProjectsLink }],
           }}
         >
           <a href="/projects">Projects</a>

@@ -591,6 +591,7 @@ export function createPostgresTaskExecutionFinalizationWriter(options: {
     const taskTree = await transaction
       .select({
         id: tasks.id,
+        identifier: tasks.identifier,
         parentId: tasks.parentId,
         ownerKind: tasks.ownerKind,
         ownerAgentId: tasks.ownerAgentId,
@@ -602,6 +603,8 @@ export function createPostgresTaskExecutionFinalizationWriter(options: {
           eq(tasks.id, input.taskId),
         ),
       );
+    const sourceTask = taskTree[0];
+    if (!sourceTask) return null;
 
     const mentionReachRows = await transaction
       .select({ key: agentMentionReachGrants.key })
@@ -704,7 +707,10 @@ export function createPostgresTaskExecutionFinalizationWriter(options: {
             message: finalText,
           },
           context: {
-            task: { id: input.taskId },
+            task: {
+              id: sourceTask.id,
+              identifier: sourceTask.identifier,
+            },
             from: {
               id: run.targetAgentId,
               name: finishingAgent?.name ?? "Agent",

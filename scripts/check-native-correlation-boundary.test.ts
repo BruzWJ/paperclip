@@ -36,7 +36,7 @@ test("rejects correlation fields and wire literals from public boundaries", () =
 test("rejects adapter codec and generic result propagation", () => {
   const fixtures = [
     [
-      "packages/adapters/example/src/index.ts",
+      "apps/server/src/retired-adapter-codec.ts",
       "export const nativeCorrelationCodec = codec;",
     ],
     [

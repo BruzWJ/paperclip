@@ -19,7 +19,9 @@ function writeJson(filePath: string, value: unknown) {
 }
 
 function createConfig(value: unknown): string {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-db-runtime-"));
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "paperclip-db-runtime-"),
+  );
   const configPath = path.join(tempDir, "instance", "config.json");
   writeJson(configPath, value);
   return configPath;
@@ -63,12 +65,14 @@ describe("resolveDatabaseTarget", () => {
     const target = resolveDatabaseTarget({
       configPath,
       environment: {
-        DATABASE_URL: "postgres://env-user:env-pass@db.example.com:5432/paperclip",
+        DATABASE_URL:
+          "postgres://env-user:env-pass@db.example.com:5432/paperclip",
       },
     });
 
     expect(target).toMatchObject({
-      connectionString: "postgres://env-user:env-pass@db.example.com:5432/paperclip",
+      connectionString:
+        "postgres://env-user:env-pass@db.example.com:5432/paperclip",
       source: "DATABASE_URL",
     });
     expect(target).not.toHaveProperty("mode");
@@ -77,14 +81,16 @@ describe("resolveDatabaseTarget", () => {
   it("uses config.database.connectionString when configured", () => {
     const configPath = createConfig({
       database: {
-        connectionString: "postgresql://cfg-user:cfg-pass@db.example.com:5432/paperclip",
+        connectionString:
+          "postgresql://cfg-user:cfg-pass@db.example.com:5432/paperclip",
       },
     });
 
     const target = resolveDatabaseTarget({ configPath, environment: {} });
 
     expect(target).toMatchObject({
-      connectionString: "postgresql://cfg-user:cfg-pass@db.example.com:5432/paperclip",
+      connectionString:
+        "postgresql://cfg-user:cfg-pass@db.example.com:5432/paperclip",
       source: "config.database.connectionString",
     });
   });
@@ -92,36 +98,59 @@ describe("resolveDatabaseTarget", () => {
   it("requires one configured external PostgreSQL URL", () => {
     const configPath = createConfig({ database: {} });
 
-    expect(() => resolveDatabaseTarget({ configPath, environment: {} })).toThrow(
-      "An external PostgreSQL connection is required",
-    );
+    expect(() =>
+      resolveDatabaseTarget({ configPath, environment: {} }),
+    ).toThrow("An external PostgreSQL connection is required");
   });
 
   it("rejects a non-PostgreSQL URL rather than falling back", () => {
     const configPath = createConfig({ database: {} });
 
-    expect(() => resolveDatabaseTarget({
-      configPath,
-      environment: { DATABASE_URL: "mysql://db.example.com/paperclip" },
-    })).toThrow(
-      "must use the postgres:// or postgresql:// protocol",
-    );
+    expect(() =>
+      resolveDatabaseTarget({
+        configPath,
+        environment: { DATABASE_URL: "mysql://db.example.com/paperclip" },
+      }),
+    ).toThrow("must use the postgres:// or postgresql:// protocol");
   });
+
+  it.each([
+    "",
+    " postgres://db.example.com/paperclip",
+    "postgres://db.example.com/paperclip ",
+  ])(
+    "rejects non-canonical DATABASE_URL=%j instead of falling back",
+    (value) => {
+      const configPath = createConfig({
+        database: { connectionString: "postgres://fallback.invalid/paperclip" },
+      });
+      expect(() =>
+        resolveDatabaseTarget({
+          configPath,
+          environment: { DATABASE_URL: value },
+        }),
+      ).toThrow(/DATABASE_URL must be an exact non-empty/);
+    },
+  );
 
   it("rejects retired database configuration even when DATABASE_URL is set", () => {
     const configPath = createConfig({
       database: {
         [retiredField("mo", "de")]: "postgres",
-        connectionString: "postgres://cfg-user:cfg-pass@db.example.com:5432/paperclip",
+        connectionString:
+          "postgres://cfg-user:cfg-pass@db.example.com:5432/paperclip",
       },
     });
 
-    expect(() => resolveDatabaseTarget({
-      configPath,
-      environment: {
-        DATABASE_URL: "postgres://env-user:env-pass@db.example.com:5432/paperclip",
-      },
-    })).toThrow("database.mode is retired");
+    expect(() =>
+      resolveDatabaseTarget({
+        configPath,
+        environment: {
+          DATABASE_URL:
+            "postgres://env-user:env-pass@db.example.com:5432/paperclip",
+        },
+      }),
+    ).toThrow("database.mode is retired");
   });
 
   it.each([
@@ -134,23 +163,26 @@ describe("resolveDatabaseTarget", () => {
   ])("rejects retired database.%s configuration", (field) => {
     const configPath = createConfig({ database: { [field]: "retired" } });
 
-    expect(() => resolveDatabaseTarget({ configPath, environment: {} })).toThrow(
-      `database.${field} is retired`,
-    );
+    expect(() =>
+      resolveDatabaseTarget({ configPath, environment: {} }),
+    ).toThrow(`database.${field} is retired`);
   });
 
   it("resolves a config-specific target with an explicit empty environment fixture", () => {
     const configPath = createConfig({
       database: {
-        connectionString: "postgres://config-user:config-pass@db.example.com:5432/worktree",
+        connectionString:
+          "postgres://config-user:config-pass@db.example.com:5432/worktree",
       },
     });
-    process.env.DATABASE_URL = "postgres://env-user:env-pass@db.example.com:5432/process";
+    process.env.DATABASE_URL =
+      "postgres://env-user:env-pass@db.example.com:5432/process";
 
     const target = resolveDatabaseTarget({ configPath, environment: {} });
 
     expect(target).toMatchObject({
-      connectionString: "postgres://config-user:config-pass@db.example.com:5432/worktree",
+      connectionString:
+        "postgres://config-user:config-pass@db.example.com:5432/worktree",
       source: "config.database.connectionString",
     });
   });
@@ -163,7 +195,10 @@ describe("resolveDatabaseTarget", () => {
       ),
     ).toBe("postgresql://migration:secret@db.example.com:5432/paperclip");
     expect(
-      resolveOptionalExternalPostgresConnectionString(undefined, "DATABASE_MIGRATION_URL"),
+      resolveOptionalExternalPostgresConnectionString(
+        undefined,
+        "DATABASE_MIGRATION_URL",
+      ),
     ).toBeUndefined();
     expect(() =>
       resolveOptionalExternalPostgresConnectionString(
@@ -171,7 +206,22 @@ describe("resolveDatabaseTarget", () => {
         "DATABASE_MIGRATION_URL",
       ),
     ).toThrow("must use the postgres:// or postgresql:// protocol");
+    expect(() =>
+      resolveOptionalExternalPostgresConnectionString(
+        " ",
+        "DATABASE_MIGRATION_URL",
+      ),
+    ).toThrow(/exact non-empty/);
   });
+
+  it.each(["", " ./config.json", "./config.json "])(
+    "rejects non-canonical explicit configPath=%j",
+    (configPath) => {
+      expect(() =>
+        resolveDatabaseTarget({ configPath, environment: {} }),
+      ).toThrow(/configPath must be exact and non-empty/);
+    },
+  );
 
   it("parses and redacts a named external target for client-only administration", () => {
     const target = parseExternalPostgresDatabaseTarget(

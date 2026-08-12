@@ -4,7 +4,6 @@ import type {
   PluginCapability,
   PluginUiSlotType,
   PluginUiSlotEntityType,
-  PluginStateScopeKind,
   PluginLauncherPlacementZone,
   PluginLauncherBounds,
   PluginLauncherRenderEnvironment,
@@ -23,7 +22,6 @@ import type {
   TaskSurfaceVisibility,
 } from "../constants.js";
 import type { Agent } from "./agent.js";
-import type { CompanySkill } from "./company-skill.js";
 import type { Project } from "./project.js";
 import type { Routine, RoutineTrigger, RoutineVariable } from "./routine.js";
 
@@ -221,33 +219,7 @@ export interface PluginManagedProjectDeclaration {
   settings?: Record<string, unknown>;
 }
 
-export interface PluginManagedSkillFileDeclaration {
-  /** Relative path inside the skill folder, for example `references/guide.md`. */
-  path: string;
-  /** File contents written when the skill is installed or reset. */
-  content: string;
-}
-
-/**
- * Declares a company skill that a plugin can install into each company's
- * skills library and later resolve by stable key.
- */
-export interface PluginManagedSkillDeclaration {
-  /** Stable identifier for this managed skill, unique within the plugin. */
-  skillKey: string;
-  /** Suggested visible skill name. */
-  displayName: string;
-  /** Suggested skill slug. Defaults to `skillKey`. */
-  slug?: string;
-  /** Suggested skill description. */
-  description?: string | null;
-  /** Full `SKILL.md` contents. Defaults to generated markdown from display metadata. */
-  markdown?: string;
-  /** Additional files installed with the skill. */
-  files?: PluginManagedSkillFileDeclaration[];
-}
-
-export type PluginManagedResourceKind = "agent" | "project" | "routine" | "skill";
+export type PluginManagedResourceKind = "agent" | "project" | "routine";
 
 export interface PluginManagedResourceRef {
   pluginKey?: string;
@@ -289,6 +261,7 @@ export interface PluginManagedRoutineDeclaration {
   /** Defaults for tasks created by this routine. */
   taskTemplate?: {
     surfaceVisibility?: TaskSurfaceVisibility;
+    /** Exact non-blank plugin correlation key, persisted without normalization. */
     originId?: string | null;
     billingCode?: string | null;
   };
@@ -324,19 +297,6 @@ export interface PluginManagedRoutineResolution {
   routine: Routine | null;
   status: "missing" | "missing_refs" | "resolved" | "created" | "relinked" | "reset";
   missingRefs?: PluginManagedResourceRef[];
-}
-
-export interface PluginManagedSkillResolution {
-  pluginKey: string;
-  resourceKind: "skill";
-  resourceKey: string;
-  companyId: string;
-  skillId: string | null;
-  skill: CompanySkill | null;
-  status: "missing" | "resolved" | "created" | "relinked" | "reset";
-  defaultDrift?: {
-    changedFiles: string[];
-  } | null;
 }
 
 /**
@@ -449,21 +409,6 @@ export interface PluginLauncherRenderContextSnapshot {
   bounds: PluginLauncherBounds;
 }
 
-/**
- * Declares a plugin launcher surface independent of the low-level slot
- * implementation that mounts it.
- */
-interface PluginLauncherDeclarationBase {
-  /** Stable identifier for this launcher, unique within the plugin. */
-  id: string;
-  /** Human-readable label shown for the launcher. */
-  displayName: string;
-  /** Optional operator-facing description. */
-  description?: string;
-  /** Optional ordering hint within the placement zone. */
-  order?: number;
-}
-
 type PluginLauncherPlacementDeclaration =
   | {
       placementZone: "toolbarButton";
@@ -491,7 +436,20 @@ type PluginLauncherActionAndRenderDeclaration =
       render?: never;
     };
 
-export type PluginLauncherDeclaration = PluginLauncherDeclarationBase
+/**
+ * Declares a plugin launcher surface independent of the low-level slot
+ * implementation that mounts it.
+ */
+export type PluginLauncherDeclaration = {
+  /** Stable identifier for this launcher, unique within the plugin. */
+  id: string;
+  /** Human-readable label shown for the launcher. */
+  displayName: string;
+  /** Optional operator-facing description. */
+  description?: string;
+  /** Optional ordering hint within the placement zone. */
+  order?: number;
+}
   & PluginLauncherPlacementDeclaration
   & PluginLauncherActionAndRenderDeclaration;
 
@@ -595,8 +553,6 @@ export interface PaperclipPluginManifestV1 {
   projects?: PluginManagedProjectDeclaration[];
   /** Suggested company-scoped routines this plugin can provision and resolve by stable key. */
   routines?: PluginManagedRoutineDeclaration[];
-  /** Suggested company skills this plugin can install and resolve by stable key. */
-  skills?: PluginManagedSkillDeclaration[];
   /** Trusted local folders this plugin can configure and access by stable key. */
   localFolders?: PluginLocalFolderDeclaration[];
   /** Non-empty UI declarations. Present exactly when `entrypoints.ui` is declared. */

@@ -4,6 +4,12 @@ import type {
   SecretProviderDescriptor,
 } from "@paperclipai/shared";
 
+export interface SecretsRuntimeConfig {
+  defaultProvider: SecretProvider;
+  strictMode: boolean;
+  masterKeyFilePath: string;
+}
+
 export interface StoredSecretVersionMaterial {
   [key: string]: unknown;
 }
@@ -63,7 +69,10 @@ export interface SecretProviderClientErrorOptions {
   cause?: unknown;
 }
 
-const SECRET_PROVIDER_CLIENT_ERROR_STATUS: Record<SecretProviderClientErrorCode, number> = {
+const SECRET_PROVIDER_CLIENT_ERROR_STATUS: Record<
+  SecretProviderClientErrorCode,
+  number
+> = {
   access_denied: 403,
   throttled: 429,
   not_found: 404,
@@ -86,7 +95,8 @@ export class SecretProviderClientError extends Error {
     this.code = options.code;
     this.provider = options.provider;
     this.operation = options.operation;
-    this.status = options.status ?? SECRET_PROVIDER_CLIENT_ERROR_STATUS[options.code];
+    this.status =
+      options.status ?? SECRET_PROVIDER_CLIENT_ERROR_STATUS[options.code];
     this.rawMessage = options.rawMessage ?? null;
     if (options.cause !== undefined) {
       Object.defineProperty(this, "cause", {
@@ -98,7 +108,9 @@ export class SecretProviderClientError extends Error {
   }
 }
 
-export function isSecretProviderClientError(error: unknown): error is SecretProviderClientError {
+export function isSecretProviderClientError(
+  error: unknown,
+): error is SecretProviderClientError {
   return error instanceof SecretProviderClientError;
 }
 

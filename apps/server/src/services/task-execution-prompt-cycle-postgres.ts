@@ -38,7 +38,6 @@ import type {
   TaskExecutionPromptCapabilityIdentity,
   TaskExecutionPromptCycleRepository,
   TaskExecutionPromptIdentity,
-  ResolvedTaskExecutionPrompt,
 } from "./task-execution-attempt-executor.js";
 import type { TaskExecutionRunService } from "./task-execution-run-service.js";
 import {
@@ -980,7 +979,7 @@ async function ensureAssistantStarted(
           ? {}
           : {
               model: {
-                id: configuration.model.id,
+                id: configuration.model.value,
                 providerID: configuration.launchProfile.registryName,
               },
             }),

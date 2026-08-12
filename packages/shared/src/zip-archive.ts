@@ -1,4 +1,5 @@
 import type { CompanyPortabilityFileEntry } from "./types/company-portability.js";
+import { isPortableRelativePath } from "./portable-path.js";
 
 // Zip central-directory parser shared by the browser importer (apps/ui) and the
 // CLI importer (packages/cli). Inflation is environment-specific, so callers
@@ -21,12 +22,13 @@ export const binaryContentTypeByExtension: Record<string, string> = {
   ".webp": "image/webp",
 };
 
-export function normalizeArchivePath(pathValue: string) {
-  return pathValue
-    .replace(/\\/g, "/")
-    .split("/")
-    .filter(Boolean)
-    .join("/");
+export function requireArchivePath(pathValue: string): string {
+  if (!isPortableRelativePath(pathValue)) {
+    throw new Error(
+      "Invalid zip archive: entry paths must be exact portable relative paths.",
+    );
+  }
+  return pathValue;
 }
 
 function readUint16(source: Uint8Array, offset: number) {
@@ -35,30 +37,34 @@ function readUint16(source: Uint8Array, offset: number) {
 
 function readUint32(source: Uint8Array, offset: number) {
   return (
-    source[offset]! |
-    (source[offset + 1]! << 8) |
-    (source[offset + 2]! << 16) |
-    (source[offset + 3]! << 24)
-  ) >>> 0;
+    (source[offset]! |
+      (source[offset + 1]! << 8) |
+      (source[offset + 2]! << 16) |
+      (source[offset + 3]! << 24)) >>>
+    0
+  );
 }
 
 function sharedArchiveRoot(paths: string[]) {
   if (paths.length === 0) return null;
-  const firstSegments = paths
-    .map((entry) => normalizeArchivePath(entry).split("/").filter(Boolean))
-    .filter((parts) => parts.length > 0);
+  const firstSegments = paths.map((entry) => entry.split("/"));
   if (firstSegments.length === 0) return null;
   const candidate = firstSegments[0]![0]!;
-  return firstSegments.every((parts) => parts.length > 1 && parts[0] === candidate)
+  return firstSegments.every(
+    (parts) => parts.length > 1 && parts[0] === candidate,
+  )
     ? candidate
     : null;
 }
 
 function inferBinaryContentType(pathValue: string) {
-  const normalized = normalizeArchivePath(pathValue);
-  const extensionIndex = normalized.lastIndexOf(".");
+  const extensionIndex = pathValue.lastIndexOf(".");
   if (extensionIndex === -1) return null;
-  return binaryContentTypeByExtension[normalized.slice(extensionIndex).toLowerCase()] ?? null;
+  return (
+    binaryContentTypeByExtension[
+      pathValue.slice(extensionIndex).toLowerCase()
+    ] ?? null
+  );
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -67,7 +73,10 @@ function bytesToBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
-function bytesToPortableFileEntry(pathValue: string, bytes: Uint8Array): CompanyPortabilityFileEntry {
+function bytesToPortableFileEntry(
+  pathValue: string,
+  bytes: Uint8Array,
+): CompanyPortabilityFileEntry {
   const contentType = inferBinaryContentType(pathValue);
   if (!contentType) return textDecoder.decode(bytes);
   return {
@@ -77,10 +86,16 @@ function bytesToPortableFileEntry(pathValue: string, bytes: Uint8Array): Company
   };
 }
 
-async function inflateZipEntry(inflateRaw: ZipInflateRaw, compressionMethod: number, bytes: Uint8Array) {
+async function inflateZipEntry(
+  inflateRaw: ZipInflateRaw,
+  compressionMethod: number,
+  bytes: Uint8Array,
+) {
   if (compressionMethod === 0) return bytes;
   if (compressionMethod !== 8) {
-    throw new Error("Unsupported zip archive: only STORE and DEFLATE entries are supported.");
+    throw new Error(
+      "Unsupported zip archive: only STORE and DEFLATE entries are supported.",
+    );
   }
   return inflateRaw(bytes);
 }
@@ -93,7 +108,9 @@ export async function readZipArchive(
   files: Record<string, CompanyPortabilityFileEntry>;
 }> {
   const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
-  const entries: Array<{ path: string; body: CompanyPortabilityFileEntry }> = [];
+  const entries: Array<{ path: string; body: CompanyPortabilityFileEntry }> =
+    [];
+  const archivePaths = new Set<string>();
   let offset = 0;
 
   while (offset + 4 <= bytes.length) {
@@ -114,7 +131,9 @@ export async function readZipArchive(
     const extraFieldLength = readUint16(bytes, offset + 28);
 
     if ((generalPurposeFlag & 0x0008) !== 0) {
-      throw new Error("Unsupported zip archive: data descriptors are not supported.");
+      throw new Error(
+        "Unsupported zip archive: data descriptors are not supported.",
+      );
     }
 
     const nameOffset = offset + 30;
@@ -124,11 +143,25 @@ export async function readZipArchive(
       throw new Error("Invalid zip archive: truncated file contents.");
     }
 
-    const rawArchivePath = textDecoder.decode(bytes.slice(nameOffset, nameOffset + fileNameLength));
-    const archivePath = normalizeArchivePath(rawArchivePath);
-    const isDirectoryEntry = /\/$/.test(rawArchivePath.replace(/\\/g, "/"));
-    if (archivePath && !isDirectoryEntry) {
-      const entryBytes = await inflateZipEntry(inflateRaw, compressionMethod, bytes.slice(bodyOffset, bodyEnd));
+    const rawArchivePath = textDecoder.decode(
+      bytes.slice(nameOffset, nameOffset + fileNameLength),
+    );
+    const isDirectoryEntry = rawArchivePath.endsWith("/");
+    const archivePath = requireArchivePath(
+      isDirectoryEntry ? rawArchivePath.slice(0, -1) : rawArchivePath,
+    );
+    if (archivePaths.has(archivePath)) {
+      throw new Error(
+        "Invalid zip archive: duplicate or conflicting entry path.",
+      );
+    }
+    archivePaths.add(archivePath);
+    if (!isDirectoryEntry) {
+      const entryBytes = await inflateZipEntry(
+        inflateRaw,
+        compressionMethod,
+        bytes.slice(bodyOffset, bodyEnd),
+      );
       entries.push({
         path: archivePath,
         body: bytesToPortableFileEntry(archivePath, entryBytes),
@@ -145,7 +178,11 @@ export async function readZipArchive(
       rootPath && entry.path.startsWith(`${rootPath}/`)
         ? entry.path.slice(rootPath.length + 1)
         : entry.path;
-    if (!normalizedPath) continue;
+    if (!normalizedPath || Object.hasOwn(files, normalizedPath)) {
+      throw new Error(
+        "Invalid zip archive: duplicate or conflicting output path.",
+      );
+    }
     files[normalizedPath] = entry.body;
   }
 

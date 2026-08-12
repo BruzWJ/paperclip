@@ -32,7 +32,7 @@ import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { isUuidLike } from "@paperclipai/shared";
+import { isCanonicalUuid } from "@paperclipai/shared";
 import { pluginRegistryService } from "../services/plugin-registry.js";
 import { logger } from "../middleware/logger.js";
 import {
@@ -125,7 +125,7 @@ function computeETag(size: number, mtimeMs: number): string {
  * @returns Express router
  */
 export function pluginUiStaticRoutes(db: Db) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const registry = pluginRegistryService(db);
   const log = logger.child({ service: "plugin-ui-static" });
 
@@ -159,7 +159,7 @@ export function pluginUiStaticRoutes(db: Db) {
     }
 
     // Step 1: Look up the exact installation UUID.
-    if (!isUuidLike(pluginId)) {
+    if (!isCanonicalUuid(pluginId)) {
       res.status(400).json({ error: "Invalid plugin installation ID" });
       return;
     }

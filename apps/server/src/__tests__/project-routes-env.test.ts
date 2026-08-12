@@ -2,6 +2,7 @@ import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
+import { testSecretsRuntimeConfig } from "./helpers/secrets-runtime.js";
 
 const mockProjectService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -13,7 +14,6 @@ const mockProjectService = vi.hoisted(() => ({
   updateWorkspace: vi.fn(),
   clearWorkspaces: vi.fn(),
   remove: vi.fn(),
-  resolveByReference: vi.fn(),
 }));
 const mockSecretService = vi.hoisted(() => ({
   normalizeEnvBindingsForPersistence: vi.fn(),
@@ -57,13 +57,16 @@ function registerModuleMocks() {
   vi.doMock("../services/secrets.js", () => ({
     secretService: () => mockSecretService,
   }));
-
 }
 
 async function createApp() {
   const [{ projectRoutes }, { errorHandler }] = await Promise.all([
-    vi.importActual<typeof import("../routes/projects.js")>("../routes/projects.js"),
-    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+    vi.importActual<typeof import("../routes/projects.js")>(
+      "../routes/projects.js",
+    ),
+    vi.importActual<typeof import("../middleware/index.js")>(
+      "../middleware/index.js",
+    ),
   ]);
   const app = express();
   app.use(express.json());
@@ -74,16 +77,18 @@ async function createApp() {
       userEmail: "board-user@paperclip.test",
       sessionId: "session-board-user",
       companyIds: ["company-1"],
-      memberships: [{
-        companyId: "company-1",
-        membershipRole: "operator",
-        status: "active",
-      }],
+      memberships: [
+        {
+          companyId: "company-1",
+          membershipRole: "operator",
+          status: "active",
+        },
+      ],
       isInstanceAdmin: false,
     });
     next();
   });
-  app.use("/api", projectRoutes({} as any));
+  app.use("/api", projectRoutes({} as any, testSecretsRuntimeConfig()));
   app.use(errorHandler);
   return app;
 }
@@ -92,7 +97,6 @@ function buildProject(overrides: Record<string, unknown> = {}) {
   return {
     id: "project-1",
     companyId: "company-1",
-    urlKey: "project-1",
     goalIds: [],
     goals: [],
     name: "Project",
@@ -134,11 +138,12 @@ describe("project env routes", () => {
       explanation: "Allowed by test mock.",
     });
     mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
-    mockProjectService.resolveByReference.mockResolvedValue({ ambiguous: false, project: null });
     mockProjectService.createWorkspace.mockResolvedValue(null);
     mockProjectService.clearWorkspaces.mockResolvedValue([]);
     mockProjectService.listWorkspaces.mockResolvedValue([]);
-    mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(async (_companyId, env) => env);
+    mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(
+      async (_companyId, env) => env,
+    );
     mockSecretService.syncEnvBindingsForTarget.mockResolvedValue([]);
   });
 
@@ -150,8 +155,12 @@ describe("project env routes", () => {
         version: "latest",
       },
     };
-    mockSecretService.normalizeEnvBindingsForPersistence.mockResolvedValue(normalizedEnv);
-    mockProjectService.create.mockResolvedValue(buildProject({ env: normalizedEnv }));
+    mockSecretService.normalizeEnvBindingsForPersistence.mockResolvedValue(
+      normalizedEnv,
+    );
+    mockProjectService.create.mockResolvedValue(
+      buildProject({ env: normalizedEnv }),
+    );
 
     const app = await createApp();
     const res = await request(app)
@@ -162,7 +171,9 @@ describe("project env routes", () => {
       });
 
     expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
-    expect(mockSecretService.normalizeEnvBindingsForPersistence).toHaveBeenCalledWith(
+    expect(
+      mockSecretService.normalizeEnvBindingsForPersistence,
+    ).toHaveBeenCalledWith(
       "company-1",
       normalizedEnv,
       expect.objectContaining({ fieldPath: "env" }),
@@ -191,16 +202,18 @@ describe("project env routes", () => {
     const normalizedEnv = {
       PLAIN_KEY: { type: "plain", value: "top-secret" },
     };
-    mockSecretService.normalizeEnvBindingsForPersistence.mockResolvedValue(normalizedEnv);
+    mockSecretService.normalizeEnvBindingsForPersistence.mockResolvedValue(
+      normalizedEnv,
+    );
     mockProjectService.getById.mockResolvedValue(buildProject());
-    mockProjectService.update.mockResolvedValue(buildProject({ env: normalizedEnv }));
+    mockProjectService.update.mockResolvedValue(
+      buildProject({ env: normalizedEnv }),
+    );
 
     const app = await createApp();
-    const res = await request(app)
-      .patch("/api/projects/project-1")
-      .send({
-        env: normalizedEnv,
-      });
+    const res = await request(app).patch("/api/projects/project-1").send({
+      env: normalizedEnv,
+    });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(mockSecretService.syncEnvBindingsForTarget).toHaveBeenCalledWith(
@@ -260,6 +273,21 @@ describe("project env routes", () => {
     );
   });
 
+  it.each([
+    "https://GitHub.com/acme/project.git",
+    "https://github.com:443/acme/project.git",
+    "https://github.com/acme/other/../project.git",
+  ])("rejects the noncanonical project repository URL %s", async (repoUrl) => {
+    const app = await createApp();
+    const res = await request(app)
+      .post("/api/companies/company-1/projects")
+      .send({ name: "Project", codebase: { repoUrl } });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(400);
+    expect(mockProjectService.create).not.toHaveBeenCalled();
+    expect(mockProjectService.createWorkspace).not.toHaveBeenCalled();
+  });
+
   it("reads and updates the project's single Codebase projection", async () => {
     const existing = buildProject({
       codebase: {
@@ -286,7 +314,9 @@ describe("project env routes", () => {
     });
 
     const app = await createApp();
-    const getResponse = await request(app).get("/api/projects/project-1/codebase");
+    const getResponse = await request(app).get(
+      "/api/projects/project-1/codebase",
+    );
     expect(getResponse.status, JSON.stringify(getResponse.body)).toBe(200);
     expect(getResponse.body).toEqual(existing.codebase);
 
@@ -326,7 +356,9 @@ describe("project env routes", () => {
       .send({ localFolder: null, repoUrl: null });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(mockProjectService.clearWorkspaces).toHaveBeenCalledWith("project-1");
+    expect(mockProjectService.clearWorkspaces).toHaveBeenCalledWith(
+      "project-1",
+    );
     expect(mockProjectService.updateWorkspace).not.toHaveBeenCalled();
   });
 });

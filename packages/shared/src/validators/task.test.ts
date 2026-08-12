@@ -8,18 +8,19 @@ import {
   commitTaskCreatorFormSchema,
   commitTaskOwnerFormSchema,
   taskBlockedInboxAttentionSchema,
+  taskCommentMetadataRowSchema,
   decideTaskExecutionStageSchema,
   reassignTaskSchema,
   reopenTaskSchema,
   selfAssignTaskWithdrawalSchema,
   updateTaskExecutionPolicySchema,
+  taskExecutionPolicySchema,
+  taskExecutionMonitorPolicySchema,
+  taskExecutionMonitorStateSchema,
   updateTaskTitleSchema,
   upsertTaskDocumentSchema,
 } from "./task.js";
-import {
-  adapterConfigSchema,
-  agentRuntimeConfigSchema,
-} from "./agent.js";
+import { adapterConfigSchema } from "./agent.js";
 
 describe("task validators", () => {
   const ownerAgentId = "22222222-2222-4222-8222-222222222222";
@@ -39,6 +40,91 @@ describe("task validators", () => {
     expect(updateTaskExecutionPolicySchema.safeParse({
       executionPolicy: null,
       status: "done",
+    }).success).toBe(false);
+  });
+
+  it("accepts one exact low-trust execution-policy shape and rejects preset aliases", () => {
+    const reviewPreset = {
+      id: "low_trust_review" as const,
+      version: 1 as const,
+      rawOutputDisposition: "quarantine" as const,
+    };
+    const trustBoundary = {
+      mode: "low_trust_review" as const,
+      rootTaskId: "33333333-3333-4333-8333-333333333333",
+    };
+    const canonicalPolicy = {
+      reviewPreset,
+      authorizationPolicy: {
+        managedBy: "permissions-extension",
+        trustBoundary,
+      },
+    };
+
+    expect(taskExecutionPolicySchema.safeParse(canonicalPolicy).success).toBe(true);
+    expect(taskExecutionPolicySchema.safeParse({
+      authorizationPolicy: { trustBoundary },
+    }).success).toBe(false);
+    expect(taskExecutionPolicySchema.safeParse({ reviewPreset }).success).toBe(false);
+
+    for (const aliasPolicy of [
+      { ...canonicalPolicy, trustPreset: "low_trust_review" },
+      {
+        ...canonicalPolicy,
+        authorizationPolicy: {
+          ...canonicalPolicy.authorizationPolicy,
+          trustPreset: "low_trust_review",
+        },
+      },
+      {
+        ...canonicalPolicy,
+        authorizationPolicy: {
+          ...canonicalPolicy.authorizationPolicy,
+          reviewPreset,
+        },
+      },
+    ]) {
+      expect(taskExecutionPolicySchema.safeParse(aliasPolicy).success).toBe(false);
+    }
+  });
+
+  it("rejects padded task-monitor service and external identities without normalizing them", () => {
+    const policy = {
+      nextCheckAt: "2026-08-11T12:00:00.000Z",
+      serviceName: "deployments",
+      externalRef: "deploy-42",
+    };
+    expect(taskExecutionMonitorPolicySchema.parse(policy)).toMatchObject({
+      serviceName: "deployments",
+      externalRef: "deploy-42",
+    });
+    for (const field of ["serviceName", "externalRef"] as const) {
+      expect(taskExecutionMonitorPolicySchema.safeParse({
+        ...policy,
+        [field]: ` ${policy[field]} `,
+      }).success).toBe(false);
+    }
+
+    const state = {
+      status: "scheduled",
+      nextCheckAt: policy.nextCheckAt,
+      lastTriggeredAt: null,
+      attemptCount: 0,
+      notes: null,
+      scheduledBy: "owner",
+      kind: null,
+      serviceName: policy.serviceName,
+      externalRef: policy.externalRef,
+      timeoutAt: null,
+      maxAttempts: null,
+      recoveryPolicy: null,
+      clearedAt: null,
+      clearReason: null,
+    };
+    expect(taskExecutionMonitorStateSchema.safeParse(state).success).toBe(true);
+    expect(taskExecutionMonitorStateSchema.safeParse({
+      ...state,
+      serviceName: ` ${state.serviceName}`,
     }).success).toBe(false);
   });
 
@@ -69,6 +155,34 @@ describe("task validators", () => {
     });
 
     expect(parsed.request).toBe(request);
+  });
+
+  it("keeps task-link metadata routing on the nullable task number only", () => {
+    const taskId = "abcdef12-3456-4789-8abc-def012345678";
+    expect(taskCommentMetadataRowSchema.safeParse({
+      type: "task_link",
+      taskId,
+      taskNumber: 42,
+      identifier: "PAP-42",
+      title: "Canonical task link",
+    }).success).toBe(true);
+    expect(taskCommentMetadataRowSchema.safeParse({
+      type: "task_link",
+      taskId,
+      taskNumber: null,
+      identifier: "PAP-42",
+    }).success).toBe(true);
+
+    for (const row of [
+      { type: "task_link", taskId, identifier: "PAP-42" },
+      { type: "task_link", taskId, taskNumber: 42 },
+      { type: "task_link", taskId: taskId.toUpperCase(), taskNumber: 42 },
+      { type: "task_link", taskId, taskNumber: 42, identifier: " pap-42 " },
+      { type: "task_link", taskId, taskNumber: 2_147_483_648 },
+      { type: "task_link", taskNumber: null },
+    ]) {
+      expect(taskCommentMetadataRowSchema.safeParse(row).success).toBe(false);
+    }
   });
 
   it("keeps the project codebase selector without restoring isolated-workspace controls", () => {
@@ -108,7 +222,6 @@ describe("task validators", () => {
       "ownerUserId",
       "allowDuplicate",
       "workMode",
-      "harnessKind",
       "requestDepth",
       "ownerAdapterOverrides",
       "executionPolicy",
@@ -411,6 +524,7 @@ describe("task validators", () => {
       action: { label: "Assign blocker", detail: "Assign the leaf blocker." },
       sourceTask: {
         id: "11111111-1111-4111-8111-111111111111",
+        taskNumber: 1,
         identifier: "PAP-1",
         title: "Blocked source",
         boardPresentationStatus: "blocked",
@@ -420,6 +534,7 @@ describe("task validators", () => {
       },
       leafTask: {
         id: "22222222-2222-4222-8222-222222222222",
+        taskNumber: 2,
         identifier: "PAP-2",
         title: "Unassigned leaf",
         boardPresentationStatus: "todo",
@@ -442,102 +557,12 @@ describe("task validators", () => {
     }).success).toBe(false);
   });
 
-  it("validates agent runtime cheap model profile config and rejects retired heartbeat fields", () => {
-    const parsed = agentRuntimeConfigSchema.parse({
-      modelProfiles: {
-        cheap: {
-          enabled: true,
-          label: "Budget model",
-          adapterConfig: {
-            model: "fixture-small",
-          },
-        },
-      },
+  it("keeps adapter editor values to native ACPX primitives", () => {
+    expect(adapterConfigSchema.parse({ model: "gpt-5.6", enabled: false })).toEqual({
+      model: "gpt-5.6",
+      enabled: false,
     });
-
-    expect(parsed.modelProfiles?.cheap?.adapterConfig).toEqual({
-      model: "fixture-small",
-    });
-    expect(agentRuntimeConfigSchema.safeParse({
-      heartbeat: { cooldownSec: 30 },
-    }).success).toBe(false);
+    expect(adapterConfigSchema.safeParse({ env: { HOME: "/tmp" } }).success).toBe(false);
   });
 
-  it("keeps raw output-token overrides separate and closed", () => {
-    expect(
-      agentRuntimeConfigSchema.parse({
-        runtimeFlags: { outputTokenMax: 12_345 },
-      }).runtimeFlags,
-    ).toEqual({ outputTokenMax: 12_345 });
-    expect(
-      agentRuntimeConfigSchema.safeParse({
-        runtimeFlags: { contextWindow: 200_000 },
-      }).success,
-    ).toBe(false);
-    expect(
-      agentRuntimeConfigSchema.safeParse({
-        runtimeFlags: { outputTokenMax: -1 },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("validates cheap model profile env bindings like top-level adapter config", () => {
-    const parsed = agentRuntimeConfigSchema.safeParse({
-      modelProfiles: {
-        cheap: {
-          adapterConfig: {
-            env: {
-              API_TOKEN: 123,
-            },
-          },
-        },
-      },
-    });
-
-    expect(parsed.success).toBe(false);
-  });
-
-  it("accepts an opaque operator-supplied CODEX_HOME without importing it into Paperclip state", () => {
-    const parsed = adapterConfigSchema.parse({
-      env: {
-        CODEX_HOME: {
-          type: "plain",
-          value: "/operator/native/codex-home",
-        },
-      },
-    });
-
-    expect(parsed.env).toEqual({
-      CODEX_HOME: {
-        type: "plain",
-        value: "/operator/native/codex-home",
-      },
-    });
-  });
-
-  it("continues to reject generic or Paperclip-managed home bridges", () => {
-    expect(adapterConfigSchema.safeParse({
-      env: {
-        AGENT_HOME: "/paperclip/agent-homes/coder",
-      },
-    }).success).toBe(false);
-
-    expect(adapterConfigSchema.safeParse({
-      codexHome: "/paperclip/codex-homes/coder",
-    }).success).toBe(false);
-  });
-
-  it("rejects unknown agent runtime model profile keys", () => {
-    const parsed = agentRuntimeConfigSchema.safeParse({
-      modelProfiles: {
-        fast: {
-          adapterConfig: {
-            model: "gpt-5-mini",
-          },
-        },
-      },
-    });
-
-    expect(parsed.success).toBe(false);
-  });
 });

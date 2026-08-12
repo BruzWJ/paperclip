@@ -34,7 +34,6 @@ interface BlockedInboxViewProps {
   groupBy: BlockedInboxGroupBy;
   sortBy: BlockedInboxSort;
   taskFilters: TaskFilterState;
-  currentUserId: string | null;
   liveTaskIds: ReadonlySet<string>;
   subtreeLiveCounts: ReadonlyMap<string, number>;
   showStatusColumn: boolean;
@@ -53,14 +52,15 @@ export function BlockedInboxView({
   groupBy,
   sortBy,
   taskFilters,
-  currentUserId,
   liveTaskIds,
   subtreeLiveCounts,
   showStatusColumn,
   showIdentifierColumn,
   showUpdatedColumn,
 }: BlockedInboxViewProps) {
-  const [collapsedVariants, setCollapsedVariants] = useState<Set<string>>(() => new Set());
+  const [collapsedVariants, setCollapsedVariants] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const {
     data: tasks = [] as Task[],
@@ -69,7 +69,10 @@ export function BlockedInboxView({
     error,
     refetch,
   } = useQuery({
-    queryKey: [...queryKeys.tasks.listBlockedAttention(companyId), "live-descendant-summary"],
+    queryKey: [
+      ...queryKeys.tasks.listBlockedAttention(companyId),
+      "live-descendant-summary",
+    ],
     queryFn: () =>
       tasksApi.list(companyId, {
         attention: "blocked",
@@ -90,14 +93,16 @@ export function BlockedInboxView({
       applyTaskFilters(
         filteredRows.map((row) => row.task),
         taskFilters,
-        currentUserId,
         true,
         liveTaskIds,
       ).map((task) => task.id),
     );
     return filteredRows.filter((row) => visibleTaskIds.has(row.task.id));
-  }, [currentUserId, filteredRows, taskFilters, liveTaskIds]);
-  const sortedRows = useMemo(() => sortBlockedInboxRows(taskFilteredRows, sortBy), [taskFilteredRows, sortBy]);
+  }, [filteredRows, taskFilters, liveTaskIds]);
+  const sortedRows = useMemo(
+    () => sortBlockedInboxRows(taskFilteredRows, sortBy),
+    [taskFilteredRows, sortBy],
+  );
   const groups = useMemo(
     () => groupBlockedInboxRows(taskFilteredRows, sortBy),
     [taskFilteredRows, sortBy],
@@ -114,7 +119,11 @@ export function BlockedInboxView({
 
   if (isLoading) {
     return (
-      <div data-testid="blocked-inbox-loading" className="space-y-3" aria-busy="true">
+      <div
+        data-testid="blocked-inbox-loading"
+        className="space-y-3"
+        aria-busy="true"
+      >
         {Array.from({ length: 3 }).map((_, groupIdx) => (
           <div key={groupIdx} className="space-y-1">
             <div className="h-4 w-40 animate-pulse rounded bg-muted/70" />
@@ -146,9 +155,14 @@ export function BlockedInboxView({
         className="flex flex-col gap-2 rounded-md border border-amber-300/70 bg-amber-50/90 p-4 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
       >
         <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <AlertTriangle
+            className="mt-0.5 h-4 w-4 shrink-0"
+            aria-hidden="true"
+          />
           <div className="flex-1 space-y-1">
-            <p className="text-sm font-medium">Couldn't load the Blocked tab.</p>
+            <p className="text-sm font-medium">
+              Couldn't load the Blocked tab.
+            </p>
             <p className="text-xs opacity-80">
               Other Inbox tabs still work. {message}
             </p>
@@ -188,56 +202,57 @@ export function BlockedInboxView({
   return (
     <div data-testid="blocked-inbox" className="space-y-3">
       <div className="overflow-hidden rounded-xl">
-        {groupBy === "none" ? (
-          sortedRows.map((row) => (
-            <BlockedInboxRow
-              key={row.task.id}
-              row={row}
-              taskLinkState={taskLinkState}
-              agentNameById={agentNameById}
-              userLabelById={userLabelById}
-              liveTaskIds={liveTaskIds}
-              subtreeLiveCounts={subtreeLiveCounts}
-              showStatusColumn={showStatusColumn}
-              showIdentifierColumn={showIdentifierColumn}
-              showUpdatedColumn={showUpdatedColumn}
-            />
-          ))
-        ) : (
-          groups.map((group) => {
-            const isCollapsed = collapsedVariants.has(group.variant);
-            return (
-              <div key={group.variant} data-testid={`blocked-inbox-group-${group.variant}`}>
-                <div className="px-3 sm:px-4">
-                  <TaskGroupHeader
-                    label={`${group.label} · ${group.rows.length}`}
-                    collapsible
-                    collapsed={isCollapsed}
-                    onToggle={() => toggleVariant(group.variant)}
-                  />
-                </div>
-                {!isCollapsed && (
-                  <div>
-                    {group.rows.map((row) => (
-                      <BlockedInboxRow
-                        key={row.task.id}
-                        row={row}
-                        taskLinkState={taskLinkState}
-                        agentNameById={agentNameById}
-                        userLabelById={userLabelById}
-                        liveTaskIds={liveTaskIds}
-                        subtreeLiveCounts={subtreeLiveCounts}
-                        showStatusColumn={showStatusColumn}
-                        showIdentifierColumn={showIdentifierColumn}
-                        showUpdatedColumn={showUpdatedColumn}
-                      />
-                    ))}
+        {groupBy === "none"
+          ? sortedRows.map((row) => (
+              <BlockedInboxRow
+                key={row.task.id}
+                row={row}
+                taskLinkState={taskLinkState}
+                agentNameById={agentNameById}
+                userLabelById={userLabelById}
+                liveTaskIds={liveTaskIds}
+                subtreeLiveCounts={subtreeLiveCounts}
+                showStatusColumn={showStatusColumn}
+                showIdentifierColumn={showIdentifierColumn}
+                showUpdatedColumn={showUpdatedColumn}
+              />
+            ))
+          : groups.map((group) => {
+              const isCollapsed = collapsedVariants.has(group.variant);
+              return (
+                <div
+                  key={group.variant}
+                  data-testid={`blocked-inbox-group-${group.variant}`}
+                >
+                  <div className="px-3 sm:px-4">
+                    <TaskGroupHeader
+                      label={`${group.label} · ${group.rows.length}`}
+                      collapsible
+                      collapsed={isCollapsed}
+                      onToggle={() => toggleVariant(group.variant)}
+                    />
                   </div>
-                )}
-              </div>
-            );
-          })
-        )}
+                  {!isCollapsed && (
+                    <div>
+                      {group.rows.map((row) => (
+                        <BlockedInboxRow
+                          key={row.task.id}
+                          row={row}
+                          taskLinkState={taskLinkState}
+                          agentNameById={agentNameById}
+                          userLabelById={userLabelById}
+                          liveTaskIds={liveTaskIds}
+                          subtreeLiveCounts={subtreeLiveCounts}
+                          showStatusColumn={showStatusColumn}
+                          showIdentifierColumn={showIdentifierColumn}
+                          showUpdatedColumn={showUpdatedColumn}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
       </div>
     </div>
   );
@@ -253,9 +268,12 @@ function BlockedInboxEmptyState() {
         <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
       </span>
       <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground">No work is stopped.</p>
+        <p className="text-sm font-medium text-foreground">
+          No work is stopped.
+        </p>
         <p className="text-xs text-muted-foreground">
-          Tasks that need a decision, recovery, or external action will appear here.
+          Tasks that need a decision, recovery, or external action will appear
+          here.
         </p>
       </div>
     </Card>
@@ -280,7 +298,8 @@ function resolveOwnerName(
   userLabelById?: ReadonlyMap<string, string>,
 ): { label: string | null; isAgent: boolean } {
   const owner = row.attention.owner;
-  if (owner.label) return { label: owner.label, isAgent: owner.type === "agent" };
+  if (owner.label)
+    return { label: owner.label, isAgent: owner.type === "agent" };
   if (owner.agentId) {
     return { label: agentNameById.get(owner.agentId) ?? null, isAgent: true };
   }
@@ -301,7 +320,11 @@ function BlockedInboxRow({
   showIdentifierColumn,
   showUpdatedColumn,
 }: BlockedInboxRowProps) {
-  const { label: ownerName, isAgent } = resolveOwnerName(row, agentNameById, userLabelById);
+  const { label: ownerName, isAgent } = resolveOwnerName(
+    row,
+    agentNameById,
+    userLabelById,
+  );
   const stoppedAge = formatStoppedAge(row.attention.stoppedSinceAt);
   const blockerAttention = resolveInboxTaskBlockerAttention(row.task, {
     isLive: liveTaskIds.has(row.task.id),
@@ -322,17 +345,19 @@ function BlockedInboxRow({
       </span>
       {ownerName ? (
         <span className="hidden w-(--sz-150px) min-w-0 items-center text-muted-foreground sm:inline-flex">
-          <Identity
-            name={ownerName}
-            size="xs"
-            className="max-w-full"
-          />
+          <Identity name={ownerName} size="xs" className="max-w-full" />
         </span>
       ) : (
-        <span className="hidden w-(--sz-150px) shrink-0 sm:inline-flex" aria-hidden="true" />
+        <span
+          className="hidden w-(--sz-150px) shrink-0 sm:inline-flex"
+          aria-hidden="true"
+        />
       )}
       {showUpdatedColumn ? (
-        <span className="hidden w-(--sz-5_75rem) text-right text-muted-foreground sm:inline" data-testid="blocked-row-age">
+        <span
+          className="hidden w-(--sz-5_75rem) text-right text-muted-foreground sm:inline"
+          data-testid="blocked-row-age"
+        >
           {stoppedAge}
         </span>
       ) : null}
@@ -370,7 +395,10 @@ function BlockedInboxRow({
       }
       mobileLeading={
         <span className="flex shrink-0 items-center gap-1.5 pt-px">
-          <StatusIcon status={row.task.boardPresentationStatus} blockerAttention={blockerAttention} />
+          <StatusIcon
+            status={row.task.boardPresentationStatus}
+            blockerAttention={blockerAttention}
+          />
         </span>
       }
       titleSuffix={
@@ -397,11 +425,20 @@ function BlockedRowDesktopMeta({
   showStatusColumn: boolean;
   showIdentifierColumn: boolean;
 }) {
-  const identifier = row.task.identifier ?? row.task.id.slice(0, 8);
+  const identifier = row.task.identifier;
   return (
     <span className="hidden shrink-0 items-center gap-2 sm:inline-flex">
-      {showStatusColumn ? <StatusIcon status={row.task.boardPresentationStatus} blockerAttention={blockerAttention} /> : null}
-      {showIdentifierColumn ? <span className="font-mono text-xs text-muted-foreground">{identifier}</span> : null}
+      {showStatusColumn ? (
+        <StatusIcon
+          status={row.task.boardPresentationStatus}
+          blockerAttention={blockerAttention}
+        />
+      ) : null}
+      {showIdentifierColumn ? (
+        <span className="font-mono text-xs text-muted-foreground">
+          {identifier}
+        </span>
+      ) : null}
     </span>
   );
 }

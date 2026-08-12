@@ -1,19 +1,13 @@
 # Agent Companies Specification
 
-Extension of the Agent Skills Specification
-
 Version: `agentcompanies/v1-draft`
 
 ## 1. Purpose
 
 An Agent Company package is a filesystem- and GitHub-native format for
 describing a company, team, configured agent identity, project, starter task,
-and associated skills using Markdown files with YAML frontmatter. The portable
-filename is `TASK.md`; Paperclip imports it as a canonical task.
-
-This specification is an extension of the Agent Skills specification, not a replacement for it.
-
-It defines how company-, team-, and agent-level package structure composes around the existing `SKILL.md` model.
+and related configuration using Markdown files with YAML frontmatter. The
+portable filename is `TASK.md`; Paperclip imports it as a canonical task.
 
 This specification is vendor-neutral. It is intended to be usable by any agent-company runtime, not only Paperclip.
 
@@ -23,7 +17,6 @@ The format is designed to:
 - work directly from a local folder or GitHub repository
 - require no central registry
 - support attribution and pinned references to upstream files
-- extend the existing Agent Skills ecosystem without redefining it
 - be useful outside Paperclip
 
 ## 2. Core Principles
@@ -31,12 +24,11 @@ The format is designed to:
 1. Markdown is canonical.
 2. Git repositories are valid package containers.
 3. Registries are optional discovery layers, not authorities.
-4. `SKILL.md` remains owned by the Agent Skills specification.
-5. External references must be pinnable to immutable Git commits.
-6. Attribution and license metadata must survive import/export.
-7. Slugs and relative paths are the portable identity layer, not database ids.
-8. Conventional folder structure should work without verbose wiring.
-9. Vendor-specific fidelity belongs in optional extensions, not the base package.
+4. External references must be pinnable to immutable Git commits.
+5. Attribution and license metadata must survive import/export.
+6. Slugs and relative paths are the portable identity layer, not database ids.
+7. Conventional folder structure should work without verbose wiring.
+8. Vendor-specific fidelity belongs in optional extensions, not the base package.
 
 ## 3. Package Kinds
 
@@ -47,7 +39,6 @@ A package root is identified by one primary markdown file:
 - `AGENTS.md` for an agent package
 - `PROJECT.md` for a project package
 - `TASK.md` for a portable starter-task package
-- `SKILL.md` for a skill package defined by the Agent Skills specification
 
 A GitHub repo may contain one package at root or many packages in subdirectories.
 
@@ -61,14 +52,12 @@ TEAM.md
 AGENTS.md
 PROJECT.md
 TASK.md
-SKILL.md
 
 agents/<slug>/AGENTS.md
 teams/<slug>/TEAM.md
 projects/<slug>/PROJECT.md
 projects/<slug>/tasks/<slug>/TASK.md
 tasks/<slug>/TASK.md
-skills/<slug>/SKILL.md
 .paperclip.yaml
 
 README.md
@@ -149,7 +138,7 @@ requirements:
 - local package contents should be discovered implicitly by folder convention
 - `includes` is optional and should be used mainly for external refs or nonstandard locations
 - included items may be local or external references
-- `COMPANY.md` may include agents directly, teams, projects, tasks, or skills
+- `COMPANY.md` may include agents directly, teams, projects, or tasks
 - a company importer may render `includes` as the tree/checkbox import UI
 
 ## 7. TEAM.md
@@ -167,7 +156,6 @@ manager: ../engineering-lead/AGENTS.md
 includes:
   - ../platform-lead/AGENTS.md
   - ../frontend-lead/AGENTS.md
-  - ../../skills/review/SKILL.md
 tags:
   - team
   - engineering
@@ -177,7 +165,7 @@ tags:
 
 - a team package is a reusable subtree, not necessarily a runtime database table
 - `manager` identifies the root agent of the subtree
-- `includes` may contain child agents, child teams, or shared skills
+- `includes` may contain child agents or child teams
 - a team package can be imported into an existing company and attached under a target manager
 
 ## 8. AGENTS.md
@@ -190,41 +178,18 @@ tags:
 name: Engineering Lead
 title: Engineering
 reportsTo: null
-skills:
-  - review
 ```
 
 ### Semantics
 
-- the base file carries portable identity and explicit skill selections only;
-  its body is empty and never becomes Paperclip model input
+- the base file carries portable identity; its body is empty and never becomes
+  Paperclip model input
 - `name` is identity, `title` is optional display text, and `reportsTo`
   references the direct parent agent slug
-- `skills` references reusable `SKILL.md` packages by skill shortname or slug
-- a bare skill entry like `review` should resolve to `skills/review/SKILL.md` by convention
-- if a package references external skills, the agent should still refer to the skill by shortname; the skill package itself owns any source refs, pinning, or attribution details
-- tools may allow path or URL entries as an escape hatch, but exporters should prefer shortname-based skill references in `AGENTS.md`
 - vendor-specific adapter/runtime config should not live in the base package
 - role, prompt/instruction, memory, provider-session, and ambient-permission
   fields are not portable agent data
 - local absolute paths, machine-specific cwd values, and secret values must not be exported as canonical package data
-
-### Skill Resolution
-
-The preferred association standard between agents and skills is by skill shortname.
-
-Suggested resolution order for an agent skill entry:
-
-1. a local package skill at `skills/<shortname>/SKILL.md`
-2. a referenced or included skill package whose declared slug or shortname matches
-3. a tool-managed company skill library entry with the same shortname
-
-Rules:
-
-- exporters should emit shortnames in `AGENTS.md` whenever possible
-- importers should not require full file paths for ordinary skill references
-- the skill package itself should carry any complexity around external refs, vendoring, mirrors, or pinned upstream content
-- this keeps `AGENTS.md` readable and consistent with `skills.sh`-style sharing
 
 ## 9. PROJECT.md
 
@@ -243,7 +208,7 @@ owner: engineering-lead
 - a project package groups related starter tasks and supporting markdown
 - `owner` should reference an agent slug when there is a clear project owner
 - a conventional `tasks/` subfolder should be discovered implicitly
-- `includes` may contain `TASK.md`, `SKILL.md`, or supporting docs when explicit wiring is needed
+- `includes` may contain `TASK.md` or supporting docs when explicit wiring is needed
 - project packages are intended to seed planned work, not represent runtime task state
 
 ## 10. TASK.md
@@ -274,7 +239,6 @@ recurring: true
 - the base package only needs to say whether a task is recurring
 - vendors may attach the actual schedule / trigger / runtime fidelity in a vendor extension such as `.paperclip.yaml`
 - this keeps `TASK.md` portable while still allowing richer runtime systems to round-trip their own automation details
-- legacy packages may still use `schedule.recurrence` during transition, but exporters should prefer `recurring: true`
 
 Example Paperclip extension:
 
@@ -288,48 +252,8 @@ routines:
 ```
 
 - vendors should ignore unknown recurring-task extensions they do not understand
-- vendors importing legacy `schedule.recurrence` data may translate it into their own runtime trigger model, but new exports should prefer the simpler `recurring: true` base field
 
-## 11. SKILL.md Compatibility
-
-A skill package must remain a valid Agent Skills package.
-
-Rules:
-
-- `SKILL.md` should follow the Agent Skills spec
-- Paperclip must not require extra top-level fields for skill validity
-- Paperclip-specific extensions must live under `metadata.paperclip` or `metadata.sources`
-- a skill directory may include `scripts/`, `references/`, and `assets/` exactly as the Agent Skills ecosystem expects
-- tools implementing this spec should treat `skills.sh` compatibility as a first-class goal rather than inventing a parallel skill format
-
-In other words, this spec extends Agent Skills upward into company/team/agent composition. It does not redefine skill package semantics.
-
-### Example compatible extension
-
-```yaml
----
-name: review
-description: Paranoid code review skill
-allowed-tools:
-  - Read
-  - Grep
-metadata:
-  paperclip:
-    tags:
-      - engineering
-      - review
-  sources:
-    - kind: github-file
-      repo: vercel-labs/skills
-      path: review/SKILL.md
-      commit: 0123456789abcdef0123456789abcdef01234567
-      sha256: 3b7e...9a
-      attribution: Vercel Labs
-      usage: referenced
----
-```
-
-## 12. Source References
+## 11. Source References
 
 A package may point to upstream content instead of vendoring it.
 
@@ -371,7 +295,7 @@ sources:
 - branch-only refs may be allowed in development mode but must warn
 - exporters should default to `referenced` for third-party content unless redistribution is clearly allowed
 
-## 13. Resolution Rules
+## 12. Resolution Rules
 
 Given a package root, an importer resolves in this order:
 
@@ -394,9 +318,9 @@ An importer must surface:
 - hash mismatches
 - missing licenses
 - referenced upstream content that requires network fetch
-- executable content in skills or scripts
+- executable content in scripts
 
-## 14. Import Graph
+## 13. Import Graph
 
 A package importer should build a graph from:
 
@@ -405,20 +329,19 @@ A package importer should build a graph from:
 - `AGENTS.md`
 - `PROJECT.md`
 - `TASK.md`
-- `SKILL.md`
 - local and external refs
 
 Suggested import UI behavior:
 
 - render graph as a tree
 - checkbox at entity level, not raw file level
-- selecting an agent auto-selects required docs and referenced skills
+- selecting an agent auto-selects its required documents
 - selecting a team auto-selects its subtree
 - selecting a project auto-selects its included tasks
 - selecting a recurring task should make it clear that the import target is a routine / automation, not a one-time task
 - selecting referenced third-party content shows attribution, license, and fetch policy
 
-## 15. Vendor Extensions
+## 14. Vendor Extensions
 
 Vendor-specific data should live outside the base package shape.
 
@@ -430,8 +353,8 @@ For Paperclip, the preferred fidelity extension is:
 
 Example uses:
 
-- adapter type and adapter config
-- adapter env inputs and defaults
+- ACPX-selected adapter revision and generic configuration
+- portable environment inputs and defaults
 - runtime settings
 - permissions
 - budgets
@@ -450,12 +373,11 @@ Suggested Paperclip shape:
 schema: paperclip/v1
 agents:
   builder:
-    adapter:
-      type: process
-      config:
-        provider: example
-        model: example/model
-        command: example-agent
+    adapterRevision:
+      sourceRevisionId: 00000000-0000-4000-8000-000000000001
+      adapterType: codex
+      adapterConfig: {}
+      runtimeConfig: {}
     inputs:
       env:
         EXAMPLE_API_KEY:
@@ -465,10 +387,6 @@ agents:
         GH_TOKEN:
           kind: secret
           requirement: optional
-        CLAUDE_BIN:
-          kind: plain
-          requirement: optional
-          default: claude
     permissionGrants:
       - permissionKey: agents:configure
         scope: null
@@ -487,10 +405,10 @@ Additional rules for Paperclip exporters:
   permission
 - do not export provider-specific secret bindings such as `secretId`, `version`, or `type: secret_ref`
 - export env inputs as portable declarations with `required` or `optional` semantics and optional defaults
-- warn on system-dependent values such as absolute commands and absolute `PATH` overrides
+- reject provider launch commands and absolute `PATH` overrides; ACPX owns launch resolution
 - omit empty and default-valued Paperclip fields when possible
 
-## 16. Export Rules
+## 15. Export Rules
 
 A compliant exporter should:
 
@@ -505,9 +423,8 @@ A compliant exporter should:
 - Paperclip exporters should emit `.paperclip.yaml` as a sidecar by default
 - preserve attribution and source references
 - prefer `referenced` over silent vendoring for third-party content
-- preserve `SKILL.md` as-is when exporting compatible skills
 
-## 17. Licensing And Attribution
+## 16. Licensing And Attribution
 
 A compliant tool must:
 
@@ -517,7 +434,7 @@ A compliant tool must:
 - surface missing license metadata as a warning
 - surface restrictive or unknown licenses before install/import if content is vendored or mirrored
 
-## 18. Optional Lock File
+## 17. Optional Lock File
 
 Authoring does not require a lock file.
 
@@ -539,18 +456,17 @@ Rules:
 - lock files are generated artifacts, not canonical authoring input
 - the markdown package remains the source of truth
 
-## 19. Paperclip Mapping
+## 18. Paperclip Mapping
 
 Paperclip can map this spec to its runtime model like this:
 
 - base package:
   - `COMPANY.md` -> company metadata
   - `TEAM.md` -> importable org subtree
-  - `AGENTS.md` -> agent identity, direct reporting edge, and explicit skill selections
+  - `AGENTS.md` -> agent identity and direct reporting edge
   - `PROJECT.md` -> starter project definition
   - `TASK.md` -> starter task definition with immutable request and explicit
     agent owner, or recurring task template when `recurring: true`
-  - `SKILL.md` -> imported skill package
   - `sources[]` -> provenance and pinned upstream refs
 - Paperclip extension:
   - `.paperclip.yaml` -> adapter config, runtime config, env input declarations,
@@ -565,7 +481,7 @@ That keeps the base format broader than Paperclip.
 
 This specification itself remains vendor-neutral and intended for any agent-company runtime, not only Paperclip.
 
-## 20. Cutover
+## 19. Cutover
 
 Paperclip should cut over to this markdown-first package model as the primary portability format.
 
@@ -573,7 +489,7 @@ Paperclip should cut over to this markdown-first package model as the primary po
 
 For Paperclip, this should be treated as a hard cutover in product direction rather than a long-lived dual-format strategy.
 
-## 21. Minimal Example
+## 20. Minimal Example
 
 ```text
 lean-dev-shop/
@@ -589,22 +505,18 @@ lean-dev-shop/
 │               └── TASK.md
 ├── teams/
 │   └── engineering/TEAM.md
-├── tasks/
-│   └── weekly-review/TASK.md
-└── skills/
-    └── review/SKILL.md
+└── tasks/
+    └── weekly-review/TASK.md
+```
 
 Optional:
 
 ```text
 .paperclip.yaml
 ```
-```
 
 **Recommendation**
 This is the direction I would take:
 
 - make this the human-facing spec
-- define `SKILL.md` compatibility as non-negotiable
-- treat this spec as an extension of Agent Skills, not a parallel format
 - make `companies.sh` a discovery layer for repos implementing this spec, not a publishing authority

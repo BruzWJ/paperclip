@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import { addValidationDetail } from "../validation-details.js";
 import {
   TASK_PRIORITIES,
@@ -15,12 +16,22 @@ import { isValidRoutineDateString } from "../routine-variables.js";
 const routineVariableValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
 
 export const routineVariableSchema = z.object({
-  name: z.string().trim().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+  name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().max(120).optional().nullable(),
   type: z.enum(ROUTINE_VARIABLE_TYPES).optional().default("text"),
   defaultValue: routineVariableValueSchema.optional().nullable(),
   required: z.boolean().optional().default(true),
-  options: z.array(z.string().trim().min(1).max(120)).max(50).optional().default([]),
+  options: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(120)
+        .refine((option) => option.trim() === option),
+    )
+    .max(50)
+    .optional()
+    .default([]),
 }).superRefine((value, ctx) => {
   if (value.type === "select" && value.options.length === 0) {
     addValidationDetail(ctx, {
@@ -32,6 +43,12 @@ export const routineVariableSchema = z.object({
     addValidationDetail(ctx, {
       path: ["options"],
       message: "Only select variables can define options",
+    });
+  }
+  if (new Set(value.options).size !== value.options.length) {
+    addValidationDetail(ctx, {
+      path: ["options"],
+      message: "Select variable options must be unique",
     });
   }
   if (value.type === "select" && value.defaultValue != null) {
@@ -53,13 +70,13 @@ export const routineVariableSchema = z.object({
 });
 
 export const createRoutineSchema = z.object({
-  projectId: z.string().uuid().optional().nullable(),
-  folderId: z.string().uuid().optional().nullable(),
-  goalId: z.string().uuid().optional().nullable(),
-  parentTaskId: z.string().uuid().optional().nullable(),
+  projectId: canonicalUuidSchema.optional().nullable(),
+  folderId: canonicalUuidSchema.optional().nullable(),
+  goalId: canonicalUuidSchema.optional().nullable(),
+  parentTaskId: canonicalUuidSchema.optional().nullable(),
   title: z.string().trim().min(1).max(200),
   description: z.string().optional().nullable(),
-  assigneeAgentId: z.string().uuid().optional().nullable(),
+  assigneeAgentId: canonicalUuidSchema.optional().nullable(),
   priority: z.enum(TASK_PRIORITIES).optional().default("medium"),
   status: z.enum(ROUTINE_STATUSES).optional().default("active"),
   concurrencyPolicy: z.enum(ROUTINE_CONCURRENCY_POLICIES).optional().default("coalesce_if_active"),
@@ -71,20 +88,20 @@ export const createRoutineSchema = z.object({
 export type CreateRoutine = z.infer<typeof createRoutineSchema>;
 
 export const updateRoutineSchema = createRoutineSchema.partial().extend({
-  baseRevisionId: z.string().uuid().optional().nullable(),
+  baseRevisionId: canonicalUuidSchema,
 });
 export type UpdateRoutine = z.infer<typeof updateRoutineSchema>;
 
 export const routineRevisionSnapshotRoutineV1Schema = z.object({
-  id: z.string().uuid(),
-  companyId: z.string().uuid(),
-  projectId: z.string().uuid().nullable(),
-  folderId: z.string().uuid().nullable().optional(),
-  goalId: z.string().uuid().nullable(),
-  parentTaskId: z.string().uuid().nullable(),
+  id: canonicalUuidSchema,
+  companyId: canonicalUuidSchema,
+  projectId: canonicalUuidSchema.nullable(),
+  folderId: canonicalUuidSchema.nullable().optional(),
+  goalId: canonicalUuidSchema.nullable(),
+  parentTaskId: canonicalUuidSchema.nullable(),
   title: z.string().trim().min(1).max(200),
   description: z.string().nullable(),
-  assigneeAgentId: z.string().uuid().nullable(),
+  assigneeAgentId: canonicalUuidSchema.nullable(),
   priority: z.enum(TASK_PRIORITIES),
   status: z.enum(ROUTINE_STATUSES),
   concurrencyPolicy: z.enum(ROUTINE_CONCURRENCY_POLICIES),
@@ -95,7 +112,7 @@ export const routineRevisionSnapshotRoutineV1Schema = z.object({
 }).strict();
 
 export const routineRevisionSnapshotTriggerV1Schema = z.object({
-  id: z.string().uuid(),
+  id: canonicalUuidSchema,
   kind: z.enum(ROUTINE_TRIGGER_KINDS),
   label: z.string().nullable(),
   enabled: z.boolean(),
@@ -111,10 +128,6 @@ export const routineRevisionSnapshotV1Schema = z.object({
   routine: routineRevisionSnapshotRoutineV1Schema,
   triggers: z.array(routineRevisionSnapshotTriggerV1Schema),
 }).strict();
-
-export const routineRevisionSnapshotSchema = routineRevisionSnapshotV1Schema;
-export type RoutineRevisionSnapshotV1 = z.infer<typeof routineRevisionSnapshotV1Schema>;
-export type RoutineRevisionSnapshot = z.infer<typeof routineRevisionSnapshotSchema>;
 
 const baseTriggerSchema = z.object({
   label: z.string().trim().max(120).optional().nullable(),
@@ -151,12 +164,15 @@ export const updateRoutineTriggerSchema = z.object({
 export type UpdateRoutineTrigger = z.infer<typeof updateRoutineTriggerSchema>;
 
 export const runRoutineSchema = z.object({
-  triggerId: z.string().uuid().optional().nullable(),
+  triggerId: canonicalUuidSchema.optional().nullable(),
   payload: z.record(z.string(), z.unknown()).optional().nullable(),
   variables: z.record(z.string(), routineVariableValueSchema).optional().nullable(),
-  projectId: z.string().uuid().optional().nullable(),
-  assigneeAgentId: z.string().uuid().optional().nullable(),
-  idempotencyKey: z.string().trim().max(255).optional().nullable(),
+  projectId: canonicalUuidSchema.optional().nullable(),
+  assigneeAgentId: canonicalUuidSchema.optional().nullable(),
+  idempotencyKey: z.string().min(1).max(255).refine(
+    (value) => value.trim() === value,
+    { message: "Idempotency key must not contain surrounding whitespace" },
+  ).optional().nullable(),
   source: z.enum(["manual", "api"]).optional().default("manual"),
 });
 

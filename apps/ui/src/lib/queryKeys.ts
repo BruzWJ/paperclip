@@ -4,33 +4,6 @@ export const queryKeys = {
     detail: (id: string) => ["companies", id] as const,
     stats: ["companies", "stats"] as const,
   },
-  companySkills: {
-    list: (companyId: string) => ["company-skills", companyId] as const,
-    listRecent: (companyId: string) =>
-      ["company-skills", companyId, "recent-updated"] as const,
-    detail: (companyId: string, skillId: string) => ["company-skills", companyId, skillId] as const,
-    versions: (companyId: string, skillId: string) => ["company-skills", companyId, skillId, "versions"] as const,
-    comments: (companyId: string, skillId: string) => ["company-skills", companyId, skillId, "comments"] as const,
-    updateStatus: (companyId: string, skillId: string) =>
-      ["company-skills", companyId, skillId, "update-status"] as const,
-    forkPrecheck: (companyId: string, skillId: string) =>
-      ["company-skills", companyId, skillId, "fork-precheck"] as const,
-    file: (companyId: string, skillId: string, relativePath: string) =>
-      ["company-skills", companyId, skillId, "file", relativePath] as const,
-    catalog: (filters: { kind?: string; category?: string; q?: string } = {}) =>
-      ["company-skills", "catalog", filters.kind ?? "__all-kinds__", filters.category ?? "__all-categories__", filters.q ?? ""] as const,
-    catalogDetail: (catalogRef: string) => ["company-skills", "catalog", "detail", catalogRef] as const,
-    catalogFile: (catalogRef: string, relativePath: string) =>
-      ["company-skills", "catalog", "file", catalogRef, relativePath] as const,
-    testInputs: (companyId: string, skillId: string) =>
-      ["company-skills", companyId, skillId, "test-inputs"] as const,
-    testRunTemplates: (companyId: string) =>
-      ["company-skills", companyId, "test-run-templates"] as const,
-    testRuns: (companyId: string, skillId: string, inputId?: string | null) =>
-      ["company-skills", companyId, skillId, "test-runs", inputId ?? "__all-inputs__"] as const,
-    testRunDetail: (companyId: string, skillId: string, runId: string) =>
-      ["company-skills", companyId, skillId, "test-run", runId] as const,
-  },
   agents: {
     list: (companyId: string) => ["agents", companyId] as const,
     taskOwnerCatalog: (companyId: string) =>
@@ -44,24 +17,10 @@ export const queryKeys = {
         "runtime-configuration",
         companyId ?? null,
       ] as const,
-    companySkillPins: (id: string) =>
-      ["agents", "company-skill-pins", id] as const,
     adapterConfigRevisions: (agentId: string) =>
       ["agents", "adapter-config-revisions", agentId] as const,
     currentAdapterConfigRevisionRoot: (agentId: string) =>
       ["agents", "adapter-config-revision-current", agentId] as const,
-    currentAdapterConfigRevision: (
-      agentId: string,
-      revisionId: string | null,
-    ) =>
-      [
-        "agents",
-        "adapter-config-revision-current",
-        agentId,
-        revisionId ?? "__unconfigured__",
-      ] as const,
-    adapterModelProfiles: (companyId: string, adapterType: string) =>
-      ["agents", companyId, "adapter-model-profiles", adapterType] as const,
   },
   tasks: {
     list: (companyId: string) => ["tasks", companyId] as const,
@@ -73,19 +32,17 @@ export const queryKeys = {
     listTouchedByMe: (companyId: string) => ["tasks", companyId, "touched-by-me"] as const,
     listUnreadTouchedByMe: (companyId: string) => ["tasks", companyId, "unread-touched-by-me"] as const,
     listBlockedAttention: (companyId: string) => ["tasks", companyId, "blocked-attention"] as const,
-    countBlockedAttention: (companyId: string) => ["tasks", companyId, "blocked-attention", "count"] as const,
     labels: (companyId: string) => ["tasks", companyId, "labels"] as const,
     listByProject: (companyId: string, projectId: string) =>
       ["tasks", companyId, "project", projectId] as const,
-    listPluginOperationsByProject: (companyId: string, projectId: string, originKindPrefix: string) =>
-      ["tasks", companyId, "project", projectId, "plugin-operations", originKindPrefix] as const,
+    listPluginOperationsByProject: (companyId: string, projectId: string, originKind: string) =>
+      ["tasks", companyId, "project", projectId, "plugin-operations", originKind] as const,
     listByParent: (companyId: string, parentId: string) =>
       ["tasks", companyId, "parent", parentId] as const,
     listByDescendantRoot: (companyId: string, rootTaskId: string) =>
       ["tasks", companyId, "descendants", rootTaskId] as const,
     detail: (id: string) => ["tasks", "detail", id] as const,
     comments: (taskId: string) => ["tasks", "comments", taskId] as const,
-    commentsList: (taskId: string) => ["tasks", "comments", taskId, "list"] as const,
     costSummary: (taskId: string, options: { excludeRoot?: boolean } = {}) =>
       options.excludeRoot
         ? (["tasks", "cost-summary", taskId, "exclude-root"] as const)
@@ -162,21 +119,22 @@ export const queryKeys = {
     adminUsers: (query: string) => ["access", "admin-users", query] as const,
     userCompanyAccess: (userId: string) => ["access", "user-company-access", userId] as const,
     invite: (token: string) => ["access", "invite", token] as const,
-    currentBoardAccess: ["access", "current-board-access"] as const,
+    currentBoardAccess: (userId: string) =>
+      ["access", "current-board-access", userId] as const,
   },
   auth: {
     session: ["auth", "session"] as const,
   },
-  inboxAgentPolicy: {
-    mine: (companyId: string) => ["inbox-agent-policy", companyId, "me"] as const,
-  },
+  inboxAgentPolicy: (companyId: string, userId: string) =>
+    ["inbox-agent-policy", companyId, userId] as const,
   sidebarPreferences: {
     companyOrder: (userId: string) => ["sidebar-preferences", "company-order", userId] as const,
     projectOrder: (companyId: string, userId: string) =>
       ["sidebar-preferences", "project-order", companyId, userId] as const,
   },
   resourceMemberships: {
-    mine: (companyId: string) => ["resource-memberships", companyId, "me"] as const,
+    forUser: (companyId: string, userId: string) =>
+      ["resource-memberships", companyId, userId] as const,
   },
   instance: {
     settings: ["instance", "settings"] as const,
@@ -192,7 +150,8 @@ export const queryKeys = {
     userDefinitions: (companyId: string) => ["user-secret-definitions", companyId] as const,
     userDefinitionCoverage: (companyId: string, definitionId: string) =>
       ["user-secret-definitions", companyId, definitionId, "coverage"] as const,
-    myUserSecrets: (companyId: string) => ["my-user-secrets", companyId] as const,
+    userSecrets: (companyId: string, userId: string) =>
+      ["user-secrets", companyId, userId] as const,
   },
   companySearch: {
     search: (companyId: string, q: string, scope: string, limit: number, offset: number) =>
@@ -201,27 +160,15 @@ export const queryKeys = {
   dashboard: (companyId: string) => ["dashboard", companyId] as const,
   attention: (companyId: string) => ["attention", companyId] as const,
   workTimeline: (companyId: string, lens?: string) => ["work-timeline", companyId, lens ?? "all"] as const,
-  userProfile: (companyId: string, userSlug: string) =>
-    ["user-profile", companyId, userSlug] as const,
+  userProfile: (companyId: string, userId: string) =>
+    ["user-profile", companyId, userId] as const,
   sidebarBadges: (companyId: string) => ["sidebar-badges", companyId] as const,
   inboxDismissals: (companyId: string) => ["inbox-dismissals", companyId] as const,
   activity: (companyId: string) => ["activity", companyId] as const,
   costs: (companyId: string, from?: string, to?: string) =>
     ["costs", companyId, from, to] as const,
-  usageByProvider: (companyId: string, from?: string, to?: string) =>
-    ["usage-by-provider", companyId, from, to] as const,
-  usageByBiller: (companyId: string, from?: string, to?: string) =>
-    ["usage-by-biller", companyId, from, to] as const,
   financeSummary: (companyId: string, from?: string, to?: string) =>
     ["finance-summary", companyId, from, to] as const,
-  financeByBiller: (companyId: string, from?: string, to?: string) =>
-    ["finance-by-biller", companyId, from, to] as const,
-  financeByKind: (companyId: string, from?: string, to?: string) =>
-    ["finance-by-kind", companyId, from, to] as const,
-  financeEvents: (companyId: string, from?: string, to?: string, limit: number = 100) =>
-    ["finance-events", companyId, from, to, limit] as const,
-  usageWindowSpend: (companyId: string) =>
-    ["usage-window-spend", companyId] as const,
   runs: (
     companyId: string,
     filters?: { agentId?: string; status?: readonly string[] },
@@ -233,9 +180,6 @@ export const queryKeys = {
   ] as const,
   runDetail: (runId: string) => ["runs", "detail", runId] as const,
   org: (companyId: string) => ["org", companyId] as const,
-  skills: {
-    available: ["skills", "available"] as const,
-  },
   plugins: {
     all: ["plugins"] as const,
     catalog: ["plugins", "catalog"] as const,
@@ -249,8 +193,5 @@ export const queryKeys = {
   },
   adapters: {
     all: ["adapters"] as const,
-    configSchemas: ["adapters", "config-schema"] as const,
-    configSchema: (adapterType: string) =>
-      ["adapters", "config-schema", adapterType] as const,
   },
 };

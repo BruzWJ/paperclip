@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
 import { pluginManagedRoutineService } from "../services/plugin-managed-routines.js";
 import { createMockDb } from "./helpers/mock-db.js";
+import { testSecretsRuntimeConfig } from "./helpers/secrets-runtime.js";
 
 const routineMocks = vi.hoisted(() => ({
   create: vi.fn(),
@@ -35,28 +36,32 @@ function manifest(): PaperclipPluginManifestV1 {
     categories: ["automation"],
     capabilities: ["routines.managed"],
     entrypoints: { worker: "./dist/worker.js" },
-    routines: [{
-      routineKey: "nightly-lint",
-      title: "Nightly lint",
-      description: "Lint plugin state",
-      assigneeRef: { resourceKind: "agent", resourceKey: "wiki-maintainer" },
-      projectRef: { resourceKind: "project", resourceKey: "operations" },
-      status: "active",
-      priority: "medium",
-      concurrencyPolicy: "coalesce_if_active",
-      catchUpPolicy: "skip_missed",
-      triggers: [{
-        kind: "schedule",
-        label: "Nightly",
-        cronExpression: "0 3 * * *",
-        timezone: "UTC",
-      }],
-      taskTemplate: {
-        surfaceVisibility: "plugin_operation",
-        originId: "operation:nightly-lint",
-        billingCode: "plugin-test:nightly-lint",
+    routines: [
+      {
+        routineKey: "nightly-lint",
+        title: "Nightly lint",
+        description: "Lint plugin state",
+        assigneeRef: { resourceKind: "agent", resourceKey: "wiki-maintainer" },
+        projectRef: { resourceKind: "project", resourceKey: "operations" },
+        status: "active",
+        priority: "medium",
+        concurrencyPolicy: "coalesce_if_active",
+        catchUpPolicy: "skip_missed",
+        triggers: [
+          {
+            kind: "schedule",
+            label: "Nightly",
+            cronExpression: "0 3 * * *",
+            timezone: "UTC",
+          },
+        ],
+        taskTemplate: {
+          surfaceVisibility: "plugin_operation",
+          originId: "operation:nightly-lint",
+          billingCode: "plugin-test:nightly-lint",
+        },
       },
-    }],
+    ],
   };
 }
 
@@ -101,6 +106,7 @@ function service(db: ReturnType<typeof createMockDb>["db"]) {
     pluginId,
     manifest: manifest(),
     ordinaryTasks: {} as never,
+    secretsRuntime: testSecretsRuntimeConfig(),
   });
 }
 
@@ -238,7 +244,9 @@ describe("plugin-managed routines", () => {
     );
     expect(logActivity).toHaveBeenCalledWith(
       harness.db,
-      expect.objectContaining({ action: "plugin.managed_routine.run_triggered" }),
+      expect.objectContaining({
+        action: "plugin.managed_routine.run_triggered",
+      }),
     );
   });
 });

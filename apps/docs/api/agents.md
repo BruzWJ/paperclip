@@ -66,7 +66,7 @@ Content-Type: application/json
 ```
 
 Creation is explicit and does not accept adapter/provider configuration. It
-does not mint a Paperclip credential, install an operational skill, create an
+does not mint a Paperclip credential, install a provider instruction package, create an
 agent-wide session, or stamp role-derived grants. The complete context/action
 and mention-reach maps make the all-false baseline unambiguous.
 
@@ -90,8 +90,8 @@ PATCH /api/agents/{agentId}/runtime-configuration
 ```
 
 Runtime configuration owns only identity, reporting structure, context/action
-grants, mention reach, and explicit company-skill selection. Adapter, budget,
-lifecycle, and provider-native state are separate owners.
+grants, and mention reach. Adapter, budget, lifecycle, and provider-native
+state are separate owners.
 
 ## Immutable ACP adapter revisions
 
@@ -110,8 +110,7 @@ the live ACPX-backed adapter catalog before creating a revision:
   "adapterConfig": {
     "<acpx-option-id>": "<selected-advertised-value>"
   },
-  "runtimeConfig": {},
-  "companySkillPins": []
+  "runtimeConfig": {}
 }
 ```
 
@@ -157,18 +156,15 @@ There is no generic invoke/wake endpoint, agent API-key endpoint, agent-wide
 runtime reset, or conversational-session endpoint. Work begins only through a
 canonical task-execution source.
 
-## Models and structural readiness
+## Structural readiness
 
 ```http
-GET /api/companies/{companyId}/adapters/{adapterType}/models
 POST /api/companies/{companyId}/adapters/{adapterType}/test-configuration
 ```
 
-The response is the exact model catalog currently discovered through ACPX for
-that data-only adapter revision. Structural readiness requires current ACPX
-registry membership, legal stable ACPX configuration selections, selected-skill
-integrity, and the agent's live eligibility/budget state. It uses a disposable
-no-prompt ACPX probe and never sends a model conversation.
+Structural readiness requires current ACPX registry membership, legal stable
+ACPX configuration selections, and the agent's live eligibility/budget state.
+It uses a disposable no-prompt ACPX probe and never sends a model conversation.
 
 The configuration-test endpoint accepts the exact unsaved generic ACPX
 selection object:

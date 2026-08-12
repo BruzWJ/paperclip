@@ -5,6 +5,7 @@ import {
   type MockDbHarness,
   type MockDbPlan,
 } from "./helpers/mock-db.js";
+import { testSecretsRuntimeConfig } from "./helpers/secrets-runtime.js";
 
 const mocks = vi.hoisted(() => ({
   resolveOwner: vi.fn(),
@@ -21,33 +22,30 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../services/agent-invokability.js", async (importActual) => {
-  const actual = await importActual<
-    typeof import("../services/agent-invokability.js")
-  >();
+  const actual =
+    await importActual<typeof import("../services/agent-invokability.js")>();
   return {
     ...actual,
     resolveInvokableTaskOwnerInTransaction: mocks.resolveOwner,
   };
 });
 
-vi.mock(
-  "../services/system-escalation-postgres.js",
-  async (importActual) => {
-    const actual = await importActual<
+vi.mock("../services/system-escalation-postgres.js", async (importActual) => {
+  const actual =
+    await importActual<
       typeof import("../services/system-escalation-postgres.js")
     >();
-    return {
-      ...actual,
-      terminalizeRoutineCreatorEdgesInTransaction:
-        mocks.terminalizeRoutineEdges,
-    };
-  },
-);
+  return {
+    ...actual,
+    terminalizeRoutineCreatorEdgesInTransaction: mocks.terminalizeRoutineEdges,
+  };
+});
 
 vi.mock("../services/task-session/admission.js", async (importActual) => {
-  const actual = await importActual<
-    typeof import("../services/task-session/admission.js")
-  >();
+  const actual =
+    await importActual<
+      typeof import("../services/task-session/admission.js")
+    >();
   return {
     ...actual,
     createTaskSessionAdmissionService: vi.fn(() => ({})),
@@ -55,9 +53,7 @@ vi.mock("../services/task-session/admission.js", async (importActual) => {
 });
 
 vi.mock("../services/secrets.js", async (importActual) => {
-  const actual = await importActual<
-    typeof import("../services/secrets.js")
-  >();
+  const actual = await importActual<typeof import("../services/secrets.js")>();
   return {
     ...actual,
     secretService: vi.fn(() => mocks.secrets),
@@ -65,9 +61,8 @@ vi.mock("../services/secrets.js", async (importActual) => {
 });
 
 vi.mock("../services/activity-log.js", async (importActual) => {
-  const actual = await importActual<
-    typeof import("../services/activity-log.js")
-  >();
+  const actual =
+    await importActual<typeof import("../services/activity-log.js")>();
   return { ...actual, logActivity: mocks.logActivity };
 });
 
@@ -81,8 +76,11 @@ import {
   routineService,
 } from "../services/routines.js";
 
-const COMPANY_ID = "company-1";
-const ROUTINE_ID = "routine-1";
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const ROUTINE_ID = "22222222-2222-4222-8222-222222222222";
+const CALLING_AGENT_ID = "33333333-3333-4333-8333-333333333333";
+const ROUTINE_REVISION_ID = "44444444-4444-4444-8444-000000000001";
+const HISTORICAL_REVISION_ID = "55555555-5555-4555-8555-555555555555";
 const USER_ACTOR = { type: "user", userId: "board-user" } as const;
 const NOW = new Date("2026-07-25T12:08:00.000Z");
 
@@ -98,7 +96,8 @@ function createMockDb(plan: MockDbPlan = {}): MockDbHarness {
     get(target, property) {
       if (property === "transaction") {
         return vi.fn(async (callback: (tx: typeof harness.db) => unknown) =>
-          callback(transactionDb));
+          callback(transactionDb),
+        );
       }
       return Reflect.get(target, property);
     },
@@ -107,7 +106,8 @@ function createMockDb(plan: MockDbPlan = {}): MockDbHarness {
     get(target, property) {
       if (property === "transaction") {
         return vi.fn(async (callback: (tx: typeof harness.db) => unknown) =>
-          callback(transactionDb));
+          callback(transactionDb),
+        );
       }
       return Reflect.get(target, property);
     },
@@ -137,7 +137,7 @@ function routine(overrides: Record<string, unknown> = {}) {
     responsibleUserId: "board-user",
     originKind: "manual",
     originId: null,
-    latestRevisionId: "revision-1",
+    latestRevisionId: ROUTINE_REVISION_ID,
     latestRevisionNumber: 1,
     lastTriggeredAt: null,
     lastEnqueuedAt: null,
@@ -183,7 +183,7 @@ function revision(
     overrides.revisionNumber ?? row.latestRevisionNumber,
   );
   return {
-    id: `revision-${revisionNumber}`,
+    id: `44444444-4444-4444-8444-${String(revisionNumber).padStart(12, "0")}`,
     companyId: row.companyId,
     routineId: row.id,
     revisionNumber,
@@ -240,6 +240,7 @@ function service(
     service: routineService(harness.db, {
       runtimeEnv,
       ordinaryTasks: ordinary as never,
+      secretsRuntime: testSecretsRuntimeConfig(),
     }),
   };
 }
@@ -255,7 +256,7 @@ function queryValues(harness: MockDbHarness, operation: "insert" | "update") {
 
 function creationHarness(created: ReturnType<typeof routine>) {
   const createdRevision = revision(created, {
-    id: "revision-1",
+    id: ROUTINE_REVISION_ID,
     revisionNumber: 1,
     snapshot: snapshot(created),
     changeSummary: "Created routine",
@@ -325,9 +326,9 @@ afterEach(() => {
 describe("routine service contracts without a database", () => {
   describe("schedule calculation", () => {
     it("preserves custom cron minutes and returns the next zoned tick", () => {
-      expect(
-        nextCronTickInTimeZone("7,37 * * * *", "UTC", NOW),
-      ).toEqual(new Date("2026-07-25T12:37:00.000Z"));
+      expect(nextCronTickInTimeZone("7,37 * * * *", "UTC", NOW)).toEqual(
+        new Date("2026-07-25T12:37:00.000Z"),
+      );
       expect(
         nextCronTickInTimeZone(
           "0 9 * * 1-5",
@@ -468,7 +469,7 @@ describe("routine service contracts without a database", () => {
       await expect(
         service(harness).service.update(
           existing.id,
-          { title: existing.title },
+          { title: existing.title, baseRevisionId: existing.latestRevisionId },
           USER_ACTOR,
         ),
       ).resolves.toBe(existing);
@@ -491,7 +492,7 @@ describe("routine service contracts without a database", () => {
           existing.id,
           {
             title: "Conflicting title",
-            baseRevisionId: "stale-revision",
+            baseRevisionId: "99999999-9999-4999-8999-999999999999",
           },
           USER_ACTOR,
         ),
@@ -586,20 +587,19 @@ describe("routine service contracts without a database", () => {
       const existing = routine();
       const targetRoutine = routine({
         assigneeAgentId: "different-agent",
-        latestRevisionId: "historical-revision",
+        latestRevisionId: HISTORICAL_REVISION_ID,
       });
       const target = revision(targetRoutine, {
-        id: "historical-revision",
+        id: HISTORICAL_REVISION_ID,
         snapshot: snapshot(targetRoutine),
       });
       const harness = createMockDb({ select: [[existing], [target]] });
 
       await expect(
-        service(harness).service.restoreRevision(
-          existing.id,
-          target.id,
-          { type: "agent", agentId: "calling-agent" },
-        ),
+        service(harness).service.restoreRevision(existing.id, target.id, {
+          type: "agent",
+          agentId: CALLING_AGENT_ID,
+        }),
       ).rejects.toMatchObject({ status: 403 });
       expect(mocks.resolveOwner).not.toHaveBeenCalled();
     });
@@ -769,7 +769,7 @@ describe("routine service contracts without a database", () => {
       await expect(
         service(harness).service.firePublicTrigger(trigger.publicId, {
           rawBody,
-          hubSignatureHeader: `sha256=${valid.slice(0, -1)}0`,
+          signatureHeader: `sha256=${valid.slice(0, -1)}0`,
         }),
       ).rejects.toMatchObject({ status: 401 });
       expect(queryValues(harness, "insert")).toHaveLength(0);
@@ -833,7 +833,18 @@ describe("routine service contracts without a database", () => {
         select: [
           [existing],
           [{ snapshot: boundSnapshot }],
-          [],
+          [
+            {
+              pluginKey: "paperclip.routine-source",
+              defaultsJson: {
+                taskTemplate: {
+                  surfaceVisibility: "plugin_operation",
+                  originId: "operation:repository-triage",
+                },
+              },
+              manifestJson: { displayName: "Routine Source" },
+            },
+          ],
           [{ responsibleUserId: "revision-owner", snapshot: boundSnapshot }],
           [],
           [],
@@ -873,7 +884,8 @@ describe("routine service contracts without a database", () => {
             routineId: ROUTINE_ID,
             routineDispatchId: createdRun.id,
           },
-          originKind: "routine_execution",
+          originKind: "plugin:paperclip.routine-source:operation",
+          originId: "operation:repository-triage",
           originRunId: createdRun.id,
           responsibleUserId: "revision-owner",
         }),
@@ -887,6 +899,43 @@ describe("routine service contracts without a database", () => {
       );
       expect(harness.remaining("select")).toBe(0);
     });
+
+    it.each([
+      "",
+      " operation:repository-triage",
+      "operation:repository-triage ",
+      "operation:\u0000repository-triage",
+    ])(
+      "rejects persisted non-canonical managed routine originId %j",
+      async (originId) => {
+        const existing = routine();
+        const harness = createMockDb({
+          select: [
+            [existing],
+            [{ id: existing.latestRevisionId }],
+            [
+              {
+                pluginKey: "paperclip.routine-source",
+                defaultsJson: { taskTemplate: { originId } },
+                manifestJson: { displayName: "Routine Source" },
+              },
+            ],
+          ],
+        });
+        const ordinary = ordinaryTasks();
+
+        await expect(
+          service(harness, ordinary).service.runRoutine(ROUTINE_ID, {
+            source: "api",
+          }),
+        ).rejects.toMatchObject({
+          status: 409,
+          message: "Managed routine task template originId is not canonical",
+        });
+        expect(ordinary.create).not.toHaveBeenCalled();
+        expect(harness.remaining("select")).toBe(0);
+      },
+    );
 
     it.each([
       ["coalesce_if_active", "coalesced"],
@@ -975,9 +1024,7 @@ describe("routine service contracts without a database", () => {
         triggeredAt: NOW,
       };
       const harness = createMockDb({
-        select: [
-          [{ trigger, routine: existing, projectPausedAt: NOW }],
-        ],
+        select: [[{ trigger, routine: existing, projectPausedAt: NOW }]],
         update: [[{ id: trigger.id }], [], []],
         insert: [[skippedRun]],
       });
@@ -1033,13 +1080,15 @@ describe("routine service contracts without a database", () => {
       };
       const harness = createMockDb({
         select: [
-          [{
-            id: "instance-settings",
-            singletonKey: "default",
-            general: { enableWorktreeRunExecution: false },
-            createdAt: NOW,
-            updatedAt: NOW,
-          }],
+          [
+            {
+              id: "instance-settings",
+              singletonKey: "default",
+              general: { enableWorktreeRunExecution: false },
+              createdAt: NOW,
+              updatedAt: NOW,
+            },
+          ],
           [{ trigger, routine: existing, projectPausedAt: null }],
         ],
         update: [[{ id: trigger.id }], [], []],
@@ -1115,12 +1164,16 @@ describe("routine service contracts without a database", () => {
 
     it("ignores a task without canonical routine execution provenance", async () => {
       const harness = createMockDb({
-        select: [[{
-          id: "ordinary-task",
-          boardPresentationStatus: "done",
-          originKind: "manual",
-          originRunId: null,
-        }]],
+        select: [
+          [
+            {
+              id: "ordinary-task",
+              boardPresentationStatus: "done",
+              originKind: "manual",
+              originRunId: null,
+            },
+          ],
+        ],
       });
 
       await expect(

@@ -1,7 +1,7 @@
-import { memo, type ComponentType, type SVGProps } from "react";
+import { memo, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { Bot, FileText, Hexagon, MessageSquare, Paperclip, Quote } from "lucide-react";
 import type { Agent, CompanySearchResult } from "@paperclipai/shared";
-import { Link } from "@/lib/router";
+import { CompanyBoardLink } from "@/components/CompanyBoardLink";
 import { cn } from "@/lib/utils";
 import { StatusIcon } from "../StatusIcon";
 import { Identity } from "../Identity";
@@ -55,6 +55,25 @@ export interface SearchResultRowProps {
 const ROW_BASE =
   "group flex items-start gap-3 rounded-md px-3 transition-colors no-underline text-inherit hover:bg-muted/40";
 
+function SearchResultTarget({
+  result,
+  className,
+  children,
+}: {
+  result: CompanySearchResult;
+  className: string;
+  children: ReactNode;
+}) {
+  if (!result.routeTarget) {
+    return <div className={className}>{children}</div>;
+  }
+  return (
+    <CompanyBoardLink routeTarget={result.routeTarget} className={className}>
+      {children}
+    </CompanyBoardLink>
+  );
+}
+
 function SearchResultRowImpl({
   result,
   agentsById,
@@ -63,10 +82,9 @@ function SearchResultRowImpl({
 }: SearchResultRowProps) {
   if (result.type === "agent") {
     return (
-      <Link
-        to={result.href}
+      <SearchResultTarget
+        result={result}
         className={cn(ROW_BASE, "py-3", isActive && "bg-muted/40", className)}
-        data-result-type="agent"
       >
         <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <Bot className="h-3 w-3" />
@@ -84,16 +102,15 @@ function SearchResultRowImpl({
             />
           ) : null}
         </div>
-      </Link>
+      </SearchResultTarget>
     );
   }
 
   if (result.type === "project") {
     return (
-      <Link
-        to={result.href}
+      <SearchResultTarget
+        result={result}
         className={cn(ROW_BASE, "py-3", isActive && "bg-muted/40", className)}
-        data-result-type="project"
       >
         <Hexagon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
@@ -107,7 +124,7 @@ function SearchResultRowImpl({
             />
           ) : null}
         </div>
-      </Link>
+      </SearchResultTarget>
     );
   }
 
@@ -116,11 +133,9 @@ function SearchResultRowImpl({
     if (!artifact) return null;
     const updated = formatRelativeTime(result.updatedAt ?? artifact.updatedAt);
     return (
-      <Link
-        to={result.href}
-        disableTaskQuicklook
+      <SearchResultTarget
+        result={result}
         className={cn(ROW_BASE, "py-4", isActive && "bg-muted/40", className)}
-        data-result-type="artifact"
       >
         <Paperclip className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
@@ -156,7 +171,7 @@ function SearchResultRowImpl({
             />
           ) : null}
         </div>
-      </Link>
+      </SearchResultTarget>
     );
   }
 
@@ -172,22 +187,18 @@ function SearchResultRowImpl({
   const hasRightRail = previewImageUrl || ownerName || updated;
 
   return (
-    <Link
-      to={result.href}
-      disableTaskQuicklook
+    <SearchResultTarget
+      result={result}
       className={cn(ROW_BASE, "py-4", isActive && "bg-muted/40", className)}
-      data-result-type="task"
     >
       <div className="mt-1 shrink-0">
         <StatusIcon status={task.boardPresentationStatus} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
-          {task.identifier ? (
-            <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
-              {task.identifier}
-            </span>
-          ) : null}
+          <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+            {task.identifier}
+          </span>
           <HighlightedText
             text={taskDisplayTitle(task)}
             highlights={titleHighlights}
@@ -230,7 +241,7 @@ function SearchResultRowImpl({
           ) : null}
         </div>
       ) : null}
-    </Link>
+    </SearchResultTarget>
   );
 }
 

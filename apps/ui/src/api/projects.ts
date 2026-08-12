@@ -1,26 +1,20 @@
 import type { Project, ProjectCodebase, UpdateProjectCodebase } from "@paperclipai/shared";
-import { api } from "./client";
+import { api, type RequestOptions } from "./client";
 
-function withCompanyScope(path: string, companyId?: string) {
-  if (!companyId) return path;
-  const separator = path.includes("?") ? "&" : "?";
-  return `${path}${separator}companyId=${encodeURIComponent(companyId)}`;
-}
-
-function projectPath(id: string, companyId?: string, suffix = "") {
-  return withCompanyScope(`/projects/${encodeURIComponent(id)}${suffix}`, companyId);
+function projectPath(id: string, suffix = "") {
+  return `/projects/${encodeURIComponent(id)}${suffix}`;
 }
 
 export const projectsApi = {
   list: (companyId: string) => api.get<Project[]>(`/companies/${companyId}/projects`),
-  get: (id: string, companyId?: string) => api.get<Project>(projectPath(id, companyId)),
+  get: (id: string, options?: RequestOptions) =>
+    api.get<Project>(projectPath(id), options),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Project>(`/companies/${companyId}/projects`, data),
-  update: (id: string, data: Record<string, unknown>, companyId?: string) =>
-    api.patch<Project>(projectPath(id, companyId), data),
-  getCodebase: (id: string, companyId?: string) =>
-    api.get<ProjectCodebase>(projectPath(id, companyId, "/codebase")),
-  updateCodebase: (id: string, data: UpdateProjectCodebase, companyId?: string) =>
-    api.patch<ProjectCodebase>(projectPath(id, companyId, "/codebase"), data),
-  remove: (id: string, companyId?: string) => api.delete<Project>(projectPath(id, companyId)),
+  update: (id: string, data: Record<string, unknown>) =>
+    api.patch<Project>(projectPath(id), data),
+  getCodebase: (id: string) =>
+    api.get<ProjectCodebase>(projectPath(id, "/codebase")),
+  updateCodebase: (id: string, data: UpdateProjectCodebase) =>
+    api.patch<ProjectCodebase>(projectPath(id, "/codebase"), data),
 };

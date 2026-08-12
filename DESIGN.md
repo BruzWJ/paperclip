@@ -10,7 +10,7 @@ Agents and humans modifying `apps/ui/` treat this file as the source of truth fo
 
 ## Product stance
 
-Paperclip is an operational control plane: org charts, tasks, heartbeat runs, budgets, approvals, audit logs. The user is an operator scanning state and making decisions. Every screen should answer, in order: *what is happening, does it need me, what do I do about it.* Density in service of scanning beats whitespace in service of aesthetics — but density comes from information, never from chrome.
+Paperclip is an operational control plane: org charts, tasks, heartbeat runs, budgets, approvals, audit logs. The user is an operator scanning state and making decisions. Every screen should answer, in order: _what is happening, does it need me, what do I do about it._ Density in service of scanning beats whitespace in service of aesthetics — but density comes from information, never from chrome.
 
 ## The token layer (where visual values live)
 
@@ -32,7 +32,7 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
 4. **Hierarchy through structure, not decoration.** Prefer position, size, and weight over borders, backgrounds, and dividers. Every border, divider, and background fill must justify itself; when in doubt, remove it. A screen should survive the removal of one visual layer.
 5. **Status is systematic.** States like running / paused / blocked / awaiting-approval / over-budget map to a single semantic status token set used identically everywhere (badge, row, chart, log). An operator learns the vocabulary once.
 6. **Machine values look machine-made.** IDs, costs, token counts, timestamps, and log output use the monospace token and consistent formatting helpers. Never format these ad hoc per screen.
-7. **Words are part of the system.** One name per concept across the entire UI — the canonical work-object term is *task* in copy, labels, and empty states. Buttons name the action ("Approve hire," not "Submit"). Errors say what happened and what to do. Empty states say what to do first.
+7. **Words are part of the system.** One name per concept across the entire UI — the canonical work-object term is _task_ in copy, labels, and empty states. Buttons name the action ("Approve hire," not "Submit"). Errors say what happened and what to do. Empty states say what to do first.
 8. **Agent-modifiable by design.** The system must be changeable via instructions: single token source, lint rules that enforce it, and this document kept current. A correct change should be expressible as "edit tokens + run checks," not "visit 40 files."
 
 ## Enforcement (what "compliant" means for the extraction run)
@@ -41,7 +41,7 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
 - **Baseline scope for Run 1:** the shared primitives in `apps/ui/src/components/ui/` (each gets a story if missing — there are only ~24) plus the ~46 existing stories under `apps/ui/storybook/stories/`. Do NOT attempt a story for every feature component (~277) in this run; full coverage is a later effort.
 - Mechanical rewrites (value extraction, renames) are done via committed codemod scripts in `scripts/`, not hand-edits — reviewable once, repeatable forever.
 - Token layer is the single source (`apps/ui/src/index.css`, per above) consumed via CSS variables / Tailwind theme — never values copied into components.
-- Lint/grep gates pass: zero hardcoded hex values, zero arbitrary spacing values, zero raw font-size declarations in `apps/ui/src/components/**` and `apps/ui/src/pages/**` outside the token layer and a documented allowlist (third-party overrides, intentional opt-outs commented inline).
+- Lint/grep gates pass: zero hardcoded hex values, zero arbitrary spacing values, zero raw font-size declarations in `apps/ui/src/components/**` and `apps/ui/src/routes/**` outside the token layer and a documented allowlist (third-party overrides, intentional opt-outs commented inline).
 - `pnpm build`, `pnpm typecheck`, and `pnpm build-storybook` pass.
 - AGENTS.md links here and states the token-only rule.
 

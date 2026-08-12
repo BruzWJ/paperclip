@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PluginSlotMount,
   _resetPluginModuleLoader,
-  _registerPluginModuleExportsForTests,
+  registerPluginModuleExports,
   ensurePluginContributionLoaded,
   resolveRegisteredPluginComponent,
   type ResolvedPluginSlot,
@@ -78,7 +78,7 @@ describe("plugin slot export registration", () => {
         { client: new QueryClient() },
         createElement(PluginSlotMount, {
           slot,
-          context: { companyId: "company-1", companyPrefix: "PAP" },
+          context: { companyId: "11111111-1111-4111-8111-111111111111" },
           missingBehavior: "placeholder",
         }),
       ));
@@ -87,7 +87,7 @@ describe("plugin slot export registration", () => {
     expect(container.textContent).toContain("Content Machine: Content");
 
     flushSync(() => {
-      _registerPluginModuleExportsForTests({
+      registerPluginModuleExports({
         pluginId: "content-machine-plugin",
         pluginKey: "content-machine",
         displayName: "Content Machine",
@@ -136,7 +136,7 @@ describe("plugin slot export registration", () => {
     };
     const ValidPanel = () => null;
 
-    expect(() => _registerPluginModuleExportsForTests(contribution, { ValidPanel })).toThrow(
+    expect(() => registerPluginModuleExports(contribution, { ValidPanel })).toThrow(
       'Plugin "acme.atomic" declares UI export "MissingPage" but its module does not export it.',
     );
     expect(resolveRegisteredPluginComponent(
@@ -162,7 +162,7 @@ describe("plugin slot export registration", () => {
       launchers: [],
     };
 
-    expect(() => _registerPluginModuleExportsForTests(contribution, { Panel: "paperclip-panel" })).toThrow(
+    expect(() => registerPluginModuleExports(contribution, { Panel: "paperclip-panel" })).toThrow(
       'Plugin "acme.invalid" UI export "Panel" must be a React component.',
     );
     expect(resolveRegisteredPluginComponent(
@@ -194,11 +194,11 @@ describe("plugin slot export registration", () => {
       launchers: [],
     });
 
-    _registerPluginModuleExportsForTests(contribution(oldUpdatedAt), { Panel: OldPanel });
+    registerPluginModuleExports(contribution(oldUpdatedAt), { Panel: OldPanel });
     expect(resolveRegisteredPluginComponent(pluginId, oldUpdatedAt, "Panel")?.component).toBe(OldPanel);
     expect(resolveRegisteredPluginComponent(pluginId, newUpdatedAt, "Panel")).toBeNull();
 
-    _registerPluginModuleExportsForTests(contribution(newUpdatedAt), { Panel: NewPanel });
+    registerPluginModuleExports(contribution(newUpdatedAt), { Panel: NewPanel });
     expect(resolveRegisteredPluginComponent(pluginId, oldUpdatedAt, "Panel")?.component).toBe(OldPanel);
     expect(resolveRegisteredPluginComponent(pluginId, newUpdatedAt, "Panel")?.component).toBe(NewPanel);
   });

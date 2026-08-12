@@ -2,7 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 
 export interface Breadcrumb {
   label: string;
-  href?: string;
+  /** Renders a native router link around this crumb's visual content. */
+  renderLink?: (content: ReactNode) => ReactNode;
   /** Optional node rendered before the label (e.g. a status glyph). */
   leading?: ReactNode;
   /**
@@ -33,7 +34,7 @@ function breadcrumbsEqual(left: Breadcrumb[], right: Breadcrumb[]) {
   for (let index = 0; index < left.length; index += 1) {
     if (
       left[index]?.label !== right[index]?.label
-      || left[index]?.href !== right[index]?.href
+      || left[index]?.renderLink !== right[index]?.renderLink
       || left[index]?.leadingKey !== right[index]?.leadingKey
     ) {
       return false;

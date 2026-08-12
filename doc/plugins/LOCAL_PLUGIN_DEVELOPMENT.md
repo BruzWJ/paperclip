@@ -2,10 +2,10 @@
 
 This is the short happy-path guide for developing a Paperclip plugin from a folder on your machine. You will scaffold a plugin, run it in watch mode, install it into a running Paperclip instance from an absolute local path, and edit code with the plugin worker reloading after each rebuild.
 
-For the full alpha surface — manifest fields, capabilities, managed agents/projects/routines/skills, UI slots, scoped API routes — see [`PLUGIN_AUTHORING_GUIDE.md`](./PLUGIN_AUTHORING_GUIDE.md).
+For the full alpha surface — manifest fields, capabilities, managed agents/projects/routines, UI slots, scoped API routes — see [`PLUGIN_AUTHORING_GUIDE.md`](./PLUGIN_AUTHORING_GUIDE.md).
 
 If your plugin has background-like recurring work, model it as managed resources:
-declare managed routines plus managed agents/projects/skills, then reconcile those
+declare managed routines plus managed agents/projects, then reconcile those
 resources in worker actions. This gives operators visible tasks, budgets,
 pause controls, and consistent audits instead of hidden daemon behavior.
 
@@ -146,7 +146,7 @@ The CLI resolves the API base URL in this order (highest priority first):
 1. `--api-base <url>` flag on the command,
 2. `PAPERCLIP_BOARD_API_URL` environment variable,
 3. the active CLI context profile's `apiBase`,
-4. inferred default `http://<PAPERCLIP_SERVER_HOST|localhost>:<PAPERCLIP_SERVER_PORT|config.server.port|3100>`.
+4. inferred local URL `http://127.0.0.1:<PORT|config.server.port|3100>`.
 
 So the API URL is explicit and overridable — the gap was never that you *couldn't* point at a branch server, it was that nothing told you which server you ended up on. `paperclipai plugin target` and the pre-install probe close that gap.
 
@@ -155,7 +155,7 @@ So the API URL is explicit and overridable — the gap was never that you *could
 ```bash
 # 1. From the branch checkout (e.g. a task worktree), run that branch's server.
 #    Pick a port that does not collide with any control-plane instance.
-PAPERCLIP_SERVER_PORT=3120 pnpm dev          # or: pnpm paperclipai run
+PORT=3120 pnpm dev          # or: pnpm paperclipai run
 
 # 2. Confirm the CLI will talk to that exact branch service before installing.
 paperclipai plugin target --api-base http://127.0.0.1:3120
@@ -228,7 +228,7 @@ When you are done iterating locally, publish the package and reinstall the npm-p
 - **Restart cleanly:** `paperclipai plugin disable <plugin-installation-id>` pauses the plugin without uninstalling it. `paperclipai plugin enable <plugin-installation-id>` brings that installation back. `paperclipai plugin uninstall <plugin-installation-id>` deletes the installation, its managed package tree, operational state, settings, jobs, webhooks, and custom database objects.
 - **Install an in-repo plugin from the board:** On a source checkout, open **Instance settings → Plugins** as an instance admin. The available list includes plugin packages under `packages/plugins/`; selecting **Install** builds that exact workspace package and installs its canonical local path. SDK and scaffolding packages are excluded because they do not declare `paperclipPlugin.manifest`.
 - **Inspect installed plugins:** `paperclipai plugin list` and `paperclipai plugin inspect <plugin-installation-id>` report the packages this instance actually installed.
-- **Go deeper:** [`PLUGIN_AUTHORING_GUIDE.md`](./PLUGIN_AUTHORING_GUIDE.md) covers worker capabilities, managed agents/projects/routines/skills, plugin database namespaces, scoped API routes, and the shared UI components in `@paperclipai/plugin-sdk/ui`. [`PLUGIN_SPEC.md`](./PLUGIN_SPEC.md) is the longer-form specification, including future ideas that are not yet implemented.
+- **Go deeper:** [`PLUGIN_AUTHORING_GUIDE.md`](./PLUGIN_AUTHORING_GUIDE.md) covers worker capabilities, managed agents/projects/routines, plugin database namespaces, scoped API routes, and the shared UI components in `@paperclipai/plugin-sdk/ui`. [`PLUGIN_SPEC.md`](./PLUGIN_SPEC.md) is the longer-form specification, including future ideas that are not yet implemented.
 - **Routine-first automation:** If your plugin should produce periodic task work, prefer managed routines and `ctx.routines.managed` reconciliation over custom process loops or unobserved cron code.
 
 ## Troubleshooting

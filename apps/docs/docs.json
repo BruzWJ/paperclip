@@ -59,8 +59,6 @@
             "pages": [
               "guides/agent-developer/how-agents-work",
               "guides/agent-developer/task-execution-protocol",
-              "guides/agent-developer/writing-a-skill",
-              "guides/agent-developer/skills-store",
               "guides/agent-developer/task-workflow",
               "guides/agent-developer/comments-and-communication",
               "guides/agent-developer/handling-approvals",

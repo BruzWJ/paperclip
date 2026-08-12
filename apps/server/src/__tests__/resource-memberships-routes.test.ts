@@ -48,7 +48,7 @@ describe("resource membership routes", () => {
     const harness = createMockDb({ select: [[], []] });
 
     const res = await request(createApp(harness.db))
-      .get(`/api/companies/${companyId}/resource-memberships/me`);
+      .get(`/api/companies/${companyId}/users/user-1/resource-memberships`);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -80,10 +80,10 @@ describe("resource membership routes", () => {
     const app = createApp(harness.db);
 
     const first = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
+      .put(`/api/companies/${companyId}/users/user-1/resource-memberships/projects/${projectId}`)
       .send({ state: "left" });
     const second = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
+      .put(`/api/companies/${companyId}/users/user-1/resource-memberships/projects/${projectId}`)
       .send({ state: "left" });
 
     expect(first.status).toBe(200);
@@ -122,12 +122,14 @@ describe("resource membership routes", () => {
     const app = createApp(harness.db);
 
     const first = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
+      .put(`/api/companies/${companyId}/users/user-1/resource-memberships/projects/${projectId}`)
       .send({ starred: true });
     const second = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
+      .put(`/api/companies/${companyId}/users/user-1/resource-memberships/projects/${projectId}`)
       .send({ starred: true });
-    const list = await request(app).get(`/api/companies/${companyId}/resource-memberships/me`);
+    const list = await request(app).get(
+      `/api/companies/${companyId}/users/user-1/resource-memberships`,
+    );
 
     expect(first.status).toBe(200);
     expect(first.body).toMatchObject({ resourceType: "project", resourceId: projectId, state: "joined", starredAt: now.toISOString() });
@@ -155,7 +157,7 @@ describe("resource membership routes", () => {
     });
 
     const res = await request(createApp(harness.db))
-      .get(`/api/companies/${companyId}/resource-memberships/me`);
+      .get(`/api/companies/${companyId}/users/user-1/resource-memberships`);
 
     expect(res.status).toBe(200);
     expect(res.body.projectMemberships).toEqual({ [projectId]: "joined" });
@@ -176,10 +178,10 @@ describe("resource membership routes", () => {
     const app = createApp(harness.db);
 
     const projectRes = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
+      .put(`/api/companies/${companyId}/users/user-1/resource-memberships/projects/${projectId}`)
       .send({ starred: true });
     const agentRes = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${agentId}`)
+      .put(`/api/companies/${companyId}/users/user-1/resource-memberships/agents/${agentId}`)
       .send({ starred: true });
 
     expect(projectRes.status).toBe(404);
@@ -188,26 +190,15 @@ describe("resource membership routes", () => {
     expect(routeMocks.logActivity).not.toHaveBeenCalled();
   });
 
-  it("rejects agent API-key actors without sending a query", async () => {
-    const harness = createMockDb();
-    const actor = { type: "agent", agentId, companyId, source: "internal" } as const;
-
-    const res = await request(createApp(harness.db, actor))
-      .get(`/api/companies/${companyId}/resource-memberships/me`);
-
-    expect(res.status).toBe(403);
-    expect(harness.calls).toEqual([]);
-  });
-
   it("rejects cross-company resources without writing membership rows", async () => {
     const harness = createMockDb({ select: [undefined, undefined] });
     const app = createApp(harness.db);
 
     const projectRes = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
+      .put(`/api/companies/${companyId}/users/user-1/resource-memberships/projects/${projectId}`)
       .send({ state: "left" });
     const agentRes = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${agentId}`)
+      .put(`/api/companies/${companyId}/users/user-1/resource-memberships/agents/${agentId}`)
       .send({ state: "left" });
 
     expect(projectRes.status).toBe(404);
@@ -231,5 +222,15 @@ describe("resource membership routes", () => {
       message: "Users may only update their own resource memberships",
     });
     expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+  });
+
+  it("rejects a route user ID that differs from the authenticated user", async () => {
+    const harness = createMockDb();
+
+    const res = await request(createApp(harness.db, boardActor("admin")))
+      .get(`/api/companies/${companyId}/users/user-2/resource-memberships`);
+
+    expect(res.status).toBe(403);
+    expect(harness.calls).toEqual([]);
   });
 });

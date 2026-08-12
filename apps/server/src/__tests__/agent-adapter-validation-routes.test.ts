@@ -11,13 +11,10 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
-  projectAgentAdapterAcpConfiguration,
 } from "@paperclipai/shared";
 import { agentRoutes } from "../routes/agents.js";
-import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { errorHandler } from "../middleware/index.js";
 import {
-  CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
   CANONICAL_TEST_ADAPTER_TYPE,
 } from "./helpers/adapter-implementation.js";
 import { canonicalTestAgentAdapterRevision } from "./helpers/agent-adapter-revision.js";
@@ -34,8 +31,6 @@ const mockRuntimeAgentConfiguration = vi.hoisted(() => ({
 const mockAdapterConfigurations = vi.hoisted(() => ({
   listRevisions: vi.fn(),
   getCurrentRevision: vi.fn(),
-  getCompanySkillPins: vi.fn(),
-  replaceCompanySkillPins: vi.fn(),
   createRevision: vi.fn(),
 }));
 const mockOperationalConfigurations = vi.hoisted(() => ({
@@ -55,10 +50,6 @@ const mockAccessService = vi.hoisted(() => ({
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/index.js", () => ({
-  agentCompanySkillSelectionService: () => ({
-    getSet: vi.fn(),
-    replaceForAgent: vi.fn(),
-  }),
   agentService: () => mockAgentService,
   accessService: () => mockAccessService,
   approvalService: () => ({
@@ -134,10 +125,7 @@ function agent(overrides: Record<string, unknown> = {}) {
     status: "idle",
     reportsTo: null,
     capabilities: null,
-    adapterType: CANONICAL_TEST_ADAPTER_TYPE,
-    adapterConfig: { model: "fixture-model" },
     currentAdapterConfigRevisionId: revisionId,
-    runtimeConfig: {},
     budgetMonthlyAmount: "0",
     knownSpendAmount: "0",
     pauseReason: null,
@@ -157,7 +145,6 @@ function revision(overrides: Record<string, unknown> = {}) {
     companyId: "company-1",
     agentId,
     revisionNumber: 1,
-    runtimeConfig: {},
     ...canonicalConfiguration,
     parentRevisionId: null,
     createdByAgentId: null,
@@ -167,26 +154,17 @@ function revision(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function createApp(actorType: "board" | "agent" = "board") {
+function createApp() {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = actorType === "board"
-      ? testBoardSessionActor({
-          userId: "board-user",
-          companyIds: ["company-1"],
-          isInstanceAdmin: false,
-        })
-      : {
-          type: "agent",
-          agentId,
-          companyId: "company-1",
-          runId: "run-1",
-          source: "internal",
-        };
+    (req as any).actor = testBoardSessionActor({
+      userId: "board-user",
+      companyIds: ["company-1"],
+      isInstanceAdmin: false,
+    });
     next();
   });
-  app.use("/api", denyGenericAgentRest("control-plane"));
   app.use("/api", agentRoutes({} as never, {
     ordinaryTasks: {} as never,
   }));
@@ -225,9 +203,7 @@ describe("agent control-plane routes", () => {
     });
     mockAdapterConfigurations.createRevision.mockResolvedValue({
       revision: revision(),
-      current: agent({
-        adapterConfig: revision().normalizedConfig,
-      }),
+      current: agent(),
       appended: true,
     });
     mockAdapterConfigurations.listRevisions.mockResolvedValue([
@@ -240,27 +216,6 @@ describe("agent control-plane routes", () => {
     mockAdapterConfigurations.getCurrentRevision.mockResolvedValue(
       revision(),
     );
-    mockAdapterConfigurations.getCompanySkillPins.mockResolvedValue({
-      entries: [
-        {
-          key: "code-review",
-          versionId:
-            "55555555-5555-4555-8555-555555555555",
-        },
-      ],
-    });
-    mockAdapterConfigurations.replaceCompanySkillPins.mockResolvedValue({
-      entries: [
-        {
-          key: "research",
-          versionId:
-            "66666666-6666-4666-8666-666666666666",
-        },
-      ],
-      revision: revision({ revisionNumber: 2 }),
-      current: agent(),
-      appended: true,
-    });
     mockOperationalConfigurations.update.mockResolvedValue({
       agent: agent({ budgetMonthlyAmount: "25" }),
     });
@@ -382,8 +337,6 @@ describe("agent control-plane routes", () => {
     const configuration = {
       adapterType: CANONICAL_TEST_ADAPTER_TYPE,
       adapterConfig: { model: "fixture-model" },
-      runtimeConfig: {},
-      companySkillPins: [],
     };
     const app = createApp();
     const created = await request(app)
@@ -398,9 +351,7 @@ describe("agent control-plane routes", () => {
     expect(created.body).toMatchObject({
       revision: {
         id: revisionId,
-        acpConfiguration: projectAgentAdapterAcpConfiguration(
-          revision().acpConfiguration,
-        ),
+        acpConfiguration: revision().acpConfiguration,
       },
       current: {
         agentId,
@@ -410,8 +361,6 @@ describe("agent control-plane routes", () => {
     });
     expect(Object.keys(created.body.revision).sort()).toEqual([
       "acpConfiguration",
-      "adapterConfigSchemaVersion",
-      "adapterType",
       "agentId",
       "companyId",
       "createdAt",
@@ -419,14 +368,10 @@ describe("agent control-plane routes", () => {
       "createdByUserId",
       "digest",
       "id",
-      "implementationIdentity",
-      "normalizedConfig",
       "parentRevisionId",
       "revisionNumber",
-      "runtimeConfig",
     ]);
     expect(Object.keys(created.body.revision.acpConfiguration).sort()).toEqual([
-      "companySkillPins",
       "contractVersion",
       "launchProfile",
       "model",
@@ -436,9 +381,7 @@ describe("agent control-plane routes", () => {
     expect(history.body.map((row: { revisionNumber: number }) =>
       row.revisionNumber)).toEqual([2, 1]);
     expect(current.status).toBe(200);
-    expect(current.body.acpConfiguration).toEqual(
-      projectAgentAdapterAcpConfiguration(revision().acpConfiguration),
-    );
+    expect(current.body.acpConfiguration).toEqual(revision().acpConfiguration);
     for (const response of [created.body, history.body, current.body]) {
       const serialized = JSON.stringify(response);
       expect(serialized).not.toContain("nativeCorrelationKind");
@@ -450,88 +393,7 @@ describe("agent control-plane routes", () => {
       expect(serialized).not.toContain("secretReferenceIdentities");
       expect(serialized).not.toContain("runtimeFlags");
       expect(serialized).not.toContain("executionTargetSelector");
-      expect(serialized).not.toContain("workspaceSelector");
     }
-  });
-
-  it("reads and replaces company skill pins through the dedicated operation", async () => {
-    const app = createApp();
-    const read = await request(app)
-      .get(`/api/agents/${agentId}/company-skill-pins`);
-    const update = {
-      entries: [
-        {
-          key: "research",
-          versionId:
-            "66666666-6666-4666-8666-666666666666",
-        },
-      ],
-    };
-    const replaced = await request(app)
-      .put(`/api/agents/${agentId}/company-skill-pins`)
-      .send(update);
-
-    expect(read.status).toBe(200);
-    expect(read.body.entries).toEqual([
-      {
-        key: "code-review",
-        versionId:
-          "55555555-5555-4555-8555-555555555555",
-      },
-    ]);
-    expect(replaced.status).toBe(200);
-    expect(replaced.body).toEqual(update);
-    expect(
-      mockAdapterConfigurations.getCompanySkillPins,
-    ).toHaveBeenCalledWith({
-      companyId: "company-1",
-      agentId,
-    });
-    expect(
-      mockAdapterConfigurations.replaceCompanySkillPins,
-    ).toHaveBeenCalledWith({
-      companyId: "company-1",
-      agentId,
-      update,
-      actor: {
-        type: "user",
-        userId: "board-user",
-      },
-    });
-    expect(mockAdapterConfigurations.createRevision).not.toHaveBeenCalled();
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        action: "agent.company_skill_pins_updated",
-        entityId: revisionId,
-      }),
-    );
-  });
-
-  it("rejects malformed company skill pin replacements before the service", async () => {
-    const duplicate = {
-      entries: [
-        {
-          key: "research",
-          versionId:
-            "66666666-6666-4666-8666-666666666666",
-        },
-        {
-          key: "research",
-          versionId:
-            "77777777-7777-4777-8777-777777777777",
-        },
-      ],
-      mode: "latest",
-    };
-    const response = await request(createApp())
-      .put(`/api/agents/${agentId}/company-skill-pins`)
-      .send(duplicate);
-
-    expect(response.status).toBe(400);
-    expect(
-      mockAdapterConfigurations.replaceCompanySkillPins,
-    ).not.toHaveBeenCalled();
   });
 
   it("updates only the board-owned operational contract", async () => {
@@ -577,9 +439,6 @@ describe("agent control-plane routes", () => {
     const statuses = await Promise.all([
       request(app).post("/api/companies/company-1/agents").send({}),
       request(app).patch(`/api/agents/${agentId}`).send({ name: "Legacy" }),
-      request(app)
-        .post(`/api/agents/${agentId}/config-revisions/legacy/rollback`)
-        .send({}),
       request(app).post(`/api/agents/${agentId}/approve`).send({}),
     ]);
 
@@ -587,17 +446,7 @@ describe("agent control-plane routes", () => {
       404,
       404,
       404,
-      404,
     ]);
   });
 
-  it("rejects agent credentials at the generic control-plane boundary", async () => {
-    const response = await request(createApp("agent"))
-      .get(`/api/agents/${agentId}/adapter-config-revisions`);
-
-    expect(response.status).toBe(403);
-    expect(response.body.error).toContain(
-      "run-scoped compiled interface",
-    );
-  });
 });

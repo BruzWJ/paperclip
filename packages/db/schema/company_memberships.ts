@@ -24,7 +24,7 @@ export const companyMemberships = pgTable(
     }),
     principalAgentId: uuid("principal_agent_id"),
     status: text("status").notNull().default("active"),
-    membershipRole: text("membership_role"),
+    membershipRole: text("membership_role").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -39,6 +39,16 @@ export const companyMemberships = pgTable(
         ${table.principalType} = 'agent'
         and ${table.principalUserId} is null
         and ${table.principalAgentId} is not null
+      )`,
+    ),
+    principalRoleCheck: check(
+      "company_memberships_principal_role_check",
+      sql`(
+        ${table.principalType} = 'user'
+        and ${table.membershipRole} in ('owner', 'admin', 'operator', 'viewer')
+      ) or (
+        ${table.principalType} = 'agent'
+        and ${table.membershipRole} = 'member'
       )`,
     ),
     principalAgentCompanyFk: foreignKey({

@@ -65,8 +65,6 @@ const ACP_CONFIGURATION = {
 
 function resolvedConfiguration(): ResolvedRegisteredAdapterRuntimeConfiguration {
   return {
-    canonicalAdapterConfig: ADAPTER_CONFIG,
-    runtimeMetadata: {} as never,
     acpConfiguration: ACP_CONFIGURATION,
   };
 }
@@ -80,7 +78,7 @@ function createHarness(probeError?: unknown) {
   );
   moduleMocks.removeTemporarySessionCwd.mockResolvedValue(undefined);
   moduleMocks.probeAcpxRuntimeReadiness.mockImplementation(async (
-    input: AcpxRuntimeReadinessProbeInput,
+    _input: AcpxRuntimeReadinessProbeInput,
   ) => {
     if (probeError) throw probeError;
     return {

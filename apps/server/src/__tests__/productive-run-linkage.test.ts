@@ -84,7 +84,7 @@ describe("productive run linkage", () => {
     const { db } = createMockDb({
       select: [
         [currentOwnerLinkage],
-        [{ id: agentId, companyId, status: "running" }],
+        [{ id: agentId, companyId, status: "idle" }],
       ],
     });
 
@@ -113,7 +113,7 @@ describe("productive run linkage", () => {
       allowed: false,
       reason: "deny_unsupported_action",
       explanation:
-        "Agent credentials cannot use generic REST content or control surfaces; use the run-scoped compiled interface.",
+        "Internal agent execution authority cannot use generic REST content or control surfaces; use the run-scoped compiled interface.",
     });
   });
 });

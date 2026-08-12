@@ -159,17 +159,6 @@ export const pluginsApi = {
   },
 
   /**
-   * Upgrade a plugin to a newer version.
-   *
-   * An upgrade that declares additional capabilities is rejected.
-   *
-   * @param pluginId - UUID of the plugin to upgrade.
-   * @param version - Target version (optional; defaults to latest published).
-   */
-  upgrade: (pluginId: string, version?: string) =>
-    api.post<PluginRecordDto>(`/plugins/${pluginId}/upgrade`, version ? { version } : {}),
-
-  /**
    * Returns normalized UI contribution declarations for ready plugins.
    * Used by the slot host runtime and launcher discovery surfaces.
    *
@@ -237,28 +226,6 @@ export const pluginsApi = {
     api.get<PluginLocalFoldersResponse>(`/plugins/${pluginId}/companies/${companyId}/local-folders`),
 
   /**
-   * Inspect a configured local folder without changing persisted settings.
-   */
-  localFolderStatus: (pluginId: string, companyId: string, folderKey: string) =>
-    api.get<PluginLocalFolderStatus>(
-      `/plugins/${pluginId}/companies/${companyId}/local-folders/${encodeURIComponent(folderKey)}/status`,
-    ),
-
-  /**
-   * Validate a candidate local folder path without saving it.
-   */
-  validateLocalFolder: (
-    pluginId: string,
-    companyId: string,
-    folderKey: string,
-    input: PluginLocalFolderPathRequest,
-  ) =>
-    api.post<PluginLocalFolderStatus>(
-      `/plugins/${pluginId}/companies/${companyId}/local-folders/${encodeURIComponent(folderKey)}/validate`,
-      input,
-    ),
-
-  /**
    * Persist a company-scoped local folder path and return its inspected status.
    */
   configureLocalFolder: (
@@ -276,33 +243,6 @@ export const pluginsApi = {
   // Bridge proxy endpoints — used by the plugin UI bridge runtime
   // ===========================================================================
 
-  /**
-   * Proxy a `getData` call from a plugin UI component to its worker backend.
-   *
-   * This is the HTTP transport for `usePluginData(key, params)`. The bridge
-   * runtime calls this method and maps the response into `PluginDataResult<T>`.
-   *
-   * On success, the response is `{ data: T }`.
-   * On failure, the response body is a `PluginBridgeError`-shaped object
-   * with `code`, `message`, and optional `details`.
-   *
-   * @param pluginId - UUID of the plugin whose worker should handle the request
-   * @param key - Plugin-defined data key (e.g. `"sync-health"`)
-   * @param params - Optional query parameters forwarded to the worker handler
-   * @param companyId - Optional company scope used for board/company access checks.
-   * @param renderEnvironment - Optional launcher/page snapshot forwarded for
-   *   launcher-backed UI so workers can distinguish modal, drawer, popover, and
-   *   page execution.
-   *
-   * Error responses:
-   * - `401`/`403` when auth or company access checks fail
-   * - `404` when the plugin or handler key does not exist
-   * - `409` when the plugin is not in a callable runtime state
-   * - `5xx` with a `PluginBridgeError`-shaped body when the worker throws
-   *
-   * @see PLUGIN_SPEC.md §13.8 — `getData`
-   * @see PLUGIN_SPEC.md §19.7 — Error Propagation Through The Bridge
-   */
   bridgeGetData: (
     pluginId: string,
     key: string,

@@ -16,7 +16,6 @@ import {
 import {
   attachmentArtifactWorkProductMetadataSchema,
   COMPANY_ARTIFACTS_MAX_LIMIT,
-  companyArtifactsQuerySchema,
   SYSTEM_TASK_DOCUMENT_KEYS,
   type CompanyArtifact,
   type CompanyArtifactGroup,
@@ -47,7 +46,8 @@ type ArtifactGroupBy = Exclude<CompanyArtifactGroupBy, "none">;
 type TaskGroupingRow = {
   id: string;
   parentId: string | null;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   updatedAt: Date;
 };
@@ -59,15 +59,21 @@ function encodeCursor(cursor: ArtifactCursor) {
 function decodeCursor(cursor: string | undefined): ArtifactCursor | null {
   if (!cursor) return null;
   try {
-    const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as Partial<ArtifactCursor>;
-    if (typeof parsed.id !== "string" || typeof parsed.updatedAt !== "string") {
+    const decoded = Buffer.from(cursor, "base64url");
+    if (decoded.toString("base64url") !== cursor) throw new Error("Noncanonical cursor");
+    const parsed = JSON.parse(decoded.toString("utf8")) as Partial<ArtifactCursor>;
+    if (
+      typeof parsed.id !== "string" ||
+      typeof parsed.updatedAt !== "string" ||
+      Object.keys(parsed).sort().join(",") !== "id,updatedAt"
+    ) {
       throw new Error("Invalid cursor");
     }
     const date = new Date(parsed.updatedAt);
-    if (Number.isNaN(date.getTime())) {
+    if (Number.isNaN(date.getTime()) || date.toISOString() !== parsed.updatedAt) {
       throw new Error("Invalid cursor date");
     }
-    return { id: parsed.id, updatedAt: date.toISOString() };
+    return { id: parsed.id, updatedAt: parsed.updatedAt };
   } catch {
     throw badRequest("Invalid artifacts cursor");
   }
@@ -135,25 +141,6 @@ function contentTypeKindCondition(contentTypeExpression: SQL<string>, kind: Comp
   return undefined;
 }
 
-function buildTaskHref(companyPrefix: string, identifier: string, anchor: string) {
-  return `/${encodeURIComponent(companyPrefix)}/tasks/${encodeURIComponent(identifier)}#${anchor}`;
-}
-
-function buildArtifactsGroupHref(
-  companyPrefix: string,
-  query: CompanyArtifactsQuery,
-  groupBy: ArtifactGroupBy,
-  groupTaskId: string,
-) {
-  const params = new URLSearchParams();
-  params.set("groupBy", groupBy);
-  params.set("groupTaskId", groupTaskId);
-  if (query.kind !== "all") params.set("kind", query.kind);
-  if (query.projectId) params.set("projectId", query.projectId);
-  if (query.q) params.set("q", query.q);
-  return `/${encodeURIComponent(companyPrefix)}/artifacts?${params.toString()}`;
-}
-
 function attachmentContentPath(attachmentId: string) {
   return `/api/attachments/${attachmentId}/content`;
 }
@@ -204,6 +191,7 @@ async function loadTaskGroupingRows(db: Db, companyId: string, seedTaskIds: Iter
       .select({
         id: tasks.id,
         parentId: tasks.parentId,
+        taskNumber: tasks.taskNumber,
         identifier: tasks.identifier,
         title: tasks.title,
         updatedAt: tasks.updatedAt,
@@ -227,7 +215,8 @@ async function loadTaskGroupingRows(db: Db, companyId: string, seedTaskIds: Iter
 function getTaskSummary(task: TaskGroupingRow) {
   return {
     id: task.id,
-    identifier: task.identifier ?? task.id,
+    taskNumber: task.taskNumber,
+    identifier: task.identifier,
     title: task.title,
   };
 }
@@ -250,8 +239,6 @@ function resolveGroupTaskId(groupBy: ArtifactGroupBy, taskId: string, taskRows: 
 }
 
 function emptyGroup(input: {
-  companyPrefix: string;
-  query: CompanyArtifactsQuery;
   groupBy: ArtifactGroupBy;
   task: TaskGroupingRow;
 }): CompanyArtifactGroup {
@@ -265,14 +252,11 @@ function emptyGroup(input: {
     mediaKinds: [],
     previewArtifacts: [],
     updatedAt: input.task.updatedAt.toISOString(),
-    href: buildArtifactsGroupHref(input.companyPrefix, input.query, input.groupBy, input.task.id),
   };
 }
 
 function buildArtifactGroups(input: {
   artifacts: CompanyArtifact[];
-  companyPrefix: string;
-  query: CompanyArtifactsQuery;
   groupBy: ArtifactGroupBy;
   taskRows: Map<string, TaskGroupingRow>;
 }) {
@@ -283,6 +267,7 @@ function buildArtifactGroups(input: {
     const groupTask = input.taskRows.get(groupTaskId) ?? {
       id: artifact.task.id,
       parentId: null,
+      taskNumber: artifact.task.taskNumber,
       identifier: artifact.task.identifier,
       title: artifact.task.title,
       updatedAt: new Date(artifact.updatedAt),
@@ -290,8 +275,6 @@ function buildArtifactGroups(input: {
     const groupId = `${input.groupBy}:${groupTaskId}`;
     const existing = groups.get(groupId);
     const group = existing ?? emptyGroup({
-      companyPrefix: input.companyPrefix,
-      query: input.query,
       groupBy: input.groupBy,
       task: groupTask,
     });
@@ -320,14 +303,13 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
   return {
     list: async (
       companyId: string,
-      rawQuery: Partial<CompanyArtifactsQuery> = {},
+      query: CompanyArtifactsQuery,
       options: { taskConditions?: SQL[] } = {},
     ): Promise<CompanyArtifactsResponse> => {
-      const query = companyArtifactsQuerySchema.parse(rawQuery);
       const cursor = decodeCursor(query.cursor);
       const groupBy = query.groupBy === "none" ? null : query.groupBy;
       const company = await db
-        .select({ id: companies.id, taskPrefix: companies.taskPrefix })
+        .select({ id: companies.id })
         .from(companies)
         .where(eq(companies.id, companyId))
         .then((rows) => rows[0] ?? null);
@@ -338,7 +320,6 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
       const q = query.q ? `%${escapeLikePattern(query.q)}%` : null;
       const taskConditions: SQL[] = [
         isNull(tasks.hiddenAt),
-        isNull(tasks.harnessKind),
         ...(options.taskConditions ?? []),
       ];
       const artifacts: CompanyArtifact[] = [];
@@ -373,6 +354,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             artifactId: documentArtifactId,
             documentId: documents.id,
             taskId: tasks.id,
+            taskNumber: tasks.taskNumber,
             taskIdentifier: tasks.identifier,
             taskTitle: tasks.title,
             projectId: projects.id,
@@ -425,7 +407,6 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         const documentRows = await documentRowsQuery.limit(sourceFetchLimit);
 
         for (const row of documentRows) {
-          const identifier = row.taskIdentifier ?? row.taskId;
           artifacts.push({
             id: row.artifactId,
             source: "document",
@@ -436,13 +417,18 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             contentPath: null,
             openPath: null,
             downloadPath: null,
-            task: { id: row.taskId, identifier, title: row.taskTitle },
+            task: {
+              id: row.taskId,
+              taskNumber: row.taskNumber,
+              identifier: row.taskIdentifier,
+              title: row.taskTitle,
+            },
             project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
             createdByAgent: row.createdByAgentId && row.createdByAgentName
               ? { id: row.createdByAgentId, name: row.createdByAgentName }
               : null,
             updatedAt: row.updatedAt.toISOString(),
-            href: buildTaskHref(company.taskPrefix, identifier, `document-${row.key}`),
+            taskFragment: `document-${row.key}`,
           });
         }
       }
@@ -492,6 +478,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             artifactId: workProductArtifactId,
             workProductId: taskWorkProducts.id,
             taskId: tasks.id,
+            taskNumber: tasks.taskNumber,
             taskIdentifier: tasks.identifier,
             taskTitle: tasks.title,
             projectId: projects.id,
@@ -586,7 +573,6 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             workProductAttachmentIds.add(attachmentMetadata.attachmentId);
           }
           const contentType = attachmentMetadata?.contentType ?? null;
-          const identifier = row.taskIdentifier ?? row.taskId;
           artifacts.push({
             id: row.artifactId,
             source: "work_product",
@@ -597,13 +583,18 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             contentPath: attachmentMetadata?.contentPath ?? null,
             openPath: attachmentMetadata?.openPath ?? (typeof row.metadata?.openPath === "string" ? row.metadata.openPath : null),
             downloadPath: attachmentMetadata?.downloadPath ?? null,
-            task: { id: row.taskId, identifier, title: row.taskTitle },
+            task: {
+              id: row.taskId,
+              taskNumber: row.taskNumber,
+              identifier: row.taskIdentifier,
+              title: row.taskTitle,
+            },
             project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
             createdByAgent: createdByAgent
               ? { id: createdByAgent.id, name: createdByAgent.name }
               : null,
             updatedAt: row.updatedAt.toISOString(),
-            href: buildTaskHref(company.taskPrefix, identifier, `work-product-${row.workProductId}`),
+            taskFragment: `work-product-${row.workProductId}`,
           });
         }
 
@@ -637,6 +628,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             attachmentId: taskAttachments.id,
             companyId: taskAttachments.companyId,
             taskId: tasks.id,
+            taskNumber: tasks.taskNumber,
             taskIdentifier: tasks.identifier,
             taskTitle: tasks.title,
             projectId: projects.id,
@@ -686,7 +678,6 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
           if (workProductAttachmentIds.has(row.attachmentId)) return null;
           const mediaKind = classifyMediaKind(row.contentType);
           const contentPath = attachmentContentPath(row.attachmentId);
-          const identifier = row.taskIdentifier ?? row.taskId;
           return {
             id: row.artifactId,
             source: "attachment",
@@ -703,13 +694,18 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             contentPath,
             openPath: contentPath,
             downloadPath: `${contentPath}?download=1`,
-            task: { id: row.taskId, identifier, title: row.taskTitle },
+            task: {
+              id: row.taskId,
+              taskNumber: row.taskNumber,
+              identifier: row.taskIdentifier,
+              title: row.taskTitle,
+            },
             project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
             createdByAgent: row.createdByAgentId && row.createdByAgentName
               ? { id: row.createdByAgentId, name: row.createdByAgentName }
               : null,
             updatedAt: row.updatedAt.toISOString(),
-            href: buildTaskHref(company.taskPrefix, identifier, `attachment-${row.attachmentId}`),
+            taskFragment: `attachment-${row.attachmentId}`,
           };
         }));
 
@@ -731,8 +727,6 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
       const taskRows = await loadTaskGroupingRows(db, companyId, taskSeedIds);
       const groups = buildArtifactGroups({
         artifacts: sorted,
-        companyPrefix: company.taskPrefix,
-        query,
         groupBy,
         taskRows,
       });
@@ -746,8 +740,6 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         const selectedGroupTaskId = resolveGroupTaskId(groupBy, selectedTask.id, taskRows);
         const selectedGroup = groups.find((group) => group.task.id === selectedGroupTaskId)
           ?? emptyGroup({
-            companyPrefix: company.taskPrefix,
-            query,
             groupBy,
             task: taskRows.get(selectedGroupTaskId) ?? selectedTask,
           });

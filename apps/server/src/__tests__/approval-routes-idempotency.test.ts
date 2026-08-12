@@ -20,17 +20,12 @@ const mockTaskApprovalService = vi.hoisted(() => ({
   linkManyForApproval: vi.fn(),
 }));
 
-const mockSecretService = vi.hoisted(() => ({
-  normalizeHireApprovalPayloadForPersistence: vi.fn(),
-}));
-
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockAccessService = vi.hoisted(() => ({
   decide: vi.fn(),
 }));
 let middlewareModule: typeof import("../middleware/index.js");
 let approvalRoutesModule: typeof import("../routes/approvals.js");
-let compiledInterfaceModule: typeof import("../routes/compiled-interface-only.js");
 
 function registerModuleMocks() {
   vi.doMock("../services/index.js", () => ({
@@ -38,7 +33,6 @@ function registerModuleMocks() {
     approvalService: () => mockApprovalService,
     taskApprovalService: () => mockTaskApprovalService,
     logActivity: mockLogActivity,
-    secretService: () => mockSecretService,
   }));
 }
 
@@ -67,31 +61,6 @@ function createRouteDb() {
   return {} as any;
 }
 
-async function createAgentApp(options: { runId?: string } = {}) {
-  const { errorHandler } = middlewareModule;
-  const { approvalRoutes } = approvalRoutesModule;
-  const { denyGenericAgentRest } = compiledInterfaceModule;
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "agent",
-      agentId: "agent-1",
-      companyId: "company-1",
-      runId: options.runId ?? "run-1",
-      source: "api_key",
-      isInstanceAdmin: false,
-    };
-    next();
-  });
-  app.use("/api", denyGenericAgentRest("REST"));
-  app.use("/api", approvalRoutes(createRouteDb(), {
-    ordinaryTasks: {} as never,
-  }));
-  app.use(errorHandler);
-  return app;
-}
-
 describe("approval routes idempotent retries", () => {
   beforeAll(async () => {
     vi.resetModules();
@@ -100,12 +69,10 @@ describe("approval routes idempotent retries", () => {
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
-    [middlewareModule, approvalRoutesModule, compiledInterfaceModule] =
-      await Promise.all([
-        import("../middleware/index.js"),
-        import("../routes/approvals.js"),
-        import("../routes/compiled-interface-only.js"),
-      ]);
+    [middlewareModule, approvalRoutesModule] = await Promise.all([
+      import("../middleware/index.js"),
+      import("../routes/approvals.js"),
+    ]);
   });
 
   beforeEach(() => {
@@ -121,7 +88,6 @@ describe("approval routes idempotent retries", () => {
     mockApprovalService.addComment.mockReset();
     mockTaskApprovalService.listTasksForApproval.mockReset();
     mockTaskApprovalService.linkManyForApproval.mockReset();
-    mockSecretService.normalizeHireApprovalPayloadForPersistence.mockReset();
     mockLogActivity.mockReset();
     mockAccessService.decide.mockReset();
     mockAccessService.decide.mockResolvedValue({
@@ -332,20 +298,4 @@ describe("approval routes idempotent retries", () => {
     );
   });
 
-  it.each([
-    [
-      "/api/companies/company-1/approvals",
-      { type: "request_board_approval", payload: { title: "Approve hosting spend" } },
-    ],
-    ["/api/approvals/approval-7/resubmit", { payload: { title: "Retry" } }],
-    ["/api/approvals/approval-8/comments", { body: "please approve" }],
-  ])("denies generic agent REST access to %s", async (path, body) => {
-    const res = await request(await createAgentApp()).post(path).send(body);
-
-    expect(res.status, JSON.stringify(res.body)).toBe(403);
-    expect(res.body.code).toBe("compiled_run_interface_required");
-    expect(mockApprovalService.create).not.toHaveBeenCalled();
-    expect(mockApprovalService.resubmit).not.toHaveBeenCalled();
-    expect(mockApprovalService.addComment).not.toHaveBeenCalled();
-  });
 });

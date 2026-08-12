@@ -108,11 +108,7 @@ function authorNameForComment(
   }
   return (
     userLabelMap?.get(comment.authorUserId)?.trim() ||
-    formatOwnerUserLabel(
-      comment.authorUserId,
-      currentUserId,
-      userLabelMap,
-    ) ||
+    formatOwnerUserLabel(comment.authorUserId, currentUserId, userLabelMap) ||
     "You"
   );
 }
@@ -175,8 +171,7 @@ function createCommentMessage(args: {
     boardGroupHasMore: comment.boardGroupHasMore === true,
     boardGroupContinuationLoading:
       comment.boardGroupContinuationLoading === true,
-    boardGroupContinuationError:
-      comment.boardGroupContinuationError ?? null,
+    boardGroupContinuationError: comment.boardGroupContinuationError ?? null,
     immediateParentDisplayReference:
       comment.immediateParentDisplayReference ?? null,
     canReply: comment.boardEntryKind === "comment" && !comment.clientStatus,
@@ -235,14 +230,11 @@ function createTimelineEventMessage(args: {
   const { event, agentMap, currentUserId, userLabelMap } = args;
   const actorName =
     event.actorType === "agent"
-      ? agentMap?.get(event.actorId)?.name ?? event.actorId.slice(0, 8)
+      ? (agentMap?.get(event.actorId)?.name ?? event.actorId.slice(0, 8))
       : event.actorType === "system"
         ? "System"
-        : formatOwnerUserLabel(
-            event.actorId,
-            currentUserId,
-            userLabelMap,
-          ) ?? "Board";
+        : (formatOwnerUserLabel(event.actorId, currentUserId, userLabelMap) ??
+          "Board");
   const lines = [
     event.followUpRequested
       ? `${actorName} requested follow-up`
@@ -256,13 +248,13 @@ function createTimelineEventMessage(args: {
   if (event.ownerChange) {
     const ownerLabel = (owner: typeof event.ownerChange.from) =>
       owner.ownerAgentId
-        ? agentMap?.get(owner.ownerAgentId)?.name ??
-          owner.ownerAgentId.slice(0, 8)
-        : formatOwnerUserLabel(
+        ? (agentMap?.get(owner.ownerAgentId)?.name ??
+          owner.ownerAgentId.slice(0, 8))
+        : (formatOwnerUserLabel(
             owner.ownerUserId,
             currentUserId,
             userLabelMap,
-          ) ?? "Board escalation";
+          ) ?? "Board escalation");
     lines.push(
       `Owner: ${ownerLabel(event.ownerChange.from)} -> ${ownerLabel(event.ownerChange.to)}`,
     );
@@ -287,11 +279,6 @@ function createTimelineEventMessage(args: {
     },
   };
   return message;
-}
-
-export interface SegmentTiming {
-  startMs: number;
-  endMs: number;
 }
 
 export function isCoTSegmentActive(args: {
@@ -354,7 +341,7 @@ export function buildTaskChatMessages(args: {
   for (const comment of orderedComments) {
     orderedMessages.push({
       createdAtMs: hasGroupedBoardProjection
-        ? comment.boardOrder ?? 0
+        ? (comment.boardOrder ?? 0)
         : toTimestamp(comment.createdAt),
       order: 1,
       message: createCommentMessage({

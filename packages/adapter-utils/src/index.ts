@@ -1,15 +1,11 @@
 export type {
   AdapterModel,
-  AdapterModelLimits,
-  AdapterModelProfileKey,
-  AdapterModelProfileDefinition,
-  ConfigFieldOption,
-  ConfigFieldSchema,
-  AdapterConfigSchema,
-  AcpAdapterConfigValue,
+  AcpAdapterSelectValue,
+  AcpAdapterTextConfigOption,
+  AcpAdapterSelectConfigOption,
+  AcpAdapterToggleConfigOption,
   AcpAdapterConfigOption,
   AcpAdapterLaunchProfile,
-  AcpAdapterEnvironmentRequirements,
   AcpAdapterRuntimeContract,
   AcpAdapterUiMetadata,
   AcpxAdapterDefinition,
@@ -18,10 +14,8 @@ export type {
   CreateConfigValues,
 } from "./types.js";
 export {
-  requireAdapterCatalogModel,
-  sameAdapterModel,
+  requireAdapterModel,
   validateAdapterModel,
-  validateAdapterModelLimits,
 } from "./adapter-model.js";
 export {
   resolveAcpAdapterRevisionConfiguration,
@@ -30,8 +24,7 @@ export {
   REDACTED_COMMAND_TEXT_VALUE,
   redactCommandText,
 } from "./command-redaction.js";
-export { validateServerAdapterModule } from "./server-adapter-contract.js";
-export { validateAdapterConfigSchema } from "./config-schema-validation.js";
-export type {
-  AdapterConfigSchemaValidationResult,
-} from "./config-schema-validation.js";
+export {
+  validateAcpAdapterConfigOptions,
+  validateServerAdapterModule,
+} from "./server-adapter-contract.js";

@@ -7,8 +7,8 @@ import { TaskBlockedNotice } from "@/components/TaskBlockedNotice";
 import { TaskRow } from "@/components/TaskRow";
 import { storybookAgents, createTask } from "../fixtures/paperclipData";
 
-const codexAgent = storybookAgents.find((agent) => agent.id === "agent-codex") ?? storybookAgents[0]!;
-const qaAgent = storybookAgents.find((agent) => agent.id === "agent-qa") ?? storybookAgents[0]!;
+const codexAgent = storybookAgents.find((agent) => agent.id === "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1") ?? storybookAgents[0]!;
+const qaAgent = storybookAgents.find((agent) => agent.id === "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2") ?? storybookAgents[0]!;
 
 function StoryFrame({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -108,7 +108,8 @@ function OwnerBacklogNoticePanel() {
 
 function BlockedByParkedWorkPanel() {
   const parkedBlocker: TaskRelationTaskSummary = {
-    id: "blocker-parked",
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddd026",
+    taskNumber: 3683,
     identifier: "PAP-3683",
     title: "Adapter restart fails after upgrade",
     boardPresentationStatus: "backlog",
@@ -144,7 +145,7 @@ function ListRowsPanel() {
       <div className="rounded-md border border-border">
         <TaskRow
           task={createTask({
-            id: "task-blocked-parent",
+            id: "dddddddd-dddd-4ddd-8ddd-ddddddddd010",
             identifier: "PAP-3643",
             taskNumber: 3643,
             title: "Restart deploy run after fixed adapter",
@@ -152,7 +153,8 @@ function ListRowsPanel() {
             priority: "high",
             blockedBy: [
               {
-                id: "blocker-parked-leaf",
+                id: "dddddddd-dddd-4ddd-8ddd-ddddddddd027",
+                taskNumber: 3683,
                 identifier: "PAP-3683",
                 title: "Adapter restart fails after upgrade",
                 boardPresentationStatus: "backlog",
@@ -175,7 +177,7 @@ function ListRowsPanel() {
         />
         <TaskRow
           task={createTask({
-            id: "task-healthy",
+            id: "dddddddd-dddd-4ddd-8ddd-ddddddddd015",
             identifier: "PAP-3644",
             taskNumber: 3644,
             title: "Compute new deploy budget for next cycle",

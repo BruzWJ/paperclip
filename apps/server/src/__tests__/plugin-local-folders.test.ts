@@ -21,21 +21,27 @@ describe("plugin local folders", () => {
   const tempRoots: string[] = [];
 
   afterEach(async () => {
-    await Promise.all(tempRoots.map((root) => fs.rm(root, { recursive: true, force: true })));
+    await Promise.all(
+      tempRoots.map((root) => fs.rm(root, { recursive: true, force: true })),
+    );
     tempRoots.length = 0;
   });
 
   async function makeRoot() {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-plugin-folder-"));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "paperclip-plugin-folder-"),
+    );
     tempRoots.push(root);
     return root;
   }
 
-  function declaration(overrides: {
-    access?: "read" | "readWrite";
-    requiredDirectories?: string[];
-    requiredFiles?: string[];
-  } = {}) {
+  function declaration(
+    overrides: {
+      access?: "read" | "readWrite";
+      requiredDirectories?: string[];
+      requiredFiles?: string[];
+    } = {},
+  ) {
     return {
       folderKey: "content-root",
       displayName: "Content root",
@@ -46,7 +52,11 @@ describe("plugin local folders", () => {
   }
 
   it("stores only the selected path", () => {
-    const settings = setStoredLocalFolder({ enabled: true }, "content-root", "/tmp/content");
+    const settings = setStoredLocalFolder(
+      { enabled: true },
+      "content-root",
+      "/tmp/content",
+    );
 
     expect(settings).toEqual({
       enabled: true,
@@ -58,15 +68,38 @@ describe("plugin local folders", () => {
     });
   });
 
+  it("rejects padded stored paths and list-window aliases", async () => {
+    expect(() =>
+      setStoredLocalFolder({}, "content-root", " /tmp/content"),
+    ).toThrow(/exact and non-empty/);
+    expect(() =>
+      getStoredLocalFolders({
+        localFolders: { "content-root": { path: "/tmp/content " } },
+      }),
+    ).toThrow(/non-empty path/);
+
+    const root = await makeRoot();
+    await expect(
+      listPluginLocalFolderEntries(root, { relativePath: " nested" }),
+    ).rejects.toMatchObject({ status: 400 });
+    for (const maxEntries of [0, 1.5, 101]) {
+      await expect(
+        listPluginLocalFolderEntries(root, { maxEntries }),
+      ).rejects.toMatchObject({ status: 400 });
+    }
+  });
+
   it("rejects persisted declaration overrides", () => {
-    expect(() => getStoredLocalFolders({
-      localFolders: {
-        "content-root": {
-          path: "/tmp/content",
-          access: "read",
+    expect(() =>
+      getStoredLocalFolders({
+        localFolders: {
+          "content-root": {
+            path: "/tmp/content",
+            access: "read",
+          },
         },
-      },
-    })).toThrow("contains undeclared fields");
+      }),
+    ).toThrow("contains undeclared fields");
   });
 
   it("reports a healthy generic folder when required paths exist", async () => {
@@ -162,9 +195,15 @@ describe("plugin local folders", () => {
       path: root,
     });
 
-    await expect(fs.stat(path.join(root, "sources"))).resolves.toMatchObject({});
-    await expect(fs.stat(path.join(root, "wiki/concepts"))).resolves.toMatchObject({});
-    await expect(fs.stat(path.join(root, "schema.md"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(path.join(root, "sources"))).resolves.toMatchObject(
+      {},
+    );
+    await expect(
+      fs.stat(path.join(root, "wiki/concepts")),
+    ).resolves.toMatchObject({});
+    await expect(fs.stat(path.join(root, "schema.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
 
     const status = await inspectPluginLocalFolder({
       declaration: declaration({
@@ -190,7 +229,9 @@ describe("plugin local folders", () => {
 
     expect(status.missingDirectories).toEqual([]);
     expect(status.missingFiles).toEqual(["schema.md"]);
-    await expect(fs.stat(path.join(root, "sources"))).resolves.toMatchObject({});
+    await expect(fs.stat(path.join(root, "sources"))).resolves.toMatchObject(
+      {},
+    );
   });
 
   it("allows write access to repair folders that are only missing required paths", async () => {
@@ -203,7 +244,9 @@ describe("plugin local folders", () => {
     });
 
     expect(status.healthy).toBe(false);
-    expect(() => assertConfiguredLocalFolder(status)).toThrow("Local folder is not healthy");
+    expect(() => assertConfiguredLocalFolder(status)).toThrow(
+      "Local folder is not healthy",
+    );
     expect(() => assertWritableConfiguredLocalFolder(status)).not.toThrow();
 
     await writePluginLocalFolderTextAtomic(root, "schema.md", "schema");
@@ -219,7 +262,9 @@ describe("plugin local folders", () => {
   it("rejects traversal outside the configured folder", async () => {
     const root = await makeRoot();
 
-    await expect(resolvePluginLocalFolderPath(root, "../outside.txt")).rejects.toMatchObject({
+    await expect(
+      resolvePluginLocalFolderPath(root, "../outside.txt"),
+    ).rejects.toMatchObject({
       status: 403,
     });
   });
@@ -228,7 +273,10 @@ describe("plugin local folders", () => {
     const root = await makeRoot();
     const outside = await makeRoot();
     await fs.writeFile(path.join(outside, "secret.txt"), "nope", "utf8");
-    await fs.symlink(path.join(outside, "secret.txt"), path.join(root, "linked.txt"));
+    await fs.symlink(
+      path.join(outside, "secret.txt"),
+      path.join(root, "linked.txt"),
+    );
 
     const status = await inspectPluginLocalFolder({
       declaration: declaration({
@@ -238,7 +286,9 @@ describe("plugin local folders", () => {
     });
 
     expect(status.healthy).toBe(false);
-    expect(status.problems.some((item) => item.code === "symlink_escape")).toBe(true);
+    expect(status.problems.some((item) => item.code === "symlink_escape")).toBe(
+      true,
+    );
   });
 
   it("writes files atomically under the root and can read them back", async () => {
@@ -248,17 +298,27 @@ describe("plugin local folders", () => {
     await writePluginLocalFolderTextAtomic(root, "nested/page.md", "hello");
     await writePluginLocalFolderTextAtomic(root, "nested/page.md", "updated");
 
-    await expect(readPluginLocalFolderText(root, "nested/page.md")).resolves.toBe("updated");
+    await expect(
+      readPluginLocalFolderText(root, "nested/page.md"),
+    ).resolves.toBe("updated");
     const leftovers = await fs.readdir(path.join(root, "nested"));
-    expect(leftovers.filter((name) => name.includes(".paperclip-"))).toEqual([]);
+    expect(leftovers.filter((name) => name.includes(".paperclip-"))).toEqual(
+      [],
+    );
   });
 
   it("creates missing nested parent directories for atomic writes", async () => {
     const root = await makeRoot();
 
-    await writePluginLocalFolderTextAtomic(root, "cases/active/smoke/README.md", "hello");
+    await writePluginLocalFolderTextAtomic(
+      root,
+      "cases/active/smoke/README.md",
+      "hello",
+    );
 
-    await expect(readPluginLocalFolderText(root, "cases/active/smoke/README.md")).resolves.toBe("hello");
+    await expect(
+      readPluginLocalFolderText(root, "cases/active/smoke/README.md"),
+    ).resolves.toBe("hello");
   });
 
   it("deletes a file without manufacturing a folder status", async () => {
@@ -267,14 +327,20 @@ describe("plugin local folders", () => {
 
     await deletePluginLocalFolderFile(root, "stale.md");
 
-    await expect(fs.stat(path.join(root, "stale.md"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(path.join(root, "stale.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("lists nested local folder entries without following symlink escapes", async () => {
     const root = await makeRoot();
     const outside = await makeRoot();
     await fs.mkdir(path.join(root, "wiki/concepts"), { recursive: true });
-    await fs.writeFile(path.join(root, "wiki/concepts/live.md"), "# Live\n", "utf8");
+    await fs.writeFile(
+      path.join(root, "wiki/concepts/live.md"),
+      "# Live\n",
+      "utf8",
+    );
     await fs.writeFile(path.join(outside, "secret.md"), "# Secret\n", "utf8");
     await fs.symlink(outside, path.join(root, "wiki/outside"));
 
@@ -284,8 +350,12 @@ describe("plugin local folders", () => {
       maxEntries: 20,
     });
 
-    expect(listing.entries.map((entry) => entry.path)).toContain("wiki/concepts/live.md");
-    expect(listing.entries.map((entry) => entry.path)).not.toContain("wiki/outside/secret.md");
+    expect(listing.entries.map((entry) => entry.path)).toContain(
+      "wiki/concepts/live.md",
+    );
+    expect(listing.entries.map((entry) => entry.path)).not.toContain(
+      "wiki/outside/secret.md",
+    );
     expect(listing.truncated).toBe(false);
   });
 
@@ -303,10 +373,14 @@ describe("plugin local folders", () => {
     });
 
     try {
-      await expect(writePluginLocalFolderTextAtomic(root, "nested/page.md", "secret")).rejects.toMatchObject({
+      await expect(
+        writePluginLocalFolderTextAtomic(root, "nested/page.md", "secret"),
+      ).rejects.toMatchObject({
         status: 403,
       });
-      await expect(fs.readFile(path.join(outside, "page.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(
+        fs.readFile(path.join(outside, "page.md"), "utf8"),
+      ).rejects.toMatchObject({ code: "ENOENT" });
       expect(await fs.readdir(outside)).toEqual([]);
     } finally {
       openSpy.mockRestore();

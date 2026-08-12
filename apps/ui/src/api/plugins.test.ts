@@ -21,6 +21,7 @@ vi.mock("./client", () => ({
 import { pluginsApi } from "./plugins";
 
 const PLUGIN_ID = "11111111-1111-4111-8111-111111111111";
+const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 
 describe("pluginsApi installation", () => {
   beforeEach(() => {
@@ -133,33 +134,20 @@ describe("pluginsApi local folders", () => {
   });
 
   it("lists company-scoped local folders for a plugin", async () => {
-    await pluginsApi.listLocalFolders(PLUGIN_ID, "company-1");
+    await pluginsApi.listLocalFolders(PLUGIN_ID, COMPANY_ID);
 
     expect(mockApi.get).toHaveBeenCalledWith(
-      `/plugins/${PLUGIN_ID}/companies/company-1/local-folders`,
-    );
-  });
-
-  it("validates a candidate folder path without saving", async () => {
-    await pluginsApi.validateLocalFolder(PLUGIN_ID, "company-1", "content-root", {
-      path: "/tmp/content",
-    });
-
-    expect(mockApi.post).toHaveBeenCalledWith(
-      `/plugins/${PLUGIN_ID}/companies/company-1/local-folders/content-root/validate`,
-      {
-        path: "/tmp/content",
-      },
+      `/plugins/${PLUGIN_ID}/companies/${COMPANY_ID}/local-folders`,
     );
   });
 
   it("saves through the local-folder PUT endpoint", async () => {
-    await pluginsApi.configureLocalFolder(PLUGIN_ID, "company-1", "content-root", {
+    await pluginsApi.configureLocalFolder(PLUGIN_ID, COMPANY_ID, "content-root", {
       path: "/tmp/content",
     });
 
     expect(mockApi.put).toHaveBeenCalledWith(
-      `/plugins/${PLUGIN_ID}/companies/company-1/local-folders/content-root`,
+      `/plugins/${PLUGIN_ID}/companies/${COMPANY_ID}/local-folders/content-root`,
       {
         path: "/tmp/content",
       },

@@ -1,6 +1,5 @@
 import { api } from "./client";
 import type {
-  CompanyArtifact,
   CompanyArtifactGroupBy,
   CompanyArtifactMediaKind,
   CompanyArtifactsResponse,
@@ -10,9 +9,7 @@ export type {
   CompanyArtifact,
   CompanyArtifactGroup,
   CompanyArtifactGroupBy as ArtifactGroupBy,
-  CompanyArtifactMediaKind as ArtifactMediaKind,
   CompanyArtifactsResponse,
-  CompanyArtifactSource as ArtifactSource,
 } from "@paperclipai/shared";
 
 /**
@@ -29,7 +26,8 @@ export type {
  * frontend and server stay synchronized as the contract evolves.
  */
 
-export type ArtifactKindFilter = Exclude<CompanyArtifactMediaKind, "empty"> | "all";
+export type ArtifactKindFilter =
+  Exclude<CompanyArtifactMediaKind, "empty"> | "all";
 
 export interface ListArtifactsParams {
   kind?: ArtifactKindFilter;
@@ -48,7 +46,8 @@ function buildArtifactsQuery(params?: ListArtifactsParams): string {
   if (params?.kind && params.kind !== "all") search.set("kind", params.kind);
   if (params?.projectId) search.set("projectId", params.projectId);
   if (params?.q) search.set("q", params.q);
-  if (params?.groupBy && params.groupBy !== "none") search.set("groupBy", params.groupBy);
+  if (params?.groupBy && params.groupBy !== "none")
+    search.set("groupBy", params.groupBy);
   if (params?.groupTaskId) search.set("groupTaskId", params.groupTaskId);
   if (params?.limit != null) search.set("limit", String(params.limit));
   if (params?.cursor) search.set("cursor", params.cursor);
@@ -56,30 +55,12 @@ function buildArtifactsQuery(params?: ListArtifactsParams): string {
   return qs ? `?${qs}` : "";
 }
 
-/**
- * Normalize the endpoint response. The contract is an envelope
- * (`{ artifacts, groups?, selectedGroup?, nextCursor }`), but we also tolerate a
- * bare array so the page keeps working if the backend ships the simpler shape.
- */
-function normalizeArtifactsResponse(
-  raw: CompanyArtifactsResponse | CompanyArtifact[],
-): CompanyArtifactsResponse {
-  if (Array.isArray(raw)) {
-    return { artifacts: raw, nextCursor: null };
-  }
-  return {
-    artifacts: raw.artifacts ?? [],
-    groups: raw.groups,
-    selectedGroup: raw.selectedGroup,
-    nextCursor: raw.nextCursor ?? null,
-  };
-}
-
 export const artifactsApi = {
-  list: async (companyId: string, params?: ListArtifactsParams): Promise<CompanyArtifactsResponse> => {
-    const raw = await api.get<CompanyArtifactsResponse | CompanyArtifact[]>(
+  list: (
+    companyId: string,
+    params?: ListArtifactsParams,
+  ): Promise<CompanyArtifactsResponse> =>
+    api.get<CompanyArtifactsResponse>(
       `/companies/${companyId}/artifacts${buildArtifactsQuery(params)}`,
-    );
-    return normalizeArtifactsResponse(raw);
-  },
+    ),
 };

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import { addValidationDetail } from "../validation-details.js";
 import { APPROVAL_TYPES } from "../constants.js";
 import { runtimeAgentCreateConfigurationSchema } from "./runtime-agent-configuration.js";
@@ -13,9 +14,12 @@ const genericApprovalTypeSchema = z
 
 export const createApprovalSchema = z.object({
   type: genericApprovalTypeSchema,
-  requestedByAgentId: z.string().uuid().optional().nullable(),
+  requestedByAgentId: canonicalUuidSchema.optional().nullable(),
   payload: z.record(z.string(), z.unknown()),
-  taskIds: z.array(z.string().uuid()).optional(),
+  taskIds: z.array(canonicalUuidSchema).optional().refine(
+    (taskIds) => taskIds === undefined || new Set(taskIds).size === taskIds.length,
+    { message: "Task IDs must be unique" },
+  ),
 }).strict();
 
 export type CreateApproval = z.infer<typeof createApprovalSchema>;
@@ -23,16 +27,16 @@ export type CreateApproval = z.infer<typeof createApprovalSchema>;
 const hireAgentApprovalRunSourceSchema = z
   .object({
     kind: z.literal("agent_run"),
-    taskId: z.string().uuid(),
-    runId: z.string().uuid(),
-    taskExecutionRefId: z.string().uuid(),
+    taskId: canonicalUuidSchema,
+    runId: canonicalUuidSchema,
+    taskExecutionRefId: canonicalUuidSchema,
   })
   .strict();
 
 const hireAgentApprovalPluginSourceSchema = z
   .object({
     kind: z.literal("plugin_control"),
-    pluginInstallationId: z.string().uuid(),
+    pluginInstallationId: canonicalUuidSchema,
   })
   .strict();
 
@@ -45,8 +49,8 @@ const hireAgentApprovalPluginSourceSchema = z
 export const hireAgentApprovalPayloadSchema = z
   .object({
     contract: z.literal("paperclip.hire-approval/v1"),
-    agentId: z.string().uuid(),
-    runtimeAgentConfigurationAuditId: z.string().uuid(),
+    agentId: canonicalUuidSchema,
+    runtimeAgentConfigurationAuditId: canonicalUuidSchema,
     runtimeAgentConfigurationRequestDigest: z
       .string()
       .regex(/^[a-f0-9]{64}$/),
@@ -67,8 +71,8 @@ export type HireAgentApprovalPayload = z.infer<
  */
 export const hireAgentApprovalResubmissionSchema = z
   .object({
-    agentId: z.string().uuid(),
-    runtimeAgentConfigurationAuditId: z.string().uuid(),
+    agentId: canonicalUuidSchema,
+    runtimeAgentConfigurationAuditId: canonicalUuidSchema,
     runtimeAgentConfigurationRequestDigest: z
       .string()
       .regex(/^[a-f0-9]{64}$/),

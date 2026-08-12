@@ -1,22 +1,14 @@
-import {
-  describe,
-  expect,
-  expectTypeOf,
-  it,
-} from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   acceptInviteSchema,
+  createCompanyInviteSchema,
   agentAdapterRevisionConfigurationSchema,
   runtimeAgentCreateConfigurationSchema,
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
 } from "./index.js";
-import type {
-  Agent,
-  AgentAdapterType,
-  CompanyPortabilityAgentManifestEntry,
-} from "./index.js";
+import type { Agent, CompanyPortabilityAgentManifestEntry } from "./index.js";
 
 function allFalse(keys: readonly string[]) {
   return Object.fromEntries(keys.map((key) => [key, false]));
@@ -28,8 +20,6 @@ describe("dynamic adapter type validation schemas", () => {
       agentAdapterRevisionConfigurationSchema.parse({
         adapterType: "external_adapter",
         adapterConfig: {},
-        runtimeConfig: {},
-        companySkillPins: [],
       }).adapterType,
     ).toBe("external_adapter");
   });
@@ -39,46 +29,40 @@ describe("dynamic adapter type validation schemas", () => {
       agentAdapterRevisionConfigurationSchema.safeParse({
         adapterType: "   ",
         adapterConfig: {},
-        runtimeConfig: {},
       }).success,
     ).toBe(false);
     expect(
       agentAdapterRevisionConfigurationSchema.safeParse({
         adapterType: "external_adapter",
-        runtimeConfig: {},
+      }).success,
+    ).toBe(false);
+    expect(
+      agentAdapterRevisionConfigurationSchema.safeParse({
+        adapterType: " external_adapter ",
+        adapterConfig: {},
       }).success,
     ).toBe(false);
   });
 
-  it("represents an unconfigured API agent with nullable adapter fields", () => {
-    expectTypeOf<Agent["adapterType"]>().toEqualTypeOf<
-      AgentAdapterType | null
-    >();
-    expectTypeOf<Agent["adapterConfig"]>().toEqualTypeOf<
-      Record<string, unknown> | null
+  it("represents an agent through one current revision identity", () => {
+    expectTypeOf<Agent["currentAdapterConfigRevisionId"]>().toEqualTypeOf<
+      string | null
     >();
     expectTypeOf<
-      CompanyPortabilityAgentManifestEntry["adapterRevision"]["adapterType"]
-    >().toEqualTypeOf<string>();
-    expectTypeOf<
-      CompanyPortabilityAgentManifestEntry["adapterRevision"]["adapterConfig"]
-    >().toEqualTypeOf<Record<string, unknown>>();
+      CompanyPortabilityAgentManifestEntry["adapterRevision"]["acpConfiguration"]
+    >().toMatchTypeOf<{ launchProfile: { registryName: string } }>();
   });
 
-  it("accepts external adapter types only with explicit invite config", () => {
+  it("keeps invite payloads exact", () => {
     expect(
-      acceptInviteSchema.parse({
-        requestType: "agent",
-        agentName: "External Joiner",
-        adapterType: "external_adapter",
-        agentDefaultsPayload: {},
-      }).adapterType,
-    ).toBe("external_adapter");
+      createCompanyInviteSchema.safeParse({
+        userRole: "operator",
+        obsoleteField: "operator",
+      }).success,
+    ).toBe(false);
     expect(
       acceptInviteSchema.safeParse({
-        requestType: "agent",
-        agentName: "Implicit Joiner",
-        adapterType: "external_adapter",
+        obsoleteField: "user",
       }).success,
     ).toBe(false);
   });
@@ -93,9 +77,7 @@ describe("dynamic adapter type validation schemas", () => {
         instruction: null,
         contextGrants: allFalse(AGENT_CONTEXT_GRANT_KEYS),
         actionGrants: allFalse(PAPERCLIP_ACTION_KEYS),
-        mentionReachGrants: allFalse(
-          AGENT_MENTION_REACH_GRANT_KEYS,
-        ),
+        mentionReachGrants: allFalse(AGENT_MENTION_REACH_GRANT_KEYS),
         role: "security",
       }).success,
     ).toBe(false);

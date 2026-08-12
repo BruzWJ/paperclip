@@ -11,6 +11,8 @@ import type {
   CompanyPortabilityPreviewResult,
   CompanyPortabilityImportResult,
 } from "@paperclipai/shared";
+import { isCanonicalUuid, isPortableRelativePath } from "@paperclipai/shared";
+import { validateCanonicalGithubImportSourceUrl } from "@paperclipai/shared/company-portability-source";
 import { getTelemetryClient, trackCompanyImported } from "../../telemetry.js";
 import { ApiRequestError } from "../../client/http.js";
 import { openUrl } from "../../client/board-auth.js";
@@ -25,32 +27,28 @@ import {
   type BaseClientOptions,
 } from "./common.js";
 import { parseExplicitAdapterOverrides } from "./adapter-overrides.js";
+import { parseExactInclude } from "./exact-include.js";
 
 interface CompanyCommandOptions extends BaseClientOptions {}
 interface CompanyJsonOptions extends BaseClientOptions {
   companyId?: string;
   payloadJson?: string;
 }
-type CompanyDeleteSelectorMode = "auto" | "id" | "prefix";
 type CompanyImportTargetMode = "new" | "existing";
 type CompanyCollisionMode = "rename" | "skip" | "replace";
 
 interface CompanyDeleteOptions extends BaseClientOptions {
-  by?: CompanyDeleteSelectorMode;
   yes?: boolean;
   confirm?: string;
 }
 
 interface CompanyExportOptions extends BaseClientOptions {
   out?: string;
-  include?: string;
-  skills?: string;
+  include: string;
   projects?: string;
   tasks?: string;
   projectTasks?: string;
-  expandReferencedSkills?: boolean;
 }
-
 
 interface CompanyImportOptions extends BaseClientOptions {
   include?: string;
@@ -59,39 +57,34 @@ interface CompanyImportOptions extends BaseClientOptions {
   newCompanyName?: string;
   agents?: string;
   collision?: CompanyCollisionMode;
-  ref?: string;
   yes?: boolean;
   dryRun?: boolean;
   adapterOverride?: string[];
   adapterConfig?: string[];
 }
 
-const DEFAULT_EXPORT_INCLUDE: CompanyPortabilityInclude = {
-  company: true,
-  agents: true,
-  projects: false,
-  tasks: false,
-  skills: false,
-};
-
-const DEFAULT_IMPORT_INCLUDE: CompanyPortabilityInclude = {
-  company: true,
-  agents: true,
-  projects: true,
-  tasks: true,
-  skills: true,
-};
+const COMPANY_INCLUDE_SELECTORS = [
+  "company",
+  "agents",
+  "projects",
+  "tasks",
+] as const;
+const DEFAULT_EXPORT_INCLUDE = "company,agents";
+const DEFAULT_IMPORT_INCLUDE = "company,agents,projects,tasks";
 
 const IMPORT_INCLUDE_OPTIONS: Array<{
   value: keyof CompanyPortabilityInclude;
   label: string;
   hint: string;
 }> = [
-  { value: "company", label: "Company", hint: "name, branding, and company settings" },
+  {
+    value: "company",
+    label: "Company",
+    hint: "name, branding, and company settings",
+  },
   { value: "projects", label: "Projects", hint: "project metadata" },
   { value: "tasks", label: "Tasks", hint: "tasks and recurring routines" },
   { value: "agents", label: "Agents", hint: "agent records and org structure" },
-  { value: "skills", label: "Skills", hint: "company skill packages and references" },
 ];
 
 const IMPORT_PREVIEW_SAMPLE_LIMIT = 6;
@@ -100,17 +93,21 @@ function collectOptionValue(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
-type ImportSelectableGroup = "projects" | "tasks" | "agents" | "skills";
+type ImportSelectableGroup = "projects" | "tasks" | "agents";
 
 type ImportSelectionCatalog = {
   company: {
     includedByDefault: boolean;
     files: string[];
   };
-  projects: Array<{ key: string; label: string; hint?: string; files: string[] }>;
+  projects: Array<{
+    key: string;
+    label: string;
+    hint?: string;
+    files: string[];
+  }>;
   tasks: Array<{ key: string; label: string; hint?: string; files: string[] }>;
   agents: Array<{ key: string; label: string; hint?: string; files: string[] }>;
-  skills: Array<{ key: string; label: string; hint?: string; files: string[] }>;
   extensionPath: string | null;
 };
 
@@ -119,11 +116,14 @@ type ImportSelectionState = {
   projects: Set<string>;
   tasks: Set<string>;
   agents: Set<string>;
-  skills: Set<string>;
 };
 
-function readPortableFileEntry(filePath: string, contents: Buffer): CompanyPortabilityFileEntry {
-  const contentType = binaryContentTypeByExtension[path.extname(filePath).toLowerCase()];
+function readPortableFileEntry(
+  filePath: string,
+  contents: Buffer,
+): CompanyPortabilityFileEntry {
+  const contentType =
+    binaryContentTypeByExtension[path.extname(filePath).toLowerCase()];
   if (!contentType) return contents.toString("utf8");
   return {
     encoding: "base64",
@@ -132,76 +132,97 @@ function readPortableFileEntry(filePath: string, contents: Buffer): CompanyPorta
   };
 }
 
-function portableFileEntryToWriteValue(entry: CompanyPortabilityFileEntry): string | Uint8Array {
+function portableFileEntryToWriteValue(
+  entry: CompanyPortabilityFileEntry,
+): string | Uint8Array {
   if (typeof entry === "string") return entry;
   return Buffer.from(entry.data, "base64");
 }
 
-function isUuidLike(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function normalizeSelector(input: string): string {
-  return input.trim();
-}
-
-function parseInclude(
-  input: string | undefined,
-  fallback: CompanyPortabilityInclude = DEFAULT_EXPORT_INCLUDE,
-): CompanyPortabilityInclude {
-  if (!input || !input.trim()) return { ...fallback };
-  const values = input.split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
-  const include = {
-    company: values.includes("company"),
-    agents: values.includes("agents"),
-    projects: values.includes("projects"),
-    tasks: values.includes("tasks"),
-    skills: values.includes("skills"),
+export function parseCompanyInclude(input: string): CompanyPortabilityInclude {
+  const selected = parseExactInclude(input, COMPANY_INCLUDE_SELECTORS);
+  return {
+    company: selected.has("company"),
+    agents: selected.has("agents"),
+    projects: selected.has("projects"),
+    tasks: selected.has("tasks"),
   };
-  if (!include.company && !include.agents && !include.projects && !include.tasks && !include.skills) {
-    throw new Error("Invalid --include value. Use one or more of: company,agents,projects,tasks,skills");
-  }
-  return include;
 }
 
 function parseAgents(input: string | undefined): "all" | string[] {
-  if (!input || !input.trim()) return "all";
-  const normalized = input.trim().toLowerCase();
-  if (normalized === "all") return "all";
-  const values = input.split(",").map((part) => part.trim()).filter(Boolean);
-  if (values.length === 0) return "all";
-  return Array.from(new Set(values));
+  if (input === undefined || input === "all") return "all";
+  const values = input.split(",");
+  if (
+    values.length === 0 ||
+    values.some((value) => value.length === 0 || value.trim() !== value) ||
+    new Set(values).size !== values.length
+  ) {
+    throw new Error(
+      "Agent slugs must be a non-empty, duplicate-free list using exact package spelling, or exactly 'all'.",
+    );
+  }
+  return values;
 }
 
-function parseCsvValues(input: string | undefined): string[] {
-  if (!input || !input.trim()) return [];
-  return Array.from(new Set(input.split(",").map((part) => part.trim()).filter(Boolean)));
+function parseExactSelectors(
+  input: string | undefined,
+  label: string,
+  isValid: (value: string) => boolean,
+): string[] {
+  if (input === undefined) return [];
+  const values = input.split(",");
+  if (
+    values.length === 0 ||
+    values.some((value) => !isValid(value)) ||
+    new Set(values).size !== values.length
+  ) {
+    throw new Error(
+      `${label} must be a non-empty, duplicate-free list using exact canonical spelling.`,
+    );
+  }
+  return values;
 }
 
 function isInteractiveTerminal(): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
 }
 
-function resolveImportInclude(input: string | undefined): CompanyPortabilityInclude {
-  return parseInclude(input, DEFAULT_IMPORT_INCLUDE);
+function resolveImportInclude(
+  input: string | undefined,
+): CompanyPortabilityInclude {
+  return parseCompanyInclude(
+    input === undefined ? DEFAULT_IMPORT_INCLUDE : input,
+  );
 }
 
-function normalizePortablePath(filePath: string): string {
-  return filePath.replace(/\\/g, "/");
+function requirePortablePath(filePath: string): string {
+  if (!isPortableRelativePath(filePath)) {
+    throw new Error(`Invalid non-canonical portable path: ${filePath}`);
+  }
+  return filePath;
 }
 
 function shouldIncludePortableFile(filePath: string): boolean {
   const baseName = path.basename(filePath);
   const isMarkdown = baseName.endsWith(".md");
-  const isPaperclipYaml = baseName === ".paperclip.yaml" || baseName === ".paperclip.yml";
-  const contentType = binaryContentTypeByExtension[path.extname(baseName).toLowerCase()];
+  const isPaperclipYaml =
+    baseName === ".paperclip.yaml" || baseName === ".paperclip.yml";
+  const contentType =
+    binaryContentTypeByExtension[path.extname(baseName).toLowerCase()];
   return isMarkdown || isPaperclipYaml || Boolean(contentType);
 }
 
-function findPortableExtensionPath(files: Record<string, CompanyPortabilityFileEntry>): string | null {
+function findPortableExtensionPath(
+  files: Record<string, CompanyPortabilityFileEntry>,
+): string | null {
   if (files[".paperclip.yaml"] !== undefined) return ".paperclip.yaml";
   if (files[".paperclip.yml"] !== undefined) return ".paperclip.yml";
-  return Object.keys(files).find((entry) => entry.endsWith("/.paperclip.yaml") || entry.endsWith("/.paperclip.yml")) ?? null;
+  return (
+    Object.keys(files).find(
+      (entry) =>
+        entry.endsWith("/.paperclip.yaml") || entry.endsWith("/.paperclip.yml"),
+    ) ?? null
+  );
 }
 
 function collectFilesUnderDirectory(
@@ -209,14 +230,19 @@ function collectFilesUnderDirectory(
   directory: string,
   opts?: { excludePrefixes?: string[] },
 ): string[] {
-  const normalizedDirectory = normalizePortablePath(directory).replace(/\/+$/, "");
-  if (!normalizedDirectory) return [];
-  const prefix = `${normalizedDirectory}/`;
-  const excluded = (opts?.excludePrefixes ?? []).map((entry) => normalizePortablePath(entry).replace(/\/+$/, "")).filter(Boolean);
+  if (!directory) return [];
+  const canonicalDirectory = requirePortablePath(directory);
+  const prefix = `${canonicalDirectory}/`;
+  const excluded = (opts?.excludePrefixes ?? []).map(requirePortablePath);
   return Object.keys(files)
-    .map(normalizePortablePath)
+    .map(requirePortablePath)
     .filter((filePath) => filePath.startsWith(prefix))
-    .filter((filePath) => !excluded.some((excludePrefix) => filePath.startsWith(`${excludePrefix}/`)))
+    .filter(
+      (filePath) =>
+        !excluded.some((excludePrefix) =>
+          filePath.startsWith(`${excludePrefix}/`),
+        ),
+    )
     .sort((left, right) => left.localeCompare(right));
 }
 
@@ -225,9 +251,11 @@ function collectEntityFiles(
   entryPath: string,
   opts?: { excludePrefixes?: string[] },
 ): string[] {
-  const normalizedPath = normalizePortablePath(entryPath);
-  const directory = normalizedPath.includes("/") ? normalizedPath.slice(0, normalizedPath.lastIndexOf("/")) : "";
-  const selected = new Set<string>([normalizedPath]);
+  const canonicalPath = requirePortablePath(entryPath);
+  const directory = canonicalPath.includes("/")
+    ? canonicalPath.slice(0, canonicalPath.lastIndexOf("/"))
+    : "";
+  const selected = new Set<string>([canonicalPath]);
   if (directory) {
     for (const filePath of collectFilesUnderDirectory(files, directory, opts)) {
       selected.add(filePath);
@@ -236,30 +264,43 @@ function collectEntityFiles(
   return Array.from(selected).sort((left, right) => left.localeCompare(right));
 }
 
-export function buildImportSelectionCatalog(preview: CompanyPortabilityPreviewResult): ImportSelectionCatalog {
+export function buildImportSelectionCatalog(
+  preview: CompanyPortabilityPreviewResult,
+): ImportSelectionCatalog {
   const selectedAgentSlugs = new Set(preview.selectedAgentSlugs);
   const companyFiles = new Set<string>();
-  const companyPath = preview.manifest.company?.path ? normalizePortablePath(preview.manifest.company.path) : null;
+  const companyPath = preview.manifest.company?.path
+    ? requirePortablePath(preview.manifest.company.path)
+    : null;
   if (companyPath) {
     companyFiles.add(companyPath);
   }
-  const readmePath = Object.keys(preview.files).find((entry) => normalizePortablePath(entry) === "README.md");
+  const readmePath = Object.keys(preview.files).find(
+    (entry) => requirePortablePath(entry) === "README.md",
+  );
   if (readmePath) {
-    companyFiles.add(normalizePortablePath(readmePath));
+    companyFiles.add(requirePortablePath(readmePath));
   }
-  const logoPath = preview.manifest.company?.logoPath ? normalizePortablePath(preview.manifest.company.logoPath) : null;
+  const logoPath = preview.manifest.company?.logoPath
+    ? requirePortablePath(preview.manifest.company.logoPath)
+    : null;
   if (logoPath && preview.files[logoPath] !== undefined) {
     companyFiles.add(logoPath);
   }
 
   return {
     company: {
-      includedByDefault: preview.include.company && preview.manifest.company !== null,
-      files: Array.from(companyFiles).sort((left, right) => left.localeCompare(right)),
+      includedByDefault:
+        preview.include.company && preview.manifest.company !== null,
+      files: Array.from(companyFiles).sort((left, right) =>
+        left.localeCompare(right),
+      ),
     },
     projects: preview.manifest.projects.map((project) => {
-      const projectPath = normalizePortablePath(project.path);
-      const projectDir = projectPath.includes("/") ? projectPath.slice(0, projectPath.lastIndexOf("/")) : "";
+      const projectPath = requirePortablePath(project.path);
+      const projectDir = projectPath.includes("/")
+        ? projectPath.slice(0, projectPath.lastIndexOf("/"))
+        : "";
       return {
         key: project.slug,
         label: project.name,
@@ -271,24 +312,24 @@ export function buildImportSelectionCatalog(preview: CompanyPortabilityPreviewRe
     }),
     tasks: preview.manifest.tasks.map((task) => ({
       key: task.slug,
-      label: task.title ?? task.identifier ?? `Task ${task.slug}`,
-      hint: task.identifier ?? task.slug,
-      files: collectEntityFiles(preview.files, normalizePortablePath(task.path)),
+      label: task.title ?? task.slug,
+      hint: task.slug,
+      files: collectEntityFiles(preview.files, requirePortablePath(task.path)),
     })),
     agents: preview.manifest.agents
-      .filter((agent) => selectedAgentSlugs.size === 0 || selectedAgentSlugs.has(agent.slug))
+      .filter(
+        (agent) =>
+          selectedAgentSlugs.size === 0 || selectedAgentSlugs.has(agent.slug),
+      )
       .map((agent) => ({
         key: agent.slug,
         label: agent.name,
         hint: agent.slug,
-        files: collectEntityFiles(preview.files, normalizePortablePath(agent.path)),
+        files: collectEntityFiles(
+          preview.files,
+          requirePortablePath(agent.path),
+        ),
       })),
-    skills: preview.manifest.skills.map((skill) => ({
-      key: skill.slug,
-      label: skill.name,
-      hint: skill.slug,
-      files: collectEntityFiles(preview.files, normalizePortablePath(skill.path)),
-    })),
     extensionPath: findPortableExtensionPath(preview.files),
   };
 }
@@ -297,25 +338,36 @@ function toKeySet(items: Array<{ key: string }>): Set<string> {
   return new Set(items.map((item) => item.key));
 }
 
-export function buildDefaultImportSelectionState(catalog: ImportSelectionCatalog): ImportSelectionState {
+export function buildDefaultImportSelectionState(
+  catalog: ImportSelectionCatalog,
+): ImportSelectionState {
   return {
     company: catalog.company.includedByDefault,
     projects: toKeySet(catalog.projects),
     tasks: toKeySet(catalog.tasks),
     agents: toKeySet(catalog.agents),
-    skills: toKeySet(catalog.skills),
   };
 }
 
-function countSelected(state: ImportSelectionState, group: ImportSelectableGroup): number {
+function countSelected(
+  state: ImportSelectionState,
+  group: ImportSelectableGroup,
+): number {
   return state[group].size;
 }
 
-function countTotal(catalog: ImportSelectionCatalog, group: ImportSelectableGroup): number {
+function countTotal(
+  catalog: ImportSelectionCatalog,
+  group: ImportSelectableGroup,
+): number {
   return catalog[group].length;
 }
 
-function summarizeGroupSelection(catalog: ImportSelectionCatalog, state: ImportSelectionState, group: ImportSelectableGroup): string {
+function summarizeGroupSelection(
+  catalog: ImportSelectionCatalog,
+  state: ImportSelectionState,
+  group: ImportSelectableGroup,
+): string {
   return `${countSelected(state, group)}/${countTotal(catalog, group)} selected`;
 }
 
@@ -327,8 +379,6 @@ function getGroupLabel(group: ImportSelectableGroup): string {
       return "Tasks";
     case "agents":
       return "Agents";
-    case "skills":
-      return "Skills";
   }
 }
 
@@ -340,39 +390,46 @@ export function buildSelectedFilesFromImportSelection(
 
   if (state.company) {
     for (const filePath of catalog.company.files) {
-      selected.add(normalizePortablePath(filePath));
+      selected.add(requirePortablePath(filePath));
     }
   }
 
-  for (const group of ["projects", "tasks", "agents", "skills"] as const) {
+  for (const group of ["projects", "tasks", "agents"] as const) {
     const selectedKeys = state[group];
     for (const item of catalog[group]) {
       if (!selectedKeys.has(item.key)) continue;
       for (const filePath of item.files) {
-        selected.add(normalizePortablePath(filePath));
+        selected.add(requirePortablePath(filePath));
       }
     }
   }
 
   if (catalog.extensionPath) {
-    selected.add(normalizePortablePath(catalog.extensionPath));
+    selected.add(requirePortablePath(catalog.extensionPath));
   }
 
   return Array.from(selected).sort((left, right) => left.localeCompare(right));
 }
 
-async function promptForImportSelection(preview: CompanyPortabilityPreviewResult): Promise<string[]> {
+async function promptForImportSelection(
+  preview: CompanyPortabilityPreviewResult,
+): Promise<string[]> {
   const catalog = buildImportSelectionCatalog(preview);
   const state = buildDefaultImportSelectionState(catalog);
 
   while (true) {
-    const choice = await p.select<ImportSelectableGroup | "company" | "confirm">({
+    const choice = await p.select<
+      ImportSelectableGroup | "company" | "confirm"
+    >({
       message: "Select what Paperclip should import",
       options: [
         {
           value: "company",
           label: state.company ? "Company: included" : "Company: skipped",
-          hint: catalog.company.files.length > 0 ? "toggle company metadata" : "no company metadata in package",
+          hint:
+            catalog.company.files.length > 0
+              ? "toggle company metadata"
+              : "no company metadata in package",
         },
         {
           value: "projects",
@@ -390,11 +447,6 @@ async function promptForImportSelection(preview: CompanyPortabilityPreviewResult
           hint: summarizeGroupSelection(catalog, state, "agents"),
         },
         {
-          value: "skills",
-          label: "Select Skills",
-          hint: summarizeGroupSelection(catalog, state, "skills"),
-        },
-        {
           value: "confirm",
           label: "Confirm",
           hint: `${buildSelectedFilesFromImportSelection(catalog, state).length} files selected`,
@@ -409,9 +461,15 @@ async function promptForImportSelection(preview: CompanyPortabilityPreviewResult
     }
 
     if (choice === "confirm") {
-      const selectedFiles = buildSelectedFilesFromImportSelection(catalog, state);
+      const selectedFiles = buildSelectedFilesFromImportSelection(
+        catalog,
+        state,
+      );
       if (selectedFiles.length === 0) {
-        p.note("Select at least one import target before confirming.", "Nothing selected");
+        p.note(
+          "Select at least one import target before confirming.",
+          "Nothing selected",
+        );
         continue;
       }
       return selectedFiles;
@@ -419,7 +477,10 @@ async function promptForImportSelection(preview: CompanyPortabilityPreviewResult
 
     if (choice === "company") {
       if (catalog.company.files.length === 0) {
-        p.note("This package does not include company metadata to toggle.", "No company metadata");
+        p.note(
+          "This package does not include company metadata to toggle.",
+          "No company metadata",
+        );
         continue;
       }
       state.company = !state.company;
@@ -429,7 +490,10 @@ async function promptForImportSelection(preview: CompanyPortabilityPreviewResult
     const group = choice;
     const groupItems = catalog[group];
     if (groupItems.length === 0) {
-      p.note(`This package does not include any ${getGroupLabel(group).toLowerCase()}.`, `No ${getGroupLabel(group)}`);
+      p.note(
+        `This package does not include any ${getGroupLabel(group).toLowerCase()}.`,
+        `No ${getGroupLabel(group)}`,
+      );
       continue;
     }
 
@@ -453,13 +517,17 @@ async function promptForImportSelection(preview: CompanyPortabilityPreviewResult
 }
 
 function summarizeInclude(include: CompanyPortabilityInclude): string {
-  const labels = IMPORT_INCLUDE_OPTIONS
-    .filter((option) => include[option.value])
-    .map((option) => option.label.toLowerCase());
+  const labels = IMPORT_INCLUDE_OPTIONS.filter(
+    (option) => include[option.value],
+  ).map((option) => option.label.toLowerCase());
   return labels.length > 0 ? labels.join(", ") : "nothing selected";
 }
 
-function formatSourceLabel(source: { type: "inline"; rootPath?: string | null } | { type: "github"; url: string }): string {
+function formatSourceLabel(
+  source:
+    | { type: "inline"; rootPath?: string | null }
+    | { type: "github"; url: string },
+): string {
   if (source.type === "github") {
     return `GitHub: ${source.url}`;
   }
@@ -467,18 +535,29 @@ function formatSourceLabel(source: { type: "inline"; rootPath?: string | null } 
 }
 
 function formatTargetLabel(
-  target: { mode: "existing_company"; companyId?: string | null } | { mode: "new_company"; newCompanyName?: string | null },
+  target:
+    | { mode: "existing_company"; companyId?: string | null }
+    | { mode: "new_company"; newCompanyName?: string | null },
   preview?: CompanyPortabilityPreviewResult,
 ): string {
   if (target.mode === "existing_company") {
     const targetName = preview?.targetCompanyName?.trim();
-    const targetId = preview?.targetCompanyId?.trim() || target.companyId?.trim() || "unknown-company";
+    const targetId =
+      preview?.targetCompanyId || target.companyId || "unknown-company";
     return targetName ? `${targetName} (${targetId})` : targetId;
   }
-  return target.newCompanyName?.trim() || preview?.manifest.company?.name || "new company";
+  return (
+    target.newCompanyName?.trim() ||
+    preview?.manifest.company?.name ||
+    "new company"
+  );
 }
 
-function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+function pluralize(
+  count: number,
+  singular: string,
+  plural = `${singular}s`,
+): string {
   return count === 1 ? singular : plural;
 }
 
@@ -497,7 +576,9 @@ function summarizePlanCounts(
   return `${plans.length} ${pluralize(plans.length, noun)} total (${parts.join(", ")})`;
 }
 
-function summarizeImportAgentResults(agents: CompanyPortabilityImportResult["agents"]): string {
+function summarizeImportAgentResults(
+  agents: CompanyPortabilityImportResult["agents"],
+): string {
   if (agents.length === 0) return "0 agents changed";
   const created = agents.filter((agent) => agent.action === "created").length;
   const updated = agents.filter((agent) => agent.action === "updated").length;
@@ -509,11 +590,19 @@ function summarizeImportAgentResults(agents: CompanyPortabilityImportResult["age
   return `${agents.length} ${pluralize(agents.length, "agent")} total (${parts.join(", ")})`;
 }
 
-function summarizeImportProjectResults(projects: CompanyPortabilityImportResult["projects"]): string {
+function summarizeImportProjectResults(
+  projects: CompanyPortabilityImportResult["projects"],
+): string {
   if (projects.length === 0) return "0 projects changed";
-  const created = projects.filter((project) => project.action === "created").length;
-  const updated = projects.filter((project) => project.action === "updated").length;
-  const skipped = projects.filter((project) => project.action === "skipped").length;
+  const created = projects.filter(
+    (project) => project.action === "created",
+  ).length;
+  const updated = projects.filter(
+    (project) => project.action === "updated",
+  ).length;
+  const skipped = projects.filter(
+    (project) => project.action === "skipped",
+  ).length;
   const parts: string[] = [];
   if (created > 0) parts.push(`${created} created`);
   if (updated > 0) parts.push(`${updated} updated`);
@@ -549,7 +638,9 @@ function appendPreviewExamples(
   lines.push(pc.bold(title));
   const shown = entries.slice(0, IMPORT_PREVIEW_SAMPLE_LIMIT);
   for (const entry of shown) {
-    const reason = entry.reason?.trim() ? pc.dim(` (${entry.reason.trim()})`) : "";
+    const reason = entry.reason?.trim()
+      ? pc.dim(` (${entry.reason.trim()})`)
+      : "";
     lines.push(`- ${actionChip(entry.action)} ${entry.label}${reason}`);
   }
   if (entries.length > shown.length) {
@@ -557,7 +648,11 @@ function appendPreviewExamples(
   }
 }
 
-function appendMessageBlock(lines: string[], title: string, messages: string[]): void {
+function appendMessageBlock(
+  lines: string[],
+  title: string,
+  messages: string[],
+): void {
   if (messages.length === 0) return;
   lines.push("");
   lines.push(pc.bold(title));
@@ -585,24 +680,29 @@ export function renderCompanyImportPreview(
     `- agents: ${preview.manifest.agents.length}`,
     `- projects: ${preview.manifest.projects.length}`,
     `- tasks: ${preview.manifest.tasks.length}`,
-    `- skills: ${preview.manifest.skills.length}`,
   ];
 
   if (preview.envInputs.length > 0) {
-    const requiredCount = preview.envInputs.filter((item) => item.requirement === "required").length;
-    lines.push(`- env inputs: ${preview.envInputs.length} (${requiredCount} required)`);
+    const requiredCount = preview.envInputs.filter(
+      (item) => item.requirement === "required",
+    ).length;
+    lines.push(
+      `- env inputs: ${preview.envInputs.length} (${requiredCount} required)`,
+    );
   }
 
   lines.push("");
   lines.push(pc.bold("Plan"));
-  lines.push(`- company: ${actionChip(preview.plan.companyAction === "none" ? "unchanged" : preview.plan.companyAction)}`);
-  lines.push(`- agents: ${summarizePlanCounts(preview.plan.agentPlans, "agent")}`);
-  lines.push(`- projects: ${summarizePlanCounts(preview.plan.projectPlans, "project")}`);
+  lines.push(
+    `- company: ${actionChip(preview.plan.companyAction === "none" ? "unchanged" : preview.plan.companyAction)}`,
+  );
+  lines.push(
+    `- agents: ${summarizePlanCounts(preview.plan.agentPlans, "agent")}`,
+  );
+  lines.push(
+    `- projects: ${summarizePlanCounts(preview.plan.projectPlans, "project")}`,
+  );
   lines.push(`- tasks: ${summarizePlanCounts(preview.plan.taskPlans, "task")}`);
-  if (preview.include.skills) {
-    lines.push(`- skills: ${preview.manifest.skills.length} ${pluralize(preview.manifest.skills.length, "skill")} packaged`);
-  }
-
   appendPreviewExamples(
     lines,
     "Agent examples",
@@ -686,7 +786,11 @@ export function renderCompanyImportResult(
   return lines.join("\n");
 }
 
-function printCompanyImportView(title: string, body: string, opts?: { interactive?: boolean }): void {
+function printCompanyImportView(
+  title: string,
+  body: string,
+  opts?: { interactive?: boolean },
+): void {
   if (opts?.interactive) {
     p.note(body, title);
     return;
@@ -701,22 +805,31 @@ export function resolveCompanyImportApiPath(input: {
   companyId?: string | null;
 }): string {
   if (input.targetMode === "existing_company") {
-    const companyId = input.companyId?.trim();
-    if (!companyId) {
-      throw new Error("Existing-company imports require a companyId to resolve the API route.");
+    const companyId = input.companyId;
+    if (!companyId || !isCanonicalUuid(companyId)) {
+      throw new Error(
+        "Existing-company imports require an exact canonical company UUID to resolve the API route.",
+      );
     }
     return input.dryRun
       ? apiPath`/api/companies/${companyId}/imports/preview`
       : apiPath`/api/companies/${companyId}/imports/apply`;
   }
 
-  return input.dryRun ? "/api/companies/imports/preview" : "/api/companies/imports";
+  return input.dryRun
+    ? "/api/companies/imports/preview"
+    : "/api/companies/imports";
 }
 
-export function buildCompanyDashboardUrl(apiBase: string, taskPrefix: string): string {
+export function buildCompanyDashboardUrl(
+  apiBase: string,
+  companyId: string,
+): string {
+  if (!isCanonicalUuid(companyId)) {
+    throw new Error("Company dashboard URLs require a canonical company UUID.");
+  }
   const url = new URL(apiBase);
-  const normalizedPrefix = taskPrefix.trim().replace(/^\/+|\/+$/g, "");
-  url.pathname = `${url.pathname.replace(/\/+$/, "")}/${normalizedPrefix}/dashboard`;
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}/${companyId}/dashboard`;
   url.search = "";
   url.hash = "";
   return url.toString();
@@ -741,121 +854,6 @@ export function resolveCompanyImportApplyConfirmationMode(input: {
     );
   }
   return "prompt";
-}
-
-export function isHttpUrl(input: string): boolean {
-  return /^https?:\/\//i.test(input.trim());
-}
-
-export function looksLikeRepoUrl(input: string): boolean {
-  try {
-    const url = new URL(input.trim());
-    if (url.protocol !== "https:") return false;
-    const segments = url.pathname.split("/").filter(Boolean);
-    return segments.length >= 2;
-  } catch {
-    return false;
-  }
-}
-
-function isGithubSegment(input: string): boolean {
-  return /^[A-Za-z0-9._-]+$/.test(input);
-}
-
-export function isGithubShorthand(input: string): boolean {
-  const trimmed = input.trim();
-  if (!trimmed || isHttpUrl(trimmed)) return false;
-  if (
-    trimmed.startsWith(".") ||
-    trimmed.startsWith("/") ||
-    trimmed.startsWith("~") ||
-    trimmed.includes("\\") ||
-    /^[A-Za-z]:/.test(trimmed)
-  ) {
-    return false;
-  }
-
-  const segments = trimmed.split("/").filter(Boolean);
-  return segments.length >= 2 && segments.every(isGithubSegment);
-}
-
-function normalizeGithubImportPath(input: string | null | undefined): string | null {
-  if (!input) return null;
-  const trimmed = input.trim().replace(/^\/+|\/+$/g, "");
-  return trimmed || null;
-}
-
-function buildGithubImportUrl(input: {
-  hostname?: string;
-  owner: string;
-  repo: string;
-  ref?: string | null;
-  path?: string | null;
-  companyPath?: string | null;
-}): string {
-  const host = input.hostname || "github.com";
-  const url = new URL(`https://${host}/${input.owner}/${input.repo.replace(/\.git$/i, "")}`);
-  const ref = input.ref?.trim();
-  if (ref) {
-    url.searchParams.set("ref", ref);
-  }
-  const companyPath = normalizeGithubImportPath(input.companyPath);
-  if (companyPath) {
-    url.searchParams.set("companyPath", companyPath);
-    return url.toString();
-  }
-  const sourcePath = normalizeGithubImportPath(input.path);
-  if (sourcePath) {
-    url.searchParams.set("path", sourcePath);
-  }
-  return url.toString();
-}
-
-export function normalizeGithubImportSource(input: string, refOverride?: string): string {
-  const trimmed = input.trim();
-  const ref = refOverride?.trim();
-
-  if (isGithubShorthand(trimmed)) {
-    const [owner, repo, ...repoPath] = trimmed.split("/").filter(Boolean);
-    return buildGithubImportUrl({
-      owner: owner!,
-      repo: repo!,
-      ref: ref || "main",
-      path: repoPath.join("/"),
-    });
-  }
-
-  if (!looksLikeRepoUrl(trimmed)) {
-    throw new Error("GitHub source must be a GitHub or GitHub Enterprise URL, or owner/repo[/path] shorthand.");
-  }
-  if (!ref) {
-    return trimmed;
-  }
-
-  const url = new URL(trimmed);
-  const hostname = url.hostname;
-  const parts = url.pathname.split("/").filter(Boolean);
-  if (parts.length < 2) {
-    throw new Error("Invalid GitHub URL.");
-  }
-
-  const owner = parts[0]!;
-  const repo = parts[1]!;
-  const existingPath = normalizeGithubImportPath(url.searchParams.get("path"));
-  const existingCompanyPath = normalizeGithubImportPath(url.searchParams.get("companyPath"));
-  if (existingCompanyPath) {
-    return buildGithubImportUrl({ hostname, owner, repo, ref, companyPath: existingCompanyPath });
-  }
-  if (existingPath) {
-    return buildGithubImportUrl({ hostname, owner, repo, ref, path: existingPath });
-  }
-  if (parts[2] === "tree") {
-    return buildGithubImportUrl({ hostname, owner, repo, ref, path: parts.slice(4).join("/") });
-  }
-  if (parts[2] === "blob") {
-    return buildGithubImportUrl({ hostname, owner, repo, ref, companyPath: parts.slice(4).join("/") });
-  }
-  return buildGithubImportUrl({ hostname, owner, repo, ref });
 }
 
 async function pathExists(inputPath: string): Promise<boolean> {
@@ -883,7 +881,10 @@ async function collectPackageFiles(
     if (!entry.isFile()) continue;
     const relativePath = path.relative(root, absolutePath).replace(/\\/g, "/");
     if (!shouldIncludePortableFile(relativePath)) continue;
-    files[relativePath] = readPortableFileEntry(relativePath, await readFile(absolutePath));
+    files[relativePath] = readPortableFileEntry(
+      relativePath,
+      await readFile(absolutePath),
+    );
   }
 }
 
@@ -893,10 +894,15 @@ export async function resolveInlineSourceFromPath(inputPath: string): Promise<{
 }> {
   const resolved = path.resolve(inputPath);
   const resolvedStat = await stat(resolved);
-  if (resolvedStat.isFile() && path.extname(resolved).toLowerCase() === ".zip") {
+  if (
+    resolvedStat.isFile() &&
+    path.extname(resolved).toLowerCase() === ".zip"
+  ) {
     const archive = await readZipArchive(await readFile(resolved));
     const filteredFiles = Object.fromEntries(
-      Object.entries(archive.files).filter(([relativePath]) => shouldIncludePortableFile(relativePath)),
+      Object.entries(archive.files).filter(([relativePath]) =>
+        shouldIncludePortableFile(relativePath),
+      ),
     );
     return {
       rootPath: archive.rootPath ?? path.basename(resolved, ".zip"),
@@ -904,7 +910,9 @@ export async function resolveInlineSourceFromPath(inputPath: string): Promise<{
     };
   }
 
-  const rootDir = resolvedStat.isDirectory() ? resolved : path.dirname(resolved);
+  const rootDir = resolvedStat.isDirectory()
+    ? resolved
+    : path.dirname(resolved);
   const files: Record<string, CompanyPortabilityFileEntry> = {};
   await collectPackageFiles(rootDir, rootDir, files);
   return {
@@ -913,12 +921,17 @@ export async function resolveInlineSourceFromPath(inputPath: string): Promise<{
   };
 }
 
-export async function writeExportToFolder(outDir: string, exported: CompanyPortabilityExportResult): Promise<void> {
+export async function writeExportToFolder(
+  outDir: string,
+  exported: CompanyPortabilityExportResult,
+): Promise<void> {
   const root = path.resolve(outDir);
   await mkdir(root, { recursive: true });
   for (const [relativePath, content] of Object.entries(exported.files)) {
-    const normalized = relativePath.replace(/\\/g, "/");
-    const filePath = resolveExportOutputPath(root, normalized);
+    const filePath = resolveExportOutputPath(
+      root,
+      requirePortablePath(relativePath),
+    );
     await mkdir(path.dirname(filePath), { recursive: true });
     const writeValue = portableFileEntryToWriteValue(content);
     if (typeof writeValue === "string") {
@@ -929,12 +942,19 @@ export async function writeExportToFolder(outDir: string, exported: CompanyPorta
   }
 }
 
-export function resolveExportOutputPath(root: string, relativePath: string): string {
+export function resolveExportOutputPath(
+  root: string,
+  relativePath: string,
+): string {
   const resolvedRoot = path.resolve(root);
   const filePath = path.resolve(resolvedRoot, relativePath);
-  const rootPrefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : `${resolvedRoot}${path.sep}`;
+  const rootPrefix = resolvedRoot.endsWith(path.sep)
+    ? resolvedRoot
+    : `${resolvedRoot}${path.sep}`;
   if (filePath !== resolvedRoot && !filePath.startsWith(rootPrefix)) {
-    throw new Error(`Refusing to write export file outside output directory: ${relativePath}`);
+    throw new Error(
+      `Refusing to write export file outside output directory: ${relativePath}`,
+    );
   }
   return filePath;
 }
@@ -944,14 +964,18 @@ async function confirmOverwriteExportDirectory(outDir: string): Promise<void> {
   const stats = await stat(root).catch(() => null);
   if (!stats) return;
   if (!stats.isDirectory()) {
-    throw new Error(`Export output path ${root} exists and is not a directory.`);
+    throw new Error(
+      `Export output path ${root} exists and is not a directory.`,
+    );
   }
 
   const entries = await readdir(root);
   if (entries.length === 0) return;
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error(`Export output directory ${root} already contains files. Re-run interactively or choose an empty directory.`);
+    throw new Error(
+      `Export output directory ${root} already contains files. Re-run interactively or choose an empty directory.`,
+    );
   }
 
   const confirmed = await p.confirm({
@@ -964,79 +988,29 @@ async function confirmOverwriteExportDirectory(outDir: string): Promise<void> {
   }
 }
 
-function matchesPrefix(company: Company, selector: string): boolean {
-  return company.taskPrefix.toUpperCase() === selector.toUpperCase();
+export function assertCanonicalCompanyId(companyId: string): void {
+  if (!isCanonicalUuid(companyId)) {
+    throw new Error("Company ID must be an exact canonical company UUID.");
+  }
 }
 
-export function resolveCompanyForDeletion(
-  companies: Company[],
-  selectorRaw: string,
-  by: CompanyDeleteSelectorMode = "auto",
-): Company {
-  const selector = normalizeSelector(selectorRaw);
-  if (!selector) {
-    throw new Error("Company selector is required.");
-  }
-
-  const idMatch = companies.find((company) => company.id === selector);
-  const prefixMatch = companies.find((company) => matchesPrefix(company, selector));
-
-  if (by === "id") {
-    if (!idMatch) {
-      throw new Error(`No company found by ID '${selector}'.`);
-    }
-    return idMatch;
-  }
-
-  if (by === "prefix") {
-    if (!prefixMatch) {
-      throw new Error(`No company found by shortname/prefix '${selector}'.`);
-    }
-    return prefixMatch;
-  }
-
-  if (idMatch && prefixMatch && idMatch.id !== prefixMatch.id) {
-    throw new Error(
-      `Selector '${selector}' is ambiguous (matches both an ID and a shortname). Re-run with --by id or --by prefix.`,
-    );
-  }
-
-  if (idMatch) return idMatch;
-  if (prefixMatch) return prefixMatch;
-
-  throw new Error(
-    `No company found for selector '${selector}'. Use company ID or task prefix (for example PAP).`,
-  );
-}
-
-export function assertDeleteConfirmation(company: Company, opts: CompanyDeleteOptions): void {
+export function assertDeleteConfirmation(
+  companyId: string,
+  opts: CompanyDeleteOptions,
+): void {
+  assertCanonicalCompanyId(companyId);
   if (!opts.yes) {
     throw new Error("Deletion requires --yes.");
   }
 
-  const confirm = opts.confirm?.trim();
+  const confirm = opts.confirm;
   if (!confirm) {
-    throw new Error(
-      "Deletion requires --confirm <value> where value matches the company ID or task prefix.",
-    );
+    throw new Error("Deletion requires --confirm <company-uuid>.");
   }
 
-  const confirmsById = confirm === company.id;
-  const confirmsByPrefix = confirm.toUpperCase() === company.taskPrefix.toUpperCase();
-  if (!confirmsById && !confirmsByPrefix) {
+  if (confirm !== companyId) {
     throw new Error(
-      `Confirmation '${confirm}' does not match target company. Expected ID '${company.id}' or prefix '${company.taskPrefix}'.`,
-    );
-  }
-}
-
-function assertDeleteFlags(opts: CompanyDeleteOptions): void {
-  if (!opts.yes) {
-    throw new Error("Deletion requires --yes.");
-  }
-  if (!opts.confirm?.trim()) {
-    throw new Error(
-      "Deletion requires --confirm <value> where value matches the company ID or task prefix.",
+      `Confirmation '${confirm}' does not match exact company UUID '${companyId}'.`,
     );
   }
 }
@@ -1069,7 +1043,8 @@ export function registerCompanyCommands(program: Command): void {
             budgetCurrency: row.budgetCurrency,
             budgetMonthlyAmount: row.budgetMonthlyAmount,
             knownSpendAmount: row.knownSpendAmount,
-            requireBoardApprovalForNewAgents: row.requireBoardApprovalForNewAgents,
+            requireBoardApprovalForNewAgents:
+              row.requireBoardApprovalForNewAgents,
           }));
           for (const row of formatted) {
             console.log(formatInlineRecord(row));
@@ -1084,11 +1059,14 @@ export function registerCompanyCommands(program: Command): void {
     company
       .command("get")
       .description("Get one company")
-      .argument("<companyId>", "Company ID")
+      .argument("<companyId>", "Canonical company UUID")
       .action(async (companyId: string, opts: CompanyCommandOptions) => {
         try {
+          assertCanonicalCompanyId(companyId);
           const ctx = resolveCommandContext(opts);
-          const row = await ctx.api.get<Company>(apiPath`/api/companies/${companyId}`);
+          const row = await ctx.api.get<Company>(
+            apiPath`/api/companies/${companyId}`,
+          );
           printOutput(row, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -1099,12 +1077,16 @@ export function registerCompanyCommands(program: Command): void {
   addCommonClientOptions(
     company
       .command("current")
-      .description("Get the current scoped company from --company-id, context, env, or agent authentication")
+      .description(
+        "Get the current scoped company from --company-id, PAPERCLIP_BOARD_COMPANY_ID, or a context profile",
+      )
       .action(async (opts: CompanyCommandOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
           const companyId = await resolveCurrentCompanyId(ctx);
-          const row = await ctx.api.get<Company>(apiPath`/api/companies/${companyId}`);
+          const row = await ctx.api.get<Company>(
+            apiPath`/api/companies/${companyId}`,
+          );
           printOutput(row, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -1120,7 +1102,9 @@ export function registerCompanyCommands(program: Command): void {
       .action(async (opts: CompanyCommandOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.get("/api/companies/stats"), { json: ctx.json });
+          printOutput(await ctx.api.get("/api/companies/stats"), {
+            json: ctx.json,
+          });
         } catch (err) {
           handleCommandError(err);
         }
@@ -1135,7 +1119,13 @@ export function registerCompanyCommands(program: Command): void {
       .action(async (opts: CompanyJsonOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          printOutput(await createCompanyForContext(ctx, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
+          printOutput(
+            await createCompanyForContext(
+              ctx,
+              parseJson(opts.payloadJson ?? "{}"),
+            ),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
@@ -1146,12 +1136,19 @@ export function registerCompanyCommands(program: Command): void {
     company
       .command("update")
       .description("Update a company")
-      .argument("<companyId>", "Company ID")
+      .argument("<companyId>", "Canonical company UUID")
       .requiredOption("--payload-json <json>", "UpdateCompany JSON payload")
       .action(async (companyId: string, opts: CompanyJsonOptions) => {
         try {
+          assertCanonicalCompanyId(companyId);
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.patch(apiPath`/api/companies/${companyId}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
+          printOutput(
+            await ctx.api.patch(
+              apiPath`/api/companies/${companyId}`,
+              parseJson(opts.payloadJson ?? "{}"),
+            ),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
@@ -1162,12 +1159,22 @@ export function registerCompanyCommands(program: Command): void {
     company
       .command("branding:update")
       .description("Update company branding")
-      .argument("<companyId>", "Company ID")
-      .requiredOption("--payload-json <json>", "UpdateCompanyBranding JSON payload")
+      .argument("<companyId>", "Canonical company UUID")
+      .requiredOption(
+        "--payload-json <json>",
+        "UpdateCompanyBranding JSON payload",
+      )
       .action(async (companyId: string, opts: CompanyJsonOptions) => {
         try {
+          assertCanonicalCompanyId(companyId);
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.patch(apiPath`/api/companies/${companyId}/branding`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
+          printOutput(
+            await ctx.api.patch(
+              apiPath`/api/companies/${companyId}/branding`,
+              parseJson(opts.payloadJson ?? "{}"),
+            ),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
@@ -1178,47 +1185,95 @@ export function registerCompanyCommands(program: Command): void {
     company
       .command("archive")
       .description("Archive a company")
-      .argument("<companyId>", "Company ID")
+      .argument("<companyId>", "Canonical company UUID")
       .action(async (companyId: string, opts: CompanyCommandOptions) => {
         try {
+          assertCanonicalCompanyId(companyId);
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.post(apiPath`/api/companies/${companyId}/archive`, {}), { json: ctx.json });
+          printOutput(
+            await ctx.api.post(
+              apiPath`/api/companies/${companyId}/archive`,
+              {},
+            ),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
       }),
   );
 
-  addCompanyJsonPost(company, "export:preview", "Preview a portable company export", "exports/preview");
-  addCompanyJsonPost(company, "export:api", "Export a company through the raw API route", "exports");
-  addCompanyJsonPost(company, "import:preview", "Preview a safe company import through the raw API route", "imports/preview");
-  addCompanyJsonPost(company, "import:apply", "Apply a safe company import through the raw API route", "imports/apply");
+  addCompanyJsonPost(
+    company,
+    "export:preview",
+    "Preview a portable company export",
+    "exports/preview",
+  );
+  addCompanyJsonPost(
+    company,
+    "export:api",
+    "Export a company through the raw API route",
+    "exports",
+  );
+  addCompanyJsonPost(
+    company,
+    "import:preview",
+    "Preview a safe company import through the raw API route",
+    "imports/preview",
+  );
+  addCompanyJsonPost(
+    company,
+    "import:apply",
+    "Apply a safe company import through the raw API route",
+    "imports/apply",
+  );
 
   addCommonClientOptions(
     company
       .command("export")
       .description("Export a company into a portable markdown package")
-      .argument("<companyId>", "Company ID")
+      .argument("<companyId>", "Canonical company UUID")
       .requiredOption("--out <path>", "Output directory")
-      .option("--include <values>", "Comma-separated include set: company,agents,projects,tasks,skills", "company,agents")
-      .option("--skills <values>", "Comma-separated skill slugs/keys to export")
-      .option("--projects <values>", "Comma-separated project shortnames/ids to export")
-      .option("--tasks <values>", "Comma-separated task identifiers/ids to export")
-      .option("--project-tasks <values>", "Comma-separated project shortnames/ids whose tasks should be exported")
-      .option("--expand-referenced-skills", "Vendor skill contents instead of exporting upstream references", false)
+      .option(
+        "--include <values>",
+        "Comma-separated include set: company,agents,projects,tasks",
+        DEFAULT_EXPORT_INCLUDE,
+      )
+      .option("--projects <values>", "Comma-separated project UUIDs to export")
+      .option("--tasks <values>", "Comma-separated task UUIDs to export")
+      .option(
+        "--project-tasks <values>",
+        "Comma-separated project UUIDs whose tasks should be exported",
+      )
       .action(async (companyId: string, opts: CompanyExportOptions) => {
         try {
+          assertCanonicalCompanyId(companyId);
           const ctx = resolveCommandContext(opts);
-          const include = parseInclude(opts.include);
+          const include = parseCompanyInclude(opts.include);
+          const projectIds = parseExactSelectors(
+            opts.projects,
+            "Project UUIDs",
+            isCanonicalUuid,
+          );
+          const taskIds = parseExactSelectors(
+            opts.tasks,
+            "Task UUIDs",
+            isCanonicalUuid,
+          );
+          const projectTaskIds = parseExactSelectors(
+            opts.projectTasks,
+            "Project-task UUIDs",
+            isCanonicalUuid,
+          );
           const exported = await ctx.api.post<CompanyPortabilityExportResult>(
             apiPath`/api/companies/${companyId}/exports`,
             {
               include,
-              skills: parseCsvValues(opts.skills),
-              projects: parseCsvValues(opts.projects),
-              tasks: parseCsvValues(opts.tasks),
-              projectTasks: parseCsvValues(opts.projectTasks),
-              expandReferencedSkills: Boolean(opts.expandReferencedSkills),
+              ...(projectIds.length > 0 ? { projects: projectIds } : {}),
+              ...(taskIds.length > 0 ? { tasks: taskIds } : {}),
+              ...(projectTaskIds.length > 0
+                ? { projectTasks: projectTaskIds }
+                : {}),
             },
           );
           if (!exported) {
@@ -1251,46 +1306,80 @@ export function registerCompanyCommands(program: Command): void {
   addCommonClientOptions(
     company
       .command("import")
-      .description("Import a portable markdown company package from local path, URL, or GitHub")
-      .argument("<fromPathOrUrl>", "Source path or URL")
-      .option("--include <values>", "Comma-separated include set: company,agents,projects,tasks,skills")
+      .description(
+        "Import a portable markdown company package from a local path or canonical GitHub HTTPS URL",
+      )
+      .argument(
+        "<source>",
+        "Local filesystem path or canonical GitHub HTTPS URL",
+      )
+      .option(
+        "--include <values>",
+        "Comma-separated include set: company,agents,projects,tasks",
+      )
       .option("--target <mode>", "Target mode: new | existing")
       .option("-C, --company-id <id>", "Existing target company ID")
       .option("--new-company-name <name>", "Name override for --target new")
-      .option("--agents <list>", "Comma-separated agent slugs to import, or all", "all")
-      .option("--collision <mode>", "Collision strategy: rename | skip | replace", "rename")
-      .option("--ref <value>", "Git ref to use for GitHub imports (branch, tag, or commit)")
-      .option("--adapter-override <slug=type>", "Explicit adapter type for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
-      .option("--adapter-config <slug=json>", "Explicit adapter config JSON object for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
-      .option("--yes", "Accept default selection and skip the pre-import confirmation prompt", false)
+      .option(
+        "--agents <list>",
+        "Comma-separated agent slugs to import, or all",
+        "all",
+      )
+      .option(
+        "--collision <mode>",
+        "Collision strategy: rename | skip | replace",
+        "rename",
+      )
+      .option(
+        "--adapter-override <slug=type>",
+        "Explicit adapter type for an imported agent slug; may be repeated",
+        collectOptionValue,
+        [] as string[],
+      )
+      .option(
+        "--adapter-config <slug=json>",
+        "Explicit adapter config JSON object for an imported agent slug; may be repeated",
+        collectOptionValue,
+        [] as string[],
+      )
+      .option(
+        "--yes",
+        "Accept default selection and skip the pre-import confirmation prompt",
+        false,
+      )
       .option("--dry-run", "Run preview only without applying", false)
-      .action(async (fromPathOrUrl: string, opts: CompanyImportOptions) => {
+      .action(async (source: string, opts: CompanyImportOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
           const interactiveView = isInteractiveTerminal() && !ctx.json;
-          const from = fromPathOrUrl.trim();
-          if (!from) {
-            throw new Error("Source path or URL is required.");
+          if (!source) {
+            throw new Error(
+              "Local filesystem path or canonical GitHub HTTPS URL is required.",
+            );
           }
 
           const include = resolveImportInclude(opts.include);
           const agents = parseAgents(opts.agents);
-          const collision = (opts.collision ?? "rename").toLowerCase() as CompanyCollisionMode;
+          const collision = opts.collision ?? "rename";
           if (!["rename", "skip", "replace"].includes(collision)) {
-            throw new Error("Invalid --collision value. Use: rename, skip, replace");
+            throw new Error(
+              "Invalid --collision value. Use: rename, skip, replace",
+            );
           }
           const adapterOverrides = parseExplicitAdapterOverrides(
             opts.adapterOverride,
             opts.adapterConfig,
           );
 
-          const inferredTarget = opts.target ?? (opts.companyId || ctx.companyId ? "existing" : "new");
-          const target = inferredTarget.toLowerCase() as CompanyImportTargetMode;
+          const inferredTarget =
+            opts.target ??
+            (opts.companyId || ctx.companyId ? "existing" : "new");
+          const target = inferredTarget;
           if (!["new", "existing"].includes(target)) {
             throw new Error("Invalid --target value. Use: new | existing");
           }
 
-          const existingTargetCompanyId = opts.companyId?.trim() || ctx.companyId;
+          const existingTargetCompanyId = opts.companyId ?? ctx.companyId;
           const targetPayload =
             target === "existing"
               ? {
@@ -1302,30 +1391,31 @@ export function registerCompanyCommands(program: Command): void {
                   newCompanyName: opts.newCompanyName?.trim() || null,
                 };
 
-          if (targetPayload.mode === "existing_company" && !targetPayload.companyId) {
-            throw new Error("Target existing company requires --company-id (or context default companyId).");
+          if (
+            targetPayload.mode === "existing_company" &&
+            !targetPayload.companyId
+          ) {
+            throw new Error(
+              "Target existing company requires --company-id (or context default companyId).",
+            );
           }
 
           let sourcePayload:
-            | { type: "inline"; rootPath?: string | null; files: Record<string, CompanyPortabilityFileEntry> }
+            | {
+                type: "inline";
+                rootPath?: string | null;
+                files: Record<string, CompanyPortabilityFileEntry>;
+              }
             | { type: "github"; url: string };
 
-          const treatAsLocalPath = !isHttpUrl(from) && await pathExists(from);
-          const isGithubSource = looksLikeRepoUrl(from) || (isGithubShorthand(from) && !treatAsLocalPath);
-
-          if (isHttpUrl(from) || isGithubSource) {
-            if (!looksLikeRepoUrl(from) && !isGithubShorthand(from)) {
-              throw new Error(
-                "Only GitHub URLs and local paths are supported for import. " +
-                "Generic HTTP URLs are not supported. Use a GitHub or GitHub Enterprise URL (https://github.com/... or https://ghe.example.com/...) or a local directory path.",
-              );
-            }
-            sourcePayload = { type: "github", url: normalizeGithubImportSource(from, opts.ref) };
+          const treatAsLocalPath = await pathExists(source);
+          if (!treatAsLocalPath && source.includes("://")) {
+            sourcePayload = {
+              type: "github",
+              url: validateCanonicalGithubImportSourceUrl(source),
+            };
           } else {
-            if (opts.ref?.trim()) {
-              throw new Error("--ref is only supported for GitHub import sources.");
-            }
-            const inline = await resolveInlineSourceFromPath(from);
+            const inline = await resolveInlineSourceFromPath(source);
             sourcePayload = {
               type: "inline",
               rootPath: inline.rootPath,
@@ -1338,19 +1428,26 @@ export function registerCompanyCommands(program: Command): void {
           const previewApiPath = resolveCompanyImportApiPath({
             dryRun: true,
             targetMode: targetPayload.mode,
-            companyId: targetPayload.mode === "existing_company" ? targetPayload.companyId : null,
+            companyId:
+              targetPayload.mode === "existing_company"
+                ? targetPayload.companyId
+                : null,
           });
 
           let selectedFiles: string[] | undefined;
-          if (interactiveView && !opts.yes && !opts.include?.trim()) {
-            const initialPreview = await ctx.api.post<CompanyPortabilityPreviewResult>(previewApiPath, {
-              source: sourcePayload,
-              include,
-              target: targetPayload,
-              agents,
-              collisionStrategy: collision,
-              adapterOverrides,
-            });
+          if (interactiveView && !opts.yes && opts.include === undefined) {
+            const initialPreview =
+              await ctx.api.post<CompanyPortabilityPreviewResult>(
+                previewApiPath,
+                {
+                  source: sourcePayload,
+                  include,
+                  target: targetPayload,
+                  agents,
+                  collisionStrategy: collision,
+                  adapterOverrides,
+                },
+              );
             if (!initialPreview) {
               throw new Error("Import preview returned no data.");
             }
@@ -1366,7 +1463,10 @@ export function registerCompanyCommands(program: Command): void {
             selectedFiles,
             adapterOverrides,
           };
-          const preview = await ctx.api.post<CompanyPortabilityPreviewResult>(previewApiPath, previewPayload);
+          const preview = await ctx.api.post<CompanyPortabilityPreviewResult>(
+            previewApiPath,
+            previewPayload,
+          );
           if (!preview) {
             throw new Error("Import preview returned no data.");
           }
@@ -1417,32 +1517,35 @@ export function registerCompanyCommands(program: Command): void {
           const importApiPath = resolveCompanyImportApiPath({
             dryRun: false,
             targetMode: targetPayload.mode,
-            companyId: targetPayload.mode === "existing_company" ? targetPayload.companyId : null,
+            companyId:
+              targetPayload.mode === "existing_company"
+                ? targetPayload.companyId
+                : null,
           });
-          const imported = await ctx.api.post<CompanyPortabilityImportResult>(importApiPath, {
-            ...previewPayload,
-          });
+          const imported = await ctx.api.post<CompanyPortabilityImportResult>(
+            importApiPath,
+            {
+              ...previewPayload,
+            },
+          );
           if (!imported) {
             throw new Error("Import request returned no data.");
           }
           const tc = getTelemetryClient();
           if (tc) {
             const isPrivate = sourcePayload.type !== "github";
-            const sourceRef = sourcePayload.type === "github" ? sourcePayload.url : from;
-            trackCompanyImported(tc, { sourceType: sourcePayload.type, sourceRef, isPrivate });
+            const sourceRef =
+              sourcePayload.type === "github" ? sourcePayload.url : source;
+            trackCompanyImported(tc, {
+              sourceType:
+                sourcePayload.type === "inline" ? "local_path" : "github",
+              sourceRef,
+              isPrivate,
+            });
           }
-          let companyUrl: string | undefined;
-          if (!ctx.json) {
-            try {
-              const importedCompany = await ctx.api.get<Company>(apiPath`/api/companies/${imported.company.id}`);
-              const taskPrefix = importedCompany?.taskPrefix?.trim();
-              if (taskPrefix) {
-                companyUrl = buildCompanyDashboardUrl(ctx.api.apiBase, taskPrefix);
-              }
-            } catch {
-              companyUrl = undefined;
-            }
-          }
+          const companyUrl = ctx.json
+            ? undefined
+            : buildCompanyDashboardUrl(ctx.api.apiBase, imported.company.id);
           if (ctx.json) {
             printOutput(imported, { json: true });
           } else {
@@ -1463,7 +1566,9 @@ export function registerCompanyCommands(program: Command): void {
                 if (await openUrl(companyUrl)) {
                   p.log.info(`Opened ${companyUrl}`);
                 } else {
-                  p.log.warn(`Could not open your browser automatically. Open this URL manually:\n${companyUrl}`);
+                  p.log.warn(
+                    `Could not open your browser automatically. Open this URL manually:\n${companyUrl}`,
+                  );
                 }
               }
             }
@@ -1477,79 +1582,38 @@ export function registerCompanyCommands(program: Command): void {
   addCommonClientOptions(
     company
       .command("delete")
-      .description("Delete a company by ID or shortname/prefix (destructive)")
-      .argument("<selector>", "Company ID or task prefix (for example PAP)")
+      .description("Delete a company by its exact canonical UUID (destructive)")
+      .argument("<company-id>", "Exact canonical company UUID")
       .option(
-        "--by <mode>",
-        "Selector mode: auto | id | prefix",
-        "auto",
+        "--yes",
+        "Required safety flag to confirm destructive action",
+        false,
       )
-      .option("--yes", "Required safety flag to confirm destructive action", false)
       .option(
-        "--confirm <value>",
-        "Required safety value: target company ID or shortname/prefix",
+        "--confirm <company-id>",
+        "Required safety value: exact canonical company UUID",
       )
-      .action(async (selector: string, opts: CompanyDeleteOptions) => {
+      .action(async (companyId: string, opts: CompanyDeleteOptions) => {
         try {
-          const by = (opts.by ?? "auto").trim().toLowerCase() as CompanyDeleteSelectorMode;
-          if (!["auto", "id", "prefix"].includes(by)) {
-            throw new Error(`Invalid --by mode '${opts.by}'. Expected one of: auto, id, prefix.`);
-          }
-
           const ctx = resolveCommandContext(opts);
-          const normalizedSelector = normalizeSelector(selector);
-          assertDeleteFlags(opts);
-
-          let target: Company | null = null;
-          const shouldTryIdLookup = by === "id" || (by === "auto" && isUuidLike(normalizedSelector));
-          if (shouldTryIdLookup) {
-            const byId = await ctx.api.get<Company>(apiPath`/api/companies/${normalizedSelector}`, { ignoreNotFound: true });
-            if (byId) {
-              target = byId;
-            } else if (by === "id") {
-              throw new Error(`No company found by ID '${normalizedSelector}'.`);
-            }
+          assertDeleteConfirmation(companyId, opts);
+          const target = await ctx.api.get<Company>(
+            apiPath`/api/companies/${companyId}`,
+          );
+          if (!target || target.id !== companyId) {
+            throw new Error(`No company found with exact UUID '${companyId}'.`);
           }
 
-          if (!target && ctx.companyId) {
-            const scoped = await ctx.api.get<Company>(apiPath`/api/companies/${ctx.companyId}`, { ignoreNotFound: true });
-            if (scoped) {
-              try {
-                target = resolveCompanyForDeletion([scoped], normalizedSelector, by);
-              } catch {
-                // Fallback to board-wide lookup below.
-              }
-            }
-          }
-
-          if (!target) {
-            try {
-              const companies = (await ctx.api.get<Company[]>("/api/companies")) ?? [];
-              target = resolveCompanyForDeletion(companies, normalizedSelector, by);
-            } catch (error) {
-              if (error instanceof ApiRequestError && error.status === 403 && error.message.includes("Board access required")) {
-                throw new Error(
-                  "Board access is required to resolve companies across the instance. Use a company ID/prefix for your current company, or run with board authentication.",
-                );
-              }
-              throw error;
-            }
-          }
-
-          if (!target) {
-            throw new Error(`No company found for selector '${normalizedSelector}'.`);
-          }
-
-          assertDeleteConfirmation(target, opts);
-
-          await ctx.api.delete<{ ok: true }>(apiPath`/api/companies/${target.id}`);
+          await ctx.api.delete<{ ok: true }>(
+            apiPath`/api/companies/${companyId}`,
+          );
 
           printOutput(
             {
               ok: true,
               deletedCompanyId: target.id,
               deletedCompanyName: target.name,
-              deletedCompanyPrefix: target.taskPrefix,
+              deletedTaskPrefix: target.taskPrefix,
             },
             { json: ctx.json },
           );
@@ -1573,17 +1637,25 @@ async function listCompaniesForContext(ctx: {
   }
 
   const companyId = await resolveCurrentCompanyId(ctx);
-  const scopedCompany = await ctx.api.get<Company>(apiPath`/api/companies/${companyId}`);
+  const scopedCompany = await ctx.api.get<Company>(
+    apiPath`/api/companies/${companyId}`,
+  );
   return scopedCompany ? [scopedCompany] : [];
 }
 
-async function createCompanyForContext(ctx: {
-  api: { post<T>(path: string, body?: unknown): Promise<T | null> };
-}, payload: unknown): Promise<unknown> {
+async function createCompanyForContext(
+  ctx: {
+    api: { post<T>(path: string, body?: unknown): Promise<T | null> };
+  },
+  payload: unknown,
+): Promise<unknown> {
   try {
     return await ctx.api.post("/api/companies", payload);
   } catch (error) {
-    if (isBoardAccessRequiredError(error) || isInstanceAdminRequiredError(error)) {
+    if (
+      isBoardAccessRequiredError(error) ||
+      isInstanceAdminRequiredError(error)
+    ) {
       throw new Error(
         "Creating companies requires board/instance-admin authentication. Use `paperclipai company list --json` or `paperclipai company current --json` to select a company, or rerun create with a board token/login.",
       );
@@ -1592,33 +1664,57 @@ async function createCompanyForContext(ctx: {
   }
 }
 
-async function resolveCurrentCompanyId(ctx: { companyId?: string; api: { get<T>(path: string): Promise<T | null> } }): Promise<string> {
-  const fromContext = ctx.companyId?.trim();
-  if (fromContext) return fromContext;
+async function resolveCurrentCompanyId(ctx: {
+  companyId?: string;
+  api: { get<T>(path: string): Promise<T | null> };
+}): Promise<string> {
+  if (ctx.companyId) return ctx.companyId;
   throw new Error(
     "Current company is not available. Pass --company-id, set PAPERCLIP_BOARD_COMPANY_ID, or set a context profile companyId.",
   );
 }
 
 function isBoardAccessRequiredError(error: unknown): error is ApiRequestError {
-  return error instanceof ApiRequestError && error.status === 403 && error.message.toLowerCase().includes("board access required");
+  return (
+    error instanceof ApiRequestError &&
+    error.status === 403 &&
+    error.message.toLowerCase().includes("board access required")
+  );
 }
 
-function isInstanceAdminRequiredError(error: unknown): error is ApiRequestError {
-  return error instanceof ApiRequestError && error.status === 403 && error.message.toLowerCase().includes("instance admin");
+function isInstanceAdminRequiredError(
+  error: unknown,
+): error is ApiRequestError {
+  return (
+    error instanceof ApiRequestError &&
+    error.status === 403 &&
+    error.message.toLowerCase().includes("instance admin")
+  );
 }
 
-function addCompanyJsonPost(parent: Command, name: string, description: string, pathSuffix: string): void {
+function addCompanyJsonPost(
+  parent: Command,
+  name: string,
+  description: string,
+  pathSuffix: string,
+): void {
   addCommonClientOptions(
     parent
       .command(name)
       .description(description)
-      .argument("<companyId>", "Company ID")
+      .argument("<companyId>", "Canonical company UUID")
       .requiredOption("--payload-json <json>", "JSON payload")
       .action(async (companyId: string, opts: CompanyJsonOptions) => {
         try {
+          assertCanonicalCompanyId(companyId);
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.post(`${apiPath`/api/companies/${companyId}`}/${pathSuffix}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
+          printOutput(
+            await ctx.api.post(
+              `${apiPath`/api/companies/${companyId}`}/${pathSuffix}`,
+              parseJson(opts.payloadJson ?? "{}"),
+            ),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }

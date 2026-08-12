@@ -29,8 +29,7 @@ function transaction(instruction: string | null, carry = false) {
   const rows = new Map<unknown, readonly unknown[]>([
     [agents, [{ instruction }]],
     [tasks, [{ companyId: "company", ownerKind: "agent", ownerAgentId: "agent",
-      ownershipEpoch: 2, workMode: "parallel", harnessKind: null,
-      originKind: "human", executionPolicy: null }]],
+      ownershipEpoch: 2, executionPolicy: null }]],
     [taskExecutionWorkspaceBindings, [{ id: "workspace" }]],
     [agentContextGrants, []],
     [taskExecutionSessions, carry ? [{ id: "carry" }] : []],

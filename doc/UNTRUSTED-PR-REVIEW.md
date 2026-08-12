@@ -103,7 +103,7 @@ Inside the PR checkout:
 
 ```sh
 pnpm install
-HOST=0.0.0.0 pnpm dev
+PAPERCLIP_BIND=lan pnpm dev
 ```
 
 Open from the host:

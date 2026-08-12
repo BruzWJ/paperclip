@@ -72,9 +72,6 @@ export interface RuntimeInterfaceCompilerSnapshot {
     ownerKind: string | null;
     ownerAgentId: string | null;
     ownershipEpoch: number | null;
-    workMode: string;
-    harnessKind: string | null;
-    originKind: string;
     executionPolicy: Record<string, unknown> | null;
   };
   agents: readonly AgentRow[];
@@ -85,7 +82,7 @@ export interface RuntimeInterfaceCompilerSnapshot {
   configureGrants: readonly ConfigureGrant[];
   childTasks: readonly {
     id: string;
-    identifier: string | null;
+    identifier: string;
     lifecycleStatus: string | null;
     creatorKind: string | null;
     creatorAuthorityId: string | null;
@@ -121,9 +118,6 @@ export function resolveRuntimeContextDial(input: {
       input.task.ownerKind === "agent" &&
       input.task.ownerAgentId === input.capability.targetAgentId,
     executionMode: resolveExecutionModeContextMask({
-      workMode: input.task.workMode,
-      harnessKind: input.task.harnessKind,
-      originKind: input.task.originKind,
       taskExecutionPolicy: input.task.executionPolicy,
     }),
   }).effective;
@@ -301,9 +295,7 @@ export function buildRuntimeInterfaceCompileInput(
             child.creatorAuthorityId === authorityId,
         )
         .sort((left, right) =>
-          (left.identifier ?? left.id).localeCompare(
-            right.identifier ?? right.id,
-          ),
+          left.identifier.localeCompare(right.identifier),
         )
     : [];
   const owners = [
@@ -448,9 +440,6 @@ async function loadSnapshot(
         ownerKind: tasks.ownerKind,
         ownerAgentId: tasks.ownerAgentId,
         ownershipEpoch: tasks.ownershipEpoch,
-        workMode: tasks.workMode,
-        harnessKind: tasks.harnessKind,
-        originKind: tasks.originKind,
         executionPolicy: tasks.executionPolicy,
       })
       .from(tasks)

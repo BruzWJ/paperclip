@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import {
   COMPANY_STATUSES,
   MAX_COMPANY_ATTACHMENT_MAX_BYTES,
 } from "../constants.js";
 import { budgetCurrencySchema, moneyAmountSchema } from "../money.js";
 
-const logoAssetIdSchema = z.string().uuid().nullable().optional();
+const logoAssetIdSchema = canonicalUuidSchema.nullable().optional();
 const brandColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional();
 const attachmentMaxBytesSchema = z
   .number()

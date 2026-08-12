@@ -14,7 +14,6 @@ const REPOSITORY_ROOT = resolve(import.meta.dirname, "..");
 const SOURCE_ROOTS = [
   "apps/server/src",
   "packages/adapter-utils/src",
-  "packages/adapters",
   "packages/shared/src",
   "packages/plugins/sdk",
   "packages/cli/src",

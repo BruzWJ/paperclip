@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
@@ -13,15 +13,10 @@ import type {
 import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
 import { RoutineHistoryTab } from "@/components/RoutineHistoryTab";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { storybookCompanies, storybookSecrets } from "../fixtures/paperclipData";
 
-const COMPANY_ID = "company-storybook";
-
-if (typeof window !== "undefined") {
-  window.localStorage.setItem("paperclip.selectedCompanyId", COMPANY_ID);
-}
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 
 function StorybookRoutineFixtures({
   revisions,
@@ -33,16 +28,8 @@ function StorybookRoutineFixtures({
   const queryClient = useQueryClient();
   queryClient.setQueryData(queryKeys.companies.all, { companies: storybookCompanies, unauthorized: false });
   queryClient.setQueryData(queryKeys.secrets.list(COMPANY_ID), storybookSecrets);
-  queryClient.setQueryData(queryKeys.routines.revisions("routine-storybook"), revisions);
+  queryClient.setQueryData(queryKeys.routines.revisions("ffffffff-ffff-4fff-8fff-fffffffffff1"), revisions);
 
-  const { selectedCompanyId, setSelectedCompanyId } = useCompany();
-  useEffect(() => {
-    if (selectedCompanyId !== COMPANY_ID) {
-      setSelectedCompanyId(COMPANY_ID);
-    }
-  }, [selectedCompanyId, setSelectedCompanyId]);
-
-  if (selectedCompanyId !== COMPANY_ID) return null;
   return <>{children}</>;
 }
 
@@ -116,9 +103,9 @@ export const SecretsTabConfigured: Story = {
       <SecretsTabSurface
         title="Configured — mix of secret refs and plain values"
         initial={{
-          OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: "latest" },
+          OPENAI_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000004", version: "latest" },
           STAGE: { type: "plain", value: "production" },
-          GH_TOKEN: { type: "secret_ref", secretId: "secret-aws-prod", version: 2 },
+          GH_TOKEN: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000001", version: 2 },
         }}
       />
     </div>
@@ -131,9 +118,9 @@ export const SecretsTabDisabledOrMissing: Story = {
       <SecretsTabSurface
         title="Bindings need attention — disabled secret + missing secret"
         initial={{
-          OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: "latest" },
-          GITHUB_APP_PEM: { type: "secret_ref", secretId: "secret-github", version: "latest" },
-          ABANDONED: { type: "secret_ref", secretId: "missing-id", version: "latest" },
+          OPENAI_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000004", version: "latest" },
+          GITHUB_APP_PEM: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000003", version: "latest" },
+          ABANDONED: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-00000000000c", version: "latest" },
         }}
       />
     </div>
@@ -144,7 +131,7 @@ function makeSnapshot(env: RoutineEnvConfig | null): RoutineRevisionSnapshotV1 {
   return {
     version: 1,
     routine: {
-      id: "routine-storybook",
+      id: "ffffffff-ffff-4fff-8fff-fffffffffff1",
       companyId: COMPANY_ID,
       projectId: null,
       goalId: null,
@@ -166,7 +153,7 @@ function makeSnapshot(env: RoutineEnvConfig | null): RoutineRevisionSnapshotV1 {
 
 function makeRoutine(latestRevisionId: string, latestRevisionNumber: number): Routine {
   return {
-    id: "routine-storybook",
+    id: "ffffffff-ffff-4fff-8fff-fffffffffff1",
     companyId: COMPANY_ID,
     projectId: null,
     goalId: null,
@@ -181,15 +168,15 @@ function makeRoutine(latestRevisionId: string, latestRevisionNumber: number): Ro
     catchUpPolicy: "skip_missed",
     variables: [],
     env: makeSnapshot({
-      OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: "latest" },
+      OPENAI_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000004", version: "latest" },
       STAGE: { type: "plain", value: "production" },
     }).routine.env,
     latestRevisionId,
     latestRevisionNumber,
     createdByAgentId: null,
-    createdByUserId: "user-board",
+    createdByUserId: "a7000000-0000-4000-8000-000000000002",
     updatedByAgentId: null,
-    updatedByUserId: "user-board",
+    updatedByUserId: "a7000000-0000-4000-8000-000000000002",
     lastTriggeredAt: null,
     lastEnqueuedAt: null,
     createdAt: new Date("2026-05-01T11:00:00.000Z"),
@@ -202,38 +189,38 @@ export const HistoryDiffWithEnv: Story = {
   render: () => {
     const revisions: RoutineRevision[] = [
       {
-        id: "rev-2",
+        id: "a2100000-0000-4000-8000-000000000004",
         companyId: COMPANY_ID,
-        routineId: "routine-storybook",
+        routineId: "ffffffff-ffff-4fff-8fff-fffffffffff1",
         revisionNumber: 2,
         title: "Nightly digest",
         description: "Summarize agent activity each night.",
         snapshot: makeSnapshot({
-          OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: "latest" },
+          OPENAI_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000004", version: "latest" },
           STAGE: { type: "plain", value: "production" },
         }),
         changeSummary: "Added STAGE plain value",
         restoredFromRevisionId: null,
         createdByAgentId: null,
-        createdByUserId: "user-board",
+        createdByUserId: "a7000000-0000-4000-8000-000000000002",
         createdByRunId: null,
         createdAt: new Date("2026-05-04T12:00:00.000Z"),
       },
       {
-        id: "rev-1",
+        id: "a2100000-0000-4000-8000-000000000003",
         companyId: COMPANY_ID,
-        routineId: "routine-storybook",
+        routineId: "ffffffff-ffff-4fff-8fff-fffffffffff1",
         revisionNumber: 1,
         title: "Nightly digest",
         description: "Summarize agent activity each night.",
         snapshot: makeSnapshot({
-          OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: 2 },
-          GH_TOKEN: { type: "plain", value: "legacy" },
+          OPENAI_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000004", version: 2 },
+          GH_TOKEN: { type: "plain", value: "retired" },
         }),
         changeSummary: "Created routine",
         restoredFromRevisionId: null,
         createdByAgentId: null,
-        createdByUserId: "user-board",
+        createdByUserId: "a7000000-0000-4000-8000-000000000002",
         createdByRunId: null,
         createdAt: new Date("2026-05-01T11:00:00.000Z"),
       },
@@ -242,7 +229,7 @@ export const HistoryDiffWithEnv: Story = {
       <StorybookRoutineFixtures revisions={revisions}>
         <div className="space-y-6 p-6">
           <RoutineHistoryTab
-            routine={makeRoutine("rev-2", 2)}
+            routine={makeRoutine("a2100000-0000-4000-8000-000000000004", 2)}
             isEditDirty={false}
             dirtyFields={[]}
             onDiscardEdits={() => {}}

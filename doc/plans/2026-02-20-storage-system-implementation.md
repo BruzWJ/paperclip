@@ -139,7 +139,7 @@ Add a single storage subsystem for Paperclip that supports:
 - [ ] `apps/ui/src/api/tasks.ts`: add attachment API client methods.
 - [ ] `apps/ui/src/api/client.ts`: support multipart upload helper (no JSON `Content-Type` for `FormData`).
 - [ ] `apps/ui/src/lib/queryKeys.ts`: add task attachment query keys.
-- [ ] `apps/ui/src/pages/TaskDetail.tsx`: add upload UI + attachment list/query invalidation.
+- [ ] `apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx`: add upload UI + attachment list/query invalidation.
 - [ ] `apps/ui/src/components/CommentThread.tsx`: optional comment image attach or display linked images.
 - [ ] `packages/shared/src/types/index.ts`: ensure attachment types are consumed cleanly in UI.
 

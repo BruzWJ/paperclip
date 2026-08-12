@@ -38,7 +38,9 @@ interface BoardKeyRow {
 }
 
 export function registerTokenCommands(program: Command): void {
-  const token = program.command("token").description("Manage Paperclip API tokens");
+  const token = program
+    .command("token")
+    .description("Manage Paperclip API tokens");
 
   const board = token.command("board").description("Manage board API keys");
 
@@ -58,9 +60,12 @@ export function registerTokenCommands(program: Command): void {
           const payload = createBoardApiKeySchema.parse({
             name: opts.name,
             requestedCompanyId: opts.companyId ?? ctx.companyId ?? null,
-            expiresAt,
+            expiresAt: expiresAt?.toISOString() ?? expiresAt,
           });
-          const key = await ctx.api.post<CreatedBoardKey>("/api/board-api-keys", payload);
+          const key = await ctx.api.post<CreatedBoardKey>(
+            "/api/board-api-keys",
+            payload,
+          );
           if (!key) throw new Error("Failed to create board API key");
           printOutput({ key }, { json: ctx.json });
         } catch (err) {
@@ -77,20 +82,23 @@ export function registerTokenCommands(program: Command): void {
       .action(async (opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const keys = (await ctx.api.get<BoardKeyRow[]>("/api/board-api-keys")) ?? [];
+          const keys =
+            (await ctx.api.get<BoardKeyRow[]>("/api/board-api-keys")) ?? [];
           if (ctx.json) {
             printOutput(keys, { json: true });
             return;
           }
           for (const key of keys) {
-            console.log(formatInlineRecord({
-              id: key.id,
-              name: key.name,
-              createdAt: key.createdAt,
-              lastUsedAt: key.lastUsedAt,
-              expiresAt: key.expiresAt,
-              revokedAt: key.revokedAt,
-            }));
+            console.log(
+              formatInlineRecord({
+                id: key.id,
+                name: key.name,
+                createdAt: key.createdAt,
+                lastUsedAt: key.lastUsedAt,
+                expiresAt: key.expiresAt,
+                revokedAt: key.revokedAt,
+              }),
+            );
           }
           if (keys.length === 0) printOutput([], { json: false });
         } catch (err) {
@@ -107,7 +115,9 @@ export function registerTokenCommands(program: Command): void {
       .action(async (keyId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const result = await ctx.api.delete<{ ok: true; keyId: string }>(apiPath`/api/board-api-keys/${keyId}`);
+          const result = await ctx.api.delete<{ ok: true; keyId: string }>(
+            apiPath`/api/board-api-keys/${keyId}`,
+          );
           printOutput(result ?? { ok: true, keyId }, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -116,17 +126,27 @@ export function registerTokenCommands(program: Command): void {
   );
 }
 
-function resolveBoardKeyExpiresAt(opts: BoardTokenOptions): Date | null | undefined {
+function resolveBoardKeyExpiresAt(
+  opts: BoardTokenOptions,
+): Date | null | undefined {
   if (opts.neverExpires) return null;
-  if (opts.expiresAt?.trim()) {
-    const date = new Date(opts.expiresAt.trim());
-    if (!Number.isFinite(date.getTime())) throw new Error(`Invalid --expires-at value: ${opts.expiresAt}`);
+  if (opts.expiresAt !== undefined) {
+    const date = new Date(opts.expiresAt);
+    if (
+      !Number.isFinite(date.getTime()) ||
+      date.toISOString() !== opts.expiresAt
+    )
+      throw new Error(`Invalid --expires-at value: ${opts.expiresAt}`);
     return date;
   }
-  if (opts.ttlDays?.trim()) {
+  if (opts.ttlDays !== undefined) {
+    if (!/^[1-9]\d*$/.test(opts.ttlDays)) {
+      throw new Error(`Invalid --ttl-days value: ${opts.ttlDays}`);
+    }
     const days = Number(opts.ttlDays);
-    if (!Number.isFinite(days) || days <= 0) throw new Error(`Invalid --ttl-days value: ${opts.ttlDays}`);
-    return new Date(Date.now() + Math.floor(days * 24 * 60 * 60 * 1000));
+    if (!Number.isSafeInteger(days))
+      throw new Error(`Invalid --ttl-days value: ${opts.ttlDays}`);
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   }
   return undefined;
 }

@@ -29,7 +29,7 @@ import type { TelemetryClient } from "./client.js";
 
 type RawDimension<T extends string | undefined> = T | (string & {});
 
-export function trackSkillStudioCreated(
+export function trackWorkspaceTemplateCreated(
   client: TelemetryClient,
   dims: {
     sharing_scope: RawDimension<"team" | "private">;
@@ -38,13 +38,13 @@ export function trackSkillStudioCreated(
   },
 ): void {
   client.track(
-    // @ts-expect-error -- proposed-telemetry(PAP-2411): measure Skill Studio create completion
-    "skill_studio.skill_created",
+    // @ts-expect-error -- proposed-telemetry(PAP-2411): measure workspace template creation
+    "workspace.template_created",
     dims,
   );
 }
 
-export function trackSkillStudioOpened(
+export function trackWorkspaceOpened(
   client: TelemetryClient,
   dims: {
     surface: "modal" | "page";
@@ -52,7 +52,7 @@ export function trackSkillStudioOpened(
 ): void {
   client.track(
     // @ts-expect-error
-    "skill_studio.opened",
+    "workspace.opened",
     dims,
   );
 }
@@ -75,10 +75,10 @@ test("extractor emits deterministic proposed-telemetry-extractor.v2 records", ()
   });
   assert.deepEqual(
     output.proposals.map((proposal) => proposal.name),
-    ["skill_studio.opened", "skill_studio.skill_created"],
+    ["workspace.opened", "workspace.template_created"],
   );
 
-  const created = output.proposals.find((proposal) => proposal.name === "skill_studio.skill_created");
+  const created = output.proposals.find((proposal) => proposal.name === "workspace.template_created");
   assert.deepEqual(created.dimensions, [
     { name: "category_count", type: "number" },
     { name: "launched_from_template", type: "boolean" },
@@ -86,7 +86,7 @@ test("extractor emits deterministic proposed-telemetry-extractor.v2 records", ()
   ]);
   assert.deepEqual(created.rationale, {
     task: "PAP-2411",
-    text: "measure Skill Studio create completion",
+    text: "measure workspace template creation",
     missingTask: false,
     missingRationale: false,
   });
@@ -101,7 +101,7 @@ test("extractor flags a missing proposed-telemetry suffix without hard-failing",
     extractProposedEvents({ repoRoot, eventsFile, ref: "fixture-sha" }),
   );
 
-  const opened = output.proposals.find((proposal) => proposal.name === "skill_studio.opened");
+  const opened = output.proposals.find((proposal) => proposal.name === "workspace.opened");
   assert.deepEqual(opened.rationale, {
     task: null,
     text: null,
@@ -177,7 +177,7 @@ test("extractor rejects invalid rationale task references when present", () => {
   assert.throws(
     () =>
       withFixtureRepo(
-        `export function trackBad(client, dims: { source: string }): void {\n  client.track(\n    // @ts-expect-error -- proposed-telemetry(PROJ-1): bad task ref\n    "skill_studio.bad_task",\n    dims,\n  );\n}\n`,
+        `export function trackBad(client, dims: { source: string }): void {\n  client.track(\n    // @ts-expect-error -- proposed-telemetry(PROJ-1): bad task ref\n    "workspace.bad_task",\n    dims,\n  );\n}\n`,
         ({ repoRoot, eventsFile }) => extractProposedEvents({ repoRoot, eventsFile, ref: "fixture-sha" }),
       ),
     /rationale task must be PAP-<digits>/,
@@ -241,7 +241,7 @@ declare const client: {
 };
 client.track(
   // @ts-expect-error -- proposed-telemetry(PAP-2411): TS2578 expiry fixture
-  "skill_studio.skill_created",
+  "workspace.template_created",
   { sharing_scope: "team" },
 );
 `;
@@ -253,8 +253,8 @@ test("TS2578 expires the directive once a fixture event is registered", () => {
 
   const registered = diagnosticsFor(
     tsMechanicsFixture(
-      '"install.started" | "skill_studio.skill_created"',
-      '"skill_studio.skill_created": { sharing_scope: string };',
+      '"install.started" | "workspace.template_created"',
+      '"workspace.template_created": { sharing_scope: string };',
     ),
   );
   assert.ok(registered.includes(2578), `expected TS2578, got ${registered.join(", ")}`);

@@ -1,7 +1,11 @@
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import type { Agent, BoardTaskComment, Task } from "@paperclipai/shared";
-import { createTaskSchema, createTaskUserCommentSchema } from "@paperclipai/shared";
+import {
+  createTaskSchema,
+  createTaskUserCommentSchema,
+  isCanonicalUuid,
+} from "@paperclipai/shared";
 import {
   addCommonClientOptions,
   apiPath,
@@ -27,7 +31,6 @@ interface PromptResult {
   agent: {
     id: string;
     name: string;
-    urlKey?: string | null;
   };
   task?: Task | null;
   comment?: BoardTaskComment | null;
@@ -39,9 +42,9 @@ export function registerPromptCommands(program: Command): void {
     board
       .command("prompt")
       .description("Create/update Paperclip work for an agent using board auth")
-      .requiredOption("--agent <agent>", "Target agent ID, shortname, or name")
+      .requiredOption("--agent <agentId>", "Target agent UUID")
       .option("-C, --company-id <id>", "Company ID")
-      .option("--task <taskId>", "Append as a comment to an existing task")
+      .option("--task <taskId>", "Append as a comment to an existing task UUID")
       .option("--title <title>", "Task title when creating a new task")
       .argument("<prompt...>", "Prompt text")
       .action(async (promptParts: string[], opts: PromptOptions) => {
@@ -57,15 +60,15 @@ export function registerPromptCommands(program: Command): void {
 }
 
 export async function runBoardPrompt(
-  agentRef: string,
+  agentId: string,
   prompt: string,
   opts: PromptOptions,
 ): Promise<PromptResult> {
   const ctx = resolveCommandContext(opts, { requireCompany: true });
   const body = normalizePrompt(prompt);
-  const query = new URLSearchParams({ companyId: ctx.companyId ?? "" });
-  const agent = await ctx.api.get<Agent>(`${apiPath`/api/agents/${agentRef}`}?${query.toString()}`);
-  if (!agent) throw new Error(`Agent not found: ${agentRef}`);
+  assertCanonicalResourceId(agentId, "Agent");
+  const agent = await ctx.api.get<Agent>(apiPath`/api/agents/${agentId}`);
+  if (!agent) throw new Error(`Agent not found: ${agentId}`);
 
   return createOrCommentForAgent({
     api: ctx.api,
@@ -91,8 +94,9 @@ async function createOrCommentForAgent(input: {
   taskId?: string;
   title?: string;
 }): Promise<PromptResult> {
-  if (input.taskId?.trim()) {
-    const taskId = input.taskId.trim();
+  if (input.taskId !== undefined) {
+    const taskId = input.taskId;
+    assertCanonicalResourceId(taskId, "Task");
     const task = await input.api.get<Task>(apiPath`/api/tasks/${taskId}`);
     if (
       !task ||
@@ -145,6 +149,12 @@ async function createOrCommentForAgent(input: {
   };
 }
 
+function assertCanonicalResourceId(id: string, resource: "Agent" | "Task"): void {
+  if (!isCanonicalUuid(id)) {
+    throw new Error(`${resource} ID must be a canonical lowercase UUID.`);
+  }
+}
+
 function normalizePrompt(prompt: string): string {
   if (!prompt.trim()) throw new Error("Prompt text is required");
   return prompt;
@@ -159,6 +169,5 @@ function agentSummary(agent: Agent): PromptResult["agent"] {
   return {
     id: agent.id,
     name: agent.name,
-    urlKey: typeof agent.urlKey === "string" ? agent.urlKey : null,
   };
 }

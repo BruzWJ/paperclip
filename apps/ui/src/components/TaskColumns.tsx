@@ -167,7 +167,7 @@ export function InboxTaskMetaLeading({
       ) : null}
       {showIdentifier ? (
         <span className="shrink-0 font-mono text-xs text-muted-foreground">
-          {task.identifier ?? task.id.slice(0, 8)}
+          {task.identifier}
         </span>
       ) : null}
       {isLive && (

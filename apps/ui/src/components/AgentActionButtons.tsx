@@ -29,7 +29,6 @@ import {
 import { AgentStatusBadge } from "./StatusBadge";
 import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
-import { agentRouteRef } from "../lib/utils";
 import { useDialogActions } from "../context/DialogContext";
 import { useToastActions } from "../context/ToastContext";
 import type { Agent } from "@paperclipai/shared";
@@ -140,7 +139,6 @@ export function AgentActionButtons({
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
 
   const resolvedCompanyId = companyId ?? agent.companyId;
-  const canonicalAgentRef = agentRouteRef(agent);
   const isPaused = agent.status === "paused";
   const isError = agent.status === "error";
 
@@ -157,21 +155,20 @@ export function AgentActionButtons({
 
   const invalidateAgent = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(canonicalAgentRef) });
     queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agent.id) });
     if (resolvedCompanyId) {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.runs(resolvedCompanyId) });
     }
-  }, [agent.id, canonicalAgentRef, queryClient, resolvedCompanyId]);
+  }, [agent.id, queryClient, resolvedCompanyId]);
 
   const agentAction = useMutation({
     mutationFn: async (action: "pause" | "resume" | "clear_error" | "terminate") => {
       switch (action) {
-        case "pause": return agentsApi.pause(agent.id, resolvedCompanyId ?? undefined);
-        case "resume": return agentsApi.resume(agent.id, resolvedCompanyId ?? undefined);
-        case "clear_error": return agentsApi.clearError(agent.id, resolvedCompanyId ?? undefined);
-        case "terminate": return agentsApi.terminate(agent.id, resolvedCompanyId ?? undefined);
+        case "pause": return agentsApi.pause(agent.id);
+        case "resume": return agentsApi.resume(agent.id);
+        case "clear_error": return agentsApi.clearError(agent.id);
+        case "terminate": return agentsApi.terminate(agent.id);
       }
     },
     onSuccess: () => {

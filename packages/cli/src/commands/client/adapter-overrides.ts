@@ -9,7 +9,7 @@ function parseAssignment(
   if (separator <= 0) {
     throw new Error(`Invalid ${flag} "${raw}". Use ${format}.`);
   }
-  return [raw.slice(0, separator).trim(), raw.slice(separator + 1).trim()];
+  return [raw.slice(0, separator), raw.slice(separator + 1)];
 }
 
 export function parseExplicitAdapterOverrides(

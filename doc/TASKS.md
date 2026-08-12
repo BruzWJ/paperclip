@@ -10,7 +10,9 @@ A task contains:
 
 | Field | Contract |
 | --- | --- |
-| `id`, `companyId`, `identifier` | Stable company-scoped identity |
+| `id`, `companyId` | Stable company-scoped UUID identity |
+| `taskNumber` | Positive per-company counter used by the canonical board address `/<company-id>/tasks/<task-number>` |
+| `identifier` | Optional human-readable display metadata; never a route or API identity |
 | `request` | Immutable, non-empty execution request |
 | `title` | Optional presentation text; board-editable through a dedicated command |
 | `status` | `open \| blocked \| done \| cancelled` |

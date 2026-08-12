@@ -88,6 +88,14 @@ export const companies = pgTable(
         ${table.sessionIntegrityState} <> 'ready'
       )`,
     ),
+    check(
+      "companies_task_prefix_check",
+      sql`${table.taskPrefix} ~ '^[A-Z][A-Z0-9]*$'`,
+    ),
+    check(
+      "companies_task_counter_check",
+      sql`${table.taskCounter} >= 0`,
+    ),
     uniqueIndex("companies_task_prefix_idx").on(table.taskPrefix),
     unique("companies_id_budget_currency_uq").on(
       table.id,

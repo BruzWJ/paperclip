@@ -1,16 +1,17 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 
-export const folderKindSchema = z.enum(["routine", "skill"]);
-export const folderSlugSchema = z.string().trim().min(1).max(120).regex(
+export const folderKindSchema = z.literal("routine");
+export const folderSlugSchema = z.string().min(1).max(120).regex(
   /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
   "Folder slug must contain only lowercase letters, numbers, and single hyphens",
 );
 
 export const folderSchema = z.object({
-  id: z.string().uuid(),
-  companyId: z.string().uuid(),
+  id: canonicalUuidSchema,
+  companyId: canonicalUuidSchema,
   kind: folderKindSchema,
-  parentId: z.string().uuid().nullable(),
+  parentId: canonicalUuidSchema.nullable(),
   name: z.string().min(1),
   slug: folderSlugSchema,
   systemKey: z.string().nullable(),
@@ -33,41 +34,41 @@ export const folderListResultSchema = z.object({
   unfiledCount: z.number().int().nonnegative(),
 });
 
+const exactFolderText = (max: number) => z.string().min(1).max(max).refine(
+  (value) => value.trim() === value,
+  "Folder values must not contain surrounding whitespace",
+);
+
 export const createFolderSchema = z.object({
   kind: folderKindSchema,
-  parentId: z.string().uuid().optional().nullable(),
-  name: z.string().trim().min(1).max(120),
+  parentId: canonicalUuidSchema.optional().nullable(),
+  name: exactFolderText(120),
   slug: folderSlugSchema.optional().nullable(),
-  color: z.string().trim().min(1).max(80).optional().nullable(),
+  color: exactFolderText(80).optional().nullable(),
   position: z.number().int().min(0).optional().nullable(),
 });
 
 export const updateFolderSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
+  name: exactFolderText(120).optional(),
   slug: folderSlugSchema.optional(),
-  color: z.string().trim().min(1).max(80).optional().nullable(),
+  color: exactFolderText(80).optional().nullable(),
   position: z.number().int().min(0).optional(),
 }).refine((value) => Object.keys(value).length > 0, {
   message: "At least one folder field is required",
 });
 
 export const moveFolderSchema = z.object({
-  parentId: z.string().uuid().optional().nullable(),
+  parentId: canonicalUuidSchema.optional().nullable(),
   position: z.number().int().min(0),
 });
 
-export const ensureMySkillFolderSchema = z.object({
-  slug: folderSlugSchema.optional().nullable(),
-}).default({});
-
 export const moveFolderItemSchema = z.object({
   kind: folderKindSchema,
-  itemId: z.string().uuid(),
-  folderId: z.string().uuid().optional().nullable(),
+  itemId: canonicalUuidSchema,
+  folderId: canonicalUuidSchema.optional().nullable(),
 });
 
 export type CreateFolder = z.infer<typeof createFolderSchema>;
 export type UpdateFolder = z.infer<typeof updateFolderSchema>;
 export type MoveFolder = z.infer<typeof moveFolderSchema>;
 export type MoveFolderItem = z.infer<typeof moveFolderItemSchema>;
-export type EnsureMySkillFolder = z.infer<typeof ensureMySkillFolderSchema>;

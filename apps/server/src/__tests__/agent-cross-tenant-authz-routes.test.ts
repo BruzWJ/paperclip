@@ -1,7 +1,6 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 vi.unmock("http");
@@ -14,16 +13,12 @@ const baseAgent = {
   id: agentId,
   companyId,
   name: "Builder",
-  urlKey: "builder",
   title: "Builder",
   icon: null,
   status: "idle",
   reportsTo: null,
   capabilities: null,
-  adapterType: "codex",
-  adapterConfig: { model: "gpt-5.6" },
   currentAdapterConfigRevisionId: null,
-  runtimeConfig: {},
   budgetMonthlyAmount: "0",
   knownSpendAmount: "0",
   pauseReason: null,
@@ -75,11 +70,6 @@ const mockTaskService = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 
-const mockSecretService = vi.hoisted(() => ({
-  normalizeAdapterConfigForPersistence: vi.fn(),
-  resolveAdapterConfigForRuntime: vi.fn(),
-}));
-
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockResolveInvokableTaskOwnerCatalogFromDb = vi.hoisted(() => vi.fn());
@@ -114,15 +104,9 @@ vi.mock("../routes/authz.js", async () => {
   }
 
   function assertCompanyAccess(req: Express.Request, expectedCompanyId: string) {
-    assertAuthenticated(req);
-    if (req.actor.type === "agent" && req.actor.companyId !== expectedCompanyId) {
-      throw forbidden("Agent key cannot access another company");
-    }
-    if (req.actor.type === "board") {
-      const allowedCompanies = req.actor.companyIds ?? [];
-      if (!allowedCompanies.includes(expectedCompanyId)) {
-        throw forbidden("User does not have access to this company");
-      }
+    assertBoard(req);
+    if (!req.actor.companyIds.includes(expectedCompanyId)) {
+      throw forbidden("User does not have access to this company");
     }
   }
 
@@ -161,7 +145,6 @@ vi.mock("../routes/authz.js", async () => {
 });
 
 vi.mock("../services/index.js", () => ({
-  agentCompanySkillSelectionService: () => ({}),
   agentService: () => mockAgentService,
   accessService: () => mockAccessService,
   approvalService: () => mockApprovalService,
@@ -170,7 +153,6 @@ vi.mock("../services/index.js", () => ({
   taskApprovalService: () => mockTaskApprovalService,
   taskService: () => mockTaskService,
   logActivity: mockLogActivity,
-  secretService: () => mockSecretService,
 }));
 
 vi.mock("../services/instance-settings.js", () => ({
@@ -205,7 +187,6 @@ async function createApp(actor: Record<string, unknown>) {
     };
     next();
   });
-  app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", agentRoutes({} as any, {
     ordinaryTasks: {} as never,
     taskExecutionCancellation: mockTaskExecutionCancellation as never,
@@ -250,7 +231,6 @@ function resetMockDefaults() {
   for (const mock of Object.values(mockTaskExecutionCancellation)) mock.mockReset();
   for (const mock of Object.values(mockTaskApprovalService)) mock.mockReset();
   for (const mock of Object.values(mockTaskService)) mock.mockReset();
-  for (const mock of Object.values(mockSecretService)) mock.mockReset();
   mockLogActivity.mockReset();
   mockGetTelemetryClient.mockReset();
   mockResolveInvokableTaskOwnerCatalogFromDb.mockReset();
@@ -407,25 +387,6 @@ describe.sequential("agent cross-tenant route authorization", () => {
     }
 
   }, 15_000);
-
-  it("rejects agent credentials at the generic agent API boundary", async () => {
-    const app = await createApp({
-      type: "agent",
-      agentId,
-      companyId,
-      runId: "run-1",
-    });
-
-    const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl).post(`/api/agents/${agentId}/clear-error`).send({}),
-    );
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe(
-      "Agent credentials cannot access the generic REST API; use the run-scoped compiled interface",
-    );
-    expect(mockAgentService.clearError).not.toHaveBeenCalled();
-  });
 
   it("clears error agents and records a distinct audit action", async () => {
     const errorAgent = {

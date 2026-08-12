@@ -8,8 +8,7 @@ import type {
 } from "@paperclipai/shared";
 import type { MarkdownEditorRef, MentionOption } from "../MarkdownEditor";
 import type { InlineEntityOption } from "../InlineEntitySelector";
-import type { RoutineHistoryDirtyFieldDescriptor } from "../RoutineHistoryTab";
-import type { RoutineRunDialogSubmitData } from "../RoutineRunVariablesDialog";
+import type { DirtyFieldDescriptor } from "../RoutineHistoryTab";
 import type {
   RoutineTriggerResponse,
   RotateRoutineTriggerResponse,
@@ -98,9 +97,9 @@ export type RoutineDetailContextValue = {
   editDraft: RoutineEditDraft;
   setEditDraft: React.Dispatch<React.SetStateAction<RoutineEditDraft>>;
   routineDefaults: RoutineEditDraft;
-  dirtyFields: RoutineHistoryDirtyFieldDescriptor[];
+  dirtyFields: DirtyFieldDescriptor[];
   isEditDirty: boolean;
-  sectionDirtyFields: (section: RoutineSectionKey) => RoutineHistoryDirtyFieldDescriptor[];
+  sectionDirtyFields: (section: RoutineSectionKey) => DirtyFieldDescriptor[];
   isSectionDirty: (section: RoutineSectionKey) => boolean;
   discardSection: (section: RoutineSectionKey) => void;
 

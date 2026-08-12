@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 export interface MarkdownDoc {
   frontmatter: Record<string, unknown>;
   body: string;
@@ -26,7 +24,6 @@ export interface FrontmatterRoundTripDiagnostic {
   message: string;
 }
 
-const SKILL_FRONTMATTER_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SUPPORTED_FRONTMATTER_KEY_RE = /^[A-Za-z0-9_. -]+$/;
 
 type SerializableFrontmatterValue =
@@ -36,31 +33,6 @@ type SerializableFrontmatterValue =
   | boolean
   | SerializableFrontmatterValue[]
   | { [key: string]: SerializableFrontmatterValue };
-
-const skillMetadataValueSchema: z.ZodType<unknown> = z.lazy(() =>
-  z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(skillMetadataValueSchema),
-    z.record(skillMetadataValueSchema),
-  ])
-);
-
-export const skillFrontmatterSchema = z.object({
-  name: z.string().regex(SKILL_FRONTMATTER_SLUG_RE, "Expected a lowercase URL slug."),
-  description: z.string().min(1),
-  "allowed-tools": z.array(z.string()).optional(),
-  metadata: z.record(skillMetadataValueSchema).optional(),
-}).passthrough();
-
-export const skillFrontmatterKnownKeys = [
-  "name",
-  "description",
-  "allowed-tools",
-  "metadata",
-] as const;
 
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -108,11 +80,6 @@ export function splitFrontmatterBlock(raw: string): FrontmatterBlock {
 
 export function stringifyFrontmatter(value: Record<string, unknown>): string {
   return stringifyYamlRecord(assertSerializableRecord(value), 0).join("\n");
-}
-
-export function getSkillFrontmatterUnknownKeys(value: Record<string, unknown>) {
-  const known = new Set<string>(skillFrontmatterKnownKeys);
-  return Object.keys(value).filter((key) => !known.has(key));
 }
 
 export function detectFrontmatterRoundTripDiagnostics(rawYaml: string): FrontmatterRoundTripDiagnostic[] {
@@ -227,7 +194,7 @@ export interface FrontmatterAnalysis {
  * Decide whether a frontmatter block can be edited through the structured
  * field form. Fields mode is only offered when re-serializing the parsed object
  * reproduces the original block exactly — this is the load-bearing round-trip
- * safety gate for the Skill Studio FrontmatterPanel (PAP-13145 Option B).
+ * safety gate for structured frontmatter editing.
  */
 export function analyzeFrontmatterBlock(frontmatterText: string): FrontmatterAnalysis {
   const diagnostics = detectFrontmatterRoundTripDiagnostics(frontmatterText);

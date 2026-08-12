@@ -2,7 +2,9 @@ import { isIP } from "node:net";
 import type { IncomingHttpHeaders, IncomingMessage } from "node:http";
 import type { RequestHandler } from "express";
 import {
-  normalizePublicOrigin,
+  parseExactHostname,
+  parseExactHostnameList,
+  parseExactPublicOrigin,
   type DeploymentExposure,
 } from "@paperclipai/shared";
 
@@ -43,11 +45,15 @@ function invalidAuthority(message: string): never {
   throw new RequestAuthorityError(message);
 }
 
-function readHeader(headers: IncomingHttpHeaders, name: string): string | undefined {
+function readHeader(
+  headers: IncomingHttpHeaders,
+  name: string,
+): string | undefined {
   const raw = headers[name];
   if (raw === undefined) return undefined;
   if (Array.isArray(raw)) {
-    if (raw.length !== 1) invalidAuthority(`Multiple ${name} headers are not allowed`);
+    if (raw.length !== 1)
+      invalidAuthority(`Multiple ${name} headers are not allowed`);
     return raw[0];
   }
   return raw;
@@ -71,9 +77,9 @@ function normalizeDomainHostname(raw: string): string {
   if (!labelSource) invalidAuthority("Host hostname is empty");
   for (const label of labelSource.split(".")) {
     if (
-      label.length === 0
-      || label.length > 63
-      || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)
+      label.length === 0 ||
+      label.length > 63 ||
+      !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)
     ) {
       invalidAuthority("Host contains an invalid hostname");
     }
@@ -82,7 +88,8 @@ function normalizeDomainHostname(raw: string): string {
 }
 
 function normalizeIpv6Hostname(raw: string): string {
-  if (isIP(raw) !== 6) invalidAuthority("Host contains an invalid IPv6 address");
+  if (isIP(raw) !== 6)
+    invalidAuthority("Host contains an invalid IPv6 address");
   return new URL(`http://[${raw}]`).hostname.slice(1, -1).toLowerCase();
 }
 
@@ -109,8 +116,8 @@ export function canonicalizeAuthority(
     invalidAuthority("Host header is missing or malformed");
   }
   if (
-    /[\u0000-\u0020\u007f]/.test(rawAuthority)
-    || /[@/\\?#,%]/.test(rawAuthority)
+    /[\u0000-\u0020\u007f]/.test(rawAuthority) ||
+    /[@/\\?#,%]/.test(rawAuthority)
   ) {
     invalidAuthority("Host header is malformed");
   }
@@ -119,7 +126,8 @@ export function canonicalizeAuthority(
   let rawPort: string | undefined;
   if (rawAuthority.startsWith("[")) {
     const match = /^\[([^\]]+)\](?::(\d{1,5}))?$/.exec(rawAuthority);
-    if (!match) invalidAuthority("Host header contains malformed IPv6 authority");
+    if (!match)
+      invalidAuthority("Host header contains malformed IPv6 authority");
     hostname = normalizeIpv6Hostname(match[1]!);
     rawPort = match[2];
   } else {
@@ -131,12 +139,13 @@ export function canonicalizeAuthority(
 
   const parsedPort = parsePort(rawPort);
   const port =
-    (scheme === "http" && parsedPort === 80)
-    || (scheme === "https" && parsedPort === 443)
+    (scheme === "http" && parsedPort === 80) ||
+    (scheme === "https" && parsedPort === 443)
       ? null
       : parsedPort;
   const formattedHostname = isIP(hostname) === 6 ? `[${hostname}]` : hostname;
-  const authority = port === null ? formattedHostname : `${formattedHostname}:${port}`;
+  const authority =
+    port === null ? formattedHostname : `${formattedHostname}:${port}`;
   return {
     scheme,
     hostname,
@@ -154,10 +163,10 @@ export function canonicalizeBrowserOrigin(
   try {
     const url = new URL(value);
     if (
-      (url.protocol !== "http:" && url.protocol !== "https:")
-      || url.username
-      || url.password
-      || (!options.allowPath && (url.pathname !== "/" || url.search || url.hash))
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password ||
+      (!options.allowPath && (url.pathname !== "/" || url.search || url.hash))
     ) {
       return null;
     }
@@ -191,7 +200,8 @@ export function resolveRequestAuthority(
   if (carrier.requestAuthority) return carrier.requestAuthority;
 
   const socketScheme: RequestScheme =
-    (req.socket as typeof req.socket & { encrypted?: boolean })?.encrypted === true
+    (req.socket as typeof req.socket & { encrypted?: boolean })?.encrypted ===
+    true
       ? "https"
       : "http";
   const hostHeader = readHeader(req.headers, "host");
@@ -232,13 +242,13 @@ export function resolveRequestAuthority(
 }
 
 function canonicalizeConfiguredHostname(raw: string): string {
-  const value = raw.trim().toLowerCase();
-  if (!value) invalidAuthority("Configured hostname cannot be empty");
-  if (value.startsWith("[") && value.endsWith("]")) {
-    return normalizeIpv6Hostname(value.slice(1, -1));
+  try {
+    return parseExactHostname(raw);
+  } catch (error) {
+    invalidAuthority(
+      error instanceof Error ? error.message : "Invalid configured hostname",
+    );
   }
-  if (isIP(value) === 6) return normalizeIpv6Hostname(value);
-  return normalizeHostname(value);
 }
 
 export function resolvePrivateHostnameAllowSet(opts: {
@@ -246,12 +256,11 @@ export function resolvePrivateHostnameAllowSet(opts: {
   bindHost: string;
 }): Set<string> {
   const allowSet = new Set<string>();
-  for (const configured of opts.allowedHostnames) {
-    if (!configured.trim()) continue;
+  for (const configured of parseExactHostnameList(opts.allowedHostnames)) {
     allowSet.add(canonicalizeConfiguredHostname(configured));
   }
 
-  const bindHost = opts.bindHost.trim();
+  const bindHost = opts.bindHost;
   if (bindHost && bindHost !== "0.0.0.0" && bindHost !== "::") {
     allowSet.add(canonicalizeConfiguredHostname(bindHost));
   }
@@ -268,7 +277,7 @@ export function createRequestAuthorityPolicy(input: {
   bindHost: string;
 }): RequestAuthorityPolicy {
   const canonicalPublicOrigin = input.canonicalPublicUrl
-    ? normalizePublicOrigin(input.canonicalPublicUrl)
+    ? parseExactPublicOrigin(input.canonicalPublicUrl)
     : null;
   if (input.deploymentExposure === "public" && !canonicalPublicOrigin) {
     throw new Error("Public exposure requires one canonical public origin");
@@ -282,9 +291,9 @@ export function createRequestAuthorityPolicy(input: {
     privateAllowedHostnames:
       input.deploymentExposure === "private"
         ? resolvePrivateHostnameAllowSet({
-          allowedHostnames: input.allowedHostnames,
-          bindHost: input.bindHost,
-        })
+            allowedHostnames: input.allowedHostnames,
+            bindHost: input.bindHost,
+          })
         : new Set(),
   };
 }
@@ -294,7 +303,10 @@ export function assertRequestAuthorityAllowed(
   policy: RequestAuthorityPolicy,
 ): void {
   if (policy.deploymentExposure === "public") {
-    if (!policy.canonicalPublicOrigin || authority.origin !== policy.canonicalPublicOrigin) {
+    if (
+      !policy.canonicalPublicOrigin ||
+      authority.origin !== policy.canonicalPublicOrigin
+    ) {
       throw new RequestAuthorityError(
         "Request authority does not match the canonical public origin",
         403,
@@ -305,8 +317,8 @@ export function assertRequestAuthorityAllowed(
 
   if (!policy.privateAllowedHostnames.has(authority.hostname)) {
     throw new RequestAuthorityError(
-      `Hostname '${authority.hostname}' is not allowed for this Paperclip instance. `
-        + `If you want to allow this hostname, please run pnpm paperclipai allowed-hostname ${authority.hostname}`,
+      `Hostname '${authority.hostname}' is not allowed for this Paperclip instance. ` +
+        `If you want to allow this hostname, please run pnpm paperclipai allowed-hostname ${authority.hostname}`,
       403,
     );
   }
@@ -327,7 +339,8 @@ export function canonicalRequestHeaders(
 ): Headers {
   const headers = new Headers();
   for (const [name, raw] of Object.entries(rawHeaders)) {
-    if (raw === undefined || RAW_AUTHORITY_HEADERS.has(name.toLowerCase())) continue;
+    if (raw === undefined || RAW_AUTHORITY_HEADERS.has(name.toLowerCase()))
+      continue;
     if (Array.isArray(raw)) {
       for (const value of raw) headers.append(name, value);
     } else {
@@ -364,7 +377,8 @@ export function createRequestAuthorityBoundary(input: {
   trustProxy: TrustProxyPredicate;
   policy: RequestAuthorityPolicy;
 }): RequestAuthorityBoundary {
-  const resolve = (req: IncomingMessage) => resolveRequestAuthority(req, input.trustProxy);
+  const resolve = (req: IncomingMessage) =>
+    resolveRequestAuthority(req, input.trustProxy);
   const admit = (req: IncomingMessage) => {
     const authority = resolve(req);
     assertRequestAuthorityAllowed(authority, input.policy);
@@ -380,8 +394,8 @@ export function createRequestAuthorityBoundary(input: {
         return;
       }
       const wantsJson =
-        req.originalUrl.startsWith("/api")
-        || req.accepts(["json", "html", "text"]) === "json";
+        req.originalUrl.startsWith("/api") ||
+        req.accepts(["json", "html", "text"]) === "json";
       if (wantsJson) {
         res.status(error.status).json({ error: error.message });
       } else {
@@ -400,10 +414,14 @@ export function createRequestAuthorityBoundary(input: {
   };
 }
 
-export function requireRequestAuthority(req: IncomingMessage): RequestAuthority {
+export function requireRequestAuthority(
+  req: IncomingMessage,
+): RequestAuthority {
   const authority = (req as AuthorityCarrier).requestAuthority;
   if (!authority) {
-    throw new Error("Request authority middleware must run before this consumer");
+    throw new Error(
+      "Request authority middleware must run before this consumer",
+    );
   }
   return authority;
 }

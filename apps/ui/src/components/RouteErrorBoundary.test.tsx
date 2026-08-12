@@ -6,11 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 
 const navigateMock = vi.hoisted(() => vi.fn());
-const routerLocation = vi.hoisted(() => ({ current: { pathname: "/co/agents/new", search: "?adapterType=codex" } }));
+const routerLocation = vi.hoisted(() => ({ current: { pathname: "/co/agents/new", searchStr: "?adapterType=codex" } }));
 
-vi.mock("@/lib/router", () => ({
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
+}));
+
+vi.mock("@tanstack/react-router", () => ({
   useLocation: () => routerLocation.current,
-  useNavigate: () => navigateMock,
+  useRouter: () => ({ history: { back: navigateMock } }),
 }));
 
 function Boom(): never {
@@ -23,7 +27,7 @@ describe("RouteErrorBoundary", () => {
 
   beforeEach(() => {
     navigateMock.mockReset();
-    routerLocation.current = { pathname: "/co/agents/new", search: "?adapterType=codex" };
+    routerLocation.current = { pathname: "/co/agents/new", searchStr: "?adapterType=codex" };
     container = document.createElement("div");
     document.body.appendChild(container);
     // React logs caught render errors to console.error; silence the expected noise.
@@ -73,7 +77,7 @@ describe("RouteErrorBoundary", () => {
       goBack?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(navigateMock).toHaveBeenCalledWith(-1);
+    expect(navigateMock).toHaveBeenCalledOnce();
 
     act(() => {
       root.unmount();
@@ -93,7 +97,7 @@ describe("RouteErrorBoundary", () => {
 
     // Simulate back-navigation to a different route, then re-render with a
     // healthy child — the boundary should reset off the new resetKey.
-    routerLocation.current = { pathname: "/co/agents", search: "" };
+    routerLocation.current = { pathname: "/co/agents", searchStr: "" };
     act(() => {
       root.render(
         <RouteErrorBoundary>

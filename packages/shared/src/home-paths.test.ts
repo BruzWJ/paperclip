@@ -6,7 +6,7 @@ import {
   resolveDefaultLogsDir,
   resolveDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir,
-  resolvePaperclipConfigPathForInstance,
+  resolvePaperclipInstanceConfigPath,
   resolvePaperclipInstanceRoot,
 } from "./home-paths.js";
 
@@ -24,9 +24,19 @@ describe("home path resolution", () => {
 
     const instanceRoot = path.join(home, "instances", "default");
     expect(resolvePaperclipInstanceRoot()).toBe(instanceRoot);
-    expect(resolvePaperclipConfigPathForInstance()).toBe(path.join(instanceRoot, "config.json"));
+    expect(resolvePaperclipInstanceConfigPath()).toBe(path.join(instanceRoot, "config.json"));
     expect(resolveDefaultLogsDir()).toBe(path.join(instanceRoot, "logs"));
     expect(resolveDefaultStorageDir()).toBe(path.join(instanceRoot, "data", "storage"));
     expect(resolveDefaultSecretsKeyFilePath()).toBe(path.join(instanceRoot, "secrets", "master.key"));
   });
+
+  it.each(["", " /tmp/paperclip", "/tmp/paperclip "])(
+    "rejects non-exact PAPERCLIP_HOME %j",
+    (value) => {
+      process.env.PAPERCLIP_HOME = value;
+      expect(() => resolvePaperclipInstanceRoot()).toThrow(
+        "PAPERCLIP_HOME must be exact and non-empty",
+      );
+    },
+  );
 });

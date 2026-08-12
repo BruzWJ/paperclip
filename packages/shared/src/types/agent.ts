@@ -1,6 +1,4 @@
 import type {
-  AgentAdapterType,
-  ModelProfileKey,
   PauseReason,
   AgentStatus,
 } from "../constants.js";
@@ -9,41 +7,21 @@ import type {
   PrincipalPermissionGrant,
 } from "./access.js";
 import type { AgentOrgChainHealth } from "../agent-eligibility.js";
-import type { AdapterImplementationIdentity } from "../adapter-implementation.js";
 import type {
   AgentAdapterAcpConfigurationInput,
-  PublicAgentAdapterAcpConfigurationInput,
 } from "../validators/agent-adapter-revision.js";
 import type { MoneyAmount } from "../money.js";
-
-export interface AgentModelProfileConfig {
-  enabled?: boolean;
-  label?: string;
-  adapterConfig: Record<string, unknown>;
-}
-
-export interface AgentRuntimeConfig extends Record<string, unknown> {
-  modelProfiles?: Partial<Record<ModelProfileKey, AgentModelProfileConfig>>;
-}
 
 /** Canonical persisted shape; immutability is enforced by revision append-only writes. */
 export type AgentAdapterAcpConfiguration =
   AgentAdapterAcpConfigurationInput;
-
-export type PublicAgentAdapterAcpConfiguration =
-  PublicAgentAdapterAcpConfigurationInput;
 
 export interface AgentAdapterConfigRevision {
   id: string;
   companyId: string;
   agentId: string;
   revisionNumber: number;
-  adapterType: string;
-  implementationIdentity: AdapterImplementationIdentity;
-  adapterConfigSchemaVersion: string;
-  normalizedConfig: Record<string, unknown>;
-  runtimeConfig: AgentRuntimeConfig;
-  acpConfiguration: PublicAgentAdapterAcpConfiguration;
+  acpConfiguration: AgentAdapterAcpConfiguration;
   digest: string;
   parentRevisionId: string | null;
   createdByAgentId: string | null;
@@ -89,16 +67,12 @@ export interface Agent {
   id: string;
   companyId: string;
   name: string;
-  urlKey: string;
   title: string | null;
   icon: string | null;
   status: AgentStatus;
   reportsTo: string | null;
   capabilities: string | null;
-  adapterType: AgentAdapterType | null;
-  adapterConfig: Record<string, unknown> | null;
   currentAdapterConfigRevisionId: string | null;
-  runtimeConfig: AgentRuntimeConfig;
   budgetMonthlyAmount: MoneyAmount;
   knownSpendAmount: MoneyAmount;
   pauseReason: PauseReason | null;
@@ -127,20 +101,4 @@ export interface AgentDetail extends Agent {
   chainOfCommand: AgentChainOfCommandEntry[];
   access: AgentAccessState;
   pluginManagement: AgentPluginManagementBinding | null;
-}
-
-export type ClearAgentErrorResponse = Agent;
-
-export interface AgentConfigRevision {
-  id: string;
-  companyId: string;
-  agentId: string;
-  createdByAgentId: string | null;
-  createdByUserId: string | null;
-  source: string;
-  rolledBackFromRevisionId: string | null;
-  changedKeys: string[];
-  beforeConfig: Record<string, unknown>;
-  afterConfig: Record<string, unknown>;
-  createdAt: Date;
 }

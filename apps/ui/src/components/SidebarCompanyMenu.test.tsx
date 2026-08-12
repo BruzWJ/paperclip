@@ -17,13 +17,14 @@ const mockAuthApi = vi.hoisted(() => ({
 }));
 const mockNavigate = vi.hoisted(() => vi.fn());
 const mockOpenOnboarding = vi.hoisted(() => vi.fn());
-const mockSetSelectedCompanyId = vi.hoisted(() => vi.fn());
 const mockSetSidebarOpen = vi.hoisted(() => vi.fn());
-const mockLocation = vi.hoisted(() => ({ pathname: "/PAP/dashboard" }));
 const mockSidebarPreferencesApi = vi.hoisted(() => ({
   getCompanyOrder: vi.fn(),
   updateCompanyOrder: vi.fn(),
 }));
+const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
+const STRATA_COMPANY_ID = vi.hoisted(() => "22222222-2222-4222-8222-222222222222");
+const ANACHRONIST_COMPANY_ID = vi.hoisted(() => "33333333-3333-4333-8333-333333333333");
 
 vi.mock("@/api/auth", () => ({
   authApi: mockAuthApi,
@@ -33,11 +34,14 @@ vi.mock("@/api/sidebarPreferences", () => ({
   sidebarPreferencesApi: mockSidebarPreferencesApi,
 }));
 
-vi.mock("@/lib/router", () => ({
-  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
-    <a href={to} {...props}>{children}</a>
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => COMPANY_ID,
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to, params, ...props }: { children: ReactNode; to: string; params?: Record<string, string> }) => (
+    <a href={to.replace("$companyId", params?.companyId ?? "")} {...props}>{children}</a>
   ),
-  useLocation: () => mockLocation,
   useNavigate: () => mockNavigate,
 }));
 
@@ -45,21 +49,21 @@ vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
     companies: [
       {
-        id: "company-1",
+        id: COMPANY_ID,
         taskPrefix: "PAP",
         name: "Acme Labs",
         brandColor: "#3366ff",
         status: "active",
       },
       {
-        id: "company-2",
+        id: STRATA_COMPANY_ID,
         taskPrefix: "STR",
         name: "Strata",
         brandColor: "#36a269",
         status: "active",
       },
       {
-        id: "company-3",
+        id: ANACHRONIST_COMPANY_ID,
         taskPrefix: "ANA",
         name: "Anachronist Wiki",
         brandColor: "#a36a21",
@@ -67,13 +71,12 @@ vi.mock("@/context/CompanyContext", () => ({
       },
     ],
     selectedCompany: {
-      id: "company-1",
+      id: COMPANY_ID,
       taskPrefix: "PAP",
       name: "Acme Labs",
       brandColor: "#3366ff",
       status: "active",
     },
-    setSelectedCompanyId: mockSetSelectedCompanyId,
   }),
 }));
 
@@ -124,14 +127,13 @@ describe("SidebarCompanyMenu", () => {
     });
     mockAuthApi.signOut.mockResolvedValue(undefined);
     mockSidebarPreferencesApi.getCompanyOrder.mockResolvedValue({
-      orderedIds: ["company-1", "company-2", "company-3"],
+      orderedIds: [COMPANY_ID, STRATA_COMPANY_ID, ANACHRONIST_COMPANY_ID],
       updatedAt: null,
     });
     mockSidebarPreferencesApi.updateCompanyOrder.mockResolvedValue({
-      orderedIds: ["company-1", "company-2", "company-3"],
+      orderedIds: [COMPANY_ID, STRATA_COMPANY_ID, ANACHRONIST_COMPANY_ID],
       updatedAt: null,
     });
-    mockLocation.pathname = "/PAP/dashboard";
   });
 
   afterEach(() => {
@@ -272,7 +274,6 @@ describe("SidebarCompanyMenu", () => {
     });
     await flushReact();
 
-    expect(mockSetSelectedCompanyId).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
 
     act(() => {
@@ -280,8 +281,7 @@ describe("SidebarCompanyMenu", () => {
     });
   });
 
-  it("navigates to the selected company dashboard from company-prefixed routes", async () => {
-    mockLocation.pathname = "/PAP/tasks";
+  it("navigates to the selected company dashboard from the authenticated company route", async () => {
     const root = createRoot(container);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -315,8 +315,10 @@ describe("SidebarCompanyMenu", () => {
     });
     await flushReact();
 
-    expect(mockSetSelectedCompanyId).toHaveBeenCalledWith("company-2");
-    expect(mockNavigate).toHaveBeenCalledWith("/STR/dashboard");
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: "/$companyId/dashboard",
+      params: { companyId: STRATA_COMPANY_ID },
+    });
 
     act(() => {
       root.unmount();

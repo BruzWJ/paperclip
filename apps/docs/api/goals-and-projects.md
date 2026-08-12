@@ -79,7 +79,9 @@ POST /api/companies/{companyId}/projects
 }
 ```
 
-`repoUrl` records source provenance. It does not clone the repository.
+`repoUrl` records source provenance. It does not clone the repository. Supply
+its exact canonical HTTPS serialization: use a lowercase scheme and host, omit
+the default HTTPS port, and remove dot segments from the path.
 `localFolder` must be absolute on the Paperclip server and becomes the working
 directory for agents running tasks in this project. If it is omitted, runs use
 an instance-managed task directory.

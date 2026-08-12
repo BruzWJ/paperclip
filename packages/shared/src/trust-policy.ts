@@ -39,8 +39,6 @@ export interface LowTrustReviewPresetPolicy {
 }
 
 export interface TrustAuthorizationPolicy extends Record<string, unknown> {
-  trustPreset?: TrustPreset;
-  reviewPreset?: LowTrustReviewPresetPolicy;
   trustBoundary?: LowTrustBoundary;
 }
 

@@ -36,6 +36,7 @@ import { lockTaskTreeExecutionGate } from "./task-execution-lifecycle-gate.js";
 type TaskRow = typeof tasks.$inferSelect;
 type HoldRow = typeof taskTreeHolds.$inferSelect;
 type HoldMemberRow = typeof taskTreeHoldMembers.$inferSelect;
+type HoldMemberSummaryRow = HoldMemberRow & { taskNumber: number };
 export type ActiveTaskTreePauseHoldGate = {
   holdId: string;
   rootTaskId: string;
@@ -107,7 +108,7 @@ function toPreviewRun(row: ActiveRunRow): TaskTreePreviewRun {
   };
 }
 
-function toHold(row: HoldRow, members?: HoldMemberRow[]): TaskTreeHold {
+function toHold(row: HoldRow, members?: HoldMemberSummaryRow[]): TaskTreeHold {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -133,7 +134,7 @@ function toHold(row: HoldRow, members?: HoldMemberRow[]): TaskTreeHold {
   };
 }
 
-function toHoldMember(row: HoldMemberRow): TaskTreeHoldMember {
+function toHoldMember(row: HoldMemberSummaryRow): TaskTreeHoldMember {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -141,6 +142,7 @@ function toHoldMember(row: HoldMemberRow): TaskTreeHoldMember {
     taskId: row.taskId,
     parentTaskId: row.parentTaskId,
     depth: row.depth,
+    taskNumber: row.taskNumber,
     taskIdentifier: row.taskIdentifier,
     taskTitle: row.taskTitle,
     taskStatus: coerceTaskStatus(row.taskStatus),
@@ -310,6 +312,35 @@ export function taskTreeControlService(
   db: Db,
   options: { taskExecutionCancellation?: TaskTreeCancellationPort } = {},
 ) {
+  async function hydrateHoldMemberTaskNumbers(
+    dbOrTx: any,
+    companyId: string,
+    members: HoldMemberRow[],
+  ): Promise<HoldMemberSummaryRow[]> {
+    if (members.length === 0) return [];
+    const taskRows: Array<{ id: string; taskNumber: number }> = await dbOrTx
+      .select({ id: tasks.id, taskNumber: tasks.taskNumber })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.companyId, companyId),
+          inArray(tasks.id, [...new Set(members.map((member) => member.taskId))]),
+        ),
+      );
+    const taskNumberById = new Map<string, number>(
+      taskRows.map((task) => [task.id, task.taskNumber]),
+    );
+    return members.map((member) => {
+      const taskNumber = taskNumberById.get(member.taskId);
+      if (taskNumber === undefined) {
+        throw conflict(
+          "Task-tree hold member references an unavailable task",
+        );
+      }
+      return { ...member, taskNumber };
+    });
+  }
+
   async function listTreeTasks(companyId: string, rootTaskId: string): Promise<TreeTask[]> {
     const root = await db
       .select()
@@ -506,6 +537,7 @@ export function taskTreeControlService(
       const run = runsByTaskId.get(task.id);
       return {
         id: task.id,
+        taskNumber: task.taskNumber,
         identifier: task.identifier,
         title: task.title,
         boardPresentationStatus,
@@ -616,7 +648,22 @@ export function taskTreeControlService(
           .returning()
         : [];
 
-      return { createdHold, createdMembers };
+      const taskNumberById = new Map(
+        previewSnapshot.tasks.map((task) => [task.id, task.taskNumber]),
+      );
+      const createdMemberSummaries: HoldMemberSummaryRow[] = createdMembers.map(
+        (member) => {
+          const taskNumber = taskNumberById.get(member.taskId);
+          if (taskNumber === undefined) {
+            throw conflict(
+              "Created task-tree hold member references an unavailable task",
+            );
+          }
+          return { ...member, taskNumber };
+        },
+      );
+
+      return { createdHold, createdMembers: createdMemberSummaries };
     }
 
     if (input.mode === "resume") {
@@ -1124,7 +1171,7 @@ export function taskTreeControlService(
       .from(taskTreeHoldMembers)
       .where(and(eq(taskTreeHoldMembers.companyId, companyId), eq(taskTreeHoldMembers.holdId, holdId)))
       .orderBy(asc(taskTreeHoldMembers.depth), asc(taskTreeHoldMembers.createdAt), asc(taskTreeHoldMembers.taskId));
-    return toHold(hold, members);
+    return toHold(hold, await hydrateHoldMemberTaskNumbers(db, companyId, members));
   }
 
   async function listHolds(
@@ -1164,8 +1211,10 @@ export function taskTreeControlService(
       )
       .orderBy(asc(taskTreeHoldMembers.depth), asc(taskTreeHoldMembers.createdAt), asc(taskTreeHoldMembers.taskId));
 
-    const membersByHoldId = new Map<string, HoldMemberRow[]>();
-    for (const member of members) {
+    const hydratedMembers = await hydrateHoldMemberTaskNumbers(db, companyId, members);
+
+    const membersByHoldId = new Map<string, HoldMemberSummaryRow[]>();
+    for (const member of hydratedMembers) {
       const existing = membersByHoldId.get(member.holdId) ?? [];
       existing.push(member);
       membersByHoldId.set(member.holdId, existing);
@@ -1301,7 +1350,10 @@ export function taskTreeControlService(
         });
       }
 
-      return toHold(updated, members);
+      return toHold(
+        updated,
+        await hydrateHoldMemberTaskNumbers(tx, companyId, members),
+      );
     });
   }
 

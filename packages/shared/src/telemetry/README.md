@@ -26,7 +26,6 @@ Use these files when reviewing or changing telemetry code:
 | Shared reusable enum domains | Named exports in `constants.ts` |
 | First-party typed emit helpers | `events.ts` |
 | Generic client behavior | `client.ts` |
-| Retention windows and event class assignments | `RETENTION_DAYS` and `EVENT_RETENTION_CLASS` in `retention.ts` |
 
 Do not copy generated event lists or dimension tables into this README. They
 will drift as the generated contract changes.
@@ -42,14 +41,9 @@ telemetry dimensions.
 Telemetry emitters send raw dimension values. They must not pre-normalize
 enum-like values into a reporting form just to match today's known domain.
 
-The receiving layer owns canonicalization. Keeping canonicalization in one place
-means emitters can stay simple and accurate: emit what the product observed, use
-the generated contract for required and optional fields, and let the receiving
-layer decide how legacy spellings, aliases, unknown names, and future values map
-to a stable reporting shape.
-
-Do not add client-side lowercasing, alias mapping, or fallback mapping unless
-the generated telemetry contract specifically requires that emitted value.
+Emitters must use the exact generated contract values. Do not lowercase,
+alias-map, or substitute unknown values. A new value requires a generated
+contract update before first-party code emits it.
 
 If a dimension is privacy-protected before emission, emit only the protected
 value and its matching public marker as defined by the typed helper or generated
@@ -79,10 +73,9 @@ Required and optional dimensions are defined by `EventDimensionsMap`.
 Required dimensions must be present for every event of that name. Optional
 dimensions should be emitted only when the value is known and useful.
 
-Sentinel values are only for required fields that have no observed raw value at
-the emitting layer. Do not use a sentinel to hide a concrete value that is new,
-custom, or not yet represented by a shared constant. Emit the concrete raw value
-and let the receiving layer canonicalize it.
+Required enum dimensions must have an exact generated value at the emitting
+layer. If no such value exists, update the generated contract before emitting
+the event; do not substitute a sentinel or forward an unregistered value.
 
 ## Adding Or Changing Telemetry
 
@@ -108,13 +101,12 @@ For stable event work:
 4. Reuse a shared constant from `constants.ts` for enum-like dimensions when one
    exists. If the generated telemetry domain has values beyond a shared constant,
    keep the emitter aligned with the generated telemetry type.
-5. Keep emitters raw. Do not normalize, alias-map, or lowercase enum-like values
-   in the client unless the generated contract explicitly calls for that emitted
-   value.
+5. Emit exact generated enum values. Do not normalize, alias-map, lowercase, or
+   widen enum-like values in the client.
 6. Add or update a typed helper in `events.ts` when the event is first-party and
    should have a stable helper API.
-7. Update tests for helper behavior, including raw pass-through for enum-like
-   values when that is the intended boundary.
+7. Update tests for helper behavior, including rejection of values outside the
+   generated enum contract.
 8. Update this README only when the contributor workflow, source-of-truth
    pointers, or durable invariants change. Do not add an event catalog here.
 
@@ -125,21 +117,3 @@ rather than documenting around the mismatch in this README.
 For new first-party events that are not in the generated contract yet, follow
 the public proposal and promotion workflow in
 [`doc/TELEMETRY_WORKFLOW.md`](../../../../doc/TELEMETRY_WORKFLOW.md).
-
-## Retention
-
-Retention windows are documented in `retention.ts`. Each event is assigned a
-retention class; the class determines the window in days. This is a
-housekeeping and query-cost concern managed by data-infra, not a schema
-concern — updating a retention window does not require a schema version bump.
-
-Current classes:
-
-| Class | Window | Description |
-| --- | --- | --- |
-| `operational_enum_count` | 90 days | Enum/boolean/count/bucket events. No token material, no PII. |
-
-When a new event carries only enums, booleans, counts, or coarse buckets and
-no token material or PII, assign it to `operational_enum_count` in
-`EVENT_RETENTION_CLASS`. If no existing class fits, define a new class in
-`RETENTION_DAYS` and document it here.

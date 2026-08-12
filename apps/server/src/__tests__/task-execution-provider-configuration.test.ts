@@ -11,16 +11,9 @@ const configuration: AgentAdapterAcpConfiguration = {
   launchProfile: { registryName: fixtureAgent },
   sessionConfigSelections: [{ configId: "model", value: "model-1" }],
   model: {
-    id: "model",
-    label: "Model",
     value: "model-1",
-    limits: {
-      contextTokenLimit: 200_000,
-      outputTokenLimit: 16_000,
-    },
+    label: "Model",
   },
-  workspaceSelector: { kind: "task_execution_workspace" },
-  companySkillPins: [],
 };
 
 function acquisitionInput(

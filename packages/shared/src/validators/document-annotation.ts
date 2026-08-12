@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import { addValidationDetail } from "../validation-details.js";
 import {
   DOCUMENT_ANNOTATION_ANCHOR_CONFIDENCES,
@@ -43,16 +44,16 @@ export const documentAnnotationAnchorSelectorSchema = z.object({
 }).strict();
 
 export const createDocumentAnnotationThreadSchema = z.object({
-  baseRevisionId: z.string().uuid(),
+  baseRevisionId: canonicalUuidSchema,
   baseRevisionNumber: z.number().int().positive(),
   selector: documentAnnotationAnchorSelectorSchema,
   body: multilineTextSchema.pipe(z.string().min(1).max(20_000)),
-  taskCommentId: z.string().uuid().nullable().optional(),
+  taskCommentId: canonicalUuidSchema.nullable().optional(),
 }).strict();
 
 export const createDocumentAnnotationCommentSchema = z.object({
   body: multilineTextSchema.pipe(z.string().min(1).max(20_000)),
-  taskCommentId: z.string().uuid().nullable().optional(),
+  taskCommentId: canonicalUuidSchema.nullable().optional(),
 }).strict();
 
 export const updateDocumentAnnotationThreadSchema = z.object({

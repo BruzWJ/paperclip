@@ -9,7 +9,7 @@ import {
 } from "react";
 
 interface SidebarContextValue {
-  // Mobile drawer + back-compat (existing behavior, unchanged).
+  // Mobile drawer visibility.
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;

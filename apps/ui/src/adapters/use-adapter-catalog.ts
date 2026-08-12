@@ -1,7 +1,6 @@
-import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
-  validateAdapterConfigSchema,
-  type AdapterConfigSchema,
+  validateAcpAdapterConfigOptions,
 } from "@paperclipai/adapter-utils";
 import {
   adaptersApi,
@@ -23,65 +22,30 @@ export interface AdapterCatalogSyncState {
   readonly refetch: () => Promise<unknown>;
 }
 
-function clearAdapterConfigSchemas(queryClient: QueryClient): void {
-  queryClient.removeQueries({
-    queryKey: queryKeys.adapters.configSchemas,
-  });
-}
-
 /**
  * Treat the ready catalog entries as a complete ACPX snapshot. Validation at
  * this boundary prevents the UI from ever interpreting malformed dynamic
  * fields, even though the server has already validated them.
  */
-function replaceAdapterConfigSchemas(
-  queryClient: QueryClient,
+function validateAdapterCatalog(
   adapters: readonly AdapterInfo[],
-): void {
-  const schemasByType = new Map<string, AdapterConfigSchema>();
-  for (const adapter of adapters) {
-    if (!adapter.loaded) continue;
-    const parsedSchema = validateAdapterConfigSchema(adapter.configSchema);
-    if (!parsedSchema.success) {
+): AdapterInfo[] {
+  return adapters.map((adapter) => {
+    if (!adapter.loaded) return adapter;
+    let configOptions;
+    try {
+      configOptions = validateAcpAdapterConfigOptions(adapter.configOptions);
+    } catch (error) {
       throw new Error(
-        `Local agent "${adapter.type}" returned an invalid configuration schema. ${parsedSchema.errors.join(" ")}`,
+        `Local agent "${adapter.type}" returned invalid ACPX configuration options. ${error instanceof Error ? error.message : ""}`,
       );
     }
-    schemasByType.set(adapter.type, parsedSchema.data);
-  }
-
-  // A catalog refresh is authoritative. Keep no schema for an agent that is
-  // no longer admitted, while replacing every schema that remains selectable.
-  for (const query of queryClient.getQueryCache().findAll({
-    queryKey: queryKeys.adapters.configSchemas,
-  })) {
-    const adapterType = query.queryKey[2];
-    if (typeof adapterType === "string" && !schemasByType.has(adapterType)) {
-      queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
-    }
-  }
-  for (const [adapterType, schema] of schemasByType) {
-    queryClient.setQueryData(
-      queryKeys.adapters.configSchema(adapterType),
-      schema,
-    );
-  }
+    return { ...adapter, configOptions };
+  });
 }
 
-async function fetchAdapterCatalog(queryClient: QueryClient): Promise<AdapterInfo[]> {
-  try {
-    const adapters = await adaptersApi.list();
-    // The catalog request already caused ACPX to discover every admitted
-    // adapter. Prime all option schemas from that one snapshot so selecting a
-    // different adapter never needs a second schema request.
-    replaceAdapterConfigSchemas(queryClient, adapters);
-    return adapters;
-  } catch (error) {
-    // Do not retain options from an older or malformed catalog after its
-    // authoritative refresh failed.
-    clearAdapterConfigSchemas(queryClient);
-    throw error;
-  }
+export async function fetchAdapterCatalog(): Promise<AdapterInfo[]> {
+  return validateAdapterCatalog(await adaptersApi.list());
 }
 
 /**
@@ -93,11 +57,10 @@ async function fetchAdapterCatalog(queryClient: QueryClient): Promise<AdapterInf
 export function useAdapterCatalogSyncState(
   options: { enabled?: boolean } = {},
 ): AdapterCatalogSyncState {
-  const queryClient = useQueryClient();
   const enabled = options.enabled ?? true;
   const query = useQuery({
     queryKey: queryKeys.adapters.all,
-    queryFn: () => fetchAdapterCatalog(queryClient),
+    queryFn: fetchAdapterCatalog,
     enabled,
     staleTime: 0,
     refetchOnMount: "always",
@@ -124,7 +87,6 @@ export function useAdapterCatalogSyncState(
   } else if (enabled && isError) {
     // A failed refresh must not leave a prior catalog masquerading as current.
     syncServerAdapters([]);
-    clearAdapterConfigSchemas(queryClient);
   }
 
   return {

@@ -63,27 +63,27 @@ export function buildTaskPropertiesPanelKey(
       : null,
     blocks: (task.blocks ?? []).map((relation) => ({
       id: relation.id,
-      identifier: relation.identifier ?? null,
+      identifier: relation.identifier,
       title: relation.title,
       boardPresentationStatus: relation.boardPresentationStatus,
     })),
     blockedBy: (task.blockedBy ?? []).map((relation) => ({
       id: relation.id,
-      identifier: relation.identifier ?? null,
+      identifier: relation.identifier,
       title: relation.title,
       boardPresentationStatus: relation.boardPresentationStatus,
     })),
     parentSummary: task.ancestors?.[0]
       ? {
           id: task.ancestors[0].id,
-          identifier: task.ancestors[0].identifier ?? null,
+          identifier: task.ancestors[0].identifier,
           title: task.ancestors[0].title,
         }
       : null,
     childTasks: childTasks.map((child) => ({
       id: child.id,
       updatedAt: String(child.updatedAt),
-      identifier: child.identifier ?? null,
+      identifier: child.identifier,
       title: child.title,
     })),
   });

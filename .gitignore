@@ -3,11 +3,13 @@ node_modules/
 **/node_modules
 **/node_modules/
 dist/
+apps/server/ui-dist/
 apps/ui/storybook-static/
 .env
 *.tsbuildinfo
 drizzle/meta/
 .vite/
+.tanstack/
 coverage/
 .DS_Store
 data/

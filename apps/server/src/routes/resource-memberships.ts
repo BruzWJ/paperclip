@@ -2,7 +2,7 @@ import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
 import { updateResourceMembershipSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { assertBoard } from "./authz.js";
+import { assertBoard, assertCurrentBoardUser } from "./authz.js";
 import { logActivity, resourceMembershipService } from "../services/index.js";
 
 async function logMembershipChange(
@@ -40,24 +40,24 @@ async function logMembershipChange(
 }
 
 export function resourceMembershipRoutes(db: Db) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = resourceMembershipService(db);
 
-  router.get("/companies/:companyId/resource-memberships/me", async (req, res) => {
+  router.get("/companies/:companyId/users/:userId/resource-memberships", async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertBoard(req);
-    const userId = req.actor.userId;
+    const userId = req.params.userId as string;
+    assertCurrentBoardUser(req, userId);
     res.json(await svc.listForUser(companyId, userId, req.actor));
   });
 
   router.put(
-    "/companies/:companyId/resource-memberships/me/projects/:projectId",
+    "/companies/:companyId/users/:userId/resource-memberships/projects/:projectId",
     validate(updateResourceMembershipSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
+      const userId = req.params.userId as string;
       const projectId = req.params.projectId as string;
-      assertBoard(req);
-      const userId = req.actor.userId;
+      assertCurrentBoardUser(req, userId);
       const result = await svc.updateProject({
         companyId,
         projectId,
@@ -84,13 +84,13 @@ export function resourceMembershipRoutes(db: Db) {
   );
 
   router.put(
-    "/companies/:companyId/resource-memberships/me/agents/:agentId",
+    "/companies/:companyId/users/:userId/resource-memberships/agents/:agentId",
     validate(updateResourceMembershipSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
+      const userId = req.params.userId as string;
       const agentId = req.params.agentId as string;
-      assertBoard(req);
-      const userId = req.actor.userId;
+      assertCurrentBoardUser(req, userId);
       const result = await svc.updateAgent({
         companyId,
         agentId,

@@ -13,13 +13,15 @@ import {
 const trustNone: TrustProxyPredicate = () => false;
 const trustLoopback: TrustProxyPredicate = (address) => address === "127.0.0.1";
 
-function incoming(input: {
-  host?: string;
-  forwardedHost?: string;
-  forwardedProto?: string;
-  remoteAddress?: string;
-  encrypted?: boolean;
-} = {}): IncomingMessage {
+function incoming(
+  input: {
+    host?: string;
+    forwardedHost?: string;
+    forwardedProto?: string;
+    remoteAddress?: string;
+    encrypted?: boolean;
+  } = {},
+): IncomingMessage {
   return {
     headers: {
       ...(input.host === undefined ? {} : { host: input.host }),
@@ -39,12 +41,15 @@ function incoming(input: {
 
 describe("request authority", () => {
   it("ignores spoofed forwarded authority from an untrusted direct peer", () => {
-    const authority = resolveRequestAuthority(incoming({
-      host: "localhost:3100",
-      forwardedHost: "attacker.example",
-      forwardedProto: "https",
-      remoteAddress: "203.0.113.10",
-    }), trustLoopback);
+    const authority = resolveRequestAuthority(
+      incoming({
+        host: "localhost:3100",
+        forwardedHost: "attacker.example",
+        forwardedProto: "https",
+        remoteAddress: "203.0.113.10",
+      }),
+      trustLoopback,
+    );
 
     expect(authority).toMatchObject({
       scheme: "http",
@@ -56,12 +61,15 @@ describe("request authority", () => {
   });
 
   it("honors canonical forwarded scheme and host for a trusted immediate peer", () => {
-    const authority = resolveRequestAuthority(incoming({
-      host: "paperclip.internal:3100",
-      forwardedHost: "Paperclip.Example:8443, proxy.internal:3100",
-      forwardedProto: "HTTPS, http",
-      remoteAddress: "127.0.0.1",
-    }), trustLoopback);
+    const authority = resolveRequestAuthority(
+      incoming({
+        host: "paperclip.internal:3100",
+        forwardedHost: "Paperclip.Example:8443, proxy.internal:3100",
+        forwardedProto: "HTTPS, http",
+        remoteAddress: "127.0.0.1",
+      }),
+      trustLoopback,
+    );
 
     expect(authority).toMatchObject({
       scheme: "https",
@@ -79,7 +87,9 @@ describe("request authority", () => {
       port: null,
       origin: "http://example.test",
     });
-    expect(canonicalizeAuthority("[0:0:0:0:0:0:0:1]:443", "https")).toMatchObject({
+    expect(
+      canonicalizeAuthority("[0:0:0:0:0:0:0:1]:443", "https"),
+    ).toMatchObject({
       hostname: "::1",
       port: null,
       authority: "[::1]",
@@ -95,7 +105,9 @@ describe("request authority", () => {
     "::1",
     "2130706433",
   ])("rejects malformed or non-canonical authority %s", (host) => {
-    expect(() => canonicalizeAuthority(host, "http")).toThrow(RequestAuthorityError);
+    expect(() => canonicalizeAuthority(host, "http")).toThrow(
+      RequestAuthorityError,
+    );
   });
 
   it("rejects malformed trusted forwarded values but ignores them for an untrusted peer", () => {
@@ -105,7 +117,9 @@ describe("request authority", () => {
       forwardedProto: "ftp",
       remoteAddress: "127.0.0.1",
     });
-    expect(() => resolveRequestAuthority(trusted, trustLoopback)).toThrow(RequestAuthorityError);
+    expect(() => resolveRequestAuthority(trusted, trustLoopback)).toThrow(
+      RequestAuthorityError,
+    );
 
     const direct = incoming({
       host: "localhost:3100",
@@ -113,8 +127,9 @@ describe("request authority", () => {
       forwardedProto: "ftp",
       remoteAddress: "203.0.113.8",
     });
-    expect(resolveRequestAuthority(direct, trustLoopback).origin)
-      .toBe("http://localhost:3100");
+    expect(resolveRequestAuthority(direct, trustLoopback).origin).toBe(
+      "http://localhost:3100",
+    );
   });
 
   it("resolves only once even if raw headers are later changed", () => {
@@ -129,13 +144,16 @@ describe("request authority", () => {
       ...canonicalizeAuthority("paperclip.example:8443", "https"),
       immediatePeerTrusted: true,
     };
-    const headers = canonicalRequestHeaders({
-      ":authority": "attacker.example",
-      host: "paperclip.internal:3100",
-      "x-forwarded-host": "attacker.example",
-      "x-forwarded-proto": "ftp",
-      cookie: "paperclip=session",
-    }, authority);
+    const headers = canonicalRequestHeaders(
+      {
+        ":authority": "attacker.example",
+        host: "paperclip.internal:3100",
+        "x-forwarded-host": "attacker.example",
+        "x-forwarded-proto": "ftp",
+        cookie: "paperclip=session",
+      },
+      authority,
+    );
 
     expect(headers.get("host")).toBe("paperclip.example:8443");
     expect(headers.get("x-forwarded-proto")).toBe("https");
@@ -150,14 +168,40 @@ describe("request authority", () => {
       allowedHostnames: ["paperclip-tailnet"],
       bindHost: "0.0.0.0",
     });
-    expect(() => assertRequestAuthorityAllowed({
-      ...canonicalizeAuthority("paperclip-tailnet:3100", "http"),
-      immediatePeerTrusted: false,
-    }, policy)).not.toThrow();
-    expect(() => assertRequestAuthorityAllowed({
-      ...canonicalizeAuthority("attacker.example:3100", "http"),
-      immediatePeerTrusted: false,
-    }, policy)).toThrow(/not allowed/);
+    expect(() =>
+      assertRequestAuthorityAllowed(
+        {
+          ...canonicalizeAuthority("paperclip-tailnet:3100", "http"),
+          immediatePeerTrusted: false,
+        },
+        policy,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertRequestAuthorityAllowed(
+        {
+          ...canonicalizeAuthority("attacker.example:3100", "http"),
+          immediatePeerTrusted: false,
+        },
+        policy,
+      ),
+    ).toThrow(/not allowed/);
+  });
+
+  it.each([
+    " Paperclip-tailnet",
+    "paperclip-tailnet ",
+    "Paperclip-tailnet",
+    "https://paperclip-tailnet",
+    "paperclip-tailnet:3100",
+  ])("rejects configured hostname alias %j", (hostname) => {
+    expect(() =>
+      createRequestAuthorityPolicy({
+        deploymentExposure: "private",
+        allowedHostnames: [hostname],
+        bindHost: "0.0.0.0",
+      }),
+    ).toThrow(/exact lowercase hostname/);
   });
 
   it.each([
@@ -172,35 +216,40 @@ describe("request authority", () => {
       bindHost: "0.0.0.0",
     });
     const url = new URL(origin);
-    expect(() => assertRequestAuthorityAllowed({
-      ...canonicalizeAuthority(
-        url.host,
-        url.protocol.slice(0, -1) as "http" | "https",
+    expect(() =>
+      assertRequestAuthorityAllowed(
+        {
+          ...canonicalizeAuthority(
+            url.host,
+            url.protocol.slice(0, -1) as "http" | "https",
+          ),
+          immediatePeerTrusted: false,
+        },
+        policy,
       ),
-      immediatePeerTrusted: false,
-    }, policy)).toThrow(/canonical public origin/);
+    ).toThrow(/canonical public origin/);
   });
 
-  it("treats explicit default ports as the same canonical public origin", () => {
-    const policy = createRequestAuthorityPolicy({
-      deploymentExposure: "public",
-      canonicalPublicUrl: "https://paperclip.example:443",
-      allowedHostnames: [],
-      bindHost: "0.0.0.0",
-    });
-    expect(() => assertRequestAuthorityAllowed({
-      ...canonicalizeAuthority("paperclip.example", "https"),
-      immediatePeerTrusted: false,
-    }, policy)).not.toThrow();
+  it("rejects an explicit default-port alias in the configured public origin", () => {
+    expect(() =>
+      createRequestAuthorityPolicy({
+        deploymentExposure: "public",
+        canonicalPublicUrl: "https://paperclip.example:443",
+        allowedHostnames: [],
+        bindHost: "0.0.0.0",
+      }),
+    ).toThrow(/exact canonical HTTPS origin/);
   });
 
   it("requires HTTPS and ignores the private hostname allowlist in public exposure", () => {
-    expect(() => createRequestAuthorityPolicy({
-      deploymentExposure: "public",
-      canonicalPublicUrl: "http://paperclip.example",
-      allowedHostnames: [],
-      bindHost: "0.0.0.0",
-    })).toThrow(/must use https:\/\//);
+    expect(() =>
+      createRequestAuthorityPolicy({
+        deploymentExposure: "public",
+        canonicalPublicUrl: "http://paperclip.example",
+        allowedHostnames: [],
+        bindHost: "0.0.0.0",
+      }),
+    ).toThrow(/must use https:\/\//);
 
     const policy = createRequestAuthorityPolicy({
       deploymentExposure: "public",

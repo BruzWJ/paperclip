@@ -36,8 +36,8 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
         && isNonEmptyActorId(session.session.userId)
         && session.session.userId === session.user.id
       ) {
-        const userId = session.user.id.trim();
-        const sessionId = session.session.id.trim();
+        const userId = session.user.id;
+        const sessionId = session.session.id;
         const [roleRow, memberships] = await Promise.all([
           db
             .select({ id: instanceUserRoles.id })
@@ -77,8 +77,8 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
       return;
     }
 
-    const token = authHeader.slice("bearer ".length).trim();
-    if (!token) {
+    const token = authHeader.slice("bearer ".length);
+    if (!token || token.trim() !== token) {
       next();
       return;
     }
@@ -89,8 +89,8 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
       && isNonEmptyActorId(boardKey.id)
       && isNonEmptyActorId(boardKey.userId)
     ) {
-      const boardKeyId = boardKey.id.trim();
-      const boardUserId = boardKey.userId.trim();
+      const boardKeyId = boardKey.id;
+      const boardUserId = boardKey.userId;
       const access = await boardAuth.resolveBoardAccess(boardUserId);
       if (access.user?.id === boardUserId) {
         await boardAuth.touchBoardApiKey(boardKey.id);

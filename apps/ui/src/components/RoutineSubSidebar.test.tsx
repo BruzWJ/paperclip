@@ -5,15 +5,25 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/router", () => ({
+vi.mock("@tanstack/react-router", () => ({
   Link: ({
     to,
+    params,
     children,
     ...props
-  }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string; children: ReactNode; replace?: boolean }) => {
+  }: AnchorHTMLAttributes<HTMLAnchorElement> & {
+    to: string;
+    params: Record<string, string>;
+    children: ReactNode;
+    replace?: boolean;
+  }) => {
     const { replace: _replace, ...rest } = props as Record<string, unknown>;
+    const href = Object.entries(params).reduce(
+      (path, [key, value]) => path.replace(`$${key}`, value),
+      to,
+    );
     return (
-      <a href={to} {...(rest as AnchorHTMLAttributes<HTMLAnchorElement>)}>
+      <a href={href} {...(rest as AnchorHTMLAttributes<HTMLAnchorElement>)}>
         {children}
       </a>
     );
@@ -46,22 +56,19 @@ function renderSidebar(overrides?: {
   activeSection?: RoutineSectionKey;
   dirty?: RoutineSectionKey[];
   hasLiveRun?: boolean;
-  onNavigate?: (section: RoutineSectionKey) => void;
 }) {
   const dirty = new Set(overrides?.dirty ?? []);
-  const onNavigate = overrides?.onNavigate ?? vi.fn();
   act(() => {
     root.render(
       <RoutineSubSidebar
         activeSection={overrides?.activeSection ?? "overview"}
-        hrefFor={(section) => `/routines/r1/${section}`}
+        companyId="11111111-1111-4111-8111-111111111111"
+        routineId="r1"
         isSectionDirty={(section) => dirty.has(section)}
         hasLiveRun={overrides?.hasLiveRun ?? false}
-        onNavigate={onNavigate}
       />,
     );
   });
-  return { onNavigate };
 }
 
 describe("RoutineSubSidebar", () => {
@@ -95,7 +102,7 @@ describe("RoutineSubSidebar", () => {
     const variables = Array.from(container.querySelectorAll("a")).find(
       (link) => link.textContent?.trim() === "Variables",
     );
-    expect(variables?.getAttribute("href")).toBe("/routines/r1/variables");
+    expect(variables?.getAttribute("href")).toBe("/11111111-1111-4111-8111-111111111111/routines/r1/variables");
   });
 
   it("shows a dirty marker only on dirty editable sections", () => {
@@ -104,14 +111,11 @@ describe("RoutineSubSidebar", () => {
     expect(dirtyMarkers.length).toBe(2);
   });
 
-  it("fires onNavigate when a section is clicked", () => {
-    const { onNavigate } = renderSidebar();
-    const triggers = Array.from(container.querySelectorAll("a")).find(
-      (link) => link.textContent?.trim() === "Triggers",
-    ) as HTMLAnchorElement;
-    act(() => {
-      triggers.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(onNavigate).toHaveBeenCalledWith("triggers");
+  it("uses the routine index as the canonical overview URL", () => {
+    renderSidebar();
+    const overview = Array.from(container.querySelectorAll("a")).find(
+      (link) => link.textContent?.trim() === "Overview",
+    );
+    expect(overview?.getAttribute("href")).toBe("/11111111-1111-4111-8111-111111111111/routines/r1");
   });
 });

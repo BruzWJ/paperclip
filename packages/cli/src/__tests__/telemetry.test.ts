@@ -24,7 +24,7 @@ function makeConfigPath(root: string, enabled: boolean): string {
     },
     server: {
       exposure: "private",
-      host: "127.0.0.1",
+      bind: "loopback",
       port: 3100,
       allowedHostnames: [],
       serveUi: true,

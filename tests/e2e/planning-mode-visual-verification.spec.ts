@@ -1,4 +1,8 @@
 import { expect, test } from "./fixtures";
+import {
+  openCreateCompanyOnboarding,
+  prepareOnboardingTestPage,
+} from "./onboarding-test-page";
 
 const AGENT_NAME = "Planning coordinator";
 const CODEX_MODEL = "gpt-5.6";
@@ -11,12 +15,8 @@ test("captures planning mode UI for desktop and mobile", async ({ page, request 
   const companyName = `PAP-3413-${timestamp}`;
   const screenshotDir = "test-results/planning-mode";
 
-  await page.goto("/onboarding");
-  const startBtn = page.getByRole("button", { name: /Start Onboarding|New Company|Add Agent/ });
-  if (await startBtn.count()) await startBtn.first().click();
-
-  const createCard = page.getByRole("button", { name: /Build a new company/ });
-  if (await createCard.count()) await createCard.first().click();
+  await prepareOnboardingTestPage(page);
+  await openCreateCompanyOnboarding(page);
 
   await expect(page.getByRole("heading", { name: "Name your company" })).toBeVisible({ timeout: 15_000 });
 
@@ -41,10 +41,10 @@ test("captures planning mode UI for desktop and mobile", async ({ page, request 
 
   await page.getByRole("button", { name: /^Next/ }).click();
   await page.getByRole("button", { name: /Codex/ }).first().click();
-  const modelField = page.locator("label").filter({ hasText: /^Model$/ }).locator("../..");
-  await expect(modelField).toBeVisible({ timeout: 15_000 });
-  await modelField.getByRole("button").last().click();
-  await page.getByRole("button", { name: "GPT-5.6", exact: true }).click();
+  const modelSelect = page.getByRole("combobox", { name: "Model", exact: true });
+  await expect(modelSelect).toBeVisible({ timeout: 15_000 });
+  await modelSelect.click();
+  await page.getByRole("option", { name: "GPT-5.6", exact: true }).click();
   const createAgentButton = page.getByRole("button", { name: "Create agent" });
   await expect(createAgentButton).toBeEnabled({ timeout: 20_000 });
   await createAgentButton.click();
@@ -100,6 +100,7 @@ test("captures planning mode UI for desktop and mobile", async ({ page, request 
     (candidate: {
       id: string;
       identifier?: string;
+      taskNumber: number;
       title: string;
       request: string;
       ownerAgentId: string | null;
@@ -115,10 +116,9 @@ test("captures planning mode UI for desktop and mobile", async ({ page, request 
   );
 
   const task = planningSeedTask;
-  const taskIdentifier = task.identifier ?? task.id;
-  const taskPath = `/${company.taskPrefix ?? company.id}/tasks/${taskIdentifier}`;
-  const companyPrefix = company.taskPrefix ?? company.id;
-  const taskLinkSelector = `a[href$="/tasks/${taskIdentifier}"]`;
+  const taskPath = `/${company.id}/tasks/${task.taskNumber}`;
+  const companyId = company.id;
+  const taskLinkSelector = `a[href$="/tasks/${task.taskNumber}"]`;
 
   const setMode = async (mode: "standard" | "planning") => {
     const patchRes = await request.patch(`/api/tasks/${task.id}`, {
@@ -140,17 +140,13 @@ test("captures planning mode UI for desktop and mobile", async ({ page, request 
   await page.goto(taskPath);
   await expect(page.getByText("Plan mode").first()).toBeVisible();
   await expect(page.getByTestId("task-chat-composer")).toHaveAttribute("data-pending-work-mode", "planning");
-  const desktopPlanningToggle = page.getByTestId("task-chat-composer-work-mode-toggle");
-  await expect(desktopPlanningToggle).toBeVisible();
-  await expect(desktopPlanningToggle).toHaveAttribute("data-pending-work-mode", "planning");
-  await expect(desktopPlanningToggle).toHaveAttribute("aria-pressed", "true");
 
   await page.screenshot({
     path: `${screenshotDir}/desktop-planning-detail-${timestamp}.png`,
     fullPage: true,
   });
 
-  await page.goto(`/${companyPrefix}/tasks`);
+  await page.goto(`/${companyId}/tasks`);
   await expect(page.locator(taskLinkSelector)).toBeVisible();
   await expect(page.locator(taskLinkSelector)).not.toContainText("Plan mode");
   await page.screenshot({
@@ -158,12 +154,10 @@ test("captures planning mode UI for desktop and mobile", async ({ page, request 
     fullPage: true,
   });
 
+  await setMode("standard");
   await page.goto(taskPath);
-  await page.getByTestId("task-chat-composer-work-mode-toggle").click();
-  await page.getByTestId("task-chat-composer-work-mode-menu-standard").click();
   await expect(page.getByTestId("task-chat-composer")).toHaveAttribute("data-pending-work-mode", "standard");
-  await expect(page.getByTestId("task-chat-composer-work-mode-toggle")).toHaveAttribute("data-pending-work-mode", "standard");
-  await expect(page.getByTestId("task-chat-composer-work-mode-toggle")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByText("Plan mode")).toHaveCount(0);
   await page.screenshot({
     path: `${screenshotDir}/desktop-standard-toggle-${timestamp}.png`,
     fullPage: true,
@@ -173,16 +167,13 @@ test("captures planning mode UI for desktop and mobile", async ({ page, request 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(taskPath);
   await expect(page.getByText("Plan mode").first()).toBeVisible();
-  const mobilePlanningToggle = page.getByTestId("task-chat-composer-work-mode-toggle");
-  await expect(mobilePlanningToggle).toBeVisible();
-  await expect(mobilePlanningToggle).toHaveAttribute("data-pending-work-mode", "planning");
-  await expect(mobilePlanningToggle).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("task-chat-composer")).toHaveAttribute("data-pending-work-mode", "planning");
   await page.screenshot({
     path: `${screenshotDir}/mobile-planning-detail-${timestamp}.png`,
     fullPage: true,
   });
 
-  await page.goto(`/${companyPrefix}/tasks`);
+  await page.goto(`/${companyId}/tasks`);
   await expect(page.locator(taskLinkSelector)).toBeVisible();
   await expect(page.locator(taskLinkSelector)).not.toContainText("Plan mode");
   await page.screenshot({

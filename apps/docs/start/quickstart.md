@@ -56,7 +56,7 @@ Once Paperclip is running:
 
 1. Create your first company in the web UI
 2. Define a company goal
-3. Create an ordinary agent and configure its adapter, grants, and skills
+3. Create an ordinary agent and configure its adapter and grants
 4. Build out the org chart with more agents
 5. Set budgets and create an initial task with an explicit agent owner
 6. Follow its task execution, comments, costs, and disposition from the board

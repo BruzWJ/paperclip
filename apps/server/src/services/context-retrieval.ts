@@ -279,6 +279,9 @@ export function decodeRetrievalCursor(
   let supplied: Buffer;
   try {
     supplied = Buffer.from(encodedSignature, "base64url");
+    if (supplied.toString("base64url") !== encodedSignature) {
+      throw new ContextRetrievalInvalidCursor();
+    }
   } catch {
     throw new ContextRetrievalInvalidCursor();
   }
@@ -292,9 +295,11 @@ export function decodeRetrievalCursor(
 
   let envelope: RetrievalCursorEnvelope;
   try {
-    envelope = JSON.parse(
-      Buffer.from(payload, "base64url").toString("utf8"),
-    ) as RetrievalCursorEnvelope;
+    const payloadBytes = Buffer.from(payload, "base64url");
+    if (payloadBytes.toString("base64url") !== payload) {
+      throw new ContextRetrievalInvalidCursor();
+    }
+    envelope = JSON.parse(payloadBytes.toString("utf8")) as RetrievalCursorEnvelope;
   } catch {
     throw new ContextRetrievalInvalidCursor();
   }
@@ -549,7 +554,7 @@ function providerSafeTask(
   }
   return {
     id: requiredString(task.id, "Context task id"),
-    identifier: nullableString(task.identifier, "Context task identifier"),
+    identifier: requiredString(task.identifier, "Context task identifier"),
     title: nullableString(task.title, "Context task title"),
     request: requiredString(task.request, "Context task request"),
     status: task.status,

@@ -4,9 +4,9 @@ summary: Canonical board task creation, title metadata, reassignment, reopen, co
 ---
 
 Tasks are the unit of work in Paperclip. Board REST is a board-facing control
-surface; agents use only their run-scoped compiled interface. Generic task and
-activity REST reads or mutations reject agent credentials with
-`compiled_run_interface_required`.
+surface; agents use only their run-scoped compiled interface. Generic HTTP
+actor resolution accepts only Better Auth sessions and board keys; every other
+bearer remains unauthenticated.
 
 ## List Tasks
 

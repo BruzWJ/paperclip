@@ -11,17 +11,24 @@ import {
   userSecretDefinitions,
 } from "@paperclipai/db";
 import type { SecretProvider } from "@paperclipai/shared";
-import { localEncryptedProvider } from "../secrets/local-encrypted-provider.js";
+import { createLocalEncryptedProvider } from "../secrets/local-encrypted-provider.js";
 import {
   SecretProviderClientError,
   type SecretProviderModule,
 } from "../secrets/types.js";
 import {
   requireSecretMutationActor,
-  secretService,
+  secretService as createSecretService,
   type SecretMutationActor,
 } from "../services/secrets.js";
 import { createMockDb } from "./helpers/mock-db.js";
+import { testSecretsRuntimeConfig } from "./helpers/secrets-runtime.js";
+
+const secretsRuntime = testSecretsRuntimeConfig();
+
+function secretService(db: Parameters<typeof createSecretService>[0]) {
+  return createSecretService(db, secretsRuntime);
+}
 
 const mocks = vi.hoisted(() => ({
   getSecretProvider: vi.fn(),
@@ -31,13 +38,16 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../secrets/provider-registry.js", () => ({
-  getSecretProvider: mocks.getSecretProvider,
-  listSecretProviders: mocks.listSecretProviders,
-  checkSecretProviders: mocks.checkSecretProviders,
+  createSecretProviderRegistry: vi.fn(() => ({
+    get: mocks.getSecretProvider,
+    list: mocks.listSecretProviders,
+    check: mocks.checkSecretProviders,
+  })),
 }));
 
 vi.mock("../services/authorization.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../services/authorization.js")>();
+  const actual =
+    await importOriginal<typeof import("../services/authorization.js")>();
   return {
     ...actual,
     authorizationService: vi.fn(() => ({ decide: mocks.authorizationDecide })),
@@ -80,11 +90,16 @@ function createProviderDouble(id: SecretProvider = "local_encrypted") {
     validateConfig: vi.fn(async () => ({ ok: true, warnings: [] })),
     createSecret: vi.fn(async () => preparedVersion()),
     createVersion: vi.fn(async () => preparedVersion()),
-    linkExternalSecret: vi.fn(async (input: { externalRef: string; providerVersionRef?: string | null }) =>
-      preparedVersion({
-        externalRef: input.externalRef,
-        providerVersionRef: input.providerVersionRef ?? null,
-      })),
+    linkExternalSecret: vi.fn(
+      async (input: {
+        externalRef: string;
+        providerVersionRef?: string | null;
+      }) =>
+        preparedVersion({
+          externalRef: input.externalRef,
+          providerVersionRef: input.providerVersionRef ?? null,
+        }),
+    ),
     listRemoteSecrets: vi.fn(async () => ({ secrets: [], nextToken: null })),
     discoverProviderConfigs: vi.fn(async () => ({
       provider: id,
@@ -235,9 +250,16 @@ function declarationRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function valuesCalls(harness: ReturnType<typeof createMockDb>, operation: "insert" | "update") {
+function valuesCalls(
+  harness: ReturnType<typeof createMockDb>,
+  operation: "insert" | "update",
+) {
   return harness.calls
-    .filter((call) => call.operation === operation && call.method === (operation === "insert" ? "values" : "set"))
+    .filter(
+      (call) =>
+        call.operation === operation &&
+        call.method === (operation === "insert" ? "values" : "set"),
+    )
     .map((call) => call.args[0]);
 }
 
@@ -256,12 +278,15 @@ describe("secretService", () => {
   });
 
   it("encrypts and resolves local values with an isolated master-key file", async () => {
-    const tempDir = mkdtempSync(path.join(os.tmpdir(), "paperclip-secrets-service-"));
+    const tempDir = mkdtempSync(
+      path.join(os.tmpdir(), "paperclip-secrets-service-"),
+    );
     const keyPath = path.join(tempDir, "master.key");
-    const previousFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
     const previousKey = process.env.PAPERCLIP_SECRETS_MASTER_KEY;
-    process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = keyPath;
     delete process.env.PAPERCLIP_SECRETS_MASTER_KEY;
+    const localEncryptedProvider = createLocalEncryptedProvider(
+      testSecretsRuntimeConfig({ masterKeyFilePath: keyPath }),
+    );
 
     try {
       const prepared = await localEncryptedProvider.createSecret({
@@ -269,28 +294,33 @@ describe("secretService", () => {
       });
       expect(existsSync(keyPath)).toBe(true);
       expect(statSync(keyPath).mode & 0o777).toBe(0o600);
-      expect(JSON.stringify(prepared.material)).not.toContain("local-runtime-secret");
-      await expect(localEncryptedProvider.resolveVersion({
-        material: prepared.material,
-        externalRef: null,
-      })).resolves.toBe("local-runtime-secret");
+      expect(JSON.stringify(prepared.material)).not.toContain(
+        "local-runtime-secret",
+      );
+      await expect(
+        localEncryptedProvider.resolveVersion({
+          material: prepared.material,
+          externalRef: null,
+        }),
+      ).resolves.toBe("local-runtime-secret");
     } finally {
-      if (previousFile === undefined) delete process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-      else process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = previousFile;
-      if (previousKey === undefined) delete process.env.PAPERCLIP_SECRETS_MASTER_KEY;
+      if (previousKey === undefined)
+        delete process.env.PAPERCLIP_SECRETS_MASTER_KEY;
       else process.env.PAPERCLIP_SECRETS_MASTER_KEY = previousKey;
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
   it("accepts only exact canonical mutation actors", () => {
-    expect(requireSecretMutationActor({ type: "user", userId: "user-1" })).toEqual({
+    expect(
+      requireSecretMutationActor({ type: "user", userId: "user-1" }),
+    ).toEqual({
       userId: "user-1",
       agentId: null,
     });
-    expect(requireSecretMutationActor({ type: "agent", agentId: "agent-1" })).toEqual({
+    expect(requireSecretMutationActor({ type: "agent", agentId })).toEqual({
       userId: null,
-      agentId: "agent-1",
+      agentId,
     });
     expect(requireSecretMutationActor(SYSTEM_ACTOR)).toEqual({
       userId: null,
@@ -323,13 +353,21 @@ describe("secretService", () => {
       userId: string | null;
       agentId: string | null;
     }> = [
-      { actor: { type: "user", userId: "secret-operator" }, userId: "secret-operator", agentId: null },
+      {
+        actor: { type: "user", userId: "secret-operator" },
+        userId: "secret-operator",
+        agentId: null,
+      },
       { actor: { type: "agent", agentId }, userId: null, agentId },
       { actor: SYSTEM_ACTOR, userId: null, agentId: null },
     ];
 
     for (const [index, entry] of cases.entries()) {
-      const reserved = secretRow({ id: `reserved-${index}`, status: "archived", latestVersion: 0 });
+      const reserved = secretRow({
+        id: `reserved-${index}`,
+        status: "archived",
+        latestVersion: 0,
+      });
       const active = secretRow({ id: reserved.id });
       const harness = createMockDb({
         select: [[], []],
@@ -337,11 +375,17 @@ describe("secretService", () => {
         update: [[], [], [active]],
       });
 
-      await expect(secretService(harness.db).create(companyId, {
-        name: `Actor secret ${index}`,
-        provider: "local_encrypted",
-        value: "provider-only-value",
-      }, entry.actor)).resolves.toEqual(active);
+      await expect(
+        secretService(harness.db).create(
+          companyId,
+          {
+            name: `Actor secret ${index}`,
+            provider: "local_encrypted",
+            value: "provider-only-value",
+          },
+          entry.actor,
+        ),
+      ).resolves.toEqual(active);
 
       const [secretValues, versionValues] = valuesCalls(harness, "insert");
       expect(secretValues).toMatchObject({
@@ -357,7 +401,9 @@ describe("secretService", () => {
         createdByAgentId: entry.agentId,
         status: "disabled",
       });
-      expect(JSON.stringify([secretValues, versionValues])).not.toContain("provider-only-value");
+      expect(JSON.stringify([secretValues, versionValues])).not.toContain(
+        "provider-only-value",
+      );
       expect(harness.remaining("select")).toBe(0);
       expect(harness.remaining("insert")).toBe(0);
       expect(harness.remaining("update")).toBe(0);
@@ -367,7 +413,8 @@ describe("secretService", () => {
   it("links an external provider reference without persisting or resolving plaintext", async () => {
     provider = createProviderDouble("aws_secrets_manager");
     mocks.getSecretProvider.mockImplementation(() => provider);
-    const externalRef = "arn:aws:secretsmanager:us-east-1:123456789012:secret:linked";
+    const externalRef =
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:linked";
     const config = providerConfigRow();
     const reserved = secretRow({
       status: "archived",
@@ -388,39 +435,116 @@ describe("secretService", () => {
       update: [[], [], [active]],
     });
 
-    await expect(secretService(harness.db).create(companyId, {
-      name: "Linked AWS secret",
+    await expect(
+      secretService(harness.db).create(
+        companyId,
+        {
+          name: "Linked AWS secret",
+          provider: "aws_secrets_manager",
+          providerConfigId,
+          managedMode: "external_reference",
+          externalRef,
+        },
+        SYSTEM_ACTOR,
+      ),
+    ).resolves.toEqual(active);
+
+    expect(provider.linkExternalSecret).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalRef,
+        providerConfig: {
+          id: providerConfigId,
+          provider: "aws_secrets_manager",
+          status: "ready",
+          config: config.config,
+        },
+      }),
+    );
+    expect(provider.createSecret).not.toHaveBeenCalled();
+    expect(provider.resolveVersion).not.toHaveBeenCalled();
+    expect(JSON.stringify(valuesCalls(harness, "insert"))).not.toContain(
+      "runtime-secret",
+    );
+  });
+
+  it("rejects padded provider references before provider lookup or persistence", async () => {
+    const harness = createMockDb();
+
+    await expect(
+      secretService(harness.db).create(
+        companyId,
+        {
+          name: "Padded AWS reference",
+          provider: "aws_secrets_manager",
+          managedMode: "external_reference",
+          externalRef:
+            " arn:aws:secretsmanager:us-east-1:123456789012:secret:linked",
+        },
+        SYSTEM_ACTOR,
+      ),
+    ).rejects.toThrow(/exact value without surrounding whitespace/i);
+
+    expect(mocks.getSecretProvider).not.toHaveBeenCalled();
+    expect(harness.calls).toEqual([]);
+  });
+
+  it("rejects non-exact provider output before committing provider references", async () => {
+    provider = createProviderDouble("aws_secrets_manager");
+    provider.linkExternalSecret.mockResolvedValueOnce(
+      preparedVersion({
+        externalRef:
+          "arn:aws:secretsmanager:us-east-1:123456789012:secret:linked",
+        providerVersionRef: " version-1",
+      }),
+    );
+    mocks.getSecretProvider.mockImplementation(() => provider);
+    const reserved = secretRow({
+      status: "archived",
+      latestVersion: 0,
       provider: "aws_secrets_manager",
       providerConfigId,
       managedMode: "external_reference",
-      externalRef,
-    }, SYSTEM_ACTOR)).resolves.toEqual(active);
+    });
+    const harness = createMockDb({
+      select: [[], [], [providerConfigRow()]],
+      insert: [[reserved]],
+      delete: [[]],
+    });
 
-    expect(provider.linkExternalSecret).toHaveBeenCalledWith(expect.objectContaining({
-      externalRef,
-      providerConfig: {
-        id: providerConfigId,
-        provider: "aws_secrets_manager",
-        status: "ready",
-        config: config.config,
-      },
-    }));
-    expect(provider.createSecret).not.toHaveBeenCalled();
-    expect(provider.resolveVersion).not.toHaveBeenCalled();
-    expect(JSON.stringify(valuesCalls(harness, "insert"))).not.toContain("runtime-secret");
+    await expect(
+      secretService(harness.db).create(
+        companyId,
+        {
+          name: "Linked AWS secret",
+          provider: "aws_secrets_manager",
+          providerConfigId,
+          managedMode: "external_reference",
+          externalRef:
+            "arn:aws:secretsmanager:us-east-1:123456789012:secret:linked",
+        },
+        SYSTEM_ACTOR,
+      ),
+    ).rejects.toThrow(/exact value without surrounding whitespace/i);
+
+    expect(harness.remaining("update")).toBe(0);
+    expect(harness.remaining("delete")).toBe(0);
+    expect(valuesCalls(harness, "insert")).toHaveLength(1);
   });
 
   it("sanitizes provider create failures and removes the reserved row", async () => {
     provider = createProviderDouble("aws_secrets_manager");
     mocks.getSecretProvider.mockImplementation(() => provider);
-    const rawMessage = "AccessDenied: arn:aws:sts::123456789012:assumed-role/private";
-    provider.createSecret.mockRejectedValueOnce(new SecretProviderClientError({
-      code: "access_denied",
-      provider: "aws_secrets_manager",
-      operation: "createSecret",
-      message: "AWS Secrets Manager denied the request.",
-      rawMessage,
-    }));
+    const rawMessage =
+      "AccessDenied: arn:aws:sts::123456789012:assumed-role/private";
+    provider.createSecret.mockRejectedValueOnce(
+      new SecretProviderClientError({
+        code: "access_denied",
+        provider: "aws_secrets_manager",
+        operation: "createSecret",
+        message: "AWS Secrets Manager denied the request.",
+        rawMessage,
+      }),
+    );
     const config = providerConfigRow();
     const reserved = secretRow({
       provider: "aws_secrets_manager",
@@ -434,13 +558,22 @@ describe("secretService", () => {
       delete: [[]],
     });
 
-    const thrown = await secretService(harness.db).create(companyId, {
-      name: "Managed AWS secret",
-      key: "managed_aws_secret",
-      provider: "aws_secrets_manager",
-      providerConfigId,
-      value: "provider-only-value",
-    }, SYSTEM_ACTOR).then(() => null, (error: unknown) => error);
+    const thrown = await secretService(harness.db)
+      .create(
+        companyId,
+        {
+          name: "Managed AWS secret",
+          key: "managed_aws_secret",
+          provider: "aws_secrets_manager",
+          providerConfigId,
+          value: "provider-only-value",
+        },
+        SYSTEM_ACTOR,
+      )
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
 
     expect(thrown).toMatchObject({
       status: 403,
@@ -456,9 +589,11 @@ describe("secretService", () => {
     });
     expect(JSON.stringify(thrown)).not.toContain("arn:aws");
     expect(JSON.stringify(thrown)).not.toContain("provider-only-value");
-    expect(harness.calls.find((call) =>
-      call.operation === "delete" && call.method === "delete"
-    )?.args[0]).toBe(companySecrets);
+    expect(
+      harness.calls.find(
+        (call) => call.operation === "delete" && call.method === "delete",
+      )?.args[0],
+    ).toBe(companySecrets);
     expect(harness.remaining("delete")).toBe(0);
   });
 
@@ -472,16 +607,24 @@ describe("secretService", () => {
       delete: [[], []],
     });
 
-    await expect(secretService(harness.db).create(companyId, {
-      name: "Rollback secret",
-      provider: "local_encrypted",
-      value: "provider-only-value",
-    }, SYSTEM_ACTOR)).rejects.toBe(persistenceFailure);
+    await expect(
+      secretService(harness.db).create(
+        companyId,
+        {
+          name: "Rollback secret",
+          provider: "local_encrypted",
+          value: "provider-only-value",
+        },
+        SYSTEM_ACTOR,
+      ),
+    ).rejects.toBe(persistenceFailure);
 
-    expect(provider.deleteOrArchive).toHaveBeenCalledWith(expect.objectContaining({
-      mode: "delete",
-      externalRef: null,
-    }));
+    expect(provider.deleteOrArchive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "delete",
+        externalRef: null,
+      }),
+    );
     const deletedTables = harness.calls
       .filter((call) => call.operation === "delete" && call.method === "delete")
       .map((call) => call.args[0]);
@@ -508,20 +651,28 @@ describe("secretService", () => {
       update: [[], [], [updated]],
     });
 
-    await expect(secretService(harness.db).rotate(secretId, {
-      value: "rotated-provider-value",
-    }, { type: "user", userId: "rotator" })).resolves.toEqual(updated);
+    await expect(
+      secretService(harness.db).rotate(
+        secretId,
+        {
+          value: "rotated-provider-value",
+        },
+        { type: "user", userId: "rotator" },
+      ),
+    ).resolves.toEqual(updated);
 
-    expect(provider.createVersion).toHaveBeenCalledWith(expect.objectContaining({
-      value: "rotated-provider-value",
-      providerConfig: expect.objectContaining({ id: providerConfigId }),
-      context: {
-        companyId,
-        secretKey: "api-key",
-        secretName: "API key",
-        version: 2,
-      },
-    }));
+    expect(provider.createVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        value: "rotated-provider-value",
+        providerConfig: expect.objectContaining({ id: providerConfigId }),
+        context: {
+          companyId,
+          secretKey: "api-key",
+          secretName: "API key",
+          version: 2,
+        },
+      }),
+    );
     expect(valuesCalls(harness, "insert")[0]).toMatchObject({
       secretId,
       version: 2,
@@ -544,27 +695,46 @@ describe("secretService", () => {
       insert: [failure],
     });
 
-    await expect(secretService(harness.db).rotate(secretId, {
-      value: "rotated-provider-value",
-    }, SYSTEM_ACTOR)).rejects.toBe(failure);
-    expect(provider.deleteOrArchive).toHaveBeenCalledWith(expect.objectContaining({
-      mode: "archive",
-      context: expect.objectContaining({ version: 2 }),
-    }));
+    await expect(
+      secretService(harness.db).rotate(
+        secretId,
+        {
+          value: "rotated-provider-value",
+        },
+        SYSTEM_ACTOR,
+      ),
+    ).rejects.toBe(failure);
+    expect(provider.deleteOrArchive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "archive",
+        context: expect.objectContaining({ version: 2 }),
+      }),
+    );
   });
 
   it("rejects inactive secrets and inactive versions before provider resolution", async () => {
     for (const unavailable of [
-      { select: [[secretRow({ status: "archived" })]], code: "secret_inactive" },
-      { select: [[secretRow()], [versionRow({ status: "disabled" })]], code: "version_inactive" },
-      { select: [[secretRow()], [versionRow({ revokedAt: now })]], code: "version_inactive" },
+      {
+        select: [[secretRow({ status: "archived" })]],
+        code: "secret_inactive",
+      },
+      {
+        select: [[secretRow()], [versionRow({ status: "disabled" })]],
+        code: "version_inactive",
+      },
+      {
+        select: [[secretRow()], [versionRow({ revokedAt: now })]],
+        code: "version_inactive",
+      },
     ]) {
       const harness = createMockDb({ select: unavailable.select });
-      await expect(secretService(harness.db).resolveSecretVersion(
-        companyId,
-        secretId,
-        "latest",
-      )).rejects.toMatchObject({
+      await expect(
+        secretService(harness.db).resolveSecretVersion(
+          companyId,
+          secretId,
+          "latest",
+        ),
+      ).rejects.toMatchObject({
         status: 422,
         details: { code: unavailable.code },
       });
@@ -577,17 +747,16 @@ describe("secretService", () => {
       select: [[secretRow({ companyId: otherCompanyId })]],
     });
 
-    await expect(secretService(harness.db).normalizeEnvBindingsForPersistence(companyId, {
-      API_KEY: { type: "secret_ref", secretId, version: "latest" },
-    })).rejects.toThrow(/same company/i);
+    await expect(
+      secretService(harness.db).normalizeEnvBindingsForPersistence(companyId, {
+        API_KEY: { type: "secret_ref", secretId, version: "latest" },
+      }),
+    ).rejects.toThrow(/same company/i);
     expect(provider.resolveVersion).not.toHaveBeenCalled();
   });
 
-  it("rejects retired access paths and class-3 leases outside the canonical allowlist", async () => {
+  it("rejects class-3 leases outside the canonical allowlist", async () => {
     const invalidBindings = [
-      { configPath: "access.API_KEY" },
-      { configPath: "access" },
-      { configPath: 'access["x.y"]' },
       {
         configPath: "env.GITHUB_TOKEN",
         projectionClass: "class_3_static_lease" as const,
@@ -597,15 +766,22 @@ describe("secretService", () => {
 
     for (const invalid of invalidBindings) {
       const harness = createMockDb({ select: [[secretRow()]] });
-      await expect(secretService(harness.db).createBinding({
-        companyId,
-        secretId,
-        targetType: "agent",
-        targetId: agentId,
-        required: true,
-        ...invalid,
-      }, SYSTEM_ACTOR)).rejects.toMatchObject({ status: 422 });
-      expect(harness.calls.filter((call) => call.operation === "insert")).toEqual([]);
+      await expect(
+        secretService(harness.db).createBinding(
+          {
+            companyId,
+            secretId,
+            targetType: "agent",
+            targetId: agentId,
+            required: true,
+            ...invalid,
+          },
+          SYSTEM_ACTOR,
+        ),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(
+        harness.calls.filter((call) => call.operation === "insert"),
+      ).toEqual([]);
     }
   });
 
@@ -616,13 +792,18 @@ describe("secretService", () => {
       insert: [[created]],
     });
 
-    await expect(secretService(createHarness.db).createBinding({
-      companyId,
-      secretId,
-      targetType: "agent",
-      targetId: agentId,
-      configPath: "env.API_KEY",
-    }, SYSTEM_ACTOR)).resolves.toEqual(created);
+    await expect(
+      secretService(createHarness.db).createBinding(
+        {
+          companyId,
+          secretId,
+          targetType: "agent",
+          targetId: agentId,
+          configPath: "env.API_KEY",
+        },
+        SYSTEM_ACTOR,
+      ),
+    ).resolves.toEqual(created);
     expect(valuesCalls(createHarness, "insert")[0]).toMatchObject({
       companyId,
       secretId,
@@ -637,14 +818,21 @@ describe("secretService", () => {
     const duplicateHarness = createMockDb({
       select: [[secretRow()], [bindingRow({ secretId: "other-secret" })]],
     });
-    await expect(secretService(duplicateHarness.db).createBinding({
-      companyId,
-      secretId,
-      targetType: "agent",
-      targetId: agentId,
-      configPath: "env.API_KEY",
-    }, SYSTEM_ACTOR)).rejects.toMatchObject({ status: 409 });
-    expect(duplicateHarness.calls.filter((call) => call.operation === "insert")).toEqual([]);
+    await expect(
+      secretService(duplicateHarness.db).createBinding(
+        {
+          companyId,
+          secretId,
+          targetType: "agent",
+          targetId: agentId,
+          configPath: "env.API_KEY",
+        },
+        SYSTEM_ACTOR,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      duplicateHarness.calls.filter((call) => call.operation === "insert"),
+    ).toEqual([]);
   });
 
   it("replaces only the target environment bindings with canonical secret refs", async () => {
@@ -654,61 +842,88 @@ describe("secretService", () => {
       insert: [[]],
     });
 
-    await expect(secretService(harness.db).syncEnvBindingsForTarget(
-      companyId,
-      { targetType: "agent", targetId: agentId },
+    await expect(
+      secretService(harness.db).syncEnvBindingsForTarget(
+        companyId,
+        { targetType: "agent", targetId: agentId },
+        {
+          API_KEY: { type: "secret_ref", secretId, version: "latest" },
+          PLAIN_VALUE: { type: "plain", value: "visible" },
+        },
+        { actor: SYSTEM_ACTOR },
+      ),
+    ).resolves.toEqual([
       {
-        API_KEY: { type: "secret_ref", secretId, version: "latest" },
-        PLAIN_VALUE: { type: "plain", value: "visible" },
+        secretId,
+        configPath: "env.API_KEY",
+        versionSelector: "latest",
+        projectionClass: "unclassified",
+        projectionAllowlistKey: null,
       },
-      { actor: SYSTEM_ACTOR },
-    )).resolves.toEqual([{
-      secretId,
-      configPath: "env.API_KEY",
-      versionSelector: "latest",
-      projectionClass: "unclassified",
-      projectionAllowlistKey: null,
-    }]);
-
-    expect(valuesCalls(harness, "insert")[0]).toEqual([{
-      companyId,
-      secretId,
-      targetType: "agent",
-      targetId: agentId,
-      configPath: "env.API_KEY",
-      versionSelector: "latest",
-      required: true,
-      projectionClass: "unclassified",
-      projectionAllowlistKey: null,
-    }]);
-    expect(harness.calls.filter((call) => call.operation === "delete" && call.method === "delete")
-      .map((call) => call.args[0])).toEqual([
-      companySecretBindings,
-      userSecretDeclarations,
     ]);
+
+    expect(valuesCalls(harness, "insert")[0]).toEqual([
+      {
+        companyId,
+        secretId,
+        targetType: "agent",
+        targetId: agentId,
+        configPath: "env.API_KEY",
+        versionSelector: "latest",
+        required: true,
+        projectionClass: "unclassified",
+        projectionAllowlistKey: null,
+      },
+    ]);
+    expect(
+      harness.calls
+        .filter(
+          (call) => call.operation === "delete" && call.method === "delete",
+        )
+        .map((call) => call.args[0]),
+    ).toEqual([companySecretBindings, userSecretDeclarations]);
   });
 
   it("resolves binding target labels without leaking fallback identifiers", async () => {
     const harness = createMockDb({
       select: [
         [bindingRow()],
-        [{ id: agentId, name: "Codex Coder", title: "Engineer", status: "idle" }],
+        [
+          {
+            id: agentId,
+            name: "Codex Coder",
+            title: "Engineer",
+            status: "idle",
+          },
+        ],
       ],
     });
 
-    await expect(secretService(harness.db).listBindingReferences(companyId, secretId))
-      .resolves.toEqual([
-        expect.objectContaining({
-          id: bindingId,
-          target: {
-            type: "agent",
-            id: agentId,
-            label: "Codex Coder (Engineer)",
-            href: "/agents/codex-coder",
-            status: "idle",
-          },
-        }),
-      ]);
+    await expect(
+      secretService(harness.db).listBindingReferences(companyId, secretId),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: bindingId,
+        target: {
+          type: "agent",
+          id: agentId,
+          label: "Codex Coder (Engineer)",
+          routeTarget: { kind: "agent", id: agentId },
+          status: "idle",
+        },
+      }),
+    ]);
+  });
+
+  it("omits noncanonical binding targets instead of projecting identifier fallbacks", async () => {
+    const harness = createMockDb({
+      select: [[bindingRow({ targetId: "legacy-agent-name" })]],
+    });
+
+    await expect(
+      secretService(harness.db).listBindingReferences(companyId, secretId),
+    ).resolves.toEqual([]);
+    expect(harness.remaining("select")).toBe(0);
   });
 
   it("resolves an allowed binding and records value-free success metadata", async () => {
@@ -718,17 +933,21 @@ describe("secretService", () => {
       insert: [[]],
     });
 
-    const resolved = await secretService(harness.db).resolveEnvBindings(companyId, {
-      API_KEY: { type: "secret_ref", secretId, version: "latest" },
-    }, {
-      consumerType: "agent",
-      consumerId: agentId,
-      actorType: "agent",
-      actorId: agentId,
-      taskId: "task-1",
-      runId: "run-1",
-      allowedBindingIds: [bindingId],
-    });
+    const resolved = await secretService(harness.db).resolveEnvBindings(
+      companyId,
+      {
+        API_KEY: { type: "secret_ref", secretId, version: "latest" },
+      },
+      {
+        consumerType: "agent",
+        consumerId: agentId,
+        actorType: "agent",
+        actorId: agentId,
+        taskId: "task-1",
+        runId: "run-1",
+        allowedBindingIds: [bindingId],
+      },
+    );
 
     expect(resolved.env).toEqual({ API_KEY: "runtime-secret" });
     expect([...resolved.secretKeys]).toEqual(["API_KEY"]);
@@ -742,10 +961,12 @@ describe("secretService", () => {
         outcome: "success",
       }),
     ]);
-    expect(provider.resolveVersion).toHaveBeenCalledWith(expect.objectContaining({
-      material: versionRow().material,
-      context: { companyId, secretId, secretKey: "api-key", version: 1 },
-    }));
+    expect(provider.resolveVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        material: versionRow().material,
+        context: { companyId, secretId, secretKey: "api-key", version: 1 },
+      }),
+    );
     const accessValues = valuesCalls(harness, "insert")[0];
     expect(accessValues).toMatchObject({
       companyId,
@@ -780,15 +1001,21 @@ describe("secretService", () => {
 
     for (const entry of cases) {
       const harness = createMockDb({ select: entry.select, insert: [[]] });
-      await expect(secretService(harness.db).resolveEnvBindings(companyId, {
-        API_KEY: { type: "secret_ref", secretId, version: "latest" },
-      }, {
-        consumerType: "agent",
-        consumerId: agentId,
-        actorType: "agent",
-        actorId: agentId,
-        ...entry.context,
-      })).rejects.toMatchObject({
+      await expect(
+        secretService(harness.db).resolveEnvBindings(
+          companyId,
+          {
+            API_KEY: { type: "secret_ref", secretId, version: "latest" },
+          },
+          {
+            consumerType: "agent",
+            consumerId: agentId,
+            actorType: "agent",
+            actorId: agentId,
+            ...entry.context,
+          },
+        ),
+      ).rejects.toMatchObject({
         status: 422,
         details: { code: entry.code },
       });
@@ -811,18 +1038,20 @@ describe("secretService", () => {
       insert: [new Error("access audit unavailable")],
     });
 
-    await expect(secretService(harness.db).resolveSecretValue(
-      companyId,
-      secretId,
-      "latest",
-      {
-        consumerType: "agent",
-        consumerId: agentId,
-        configPath: "env.API_KEY",
-        actorType: "agent",
-        actorId: agentId,
-      },
-    )).resolves.toBe("runtime-secret");
+    await expect(
+      secretService(harness.db).resolveSecretValue(
+        companyId,
+        secretId,
+        "latest",
+        {
+          consumerType: "agent",
+          consumerId: agentId,
+          configPath: "env.API_KEY",
+          actorType: "agent",
+          actorId: agentId,
+        },
+      ),
+    ).resolves.toBe("runtime-secret");
     expect(harness.remaining("update")).toBe(0);
     expect(harness.remaining("insert")).toBe(0);
   });
@@ -834,11 +1063,17 @@ describe("secretService", () => {
     });
     const harness = createMockDb({ select: [[]], insert: [[created]] });
 
-    await expect(secretService(harness.db).createUserSecretDefinition(companyId, {
-      key: " github_token ",
-      name: " GitHub token ",
-      provider: "local_encrypted",
-    }, { type: "user", userId: "owner-user" })).resolves.toEqual(created);
+    await expect(
+      secretService(harness.db).createUserSecretDefinition(
+        companyId,
+        {
+          key: "github_token",
+          name: " GitHub token ",
+          provider: "local_encrypted",
+        },
+        { type: "user", userId: "owner-user" },
+      ),
+    ).resolves.toEqual(created);
     expect(valuesCalls(harness, "insert")[0]).toMatchObject({
       companyId,
       key: "github_token",
@@ -849,6 +1084,18 @@ describe("secretService", () => {
       updatedByAgentId: null,
     });
 
+    await expect(
+      secretService(createMockDb().db).createUserSecretDefinition(
+        companyId,
+        {
+          key: " github_token ",
+          name: "GitHub token",
+          provider: "local_encrypted",
+        },
+        { type: "user", userId: "owner-user" },
+      ),
+    ).rejects.toMatchObject({ status: 422 });
+
     const uniqueRace = Object.assign(new Error("duplicate definition"), {
       cause: {
         code: "23505",
@@ -856,11 +1103,17 @@ describe("secretService", () => {
       },
     });
     const raceHarness = createMockDb({ select: [[]], insert: [uniqueRace] });
-    await expect(secretService(raceHarness.db).createUserSecretDefinition(companyId, {
-      key: "github_token",
-      name: "GitHub token",
-      provider: "local_encrypted",
-    }, SYSTEM_ACTOR)).rejects.toMatchObject({ status: 409 });
+    await expect(
+      secretService(raceHarness.db).createUserSecretDefinition(
+        companyId,
+        {
+          key: "github_token",
+          name: "GitHub token",
+          provider: "local_encrypted",
+        },
+        SYSTEM_ACTOR,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
   });
 
   it("persists a target-scoped user-secret declaration without resolving its value", async () => {
@@ -870,37 +1123,45 @@ describe("secretService", () => {
       insert: [[]],
     });
 
-    await expect(secretService(harness.db).syncUserSecretDeclarationsForTarget(
-      companyId,
-      { targetType: "agent", targetId: agentId },
-      [{
-        definitionKey: "github_token",
+    await expect(
+      secretService(harness.db).syncUserSecretDeclarationsForTarget(
+        companyId,
+        { targetType: "agent", targetId: agentId },
+        [
+          {
+            definitionKey: "github_token",
+            configPath: "env.GITHUB_TOKEN",
+            envKey: "GITHUB_TOKEN",
+          },
+        ],
+        { actor: SYSTEM_ACTOR },
+      ),
+    ).resolves.toEqual([
+      {
+        definitionId,
         configPath: "env.GITHUB_TOKEN",
         envKey: "GITHUB_TOKEN",
-      }],
-      { actor: SYSTEM_ACTOR },
-    )).resolves.toEqual([{
-      definitionId,
-      configPath: "env.GITHUB_TOKEN",
-      envKey: "GITHUB_TOKEN",
-      versionSelector: "latest",
-      required: true,
-      allowMissingOverride: false,
-      label: null,
-    }]);
+        versionSelector: "latest",
+        required: true,
+        allowMissingOverride: false,
+        label: null,
+      },
+    ]);
 
-    expect(valuesCalls(harness, "insert")[0]).toEqual([{
-      companyId,
-      userSecretDefinitionId: definitionId,
-      targetType: "agent",
-      targetId: agentId,
-      configPath: "env.GITHUB_TOKEN",
-      envKey: "GITHUB_TOKEN",
-      versionSelector: "latest",
-      required: true,
-      allowMissingOverride: false,
-      label: null,
-    }]);
+    expect(valuesCalls(harness, "insert")[0]).toEqual([
+      {
+        companyId,
+        userSecretDefinitionId: definitionId,
+        targetType: "agent",
+        targetId: agentId,
+        configPath: "env.GITHUB_TOKEN",
+        envKey: "GITHUB_TOKEN",
+        versionSelector: "latest",
+        required: true,
+        allowMissingOverride: false,
+        label: null,
+      },
+    ]);
     expect(provider.resolveVersion).not.toHaveBeenCalled();
   });
 
@@ -923,18 +1184,22 @@ describe("secretService", () => {
       insert: [[]],
     });
 
-    const result = await secretService(harness.db).resolveUserSecretValue(companyId, {
-      definitionKey: "github_token",
-      responsibleUserId: "responsible-user",
-      version: "latest",
-    }, {
-      consumerType: "agent",
-      consumerId: agentId,
-      configPath: "env.GITHUB_TOKEN",
-      actorType: "agent",
-      actorId: agentId,
-      allowedBindingIds: [declarationId],
-    });
+    const result = await secretService(harness.db).resolveUserSecretValue(
+      companyId,
+      {
+        definitionKey: "github_token",
+        responsibleUserId: "responsible-user",
+        version: "latest",
+      },
+      {
+        consumerType: "agent",
+        consumerId: agentId,
+        configPath: "env.GITHUB_TOKEN",
+        actorType: "agent",
+        actorId: agentId,
+        allowedBindingIds: [declarationId],
+      },
+    );
 
     expect(result).toMatchObject({
       value: "runtime-secret",
@@ -962,25 +1227,33 @@ describe("secretService", () => {
     const deniedHarness = createMockDb({
       select: [[definitionRow()], [declarationRow()]],
     });
-    await expect(secretService(deniedHarness.db).resolveUserSecretValue(companyId, {
-      definitionKey: "github_token",
-      responsibleUserId: "responsible-user",
-    }, {
-      consumerType: "agent",
-      consumerId: agentId,
-      configPath: "env.GITHUB_TOKEN",
-      allowedBindingIds: ["another-declaration"],
-    })).rejects.toMatchObject({
+    await expect(
+      secretService(deniedHarness.db).resolveUserSecretValue(
+        companyId,
+        {
+          definitionKey: "github_token",
+          responsibleUserId: "responsible-user",
+        },
+        {
+          consumerType: "agent",
+          consumerId: agentId,
+          configPath: "env.GITHUB_TOKEN",
+          allowedBindingIds: ["another-declaration"],
+        },
+      ),
+    ).rejects.toMatchObject({
       status: 422,
       details: { code: "binding_not_allowed" },
     });
 
     const optionalHarness = createMockDb({ select: [[]] });
-    await expect(secretService(optionalHarness.db).resolveUserSecretValue(companyId, {
-      definitionKey: "missing_optional",
-      required: false,
-      responsibleUserId: "responsible-user",
-    })).resolves.toBeNull();
+    await expect(
+      secretService(optionalHarness.db).resolveUserSecretValue(companyId, {
+        definitionKey: "missing_optional",
+        required: false,
+        responsibleUserId: "responsible-user",
+      }),
+    ).resolves.toBeNull();
   });
 
   it("maintains one default provider vault and rejects disabled defaults", async () => {
@@ -993,14 +1266,22 @@ describe("secretService", () => {
     });
     const harness = createMockDb({ update: [[]], insert: [[created]] });
 
-    await expect(secretService(harness.db).createProviderConfig(companyId, {
-      provider: "local_encrypted",
-      displayName: " Local vault ",
-      isDefault: true,
-      config: {},
-    }, { type: "agent", agentId })).resolves.toEqual(created);
+    await expect(
+      secretService(harness.db).createProviderConfig(
+        companyId,
+        {
+          provider: "local_encrypted",
+          displayName: " Local vault ",
+          isDefault: true,
+          config: {},
+        },
+        { type: "agent", agentId },
+      ),
+    ).resolves.toEqual(created);
 
-    expect(valuesCalls(harness, "update")[0]).toMatchObject({ isDefault: false });
+    expect(valuesCalls(harness, "update")[0]).toMatchObject({
+      isDefault: false,
+    });
     expect(valuesCalls(harness, "insert")[0]).toMatchObject({
       companyId,
       provider: "local_encrypted",
@@ -1012,23 +1293,33 @@ describe("secretService", () => {
     });
 
     const invalidHarness = createMockDb();
-    await expect(secretService(invalidHarness.db).createProviderConfig(companyId, {
-      provider: "local_encrypted",
-      displayName: "Disabled",
-      status: "disabled",
-      isDefault: true,
-      config: {},
-    }, SYSTEM_ACTOR)).rejects.toMatchObject({ status: 422 });
+    await expect(
+      secretService(invalidHarness.db).createProviderConfig(
+        companyId,
+        {
+          provider: "local_encrypted",
+          displayName: "Disabled",
+          status: "disabled",
+          isDefault: true,
+          config: {},
+        },
+        SYSTEM_ACTOR,
+      ),
+    ).rejects.toMatchObject({ status: 422 });
     expect(invalidHarness.calls).toEqual([]);
 
     const disabledHarness = createMockDb({
       select: [[providerConfigRow({ status: "disabled" })]],
     });
-    await expect(secretService(disabledHarness.db).setDefaultProviderConfig(
-      providerConfigId,
-      SYSTEM_ACTOR,
-    )).rejects.toMatchObject({ status: 422 });
-    expect(disabledHarness.calls.filter((call) => call.operation === "update")).toEqual([]);
+    await expect(
+      secretService(disabledHarness.db).setDefaultProviderConfig(
+        providerConfigId,
+        SYSTEM_ACTOR,
+      ),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(
+      disabledHarness.calls.filter((call) => call.operation === "update"),
+    ).toEqual([]);
   });
 
   it("passes the selected provider vault into health checks", async () => {
@@ -1037,10 +1328,12 @@ describe("secretService", () => {
     const config = providerConfigRow();
     const harness = createMockDb({ select: [[config]], update: [[]] });
 
-    await expect(secretService(harness.db).checkProviderConfigHealth(
-      providerConfigId,
-      SYSTEM_ACTOR,
-    )).resolves.toMatchObject({
+    await expect(
+      secretService(harness.db).checkProviderConfigHealth(
+        providerConfigId,
+        SYSTEM_ACTOR,
+      ),
+    ).resolves.toMatchObject({
       configId: providerConfigId,
       provider: "aws_secrets_manager",
       status: "ready",
@@ -1070,26 +1363,40 @@ describe("secretService", () => {
       mocks.getSecretProvider.mockImplementation(() => provider);
       const harness = createMockDb({ select: [[], [], [config]] });
 
-      await expect(secretService(harness.db).create(companyId, {
-        name: "Rejected vault",
-        provider: "aws_secrets_manager",
-        providerConfigId,
-        value: "must-not-reach-provider",
-      }, SYSTEM_ACTOR)).rejects.toMatchObject({ status: 422 });
+      await expect(
+        secretService(harness.db).create(
+          companyId,
+          {
+            name: "Rejected vault",
+            provider: "aws_secrets_manager",
+            providerConfigId,
+            value: "must-not-reach-provider",
+          },
+          SYSTEM_ACTOR,
+        ),
+      ).rejects.toMatchObject({ status: 422 });
       expect(provider.createSecret).not.toHaveBeenCalled();
-      expect(harness.calls.filter((call) => call.operation === "insert")).toEqual([]);
+      expect(
+        harness.calls.filter((call) => call.operation === "insert"),
+      ).toEqual([]);
     }
   });
 
   it("previews remote references with duplicate enrichment and sanitized metadata", async () => {
     provider = createProviderDouble("aws_secrets_manager");
     mocks.getSecretProvider.mockImplementation(() => provider);
-    const duplicateRef = "arn:aws:secretsmanager:us-east-1:123456789012:secret:duplicate";
-    const readyRef = "arn:aws:secretsmanager:us-east-1:123456789012:secret:ready";
+    const duplicateRef =
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:duplicate";
+    const readyRef =
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:ready";
     provider.listRemoteSecrets.mockResolvedValue({
       nextToken: "next-page",
       secrets: [
-        { externalRef: duplicateRef, name: "duplicate", metadata: { arn: duplicateRef } },
+        {
+          externalRef: duplicateRef,
+          name: "duplicate",
+          metadata: { arn: duplicateRef },
+        },
         {
           externalRef: readyRef,
           name: "ready",
@@ -1100,23 +1407,28 @@ describe("secretService", () => {
     const harness = createMockDb({
       select: [
         [providerConfigRow()],
-        [{
-          id: "existing-secret",
-          name: "Existing duplicate",
-          key: "existing-duplicate",
-          provider: "aws_secrets_manager",
-          providerConfigId,
-          externalRef: duplicateRef,
-          status: "active",
-        }],
+        [
+          {
+            id: "existing-secret",
+            name: "Existing duplicate",
+            key: "existing-duplicate",
+            provider: "aws_secrets_manager",
+            providerConfigId,
+            externalRef: duplicateRef,
+            status: "active",
+          },
+        ],
       ],
     });
 
-    const preview = await secretService(harness.db).previewRemoteImport(companyId, {
-      providerConfigId,
-      query: "prod",
-      pageSize: 25,
-    });
+    const preview = await secretService(harness.db).previewRemoteImport(
+      companyId,
+      {
+        providerConfigId,
+        query: "prod",
+        pageSize: 25,
+      },
+    );
 
     expect(provider.listRemoteSecrets).toHaveBeenCalledWith({
       providerConfig: expect.objectContaining({ id: providerConfigId }),
@@ -1137,25 +1449,35 @@ describe("secretService", () => {
       importable: true,
       providerMetadata: { hasKmsKey: true, tagCount: 2 },
     });
-    expect(JSON.stringify(preview.candidates[1]?.providerMetadata)).not.toContain("arn:aws");
+    expect(
+      JSON.stringify(preview.candidates[1]?.providerMetadata),
+    ).not.toContain("arn:aws");
   });
 
   it("sanitizes draft provider discovery failures without persistence", async () => {
     provider = createProviderDouble("aws_secrets_manager");
     mocks.getSecretProvider.mockImplementation(() => provider);
-    provider.discoverProviderConfigs.mockRejectedValueOnce(new SecretProviderClientError({
-      code: "access_denied",
-      provider: "aws_secrets_manager",
-      operation: "discoverProviderConfigs",
-      message: "AWS Secrets Manager denied the request.",
-      rawMessage: "AccessDenied: arn:aws:sts::123456789012:assumed-role/private",
-    }));
+    provider.discoverProviderConfigs.mockRejectedValueOnce(
+      new SecretProviderClientError({
+        code: "access_denied",
+        provider: "aws_secrets_manager",
+        operation: "discoverProviderConfigs",
+        message: "AWS Secrets Manager denied the request.",
+        rawMessage:
+          "AccessDenied: arn:aws:sts::123456789012:assumed-role/private",
+      }),
+    );
     const harness = createMockDb();
 
-    const thrown = await secretService(harness.db).previewProviderConfigDiscovery(companyId, {
-      provider: "aws_secrets_manager",
-      config: { region: "us-east-1" },
-    }).then(() => null, (error: unknown) => error);
+    const thrown = await secretService(harness.db)
+      .previewProviderConfigDiscovery(companyId, {
+        provider: "aws_secrets_manager",
+        config: { region: "us-east-1" },
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
 
     expect(thrown).toMatchObject({
       status: 403,
@@ -1177,16 +1499,19 @@ describe("secretService", () => {
   it("removes provider material with canonical context and treats provider not-found as idempotent", async () => {
     provider = createProviderDouble("aws_secrets_manager");
     mocks.getSecretProvider.mockImplementation(() => provider);
-    provider.deleteOrArchive.mockRejectedValueOnce(new SecretProviderClientError({
-      code: "not_found",
-      provider: "aws_secrets_manager",
-      operation: "deleteSecret",
-      message: "Remote secret was already removed.",
-    }));
+    provider.deleteOrArchive.mockRejectedValueOnce(
+      new SecretProviderClientError({
+        code: "not_found",
+        provider: "aws_secrets_manager",
+        operation: "deleteSecret",
+        message: "Remote secret was already removed.",
+      }),
+    );
     const secret = secretRow({
       provider: "aws_secrets_manager",
       providerConfigId,
-      externalRef: "arn:aws:secretsmanager:us-east-1:123456789012:secret:managed",
+      externalRef:
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:managed",
     });
     const harness = createMockDb({
       select: [[secret], [versionRow()], [providerConfigRow()]],
@@ -1194,8 +1519,9 @@ describe("secretService", () => {
       delete: [[]],
     });
 
-    await expect(secretService(harness.db).remove(secretId, SYSTEM_ACTOR))
-      .resolves.toEqual(secret);
+    await expect(
+      secretService(harness.db).remove(secretId, SYSTEM_ACTOR),
+    ).resolves.toEqual(secret);
     expect(provider.deleteOrArchive).toHaveBeenCalledWith({
       material: versionRow().material,
       externalRef: secret.externalRef,
@@ -1213,15 +1539,20 @@ describe("secretService", () => {
       name: `API key__deleted__${secretId}`,
       status: "deleted",
     });
-    expect(harness.calls.find((call) =>
-      call.operation === "delete" && call.method === "delete"
-    )?.args[0]).toBe(companySecrets);
+    expect(
+      harness.calls.find(
+        (call) => call.operation === "delete" && call.method === "delete",
+      )?.args[0],
+    ).toBe(companySecrets);
   });
 
   it("rejects generic retargeting and deletion paths for provider-managed identities", async () => {
     const cases = [
       {
-        secret: secretRow({ managedMode: "paperclip_managed", providerConfigId }),
+        secret: secretRow({
+          managedMode: "paperclip_managed",
+          providerConfigId,
+        }),
         patch: { providerConfigId: "another-provider-config" },
       },
       {
@@ -1239,12 +1570,12 @@ describe("secretService", () => {
 
     for (const entry of cases) {
       const harness = createMockDb({ select: [[entry.secret]] });
-      await expect(secretService(harness.db).update(
-        secretId,
-        entry.patch,
-        SYSTEM_ACTOR,
-      )).rejects.toMatchObject({ status: 422 });
-      expect(harness.calls.filter((call) => call.operation === "update")).toEqual([]);
+      await expect(
+        secretService(harness.db).update(secretId, entry.patch, SYSTEM_ACTOR),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(
+        harness.calls.filter((call) => call.operation === "update"),
+      ).toEqual([]);
     }
   });
 
@@ -1252,13 +1583,20 @@ describe("secretService", () => {
     const harness = createMockDb();
     const service = secretService(harness.db);
 
-    await expect(service.normalizeEnvBindingsForPersistence(companyId, {
-      OPENAI_API_KEY: { type: "plain", value: "plaintext-key" },
-    }, { strictMode: true })).rejects.toMatchObject({ status: 422 });
-    await expect(service.normalizeEnvBindingsForPersistence(companyId, {
-      SAFE_VALUE: { type: "plain", value: "***REDACTED***" },
-    })).rejects.toMatchObject({ status: 422 });
+    await expect(
+      service.normalizeEnvBindingsForPersistence(
+        companyId,
+        {
+          OPENAI_API_KEY: { type: "plain", value: "plaintext-key" },
+        },
+        { strictMode: true },
+      ),
+    ).rejects.toMatchObject({ status: 422 });
+    await expect(
+      service.normalizeEnvBindingsForPersistence(companyId, {
+        SAFE_VALUE: { type: "plain", value: "***REDACTED***" },
+      }),
+    ).rejects.toMatchObject({ status: 422 });
     expect(harness.calls).toEqual([]);
   });
-
 });

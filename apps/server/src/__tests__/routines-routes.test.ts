@@ -1,8 +1,8 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
+import { testSecretsRuntimeConfig } from "./helpers/secrets-runtime.js";
 
 const companyId = "22222222-2222-4222-8222-222222222222";
 const agentId = "11111111-1111-4111-8111-111111111111";
@@ -136,7 +136,9 @@ const mockTrackRoutineCreated = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 
 function registerModuleMocks() {
-  vi.doMock("../routes/authz.js", async () => vi.importActual("../routes/authz.js"));
+  vi.doMock("../routes/authz.js", async () =>
+    vi.importActual("../routes/authz.js"),
+  );
 
   vi.doMock("@paperclipai/shared/telemetry", () => ({
     trackRoutineCreated: mockTrackRoutineCreated,
@@ -169,8 +171,12 @@ function registerModuleMocks() {
 
 async function createApp(actor: Record<string, unknown>) {
   const [{ errorHandler }, { routineRoutes }] = await Promise.all([
-    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
-    vi.importActual<typeof import("../routes/routines.js")>("../routes/routines.js"),
+    vi.importActual<typeof import("../middleware/index.js")>(
+      "../middleware/index.js",
+    ),
+    vi.importActual<typeof import("../routes/routines.js")>(
+      "../routes/routines.js",
+    ),
   ]);
   const app = express();
   app.use(express.json());
@@ -178,10 +184,13 @@ async function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", denyGenericAgentRest("REST"));
-  app.use("/api", routineRoutes({} as any, {
-    ordinaryTasks: {} as never,
-  }));
+  app.use(
+    "/api",
+    routineRoutes({} as any, {
+      ordinaryTasks: {} as never,
+      secretsRuntime: testSecretsRuntimeConfig(),
+    }),
+  );
   app.use(errorHandler);
   return app;
 }
@@ -205,11 +214,18 @@ describe("routine routes", () => {
     mockRoutineService.create.mockResolvedValue(routine);
     mockRoutineService.get.mockResolvedValue(routine);
     mockRoutineService.getTrigger.mockResolvedValue(trigger);
-    mockRoutineService.update.mockResolvedValue({ ...routine, assigneeAgentId: otherAgentId });
+    mockRoutineService.update.mockResolvedValue({
+      ...routine,
+      assigneeAgentId: otherAgentId,
+    });
     mockRoutineService.listRevisions.mockResolvedValue([revision]);
     mockRoutineService.restoreRevision.mockResolvedValue({
       routine,
-      revision: { ...revision, revisionNumber: 2, restoredFromRevisionId: revision.id },
+      revision: {
+        ...revision,
+        revisionNumber: 2,
+        restoredFromRevisionId: revision.id,
+      },
       restoredFromRevisionId: revision.id,
       restoredFromRevisionNumber: revision.revisionNumber,
       secretMaterials: [],
@@ -266,7 +282,12 @@ describe("routine routes", () => {
       markdownEnd: 19,
       anchorSelector: {
         quote: { exact: "selected text", prefix: "Alpha ", suffix: " omega" },
-        position: { normalizedStart: 6, normalizedEnd: 19, markdownStart: 6, markdownEnd: 19 },
+        position: {
+          normalizedStart: 6,
+          normalizedEnd: 19,
+          markdownStart: 6,
+          markdownEnd: 19,
+        },
       },
       createdByAgentId: null,
       createdByUserId: "board-user",
@@ -275,24 +296,28 @@ describe("routine routes", () => {
       resolvedAt: null,
       createdAt: new Date("2026-03-20T00:00:00.000Z"),
       updatedAt: new Date("2026-03-20T00:00:00.000Z"),
-      comments: [{
-        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-        companyId,
-        threadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        taskId: null,
-        routineId,
-        documentId: "99999999-9999-4999-8999-999999999999",
-        body: "Please review",
-        authorType: "user",
-        authorAgentId: null,
-        authorUserId: "board-user",
-        createdByRunId: null,
-        taskCommentId: null,
-        createdAt: new Date("2026-03-20T00:00:00.000Z"),
-        updatedAt: new Date("2026-03-20T00:00:00.000Z"),
-      }],
+      comments: [
+        {
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          companyId,
+          threadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          taskId: null,
+          routineId,
+          documentId: "99999999-9999-4999-8999-999999999999",
+          body: "Please review",
+          authorType: "user",
+          authorAgentId: null,
+          authorUserId: "board-user",
+          createdByRunId: null,
+          taskCommentId: null,
+          createdAt: new Date("2026-03-20T00:00:00.000Z"),
+          updatedAt: new Date("2026-03-20T00:00:00.000Z"),
+        },
+      ],
     };
-    mockAnnotationService.createRoutineThread.mockResolvedValue(annotationThread);
+    mockAnnotationService.createRoutineThread.mockResolvedValue(
+      annotationThread,
+    );
     mockAnnotationService.addRoutineComment.mockResolvedValue({
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       companyId,
@@ -313,34 +338,42 @@ describe("routine routes", () => {
       ...annotationThread,
       status: "resolved",
     });
-    mockAnnotationService.remapOpenThreadsForRoutineDocument.mockResolvedValue([]);
+    mockAnnotationService.remapOpenThreadsForRoutineDocument.mockResolvedValue(
+      [],
+    );
   });
 
   it("passes project filters to the routine list service", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: true,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "admin" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: true,
+        companyIds: [companyId],
+        memberships: [{ companyId, status: "active", membershipRole: "admin" }],
+      }),
+    );
 
     const res = await request(app)
       .get(`/api/companies/${companyId}/routines`)
       .query({ projectId });
 
     expect(res.status).toBe(200);
-    expect(mockRoutineService.list).toHaveBeenCalledWith(companyId, { projectId });
+    expect(mockRoutineService.list).toHaveBeenCalledWith(companyId, {
+      projectId,
+    });
   });
 
   it("lists routine revisions for a board member in newest-first service order", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: true,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "admin" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: true,
+        companyIds: [companyId],
+        memberships: [{ companyId, status: "active", membershipRole: "admin" }],
+      }),
+    );
 
     const res = await request(app).get(`/api/routines/${routineId}/revisions`);
 
@@ -350,17 +383,24 @@ describe("routine routes", () => {
   });
 
   it("creates, replies to, and resolves routine description annotation threads", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: true,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "admin" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: true,
+        companyIds: [companyId],
+        memberships: [{ companyId, status: "active", membershipRole: "admin" }],
+      }),
+    );
 
     const selector = {
       quote: { exact: "selected text", prefix: "Alpha ", suffix: " omega" },
-      position: { normalizedStart: 6, normalizedEnd: 19, markdownStart: 6, markdownEnd: 19 },
+      position: {
+        normalizedStart: 6,
+        normalizedEnd: 19,
+        markdownStart: 6,
+        markdownEnd: 19,
+      },
     };
 
     const created = await request(app)
@@ -385,15 +425,20 @@ describe("routine routes", () => {
       expect.objectContaining({ body: "Please review" }),
       expect.objectContaining({ actorType: "user", userId: "board-user" }),
     );
-    expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "routine.document_annotation_thread_created",
-      entityType: "routine",
-      entityId: routineId,
-      details: expect.objectContaining({ documentKey: "description" }),
-    }));
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "routine.document_annotation_thread_created",
+        entityType: "routine",
+        entityId: routineId,
+        details: expect.objectContaining({ documentKey: "description" }),
+      }),
+    );
 
     await request(app)
-      .post(`/api/routines/${routineId}/description/annotations/${created.body.id}/comments`)
+      .post(
+        `/api/routines/${routineId}/description/annotations/${created.body.id}/comments`,
+      )
       .send({ body: "Reply" })
       .expect(201);
     expect(mockAnnotationService.addRoutineComment).toHaveBeenCalledWith(
@@ -403,14 +448,19 @@ describe("routine routes", () => {
       expect.objectContaining({ body: "Reply" }),
       expect.objectContaining({ actorType: "user", userId: "board-user" }),
     );
-    expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "routine.document_annotation_comment_added",
-      entityType: "routine",
-      entityId: routineId,
-    }));
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "routine.document_annotation_comment_added",
+        entityType: "routine",
+        entityId: routineId,
+      }),
+    );
 
     const resolved = await request(app)
-      .patch(`/api/routines/${routineId}/description/annotations/${created.body.id}`)
+      .patch(
+        `/api/routines/${routineId}/description/annotations/${created.body.id}`,
+      )
       .send({ status: "resolved" })
       .expect(200);
 
@@ -422,25 +472,32 @@ describe("routine routes", () => {
       expect.objectContaining({ status: "resolved" }),
       expect.objectContaining({ actorType: "user", userId: "board-user" }),
     );
-    expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "routine.document_annotation_thread_resolved",
-      entityType: "routine",
-      entityId: routineId,
-    }));
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "routine.document_annotation_thread_resolved",
+        entityType: "routine",
+        entityId: routineId,
+      }),
+    );
   });
 
   it("blocks routine revision reads across company scope", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: false,
-      companyIds: ["99999999-9999-4999-8999-999999999999"],
-      memberships: [{
-        companyId: "99999999-9999-4999-8999-999999999999",
-        status: "active",
-        membershipRole: "member",
-      }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: false,
+        companyIds: ["99999999-9999-4999-8999-999999999999"],
+        memberships: [
+          {
+            companyId: "99999999-9999-4999-8999-999999999999",
+            status: "active",
+            membershipRole: "operator",
+          },
+        ],
+      }),
+    );
 
     const res = await request(app).get(`/api/routines/${routineId}/revisions`);
 
@@ -449,17 +506,21 @@ describe("routine routes", () => {
   });
 
   it("returns an identical 404 body for missing and cross-tenant routine triggers", async () => {
-    const crossTenantApp = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: false,
-      companyIds: ["99999999-9999-4999-8999-999999999999"],
-      memberships: [{
-        companyId: "99999999-9999-4999-8999-999999999999",
-        status: "active",
-        membershipRole: "member",
-      }],
-    }));
+    const crossTenantApp = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: false,
+        companyIds: ["99999999-9999-4999-8999-999999999999"],
+        memberships: [
+          {
+            companyId: "99999999-9999-4999-8999-999999999999",
+            status: "active",
+            membershipRole: "operator",
+          },
+        ],
+      }),
+    );
     const crossTenant = await request(crossTenantApp)
       .patch(`/api/routine-triggers/${trigger.id}`)
       .send({ kind: "cron", config: { expression: "0 9 * * *" } });
@@ -475,50 +536,18 @@ describe("routine routes", () => {
     expect(mockRoutineService.updateTrigger).not.toHaveBeenCalled();
   });
 
-  it("requires an assigned agent for routine revision history access", async () => {
-    const app = await createApp({
-      type: "agent",
-      source: "internal",
-      agentId: otherAgentId,
-      companyId,
-      runId: "88888888-8888-4888-8888-888888888889",
-    });
-
-    const res = await request(app).get(`/api/routines/${routineId}/revisions`);
-
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("compiled_run_interface_required");
-    expect(mockRoutineService.listRevisions).not.toHaveBeenCalled();
-  });
-
-  it("rejects agent revision restore through generic REST", async () => {
-    const app = await createApp({
-      type: "agent",
-      source: "internal",
-      agentId,
-      companyId,
-      runId: "88888888-8888-4888-8888-888888888888",
-    });
-
-    const res = await request(app).post(`/api/routines/${routineId}/revisions/${revisionId}/restore`).send({});
-
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("compiled_run_interface_required");
-    expect(mockRoutineService.restoreRevision).not.toHaveBeenCalled();
-    expect(mockLogActivity).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ action: "routine.revision_restored" }),
-    );
-  });
-
   it("rejects viewer routine creation", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: false,
+        companyIds: [companyId],
+        memberships: [
+          { companyId, status: "active", membershipRole: "viewer" },
+        ],
+      }),
+    );
 
     const res = await request(app)
       .post(`/api/companies/${companyId}/routines`)
@@ -535,19 +564,22 @@ describe("routine routes", () => {
   });
 
   it("rejects a viewer retargeting a routine owner", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: false,
+        companyIds: [companyId],
+        memberships: [
+          { companyId, status: "active", membershipRole: "viewer" },
+        ],
+      }),
+    );
 
-    const res = await request(app)
-      .patch(`/api/routines/${routineId}`)
-      .send({
-        assigneeAgentId: otherAgentId,
-      });
+    const res = await request(app).patch(`/api/routines/${routineId}`).send({
+      assigneeAgentId: otherAgentId,
+      baseRevisionId: revisionId,
+    });
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("Viewer access is read-only");
@@ -557,19 +589,22 @@ describe("routine routes", () => {
 
   it("rejects a viewer reactivating a routine", async () => {
     mockRoutineService.get.mockResolvedValue(pausedRoutine);
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: false,
+        companyIds: [companyId],
+        memberships: [
+          { companyId, status: "active", membershipRole: "viewer" },
+        ],
+      }),
+    );
 
-    const res = await request(app)
-      .patch(`/api/routines/${routineId}`)
-      .send({
-        status: "active",
-      });
+    const res = await request(app).patch(`/api/routines/${routineId}`).send({
+      status: "active",
+      baseRevisionId: revisionId,
+    });
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("Viewer access is read-only");
@@ -578,13 +613,17 @@ describe("routine routes", () => {
   });
 
   it("rejects a viewer creating a trigger", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: false,
+        companyIds: [companyId],
+        memberships: [
+          { companyId, status: "active", membershipRole: "viewer" },
+        ],
+      }),
+    );
 
     const res = await request(app)
       .post(`/api/routines/${routineId}/triggers`)
@@ -601,13 +640,17 @@ describe("routine routes", () => {
   });
 
   it("rejects a viewer updating a trigger", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: false,
+        companyIds: [companyId],
+        memberships: [
+          { companyId, status: "active", membershipRole: "viewer" },
+        ],
+      }),
+    );
 
     const res = await request(app)
       .patch(`/api/routine-triggers/${trigger.id}`)
@@ -622,13 +665,17 @@ describe("routine routes", () => {
   });
 
   it("rejects a viewer manually running a routine", async () => {
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: false,
+        companyIds: [companyId],
+        memberships: [
+          { companyId, status: "active", membershipRole: "viewer" },
+        ],
+      }),
+    );
 
     const res = await request(app)
       .post(`/api/routines/${routineId}/run`)
@@ -645,25 +692,33 @@ describe("routine routes", () => {
       allowed: true,
       explanation: "Active board membership",
     });
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "member" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: false,
+        companyIds: [companyId],
+        memberships: [
+          { companyId, status: "active", membershipRole: "operator" },
+        ],
+      }),
+    );
 
     const res = await request(app)
       .post(`/api/routines/${routineId}/run`)
       .send({});
 
     expect(res.status).toBe(202);
-    expect(mockRoutineService.runRoutine).toHaveBeenCalledWith(routineId, {
-      source: "manual",
-    }, {
-      type: "user",
-      userId: "board-user",
-    });
+    expect(mockRoutineService.runRoutine).toHaveBeenCalledWith(
+      routineId,
+      {
+        source: "manual",
+      },
+      {
+        type: "user",
+        userId: "board-user",
+      },
+    );
   });
 
   it("allows routine creation with board task-mutation authority", async () => {
@@ -671,13 +726,17 @@ describe("routine routes", () => {
       allowed: true,
       explanation: "Active board membership",
     });
-    const app = await createApp(testBoardSessionActor({
-      userId: "board-user",
-      sessionId: "session-board-user",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-      memberships: [{ companyId, status: "active", membershipRole: "member" }],
-    }));
+    const app = await createApp(
+      testBoardSessionActor({
+        userId: "board-user",
+        sessionId: "session-board-user",
+        isInstanceAdmin: false,
+        companyIds: [companyId],
+        memberships: [
+          { companyId, status: "active", membershipRole: "operator" },
+        ],
+      }),
+    );
 
     const res = await request(app)
       .post(`/api/companies/${companyId}/routines`)
@@ -688,14 +747,18 @@ describe("routine routes", () => {
       });
 
     expect(res.status).toBe(201);
-    expect(mockRoutineService.create).toHaveBeenCalledWith(companyId, expect.objectContaining({
-      projectId,
-      title: "Daily routine",
-      assigneeAgentId: agentId,
-    }), {
-      type: "user",
-      userId: "board-user",
-    });
+    expect(mockRoutineService.create).toHaveBeenCalledWith(
+      companyId,
+      expect.objectContaining({
+        projectId,
+        title: "Daily routine",
+        assigneeAgentId: agentId,
+      }),
+      {
+        type: "user",
+        userId: "board-user",
+      },
+    );
     expect(mockTrackRoutineCreated).toHaveBeenCalledWith(expect.anything());
   });
 });

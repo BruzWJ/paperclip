@@ -5,55 +5,31 @@ import type { ServerAdapterModule } from "./types.js";
 
 function fixture(): ServerAdapterModule {
   const model = {
-    id: "fixture-model",
-    label: "Fixture model",
     value: "fixture-model",
-    limits: {
-      contextTokenLimit: 10_000,
-      outputTokenLimit: 2_000,
-    },
+    label: "Fixture model",
   } as const;
   return {
     type: "fixture",
     definition: {
       version: "acpx-runtime/v1",
-      launchProfile: { registryName: "fixture-agent" },
-      environment: {
-        cwd: "execution-workspace",
-        additionalDirectories: "authorized-workspace-only",
-        environmentKeys: [],
-      },
+      launchProfile: { registryName: "fixture" },
       runtime: {
         controls: ["session/status", "session/set_config_option"],
       },
       ui: {
         label: "Fixture",
-        description: "Fixture ACP adapter",
-      },
-      configSchema: {
-        fields: [
-          {
-            key: "model",
-            label: "Model",
-            type: "select",
-            required: true,
-            options: [{ label: model.label, value: model.value }],
-          },
-        ],
       },
       configOptions: [
         {
           id: "model",
-          configKey: "model",
           label: "Model",
-          required: true,
+          type: "select",
           values: [{ label: model.label, value: model.value }],
+          currentValue: model.value,
         },
       ],
       modelConfigOptionId: "model",
       models: [model],
-      modelProfiles: [],
-      configurationDoc: "Authenticate through the target CLI.",
     },
   };
 }
@@ -101,40 +77,27 @@ describe("declarative ACP adapter contract", () => {
     ).toThrow(/unknown field command/);
   });
 
-  it("derives sorted, nonempty stable ACP config selections and model limits", () => {
+  it("derives sorted, nonempty stable ACP config selections and model", () => {
     const adapter = fixture();
-    const modelField = adapter.definition.configSchema.fields[0]!;
     const modelOption = adapter.definition.configOptions[0]!;
     const resolved = resolveAcpAdapterRevisionConfiguration({
       adapter: {
         ...adapter,
         definition: {
           ...adapter.definition,
-          configSchema: {
-            fields: [
-              modelField,
-              {
-                key: "enabled",
-                label: "Enabled",
-                type: "toggle",
-                required: true,
-              },
-            ],
-          },
           configOptions: [
             { ...modelOption, id: "a" },
             {
               id: "Z",
-              configKey: "enabled",
               label: "Enabled",
-              required: true,
-              values: [{ label: "Enabled", value: true }],
+              type: "toggle",
+              currentValue: true,
             },
           ],
           modelConfigOptionId: "a",
         },
       },
-      config: { model: "fixture-model", enabled: true },
+      config: { Z: true, a: "fixture-model" },
     });
     expect(resolved).toMatchObject({
       contractVersion: "acpx-runtime/v1",
@@ -143,11 +106,7 @@ describe("declarative ACP adapter contract", () => {
         { configId: "a", value: "fixture-model" },
       ],
       model: {
-        id: "fixture-model",
-        limits: {
-          contextTokenLimit: 10_000,
-          outputTokenLimit: 2_000,
-        },
+        value: "fixture-model",
       },
     });
   });

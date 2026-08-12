@@ -134,24 +134,6 @@ export function filterLocalInboxArchivedTasks(
   return tasks.filter((task) => !taskIds.has(task.id));
 }
 
-function inboxTaskCompanyIdFromQueryKey(queryKey: QueryKey): string | null {
-  const inboxQueryKind = String(queryKey[2]);
-  if (
-    queryKey[0] !== "tasks"
-    || typeof queryKey[1] !== "string"
-    || !["compact", "mine-by-me", "touched-by-me", "unread-touched-by-me"].includes(inboxQueryKind)
-  ) {
-    return null;
-  }
-  return queryKey[1];
-}
-
-export function filterLocalInboxArchivedQueryData<TData>(queryKey: QueryKey, data: TData): TData {
-  const companyId = inboxTaskCompanyIdFromQueryKey(queryKey);
-  if (!companyId || !Array.isArray(data)) return data;
-  return filterLocalInboxArchivedTasks(companyId, data as Task[]) as TData;
-}
-
 function inboxTaskQueryPrefixes(companyId: string) {
   return [
     queryKeys.tasks.listMineByMe(companyId),

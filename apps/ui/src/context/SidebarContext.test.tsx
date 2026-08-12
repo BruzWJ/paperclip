@@ -290,8 +290,8 @@ describe("SidebarContext", () => {
     });
   });
 
-  describe("back-compat", () => {
-    it("retains sidebarOpen/toggleSidebar for the drawer", () => {
+  describe("mobile drawer controls", () => {
+    it("exposes sidebarOpen/toggleSidebar for the drawer", () => {
       active = renderProvider();
       const initial = capturedValue?.sidebarOpen;
       expect(typeof initial).toBe("boolean");

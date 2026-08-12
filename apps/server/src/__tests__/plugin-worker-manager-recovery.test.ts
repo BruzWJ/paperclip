@@ -122,7 +122,7 @@ function workerOptions(onTerminalCrash: () => void | Promise<void>) {
     databaseNamespace: null,
     onTerminalCrash,
     hostHandlers: createHostClientHandlers({
-      pluginId: "test.plugin",
+      pluginKey: "test.plugin",
       capabilities: [],
       services: {} as HostServices,
     }),

@@ -175,6 +175,72 @@ describe("worker RPC transport", () => {
     }
   });
 
+  it("rejects creator callback identity aliases before host registration", async () => {
+    const hostToWorker = new PassThrough();
+    const workerToHost = new PassThrough();
+    const hostReadline = createInterface({ input: workerToHost });
+    const outboundRequests: string[] = [];
+    let resolveInitialize!: (response: JsonRpcResponse) => void;
+    const initializeResponse = new Promise<JsonRpcResponse>((resolve) => {
+      resolveInitialize = resolve;
+    });
+    const worker = startWorkerRpcHost({
+      plugin: definePlugin({
+        async setup(ctx) {
+          await ctx.tasks.registerCreatorCallback(
+            { key: " callback ", version: " 1 " },
+            (delivery) => ({ deliveryId: delivery.deliveryId, accepted: true }),
+          );
+        },
+      }),
+      stdin: hostToWorker,
+      stdout: workerToHost,
+    });
+
+    hostReadline.on("line", (line) => {
+      const message = parseMessage(line);
+      if (isJsonRpcRequest(message)) {
+        outboundRequests.push(message.method);
+      } else if (message.id === "initialize-callback-alias") {
+        resolveInitialize(message);
+      }
+    });
+
+    try {
+      hostToWorker.write(serializeMessage(createRequest("initialize", {
+        manifest: {
+          id: "paperclip.callback-alias-test",
+          apiVersion: 1,
+          version: "1.0.0",
+          displayName: "Callback alias test",
+          description: "Callback alias test",
+          author: "Paperclip",
+          categories: ["automation"],
+          capabilities: ["tasks.create"],
+          entrypoints: { worker: "dist/worker.js" },
+        },
+        instanceInfo: { instanceId: "test", hostVersion: "0.0.0" },
+        apiVersion: 1,
+        databaseNamespace: null,
+      }, "initialize-callback-alias")));
+
+      await expect(initializeResponse).resolves.toMatchObject({
+        id: "initialize-callback-alias",
+        error: {
+          message: expect.stringContaining(
+            "Creator callback key and version must be exact non-empty strings",
+          ),
+        },
+      });
+      expect(outboundRequests).toEqual([]);
+    } finally {
+      worker.stop();
+      hostReadline.close();
+      hostToWorker.destroy();
+      workerToHost.destroy();
+    }
+  });
+
   it("drains accepted work, rejects new intake, then runs shutdown once", async () => {
     const hostToWorker = new PassThrough();
     const workerToHost = new PassThrough();
@@ -925,7 +991,7 @@ describe("worker invocation scope propagation", () => {
     const readSession = vi.fn(async () => sessionResult);
     const readTaskComments = vi.fn(async () => commentsResult);
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.before-prompt-records-test",
+      pluginKey: "paperclip.before-prompt-records-test",
       capabilities: ["runtime.records.read"],
       services: {
         runtimeRecords: { readSession, readTaskComments },
@@ -1160,7 +1226,7 @@ describe("worker plugin run-context bridge", () => {
       nextCursor: null,
     }));
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.run-context-test",
+      pluginKey: "paperclip.run-context-test",
       capabilities: ["tasks.read"],
       services: {
         tasks: { list: ordinaryTaskList },

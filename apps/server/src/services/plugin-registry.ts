@@ -8,11 +8,12 @@ import {
   pluginEntities,
   pluginWebhookDeliveries,
 } from "@paperclipai/db";
-import type {
-  PaperclipPluginManifestV1,
-  PluginStatus,
-  PluginCompanySettings,
-  PluginInstallSource,
+import {
+  isCanonicalUuid,
+  type PaperclipPluginManifestV1,
+  type PluginStatus,
+  type PluginCompanySettings,
+  type PluginInstallSource,
 } from "@paperclipai/shared";
 import type { WorkerToHostMethods } from "@paperclipai/plugin-sdk";
 import { conflict, notFound } from "../errors.js";
@@ -277,6 +278,7 @@ export function pluginRegistryService(db: Db) {
   // -----------------------------------------------------------------------
 
   async function getById(id: string) {
+    if (!isCanonicalUuid(id)) return null;
     return db
       .select()
       .from(plugins)

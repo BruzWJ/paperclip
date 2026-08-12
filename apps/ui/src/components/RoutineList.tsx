@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { MoreHorizontal, Play } from "lucide-react";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,13 +50,37 @@ export function nextRoutineStatus(currentStatus: string, enabled: boolean) {
   return enabled ? "active" : "paused";
 }
 
+function RoutineLink({
+  routeId,
+  className,
+  children,
+}: {
+  routeId: string | null;
+  className?: string;
+  children: ReactNode;
+}) {
+  const companyId = useCompanyRouteId();
+  if (routeId) {
+    return (
+      <Link
+        to="/$companyId/routines/$routineId"
+        params={{ companyId, routineId: routeId }}
+        className={className}
+      >
+        {children}
+      </Link>
+    );
+  }
+  return <Link to="/$companyId/routines" params={{ companyId }} className={className}>{children}</Link>;
+}
+
 export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   routine,
   projectById,
   agentById,
   runningRoutineId,
   statusMutationRoutineId,
-  href,
+  routineRouteId,
   configureLabel = "Edit",
   managedByLabel,
   secondaryDetails,
@@ -77,7 +102,8 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   agentById: Map<string, RoutineListAgentSummary>;
   runningRoutineId: string | null;
   statusMutationRoutineId: string | null;
-  href: string;
+  /** Canonical routine route id. `null` links to the routines index; omitted uses `routine.id`. */
+  routineRouteId?: string | null;
   configureLabel?: string;
   managedByLabel?: string | null;
   secondaryDetails?: ReactNode;
@@ -95,6 +121,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   onToggleEnabled: (routine: TRoutine, enabled: boolean) => void;
   onToggleArchived?: (routine: TRoutine) => void;
 }) {
+  const routeId = routineRouteId === undefined ? routine.id : routineRouteId;
   const enabled = routine.status === "active";
   const isArchived = routine.status === "archived";
   const isStatusPending = statusMutationRoutineId === routine.id;
@@ -120,7 +147,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
           />
         </div>
       ) : null}
-      <Link to={href} className="min-w-0 flex-1 space-y-1.5 no-underline text-inherit">
+      <RoutineLink routeId={routeId} className="min-w-0 flex-1 space-y-1.5 no-underline text-inherit">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium">{routine.title}</span>
           {(isArchived || routine.status === "paused" || isDraft) ? (
@@ -152,7 +179,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
         {secondaryDetails ? (
           <div className="text-xs text-muted-foreground">{secondaryDetails}</div>
         ) : null}
-      </Link>
+      </RoutineLink>
 
       <div className="flex items-center gap-3">
         {runNowButton ? (
@@ -188,7 +215,9 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild>
-              <Link to={href}>{configureLabel}</Link>
+              <RoutineLink routeId={routeId}>
+                {configureLabel}
+              </RoutineLink>
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={runDisabled}

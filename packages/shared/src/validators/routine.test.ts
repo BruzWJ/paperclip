@@ -78,11 +78,16 @@ describe("routine validators", () => {
     })).toThrow();
   });
 
-  it("accepts optional base revision ids on routine updates", () => {
+  it("requires a canonical base revision id on routine updates", () => {
     expect(updateRoutineSchema.parse({
       title: "Daily triage",
       baseRevisionId,
     }).baseRevisionId).toBe(baseRevisionId);
+    expect(updateRoutineSchema.safeParse({ title: "Daily triage" }).success).toBe(false);
+    expect(updateRoutineSchema.safeParse({
+      title: "Daily triage",
+      baseRevisionId: null,
+    }).success).toBe(false);
   });
 
   it("accepts date variables with valid YYYY-MM-DD defaults", () => {
@@ -109,5 +114,25 @@ describe("routine validators", () => {
       type: "date",
       defaultValue: 20240229,
     })).toThrow(/YYYY-MM-DD/);
+  });
+
+  it("rejects padded or duplicate variable identities", () => {
+    expect(
+      routineVariableSchema.safeParse({ name: " branch" }).success,
+    ).toBe(false);
+    expect(
+      routineVariableSchema.safeParse({
+        name: "branch",
+        type: "select",
+        options: ["main", " release"],
+      }).success,
+    ).toBe(false);
+    expect(
+      routineVariableSchema.safeParse({
+        name: "branch",
+        type: "select",
+        options: ["main", "main"],
+      }).success,
+    ).toBe(false);
   });
 });

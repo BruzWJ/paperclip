@@ -8,8 +8,9 @@ quickly becomes misleading when screens and components are removed.
 
 Before adding or consolidating a UI component:
 
-1. Inspect the current `apps/ui/src/components/` and `apps/ui/src/pages/`
-   trees for an existing primitive or equivalent behavior.
+1. Inspect the current `apps/ui/src/components/` tree and the route-owned
+   `apps/ui/src/routes/**/` trees (`index.tsx` is the screen entry)
+   for an existing primitive or equivalent behavior.
 2. Reuse the established component when its behavior and accessibility contract
    fit; otherwise keep the new component focused on one clearly distinct
    responsibility.

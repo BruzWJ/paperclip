@@ -8,10 +8,9 @@ import {
   LayoutGrid,
   Play,
   Send,
-  SlidersHorizontal,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import {
   ROUTINE_SECTION_KEYS,
@@ -63,23 +62,22 @@ const ALL_ITEMS: NavItem[] = NAV_GROUPS.flatMap((group) => group.items);
 
 export function RoutineSubSidebar({
   activeSection,
-  hrefFor,
+  companyId,
+  routineId,
   isSectionDirty,
   hasLiveRun,
-  onNavigate,
 }: {
   activeSection: RoutineSectionKey;
-  hrefFor: (section: RoutineSectionKey) => string;
+  companyId: string;
+  routineId: string;
   isSectionDirty: (section: RoutineSectionKey) => boolean;
   hasLiveRun: boolean;
-  onNavigate: (section: RoutineSectionKey) => void;
 }) {
   const itemRefs = useRef<Array<HTMLAnchorElement | null>>([]);
 
   const focusItem = (index: number) => {
     const clamped = (index + ALL_ITEMS.length) % ALL_ITEMS.length;
     itemRefs.current[clamped]?.focus();
-    onNavigate(ALL_ITEMS[clamped].key);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent, index: number) => {
@@ -130,13 +128,21 @@ export function RoutineSubSidebar({
                 ref={(node) => {
                   itemRefs.current[index] = node;
                 }}
-                to={hrefFor(item.key)}
+                to={
+                  item.key === "overview"
+                    ? "/$companyId/routines/$routineId"
+                    : "/$companyId/routines/$routineId/$section"
+                }
+                params={
+                  item.key === "overview"
+                    ? { companyId, routineId }
+                    : { companyId, routineId, section: item.key }
+                }
                 replace
                 role="tab"
                 aria-current={isActive ? "page" : undefined}
                 tabIndex={isActive ? 0 : -1}
                 onKeyDown={(event) => handleKeyDown(event, index)}
-                onClick={() => onNavigate(item.key)}
                 className={cn(
                   // Match the primary nav rows (SidebarNavItem): same rhythm,
                   // inset pill, type scale, and icon size.
@@ -212,5 +218,3 @@ export function RoutineSectionPicker({
     </div>
   );
 }
-
-export { ALL_ITEMS as ROUTINE_NAV_ITEMS };

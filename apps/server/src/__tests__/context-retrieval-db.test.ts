@@ -10,6 +10,10 @@ import {
 
 describe("context retrieval DB projection", () => {
   it("builds a valid first-page trace query with delivered source messages only", async () => {
+    const companyId = "11111111-1111-4111-8111-111111111111";
+    const taskId = "22222222-2222-4222-8222-222222222222";
+    const runId = "33333333-3333-4333-8333-333333333333";
+    const sessionId = "44444444-4444-4444-8444-444444444444";
     const statements: string[] = [];
     let statementCount = 0;
     const repository = createContextRetrievalDbRepository(
@@ -17,9 +21,7 @@ describe("context retrieval DB projection", () => {
         statements.push(query);
         statementCount += 1;
         return {
-          rows: statementCount === 1
-            ? [["company", "task", "run"]]
-            : [],
+          rows: statementCount === 1 ? [[companyId, taskId, runId]] : [],
         };
       }) as never,
       {
@@ -27,8 +29,8 @@ describe("context retrieval DB projection", () => {
           async readJoinedRunDetail() {
             return {
               run: {
-                taskId: "task",
-                sessionId: "session",
+                taskId,
+                sessionId,
                 kind: "productive",
                 status: "succeeded",
                 startedAt: null,
@@ -44,16 +46,17 @@ describe("context retrieval DB projection", () => {
     );
 
     await repository.readCanonicalRunTrace({
-      companyId: "company",
-      runId: "run",
+      companyId,
+      runId,
       after: null,
       limit: 26,
     });
 
     const traceQuery = statements.at(-1)!;
     expect(traceQuery).not.toContain("and )");
-    expect(traceQuery.match(/prompt_transmission_phase = 'transmitted'/g))
-      .toHaveLength(2);
+    expect(
+      traceQuery.match(/prompt_transmission_phase = 'transmitted'/g),
+    ).toHaveLength(2);
     expect(traceQuery).toContain("source_ref.source_message_id");
     expect(traceQuery).toContain("segment.source_message_id");
   });
@@ -72,21 +75,27 @@ describe("context retrieval DB projection", () => {
       createdAt: "2026-07-25T00:00:00.000Z",
     };
     expect(mapContextCommentAuthor(base)).toEqual({ kind: "system" });
-    expect(mapContextCommentAuthor({
-      ...base,
-      authorType: "agent",
-      authorAgentId: "agent-1",
-    })).toEqual({ kind: "agent", agentId: "agent-1" });
-    expect(mapContextCommentAuthor({
-      ...base,
-      authorType: "user",
-      authorUserId: "user-1",
-    })).toEqual({ kind: "user", userId: "user-1" });
-    expect(mapContextCommentAuthor({
-      ...base,
-      authorType: "plugin",
-      authorPluginKey: "paperclip.example",
-    })).toEqual({ kind: "plugin", pluginKey: "paperclip.example" });
+    expect(
+      mapContextCommentAuthor({
+        ...base,
+        authorType: "agent",
+        authorAgentId: "agent-1",
+      }),
+    ).toEqual({ kind: "agent", agentId: "agent-1" });
+    expect(
+      mapContextCommentAuthor({
+        ...base,
+        authorType: "user",
+        authorUserId: "user-1",
+      }),
+    ).toEqual({ kind: "user", userId: "user-1" });
+    expect(
+      mapContextCommentAuthor({
+        ...base,
+        authorType: "plugin",
+        authorPluginKey: "paperclip.example",
+      }),
+    ).toEqual({ kind: "plugin", pluginKey: "paperclip.example" });
 
     for (const malformed of [
       { ...base, authorType: "plugin", authorPluginKey: null },

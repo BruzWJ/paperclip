@@ -1,24 +1,14 @@
 import { describe, expect, it } from "vitest";
-import {
-  applySearchOperatorSuggestion,
-  buildSearchPathFromQuery,
-  parseSearchQuery,
-  readSearchFiltersFromParams,
-  searchOperatorSuggestions,
-} from "./search-query-parser";
+import { applySearchOperatorSuggestion, parseSearchQuery, searchOperatorSuggestions } from "./search-query-parser";
+
+const AGENT_ID = "33333333-3333-4333-8333-333333333333";
+const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
+const LABEL_ID = "22222222-2222-4222-8222-222222222222";
 
 const context = {
-  currentUserId: "user-1",
-  agents: [
-    { id: "agent-1", name: "Codex Coder", urlKey: "codex-coder" },
-    { id: "agent-2", name: "QA" },
-  ],
-  projects: [
-    { id: "11111111-1111-4111-8111-111111111111", name: "Paperclip App", urlKey: "paperclip-app" },
-  ],
-  labels: [
-    { id: "22222222-2222-4222-8222-222222222222", name: "bug" },
-  ],
+  agents: [{ id: AGENT_ID, name: "Codex Coder" }],
+  projects: [{ id: PROJECT_ID, name: "Paperclip App" }],
+  labels: [{ id: LABEL_ID, name: "bug" }],
 };
 
 describe("parseSearchQuery", () => {
@@ -30,29 +20,53 @@ describe("parseSearchQuery", () => {
     });
   });
 
-  it("parses owner:me to the current user", () => {
-    expect(parseSearchQuery("owner:me", context).filters).toEqual({
-      ownerUserId: "user-1",
-    });
-  });
-
-  it("parses owner names including quoted multi-word names", () => {
-    expect(parseSearchQuery("owner:\"Codex Coder\" crash", context)).toMatchObject({
+  it("parses an exact canonical owner UUID and resolves only its display label", () => {
+    expect(parseSearchQuery(`owner:${AGENT_ID} crash`, context)).toMatchObject({
       query: "crash",
-      filters: { ownerAgentId: "agent-1" },
-      pills: [{ key: "owner", value: "Codex Coder", label: "owner:Codex Coder" }],
+      filters: { ownerAgentId: AGENT_ID },
+      pills: [{ key: "owner", value: AGENT_ID, label: "owner:Codex Coder" }],
     });
   });
 
-  it("parses project names", () => {
-    expect(parseSearchQuery("project:paperclip-app", context).filters).toEqual({
-      projectId: "11111111-1111-4111-8111-111111111111",
+  it("does not treat owner aliases or names as identities", () => {
+    expect(parseSearchQuery('owner:me owner:"Codex Coder"', context)).toMatchObject({
+      query: 'owner:me owner:"Codex Coder"',
+      filters: {},
+      pills: [],
     });
   });
 
-  it("parses label names", () => {
-    expect(parseSearchQuery("label:bug", context).filters).toEqual({
-      labelId: "22222222-2222-4222-8222-222222222222",
+  it("parses an exact canonical project UUID", () => {
+    expect(parseSearchQuery(`project:${PROJECT_ID}`, context).filters).toEqual({
+      projectId: PROJECT_ID,
+    });
+  });
+
+  it("parses an exact canonical label UUID", () => {
+    expect(parseSearchQuery(`label:${LABEL_ID}`, context).filters).toEqual({
+      labelId: LABEL_ID,
+    });
+  });
+
+  it("keeps non-canonical selector spellings in free text", () => {
+    expect(
+      parseSearchQuery("owner:33333333-3333-4333-8333-333333333333 project:Paperclip label:bug", context),
+    ).toMatchObject({
+      query: "project:Paperclip label:bug",
+      filters: { ownerAgentId: AGENT_ID },
+    });
+    expect(parseSearchQuery(`owner:33333333-3333-4333-8333-AAAAAAAAAAAA owner:"${AGENT_ID}"`, context)).toMatchObject({
+      query: `owner:33333333-3333-4333-8333-AAAAAAAAAAAA owner:"${AGENT_ID}"`,
+      filters: {},
+    });
+    expect(
+      parseSearchQuery(
+        "owner:33333333-3333-4333-8333-333333333333 OWNER:33333333-3333-4333-8333-333333333333",
+        context,
+      ),
+    ).toMatchObject({
+      query: "OWNER:33333333-3333-4333-8333-333333333333",
+      filters: { ownerAgentId: AGENT_ID },
     });
   });
 
@@ -75,19 +89,19 @@ describe("parseSearchQuery", () => {
   });
 
   it("preserves quoted phrases in free text", () => {
-    expect(parseSearchQuery("\"auth flake\" status:blocked", context)).toMatchObject({
-      query: "\"auth flake\"",
+    expect(parseSearchQuery('"auth flake" status:blocked', context)).toMatchObject({
+      query: '"auth flake"',
       filters: { status: ["blocked"] },
     });
   });
 
   it("parses mixed free text and multiple operators", () => {
-    expect(parseSearchQuery("auth status:in_progress priority:critical project:paperclip-app", context)).toMatchObject({
+    expect(parseSearchQuery(`auth status:in_progress priority:critical project:${PROJECT_ID}`, context)).toMatchObject({
       query: "auth",
       filters: {
         status: ["in_progress"],
         priority: ["critical"],
-        projectId: "11111111-1111-4111-8111-111111111111",
+        projectId: PROJECT_ID,
       },
     });
   });
@@ -101,29 +115,10 @@ describe("parseSearchQuery", () => {
   });
 
   it("falls malformed values through to plain text", () => {
-    expect(parseSearchQuery("status:notreal updated:>soon priority:urgent", context)).toMatchObject({
-      query: "status:notreal updated:>soon priority:urgent",
+    expect(parseSearchQuery("status:notreal updated:>soon updated:7d priority:urgent", context)).toMatchObject({
+      query: "status:notreal updated:>soon updated:7d priority:urgent",
       filters: {},
       pills: [],
-    });
-  });
-});
-
-describe("search query URLs", () => {
-  it("builds /search paths with parsed filters", () => {
-    expect(buildSearchPathFromQuery("auth status:todo updated:>7d", context)).toBe(
-      "/search?q=auth&status=todo&updatedWithin=7d",
-    );
-  });
-
-  it("reads filter params back from URLSearchParams", () => {
-    const filters = readSearchFiltersFromParams(
-      new URLSearchParams("q=auth&status=todo&status=blocked&priority=high&updatedWithin=7d"),
-    );
-    expect(filters).toEqual({
-      status: ["todo", "blocked"],
-      priority: ["high"],
-      updatedWithin: "7d",
     });
   });
 });
@@ -138,6 +133,6 @@ describe("search operator suggestions", () => {
 
   it("replaces only the current token when applying a suggestion", () => {
     expect(applySearchOperatorSuggestion("auth sta", "status:todo")).toBe("auth status:todo");
-    expect(applySearchOperatorSuggestion("", "owner:me")).toBe("owner:me");
+    expect(applySearchOperatorSuggestion("", "updated:>7d")).toBe("updated:>7d");
   });
 });

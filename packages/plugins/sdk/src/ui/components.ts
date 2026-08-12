@@ -17,6 +17,7 @@
  */
 
 import type React from "react";
+import type { TaskStatus } from "@paperclipai/shared";
 import { renderSdkUiComponent } from "./runtime.js";
 
 // ---------------------------------------------------------------------------
@@ -245,7 +246,7 @@ export interface FileTreeProps {
 }
 
 export interface TasksListFilters {
-  status?: "open" | "blocked" | "done" | "cancelled";
+  status?: readonly TaskStatus[];
   projectId?: string;
   parentId?: string;
   ownerAgentId?: string;
@@ -253,7 +254,6 @@ export interface TasksListFilters {
   labelId?: string;
   workspaceId?: string;
   descendantOf?: string;
-  includeRoutineExecutions?: boolean;
   includeLiveDescendantSummary?: boolean;
 }
 

@@ -1,57 +1,50 @@
-import { grantsForHumanRole, PERMISSION_KEYS } from "@paperclipai/shared";
-import type { HumanCompanyMembershipRole } from "@paperclipai/shared";
+import { PERMISSION_KEYS } from "@paperclipai/shared";
 
-export function grantsFromDefaults(
+export function userJoinGrantsFromDefaults(
   defaultsPayload: Record<string, unknown> | null | undefined,
-  key: "human" | "agent"
 ): Array<{
   permissionKey: (typeof PERMISSION_KEYS)[number];
   scope: Record<string, unknown> | null;
 }> {
-  if (!defaultsPayload || typeof defaultsPayload !== "object") return [];
-  const scoped = defaultsPayload[key];
-  if (!scoped || typeof scoped !== "object") return [];
-  const grants = (scoped as Record<string, unknown>).grants;
-  if (!Array.isArray(grants)) return [];
+  if (!defaultsPayload || typeof defaultsPayload !== "object") {
+    throw new Error("User invite defaults are missing");
+  }
+  const scoped = defaultsPayload.user;
+  if (!scoped || typeof scoped !== "object" || Array.isArray(scoped)) {
+    throw new Error("User invite defaults are missing grants");
+  }
+  const rawGrants = (scoped as Record<string, unknown>).grants;
+  if (!Array.isArray(rawGrants)) {
+    throw new Error("User invite grants must be an array");
+  }
   const validPermissionKeys = new Set<string>(PERMISSION_KEYS);
-  const result: Array<{
+  const grants: Array<{
     permissionKey: (typeof PERMISSION_KEYS)[number];
     scope: Record<string, unknown> | null;
   }> = [];
-  for (const item of grants) {
-    if (!item || typeof item !== "object") continue;
+  for (const item of rawGrants) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("User invite grants contain an invalid entry");
+    }
     const record = item as Record<string, unknown>;
-    if (typeof record.permissionKey !== "string") continue;
-    if (!validPermissionKeys.has(record.permissionKey)) continue;
-    result.push({
+    if (
+      typeof record.permissionKey !== "string" ||
+      !validPermissionKeys.has(record.permissionKey)
+    ) {
+      throw new Error("User invite grants contain an invalid entry");
+    }
+    if (
+      record.scope !== undefined &&
+      record.scope !== null &&
+      (typeof record.scope !== "object" || Array.isArray(record.scope))
+    ) {
+      throw new Error("User invite grants contain an invalid entry");
+    }
+    grants.push({
       permissionKey: record.permissionKey as (typeof PERMISSION_KEYS)[number],
       scope:
-        record.scope &&
-        typeof record.scope === "object" &&
-        !Array.isArray(record.scope)
-          ? (record.scope as Record<string, unknown>)
-          : null,
+        (record.scope as Record<string, unknown> | null | undefined) ?? null,
     });
   }
-  return result;
-}
-
-export function agentJoinGrantsFromDefaults(
-  defaultsPayload: Record<string, unknown> | null | undefined
-): Array<{
-  permissionKey: (typeof PERMISSION_KEYS)[number];
-  scope: Record<string, unknown> | null;
-}> {
-  return grantsFromDefaults(defaultsPayload, "agent");
-}
-
-export function humanJoinGrantsFromDefaults(
-  defaultsPayload: Record<string, unknown> | null | undefined,
-  membershipRole: HumanCompanyMembershipRole
-): Array<{
-  permissionKey: (typeof PERMISSION_KEYS)[number];
-  scope: Record<string, unknown> | null;
-}> {
-  const grants = grantsFromDefaults(defaultsPayload, "human");
-  return grants.length > 0 ? grants : grantsForHumanRole(membershipRole);
+  return grants;
 }

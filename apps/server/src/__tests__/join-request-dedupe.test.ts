@@ -1,29 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
-  collapseDuplicatePendingHumanJoinRequests,
-  findReusableHumanJoinRequest,
+  collapseDuplicatePendingUserJoinRequests,
+  findReusableUserJoinRequest,
 } from "../lib/join-request-dedupe.js";
 
-describe("findReusableHumanJoinRequest", () => {
+describe("findReusableUserJoinRequest", () => {
   it("reuses the newest pending request for the same user", () => {
     const rows = [
       {
         id: "pending-new",
-        requestType: "human",
         status: "pending_approval",
         requestingUserId: "user-1",
         requestEmailSnapshot: "person@example.com",
       },
       {
         id: "pending-old",
-        requestType: "human",
         status: "pending_approval",
         requestingUserId: "user-1",
         requestEmailSnapshot: "person@example.com",
       },
       {
         id: "other-user",
-        requestType: "human",
         status: "pending_approval",
         requestingUserId: "user-2",
         requestEmailSnapshot: "other@example.com",
@@ -31,10 +28,10 @@ describe("findReusableHumanJoinRequest", () => {
     ] as const;
 
     expect(
-      findReusableHumanJoinRequest(rows, {
+      findReusableUserJoinRequest(rows, {
         requestingUserId: "user-1",
         requestEmailSnapshot: "person@example.com",
-      })?.id
+      })?.id,
     ).toBe("pending-new");
   });
 
@@ -42,14 +39,12 @@ describe("findReusableHumanJoinRequest", () => {
     const rows = [
       {
         id: "approved-existing",
-        requestType: "human",
         status: "approved",
         requestingUserId: null,
         requestEmailSnapshot: "Person@Example.com",
       },
       {
-        id: "agent-request",
-        requestType: "agent",
+        id: "unidentified-request",
         status: "pending_approval",
         requestingUserId: null,
         requestEmailSnapshot: null,
@@ -57,48 +52,45 @@ describe("findReusableHumanJoinRequest", () => {
     ] as const;
 
     expect(
-      findReusableHumanJoinRequest(rows, {
+      findReusableUserJoinRequest(rows, {
         requestingUserId: null,
         requestEmailSnapshot: "person@example.com",
-      })?.id
+      })?.id,
     ).toBe("approved-existing");
   });
 });
 
-describe("collapseDuplicatePendingHumanJoinRequests", () => {
-  it("keeps only the newest pending human row per requester", () => {
+describe("collapseDuplicatePendingUserJoinRequests", () => {
+  it("keeps only the newest pending user row per requester", () => {
     const rows = [
       {
-        id: "human-new",
-        requestType: "human",
+        id: "user-new",
         status: "pending_approval",
         requestingUserId: "user-1",
         requestEmailSnapshot: "person@example.com",
       },
       {
-        id: "human-old",
-        requestType: "human",
+        id: "user-old",
         status: "pending_approval",
         requestingUserId: "user-1",
         requestEmailSnapshot: "person@example.com",
       },
       {
         id: "approved-history",
-        requestType: "human",
         status: "approved",
         requestingUserId: "user-1",
         requestEmailSnapshot: "person@example.com",
       },
       {
-        id: "agent-pending",
-        requestType: "agent",
+        id: "unidentified-pending",
         status: "pending_approval",
         requestingUserId: null,
         requestEmailSnapshot: null,
       },
     ] as const;
 
-    expect(collapseDuplicatePendingHumanJoinRequests(rows).map((row) => row.id))
-      .toEqual(["human-new", "approved-history", "agent-pending"]);
+    expect(
+      collapseDuplicatePendingUserJoinRequests(rows).map((row) => row.id),
+    ).toEqual(["user-new", "approved-history", "unidentified-pending"]);
   });
 });

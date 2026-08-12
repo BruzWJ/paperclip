@@ -5,7 +5,13 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Approval } from "@paperclipai/shared";
 
-vi.mock("@/lib/router", () => ({
+const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
+
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => COMPANY_ID,
+}));
+
+vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children, ...props }: React.ComponentProps<"a"> & { to: string }) => (
     <a href={to} {...props}>{children}</a>
   ),
@@ -17,7 +23,7 @@ import { ApprovalCard } from "./ApprovalCard";
 
 const approval: Approval = {
   id: "approval-1",
-  companyId: "company-1",
+  companyId: COMPANY_ID,
   type: "request_board_approval",
   requestedByAgentId: null,
   requestedByUserId: "user-1",

@@ -9,19 +9,19 @@ const targetThreeId = "00000000-0000-4000-8000-000000000004";
 const inboundTaskId = "00000000-0000-4000-8000-000000000005";
 
 describe("taskReferenceService", () => {
-  it("extracts and replaces task, comment, and document source mentions", async () => {
+  it("extracts and replaces UUID task links from task, comment, and document sources", async () => {
     const taskHarness = createMockDb({
       select: [
         [{
           id: sourceTaskId,
           companyId,
-          title: "Coordinate PAP-2",
-          request: "Review /tasks/pap-3 and ignore PAP-1 self references.",
+          title: `Coordinate task://${targetTwoId}`,
+          request: `Review task://${targetThreeId} and ignore task://${sourceTaskId} self references.`,
         }],
-        [{ id: targetTwoId, identifier: "PAP-2" }],
+        [{ id: targetTwoId }],
         [
-          { id: targetThreeId, identifier: "PAP-3" },
-          { id: sourceTaskId, identifier: "PAP-1" },
+          { id: targetThreeId },
+          { id: sourceTaskId },
         ],
       ],
       delete: [[], []],
@@ -43,7 +43,7 @@ describe("taskReferenceService", () => {
         sourceKind: "title",
         sourceRecordId: null,
         documentKey: null,
-        matchedText: "PAP-2",
+        matchedText: `task://${targetTwoId}`,
       }],
       [{
         companyId,
@@ -52,7 +52,7 @@ describe("taskReferenceService", () => {
         sourceKind: "request",
         sourceRecordId: null,
         documentKey: null,
-        matchedText: "/tasks/pap-3",
+        matchedText: `task://${targetThreeId}`,
       }],
     ]);
 
@@ -63,9 +63,9 @@ describe("taskReferenceService", () => {
           id: commentId,
           companyId,
           taskId: sourceTaskId,
-          body: "Follow up in https://paperclip.test/tasks/pap-2.",
+          body: `Follow up in task://${targetTwoId}.`,
         }],
-        [{ id: targetTwoId, identifier: "PAP-2" }],
+        [{ id: targetTwoId }],
       ],
       delete: [[]],
       insert: [[]],
@@ -92,9 +92,9 @@ describe("taskReferenceService", () => {
           companyId,
           taskId: sourceTaskId,
           key: "plan",
-          body: "Spec note: /PAP/tasks/PAP-3",
+          body: `Spec note: task://${targetThreeId}`,
         }],
-        [{ id: targetThreeId, identifier: "PAP-3" }],
+        [{ id: targetThreeId }],
       ],
       delete: [[]],
       insert: [[]],
@@ -125,6 +125,7 @@ describe("taskReferenceService", () => {
       documentKey: string | null = null,
     ) => ({
       relatedTaskId: id,
+      relatedTaskNumber: Number(identifier.split("-").at(-1)),
       relatedTaskIdentifier: identifier,
       relatedTaskTitle: title,
       relatedTaskBoardPresentationStatus: "todo",
@@ -152,11 +153,13 @@ describe("taskReferenceService", () => {
     const summary = await taskReferenceService(db).listTaskReferenceSummary(sourceTaskId);
 
     expect(summary.outbound.map((item) => item.task.identifier)).toEqual(["PAP-3", "PAP-2"]);
+    expect(summary.outbound.map((item) => item.task.taskNumber)).toEqual([3, 2]);
     expect(summary.outbound[0]?.mentionCount).toBe(2);
     expect(summary.outbound[0]?.sources.map((source) => source.label)).toEqual(["request", "plan"]);
     expect(summary.outbound[1]?.mentionCount).toBe(2);
     expect(summary.outbound[1]?.sources.map((source) => source.label)).toEqual(["title", "comment"]);
     expect(summary.inbound.map((item) => item.task.identifier)).toEqual(["PAP-4"]);
+    expect(summary.inbound.map((item) => item.task.taskNumber)).toEqual([4]);
   });
 
   it("projects an annotation comment and deletes its source projection", async () => {
@@ -167,9 +170,9 @@ describe("taskReferenceService", () => {
           id: annotationCommentId,
           companyId,
           taskId: sourceTaskId,
-          body: "Review PAP-20.",
+          body: `Review task://${targetTwoId}.`,
         }],
-        [{ id: targetTwoId, identifier: "PAP-20" }],
+        [{ id: targetTwoId }],
       ],
       delete: [[], []],
       insert: [[]],

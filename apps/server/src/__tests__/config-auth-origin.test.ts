@@ -36,18 +36,18 @@ describe("canonical auth origin environment", () => {
     ).not.toThrow();
   });
 
-  it("ignores empty ambient values because Better Auth cannot consume them", () => {
+  it("rejects ambient aliases even when their value is empty", () => {
     expect(() =>
       assertNoAmbientAuthOriginEnvironment(
         Object.fromEntries(AMBIENT_KEYS.map((key) => [key, ""])),
       ),
-    ).not.toThrow();
+    ).toThrow(/Unsupported ambient auth-origin/);
   });
 
-  it("normalizes matching environment and persisted public origins", () => {
+  it("accepts matching exact environment and persisted public origins", () => {
     expect(resolveCanonicalPublicOrigin({
       deploymentExposure: "public",
-      environmentValue: "HTTPS://Paperclip.Example:443/",
+      environmentValue: "https://paperclip.example",
       persistedValue: "https://paperclip.example",
     })).toBe("https://paperclip.example");
   });
@@ -62,6 +62,11 @@ describe("canonical auth origin environment", () => {
       deploymentExposure: "public",
       environmentValue: "https://paperclip.example/path",
     })).toThrow(/must not contain a path/);
+
+    expect(() => resolveCanonicalPublicOrigin({
+      deploymentExposure: "public",
+      environmentValue: "HTTPS://Paperclip.Example:443/",
+    })).toThrow(/exact canonical HTTPS origin/);
 
     expect(() => resolveCanonicalPublicOrigin({
       deploymentExposure: "public",

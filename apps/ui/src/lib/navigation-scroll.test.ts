@@ -7,14 +7,29 @@ import {
   resetNavigationScroll,
   SIDEBAR_SCROLL_RESET_STATE,
   shouldResetScrollOnNavigation,
+  type NavigationScrollRoute,
 } from "./navigation-scroll";
+
+const dashboardRoute: NavigationScrollRoute = {
+  matchId: "dashboard",
+  kind: "other",
+};
+const taskIndexRoute: NavigationScrollRoute = {
+  matchId: "task-index",
+  kind: "task-index",
+};
+const taskDetailRoute = (taskRef: string): NavigationScrollRoute => ({
+  matchId: `task-detail:${taskRef}`,
+  kind: "task-detail",
+  taskRef,
+});
 
 describe("navigation-scroll", () => {
   it("resets scroll only for flagged sidebar navigation", () => {
     expect(
       shouldResetScrollOnNavigation({
-        previousPathname: "/tasks",
-        pathname: "/dashboard",
+        previousRoute: taskIndexRoute,
+        route: dashboardRoute,
         navigationType: "PUSH",
         state: SIDEBAR_SCROLL_RESET_STATE,
       }),
@@ -22,8 +37,8 @@ describe("navigation-scroll", () => {
 
     expect(
       shouldResetScrollOnNavigation({
-        previousPathname: "/tasks",
-        pathname: "/dashboard",
+        previousRoute: taskIndexRoute,
+        route: dashboardRoute,
         navigationType: "PUSH",
         state: null,
       }),
@@ -33,8 +48,8 @@ describe("navigation-scroll", () => {
   it("preserves scroll restoration for browser history navigation even for sidebar entries", () => {
     expect(
       shouldResetScrollOnNavigation({
-        previousPathname: "/tasks",
-        pathname: "/dashboard",
+        previousRoute: taskIndexRoute,
+        route: dashboardRoute,
         navigationType: "POP",
         state: SIDEBAR_SCROLL_RESET_STATE,
       }),
@@ -44,17 +59,8 @@ describe("navigation-scroll", () => {
   it("resets scroll when navigating into the top-level tasks page", () => {
     expect(
       shouldResetScrollOnNavigation({
-        previousPathname: "/tasks/PAP-1389",
-        pathname: "/tasks",
-        navigationType: "PUSH",
-        state: null,
-      }),
-    ).toBe(true);
-
-    expect(
-      shouldResetScrollOnNavigation({
-        previousPathname: "/PAP/tasks/PAP-1389",
-        pathname: "/PAP/tasks",
+        previousRoute: taskDetailRoute("PAP-1389"),
+        route: taskIndexRoute,
         navigationType: "REPLACE",
         state: null,
       }),
@@ -64,8 +70,8 @@ describe("navigation-scroll", () => {
   it("does not reset tasks page scroll on browser history restoration", () => {
     expect(
       shouldResetScrollOnNavigation({
-        previousPathname: "/tasks/PAP-1389",
-        pathname: "/tasks",
+        previousRoute: taskDetailRoute("PAP-1389"),
+        route: taskIndexRoute,
         navigationType: "POP",
         state: null,
       }),
@@ -75,28 +81,19 @@ describe("navigation-scroll", () => {
   it("resets scroll when navigating directly between task detail routes", () => {
     expect(
       shouldResetScrollOnNavigation({
-        previousPathname: "/tasks/PAP-1389",
-        pathname: "/tasks/PAP-1346",
-        navigationType: "PUSH",
-        state: null,
-      }),
-    ).toBe(true);
-
-    expect(
-      shouldResetScrollOnNavigation({
-        previousPathname: "/PAP/tasks/PAP-1389",
-        pathname: "/PAP/tasks/PAP-1346",
+        previousRoute: taskDetailRoute("PAP-1389"),
+        route: taskDetailRoute("PAP-1346"),
         navigationType: "REPLACE",
         state: null,
       }),
     ).toBe(true);
   });
 
-  it("does not treat non-detail task routes as task-to-task navigation", () => {
+  it("does not treat other routes as task-to-task navigation", () => {
     expect(
       shouldResetScrollOnNavigation({
-        previousPathname: "/projects/project-1/tasks/all",
-        pathname: "/tasks/PAP-1346",
+        previousRoute: { matchId: "project-tasks", kind: "other" },
+        route: taskDetailRoute("PAP-1346"),
         navigationType: "PUSH",
         state: null,
       }),
@@ -104,19 +101,19 @@ describe("navigation-scroll", () => {
 
     expect(
       shouldResetScrollOnNavigation({
-        previousPathname: "/tasks/PAP-1389",
-        pathname: "/projects/project-1/tasks/all",
+        previousRoute: taskDetailRoute("PAP-1389"),
+        route: { matchId: "project-tasks", kind: "other" },
         navigationType: "PUSH",
         state: null,
       }),
     ).toBe(false);
   });
 
-  it("does not reset scroll on the initial render or when the pathname is unchanged", () => {
+  it("does not reset scroll on the initial render or when the route match is unchanged", () => {
     expect(
       shouldResetScrollOnNavigation({
-        previousPathname: null,
-        pathname: "/dashboard",
+        previousRoute: null,
+        route: dashboardRoute,
         navigationType: "PUSH",
         state: SIDEBAR_SCROLL_RESET_STATE,
       }),
@@ -124,8 +121,8 @@ describe("navigation-scroll", () => {
 
     expect(
       shouldResetScrollOnNavigation({
-        previousPathname: "/dashboard",
-        pathname: "/dashboard",
+        previousRoute: dashboardRoute,
+        route: dashboardRoute,
         navigationType: "REPLACE",
         state: SIDEBAR_SCROLL_RESET_STATE,
       }),

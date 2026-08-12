@@ -315,18 +315,13 @@ test('scanTestPatterns: flags suspicious patterns in __tests__ directories', () 
 
 // ── scanSensitivePaths ───────────────────────────────────────────────────────
 
-test('scanSensitivePaths: flags changes to agents route (API key IDOR / cross-tenant)', () => {
+test('scanSensitivePaths: flags tenant-sensitive agent route changes', () => {
   const files = [{ filename: 'apps/server/src/routes/agents.ts', status: 'modified' }];
   assert.ok(scanSensitivePaths(files).length > 0);
 });
 
 test('scanSensitivePaths: flags changes to MarkdownBody (XSS via urlTransform)', () => {
   const files = [{ filename: 'apps/ui/src/components/MarkdownBody.tsx', status: 'modified' }];
-  assert.ok(scanSensitivePaths(files).length > 0);
-});
-
-test('scanSensitivePaths: flags changes to company-skills route (malicious skill exfil)', () => {
-  const files = [{ filename: 'apps/server/src/routes/company-skills.ts', status: 'modified' }];
   assert.ok(scanSensitivePaths(files).length > 0);
 });
 

@@ -10,6 +10,8 @@ import {
 } from "@paperclipai/db";
 import {
   hireAgentApprovalPayloadSchema,
+  isCanonicalUuid,
+  type ApprovalStatus,
   type HireAgentApprovalPayload,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
@@ -27,9 +29,11 @@ import {
   type RuntimeAgentConfigurationBoardActor,
 } from "./runtime-agent-configuration.js";
 import { lockCompanyAgentGraph } from "./agent-org-graph-lock.js";
+import { publishCommittedActivity } from "./activity-log.js";
 
-export type ApprovalLifecycleTransaction =
-  Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type ApprovalLifecycleTransaction = Parameters<
+  Parameters<Db["transaction"]>[0]
+>[0];
 
 export interface HireRejectionAgentTerminationInput {
   companyId: string;
@@ -68,6 +72,7 @@ export async function withdrawOpenHireApprovalForAgentInTransaction(
   dispatchRefIds: string[];
   cancellationRequests: AgentTerminationCommit["cancellationRequests"];
   suspensionRequests: AgentTerminationCommit["suspensionRequests"];
+  activities: AgentTerminationCommit["activities"];
 } | null> {
   await lockCompanyAgentGraph(tx, input.companyId);
   const openApprovals = await tx
@@ -142,6 +147,7 @@ export async function withdrawOpenHireApprovalForAgentInTransaction(
     dispatchRefIds: terminated.dispatchRefIds,
     cancellationRequests: terminated.cancellationRequests,
     suspensionRequests: terminated.suspensionRequests,
+    activities: terminated.activities,
   };
 }
 
@@ -149,20 +155,23 @@ export function approvalService(
   db: Db,
   options: {
     taskExecutionCancellation: AgentLifecycleCancellationService;
-    terminateHireRejectionAgentInTransaction:
-      HireRejectionAgentTerminationOwner;
+    terminateHireRejectionAgentInTransaction: HireRejectionAgentTerminationOwner;
     dispatchRef(refId: string): Promise<void>;
   },
 ) {
   const instanceSettings = instanceSettingsService(db);
-  const canResolveStatuses = new Set(["pending", "revision_requested"]);
-  const resolvableStatuses = Array.from(canResolveStatuses);
+  const resolvableStatuses = [
+    "pending",
+    "revision_requested",
+  ] as const satisfies readonly ApprovalStatus[];
+  const canResolveStatuses = new Set<string>(resolvableStatuses);
   type ApprovalRecord = typeof approvals.$inferSelect;
   type ResolutionResult = { approval: ApprovalRecord; applied: boolean };
-  type ApprovalTransaction =
-    Parameters<Parameters<Db["transaction"]>[0]>[0];
+  type ApprovalTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-  function parseHirePayload(approval: ApprovalRecord): HireAgentApprovalPayload {
+  function parseHirePayload(
+    approval: ApprovalRecord,
+  ): HireAgentApprovalPayload {
     const parsed = hireAgentApprovalPayloadSchema.safeParse(approval.payload);
     if (!parsed.success) {
       throw conflict(
@@ -259,13 +268,11 @@ export function approvalService(
       .then((rows) => rows[0] ?? null);
     if (
       !pendingAgent ||
-      (
-        pendingAgent.status !== "pending_approval" &&
+      (pendingAgent.status !== "pending_approval" &&
         !(
           pendingAgent.status === "paused" &&
           pendingAgent.pauseReason === "system"
-        )
-      )
+        ))
     ) {
       throw conflict(
         "Hire approval must reference its existing pending or system-paused agent",
@@ -282,8 +289,7 @@ export function approvalService(
         companyId: approval.companyId,
         agentId: payload.agentId,
         auditId: payload.runtimeAgentConfigurationAuditId,
-        requestDigest:
-          payload.runtimeAgentConfigurationRequestDigest,
+        requestDigest: payload.runtimeAgentConfigurationRequestDigest,
       });
     } catch (error) {
       if (error instanceof RuntimeAgentConfigurationConflict) {
@@ -299,10 +305,15 @@ export function approvalService(
     return { payload, pendingAgent };
   }
 
-  function redactApprovalComment<T extends { body: string }>(comment: T, censorUsernameInLogs: boolean): T {
+  function redactApprovalComment<T extends { body: string }>(
+    comment: T,
+    censorUsernameInLogs: boolean,
+  ): T {
     return {
       ...comment,
-      body: redactCurrentUserText(comment.body, { enabled: censorUsernameInLogs }),
+      body: redactCurrentUserText(comment.body, {
+        enabled: censorUsernameInLogs,
+      }),
     };
   }
 
@@ -313,6 +324,70 @@ export function approvalService(
       .where(eq(approvals.id, id))
       .then((rows) => rows[0] ?? null);
     if (!existing) throw notFound("Approval not found");
+    return existing;
+  }
+
+  async function updateApprovalDecision(
+    executor: Pick<ApprovalTransaction, "update">,
+    input: {
+      id: string;
+      expectedStatuses: readonly [ApprovalStatus, ...ApprovalStatus[]];
+      status: ApprovalStatus;
+      decidedByUserId: string;
+      decisionNote: string | null | undefined;
+      decidedAt: Date;
+    },
+  ): Promise<ApprovalRecord | null> {
+    return executor
+      .update(approvals)
+      .set({
+        status: input.status,
+        decidedByUserId: input.decidedByUserId,
+        decisionNote: input.decisionNote ?? null,
+        decidedAt: input.decidedAt,
+        updatedAt: input.decidedAt,
+      })
+      .where(
+        and(
+          eq(approvals.id, input.id),
+          inArray(approvals.status, [...input.expectedStatuses]),
+        ),
+      )
+      .returning()
+      .then((rows) => rows[0] ?? null);
+  }
+
+  async function lockHireApprovalForUpdate(
+    tx: ApprovalTransaction,
+    id: string,
+  ): Promise<ApprovalRecord> {
+    const candidate = await tx
+      .select()
+      .from(approvals)
+      .where(eq(approvals.id, id))
+      .then((rows) => rows[0] ?? null);
+    if (!candidate) throw notFound("Approval not found");
+    if (candidate.type !== "hire_agent") {
+      throw conflict("Approval is not a hire approval", {
+        code: "approval_type_mismatch",
+        approvalId: id,
+      });
+    }
+
+    await lockCompanyAgentGraph(tx, candidate.companyId);
+    const existing = await tx
+      .select()
+      .from(approvals)
+      .where(eq(approvals.id, id))
+      .for("update")
+      .then((rows) => rows[0] ?? null);
+    if (!existing) throw notFound("Approval not found");
+    if (existing.type !== "hire_agent") {
+      throw conflict("Approval is not a hire approval", {
+        code: "approval_type_mismatch",
+        approvalId: id,
+      });
+    }
     return existing;
   }
 
@@ -333,18 +408,14 @@ export function approvalService(
     }
 
     const now = new Date();
-    const updated = await db
-      .update(approvals)
-      .set({
-        status: targetStatus,
-        decidedByUserId,
-        decisionNote: decisionNote ?? null,
-        decidedAt: now,
-        updatedAt: now,
-      })
-      .where(and(eq(approvals.id, id), inArray(approvals.status, resolvableStatuses)))
-      .returning()
-      .then((rows) => rows[0] ?? null);
+    const updated = await updateApprovalDecision(db, {
+      id,
+      expectedStatuses: resolvableStatuses,
+      status: targetStatus,
+      decidedByUserId,
+      decisionNote,
+      decidedAt: now,
+    });
 
     if (updated) {
       return { approval: updated, applied: true };
@@ -367,40 +438,18 @@ export function approvalService(
     decisionNote: string | null | undefined,
   ): Promise<ResolutionResult> {
     const committed = await db.transaction(async (tx) => {
-      const candidate = await tx
-        .select()
-        .from(approvals)
-        .where(eq(approvals.id, id))
-        .then((rows) => rows[0] ?? null);
-      if (!candidate) throw notFound("Approval not found");
-      if (candidate.type !== "hire_agent") {
-        throw conflict("Approval is not a hire approval", {
-          code: "approval_type_mismatch",
-          approvalId: id,
-        });
-      }
-      await lockCompanyAgentGraph(tx, candidate.companyId);
-      const existing = await tx
-        .select()
-        .from(approvals)
-        .where(eq(approvals.id, id))
-        .for("update")
-        .then((rows) => rows[0] ?? null);
-      if (!existing) throw notFound("Approval not found");
-      if (existing.type !== "hire_agent") {
-        throw conflict("Approval is not a hire approval", {
-          code: "approval_type_mismatch",
-          approvalId: id,
-        });
-      }
+      const existing = await lockHireApprovalForUpdate(tx, id);
       if (!canResolveStatuses.has(existing.status)) {
         if (existing.status === targetStatus) {
           return {
             approval: existing,
             applied: false,
             dispatchRefIds: [] as string[],
-            cancellationRequests: null as AgentTerminationCommit["cancellationRequests"],
-            suspensionRequests: null as AgentTerminationCommit["suspensionRequests"],
+            cancellationRequests:
+              null as AgentTerminationCommit["cancellationRequests"],
+            suspensionRequests:
+              null as AgentTerminationCommit["suspensionRequests"],
+            activities: [] as AgentTerminationCommit["activities"],
           };
         }
         throw unprocessable(
@@ -415,8 +464,11 @@ export function approvalService(
 
       const now = new Date();
       let dispatchRefIds: string[] = [];
-      let cancellationRequests: AgentTerminationCommit["cancellationRequests"] = null;
-      let suspensionRequests: AgentTerminationCommit["suspensionRequests"] = null;
+      let cancellationRequests: AgentTerminationCommit["cancellationRequests"] =
+        null;
+      let suspensionRequests: AgentTerminationCommit["suspensionRequests"] =
+        null;
+      let activities: AgentTerminationCommit["activities"] = [];
       if (targetStatus === "approved") {
         const preserveSystemPause =
           pendingAgent.status === "paused" &&
@@ -427,7 +479,7 @@ export function approvalService(
             status: preserveSystemPause ? "paused" : "idle",
             pauseReason: preserveSystemPause ? "system" : null,
             pausedAt: preserveSystemPause
-              ? pendingAgent.pausedAt ?? now
+              ? (pendingAgent.pausedAt ?? now)
               : null,
             errorReason: null,
             updatedAt: now,
@@ -445,18 +497,15 @@ export function approvalService(
           .returning({ id: agents.id })
           .then((rows) => rows[0] ?? null);
         if (!activated) {
-          throw conflict(
-            "Hire approval lost its pending-agent transition",
-            {
-              code: "hire_approval_pending_agent_conflict",
-              approvalId: existing.id,
-              agentId: payload.agentId,
-            },
-          );
+          throw conflict("Hire approval lost its pending-agent transition", {
+            code: "hire_approval_pending_agent_conflict",
+            approvalId: existing.id,
+            agentId: payload.agentId,
+          });
         }
       } else {
-        const terminated = await options
-          .terminateHireRejectionAgentInTransaction(
+        const terminated =
+          await options.terminateHireRejectionAgentInTransaction(
             tx,
             {
               companyId: existing.companyId,
@@ -468,37 +517,26 @@ export function approvalService(
             options.taskExecutionCancellation,
           );
         if (!terminated) {
-          throw conflict(
-            "Hire rejection lost its pending-agent transition",
-            {
-              code: "hire_approval_pending_agent_conflict",
-              approvalId: existing.id,
-              agentId: payload.agentId,
-            },
-          );
+          throw conflict("Hire rejection lost its pending-agent transition", {
+            code: "hire_approval_pending_agent_conflict",
+            approvalId: existing.id,
+            agentId: payload.agentId,
+          });
         }
         dispatchRefIds = terminated.dispatchRefIds;
         cancellationRequests = terminated.cancellationRequests;
         suspensionRequests = terminated.suspensionRequests;
+        activities = terminated.activities;
       }
 
-      const updated = await tx
-        .update(approvals)
-        .set({
-          status: targetStatus,
-          decidedByUserId,
-          decisionNote: decisionNote ?? null,
-          decidedAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(approvals.id, id),
-            inArray(approvals.status, resolvableStatuses),
-          ),
-        )
-        .returning()
-        .then((rows) => rows[0] ?? null);
+      const updated = await updateApprovalDecision(tx, {
+        id,
+        expectedStatuses: resolvableStatuses,
+        status: targetStatus,
+        decidedByUserId,
+        decisionNote,
+        decidedAt: now,
+      });
       if (!updated) {
         throw conflict("Hire approval resolution lost its locked transition", {
           code: "hire_approval_resolution_conflict",
@@ -511,17 +549,21 @@ export function approvalService(
         dispatchRefIds,
         cancellationRequests,
         suspensionRequests,
+        activities,
       };
     });
+    for (const activity of committed.activities) {
+      publishCommittedActivity(activity);
+    }
     if (committed.cancellationRequests) {
-      await options.taskExecutionCancellation
-        .reconcileRequestedCancellations(
-          committed.cancellationRequests,
-        );
+      await options.taskExecutionCancellation.reconcileRequestedCancellations(
+        committed.cancellationRequests,
+      );
     }
     if (committed.suspensionRequests) {
-      await options.taskExecutionCancellation
-        .reconcileRequestedCancellations(committed.suspensionRequests);
+      await options.taskExecutionCancellation.reconcileRequestedCancellations(
+        committed.suspensionRequests,
+      );
     }
     for (const refId of committed.dispatchRefIds) {
       await options.dispatchRef(refId);
@@ -538,57 +580,21 @@ export function approvalService(
     decisionNote: string | null | undefined,
   ) {
     return db.transaction(async (tx) => {
-      const candidate = await tx
-        .select()
-        .from(approvals)
-        .where(eq(approvals.id, id))
-        .then((rows) => rows[0] ?? null);
-      if (!candidate) throw notFound("Approval not found");
-      if (candidate.type !== "hire_agent") {
-        throw conflict("Approval is not a hire approval", {
-          code: "approval_type_mismatch",
-          approvalId: id,
-        });
-      }
-      await lockCompanyAgentGraph(tx, candidate.companyId);
-      const existing = await tx
-        .select()
-        .from(approvals)
-        .where(eq(approvals.id, id))
-        .for("update")
-        .then((rows) => rows[0] ?? null);
-      if (!existing) throw notFound("Approval not found");
-      if (existing.type !== "hire_agent") {
-        throw conflict("Approval is not a hire approval", {
-          code: "approval_type_mismatch",
-          approvalId: id,
-        });
-      }
+      const existing = await lockHireApprovalForUpdate(tx, id);
       if (existing.status !== "pending") {
-        throw unprocessable(
-          "Only pending approvals can request revision",
-        );
+        throw unprocessable("Only pending approvals can request revision");
       }
       await lockAndAssertPendingHire(tx, existing);
 
       const now = new Date();
-      const updated = await tx
-        .update(approvals)
-        .set({
-          status: "revision_requested",
-          decidedByUserId,
-          decisionNote: decisionNote ?? null,
-          decidedAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(approvals.id, id),
-            eq(approvals.status, "pending"),
-          ),
-        )
-        .returning()
-        .then((rows) => rows[0] ?? null);
+      const updated = await updateApprovalDecision(tx, {
+        id,
+        expectedStatuses: ["pending"],
+        status: "revision_requested",
+        decidedByUserId,
+        decisionNote,
+        decidedAt: now,
+      });
       if (!updated) {
         throw conflict(
           "Hire approval revision request lost its locked transition",
@@ -603,20 +609,28 @@ export function approvalService(
   }
 
   return {
-    list: (companyId: string, status?: string) => {
+    list: (companyId: string, status?: ApprovalStatus) => {
       const conditions = [eq(approvals.companyId, companyId)];
       if (status) conditions.push(eq(approvals.status, status));
-      return db.select().from(approvals).where(and(...conditions));
+      return db
+        .select()
+        .from(approvals)
+        .where(and(...conditions));
     },
 
-    getById: (id: string) =>
-      db
+    getById: (id: string) => {
+      if (!isCanonicalUuid(id)) return Promise.resolve(null);
+      return db
         .select()
         .from(approvals)
         .where(eq(approvals.id, id))
-        .then((rows) => rows[0] ?? null),
+        .then((rows) => rows[0] ?? null);
+    },
 
-    findOpenHireApprovalForAgent: async (companyId: string, agentId: string) => {
+    findOpenHireApprovalForAgent: async (
+      companyId: string,
+      agentId: string,
+    ) => {
       const rows = await db
         .select()
         .from(approvals)
@@ -647,7 +661,11 @@ export function approvalService(
         .then((rows) => rows[0]);
     },
 
-    approve: async (id: string, decidedByUserId: string, decisionNote?: string | null) => {
+    approve: async (
+      id: string,
+      decidedByUserId: string,
+      decisionNote?: string | null,
+    ) => {
       const existing = await getExistingApproval(id);
       if (existing.type === "hire_agent") {
         return resolveHireApproval(
@@ -666,7 +684,11 @@ export function approvalService(
       return { approval: updated, applied };
     },
 
-    reject: async (id: string, decidedByUserId: string, decisionNote?: string | null) => {
+    reject: async (
+      id: string,
+      decidedByUserId: string,
+      decisionNote?: string | null,
+    ) => {
       const existing = await getExistingApproval(id);
       if (existing.type === "hire_agent") {
         return resolveHireApproval(
@@ -685,51 +707,40 @@ export function approvalService(
       return { approval: updated, applied };
     },
 
-    requestRevision: async (id: string, decidedByUserId: string, decisionNote?: string | null) => {
+    requestRevision: async (
+      id: string,
+      decidedByUserId: string,
+      decisionNote?: string | null,
+    ) => {
       const existing = await getExistingApproval(id);
       if (existing.type === "hire_agent") {
-        return requestHireRevision(
-          id,
-          decidedByUserId,
-          decisionNote,
-        );
+        return requestHireRevision(id, decidedByUserId, decisionNote);
       }
       if (existing.status !== "pending") {
         throw unprocessable("Only pending approvals can request revision");
       }
 
       const now = new Date();
-      return db
-        .update(approvals)
-        .set({
-          status: "revision_requested",
-          decidedByUserId,
-          decisionNote: decisionNote ?? null,
-          decidedAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(approvals.id, id),
-            eq(approvals.status, "pending"),
-          ),
-        )
-        .returning()
-        .then((rows) => {
-          const updated = rows[0] ?? null;
-          if (!updated) {
-            throw unprocessable(
-              "Only pending approvals can request revision",
-            );
-          }
-          return updated;
-        });
+      const updated = await updateApprovalDecision(db, {
+        id,
+        expectedStatuses: ["pending"],
+        status: "revision_requested",
+        decidedByUserId,
+        decisionNote,
+        decidedAt: now,
+      });
+      if (!updated) {
+        throw unprocessable("Only pending approvals can request revision");
+      }
+      return updated;
     },
 
     resubmit: async (id: string, payload?: Record<string, unknown>) => {
       const existing = await getExistingApproval(id);
       if (existing.status !== "revision_requested") {
-        throw unprocessable("Only revision requested approvals can be resubmitted");
+        throw unprocessable(
+          "Only revision requested approvals can be resubmitted",
+        );
       }
       if (existing.type === "hire_agent") {
         throw unprocessable(
@@ -761,16 +772,12 @@ export function approvalService(
       runtimeAgentConfigurationRequestDigest: string;
       configuration: unknown;
     }) => {
-      await createRuntimeAgentConfigurationService(
-        db,
-      ).resubmitHireApproval({
+      await createRuntimeAgentConfigurationService(db).resubmitHireApproval({
         approvalId: input.approvalId,
         actor: input.actor,
         expectedAgentId: input.agentId,
-        expectedAuditId:
-          input.runtimeAgentConfigurationAuditId,
-        expectedRequestDigest:
-          input.runtimeAgentConfigurationRequestDigest,
+        expectedAuditId: input.runtimeAgentConfigurationAuditId,
+        expectedRequestDigest: input.runtimeAgentConfigurationRequestDigest,
         configuration: input.configuration,
       });
       return getExistingApproval(input.approvalId);
@@ -789,7 +796,11 @@ export function approvalService(
           ),
         )
         .orderBy(asc(approvalComments.createdAt))
-        .then((comments) => comments.map((comment) => redactApprovalComment(comment, censorUsernameInLogs)));
+        .then((comments) =>
+          comments.map((comment) =>
+            redactApprovalComment(comment, censorUsernameInLogs),
+          ),
+        );
     },
 
     addComment: async (
@@ -801,7 +812,10 @@ export function approvalService(
       const currentUserRedactionOptions = {
         enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
       };
-      const redactedBody = redactCurrentUserText(body, currentUserRedactionOptions);
+      const redactedBody = redactCurrentUserText(
+        body,
+        currentUserRedactionOptions,
+      );
       return db
         .insert(approvalComments)
         .values({
@@ -812,7 +826,9 @@ export function approvalService(
           body: redactedBody,
         })
         .returning()
-        .then((rows) => redactApprovalComment(rows[0], currentUserRedactionOptions.enabled));
+        .then((rows) =>
+          redactApprovalComment(rows[0], currentUserRedactionOptions.enabled),
+        );
     },
   };
 }

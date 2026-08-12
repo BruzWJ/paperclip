@@ -2,14 +2,20 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import type { Company } from "@paperclipai/shared";
-import { createBoardApiKeySchema } from "@paperclipai/shared";
+import { createBoardApiKeySchema, isCanonicalUuid } from "@paperclipai/shared";
 import { loginBoardCli } from "../../client/board-auth.js";
+import { parseExactApiBase } from "../../client/api-base.js";
 import { PaperclipApiClient } from "../../client/http.js";
-import { resolveProfile, readContext, setCurrentProfile, upsertProfile } from "../../client/context.js";
+import {
+  readContext,
+  requireExactProfileName,
+  resolveProfile,
+  setCurrentProfile,
+  upsertProfile,
+} from "../../client/context.js";
 import {
   addCommonClientOptions,
   handleCommandError,
-  normalizeApiBase,
   printOutput,
   resolveApiBase,
   type BaseClientOptions,
@@ -34,7 +40,11 @@ export function registerConnectCommand(program: Command): void {
     program
       .command("connect")
       .description("Interactively connect the CLI as a board operator")
-      .option("--api-key-env-var-name <name>", "Env var name to store in the profile", "PAPERCLIP_BOARD_API_KEY")
+      .option(
+        "--api-key-env-var-name <name>",
+        "Env var name to store in the profile",
+        "PAPERCLIP_BOARD_API_KEY",
+      )
       .option("--token-name <name>", "Token label to create")
       .action(async (opts: ConnectOptions) => {
         try {
@@ -49,13 +59,30 @@ export function registerConnectCommand(program: Command): void {
 
 async function connectWizard(opts: ConnectOptions) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error("`paperclipai connect` is interactive. For scripts, pass --api-base/--api-key or use context set/token commands.");
+    throw new Error(
+      "`paperclipai connect` is interactive. For scripts, pass --api-base/--api-key or use context set/token commands.",
+    );
   }
 
   p.intro(pc.bgCyan(pc.black(" paperclipai connect ")));
 
   const context = readContext(opts.context);
-  const resolvedProfile = resolveProfile(context, opts.profile);
+  const requestedProfileName =
+    opts.profile === undefined
+      ? undefined
+      : requireExactProfileName(opts.profile);
+  const resolvedProfile =
+    requestedProfileName && !context.profiles[requestedProfileName]
+      ? { name: requestedProfileName, profile: {} }
+      : resolveProfile(context, requestedProfileName);
+  const requestedCompanyId =
+    opts.companyId ?? resolvedProfile.profile.companyId;
+  if (
+    requestedCompanyId !== undefined &&
+    !isCanonicalUuid(requestedCompanyId)
+  ) {
+    throw new Error("--company-id must be an exact canonical company UUID.");
+  }
   const initialApiBase = resolveApiBase(opts, resolvedProfile.profile);
   const apiBaseInput = await p.text({
     message: "Paperclip API base",
@@ -63,39 +90,55 @@ async function connectWizard(opts: ConnectOptions) {
     placeholder: "http://localhost:3100",
   });
   assertNotCancelled(apiBaseInput);
-  const apiBase = normalizeApiBase(String(apiBaseInput || initialApiBase));
+  const apiBase = parseExactApiBase(String(apiBaseInput || initialApiBase));
   console.log(pc.dim(`Checking ${apiBase}/api/health ...`));
   await verifyHealth(apiBase);
 
   const boardLogin = await loginBoardCli({
     apiBase,
     requestedAccess: "board",
-    requestedCompanyId: opts.companyId ?? resolvedProfile.profile.companyId ?? null,
+    requestedCompanyId: requestedCompanyId ?? null,
     command: "paperclipai connect",
   });
-  const boardApi = new PaperclipApiClient({ apiBase, apiKey: boardLogin.token });
+  const boardApi = new PaperclipApiClient({
+    apiBase,
+    apiKey: boardLogin.token,
+  });
   const companies = (await boardApi.get<Company[]>("/api/companies")) ?? [];
 
-  const profileName = opts.profile?.trim() || await askProfileName(resolvedProfile.name);
-  const apiKeyEnvVarName = opts.apiKeyEnvVarName?.trim() || "PAPERCLIP_BOARD_API_KEY";
+  const profileName =
+    requestedProfileName ?? (await askProfileName(resolvedProfile.name));
+  const apiKeyEnvVarName = opts.apiKeyEnvVarName ?? "PAPERCLIP_BOARD_API_KEY";
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(apiKeyEnvVarName)) {
+    throw new Error(
+      "--api-key-env-var-name must be an exact environment variable name.",
+    );
+  }
 
-  const company = await chooseCompany(companies, opts.companyId ?? resolvedProfile.profile.companyId, {
+  const company = await chooseCompany(companies, requestedCompanyId, {
     optional: true,
   });
-  const tokenName = opts.tokenName?.trim() || `cli-board-${new Date().toISOString()}`;
-  const key = await boardApi.post<CreatedBoardKey>("/api/board-api-keys", createBoardApiKeySchema.parse({
-    name: tokenName,
-    requestedCompanyId: company?.id ?? null,
-  }));
+  const tokenName = opts.tokenName ?? `cli-board-${new Date().toISOString()}`;
+  const key = await boardApi.post<CreatedBoardKey>(
+    "/api/board-api-keys",
+    createBoardApiKeySchema.parse({
+      name: tokenName,
+      requestedCompanyId: company?.id ?? null,
+    }),
+  );
   if (!key) throw new Error("Failed to create board token");
-  upsertProfile(profileName, {
-    apiBase,
-    companyId: company?.id,
-    apiKeyEnvVarName,
-    tokenName: key.name,
-    tokenId: key.id,
-    tokenCreatedAt: key.createdAt,
-  }, opts.context);
+  upsertProfile(
+    profileName,
+    {
+      apiBase,
+      companyId: company?.id,
+      apiKeyEnvVarName,
+      tokenName: key.name,
+      tokenId: key.id,
+      tokenCreatedAt: key.createdAt,
+    },
+    opts.context,
+  );
   setCurrentProfile(profileName, opts.context);
   p.outro(pc.green(`Connected profile '${profileName}' as board.`));
   return {
@@ -105,7 +148,12 @@ async function connectWizard(opts: ConnectOptions) {
     apiBase,
     companyId: company?.id ?? null,
     key: publicKeyResult(key),
-    exports: buildExports({ apiBase, companyId: company?.id, envName: apiKeyEnvVarName, token: key.token }),
+    exports: buildExports({
+      apiBase,
+      companyId: company?.id,
+      envName: apiKeyEnvVarName,
+      token: key.token,
+    }),
   };
 }
 
@@ -120,9 +168,7 @@ async function askProfileName(defaultName: string): Promise<string> {
     initialValue: defaultName || "default",
   });
   assertNotCancelled(profile);
-  const value = String(profile).trim();
-  if (!value) throw new Error("Profile name is required");
-  return value;
+  return requireExactProfileName(String(profile));
 }
 
 async function chooseCompany(
@@ -134,10 +180,14 @@ async function chooseCompany(
     if (opts.optional) return null;
     throw new Error("No companies are accessible with this board credential.");
   }
-  const preferred = preferredCompanyId ? companies.find((company) => company.id === preferredCompanyId) : null;
+  const preferred = preferredCompanyId
+    ? companies.find((company) => company.id === preferredCompanyId)
+    : null;
   if (companies.length === 1 && !opts.optional) return companies[0] ?? null;
   const selected = await p.select({
-    message: opts.optional ? "Default company for this profile" : "Agent company",
+    message: opts.optional
+      ? "Default company for this profile"
+      : "Agent company",
     initialValue: preferred?.id ?? companies[0]?.id,
     options: [
       ...(opts.optional ? [{ value: "", label: "(none)" }] : []),
@@ -162,9 +212,13 @@ function buildExports(input: {
   const escaped = (value: string) => value.replace(/'/g, "'\"'\"'");
   return [
     `export PAPERCLIP_BOARD_API_URL='${escaped(input.apiBase)}'`,
-    input.companyId ? `export PAPERCLIP_BOARD_COMPANY_ID='${escaped(input.companyId)}'` : null,
+    input.companyId
+      ? `export PAPERCLIP_BOARD_COMPANY_ID='${escaped(input.companyId)}'`
+      : null,
     `export ${input.envName}='${escaped(input.token)}'`,
-  ].filter((line): line is string => Boolean(line)).join("\n");
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
 }
 
 function publicKeyResult(key: CreatedBoardKey) {

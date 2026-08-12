@@ -10,7 +10,7 @@ function folderRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "00000000-0000-4000-8000-000000000010",
     companyId,
-    kind: "skill" as const,
+    kind: "routine" as const,
     parentId: null,
     name: "Engineering",
     slug: "engineering",
@@ -29,6 +29,7 @@ describe("folder service", () => {
     expect(folderSlugSchema.safeParse("../escape").success).toBe(false);
     expect(folderSlugSchema.safeParse("Valid Slug").success).toBe(false);
     expect(folderSlugSchema.safeParse("valid-slug-2").success).toBe(true);
+    expect(folderSlugSchema.safeParse(" valid-slug-2 ").success).toBe(false);
   });
 
   it("builds nested paths and item counts from fixed query results", async () => {
@@ -51,9 +52,9 @@ describe("folder service", () => {
       ],
     });
 
-    const result = await folderService(harness.db, true).list(companyId, "skill");
+    const result = await folderService(harness.db, true).list(companyId, "routine");
 
-    expect(result).toMatchObject({ kind: "skill", allCount: 6, unfiledCount: 3 });
+    expect(result).toMatchObject({ kind: "routine", allCount: 6, unfiledCount: 3 });
     expect(result.folders).toEqual([
       expect.objectContaining({ id: root.id, path: "engineering", depth: 1, itemCount: 2 }),
       expect.objectContaining({ id: child.id, path: "engineering/code-review", depth: 2, itemCount: 1 }),
@@ -69,7 +70,7 @@ describe("folder service", () => {
     });
 
     const created = await folderService(harness.db, true).create(companyId, {
-      kind: "skill",
+      kind: "routine",
       name: "  Code Review  ",
     });
 
@@ -83,48 +84,6 @@ describe("folder service", () => {
     expect(harness.calls.some((call) => call.operation === "insert" && call.method === "values")).toBe(true);
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("insert")).toBe(0);
-  });
-
-  it.each(["bundled", "my", "projects"])(
-    "rejects the reserved %s root before sending a query",
-    async (slug) => {
-      const harness = createMockDb();
-
-      await expect(folderService(harness.db, true).create(companyId, {
-        kind: "skill",
-        name: slug,
-        slug,
-      })).rejects.toMatchObject({
-        status: 403,
-        message: "Reserved skill folders are system-managed",
-      });
-      expect(harness.calls).toEqual([]);
-    },
-  );
-
-  it("rejects moving an item into a folder of the wrong kind", async () => {
-    const target = folderRow({ kind: "skill" });
-    const harness = createMockDb({ select: [[target], [target]] });
-
-    await expect(folderService(harness.db, true).moveItem(companyId, {
-      kind: "routine",
-      itemId: "00000000-0000-4000-8000-000000000020",
-      folderId: target.id,
-    })).rejects.toMatchObject({
-      status: 422,
-      message: "Folder kind must match item kind",
-    });
-    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
-  });
-
-  it("protects system-managed folders from updates", async () => {
-    const system = folderRow({ systemKey: "bundled:software-development" });
-    const harness = createMockDb({ select: [[system], [system]] });
-
-    await expect(folderService(harness.db, true).update(companyId, system.id, {
-      name: "Changed",
-    })).rejects.toMatchObject({ status: 403, message: "System-managed folders cannot be changed" });
-    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
   });
 
   it("rejects deleting a folder while it still has a child", async () => {
@@ -157,7 +116,7 @@ describe("folder service", () => {
       slug: "child",
     });
     const harness = createMockDb({
-      select: [[parent], [parent, child], [parent], [parent, child], [parent, child]],
+      select: [[parent], [parent, child], [parent, child]],
     });
 
     await expect(folderService(harness.db, true).moveFolder(companyId, parent.id, {

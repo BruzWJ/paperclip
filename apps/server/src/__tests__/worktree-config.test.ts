@@ -46,7 +46,7 @@ function buildExternalConfig(
     },
     server: {
       exposure: "private",
-      host: "127.0.0.1",
+      bind: "loopback",
       port: 3100,
       allowedHostnames: [],
       serveUi: true,

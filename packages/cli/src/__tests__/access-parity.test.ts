@@ -1,9 +1,11 @@
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerAccessCommands } from "../commands/client/access.js";
+import { assertExactAuthUserId } from "../commands/client/common.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
-const USER_ID = "33333333-3333-4333-8333-333333333333";
+const USER_ID = "better-auth:User_42";
+const ENCODED_USER_ID = "better-auth%3AUser_42";
 const INVITE_ID = "44444444-4444-4444-8444-444444444444";
 const JOIN_ID = "55555555-5555-4555-8555-555555555555";
 const MEMBER_ID = "66666666-6666-4666-8666-666666666666";
@@ -17,7 +19,18 @@ function createProgram(): Command {
 }
 
 async function run(args: string[]): Promise<void> {
-  await createProgram().parseAsync([...args, "--api-base", "http://localhost:3100", "--api-key", "board-token"], { from: "user" });
+  await createProgram().parseAsync(
+    [
+      ...args,
+      "--api-base",
+      "http://localhost:3100",
+      "--api-key",
+      "board-token",
+      "--user-id",
+      USER_ID,
+    ],
+    { from: "user" },
+  );
 }
 
 describe("access parity commands", () => {
@@ -33,49 +46,122 @@ describe("access parity commands", () => {
   });
 
   it("wraps auth, invites, joins, members, and admin endpoints", async () => {
-    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
 
     await run(["health"]);
     await run(["whoami"]);
     await run(["access", "whoami"]);
     await run(["profile", "session"]);
+    await run(["profile", "company-user", USER_ID, "--company-id", COMPANY_ID]);
     await run(["invite", "list", "--company-id", COMPANY_ID]);
-    await run(["invite", "create", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
+    await run([
+      "invite",
+      "create",
+      "--company-id",
+      COMPANY_ID,
+      "--payload-json",
+      "{}",
+    ]);
     await run(["invite", "revoke", INVITE_ID]);
     await run(["invite", "show", "token-1"]);
     await run(["invite", "accept", "token-1"]);
-    await run(["join", "list", "--company-id", COMPANY_ID, "--status", "pending_approval"]);
+    await run([
+      "join",
+      "list",
+      "--company-id",
+      COMPANY_ID,
+      "--status",
+      "pending_approval",
+    ]);
     await run(["join", "approve", JOIN_ID, "--company-id", COMPANY_ID]);
     await run(["join", "reject", JOIN_ID, "--company-id", COMPANY_ID]);
     await run(["member", "list", "--company-id", COMPANY_ID]);
-    await run(["member", "update", MEMBER_ID, "--company-id", COMPANY_ID, "--payload-json", "{}"]);
+    await run([
+      "member",
+      "update",
+      MEMBER_ID,
+      "--company-id",
+      COMPANY_ID,
+      "--payload-json",
+      "{}",
+    ]);
     await run(["member", "archive", MEMBER_ID, "--company-id", COMPANY_ID]);
     await run(["admin", "user", "list"]);
     await run(["admin", "user", "promote", USER_ID]);
-    await run(["admin", "user", "company-access:update", USER_ID, "--payload-json", "{}"]);
+    await run([
+      "admin",
+      "user",
+      "company-access:update",
+      USER_ID,
+      "--payload-json",
+      "{}",
+    ]);
 
-    expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
+    expect(
+      fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]]),
+    ).toEqual([
       ["GET", "http://localhost:3100/api/health"],
-      ["GET", "http://localhost:3100/api/cli-auth/me"],
-      ["GET", "http://localhost:3100/api/cli-auth/me"],
+      ["GET", `http://localhost:3100/api/cli-auth/users/${ENCODED_USER_ID}`],
+      ["GET", `http://localhost:3100/api/cli-auth/users/${ENCODED_USER_ID}`],
       ["GET", "http://localhost:3100/api/auth/get-session"],
+      [
+        "GET",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/users/${ENCODED_USER_ID}/profile`,
+      ],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/invites`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/invites`],
       ["POST", `http://localhost:3100/api/invites/${INVITE_ID}/revoke`],
       ["GET", "http://localhost:3100/api/invites/token-1"],
       ["POST", "http://localhost:3100/api/invites/token-1/accept"],
-      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/join-requests?status=pending_approval`],
-      ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/join-requests/${JOIN_ID}/approve`],
-      ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/join-requests/${JOIN_ID}/reject`],
+      [
+        "GET",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/join-requests?status=pending_approval`,
+      ],
+      [
+        "POST",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/join-requests/${JOIN_ID}/approve`,
+      ],
+      [
+        "POST",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/join-requests/${JOIN_ID}/reject`,
+      ],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/members`],
-      ["PATCH", `http://localhost:3100/api/companies/${COMPANY_ID}/members/${MEMBER_ID}`],
-      ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/members/${MEMBER_ID}/archive`],
+      [
+        "PATCH",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/members/${MEMBER_ID}`,
+      ],
+      [
+        "POST",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/members/${MEMBER_ID}/archive`,
+      ],
       ["GET", "http://localhost:3100/api/admin/users"],
-      ["POST", `http://localhost:3100/api/admin/users/${USER_ID}/promote-instance-admin`],
-      ["PUT", `http://localhost:3100/api/admin/users/${USER_ID}/company-access`],
+      [
+        "POST",
+        `http://localhost:3100/api/admin/users/${ENCODED_USER_ID}/promote-instance-admin`,
+      ],
+      [
+        "PUT",
+        `http://localhost:3100/api/admin/users/${ENCODED_USER_ID}/company-access`,
+      ],
     ]);
-    expect(fetchMock.mock.calls[10]?.[1]?.body).toBe(JSON.stringify({}));
+    expect(fetchMock.mock.calls[11]?.[1]?.body).toBe(JSON.stringify({}));
+  });
+
+  it("requires exact non-empty auth user IDs without UUID coercion or trimming", () => {
+    expect(assertExactAuthUserId(USER_ID)).toBe(USER_ID);
+    expect(assertExactAuthUserId("auth user/id")).toBe("auth user/id");
+    expect(() => assertExactAuthUserId("")).toThrow(
+      /exact non-empty auth user ID/,
+    );
+    expect(() => assertExactAuthUserId(` ${USER_ID}`)).toThrow(
+      /surrounding whitespace/,
+    );
+    expect(() => assertExactAuthUserId(`${USER_ID} `)).toThrow(
+      /surrounding whitespace/,
+    );
   });
 
   it("exposes only Better Auth session inspection and company authorization profiles", () => {
@@ -89,8 +175,10 @@ describe("access parity commands", () => {
     ]);
   });
 
-  it("wraps instance, sidebar, llm, and openapi endpoints", async () => {
-    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+  it("wraps instance, sidebar, inbox, and openapi endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
 
     await run(["openapi"]);
@@ -99,30 +187,66 @@ describe("access parity commands", () => {
     await run(["sidebar", "preferences"]);
     await run(["sidebar", "preferences:update", "--payload-json", "{}"]);
     await run(["sidebar", "project-preferences", "--company-id", COMPANY_ID]);
-    await run(["sidebar", "project-preferences:update", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
+    await run([
+      "sidebar",
+      "project-preferences:update",
+      "--company-id",
+      COMPANY_ID,
+      "--payload-json",
+      "{}",
+    ]);
     await run(["sidebar", "badges", "--company-id", COMPANY_ID]);
     await run(["inbox", "dismissals", "--company-id", COMPANY_ID]);
-    await run(["inbox", "dismiss", "--company-id", COMPANY_ID, "--payload-json", "{\"itemKey\":\"run:1\"}"]);
-    await run(["llm", "agent-configuration"]);
-    await run(["llm", "agent-configuration:adapter", "codex"]);
+    await run([
+      "inbox",
+      "dismiss",
+      "--company-id",
+      COMPANY_ID,
+      "--payload-json",
+      '{"itemKey":"run:1"}',
+    ]);
 
-    expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
+    expect(
+      fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]]),
+    ).toEqual([
       ["GET", "http://localhost:3100/api/openapi.json"],
       ["GET", "http://localhost:3100/api/instance/settings/general"],
       ["PATCH", "http://localhost:3100/api/instance/settings/general"],
-      ["GET", "http://localhost:3100/api/sidebar-preferences/me"],
-      ["PUT", "http://localhost:3100/api/sidebar-preferences/me"],
-      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/sidebar-preferences/me`],
-      ["PUT", `http://localhost:3100/api/companies/${COMPANY_ID}/sidebar-preferences/me`],
-      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/sidebar-badges`],
-      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/inbox-dismissals`],
-      ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/inbox-dismissals`],
-      ["GET", "http://localhost:3100/api/llms/agent-configuration.txt"],
-      ["GET", "http://localhost:3100/api/llms/agent-configuration/codex.txt"],
+      [
+        "GET",
+        `http://localhost:3100/api/users/${ENCODED_USER_ID}/sidebar-preferences`,
+      ],
+      [
+        "PUT",
+        `http://localhost:3100/api/users/${ENCODED_USER_ID}/sidebar-preferences`,
+      ],
+      [
+        "GET",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/users/${ENCODED_USER_ID}/sidebar-preferences`,
+      ],
+      [
+        "PUT",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/users/${ENCODED_USER_ID}/sidebar-preferences`,
+      ],
+      [
+        "GET",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/sidebar-badges`,
+      ],
+      [
+        "GET",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/inbox-dismissals`,
+      ],
+      [
+        "POST",
+        `http://localhost:3100/api/companies/${COMPANY_ID}/inbox-dismissals`,
+      ],
     ]);
   });
 });
 
-function jsonResponse(body: unknown = { ok: true }, init: ResponseInit = { status: 200 }): Response {
+function jsonResponse(
+  body: unknown = { ok: true },
+  init: ResponseInit = { status: 200 },
+): Response {
   return new Response(JSON.stringify(body), init);
 }

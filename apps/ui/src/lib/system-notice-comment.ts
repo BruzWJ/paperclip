@@ -25,7 +25,9 @@ function metadataRowText(row: { label?: string | null }, fallback: string) {
 
 function mapMetadataRow(
   row: TaskCommentMetadataRow,
-  ctx: { runAgentId?: string | null },
+  ctx: {
+    runAgentId?: string | null;
+  },
 ): SystemNoticeMetadataRow | null {
   switch (row.type) {
     case "text":
@@ -35,35 +37,41 @@ function mapMetadataRow(
     case "key_value":
       return { kind: "text", label: row.label, value: row.value };
     case "task_link": {
-      const identifier = row.identifier ?? null;
-      if (!identifier) {
-        return { kind: "text", label: metadataRowText(row, "Task"), value: row.title ?? "unknown" };
+      if (row.taskNumber !== null) {
+        return {
+          kind: "task",
+          label: metadataRowText(row, "Task"),
+          taskNumber: row.taskNumber,
+          identifier: row.identifier,
+          link: true,
+          title: row.title ?? undefined,
+        };
       }
       return {
         kind: "task",
         label: metadataRowText(row, "Task"),
-        identifier,
-        href: `/tasks/${identifier}`,
+        taskNumber: null,
+        identifier: row.identifier ?? null,
+        link: false,
         title: row.title ?? undefined,
       };
     }
     case "agent_link": {
-      const name = row.name?.trim() || row.agentId.slice(0, 8);
+      const name = row.name?.trim() || "Unknown agent";
       return {
         kind: "agent",
         label: metadataRowText(row, "Agent"),
         name,
-        href: `/agents/${row.agentId}`,
+        agentId: row.agentId,
       };
     }
     case "run_link": {
       const runAgentId = ctx.runAgentId ?? null;
-      const href = runAgentId ? `/agents/${runAgentId}/runs/${row.runId}` : undefined;
       return {
         kind: "run",
         label: metadataRowText(row, "Run"),
         runId: row.runId,
-        href,
+        agentId: runAgentId ?? undefined,
         status: row.title ?? undefined,
       };
     }
@@ -74,7 +82,9 @@ function mapMetadataRow(
 
 export function mapCommentMetadataToSystemNoticeSections(
   metadata: TaskCommentMetadata | null | undefined,
-  ctx: { runAgentId?: string | null } = {},
+  ctx: {
+    runAgentId?: string | null;
+  } = {},
 ): SystemNoticeMetadataSection[] {
   if (!metadata || !Array.isArray(metadata.sections)) return [];
   return metadata.sections

@@ -6,7 +6,9 @@ function storageKey(companyId: string) {
 }
 
 function isStorageAvailable() {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  return (
+    typeof window !== "undefined" && typeof window.localStorage !== "undefined"
+  );
 }
 
 export function loadRecentSearches(companyId: string): string[] {
@@ -35,7 +37,9 @@ export function pushRecentSearch(companyId: string, query: string): string[] {
   const trimmed = query.trim();
   if (!trimmed) return loadRecentSearches(companyId);
   const existing = loadRecentSearches(companyId);
-  const filtered = existing.filter((entry) => entry.toLowerCase() !== trimmed.toLowerCase());
+  const filtered = existing.filter(
+    (entry) => entry.toLowerCase() !== trimmed.toLowerCase(),
+  );
   const next = [trimmed, ...filtered].slice(0, MAX_RECENT_SEARCHES);
   try {
     window.localStorage.setItem(storageKey(companyId), JSON.stringify(next));
@@ -44,14 +48,3 @@ export function pushRecentSearch(companyId: string, query: string): string[] {
   }
   return next;
 }
-
-export function clearRecentSearches(companyId: string): void {
-  if (!isStorageAvailable() || !companyId) return;
-  try {
-    window.localStorage.removeItem(storageKey(companyId));
-  } catch {
-    // ignore
-  }
-}
-
-export const RECENT_SEARCHES_LIMIT = MAX_RECENT_SEARCHES;

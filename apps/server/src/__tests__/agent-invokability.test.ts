@@ -17,7 +17,7 @@ function agent(partial: Partial<AgentOrgRow> & Pick<AgentOrgRow, "id">): AgentOr
     companyId: "company-1",
     name: partial.id,
     reportsTo: null,
-    status: "active",
+    status: "idle",
     ...partial,
   };
 }
@@ -44,7 +44,7 @@ function ownerRevision(
 }
 
 describe("agent invokability", () => {
-  it("blocks active descendants under a terminated manager as invalid-org-chain", () => {
+  it("blocks idle descendants under a terminated manager as invalid-org-chain", () => {
     const rows = [
       agent({ id: "root", status: "terminated" }),
       agent({ id: "manager", reportsTo: "root" }),
@@ -99,18 +99,18 @@ describe("agent invokability", () => {
   });
 
   it("uses one typed owner predicate for lifecycle, org-chain, and exact revision failures", () => {
-    const active = ownerAgent({ id: "active" });
+    const idle = ownerAgent({ id: "idle" });
     const valid = resolveInvokableTaskOwner({
       companyId: "company-1",
-      ownerAgentId: active.id,
-      companyAgents: [active],
+      ownerAgentId: idle.id,
+      companyAgents: [idle],
       adapterRevisions: [
-        ownerRevision(active.currentAdapterConfigRevisionId!, active.id),
+        ownerRevision(idle.currentAdapterConfigRevisionId!, idle.id),
       ],
     });
     expect(valid).toMatchObject({
-      owner: { id: "active" },
-      revisionId: "active-revision",
+      owner: { id: "idle" },
+      revisionId: "idle-revision",
     });
 
     const cases: Array<{

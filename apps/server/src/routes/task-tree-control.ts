@@ -3,7 +3,7 @@ import type { Request } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   createTaskTreeHoldSchema,
-  isUuidLike,
+  isCanonicalUuid,
   previewTaskTreeControlSchema,
   releaseTaskTreeHoldSchema,
 } from "@paperclipai/shared";
@@ -11,12 +11,20 @@ import { validate } from "../middleware/validate.js";
 import { taskService, taskTreeControlService, logActivity } from "../services/index.js";
 import type { TaskTreeCancellationPort } from "../services/task-tree-control.js";
 import { assertBoard, getAccessibleResource } from "./authz.js";
+import {
+  assertExactQueryKeys,
+  parseExactBooleanQuery,
+  parseExactOptionalEnum,
+} from "./exact-query.js";
+
+const TREE_HOLD_STATUSES = ["active", "released"] as const;
+const TREE_HOLD_MODES = ["pause", "resume", "cancel", "restore"] as const;
 
 export function taskTreeControlRoutes(
   db: Db,
   taskExecutionCancellation: TaskTreeCancellationPort,
 ) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const tasksSvc = taskService(db);
   const treeControlSvc = taskTreeControlService(db, {
     taskExecutionCancellation,
@@ -158,15 +166,13 @@ export function taskTreeControlRoutes(
     assertBoard(req);
     const root = await getAccessibleResource(req, res, resolveRootTask(req), "Root task not found");
     if (!root) return;
-    const statusParam = typeof req.query.status === "string" ? req.query.status : null;
-    const modeParam = typeof req.query.mode === "string" ? req.query.mode : null;
-    const includeMembers = req.query.includeMembers === "true";
+    assertExactQueryKeys(req.query, ["includeMembers", "mode", "status"]);
+    const status = parseExactOptionalEnum(req.query.status, "status", TREE_HOLD_STATUSES);
+    const mode = parseExactOptionalEnum(req.query.mode, "mode", TREE_HOLD_MODES);
+    const includeMembers = parseExactBooleanQuery(req.query.includeMembers, "includeMembers");
     const holds = await treeControlSvc.listHolds(root.companyId, root.id, {
-      status: statusParam === "active" || statusParam === "released" ? statusParam : undefined,
-      mode:
-        modeParam === "pause" || modeParam === "resume" || modeParam === "cancel" || modeParam === "restore"
-          ? modeParam
-          : undefined,
+      status,
+      mode,
       includeMembers,
     });
     res.json(holds);
@@ -178,7 +184,7 @@ export function taskTreeControlRoutes(
     if (!root) return;
 
     const holdId = req.params.holdId as string;
-    if (!isUuidLike(holdId)) {
+    if (!isCanonicalUuid(holdId)) {
       res.status(400).json({ error: "Invalid hold ID" });
       return;
     }
@@ -200,7 +206,7 @@ export function taskTreeControlRoutes(
       if (!root) return;
 
       const holdId = req.params.holdId as string;
-      if (!isUuidLike(holdId)) {
+      if (!isCanonicalUuid(holdId)) {
         res.status(400).json({ error: "Invalid hold ID" });
         return;
       }

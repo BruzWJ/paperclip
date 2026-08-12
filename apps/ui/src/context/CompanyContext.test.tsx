@@ -6,30 +6,30 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { canonicalizeMoneyAmount, type Company } from "@paperclipai/shared";
 import { queryKeys } from "../lib/queryKeys";
+import { TestRouter } from "../test/TestRouter";
 import {
   CompanyProvider,
-  resolveBootstrapCompanySelection,
-  shouldClearStoredCompanySelection,
+  ROOT_REDIRECT_COMPANY_STORAGE_KEY,
+  resolveRootRedirectCompanyId,
+  shouldClearRootRedirectCompanyId,
   useCompany,
 } from "./CompanyContext";
 
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_COMPANY_ID = "22222222-2222-4222-8222-222222222222";
+
 const mockCompaniesApi = vi.hoisted(() => ({
   list: vi.fn(),
-  create: vi.fn(),
 }));
 
 vi.mock("../api/companies", () => ({
   companiesApi: mockCompaniesApi,
 }));
 
-const activeCompany = { id: "company-1" };
-const secondActiveCompany = { id: "company-2" };
-const archivedCompany = { id: "archived-company" };
-
 function makeCompany(id: string): Company {
   return {
     id,
-    name: "Paperclip",
+    name: id === COMPANY_ID ? "Paperclip" : "Other",
     description: null,
     status: "active",
     pauseReason: null,
@@ -50,72 +50,58 @@ function makeCompany(id: string): Company {
   };
 }
 
-function Probe({ onSelectedCompanyId }: { onSelectedCompanyId: (companyId: string | null) => void }) {
-  const { selectedCompanyId } = useCompany();
+function Probe({ onCompanyId }: { onCompanyId: (companyId: string | null) => void }) {
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id ?? null;
   useEffect(() => {
-    onSelectedCompanyId(selectedCompanyId);
-  }, [onSelectedCompanyId, selectedCompanyId]);
-  return <div data-selected-company-id={selectedCompanyId ?? ""} />;
+    onCompanyId(companyId);
+  }, [companyId, onCompanyId]);
+  return <div data-company-id={companyId ?? ""} />;
 }
 
-describe("resolveBootstrapCompanySelection", () => {
-  it("does not expose a stale stored company id before companies load", () => {
-    expect(resolveBootstrapCompanySelection({
+describe("resolveRootRedirectCompanyId", () => {
+  it("returns null when no company can be targeted", () => {
+    expect(resolveRootRedirectCompanyId({
       companies: [],
       sidebarCompanies: [],
-      selectedCompanyId: null,
-      storedCompanyId: "stale-company",
+      storedCompanyId: COMPANY_ID,
     })).toBeNull();
   });
 
-  it("replaces a stale stored company id with the first loaded company", () => {
-    expect(resolveBootstrapCompanySelection({
-      companies: [activeCompany],
-      sidebarCompanies: [activeCompany],
-      selectedCompanyId: null,
+  it("uses an exact stored target and rejects a stale one", () => {
+    const companies = [{ id: COMPANY_ID }, { id: OTHER_COMPANY_ID }];
+    expect(resolveRootRedirectCompanyId({
+      companies,
+      sidebarCompanies: companies,
+      storedCompanyId: OTHER_COMPANY_ID,
+    })).toBe(OTHER_COMPANY_ID);
+    expect(resolveRootRedirectCompanyId({
+      companies,
+      sidebarCompanies: companies,
       storedCompanyId: "stale-company",
-    })).toBe("company-1");
+    })).toBe(COMPANY_ID);
   });
 
-  it("keeps a valid selected company ahead of stored bootstrap state", () => {
-    expect(resolveBootstrapCompanySelection({
-      companies: [activeCompany],
-      sidebarCompanies: [activeCompany],
-      selectedCompanyId: "company-1",
-      storedCompanyId: "stale-company",
-    })).toBe("company-1");
-  });
-
-  it("keeps a valid stored company id instead of falling back to the first company", () => {
-    expect(resolveBootstrapCompanySelection({
-      companies: [activeCompany, secondActiveCompany],
-      sidebarCompanies: [activeCompany, secondActiveCompany],
-      selectedCompanyId: null,
-      storedCompanyId: "company-2",
-    })).toBe("company-2");
-  });
-
-  it("uses selectable sidebar companies before archived companies", () => {
-    expect(resolveBootstrapCompanySelection({
-      companies: [archivedCompany, activeCompany],
-      sidebarCompanies: [activeCompany],
-      selectedCompanyId: null,
-      storedCompanyId: "archived-company",
-    })).toBe("company-1");
+  it("does not select an archived stored target when an active company exists", () => {
+    expect(resolveRootRedirectCompanyId({
+      companies: [{ id: OTHER_COMPANY_ID }, { id: COMPANY_ID }],
+      sidebarCompanies: [{ id: COMPANY_ID }],
+      storedCompanyId: OTHER_COMPANY_ID,
+    })).toBe(COMPANY_ID);
   });
 });
 
-describe("shouldClearStoredCompanySelection", () => {
-  it("does not clear the stored company selection during an unauthorized company list response", () => {
-    expect(shouldClearStoredCompanySelection({
+describe("shouldClearRootRedirectCompanyId", () => {
+  it("preserves the redirect target for an unauthorized company-list response", () => {
+    expect(shouldClearRootRedirectCompanyId({
       companies: [],
       isLoading: false,
       unauthorized: true,
     })).toBe(false);
   });
 
-  it("clears the stored company selection when an authorized company list is empty", () => {
-    expect(shouldClearStoredCompanySelection({
+  it("clears the redirect target for an authorized empty company list", () => {
+    expect(shouldClearRootRedirectCompanyId({
       companies: [],
       isLoading: false,
       unauthorized: false,
@@ -135,59 +121,59 @@ describe("CompanyProvider", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-      },
+      defaultOptions: { queries: { retry: false } },
     });
+    queryClient.setQueryData(queryKeys.companies.all, {
+      companies: [makeCompany(COMPANY_ID), makeCompany(OTHER_COMPANY_ID)],
+      unauthorized: false,
+    });
+    mockCompaniesApi.list.mockImplementation(() => new Promise(() => {}));
   });
 
   afterEach(async () => {
-    await act(async () => {
-      root.unmount();
-    });
+    await act(async () => root.unmount());
     queryClient.clear();
     container.remove();
     vi.clearAllMocks();
   });
 
-  it("does not expose a stale stored company id before companies load", async () => {
-    localStorage.setItem("paperclip.selectedCompanyId", "stale-company");
-    mockCompaniesApi.list.mockImplementation(() => new Promise(() => {}));
+  it("exposes the route company synchronously and remembers it only for root redirects", async () => {
+    localStorage.setItem(ROOT_REDIRECT_COMPANY_STORAGE_KEY, OTHER_COMPANY_ID);
     const seen: Array<string | null> = [];
 
     await act(async () => {
       root.render(
-        <QueryClientProvider client={queryClient}>
-          <CompanyProvider>
-            <Probe onSelectedCompanyId={(companyId) => seen.push(companyId)} />
-          </CompanyProvider>
-        </QueryClientProvider>,
+        <TestRouter initialEntries={[`/${COMPANY_ID}/dashboard`]} queryClient={queryClient}>
+          <QueryClientProvider client={queryClient}>
+            <CompanyProvider>
+              <Probe onCompanyId={(companyId) => seen.push(companyId)} />
+            </CompanyProvider>
+          </QueryClientProvider>
+        </TestRouter>,
+      );
+    });
+
+    expect(seen).toEqual([COMPANY_ID]);
+    expect(localStorage.getItem(ROOT_REDIRECT_COMPANY_STORAGE_KEY)).toBe(COMPANY_ID);
+  });
+
+  it("does not turn a stored redirect target into active company state on a global route", async () => {
+    localStorage.setItem(ROOT_REDIRECT_COMPANY_STORAGE_KEY, OTHER_COMPANY_ID);
+    const seen: Array<string | null> = [];
+
+    await act(async () => {
+      root.render(
+        <TestRouter initialEntries={["/auth"]} queryClient={queryClient}>
+          <QueryClientProvider client={queryClient}>
+            <CompanyProvider>
+              <Probe onCompanyId={(companyId) => seen.push(companyId)} />
+            </CompanyProvider>
+          </QueryClientProvider>
+        </TestRouter>,
       );
     });
 
     expect(seen).toEqual([null]);
-  });
-
-  it("replaces a stale stored company id with the first loaded company", async () => {
-    localStorage.setItem("paperclip.selectedCompanyId", "stale-company");
-    queryClient.setQueryData(queryKeys.companies.all, {
-      companies: [makeCompany("company-1")],
-      unauthorized: false,
-    });
-    mockCompaniesApi.list.mockImplementation(() => new Promise(() => {}));
-    const seen: Array<string | null> = [];
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <CompanyProvider>
-            <Probe onSelectedCompanyId={(companyId) => seen.push(companyId)} />
-          </CompanyProvider>
-        </QueryClientProvider>,
-      );
-    });
-
-    expect(seen).toEqual([null, "company-1"]);
-    expect(localStorage.getItem("paperclip.selectedCompanyId")).toBe("company-1");
+    expect(localStorage.getItem(ROOT_REDIRECT_COMPANY_STORAGE_KEY)).toBe(OTHER_COMPANY_ID);
   });
 });

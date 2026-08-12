@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { updateResourceMembershipSchema } from "./validators/resource-memberships.js";
 
 describe("resource membership contract", () => {
-  it("accepts legacy state-only membership updates", () => {
+  it("accepts state-only membership updates", () => {
     expect(updateResourceMembershipSchema.parse({ state: "left" })).toEqual({ state: "left" });
     expect(updateResourceMembershipSchema.parse({ state: "joined" })).toEqual({ state: "joined" });
   });

@@ -6,6 +6,4 @@ export {
   resolveCurrentTaskOwnerRunLinkage,
   resolveCurrentTaskOwnerRunLinkages,
   resolveProductiveRunLinkage,
-  type CurrentTaskOwnerRunLinkage,
-  type ProductiveRunLinkage,
 } from "./task-execution-run-service.js";

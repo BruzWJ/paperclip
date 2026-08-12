@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import { addValidationDetail } from "../validation-details.js";
 
 function attachmentContentPath(attachmentId: string): string {
@@ -34,7 +35,7 @@ export const taskWorkProductReviewStateSchema = z.enum([
 ]);
 
 export const attachmentArtifactWorkProductMetadataSchema = z.object({
-  attachmentId: z.string().uuid(),
+  attachmentId: canonicalUuidSchema,
   contentType: z.string().min(1),
   byteSize: z.number().int().nonnegative(),
   contentPath: z.string().min(1),
@@ -72,7 +73,7 @@ export const taskWorkProductMetadataSchema = z
 export type TaskWorkProductMetadata = z.infer<typeof taskWorkProductMetadataSchema>;
 
 export const createTaskWorkProductSchema = z.object({
-  projectId: z.string().uuid().optional().nullable(),
+  projectId: canonicalUuidSchema.optional().nullable(),
   type: taskWorkProductTypeSchema,
   provider: z.string().min(1),
   externalId: z.string().optional().nullable(),
@@ -84,7 +85,7 @@ export const createTaskWorkProductSchema = z.object({
   healthStatus: z.enum(["unknown", "healthy", "unhealthy"]).optional().default("unknown"),
   summary: z.string().optional().nullable(),
   metadata: taskWorkProductMetadataSchema.optional().nullable(),
-  createdByRunId: z.string().uuid().optional().nullable(),
+  createdByRunId: canonicalUuidSchema.optional().nullable(),
 });
 
 export type CreateTaskWorkProduct = z.infer<typeof createTaskWorkProductSchema>;

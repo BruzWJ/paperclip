@@ -145,7 +145,6 @@ function formatParticipantLabel(
 function formatTaskReferenceLabel(reference: ActivityTaskReference): string {
   if (reference.identifier) return reference.identifier;
   if (reference.title) return reference.title;
-  if (reference.id) return reference.id.slice(0, 8);
   return "task";
 }
 

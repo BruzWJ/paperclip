@@ -50,13 +50,15 @@ export interface UpdateUserSecretDefinitionInput {
 }
 
 /** Owner-supplied value for a user secret. Either `value` (managed) or `externalRef`. */
-export interface UpsertMyUserSecretInput {
-  definitionId?: string;
-  definitionKey?: string;
+export interface MyUserSecretValueInput {
   value?: string | null;
   externalRef?: string | null;
   providerVersionRef?: string | null;
   providerConfigId?: string | null;
+}
+
+export interface CreateMyUserSecretInput extends MyUserSecretValueInput {
+  definitionId: string;
 }
 
 export interface CreateSecretInput {
@@ -209,20 +211,34 @@ export const secretsApi = {
       `/companies/${companyId}/user-secret-definitions/${definitionId}/coverage`,
     ),
 
-  // Current user ("My secrets"): each definition paired with my own value.
-  listMyUserSecrets: (companyId: string) =>
-    api.get<MyUserSecretEntry[]>(`/companies/${companyId}/me/user-secrets`),
-  createMyUserSecret: (companyId: string, data: UpsertMyUserSecretInput) =>
-    api.post<CompanySecret>(`/companies/${companyId}/me/user-secrets`, data),
-  updateMyUserSecret: (
+  // Authenticated user's values, scoped by the exact session user ID.
+  listUserSecrets: (companyId: string, userId: string) =>
+    api.get<MyUserSecretEntry[]>(
+      `/companies/${companyId}/users/${encodeURIComponent(userId)}/secrets`,
+    ),
+  createUserSecret: (
     companyId: string,
+    userId: string,
+    data: CreateMyUserSecretInput,
+  ) =>
+    api.post<CompanySecret>(
+      `/companies/${companyId}/users/${encodeURIComponent(userId)}/secrets`,
+      data,
+    ),
+  rotateUserSecret: (
+    companyId: string,
+    userId: string,
     secretId: string,
-    data: Partial<UpsertMyUserSecretInput> & { status?: SecretStatus },
-  ) => api.patch<CompanySecret>(`/companies/${companyId}/me/user-secrets/${secretId}`, data),
-  rotateMyUserSecret: (companyId: string, secretId: string, data: UpsertMyUserSecretInput) =>
-    api.post<CompanySecret>(`/companies/${companyId}/me/user-secrets/${secretId}/rotate`, data),
-  removeMyUserSecret: (companyId: string, secretId: string) =>
-    api.delete<{ ok: true }>(`/companies/${companyId}/me/user-secrets/${secretId}`),
+    data: MyUserSecretValueInput,
+  ) =>
+    api.post<CompanySecret>(
+      `/companies/${companyId}/users/${encodeURIComponent(userId)}/secrets/${secretId}/rotate`,
+      data,
+    ),
+  removeUserSecret: (companyId: string, userId: string, secretId: string) =>
+    api.delete<{ ok: true }>(
+      `/companies/${companyId}/users/${encodeURIComponent(userId)}/secrets/${secretId}`,
+    ),
   remoteImportPreview: (companyId: string, data: RemoteImportPreviewInput) =>
     api.post<RemoteSecretImportPreviewResult>(
       `/companies/${companyId}/secrets/remote-import/preview`,

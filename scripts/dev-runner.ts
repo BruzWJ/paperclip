@@ -50,9 +50,7 @@ const watchedDirectories = [
   "scripts",
   "apps/server",
   "packages/adapter-utils",
-  "packages/adapters",
   "packages/db",
-  "packages/skills-catalog",
   "packages/plugins/sdk",
   "packages/shared",
 ].map((relativePath) => path.join(repoRoot, relativePath));

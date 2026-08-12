@@ -1,20 +1,16 @@
+import { isCanonicalUuid } from "./canonical-uuid.js";
+
 export const PROJECT_MENTION_SCHEME = "project://";
 export const AGENT_MENTION_SCHEME = "agent://";
 export const USER_MENTION_SCHEME = "user://";
-export const SKILL_MENTION_SCHEME = "skill://";
 export const ROUTINE_MENTION_SCHEME = "routine://";
 
-const HEX_COLOR_RE = /^[0-9a-f]{6}$/i;
-const HEX_COLOR_SHORT_RE = /^[0-9a-f]{3}$/i;
-const HEX_COLOR_WITH_HASH_RE = /^#[0-9a-f]{6}$/i;
-const HEX_COLOR_SHORT_WITH_HASH_RE = /^#[0-9a-f]{3}$/i;
+const HEX_COLOR_WITH_HASH_RE = /^#[0-9a-f]{6}$/;
 const PROJECT_MENTION_LINK_RE = /\[[^\]]*]\((project:\/\/[^)\s]+)\)/gi;
 const AGENT_MENTION_LINK_RE = /\[[^\]]*]\((agent:\/\/[^)\s]+)\)/gi;
 const USER_MENTION_LINK_RE = /\[[^\]]*]\((user:\/\/[^)\s]+)\)/gi;
-const SKILL_MENTION_LINK_RE = /\[[^\]]*]\((skill:\/\/[^)\s]+)\)/gi;
 const ROUTINE_MENTION_LINK_RE = /\[[^\]]*]\((routine:\/\/[^)\s]+)\)/gi;
-const AGENT_ICON_NAME_RE = /^[a-z0-9-]+$/i;
-const SKILL_SLUG_RE = /^[a-z0-9][a-z0-9-]*$/i;
+const AGENT_ICON_NAME_RE = /^[a-z0-9-]+$/;
 
 export interface ParsedProjectMention {
   projectId: string;
@@ -30,171 +26,110 @@ export interface ParsedUserMention {
   userId: string;
 }
 
-export interface ParsedSkillMention {
-  skillId: string;
-  slug: string | null;
-}
-
 export interface ParsedRoutineMention {
   routineId: string;
 }
 
-function normalizeHexColor(input: string | null | undefined): string | null {
-  if (!input) return null;
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-
-  if (HEX_COLOR_WITH_HASH_RE.test(trimmed)) {
-    return trimmed.toLowerCase();
+function requireCanonicalUuid(value: string, kind: string): string {
+  if (!isCanonicalUuid(value)) {
+    throw new TypeError(`${kind} mention requires a canonical UUID.`);
   }
-  if (HEX_COLOR_RE.test(trimmed)) {
-    return `#${trimmed.toLowerCase()}`;
-  }
-  if (HEX_COLOR_SHORT_WITH_HASH_RE.test(trimmed)) {
-    const raw = trimmed.slice(1).toLowerCase();
-    return `#${raw[0]}${raw[0]}${raw[1]}${raw[1]}${raw[2]}${raw[2]}`;
-  }
-  if (HEX_COLOR_SHORT_RE.test(trimmed)) {
-    const raw = trimmed.toLowerCase();
-    return `#${raw[0]}${raw[0]}${raw[1]}${raw[1]}${raw[2]}${raw[2]}`;
-  }
-  return null;
+  return value;
 }
 
-export function buildProjectMentionHref(projectId: string, color?: string | null): string {
-  const trimmedProjectId = projectId.trim();
-  const normalizedColor = normalizeHexColor(color ?? null);
-  if (!normalizedColor) {
-    return `${PROJECT_MENTION_SCHEME}${trimmedProjectId}`;
+function encodeOpaqueId(value: string): string {
+  if (value.length === 0) {
+    throw new TypeError("User mention requires an exact non-empty user ID.");
   }
-  return `${PROJECT_MENTION_SCHEME}${trimmedProjectId}?c=${encodeURIComponent(normalizedColor.slice(1))}`;
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
-export function parseProjectMentionHref(href: string): ParsedProjectMention | null {
-  if (!href.startsWith(PROJECT_MENTION_SCHEME)) return null;
-
-  let url: URL;
-  try {
-    url = new URL(href);
-  } catch {
-    return null;
+export function buildProjectMentionHref(
+  projectId: string,
+  color?: string | null,
+): string {
+  const canonicalProjectId = requireCanonicalUuid(projectId, "Project");
+  if (color == null) {
+    return `${PROJECT_MENTION_SCHEME}${canonicalProjectId}`;
   }
+  if (!HEX_COLOR_WITH_HASH_RE.test(color)) {
+    throw new TypeError(
+      "Project mention color must be an exact lowercase six-digit hex color.",
+    );
+  }
+  return `${PROJECT_MENTION_SCHEME}${canonicalProjectId}?c=${color.slice(1)}`;
+}
 
-  if (url.protocol !== "project:") return null;
-
-  const projectId = `${url.hostname}${url.pathname}`.replace(/^\/+/, "").trim();
-  if (!projectId) return null;
-
-  const color = normalizeHexColor(url.searchParams.get("c") ?? url.searchParams.get("color"));
+export function parseProjectMentionHref(
+  href: string,
+): ParsedProjectMention | null {
+  const match = /^project:\/\/([0-9a-f-]+)(?:\?c=([0-9a-f]{6}))?$/.exec(href);
+  if (!match || !isCanonicalUuid(match[1])) return null;
 
   return {
-    projectId,
-    color,
+    projectId: match[1],
+    color: match[2] ? `#${match[2]}` : null,
   };
 }
 
-export function buildAgentMentionHref(agentId: string, icon?: string | null): string {
-  const trimmedAgentId = agentId.trim();
-  const normalizedIcon = normalizeAgentIcon(icon ?? null);
-  if (!normalizedIcon) {
-    return `${AGENT_MENTION_SCHEME}${trimmedAgentId}`;
+export function buildAgentMentionHref(
+  agentId: string,
+  icon?: string | null,
+): string {
+  const canonicalAgentId = requireCanonicalUuid(agentId, "Agent");
+  if (icon == null) {
+    return `${AGENT_MENTION_SCHEME}${canonicalAgentId}`;
   }
-  return `${AGENT_MENTION_SCHEME}${trimmedAgentId}?i=${encodeURIComponent(normalizedIcon)}`;
+  if (!AGENT_ICON_NAME_RE.test(icon)) {
+    throw new TypeError(
+      "Agent mention icon must be an exact lowercase icon name.",
+    );
+  }
+  return `${AGENT_MENTION_SCHEME}${canonicalAgentId}?i=${icon}`;
 }
 
 export function parseAgentMentionHref(href: string): ParsedAgentMention | null {
-  if (!href.startsWith(AGENT_MENTION_SCHEME)) return null;
-
-  let url: URL;
-  try {
-    url = new URL(href);
-  } catch {
-    return null;
-  }
-
-  if (url.protocol !== "agent:") return null;
-
-  const agentId = `${url.hostname}${url.pathname}`.replace(/^\/+/, "").trim();
-  if (!agentId) return null;
+  const match = /^agent:\/\/([0-9a-f-]+)(?:\?i=([a-z0-9-]+))?$/.exec(href);
+  if (!match || !isCanonicalUuid(match[1])) return null;
 
   return {
-    agentId,
-    icon: normalizeAgentIcon(url.searchParams.get("i") ?? url.searchParams.get("icon")),
+    agentId: match[1],
+    icon: match[2] ?? null,
   };
 }
 
 export function buildUserMentionHref(userId: string): string {
-  return `${USER_MENTION_SCHEME}${userId.trim()}`;
+  return `${USER_MENTION_SCHEME}${encodeOpaqueId(userId)}`;
 }
 
 export function parseUserMentionHref(href: string): ParsedUserMention | null {
   if (!href.startsWith(USER_MENTION_SCHEME)) return null;
+  const encodedUserId = href.slice(USER_MENTION_SCHEME.length);
+  if (!encodedUserId || /[?#]/.test(encodedUserId)) return null;
 
-  let url: URL;
+  let userId: string;
   try {
-    url = new URL(href);
+    userId = decodeURIComponent(encodedUserId);
   } catch {
     return null;
   }
-
-  if (url.protocol !== "user:") return null;
-
-  const userId = `${url.hostname}${url.pathname}`.replace(/^\/+/, "").trim();
-  if (!userId) return null;
+  if (!userId || encodeOpaqueId(userId) !== encodedUserId) return null;
 
   return { userId };
 }
 
-export function buildSkillMentionHref(skillId: string, slug?: string | null): string {
-  const trimmedSkillId = skillId.trim();
-  const normalizedSlug = normalizeSkillSlug(slug ?? null);
-  if (!normalizedSlug) {
-    return `${SKILL_MENTION_SCHEME}${trimmedSkillId}`;
-  }
-  return `${SKILL_MENTION_SCHEME}${trimmedSkillId}?s=${encodeURIComponent(normalizedSlug)}`;
-}
-
-export function parseSkillMentionHref(href: string): ParsedSkillMention | null {
-  if (!href.startsWith(SKILL_MENTION_SCHEME)) return null;
-
-  let url: URL;
-  try {
-    url = new URL(href);
-  } catch {
-    return null;
-  }
-
-  if (url.protocol !== "skill:") return null;
-
-  const skillId = `${url.hostname}${url.pathname}`.replace(/^\/+/, "").trim();
-  if (!skillId) return null;
-
-  return {
-    skillId,
-    slug: normalizeSkillSlug(url.searchParams.get("s") ?? url.searchParams.get("slug")),
-  };
-}
-
 export function buildRoutineMentionHref(routineId: string): string {
-  return `${ROUTINE_MENTION_SCHEME}${routineId.trim()}`;
+  return `${ROUTINE_MENTION_SCHEME}${requireCanonicalUuid(routineId, "Routine")}`;
 }
 
-export function parseRoutineMentionHref(href: string): ParsedRoutineMention | null {
-  if (!href.startsWith(ROUTINE_MENTION_SCHEME)) return null;
-
-  let url: URL;
-  try {
-    url = new URL(href);
-  } catch {
-    return null;
-  }
-
-  if (url.protocol !== "routine:") return null;
-
-  const routineId = `${url.hostname}${url.pathname}`.replace(/^\/+/, "").trim();
-  if (!routineId) return null;
-
-  return { routineId };
+export function parseRoutineMentionHref(
+  href: string,
+): ParsedRoutineMention | null {
+  const match = /^routine:\/\/([0-9a-f-]+)$/.exec(href);
+  return match && isCanonicalUuid(match[1]) ? { routineId: match[1] } : null;
 }
 
 export function extractProjectMentionIds(markdown: string): string[] {
@@ -233,18 +168,6 @@ export function extractUserMentionIds(markdown: string): string[] {
   return [...ids];
 }
 
-export function extractSkillMentionIds(markdown: string): string[] {
-  if (!markdown) return [];
-  const ids = new Set<string>();
-  const re = new RegExp(SKILL_MENTION_LINK_RE);
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(markdown)) !== null) {
-    const parsed = parseSkillMentionHref(match[1]);
-    if (parsed) ids.add(parsed.skillId);
-  }
-  return [...ids];
-}
-
 export function extractRoutineMentionIds(markdown: string): string[] {
   if (!markdown) return [];
   const ids = new Set<string>();
@@ -255,18 +178,4 @@ export function extractRoutineMentionIds(markdown: string): string[] {
     if (parsed) ids.add(parsed.routineId);
   }
   return [...ids];
-}
-
-function normalizeAgentIcon(input: string | null | undefined): string | null {
-  if (!input) return null;
-  const trimmed = input.trim().toLowerCase();
-  if (!trimmed || !AGENT_ICON_NAME_RE.test(trimmed)) return null;
-  return trimmed;
-}
-
-function normalizeSkillSlug(input: string | null | undefined): string | null {
-  if (!input) return null;
-  const trimmed = input.trim().toLowerCase();
-  if (!trimmed || !SKILL_SLUG_RE.test(trimmed)) return null;
-  return trimmed;
 }

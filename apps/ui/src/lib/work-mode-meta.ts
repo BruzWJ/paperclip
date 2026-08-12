@@ -1,7 +1,7 @@
 import type { TaskWorkMode } from "@paperclipai/shared";
 import { ClipboardList, Hammer, MessageCircleQuestion, type LucideIcon } from "lucide-react";
 
-export type WorkModeTone = "neutral" | "ask" | "planning";
+type WorkModeTone = "neutral" | "ask" | "planning";
 
 export interface WorkModeMeta {
   value: TaskWorkMode;
@@ -80,14 +80,4 @@ export function nextWorkMode(mode: TaskWorkMode): TaskWorkMode {
   const modes = workModeMetaList();
   const index = modes.findIndex((meta) => meta.value === mode);
   return modes[(index + 1) % modes.length]?.value ?? "standard";
-}
-
-export function titleForPendingWorkMode(mode: TaskWorkMode): string {
-  if (mode === "ask") {
-    return "Ask mode for this submission. Click to change. The responsible will answer in this thread; no implementation work.";
-  }
-  if (mode === "planning") {
-    return "Plan mode is on for this submission. Click to change.";
-  }
-  return "Agent mode for this submission. Click to change.";
 }

@@ -52,7 +52,8 @@ export interface TaskAncestorGoal {
 
 export interface TaskAncestor {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   request: string;
   boardPresentationStatus: TaskStatus;
@@ -119,7 +120,8 @@ export interface DocumentRevision {
 
 export interface TaskRelationTaskSummary {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: TaskStatus;
   priority: TaskPriority;
@@ -134,7 +136,8 @@ export type TaskBlockerDiagnosticFlag =
 
 export interface TaskBlockerDiagnosticTaskSummary {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: TaskStatus;
   priority: TaskPriority;
@@ -255,7 +258,8 @@ export type TaskBlockedInboxOwnerType = "agent" | "user" | "board" | "external" 
 
 export interface TaskBlockedInboxTaskRef {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: TaskStatus;
   priority: TaskPriority;
@@ -429,8 +433,8 @@ interface TaskBase {
   escalatedFromReason?: string | null;
   affectedOwnershipEpoch?: number | null;
   responsibleUserId: string | null;
-  taskNumber: number | null;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   originKind?: TaskOriginKind;
   originId?: string | null;
   originRunId?: string | null;
@@ -570,7 +574,6 @@ type CanonicalTaskCreator =
     };
 
 export type Task = TaskBase & CanonicalTaskOwner & CanonicalTaskCreator;
-export type CanonicalTask = Task;
 
 export type CompactTask = Pick<
   Task,
@@ -782,12 +785,24 @@ export interface TaskCommentMetadataKeyValueRow extends TaskCommentMetadataRowBa
   value: string;
 }
 
-export interface TaskCommentMetadataTaskLinkRow extends TaskCommentMetadataRowBase {
+interface TaskCommentMetadataTaskLinkRowBase extends TaskCommentMetadataRowBase {
   type: "task_link";
   taskId?: string | null;
-  identifier?: string | null;
   title?: string | null;
 }
+
+export type TaskCommentMetadataTaskLinkRow =
+  TaskCommentMetadataTaskLinkRowBase & (
+    | {
+        taskNumber: number;
+        identifier: string;
+      }
+    | {
+        /** The referenced task is unavailable, so this row cannot route. */
+        taskNumber: null;
+        identifier?: string | null;
+      }
+  );
 
 export interface TaskCommentMetadataAgentLinkRow extends TaskCommentMetadataRowBase {
   type: "agent_link";

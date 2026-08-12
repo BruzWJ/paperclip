@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   taskExecutionAttempts,
   taskExecutionAttemptRetrySchedules,
@@ -8,15 +7,16 @@ import {
   type TaskExecutionAttempt,
   type TaskExecutionAttemptRetrySchedule,
 } from "@paperclipai/db";
-import { and, asc, eq, inArray, lte } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   lockTaskExecutionRunInTransaction,
   transitionTaskExecutionRunStatusInTransaction,
   type TaskExecutionRunEnvelope,
 } from "./task-execution-run-service.js";
 
-type TaskExecutionDbTransaction =
-  Parameters<Parameters<Db["transaction"]>[0]>[0];
+type TaskExecutionDbTransaction = Parameters<
+  Parameters<Db["transaction"]>[0]
+>[0];
 
 export interface ScheduleTaskExecutionAttemptRetryInput {
   readonly companyId: string;
@@ -90,19 +90,14 @@ function validateScheduleInput(
   exactIdentifier(input.predecessorAttemptId, "predecessor attempt id");
   exactDate(input.at, "retry creation time");
   exactDate(input.retryAt, "retry due time");
-  if (
-    input.reasonCode !== "transport_transient" ||
-    input.retryAt < input.at
-  ) {
+  if (input.reasonCode !== "transport_transient" || input.retryAt < input.at) {
     throw new TaskExecutionAttemptRetryScheduleRejected(
       "retry schedule requires a closed reason and a non-past due time",
     );
   }
 }
 
-function validateClaimInput(
-  input: ClaimTaskExecutionAttemptRetryInput,
-): void {
+function validateClaimInput(input: ClaimTaskExecutionAttemptRetryInput): void {
   exactIdentifier(input.companyId, "company id");
   exactIdentifier(input.taskId, "task id");
   exactIdentifier(input.runId, "run id");
@@ -366,7 +361,13 @@ export async function claimTaskExecutionAttemptRetryInTransaction(
       "retry claim found another live attempt on the run",
     );
   }
-  await input.revalidate({ transaction, run, predecessor, schedule, at: input.at });
+  await input.revalidate({
+    transaction,
+    run,
+    predecessor,
+    schedule,
+    at: input.at,
+  });
 
   const successor = exactlyOne(
     await transaction
@@ -420,66 +421,3 @@ export async function claimTaskExecutionAttemptRetryInTransaction(
   });
   return { schedule: claimed, successor };
 }
-
-export function createPostgresTaskExecutionAttemptRetryScheduleService(
-  database: Db,
-  options: {
-    readonly revalidateClaim: (
-      scope: TaskExecutionRetryClaimScope,
-    ) => Promise<void>;
-    readonly idFactory?: () => string;
-  },
-) {
-  const idFactory = options.idFactory ?? randomUUID;
-  return {
-    schedule(input: ScheduleTaskExecutionAttemptRetryInput) {
-      return database.transaction((transaction) =>
-        scheduleTaskExecutionAttemptRetryInTransaction(transaction, {
-          ...input,
-          id: idFactory(),
-        }));
-    },
-
-    claim(input: ClaimTaskExecutionAttemptRetryInput) {
-      return database.transaction((transaction) =>
-        claimTaskExecutionAttemptRetryInTransaction(transaction, {
-          ...input,
-          successorAttemptId: idFactory(),
-          revalidate: options.revalidateClaim,
-        }));
-    },
-
-    async listDue(input: {
-      readonly companyId: string;
-      readonly at: Date;
-      readonly limit: number;
-    }): Promise<readonly TaskExecutionAttemptRetrySchedule[]> {
-      exactIdentifier(input.companyId, "company id");
-      exactDate(input.at, "retry due-list time");
-      if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 1_000) {
-        throw new TaskExecutionAttemptRetryScheduleRejected(
-          "retry due-list limit must be an integer from 1 through 1000",
-        );
-      }
-      return database
-        .select()
-        .from(taskExecutionAttemptRetrySchedules)
-        .where(
-          and(
-            eq(taskExecutionAttemptRetrySchedules.companyId, input.companyId),
-            eq(taskExecutionAttemptRetrySchedules.state, "scheduled"),
-            lte(taskExecutionAttemptRetrySchedules.retryAt, input.at),
-          ),
-        )
-        .orderBy(
-          asc(taskExecutionAttemptRetrySchedules.retryAt),
-          asc(taskExecutionAttemptRetrySchedules.id),
-        )
-        .limit(input.limit);
-    },
-  };
-}
-
-export type PostgresTaskExecutionAttemptRetryScheduleService = ReturnType<
-  typeof createPostgresTaskExecutionAttemptRetryScheduleService
->;

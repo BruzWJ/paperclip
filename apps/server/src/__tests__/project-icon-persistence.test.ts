@@ -34,9 +34,9 @@ function projectRow(input: {
 
 function projectPersistenceHarness(row: ProjectRow) {
   return createMockDb({
-    // create: shortname check, goals, workspaces, managed-project binding.
+    // create: goals, workspaces, managed-project binding.
     // getById: project, goals, workspaces, managed-project binding.
-    select: [[], [], [], [], [row], [], [], []],
+    select: [[], [], [], [row], [], [], []],
     insert: [[row]],
   });
 }

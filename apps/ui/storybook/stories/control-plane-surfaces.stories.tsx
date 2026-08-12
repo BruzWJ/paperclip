@@ -106,7 +106,7 @@ function ControlPlaneSurfaces() {
                 requesterAgent={approval.requestedByAgentId ? storybookAgentMap.get(approval.requestedByAgentId) ?? null : null}
                 onApprove={approval.status === "pending" ? () => undefined : undefined}
                 onReject={approval.status === "pending" ? () => undefined : undefined}
-                detailLink={`/approvals/${approval.id}`}
+                linkToDetails
               />
             ))}
           </div>
@@ -189,7 +189,9 @@ function ControlPlaneSurfaces() {
                   <p className="leading-6 text-muted-foreground">{agent.capabilities}</p>
                   <div className="flex flex-wrap gap-2">
                     {agent.title ? <Badge variant="outline">{agent.title}</Badge> : null}
-                    <Badge variant="outline">{agent.adapterType}</Badge>
+                    <Badge variant="outline">
+                      {agent.currentAdapterConfigRevisionId ? "Configured" : "Not configured"}
+                    </Badge>
                     <Badge variant="outline" className="gap-1">
                       <WalletCards className="h-3 w-3" />
                       {formatMoneyAmount(agent.knownSpendAmount, "USD")} spent

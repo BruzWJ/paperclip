@@ -7,6 +7,8 @@ import { setStoredBoardCredential } from "../client/board-auth.js";
 import { apiPath, inferContentTypeFromPath, resolveApiBase, resolveCommandContext } from "../commands/client/common.js";
 
 const ORIGINAL_ENV = { ...process.env };
+const PROFILE_COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const OVERRIDE_COMPANY_ID = "abcdef12-3456-4789-8abc-def012345678";
 
 function createTempPath(name: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-cli-common-"));
@@ -20,7 +22,7 @@ describe("resolveCommandContext", () => {
     delete process.env.PAPERCLIP_BOARD_API_KEY;
     delete process.env.PAPERCLIP_BOARD_COMPANY_ID;
     delete process.env.PAPERCLIP_AUTH_STORE;
-    delete process.env.PAPERCLIP_SERVER_PORT;
+    delete process.env.PORT;
   });
 
   afterEach(() => {
@@ -37,7 +39,7 @@ describe("resolveCommandContext", () => {
         profiles: {
           ops: {
             apiBase: "http://127.0.0.1:9999",
-            companyId: "company-profile",
+            companyId: PROFILE_COMPANY_ID,
             apiKeyEnvVarName: "AGENT_KEY",
           },
         },
@@ -48,7 +50,7 @@ describe("resolveCommandContext", () => {
 
     const resolved = resolveCommandContext({ context: contextPath }, { requireCompany: true });
     expect(resolved.api.apiBase).toBe("http://127.0.0.1:9999");
-    expect(resolved.companyId).toBe("company-profile");
+    expect(resolved.companyId).toBe(PROFILE_COMPANY_ID);
     expect(resolved.api.apiKey).toBe("key-from-env");
   });
 
@@ -61,7 +63,7 @@ describe("resolveCommandContext", () => {
         profiles: {
           default: {
             apiBase: "http://profile:3100",
-            companyId: "company-profile",
+            companyId: PROFILE_COMPANY_ID,
           },
         },
       },
@@ -73,13 +75,13 @@ describe("resolveCommandContext", () => {
         context: contextPath,
         apiBase: "http://override:3200",
         apiKey: "direct-token",
-        companyId: "company-override",
+        companyId: OVERRIDE_COMPANY_ID,
       },
       { requireCompany: true },
     );
 
     expect(resolved.api.apiBase).toBe("http://override:3200");
-    expect(resolved.companyId).toBe("company-override");
+    expect(resolved.companyId).toBe(OVERRIDE_COMPANY_ID);
     expect(resolved.api.apiKey).toBe("direct-token");
   });
 
@@ -99,24 +101,76 @@ describe("resolveCommandContext", () => {
     ).toThrow(/Company ID is required/);
   });
 
+  it("rejects invalid explicit and environment company IDs without falling back", () => {
+    const contextPath = createTempPath("context.json");
+    writeContext({
+      version: 2,
+      currentProfile: "default",
+      profiles: { default: { companyId: PROFILE_COMPANY_ID } },
+    }, contextPath);
+
+    process.env.PAPERCLIP_BOARD_COMPANY_ID = OVERRIDE_COMPANY_ID;
+    expect(() => resolveCommandContext({
+      context: contextPath,
+      companyId: ` ${OVERRIDE_COMPANY_ID}`,
+    }, { requireCompany: true })).toThrow(/--company-id must be an exact canonical company UUID/);
+
+    expect(() => resolveCommandContext({
+      context: contextPath,
+      companyId: OVERRIDE_COMPANY_ID.toUpperCase(),
+    }, { requireCompany: true })).toThrow(/--company-id must be an exact canonical company UUID/);
+
+    process.env.PAPERCLIP_BOARD_COMPANY_ID = `${OVERRIDE_COMPANY_ID} `;
+    expect(() => resolveCommandContext({ context: contextPath }, { requireCompany: true }))
+      .toThrow(/PAPERCLIP_BOARD_COMPANY_ID must be an exact canonical company UUID/);
+  });
+
   it("resolves api base by explicit, env, profile, then config/default precedence", () => {
     const configPath = createTempPath("config.json");
     fs.writeFileSync(configPath, JSON.stringify({
       $meta: { version: 1, updatedAt: "2026-05-23T00:00:00.000Z", source: "onboard" },
       database: { connectionString: "postgresql://operator:secret@database.example.com/paperclip" },
       logging: { mode: "file" },
-      server: { exposure: "private", host: "127.0.0.1", port: 4111 },
+      server: { exposure: "private", bind: "loopback", port: 4111 },
     }));
 
     expect(resolveApiBase({ apiBase: "http://explicit:1", config: configPath }, { apiBase: "http://profile:2" }))
       .toBe("http://explicit:1");
 
-    process.env.PAPERCLIP_BOARD_API_URL = "http://env:3/";
+    process.env.PAPERCLIP_BOARD_API_URL = "http://env:3";
     expect(resolveApiBase({ config: configPath }, { apiBase: "http://profile:2" })).toBe("http://env:3");
 
     delete process.env.PAPERCLIP_BOARD_API_URL;
-    expect(resolveApiBase({ config: configPath }, { apiBase: "http://profile:2/" })).toBe("http://profile:2");
-    expect(resolveApiBase({ config: configPath }, {})).toBe("http://localhost:4111");
+    expect(resolveApiBase({ config: configPath }, { apiBase: "http://profile:2" })).toBe("http://profile:2");
+    expect(resolveApiBase({ config: configPath }, {})).toBe("http://127.0.0.1:4111");
+
+    process.env.PORT = "4222";
+    expect(resolveApiBase({ config: configPath }, {})).toBe("http://127.0.0.1:4222");
+  });
+
+  it.each([
+    " http://localhost:3100",
+    "http://localhost:3100/",
+    "HTTP://localhost:3100",
+    "http://user:password@localhost:3100",
+    "http://localhost:3100/api",
+  ])("rejects the API-base alias %j", (apiBase) => {
+    expect(() => resolveApiBase({ apiBase }, {})).toThrow(/exact canonical|exact and non-empty/);
+  });
+
+  it.each(["", "0", "03100", "65536", " 3100", "abc"])(
+    "rejects invalid canonical PORT %j during API-base inference",
+    (port) => {
+      process.env.PORT = port;
+      expect(() => resolveApiBase({}, {})).toThrow(/PORT/);
+    },
+  );
+
+  it("does not read removed PAPERCLIP_SERVER_HOST or PAPERCLIP_SERVER_PORT aliases", () => {
+    const configPath = createTempPath("missing-config.json");
+    process.env.PAPERCLIP_SERVER_HOST = "remote.example.test";
+    process.env.PAPERCLIP_SERVER_PORT = "9999";
+    expect(resolveApiBase({ config: configPath }, {})).toBe("http://127.0.0.1:3100");
   });
 
   it("prefers explicit and env tokens over profile env and stored board auth", () => {
@@ -157,6 +211,29 @@ describe("resolveCommandContext", () => {
     expect(explicitResolved.api.apiKey).toBe("explicit-token");
     expect(explicitResolved.authSource).toBe("explicit");
   });
+
+  it.each([
+    {
+      source: "explicit",
+      options: () => ({ apiKey: " padded " }),
+    },
+    {
+      source: "environment",
+      options: () => {
+        process.env.PAPERCLIP_BOARD_API_KEY = " padded ";
+        return {};
+      },
+    },
+  ])("rejects a non-exact $source API key", ({ options }) => {
+    const contextPath = createTempPath("context.json");
+    writeContext(
+      { version: 2, currentProfile: "default", profiles: { default: {} } },
+      contextPath,
+    );
+    expect(() => resolveCommandContext({ context: contextPath, ...options() })).toThrow(
+      /exact non-empty API key/,
+    );
+  });
 });
 
 describe("inferContentTypeFromPath", () => {
@@ -192,10 +269,13 @@ describe("apiPath", () => {
       .toBe("/api/tasks/PAP-1%2Fchild/comments/needs%20review%3F");
   });
 
-  it("rejects empty dynamic path segments", () => {
-    expect(() => apiPath`/api/tasks/${""}`).toThrow("Cannot build API path with an empty path segment.");
-    expect(() => apiPath`/api/tasks/${undefined}`).toThrow("Cannot build API path with an empty path segment.");
-    expect(() => apiPath`/api/tasks/${null}`).toThrow("Cannot build API path with an empty path segment.");
-    expect(() => apiPath`/api/tasks/${" "}`).toThrow("Cannot build API path with an empty path segment.");
+  it("rejects empty, padded, and noncanonical UUID path segments", () => {
+    expect(() => apiPath`/api/tasks/${""}`).toThrow(/empty or padded/);
+    expect(() => apiPath`/api/tasks/${undefined}`).toThrow(/empty or padded/);
+    expect(() => apiPath`/api/tasks/${null}`).toThrow(/empty or padded/);
+    expect(() => apiPath`/api/tasks/${" "}`).toThrow(/empty or padded/);
+    expect(() => apiPath`/api/tasks/${" padded"}`).toThrow(/empty or padded/);
+    expect(() => apiPath`/api/tasks/${"ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF"}`)
+      .toThrow(/noncanonical UUID/);
   });
 });

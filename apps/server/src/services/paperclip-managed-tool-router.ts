@@ -7,13 +7,14 @@ import { logActivity } from "./activity-log.js";
 import { listCompanyAgentGraphDescendants } from "./agent-org-graph-lock.js";
 import { agentService } from "./agents.js";
 import type { ContextDial } from "./context-dial-resolver.js";
+import type {
+  ContextRetrievalScope,
+  ContextRetrievalService,
+} from "./context-retrieval.js";
 import {
   ContextRetrievalDenied,
   ContextRetrievalInvalidCursor,
-  type ContextRetrievalScope,
-  type ContextRetrievalService,
 } from "./context-retrieval.js";
-import { taskService } from "./tasks.js";
 import {
   OrdinaryTaskRuntimeRejected,
   type OrdinaryTaskRuntime,
@@ -23,8 +24,8 @@ import {
   type PaperclipManagedToolCommand,
   type PaperclipManagedToolCommandFor,
 } from "./paperclip-managed-tool-registry.js";
-import type { PluginDomainEventPublisher } from "./plugin-domain-event-publisher.js";
 import type { PromptCapabilityBinding } from "./prompt-capability-gateway.js";
+import type { PluginDomainEventPublisher } from "./plugin-domain-event-publisher.js";
 import {
   RuntimeAgentConfigurationConflict,
   RuntimeAgentConfigurationDenied,
@@ -32,7 +33,12 @@ import {
   createRuntimeAgentConfigurationService,
 } from "./runtime-agent-configuration.js";
 import type { RuntimeToolCallTransaction } from "./runtime-tool-call-ledger.js";
+import {
+  RuntimeInterfaceConflict,
+  RuntimeToolUnavailable,
+} from "./runtime-tool-errors.js";
 import { canonicalTaskSessionJson } from "./task-session/store.js";
+import { taskService } from "./tasks.js";
 
 export interface AgentRunToolAuthority {
   kind: "agent_run";
@@ -80,6 +86,13 @@ export function boardToolAuthority(input: {
   };
 }
 
+class PaperclipManagedToolError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = "PaperclipManagedToolError";
+  }
+}
+
 function assertCompanyScope(
   authority: PaperclipToolAuthority,
   companyId: string,
@@ -88,10 +101,7 @@ function assertCompanyScope(
     ? authority.companyIds.includes(companyId)
     : authority.capability.companyId === companyId;
   if (!authorized) {
-    throw new PaperclipManagedToolError(
-      "company_not_found",
-      "Company not found",
-    );
+    throw new PaperclipManagedToolError("company_not_found", "Company not found");
   }
 }
 
@@ -114,13 +124,6 @@ function toolInvocationKey(input: {
     }))
     .digest("hex");
   return `paperclip-tool:${input.name}:${digest}`;
-}
-
-class PaperclipManagedToolError extends Error {
-  constructor(readonly code: string, message: string) {
-    super(message);
-    this.name = "PaperclipManagedToolError";
-  }
 }
 
 type AgentRunManagedActionName = Exclude<
@@ -161,7 +164,6 @@ export function agentRunManagedActionInvocation<
 
 export interface PaperclipManagedToolRouteContext {
   authority: PaperclipToolAuthority;
-  /** Needed only when a compiled ACPX context reader is invoked. */
   resolveRuntimeScope?: () => Promise<ContextRetrievalScope>;
 }
 
@@ -182,10 +184,7 @@ export interface PaperclipManagedToolRouterDependencies {
 
 export function paperclipManagedToolPublicError(error: unknown) {
   if (error instanceof PaperclipManagedToolError) {
-    return {
-      code: error.code,
-      message: error.message,
-    };
+    return { code: error.code, message: error.message };
   }
   if (error instanceof z.ZodError) {
     return {
@@ -223,10 +222,29 @@ function boardScope(companyId: string, activeTaskId: string) {
   return { companyId, activeTaskId, dial: FULL_BOARD_CONTEXT_DIAL };
 }
 
+function requireRuntimeScope(scope: ContextRetrievalScope | null) {
+  if (!scope) {
+    throw new RuntimeInterfaceConflict(
+      "The active execution has no context retrieval scope",
+    );
+  }
+  return scope;
+}
+
+function assertCommandScope(
+  command: PaperclipManagedToolCommand,
+  authority: AgentRunToolAuthority,
+): void {
+  if (command.companyId !== authority.capability.companyId) {
+    throw new RuntimeInterfaceConflict(
+      "The normalized managed-tool command escaped its run company",
+    );
+  }
+}
+
 /**
- * The one concrete managed-tool router. Board MCP supplies raw public input;
- * ACPX supplies a descriptor-normalized command. Both paths execute the same
- * command switch and share the same lower domain services.
+ * One canonical command router with two explicit authorities: request-scoped
+ * ACPX runs and board-key-authenticated Board MCP users.
  */
 export function createPaperclipManagedToolRouter(
   dependencies: PaperclipManagedToolRouterDependencies,
@@ -329,16 +347,6 @@ export function createPaperclipManagedToolRouter(
     return { message, status: command.status };
   }
 
-  function requireRuntimeScope(scope: ContextRetrievalScope | null) {
-    if (!scope) {
-      throw new PaperclipManagedToolError(
-        "runtime_context_scope_unavailable",
-        "The active execution has no context retrieval scope",
-      );
-    }
-    return scope;
-  }
-
   function executeAgentRun(
     command: PaperclipManagedToolCommand,
     authority: AgentRunToolAuthority,
@@ -381,76 +389,14 @@ export function createPaperclipManagedToolRouter(
           agentRunManagedActionInvocation(command, authority),
         );
       default:
-        throw new PaperclipManagedToolError(
-          "tool_unavailable",
-          `Paperclip managed tool is unavailable: ${command.name}`,
-        );
+        throw new RuntimeToolUnavailable(command.name);
     }
   }
 
-  async function executeCommand(
+  async function executeBoardUser(
     command: PaperclipManagedToolCommand,
-    authority: PaperclipToolAuthority,
-    runtimeScope: ContextRetrievalScope | null,
+    authority: BoardUserToolAuthority,
   ): Promise<unknown> {
-    if (command.name === "list_company_tasks") {
-      assertCompanyScope(authority, command.companyId);
-      return dependencies.retrieval().listCompanyTasks(
-        authority.kind === "board_user"
-          ? boardScope(command.companyId, command.companyId)
-          : requireRuntimeScope(runtimeScope),
-        {
-          filters: command.filters,
-          cursor: command.cursor,
-          limit: command.limit,
-        },
-      );
-    }
-    if (command.name === "list_sub_tasks") {
-      assertCompanyScope(authority, command.companyId);
-      if (authority.kind === "board_user") {
-        await taskInBoardScope(command.companyId, command.taskId);
-      }
-      return dependencies.retrieval().listSubTasks(
-        authority.kind === "board_user"
-          ? boardScope(command.companyId, command.taskId)
-          : requireRuntimeScope(runtimeScope),
-        {
-          taskId: command.taskId,
-          cursor: command.cursor,
-          limit: command.limit,
-        },
-      );
-    }
-    if (command.name === "read_task_comments") {
-      assertCompanyScope(authority, command.companyId);
-      if (authority.kind === "board_user") {
-        await taskInBoardScope(command.companyId, command.taskId);
-      }
-      return dependencies.retrieval().readTaskComments(
-        authority.kind === "board_user"
-          ? boardScope(command.companyId, command.taskId)
-          : requireRuntimeScope(runtimeScope),
-        {
-          taskId: command.taskId,
-          cursor: command.cursor,
-          limit: command.limit,
-        },
-      );
-    }
-    if (command.name === "read_task_agent_run") {
-      assertCompanyScope(authority, command.companyId);
-      return dependencies.retrieval().readTaskAgentRun(
-        authority.kind === "board_user"
-          ? boardScope(command.companyId, command.companyId)
-          : requireRuntimeScope(runtimeScope),
-        { runId: command.runId, cursor: command.cursor },
-      );
-    }
-    if (authority.kind === "agent_run") {
-      return executeAgentRun(command, authority);
-    }
-
     assertCompanyScope(authority, command.companyId);
     switch (command.name) {
       case "task_create": {
@@ -507,10 +453,7 @@ export function createPaperclipManagedToolRouter(
       }
       case "task_update": {
         const lifecycleUpdate = boardLifecycleUpdate(command);
-        const existing = await taskInBoardScope(
-          command.companyId,
-          command.taskId,
-        );
+        const existing = await taskInBoardScope(command.companyId, command.taskId);
         const result: Record<string, unknown> = { taskId: existing.id };
         if (command.reopen) {
           result.reopen = await dependencies.ordinaryTasks().boardReopen({
@@ -552,10 +495,7 @@ export function createPaperclipManagedToolRouter(
         if (command.title !== undefined) {
           const task = await tasks.updateTitle(existing.id, command.title);
           if (!task) {
-            throw new PaperclipManagedToolError(
-              "task_not_found",
-              "Task not found",
-            );
+            throw new PaperclipManagedToolError("task_not_found", "Task not found");
           }
           await logActivity(dependencies.db, {
             companyId: command.companyId,
@@ -576,10 +516,7 @@ export function createPaperclipManagedToolRouter(
         return result;
       }
       case "mention_agent": {
-        const task = await taskInBoardScope(
-          command.companyId,
-          command.taskId,
-        );
+        const task = await taskInBoardScope(command.companyId, command.taskId);
         const result = await dependencies.ordinaryTasks().userComment({
           companyId: command.companyId,
           taskId: command.taskId,
@@ -640,10 +577,7 @@ export function createPaperclipManagedToolRouter(
             payload: command,
           }),
         });
-        const agent = await agentInBoardScope(
-          command.companyId,
-          result.agentId,
-        );
+        const agent = await agentInBoardScope(command.companyId, result.agentId);
         return {
           agent,
           configuration: result.configuration,
@@ -686,10 +620,7 @@ export function createPaperclipManagedToolRouter(
         if (!command.agentId) return { agents: companyAgents };
         const root = companyAgents.find((agent) => agent.id === command.agentId);
         if (!root) {
-          throw new PaperclipManagedToolError(
-            "agent_not_found",
-            "Agent not found",
-          );
+          throw new PaperclipManagedToolError("agent_not_found", "Agent not found");
         }
         return {
           agents: [
@@ -699,10 +630,7 @@ export function createPaperclipManagedToolRouter(
         };
       }
       case "agent_read": {
-        const agent = await agentInBoardScope(
-          command.companyId,
-          command.agentId,
-        );
+        const agent = await agentInBoardScope(command.companyId, command.agentId);
         const configuration = await runtimeAgents.get({
           companyId: command.companyId,
           targetAgentId: command.agentId,
@@ -710,10 +638,15 @@ export function createPaperclipManagedToolRouter(
         return { agent, configuration };
       }
       case "mention_board":
-          throw new PaperclipManagedToolError(
-            "tool_unavailable",
-            `Paperclip managed tool is unavailable: ${command.name}`,
-          );
+        throw new PaperclipManagedToolError(
+          "tool_unavailable",
+          `Paperclip managed tool is unavailable: ${command.name}`,
+        );
+      default:
+        throw new PaperclipManagedToolError(
+          "tool_unavailable",
+          "Paperclip managed tool is unavailable",
+        );
     }
   }
 
@@ -721,12 +654,70 @@ export function createPaperclipManagedToolRouter(
     command: PaperclipManagedToolCommand,
     context: PaperclipManagedToolRouteContext,
   ): Promise<unknown> {
+    if (context.authority.kind === "agent_run") {
+      assertCommandScope(command, context.authority);
+    } else {
+      assertCompanyScope(context.authority, command.companyId);
+    }
     const runtimeScope =
       context.authority.kind === "agent_run" &&
-        isPaperclipContextToolName(command.name)
-        ? await context.resolveRuntimeScope?.() ?? null
-        : null;
-    return executeCommand(command, context.authority, runtimeScope);
+      isPaperclipContextToolName(command.name)
+      ? await context.resolveRuntimeScope?.() ?? null
+      : null;
+
+    if (command.name === "list_company_tasks") {
+      return dependencies.retrieval().listCompanyTasks(
+        context.authority.kind === "board_user"
+          ? boardScope(command.companyId, command.companyId)
+          : requireRuntimeScope(runtimeScope),
+        {
+          filters: command.filters,
+          cursor: command.cursor,
+          limit: command.limit,
+        },
+      );
+    }
+    if (command.name === "list_sub_tasks") {
+      if (context.authority.kind === "board_user") {
+        await taskInBoardScope(command.companyId, command.taskId);
+      }
+      return dependencies.retrieval().listSubTasks(
+        context.authority.kind === "board_user"
+          ? boardScope(command.companyId, command.taskId)
+          : requireRuntimeScope(runtimeScope),
+        {
+          taskId: command.taskId,
+          cursor: command.cursor,
+          limit: command.limit,
+        },
+      );
+    }
+    if (command.name === "read_task_comments") {
+      if (context.authority.kind === "board_user") {
+        await taskInBoardScope(command.companyId, command.taskId);
+      }
+      return dependencies.retrieval().readTaskComments(
+        context.authority.kind === "board_user"
+          ? boardScope(command.companyId, command.taskId)
+          : requireRuntimeScope(runtimeScope),
+        {
+          taskId: command.taskId,
+          cursor: command.cursor,
+          limit: command.limit,
+        },
+      );
+    }
+    if (command.name === "read_task_agent_run") {
+      return dependencies.retrieval().readTaskAgentRun(
+        context.authority.kind === "board_user"
+          ? boardScope(command.companyId, command.companyId)
+          : requireRuntimeScope(runtimeScope),
+        { runId: command.runId, cursor: command.cursor },
+      );
+    }
+    return context.authority.kind === "board_user"
+      ? executeBoardUser(command, context.authority)
+      : executeAgentRun(command, context.authority);
   }
 
   return { routeExecution };

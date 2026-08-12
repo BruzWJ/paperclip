@@ -36,6 +36,16 @@ export function getBoardUserId(req: Request): string {
   return req.actor.userId;
 }
 
+export function assertCurrentBoardUser(
+  req: Request,
+  userId: string,
+): asserts req is RequestWithActor<BoardActor> {
+  assertBoard(req);
+  if (req.actor.userId !== userId) {
+    throw forbidden("Authenticated user does not match requested user");
+  }
+}
+
 export function hasBoardOrgAccess(req: Request) {
   if (req.actor.type !== "board") {
     return false;
@@ -100,8 +110,10 @@ export async function authorizeHumanTaskSteering(
 ): Promise<string> {
   assertCompanyAccess(req, companyId);
   assertBoard(req);
-  const userId = req.actor.userId.trim();
-  if (!userId) throw forbidden("Human steering requires a named user");
+  const userId = req.actor.userId;
+  if (!userId || userId.trim() !== userId) {
+    throw forbidden("Human steering requires an exact named user ID");
+  }
   const [user, membership] = await Promise.all([
     db
       .select({ id: authUsers.id })

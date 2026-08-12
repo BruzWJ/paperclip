@@ -1,6 +1,5 @@
 import {
   taskExecutionHistoryViews,
-  taskExecutionRefs,
   taskExecutionSessions,
   taskCommentProjectionSources,
   taskComments,
@@ -17,12 +16,8 @@ import type {
   TaskCommentPresentation,
   SourceTrustMetadata,
 } from "@paperclipai/shared";
-import {
-  encodeTaskSessionMessage,
-  isTaskSessionEvent,
-  versionedTaskSessionEventType,
-} from "@paperclipai/shared/task-session";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { encodeTaskSessionMessage } from "@paperclipai/shared/task-session";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { DateTime } from "effect";
 import {
   TaskSessionInvariantError,
@@ -31,9 +26,7 @@ import {
   encodeTaskSessionMessageData,
   isSettledTaskSessionMessage,
 } from "./store.js";
-import {
-  revokeTaskExecutionPromptCapabilitiesForSessionInTransaction,
-} from "../task-execution-run-service.js";
+import { revokeTaskExecutionPromptCapabilitiesForSessionInTransaction } from "../task-execution-run-service.js";
 import { resetTaskSessionContext } from "./context-epoch.js";
 import {
   commitProjectedTaskSessionSequence,
@@ -142,120 +135,6 @@ export function assertTaskSessionRunProgressProjection(
   }
 }
 
-const DURABLE_SESSION_EVENT_VERSIONS = new Map<string, number>([
-  ["session.next.agent.switched", 1],
-  ["session.next.model.switched", 1],
-  ["session.next.moved", 1],
-  ["session.next.prompted", 1],
-  ["session.next.prompt.admitted", 1],
-  ["session.next.context.updated", 1],
-  ["session.next.synthetic", 1],
-  ["session.next.shell.started", 1],
-  ["session.next.shell.ended", 1],
-  ["session.next.step.started", 1],
-  ["session.next.step.ended", 3],
-  ["session.next.step.failed", 2],
-  ["session.next.text.started", 1],
-  ["session.next.text.ended", 1],
-  ["session.next.reasoning.started", 1],
-  ["session.next.reasoning.ended", 1],
-  ["session.next.tool.input.started", 1],
-  ["session.next.tool.input.ended", 1],
-  ["session.next.tool.called", 1],
-  ["session.next.tool.progress", 1],
-  ["session.next.tool.success", 1],
-  ["session.next.tool.failed", 1],
-  ["session.next.retried", 1],
-  ["session.next.revert.staged", 1],
-  ["session.next.revert.cleared", 1],
-  ["session.next.revert.committed", 1],
-]);
-
-export function taskSessionEventVersion(type: string): number {
-  const version = DURABLE_SESSION_EVENT_VERSIONS.get(type);
-  if (version === undefined) {
-    throw new TaskSessionLifecycleConflict(
-      "Session event type is not a durable Task Session event",
-      { eventType: type },
-    );
-  }
-  return version;
-}
-
-export type PersistedTaskSessionEvent =
-  TaskSession.DurableEvent & {
-    id: string;
-    durable: {
-      aggregateID: string;
-      seq: number;
-      version: number;
-    };
-  };
-
-export function assertDurableTaskSessionEvent(
-  event: TaskSession.TaskSessionEvent,
-): void {
-  const eventType = event.type;
-  if (
-    event.metadata !== undefined &&
-    Object.keys(event.metadata).length > 0
-  ) {
-    throw new TaskSessionLifecycleConflict(
-      "Durable Session events cannot carry event-level metadata",
-      { eventType: event.type },
-    );
-  }
-  const eventId = (event as { id?: unknown }).id;
-  if (
-    typeof eventId !== "string" ||
-    !eventId.startsWith("evt_")
-  ) {
-    throw new TaskSessionLifecycleConflict(
-      "Durable Session event is missing its canonical event identity",
-      { eventType: event.type },
-    );
-  }
-  if (
-    typeof event.data !== "object" ||
-    event.data === null ||
-    typeof event.data.sessionID !== "string" ||
-    event.data.sessionID.length === 0
-  ) {
-    throw new TaskSessionLifecycleConflict(
-      "Durable Session event data is malformed",
-      { eventType: event.type },
-    );
-  }
-  const expectedVersion = taskSessionEventVersion(event.type);
-  const durable = (
-    event as {
-      durable?: {
-        aggregateID?: unknown;
-        seq?: unknown;
-        version?: unknown;
-      };
-    }
-  ).durable;
-  if (
-    durable !== undefined &&
-    (durable.aggregateID !== event.data.sessionID ||
-      !Number.isInteger(durable.seq) ||
-      (durable.seq as number) < 1 ||
-      durable.version !== expectedVersion)
-  ) {
-    throw new TaskSessionLifecycleConflict(
-      "Durable Session event has an invalid sequence envelope",
-      { eventId, eventType: event.type },
-    );
-  }
-  if (!isTaskSessionEvent(event)) {
-    throw new TaskSessionLifecycleConflict(
-      "Durable Session event does not satisfy the Task Session schema",
-      { eventId, eventType },
-    );
-  }
-}
-
 type DurableEventRow = ProjectableTaskSessionEvent;
 type SessionMessageRow = typeof taskSessionMessages.$inferSelect;
 type SessionMessage = TaskSession.TaskSessionMessage;
@@ -267,10 +146,7 @@ export function taskSessionMessageFromRow(
 }
 
 function sessionTimestamp(value: unknown, label: string): Date {
-  if (
-    typeof value !== "number" ||
-    !Number.isFinite(value)
-  ) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new TaskSessionLifecycleConflict(
       `${label} must contain a canonical millisecond timestamp`,
     );
@@ -388,9 +264,7 @@ function createMessageProjectionStore(
         )
         .orderBy(desc(taskSessionMessages.seq))
         .limit(1);
-      const message = rows[0]
-        ? taskSessionMessageFromRow(rows[0])
-        : undefined;
+      const message = rows[0] ? taskSessionMessageFromRow(rows[0]) : undefined;
       return message?.type === "assistant" ? message : undefined;
     },
     async getAssistant(messageID) {
@@ -415,9 +289,7 @@ function createMessageProjectionStore(
         )
         .orderBy(desc(taskSessionMessages.seq))
         .limit(1);
-      const message = rows[0]
-        ? taskSessionMessageFromRow(rows[0])
-        : undefined;
+      const message = rows[0] ? taskSessionMessageFromRow(rows[0]) : undefined;
       return message?.type === "shell" ? message : undefined;
     },
     updateAssistant(message) {
@@ -458,12 +330,11 @@ function createMessageProjectionStore(
         .returning();
       if (inserted[0]) return;
 
-      const existing = await findMessage(
-        transaction,
-        event,
-        message.id,
-      );
-      if (!existing || !sameMessageEnvelope(existing, event, message, sequence)) {
+      const existing = await findMessage(transaction, event, message.id);
+      if (
+        !existing ||
+        !sameMessageEnvelope(existing, event, message, sequence)
+      ) {
         throw new TaskSessionLifecycleConflict(
           "PostgreSQL Session message identity or sequence was reused",
           { messageId: message.id, sequence },
@@ -550,13 +421,8 @@ async function materializeComment(
   materialization: MaterializeCommentInput,
 ): Promise<typeof taskComments.$inferSelect> {
   if (materialization.kind === "terminal") {
-    const {
-      source,
-      comment,
-      terminalSessionMessageId,
-      body,
-      presentation,
-    } = materialization;
+    const { source, comment, terminalSessionMessageId, body, presentation } =
+      materialization;
     if (source.terminalSessionMessageId === null) {
       const bound = await transaction
         .update(taskCommentProjectionSources)
@@ -580,10 +446,7 @@ async function materializeComment(
     ) {
       return comment;
     }
-    if (
-      comment.body !== "" ||
-      comment.presentation?.kind !== "run_progress"
-    ) {
+    if (comment.body !== "" || comment.presentation?.kind !== "run_progress") {
       throw new TaskSessionLifecycleConflict(
         "Stable run-progress comment was changed before terminal settlement",
         { progressCommentId: comment.id },
@@ -631,12 +494,10 @@ async function materializeComment(
     input.comment.threadRootCommentId,
     input.comment.threadRootProjectedEventSeq,
   ];
-  if (
-    !(
-      replyTuple.every((value) => value === null) ||
-      replyTuple.every((value) => value !== null)
-    )
-  ) {
+  if (!(
+    replyTuple.every((value) => value === null) ||
+    replyTuple.every((value) => value !== null)
+  )) {
     throw new TaskSessionLifecycleConflict(
       "Task Session comment projection has a partial reply tuple",
       { eventId: event.id, commentId: input.comment.id },
@@ -668,11 +529,8 @@ async function materializeComment(
     )
     .limit(1);
   const admittedEventSeq =
-    input.phase === "direct"
-      ? event.seq
-      : (inbox[0]?.admittedSeq ?? event.seq);
-  const promotedEventSeq =
-    input.phase === "admitted" ? null : event.seq;
+    input.phase === "direct" ? event.seq : (inbox[0]?.admittedSeq ?? event.seq);
+  const promotedEventSeq = input.phase === "admitted" ? null : event.seq;
 
   if (input.phase !== "admitted") {
     const message = await findMessage(transaction, event, input.messageId);
@@ -734,13 +592,11 @@ async function materializeComment(
       sourceId: input.sourceId,
       messageId: input.messageId,
       runId: event.runId,
-      steeringTargetRunId:
-        input.steeringSegment?.steeringTargetRunId ?? null,
+      steeringTargetRunId: input.steeringSegment?.steeringTargetRunId ?? null,
       replyToCommentId: input.comment.replyToCommentId,
       replyToProjectedEventSeq: input.comment.replyToProjectedEventSeq,
       threadRootCommentId: input.comment.threadRootCommentId,
-      threadRootProjectedEventSeq:
-        input.comment.threadRootProjectedEventSeq,
+      threadRootProjectedEventSeq: input.comment.threadRootProjectedEventSeq,
       refId: input.steeringSegment?.refId ?? null,
       refOrdinal: input.steeringSegment?.refOrdinal ?? null,
       segmentOrdinal: input.steeringSegment?.segmentOrdinal ?? null,
@@ -782,8 +638,7 @@ async function materializeComment(
         input.comment.threadRootProjectedEventSeq ||
       source.refId !== (input.steeringSegment?.refId ?? null) ||
       source.refOrdinal !== (input.steeringSegment?.refOrdinal ?? null) ||
-      source.segmentOrdinal !==
-        (input.steeringSegment?.segmentOrdinal ?? null)
+      source.segmentOrdinal !== (input.steeringSegment?.segmentOrdinal ?? null)
     ) {
       throw new TaskSessionLifecycleConflict(
         "Task Session comment projection companion was reused",
@@ -828,10 +683,7 @@ async function materializeComment(
       )`,
     })
     .where(
-      and(
-        eq(tasks.companyId, event.companyId),
-        eq(tasks.id, event.taskId),
-      ),
+      and(eq(tasks.companyId, event.companyId), eq(tasks.id, event.taskId)),
     );
   await syncComment(comment.id, transaction);
   return comment;
@@ -854,10 +706,7 @@ async function loadDurableEvent(
 async function projectMoved(
   transaction: TaskSessionDbTransaction,
   eventRow: DurableEventRow,
-  event: Extract<
-    TaskSession.DurableEvent,
-    { type: "session.next.moved" }
-  >,
+  event: Extract<TaskSession.DurableEvent, { type: "session.next.moved" }>,
 ): Promise<void> {
   const location = event.data.location;
   const sessions = await transaction
@@ -1141,11 +990,7 @@ async function projectRevert(
         { eventId: eventRow.id, boundaryMessageId },
       );
     }
-    await truncateRevertProjection(
-      transaction,
-      eventRow,
-      boundaryMessageId,
-    );
+    await truncateRevertProjection(transaction, eventRow, boundaryMessageId);
     const epoch = await resetTaskSessionContext(transaction, {
       companyId: eventRow.companyId,
       taskId: eventRow.taskId,
@@ -1178,10 +1023,7 @@ async function projectEvent(
   rebuilding: boolean,
   touchedMessageIds?: Set<string>,
 ): Promise<typeof taskComments.$inferSelect | null> {
-  if (
-    eventRow.type === "session.next.step.ended" &&
-    input.comment
-  ) {
+  if (eventRow.type === "session.next.step.ended" && input.comment) {
     throw new TaskSessionLifecycleConflict(
       "Productive Step.Ended comments require terminal finalization after pending-input resolution",
       { eventId: eventRow.id },
@@ -1318,11 +1160,7 @@ export async function projectTaskSessionFinalCommentInTx(
   }
 
   const [message, trailing] = await Promise.all([
-    findMessage(
-      transaction,
-      eventRow,
-      event.data.assistantMessageID,
-    ),
+    findMessage(transaction, eventRow, event.data.assistantMessageID),
     transaction
       .select({ id: taskSessionMessages.id })
       .from(taskSessionMessages)
@@ -1359,8 +1197,10 @@ export async function projectTaskSessionFinalCommentInTx(
     .filter(
       (
         part,
-      ): part is Extract<(typeof assistant.content)[number], { type: "text" }> =>
-        part.type === "text",
+      ): part is Extract<
+        (typeof assistant.content)[number],
+        { type: "text" }
+      > => part.type === "text",
     )
     .map((part) => part.text)
     .join("");

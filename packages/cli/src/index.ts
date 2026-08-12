@@ -17,7 +17,6 @@ import { registerActivityCommands } from "./commands/client/activity.js";
 import { registerDashboardCommands } from "./commands/client/dashboard.js";
 import { registerRoutineCommands } from "./commands/routines.js";
 import { registerSecretCommands } from "./commands/client/secrets.js";
-import { registerSkillsCommands } from "./commands/client/skills.js";
 import { applyDataDirOverride, type DataDirOptionLike } from "./config/data-dir.js";
 import { loadPaperclipEnvFile } from "./config/env.js";
 import { initTelemetryFromConfigFile, flushTelemetry } from "./telemetry.js";
@@ -34,7 +33,6 @@ import { registerAccessCommands } from "./commands/client/access.js";
 import { registerRoutineApiCommands } from "./commands/client/routine-api.js";
 import { registerAdapterCommands } from "./commands/client/adapter.js";
 import { registerAssetCommands } from "./commands/client/asset.js";
-import { registerSkillCommands } from "./commands/client/skill.js";
 import { cliVersion } from "./version.js";
 
 const program = new Command();
@@ -130,10 +128,8 @@ registerAccessCommands(program);
 registerRoutineApiCommands(program);
 registerAdapterCommands(program);
 registerAssetCommands(program);
-registerSkillCommands(program);
 registerRoutineCommands(program);
 registerSecretCommands(program);
-registerSkillsCommands(program);
 registerWorktreeCommands(program);
 registerPluginCommands(program);
 

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { addValidationDetail } from "../validation-details.js";
 import { TASK_PRIORITIES, TASK_STATUSES } from "../constants.js";
-import { isUuidLike } from "../agent-url-key.js";
+import { isCanonicalUuid } from "../canonical-uuid.js";
 import {
   COMPANY_SEARCH_EXTRACT_KINDS,
   COMPANY_SEARCH_EXTRACT_SCOPES,
@@ -22,8 +22,14 @@ export const COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK = 200;
 
 const UPDATED_WITHIN_RE = /^[1-9]\d{0,2}(h|d|w|m)$/;
 
-function firstQueryValue(value: unknown): unknown {
-  return Array.isArray(value) ? value[0] : value;
+function singleQueryValue(
+  value: unknown,
+  ctx: z.RefinementCtx,
+  field: string,
+): unknown {
+  if (!Array.isArray(value)) return value;
+  addValidationDetail(ctx, { message: `${field} must appear at most once` });
+  return undefined;
 }
 
 function queryValues(value: unknown): unknown[] {
@@ -32,14 +38,17 @@ function queryValues(value: unknown): unknown[] {
 }
 
 function parseOptionalString(value: unknown, ctx: z.RefinementCtx, field: string): string | undefined {
-  const raw = firstQueryValue(value);
-  if (raw === undefined || raw === null) return undefined;
-  if (typeof raw !== "string" && typeof raw !== "number") {
-    addValidationDetail(ctx, { message: `${field} must be a string` });
+  const raw = singleQueryValue(value, ctx, field);
+  if (raw === undefined) return undefined;
+  if (
+    typeof raw !== "string" ||
+    raw.length === 0 ||
+    raw.trim() !== raw
+  ) {
+    addValidationDetail(ctx, { message: `${field} must be an exact non-blank string` });
     return undefined;
   }
-  const normalized = String(raw).trim();
-  return normalized.length > 0 ? normalized : undefined;
+  return raw;
 }
 
 function parseIntegerQuery(
@@ -50,14 +59,13 @@ function parseIntegerQuery(
   min: number,
   max: number,
 ): number {
-  const raw = firstQueryValue(value);
-  if (raw === undefined || raw === null || raw === "") return fallback;
-  const text = typeof raw === "number" ? String(raw) : typeof raw === "string" ? raw.trim() : "";
-  if (!/^-?\d+$/.test(text)) {
-    addValidationDetail(ctx, { message: `${field} must be an integer` });
+  const raw = singleQueryValue(value, ctx, field);
+  if (raw === undefined) return fallback;
+  if (typeof raw !== "string" || !/^(?:0|[1-9]\d*)$/.test(raw)) {
+    addValidationDetail(ctx, { message: `${field} must be an exact non-negative integer` });
     return fallback;
   }
-  const numeric = Number.parseInt(text, 10);
+  const numeric = Number(raw);
   if (!Number.isInteger(numeric) || numeric < min || numeric > max) {
     const range = min === 0 ? `between 0 and ${max}` : `between ${min} and ${max}`;
     addValidationDetail(ctx, { message: `${field} must be ${range}` });
@@ -76,52 +84,44 @@ function parseEnumList<T extends string>(
   const values: T[] = [];
   for (const rawEntry of queryValues(value)) {
     if (typeof rawEntry !== "string") {
-      addValidationDetail(ctx, { message: `${field} must be a comma-separated string` });
+      addValidationDetail(ctx, { message: `${field} must be a string` });
       continue;
     }
-    for (const rawItem of rawEntry.split(",")) {
-      const item = rawItem.trim();
-      if (!item) continue;
-      if (!allowedSet.has(item)) {
-        addValidationDetail(ctx, { message: `${field} contains an unsupported value` });
-        continue;
-      }
-      if (!values.includes(item as T)) values.push(item as T);
+    if (!allowedSet.has(rawEntry)) {
+      addValidationDetail(ctx, { message: `${field} contains an unsupported value` });
+      continue;
     }
+    if (values.includes(rawEntry as T)) {
+      addValidationDetail(ctx, { message: `${field} must not contain duplicate values` });
+      continue;
+    }
+    values.push(rawEntry as T);
   }
   return values;
 }
 
 function parseOptionalUuid(value: unknown, ctx: z.RefinementCtx, field: string): string | undefined {
-  const normalized = parseOptionalString(value, ctx, field);
-  if (normalized === undefined) return undefined;
-  if (!isUuidLike(normalized)) {
+  const raw = singleQueryValue(value, ctx, field);
+  if (raw === undefined) return undefined;
+  if (
+    typeof raw !== "string" ||
+    !isCanonicalUuid(raw)
+  ) {
     addValidationDetail(ctx, { message: `${field} must be a UUID` });
     return undefined;
   }
-  return normalized;
-}
-
-function parseOwnerAgentId(value: unknown, ctx: z.RefinementCtx): string | null | undefined {
-  const normalized = parseOptionalString(value, ctx, "ownerAgentId");
-  if (normalized === undefined) return undefined;
-  if (normalized.toLowerCase() === "null") return null;
-  if (!isUuidLike(normalized)) {
-    addValidationDetail(ctx, { message: "ownerAgentId must be a UUID or 'null'" });
-    return undefined;
-  }
-  return normalized;
+  return raw;
 }
 
 function parseUpdatedAfter(value: unknown, ctx: z.RefinementCtx): string | undefined {
-  const normalized = parseOptionalString(value, ctx, "updatedAfter");
-  if (normalized === undefined) return undefined;
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) {
-    addValidationDetail(ctx, { message: "updatedAfter must be a valid date" });
+  const exact = parseOptionalString(value, ctx, "updatedAfter");
+  if (exact === undefined) return undefined;
+  const date = new Date(exact);
+  if (Number.isNaN(date.getTime()) || date.toISOString() !== exact) {
+    addValidationDetail(ctx, { message: "updatedAfter must be an exact ISO timestamp" });
     return undefined;
   }
-  return date.toISOString();
+  return exact;
 }
 
 function parseUpdatedWithin(value: unknown, ctx: z.RefinementCtx): string | undefined {
@@ -137,7 +137,14 @@ function parseUpdatedWithin(value: unknown, ctx: z.RefinementCtx): string | unde
 export const companySearchQuerySchema = z.object({
   q: z.unknown()
     .optional()
-    .transform((value, ctx) => (parseOptionalString(value, ctx, "q") ?? "").slice(0, COMPANY_SEARCH_MAX_QUERY_LENGTH)),
+    .transform((value, ctx) => {
+      const exact = parseOptionalString(value, ctx, "q") ?? "";
+      if (exact.length > COMPANY_SEARCH_MAX_QUERY_LENGTH) {
+        addValidationDetail(ctx, { message: `q must be at most ${COMPANY_SEARCH_MAX_QUERY_LENGTH} characters` });
+        return "";
+      }
+      return exact;
+    }),
   scope: z.unknown()
     .optional()
     .transform((value, ctx) => {
@@ -162,7 +169,7 @@ export const companySearchQuerySchema = z.object({
     .transform((value, ctx) => parseEnumList(value, ctx, "priority", TASK_PRIORITIES)),
   ownerAgentId: z.unknown()
     .optional()
-    .transform((value, ctx) => parseOwnerAgentId(value, ctx)),
+    .transform((value, ctx) => parseOptionalUuid(value, ctx, "ownerAgentId")),
   ownerUserId: z.unknown()
     .optional()
     .transform((value, ctx) => parseOptionalString(value, ctx, "ownerUserId")),
@@ -188,7 +195,7 @@ export const companySearchQuerySchema = z.object({
       }
       return normalized as (typeof COMPANY_SEARCH_SORTS)[number];
     }),
-});
+}).strict();
 
 export type CompanySearchQuery = z.infer<typeof companySearchQuerySchema>;
 
@@ -258,7 +265,7 @@ export const companySearchExtractQuerySchema = z.object({
   updatedAfter: z.unknown()
     .optional()
     .transform((value, ctx) => parseUpdatedAfter(value, ctx)),
-}).superRefine((value, ctx) => {
+}).strict().superRefine((value, ctx) => {
   if (value.updatedWithin && value.updatedAfter) {
     addValidationDetail(ctx, {
       message: "updatedWithin and updatedAfter cannot be used together",

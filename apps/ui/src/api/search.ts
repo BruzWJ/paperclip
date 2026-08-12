@@ -1,4 +1,10 @@
-import type { CompanySearchResponse, CompanySearchScope, CompanySearchSort, TaskPriority, TaskStatus } from "@paperclipai/shared";
+import type {
+  CompanySearchResponse,
+  CompanySearchScope,
+  CompanySearchSort,
+  TaskPriority,
+  TaskStatus,
+} from "@paperclipai/shared";
 import { api } from "./client";
 
 export interface CompanySearchParams {
@@ -8,7 +14,7 @@ export interface CompanySearchParams {
   offset?: number;
   status?: TaskStatus[];
   priority?: TaskPriority[];
-  ownerAgentId?: string | null;
+  ownerAgentId?: string;
   ownerUserId?: string;
   projectId?: string;
   labelId?: string;
@@ -30,7 +36,7 @@ export const searchApi = {
     if (params.offset !== undefined) search.set("offset", String(params.offset));
     appendMulti(search, "status", params.status);
     appendMulti(search, "priority", params.priority);
-    if (params.ownerAgentId !== undefined) search.set("ownerAgentId", params.ownerAgentId ?? "null");
+    if (params.ownerAgentId !== undefined) search.set("ownerAgentId", params.ownerAgentId);
     if (params.ownerUserId !== undefined) search.set("ownerUserId", params.ownerUserId);
     if (params.projectId !== undefined) search.set("projectId", params.projectId);
     if (params.labelId !== undefined) search.set("labelId", params.labelId);
@@ -38,8 +44,6 @@ export const searchApi = {
     if (params.updatedAfter !== undefined) search.set("updatedAfter", params.updatedAfter);
     if (params.sort !== undefined) search.set("sort", params.sort);
     const qs = search.toString();
-    return api.get<CompanySearchResponse>(
-      `/companies/${companyId}/search${qs ? `?${qs}` : ""}`,
-    );
+    return api.get<CompanySearchResponse>(`/companies/${companyId}/search${qs ? `?${qs}` : ""}`);
   },
 };

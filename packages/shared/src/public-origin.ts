@@ -1,7 +1,6 @@
-export function normalizePublicOrigin(rawValue: string): string {
-  const value = rawValue.trim();
-  if (!value) {
-    throw new Error("Public origin must not be empty");
+export function parseExactPublicOrigin(value: string): string {
+  if (value.length === 0 || value.trim() !== value) {
+    throw new Error("Public origin must be exact and non-empty");
   }
   if (/[\u0000-\u0020\u007f]/.test(value)) {
     throw new Error("Public origin must be a valid HTTPS URL");
@@ -36,5 +35,9 @@ export function normalizePublicOrigin(rawValue: string): string {
     throw new Error("Public origin must not contain a path, query, or fragment");
   }
 
-  return parsed.origin;
+  if (parsed.origin !== value) {
+    throw new Error("Public origin must be its exact canonical HTTPS origin");
+  }
+
+  return value;
 }

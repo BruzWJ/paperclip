@@ -88,7 +88,7 @@ const RESOLVED_DEP_SECTIONS = ["dependencies", "optionalDependencies", "peerDepe
 // same calver version. If the target is NOT publishFromCi:true it never gets a calver
 // publish, so the rewritten spec points at a version that will never exist on npm and
 // the package becomes uninstallable. Detect those edges so the release fails fast
-// instead of shipping a broken canary (e.g. server -> skills-catalog from #8327).
+// instead of shipping a broken canary.
 function findUnpublishableWorkspaceEdges(packages) {
   const publishFromCiByName = new Map(packages.map((pkg) => [pkg.name, pkg.publishFromCi]));
   const problems = [];

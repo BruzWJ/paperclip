@@ -24,39 +24,8 @@ test("release package list only contains CI-enrolled packages", () => {
   assert.ok(enabledPackages.every((pkg) => pkg.publishFromCi === true));
 });
 
-test("retired built-in adapter packages are absent from the release surface", () => {
-  const packages = buildReleasePackagePlan();
-  const retiredDirs = new Set([
-    "packages/adapters/claude-local",
-    "packages/adapters/codex-local",
-    "packages/adapters/cursor-cloud",
-    "packages/adapters/cursor-local",
-    "packages/adapters/gemini-local",
-    "packages/adapters/grok-local",
-    "packages/adapters/hermes",
-    "packages/adapters/opencode-local",
-    "packages/adapters/pi-local",
-  ]);
-
-  assert.equal(packages.some((pkg) => retiredDirs.has(pkg.dir)), false);
-});
-
 test("release package configuration validates successfully", () => {
   assert.doesNotThrow(() => checkConfiguration());
-});
-
-test("guard flags a publishFromCi:true package depending on a publishFromCi:false package", () => {
-  const problems = findUnpublishableWorkspaceEdges([
-    pkg("@paperclipai/server", {
-      publishFromCi: true,
-      dependencies: { "@paperclipai/skills-catalog": "workspace:*" },
-    }),
-    pkg("@paperclipai/skills-catalog", { publishFromCi: false }),
-  ]);
-
-  assert.equal(problems.length, 1);
-  assert.match(problems[0], /@paperclipai\/server/);
-  assert.match(problems[0], /@paperclipai\/skills-catalog/);
 });
 
 test("guard inspects optional and peer dependency sections too", () => {

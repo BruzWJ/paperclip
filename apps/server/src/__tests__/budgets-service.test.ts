@@ -51,9 +51,7 @@ function agentRow(input: {
     pauseReason: input.pauseReason ?? null,
     pausedAt: input.pauseReason ? now : null,
     reportsTo: null,
-    adapterType: "codex",
-    adapterConfig: { model: "gpt-5.6" },
-    runtimeConfig: {},
+    currentAdapterConfigRevisionId: null,
     instruction: null,
     budgetMonthlyAmount: input.budgetMonthlyAmount ?? "10",
     createdAt: now,
@@ -179,6 +177,35 @@ describe("canonical budget service", () => {
       name: "Numeric Budget Company",
       budgetMonthlyAmount: 100 as never,
     }, "board-user")).rejects.toThrow("canonical decimal string");
+  });
+
+  it("rejects noncanonical budget incident UUID aliases before database access", async () => {
+    const companyId = randomUUID();
+    const canonicalIncidentId = "abcdefab-cdef-4abc-8def-abcdefabcdef";
+    const uppercaseIncidentId = canonicalIncidentId.toUpperCase();
+    const { db, calls } = createMockDb();
+    const service = budgetService(db);
+
+    await expect(
+      service.getIncidentScope(companyId, uppercaseIncidentId),
+    ).rejects.toMatchObject({
+      status: 404,
+      message: "Budget incident not found",
+    });
+    await expect(
+      service.resolveIncident(
+        companyId,
+        uppercaseIncidentId,
+        { action: "keep_paused" },
+        "board-user",
+      ),
+    ).rejects.toMatchObject({
+      status: 404,
+      message: "Budget incident not found",
+    });
+
+    expect(calls).toEqual([]);
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
   it("writes agent limits only through the operational budget owner", async () => {

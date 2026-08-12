@@ -27,10 +27,10 @@
  * @example
  * ```ts
  * const handlers = createHostClientHandlers({
- *   pluginId: "acme.linear",
+ *   pluginKey: "acme.linear",
  *   capabilities: manifest.capabilities,
  *   services: {
- *     config:    { get: () => registry.getConfig(pluginId) },
+ *     config:    { get: () => registry.getConfig(pluginKey) },
  *     state:     { get: ..., set: ..., delete: ... },
  *     entities:  { upsert: ..., list: ... },
  *     // ... all services
@@ -65,9 +65,9 @@ export class CapabilityDeniedError extends Error {
   override readonly name = "CapabilityDeniedError";
   readonly code = PLUGIN_RPC_ERROR_CODES.CAPABILITY_DENIED;
 
-  constructor(pluginId: string, method: string, capability: PluginCapability) {
+  constructor(pluginKey: string, method: string, capability: PluginCapability) {
     super(
-      `Plugin "${pluginId}" is missing required capability "${capability}" for method "${method}"`,
+      `Plugin "${pluginKey}" is missing required capability "${capability}" for method "${method}"`,
     );
   }
 }
@@ -80,8 +80,8 @@ export class InvocationScopeDeniedError extends Error {
   override readonly name = "InvocationScopeDeniedError";
   readonly code = PLUGIN_RPC_ERROR_CODES.INVOCATION_SCOPE_DENIED;
 
-  constructor(pluginId: string, method: string, message: string) {
-    super(`Plugin "${pluginId}" is not allowed to perform "${method}": ${message}`);
+  constructor(pluginKey: string, method: string, message: string) {
+    super(`Plugin "${pluginKey}" is not allowed to perform "${method}": ${message}`);
   }
 }
 
@@ -202,13 +202,6 @@ export interface HostServices {
     managedRun(params: WorkerToHostMethods["routines.managed.run"][0]): Promise<WorkerToHostMethods["routines.managed.run"][1]>;
   };
 
-  /** Provides `skills.managed.*`. */
-  skills: {
-    managedGet(params: WorkerToHostMethods["skills.managed.get"][0]): Promise<WorkerToHostMethods["skills.managed.get"][1]>;
-    managedReconcile(params: WorkerToHostMethods["skills.managed.reconcile"][0]): Promise<WorkerToHostMethods["skills.managed.reconcile"][1]>;
-    managedReset(params: WorkerToHostMethods["skills.managed.reset"][0]): Promise<WorkerToHostMethods["skills.managed.reset"][1]>;
-  };
-
   /** Provides the installation-bound task control plane. */
   tasks: {
     list(params: WorkerToHostMethods["tasks.list"][0]): Promise<WorkerToHostMethods["tasks.list"][1]>;
@@ -291,8 +284,8 @@ export interface HostRpcOperationContext {
  * Options for `createHostClientHandlers`.
  */
 export interface HostClientFactoryOptions {
-  /** The plugin ID. Used for error messages and logging. */
-  pluginId: string;
+  /** The manifest plugin key. Used for error messages and logging. */
+  pluginKey: string;
 
   /**
    * The capabilities declared by the plugin in its manifest. The factory
@@ -401,9 +394,6 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
     "routines.managed.reset": "routines.managed",
     "routines.managed.update": "routines.managed",
     "routines.managed.run": "routines.managed",
-    "skills.managed.get": "skills.managed",
-    "skills.managed.reconcile": "skills.managed",
-    "skills.managed.reset": "skills.managed",
 
   // Tasks
   "tasks.list": "tasks.read",
@@ -481,19 +471,20 @@ const INSTALLATION_TASK_CONTROL_PLANE_METHODS: ReadonlySet<WorkerToHostMethodNam
  * JSON-RPC error response to the worker, which surfaces as a `JsonRpcCallError`
  * in the plugin's SDK client.
  *
- * @param options - Plugin ID, capabilities, and service adapters
+ * @param options - Manifest plugin key, capabilities, and service adapters
  * @returns A handler map suitable for `WorkerStartOptions.hostHandlers`
  */
 export function createHostClientHandlers(
   options: HostClientFactoryOptions,
 ): HostClientHandlers {
-  const { pluginId, services } = options;
+  const { pluginKey, services } = options;
   const capabilitySet = new Set<PluginCapability>(options.capabilities);
 
   type CompanyScopeRequest =
     | { kind: "none" }
     | { kind: "single"; companyId: string }
-    | { kind: "all" };
+    | { kind: "all" }
+    | { kind: "invalid" };
 
   const noCompanyScope: CompanyScopeRequest = { kind: "none" };
 
@@ -501,8 +492,12 @@ export function createHostClientHandlers(
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
-  function readNonEmptyString(value: unknown): string | null {
-    return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  function readExactNonEmptyString(value: unknown): string | null {
+    return typeof value === "string"
+      && value.length > 0
+      && value === value.trim()
+      ? value
+      : null;
   }
 
   function requestedCompanyScope(
@@ -515,17 +510,23 @@ export function createHostClientHandlers(
     if (method === "companies.list") return { kind: "all" };
     if (!isRecord(params)) return noCompanyScope;
 
-    const companyId = readNonEmptyString(params.companyId);
-    if (companyId) return { kind: "single", companyId };
+    if (params.companyId !== undefined) {
+      const companyId = readExactNonEmptyString(params.companyId);
+      return companyId ? { kind: "single", companyId } : { kind: "invalid" };
+    }
 
     if (params.scopeKind === "company") {
-      const scopeId = readNonEmptyString(params.scopeId);
-      return scopeId ? { kind: "single", companyId: scopeId } : { kind: "all" };
+      const scopeId = readExactNonEmptyString(params.scopeId);
+      return scopeId ? { kind: "single", companyId: scopeId } : { kind: "invalid" };
     }
 
     if (method === "events.subscribe" && isRecord(params.filter)) {
-      const filterCompanyId = readNonEmptyString(params.filter.companyId);
-      if (filterCompanyId) return { kind: "single", companyId: filterCompanyId };
+      if (params.filter.companyId !== undefined) {
+        const filterCompanyId = readExactNonEmptyString(params.filter.companyId);
+        return filterCompanyId
+          ? { kind: "single", companyId: filterCompanyId }
+          : { kind: "invalid" };
+      }
     }
 
     return noCompanyScope;
@@ -539,35 +540,43 @@ export function createHostClientHandlers(
     const requested = requestedCompanyScope(method, params);
     if (requested.kind === "none") return;
 
+    if (requested.kind === "invalid") {
+      throw new InvocationScopeDeniedError(
+        pluginKey,
+        method,
+        "company identity must be an exact non-empty string",
+      );
+    }
+
     if (context?.invalidInvocationScope) {
       throw new InvocationScopeDeniedError(
-        pluginId,
+        pluginKey,
         method,
         "the worker referenced a missing, expired, or unknown invocation scope",
       );
     }
 
-    const allowedCompanyId = readNonEmptyString(context?.invocationScope?.companyId);
+    const allowedCompanyId = readExactNonEmptyString(context?.invocationScope?.companyId);
 
     if (requested.kind === "all") {
       if (method === "companies.list") return;
       if (!allowedCompanyId) {
-        throw new InvocationScopeDeniedError(pluginId, method, "company context is required");
+        throw new InvocationScopeDeniedError(pluginKey, method, "company context is required");
       }
       throw new InvocationScopeDeniedError(
-        pluginId,
+        pluginKey,
         method,
         `the current invocation is scoped to company "${allowedCompanyId}"`,
       );
     }
 
     if (!allowedCompanyId) {
-      throw new InvocationScopeDeniedError(pluginId, method, "company context is required");
+      throw new InvocationScopeDeniedError(pluginKey, method, "company context is required");
     }
 
     if (requested.companyId !== allowedCompanyId) {
       throw new InvocationScopeDeniedError(
-        pluginId,
+        pluginKey,
         method,
         `requested company "${requested.companyId}" but the current invocation is scoped to company "${allowedCompanyId}"`,
       );
@@ -581,21 +590,28 @@ export function createHostClientHandlers(
   ): string {
     if (context?.invalidInvocationScope) {
       throw new InvocationScopeDeniedError(
-        pluginId,
+        pluginKey,
         method,
         "the worker referenced a missing, expired, or unknown invocation scope",
       );
     }
 
     const requested = requestedCompanyScope(method, params);
-    const scopedCompanyId = readNonEmptyString(context?.invocationScope?.companyId);
+    if (requested.kind === "invalid") {
+      throw new InvocationScopeDeniedError(
+        pluginKey,
+        method,
+        "company identity must be an exact non-empty string",
+      );
+    }
+    const scopedCompanyId = readExactNonEmptyString(context?.invocationScope?.companyId);
     if (requested.kind === "single") {
       if (!scopedCompanyId) {
-        throw new InvocationScopeDeniedError(pluginId, method, "company context is required");
+        throw new InvocationScopeDeniedError(pluginKey, method, "company context is required");
       }
       if (requested.companyId !== scopedCompanyId) {
         throw new InvocationScopeDeniedError(
-          pluginId,
+          pluginKey,
           method,
           `requested company "${requested.companyId}" but the current invocation is scoped to company "${scopedCompanyId}"`,
         );
@@ -605,7 +621,7 @@ export function createHostClientHandlers(
 
     if (scopedCompanyId) return scopedCompanyId;
 
-    throw new InvocationScopeDeniedError(pluginId, method, "company context is required");
+    throw new InvocationScopeDeniedError(pluginKey, method, "company context is required");
   }
 
   function requireExactRunContextHandle(
@@ -621,18 +637,18 @@ export function createHostClientHandlers(
   ): void {
     if (context?.invalidInvocationScope) {
       throw new InvocationScopeDeniedError(
-        pluginId,
+        pluginKey,
         method,
         "the worker referenced a missing, expired, or unknown invocation scope",
       );
     }
-    const supplied = readNonEmptyString(params.runContextHandle);
-    const active = readNonEmptyString(
+    const supplied = readExactNonEmptyString(params.runContextHandle);
+    const active = readExactNonEmptyString(
       context?.invocationScope?.pluginRunContextHandle,
     );
     if (!supplied || !active || supplied !== active) {
       throw new InvocationScopeDeniedError(
-        pluginId,
+        pluginKey,
         method,
         "an exact active plugin run-context handle is required",
       );
@@ -644,12 +660,12 @@ export function createHostClientHandlers(
     context?: WorkerHostCallContext,
   ): void {
     if (!INSTALLATION_TASK_CONTROL_PLANE_METHODS.has(method)) return;
-    const activeRunContextHandle = readNonEmptyString(
+    const activeRunContextHandle = readExactNonEmptyString(
       context?.invocationScope?.pluginRunContextHandle,
     );
     if (!activeRunContextHandle) return;
     throw new InvocationScopeDeniedError(
-      pluginId,
+      pluginKey,
       method,
       "the installation task control plane is unavailable while serving an agent run; use only run.tasks.* with the exact active run-context handle",
     );
@@ -659,7 +675,7 @@ export function createHostClientHandlers(
     method: "tasks.create" | "tasks.update" | "tasks.withdraw",
     context?: WorkerHostCallContext,
   ): HostRpcOperationContext {
-    const hostRpcOperationId = readNonEmptyString(context?.rpcOperationId);
+    const hostRpcOperationId = readExactNonEmptyString(context?.rpcOperationId);
     if (!hostRpcOperationId) {
       throw new Error(
         `Host-assigned RPC operation identity is required for "${method}"`,
@@ -678,7 +694,7 @@ export function createHostClientHandlers(
     const required = METHOD_CAPABILITY_MAP[method];
     if (required === null) return; // No capability required
     if (capabilitySet.has(required)) return;
-    throw new CapabilityDeniedError(pluginId, method, required);
+    throw new CapabilityDeniedError(pluginKey, method, required);
   }
 
   /**
@@ -777,7 +793,7 @@ export function createHostClientHandlers(
           params.snapshotHighWaterSeq !== canonicalSession.snapshotHighWaterSeq)
       ) {
         throw new InvocationScopeDeniedError(
-          pluginId,
+          pluginKey,
           "runtime.records.readSession",
           "the requested Session snapshot is outside the host-stamped invocation boundary",
         );
@@ -789,7 +805,7 @@ export function createHostClientHandlers(
         result.snapshotHighWaterSeq !== params.snapshotHighWaterSeq
       ) {
         throw new InvocationScopeDeniedError(
-          pluginId,
+          pluginKey,
           "runtime.records.readSession",
           "the canonical Session result is outside the requested snapshot",
         );
@@ -799,7 +815,7 @@ export function createHostClientHandlers(
         result.session.taskId !== canonicalSession.taskId
       ) {
         throw new InvocationScopeDeniedError(
-          pluginId,
+          pluginKey,
           "runtime.records.readSession",
           "the canonical Session does not belong to the host-stamped invocation task",
         );
@@ -838,7 +854,9 @@ export function createHostClientHandlers(
     // Companies
     "companies.list": gated("companies.list", async (params, context) => {
       const rows = await services.companies.list(params);
-      const allowedCompanyId = readNonEmptyString(context?.invocationScope?.companyId);
+      const allowedCompanyId = readExactNonEmptyString(
+        context?.invocationScope?.companyId,
+      );
       if (!allowedCompanyId) return rows;
       return rows.filter((company) =>
         isRecord(company) && company.id === allowedCompanyId,
@@ -880,17 +898,6 @@ export function createHostClientHandlers(
     }),
     "routines.managed.run": gated("routines.managed.run", async (params) => {
       return services.routines.managedRun(params);
-    }),
-
-    // Skills
-    "skills.managed.get": gated("skills.managed.get", async (params) => {
-      return services.skills.managedGet(params);
-    }),
-    "skills.managed.reconcile": gated("skills.managed.reconcile", async (params) => {
-      return services.skills.managedReconcile(params);
-    }),
-    "skills.managed.reset": gated("skills.managed.reset", async (params) => {
-      return services.skills.managedReset(params);
     }),
 
     // Tasks

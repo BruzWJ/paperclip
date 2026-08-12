@@ -5,15 +5,13 @@ import type {
   TaskBlockerAttention,
   TaskRelationTaskSummary,
 } from "@paperclipai/shared";
-import { Bot, CheckCircle2, Clock3, DollarSign, FolderKanban, Inbox, MessageSquare, Users } from "lucide-react";
-import { CopyText } from "@/components/CopyText";
+import { Clock3, DollarSign, FolderKanban, Inbox, Users } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { Identity } from "@/components/Identity";
 import { TaskBlockedNotice } from "@/components/TaskBlockedNotice";
 import { TaskRow } from "@/components/TaskRow";
 import { MetricCard } from "@/components/MetricCard";
 import { PriorityIcon } from "@/components/PriorityIcon";
-import { QuotaBar } from "@/components/QuotaBar";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusIcon } from "@/components/StatusIcon";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -189,7 +187,7 @@ const coveredBlockedMatrix: CoveredBlockedCell[] = [
 ];
 
 const coveredBlockedTask = createTask({
-  id: "task-covered-blocked-story",
+  id: "dddddddd-dddd-4ddd-8ddd-ddddddddd011",
   identifier: "PAP-2178",
   taskNumber: 2178,
   title: "Covered blocked visual state: final acceptance",
@@ -202,11 +200,16 @@ const coveredBlockedTask = createTask({
 
 function summaryBlocker(
   partial: Partial<TaskRelationTaskSummary> &
-    Pick<TaskRelationTaskSummary, "id" | "title" | "boardPresentationStatus">,
+    Pick<
+      TaskRelationTaskSummary,
+      "id" | "identifier" | "title" | "boardPresentationStatus"
+    >,
 ): TaskRelationTaskSummary {
   return {
     id: partial.id,
-    identifier: partial.identifier ?? null,
+    taskNumber:
+      partial.taskNumber ?? Number(partial.identifier.split("-").at(-1)),
+    identifier: partial.identifier,
     title: partial.title,
     boardPresentationStatus: partial.boardPresentationStatus,
     priority: partial.priority ?? "medium",
@@ -229,21 +232,21 @@ type BlockedNoticeFixture = {
 };
 
 const stalledLeafSingle = summaryBlocker({
-  id: "task-stalled-leaf-single",
+  id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01c",
   identifier: "PAP-2279",
   title: "Stage gate review for export pipeline",
   boardPresentationStatus: "in_review",
 });
 
 const stalledLeafMultiPrimary = summaryBlocker({
-  id: "task-stalled-leaf-multi-1",
+  id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01a",
   identifier: "PAP-2284",
   title: "Approve schema migration",
   boardPresentationStatus: "in_review",
 });
 
 const stalledLeafMultiSecondary = summaryBlocker({
-  id: "task-stalled-leaf-multi-2",
+  id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01b",
   identifier: "PAP-2291",
   title: "Sign off on rollout copy",
   boardPresentationStatus: "in_review",
@@ -255,7 +258,7 @@ const blockedNoticeFixtures: BlockedNoticeFixture[] = [
     caption: "Active sub-task covers the chain — informational only.",
     blockers: [
       summaryBlocker({
-        id: "task-active-child",
+        id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00f",
         identifier: "PAP-2175",
         title: "Wire export pipeline preview",
         boardPresentationStatus: "in_progress",
@@ -274,7 +277,7 @@ const blockedNoticeFixtures: BlockedNoticeFixture[] = [
     caption: "Chain stalled on one leaf review — copy names the leaf and shows the chip strip.",
     blockers: [
       summaryBlocker({
-        id: "task-stalled-parent-single",
+        id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01f",
         identifier: "PAP-2278",
         title: "Ship rollout dashboard",
         boardPresentationStatus: "blocked",
@@ -295,14 +298,14 @@ const blockedNoticeFixtures: BlockedNoticeFixture[] = [
     caption: "Multiple stalled reviews — body uses plural agreement (\"reviews\"/\"them\") to match the chip strip.",
     blockers: [
       summaryBlocker({
-        id: "task-stalled-parent-multi-a",
+        id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01d",
         identifier: "PAP-2283",
         title: "Coordinate billing change rollout",
         boardPresentationStatus: "blocked",
         terminalBlockers: [stalledLeafMultiPrimary],
       }),
       summaryBlocker({
-        id: "task-stalled-parent-multi-b",
+        id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01e",
         identifier: "PAP-2290",
         title: "Coordinate marketing transfer",
         boardPresentationStatus: "blocked",
@@ -533,45 +536,42 @@ function StatusLanguage() {
         <Section eyebrow="Dashboard" title="Metrics, quota bars, empty states, and copy affordances">
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <MetricCard icon={Users} value={8} label="Active agents" description="3 running right now" to="/agents/active" />
-              <MetricCard icon={FolderKanban} value={27} label="Open tasks" description="5 in review" to="/tasks" />
-              <MetricCard icon={DollarSign} value="$675" label="MTD spend" description="27% of budget" to="/costs" />
+              <MetricCard
+                icon={Users}
+                value={8}
+                label="Agents"
+                description="3 live runs"
+                linkOptions={{
+                  to: "/$companyId/agents/idle",
+                  params: { companyId: "11111111-1111-4111-8111-111111111111" },
+                }}
+              />
+              <MetricCard
+                icon={FolderKanban}
+                value={27}
+                label="Open tasks"
+                description="5 in review"
+                linkOptions={{
+                  to: "/$companyId/tasks",
+                  params: { companyId: "11111111-1111-4111-8111-111111111111" },
+                }}
+              />
+              <MetricCard
+                icon={DollarSign}
+                value="$675"
+                label="MTD spend"
+                description="27% of budget"
+                linkOptions={{
+                  to: "/$companyId/costs",
+                  params: { companyId: "11111111-1111-4111-8111-111111111111" },
+                }}
+              />
               <MetricCard icon={Clock3} value="14m" label="P95 run age" description="last 24 hours" />
             </div>
 
-            <Card className="shadow-none">
-              <CardHeader>
-                <CardTitle>Copyable identifiers</CardTitle>
-                <CardDescription>Click values to exercise the status tooltip.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Task</span>
-                  <CopyText text="PAP-1641" className="font-mono">PAP-1641</CopyText>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Run</span>
-                  <CopyText text="49442f05-f1c1-45c5-88d3-1e5b871dbb8b" className="font-mono">
-                    49442f05
-                  </CopyText>
-                </div>
-              </CardContent>
-            </Card>
           </div>
 
-          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <Card className="shadow-none">
-              <CardHeader>
-                <CardTitle>Quota thresholds</CardTitle>
-                <CardDescription>Green, warning, and hard-stop-adjacent progress treatments.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <QuotaBar label="Company budget" percentUsed={27} leftLabel="$675 used" rightLabel="$2,500 cap" />
-                <QuotaBar label="Project budget" percentUsed={86} leftLabel="$1,031 used" rightLabel="$1,200 cap" />
-                <QuotaBar label="Agent budget" percentUsed={108} leftLabel="$432 used" rightLabel="$400 cap" showDeficitNotch />
-              </CardContent>
-            </Card>
-
+          <div className="mt-5 grid gap-5">
             <Card className="shadow-none">
               <CardHeader>
                 <CardTitle>Empty state</CardTitle>

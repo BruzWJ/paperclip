@@ -28,6 +28,7 @@ const baseTime = new Date("2026-04-21T10:00:00.000Z");
 
 function task(input: {
   id?: string;
+  taskNumber?: number | null;
   parentId?: string | null;
   title?: string;
   status?: string;
@@ -40,6 +41,7 @@ function task(input: {
   return {
     id,
     companyId,
+    taskNumber: input.taskNumber ?? 1,
     identifier: `TST-${id.slice(0, 4)}`,
     title: input.title ?? "Task",
     parentId: input.parentId ?? null,
@@ -342,6 +344,7 @@ describe("taskTreeControlService without a database process", () => {
         [existing],
         [snapshot],
         [{ id: rootTaskId, ownershipEpoch: 1 }],
+        [{ id: rootTaskId, taskNumber: 1 }],
       ],
       update: [[released]],
     });
@@ -626,6 +629,10 @@ describe("taskTreeControlService without a database process", () => {
         [],
         [cancelHold],
         [rootSnapshot, childSnapshot],
+        [
+          { id: root.id, taskNumber: root.taskNumber },
+          { id: child.id, taskNumber: child.taskNumber },
+        ],
       ],
     });
 

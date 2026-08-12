@@ -8,12 +8,12 @@ import { authApi } from "../api/auth";
 import { dashboardApi } from "../api/dashboard";
 import { runsApi } from "../api/runs";
 import { tasksApi } from "../api/tasks";
+import { INBOX_MINE_TASK_STATUSES, type AuthSession } from "@paperclipai/shared";
 import { queryKeys } from "../lib/queryKeys";
 import {
   filterLocalInboxArchivedTasks,
   useLocalInboxArchiveTaskIds,
 } from "../lib/inboxArchiveCache";
-import { usePublishSharedQueryData, useSharedPollingQuery } from "./useSharedPolling";
 import {
   buildInboxDismissedAtByKey,
   computeInboxBadgeData,
@@ -25,7 +25,6 @@ import {
   READ_ITEMS_KEY,
 } from "../lib/inbox";
 
-const INBOX_TASK_STATUSES = "backlog,todo,in_progress,in_review,blocked,done";
 const INBOX_BADGE_TASK_LIMIT = 500;
 const INBOX_BADGE_RUN_LIMIT = 200;
 const INBOX_BADGE_HOT_PATH_STALE_MS = 30_000;
@@ -82,18 +81,23 @@ export function useInboxDismissals(companyId: string | null | undefined) {
     if (!companyId) return;
     const previous = queryClient.getQueryData<typeof dismissals>(queryKey) ?? [];
     const now = new Date();
-    queryClient.setQueryData(queryKey, [
-      {
-        id: `optimistic:${itemKey}`,
-        companyId,
-        userId: "me",
-        itemKey,
-        dismissedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      },
-      ...previous.filter((dismissal) => dismissal.itemKey !== itemKey),
-    ]);
+    const currentUserId = queryClient.getQueryData<AuthSession | null>(
+      queryKeys.auth.session,
+    )?.user.id;
+    if (currentUserId) {
+      queryClient.setQueryData(queryKey, [
+        {
+          id: `optimistic:${itemKey}`,
+          companyId,
+          userId: currentUserId,
+          itemKey,
+          dismissedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        },
+        ...previous.filter((dismissal) => dismissal.itemKey !== itemKey),
+      ]);
+    }
     setPendingCount((count) => count + 1);
     void inboxDismissalsApi.dismiss(companyId, itemKey)
       .catch(() => {
@@ -179,6 +183,7 @@ export function useInboxBadge(companyId: string | null | undefined) {
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
   });
+  const currentUserId = session?.user.id ?? null;
 
   const { data: approvals = [] } = useQuery({
     queryKey: queryKeys.approvals.list(companyId!),
@@ -203,46 +208,31 @@ export function useInboxBadge(companyId: string | null | undefined) {
   });
 
   const dashboardQueryKey = queryKeys.dashboard(companyId!);
-  const sharedDashboard = useSharedPollingQuery({
-    companyId,
-    resourceKey: "dashboard",
-    queryKey: dashboardQueryKey,
-    enabled: !!companyId,
-  });
-  const { data: dashboard, dataUpdatedAt: dashboardUpdatedAt } = useQuery({
+  const { data: dashboard } = useQuery({
     queryKey: dashboardQueryKey,
     queryFn: () => dashboardApi.summary(companyId!),
     enabled: !!companyId,
   });
-  usePublishSharedQueryData(sharedDashboard, dashboard, dashboardUpdatedAt);
 
   const mineTasksQueryKey = queryKeys.tasks.listMineByMe(companyId!);
-  const sharedMineTasks = useSharedPollingQuery({
-    companyId,
-    resourceKey: "inbox-badge:mine-tasks",
-    queryKey: mineTasksQueryKey,
-    enabled: !!companyId,
-  });
-  const { data: mineTasksRaw = [], dataUpdatedAt: mineTasksUpdatedAt } = useQuery({
+  const { data: mineTasksRaw = [] } = useQuery({
     queryKey: mineTasksQueryKey,
     queryFn: () =>
       tasksApi.list(companyId!, {
-        touchedByUserId: "me",
-        inboxArchivedByUserId: "me",
-        status: INBOX_TASK_STATUSES,
+        touchedByUserId: currentUserId!,
+        inboxArchivedByUserId: currentUserId!,
+        status: INBOX_MINE_TASK_STATUSES,
         limit: INBOX_BADGE_TASK_LIMIT,
       }),
-    enabled: !!companyId,
+    enabled: !!companyId && !!currentUserId,
     refetchOnWindowFocus: false,
     staleTime: INBOX_BADGE_HOT_PATH_STALE_MS,
   });
-  usePublishSharedQueryData(sharedMineTasks, mineTasksRaw, mineTasksUpdatedAt);
 
   const mineTasks = useMemo(
     () => getRecentTouchedTasks(filterLocalInboxArchivedTasks(companyId, mineTasksRaw)),
     [companyId, locallyArchivedTaskIds, mineTasksRaw],
   );
-  const currentUserId = session?.user.id ?? session?.session.userId ?? null;
 
   const { data: runPage } = useQuery({
     queryKey: queryKeys.runs(companyId!),

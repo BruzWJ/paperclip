@@ -6,7 +6,7 @@ import {
 
 describe("shouldSilenceHttpSuccessLog", () => {
   it("silences cached 304 responses", () => {
-    expect(shouldSilenceHttpSuccessLog("GET", "/api/tasks/PAP-1383", 304)).toBe(true);
+    expect(shouldSilenceHttpSuccessLog("GET", "/api/tasks/00000000-0000-4000-8000-000000000001", 304)).toBe(true);
   });
 
   it("silences successful polling endpoints", () => {
@@ -42,7 +42,7 @@ describe("shouldSilenceHttpSuccessLog", () => {
     expect(
       shouldSilenceHttpSuccessLog(
         "GET",
-        "/api/companies/5cbe79ee-acb3-4597-896e-7662742593cd/tasks?includeRoutineExecutions=true",
+        "/api/companies/5cbe79ee-acb3-4597-896e-7662742593cd/tasks",
         200,
       ),
     ).toBe(true);
@@ -61,12 +61,11 @@ describe("shouldSilenceHttpSuccessLog", () => {
     expect(shouldSilenceHttpSuccessLog("GET", "/@fs/Users/dotta/paperclip/ui/src/main.tsx", 200)).toBe(true);
     expect(shouldSilenceHttpSuccessLog("GET", "/src/App.tsx?t=123", 200)).toBe(true);
     expect(shouldSilenceHttpSuccessLog("GET", "/site.webmanifest", 200)).toBe(true);
-    expect(shouldSilenceHttpSuccessLog("GET", "/sw.js", 200)).toBe(true);
   });
 
   it("keeps normal successful application requests", () => {
-    expect(shouldSilenceHttpSuccessLog("GET", "/api/tasks/PAP-1383", 200)).toBe(false);
-    expect(shouldSilenceHttpSuccessLog("PATCH", "/api/tasks/PAP-1383", 200)).toBe(false);
+    expect(shouldSilenceHttpSuccessLog("GET", "/api/tasks/00000000-0000-4000-8000-000000000001", 200)).toBe(false);
+    expect(shouldSilenceHttpSuccessLog("PATCH", "/api/tasks/00000000-0000-4000-8000-000000000001", 200)).toBe(false);
   });
 
   it("keeps failing requests visible", () => {

@@ -18,8 +18,10 @@ export function buildSubTaskDefaults(task: SubTaskDefaultSource) {
 export function buildSubTaskDefaultsForViewer(task: SubTaskDefaultSource) {
   return {
     parentId: task.id,
-    parentIdentifier: task.identifier ?? undefined,
-    parentTitle: task.title ?? task.identifier ?? undefined,
+    ...(task.identifier ? { parentIdentifier: task.identifier } : {}),
+    ...(task.title || task.identifier
+      ? { parentTitle: task.title ?? task.identifier }
+      : {}),
     ...(task.projectId ? { projectId: task.projectId } : {}),
     ...(task.projectWorkspaceId
       ? { projectWorkspaceId: task.projectWorkspaceId }

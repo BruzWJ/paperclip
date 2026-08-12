@@ -6,6 +6,14 @@ export type CompanyArtifactGroupBy = "none" | "task" | "parent_task";
 
 export interface CompanyArtifactTaskSummary {
   id: string;
+  taskNumber: number;
+  identifier: string;
+  title: string | null;
+}
+
+export interface CompanyArtifactGroupTaskSummary {
+  id: string;
+  taskNumber: number;
   identifier: string;
   title: string | null;
 }
@@ -34,19 +42,19 @@ export interface CompanyArtifact {
   project: CompanyArtifactProjectSummary | null;
   createdByAgent: CompanyArtifactAgentSummary | null;
   updatedAt: string;
-  href: string;
+  /** Hash fragment without the leading `#` for the canonical task route. */
+  taskFragment: string;
 }
 
 export interface CompanyArtifactGroup {
   id: string;
   groupBy: Exclude<CompanyArtifactGroupBy, "none">;
-  task: CompanyArtifactTaskSummary;
+  task: CompanyArtifactGroupTaskSummary;
   title: string;
   count: number;
   mediaKinds: CompanyArtifactMediaKind[];
   previewArtifacts: CompanyArtifact[];
   updatedAt: string;
-  href: string;
 }
 
 export interface CompanyArtifactsResponse {

@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { ArrowLeft, Check, Layers, Package, Search, X } from "lucide-react";
 import { ArtifactCard } from "@/components/artifacts/ArtifactCard";
+import { ArtifactGroupCard } from "@/components/artifacts/ArtifactGroupCard";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,13 +13,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { cn, formatDate } from "@/lib/utils";
-import type { CompanyArtifact } from "@/api/artifacts";
+import { cn } from "@/lib/utils";
+import type { CompanyArtifact, CompanyArtifactGroup } from "@/api/artifacts";
+import { Link } from "@tanstack/react-router";
 import {
   ARTIFACT_GROUP_OPTIONS,
   ARTIFACT_KIND_FILTERS,
   artifactGroupByLabel,
-} from "@/pages/Artifacts";
+} from "@/routes/_authenticated/$companyId/artifacts";
 
 /**
  * Storybook coverage for the company Artifacts page. Covers:
@@ -52,7 +54,7 @@ const SAMPLE_IMAGE_AMBER =
 
 function makeArtifact(overrides: Partial<CompanyArtifact>): CompanyArtifact {
   return {
-    id: "art",
+    id: "b6000000-0000-4000-8000-000000000001",
     source: "attachment",
     mediaKind: "image",
     title: "Artifact",
@@ -61,18 +63,18 @@ function makeArtifact(overrides: Partial<CompanyArtifact>): CompanyArtifact {
     contentPath: null,
     openPath: null,
     downloadPath: null,
-    task: { id: "task-1", identifier: "PAP-10306", title: "Landing visuals refresh" },
-    project: { id: "proj-1", name: "Paperclip App" },
-    createdByAgent: { id: "agent-1", name: "ClaudeCoder" },
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd009", taskNumber: 10306, identifier: "PAP-10306", title: "Landing visuals refresh" },
+    project: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb7", name: "Paperclip App" },
+    createdByAgent: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4", name: "ClaudeCoder" },
     updatedAt: new Date("2026-06-04T12:00:00Z").toISOString(),
-    href: "/tasks/PAP-10306#attachment-art",
+    taskFragment: "attachment-art",
     ...overrides,
   };
 }
 
 const ARTIFACTS: CompanyArtifact[] = [
   makeArtifact({
-    id: "wp-video",
+    id: "b6000000-0000-4000-8000-000000000002",
     source: "work_product",
     mediaKind: "video",
     title: "Product demo — primary cut.mp4",
@@ -80,11 +82,11 @@ const ARTIFACTS: CompanyArtifact[] = [
     contentPath: null,
     openPath: "/files/demo.mp4",
     downloadPath: "/files/demo.mp4?download=1",
-    task: { id: "task-2", identifier: "PAP-10205", title: "Record the launch walkthrough" },
-    href: "/tasks/PAP-10205#work-product-wp-video",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00a", taskNumber: 10205, identifier: "PAP-10205", title: "Record the launch walkthrough" },
+    taskFragment: "work-product-wp-video",
   }),
   makeArtifact({
-    id: "img-hero",
+    id: "b6000000-0000-4000-8000-000000000003",
     mediaKind: "image",
     title: "Hero render.png",
     contentType: "image/png",
@@ -93,19 +95,19 @@ const ARTIFACTS: CompanyArtifact[] = [
     downloadPath: SAMPLE_IMAGE,
   }),
   makeArtifact({
-    id: "doc-plan",
+    id: "b6000000-0000-4000-8000-000000000007",
     source: "document",
     mediaKind: "document",
     title: "Artifacts Page Plan",
     previewText:
-      "Build a company-level Artifacts page at /{companyPrefix}/artifacts, with a sidebar item below Goals and a three-column artifact grid. The page should make agent-produced work easy to find without becoming another attachment dump.",
+      "Build a company-level Artifacts page at /{companyId}/artifacts, with a sidebar item below Goals and a three-column artifact grid. The page should make agent-produced work easy to find without becoming another attachment dump.",
     contentType: "text/markdown",
-    task: { id: "task-3", identifier: "PAP-10341", title: "Draft the rollout plan" },
-    createdByAgent: { id: "agent-2", name: "CodexCoder" },
-    href: "/tasks/PAP-10341#document-plan",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00b", taskNumber: 10341, identifier: "PAP-10341", title: "Draft the rollout plan" },
+    createdByAgent: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5", name: "CodexCoder" },
+    taskFragment: "a2000000-0000-4000-8000-000000000002",
   }),
   makeArtifact({
-    id: "txt-notes",
+    id: "b6000000-0000-4000-8000-000000000008",
     mediaKind: "text",
     title: "review-notes.txt",
     previewText:
@@ -113,19 +115,19 @@ const ARTIFACTS: CompanyArtifact[] = [
     contentType: "text/plain",
     openPath: "/files/review-notes.txt",
     downloadPath: "/files/review-notes.txt?download=1",
-    task: { id: "task-2", identifier: "PAP-10205", title: "Record the launch walkthrough" },
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00a", taskNumber: 10205, identifier: "PAP-10205", title: "Record the launch walkthrough" },
   }),
   makeArtifact({
-    id: "file-zip",
+    id: "b6000000-0000-4000-8000-00000000000a",
     mediaKind: "file",
     title: "design-assets.zip",
     contentType: "application/zip",
     openPath: "/files/design-assets.zip",
     downloadPath: "/files/design-assets.zip?download=1",
-    task: { id: "task-1", identifier: "PAP-10306", title: "Landing visuals refresh" },
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd009", taskNumber: 10306, identifier: "PAP-10306", title: "Landing visuals refresh" },
   }),
   makeArtifact({
-    id: "img-broken",
+    id: "b6000000-0000-4000-8000-000000000006",
     mediaKind: "image",
     title: "missing-preview.png (broken source)",
     contentType: "image/png",
@@ -246,196 +248,121 @@ function ArtifactsToolbar({
   );
 }
 
-interface MockGroup {
-  id: string;
-  groupBy: Exclude<StoryArtifactGroupBy, "none">;
-  taskIdentifier: string;
-  taskTitle: string;
-  count: number;
-  preview: CompanyArtifact;
-  updatedAt: string;
-  href: string;
-}
-
-/**
- * Stack card mock for grouped views.
- *
- * Visual rules (matching ArtifactCard footprint):
- *  - Same border, radius (rounded-[8px]), border + bg-card surface, hover treatment.
- *  - Preview frame is the same `aspect-video` PreviewFrame as ArtifactCard.
- *  - Footer block has the same vertical rhythm.
- *  - When `count > 1`, render two stacked sibling layers behind the main card,
- *    offset by 4px / 8px on both axes, with reduced opacity. This produces a
- *    subtle "stack" without competing with the preview content.
- *  - Stack count badge sits in the top-right of the preview as a small pill.
- *  - The body line replaces the artifact title with the task identifier and
- *    title; metadata line shows the artifact count and most-recent-edit time.
- */
-function ArtifactStackCard({ group }: { group: MockGroup }) {
-  const isStacked = group.count > 1;
-
+function ArtifactStackCard({ group }: { group: CompanyArtifactGroup }) {
   return (
-    <div className="relative">
-      {isStacked ? (
-        <>
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 translate-x-[8px] translate-y-[8px] rounded-[8px] border border-border bg-muted/40 shadow-sm"
-          />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 translate-x-[4px] translate-y-[4px] rounded-[8px] border border-border bg-muted/70 shadow-sm"
-          />
-        </>
-      ) : null}
-
-      <a
-        href={group.href}
-        data-testid="artifact-stack-card"
-        data-stack-count={group.count}
-        className="group relative flex flex-col overflow-hidden rounded-[8px] border border-border bg-card transition-colors hover:border-foreground/20"
-      >
-        <div className="relative aspect-video w-full overflow-hidden bg-accent/20">
-          {group.preview.contentPath ? (
-            <img
-              src={group.preview.contentPath}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-accent/15 text-muted-foreground/40">
-              <Layers className="h-8 w-8" aria-hidden="true" />
-            </div>
-          )}
-          <div className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium text-foreground/90 shadow-sm backdrop-blur">
-            <Layers className="h-3 w-3" aria-hidden="true" />
-            {group.count}
-          </div>
-        </div>
-
-        <div className="flex flex-1 flex-col gap-1 p-3">
-          <div className="flex h-7 items-center gap-2">
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {group.taskIdentifier}
-            </span>
-            <h3
-              className="min-w-0 flex-1 truncate text-sm font-medium leading-7 text-foreground/85"
-              title={group.taskTitle}
-            >
-              {group.taskTitle}
-            </h3>
-          </div>
-
-          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/65">
-            <span>{group.count} artifacts</span>
-            <span className="text-muted-foreground/50">·</span>
-            <span>Updated {formatDate(group.updatedAt)}</span>
-          </div>
-        </div>
-      </a>
-    </div>
+    <ArtifactGroupCard
+      group={group}
+      linkOptions={{
+        to: "/$companyId/artifacts",
+        params: { companyId: "11111111-1111-4111-8111-111111111111" },
+        search: {
+          groupBy: group.groupBy === "task" ? undefined : group.groupBy,
+          groupTaskId: group.task.id,
+        },
+      }}
+    />
   );
 }
 
-const TASK_GROUPS: MockGroup[] = [
+const TASK_GROUPS: CompanyArtifactGroup[] = [
   {
-    id: "task:task-1",
+    id: "task:dddddddd-dddd-4ddd-8ddd-ddddddddd009",
     groupBy: "task",
-    taskIdentifier: "PAP-10306",
-    taskTitle: "Landing visuals refresh",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd009", taskNumber: 10306, identifier: "PAP-10306", title: "Landing visuals refresh" },
+    title: "Landing visuals refresh",
     count: 5,
-    preview: makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE }),
+    mediaKinds: ["image"],
+    previewArtifacts: [makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE })],
     updatedAt: new Date("2026-06-04T12:00:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-1",
   },
   {
-    id: "task:task-2",
+    id: "task:dddddddd-dddd-4ddd-8ddd-ddddddddd00a",
     groupBy: "task",
-    taskIdentifier: "PAP-10205",
-    taskTitle: "Record the launch walkthrough",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00a", taskNumber: 10205, identifier: "PAP-10205", title: "Record the launch walkthrough" },
+    title: "Record the launch walkthrough",
     count: 3,
-    preview: makeArtifact({ mediaKind: "video", contentPath: null }),
+    mediaKinds: ["video"],
+    previewArtifacts: [makeArtifact({ mediaKind: "video", contentPath: null })],
     updatedAt: new Date("2026-06-03T09:30:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-2",
   },
   {
-    id: "task:task-3",
+    id: "task:dddddddd-dddd-4ddd-8ddd-ddddddddd00b",
     groupBy: "task",
-    taskIdentifier: "PAP-10341",
-    taskTitle: "Draft the rollout plan",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00b", taskNumber: 10341, identifier: "PAP-10341", title: "Draft the rollout plan" },
+    title: "Draft the rollout plan",
     count: 2,
-    preview: makeArtifact({ mediaKind: "document", contentPath: null }),
+    mediaKinds: ["document"],
+    previewArtifacts: [makeArtifact({ mediaKind: "document", contentPath: null })],
     updatedAt: new Date("2026-06-02T18:15:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-3",
   },
   {
-    id: "task:task-4",
+    id: "task:dddddddd-dddd-4ddd-8ddd-ddddddddd00c",
     groupBy: "task",
-    taskIdentifier: "PAP-10412",
-    taskTitle: "Investigate paywall regression",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00c", taskNumber: 10412, identifier: "PAP-10412", title: "Investigate paywall regression" },
+    title: "Investigate paywall regression",
     count: 1,
-    preview: makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE_AMBER }),
+    mediaKinds: ["image"],
+    previewArtifacts: [makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE_AMBER })],
     updatedAt: new Date("2026-06-02T11:00:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-4",
   },
   {
-    id: "task:task-5",
+    id: "task:dddddddd-dddd-4ddd-8ddd-ddddddddd00d",
     groupBy: "task",
-    taskIdentifier: "PAP-10391",
-    taskTitle: "Iterate on nav",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00d", taskNumber: 10391, identifier: "PAP-10391", title: "Iterate on nav" },
+    title: "Iterate on nav",
     count: 4,
-    preview: makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE_TEAL }),
+    mediaKinds: ["image"],
+    previewArtifacts: [makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE_TEAL })],
     updatedAt: new Date("2026-06-01T16:42:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-5",
   },
   {
-    id: "task:task-6",
+    id: "task:dddddddd-dddd-4ddd-8ddd-ddddddddd00e",
     groupBy: "task",
-    taskIdentifier: "PAP-10377",
-    taskTitle: "QA: empty states",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00e", taskNumber: 10377, identifier: "PAP-10377", title: "QA: empty states" },
+    title: "QA: empty states",
     count: 1,
-    preview: makeArtifact({ mediaKind: "text", previewText: "All empty states green except onboarding-step-3." }),
+    mediaKinds: ["text"],
+    previewArtifacts: [makeArtifact({ mediaKind: "text", previewText: "All empty states green except onboarding-step-3." })],
     updatedAt: new Date("2026-05-31T10:00:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-6",
   },
 ];
 
-const PARENT_TASK_GROUPS: MockGroup[] = [
+const PARENT_TASK_GROUPS: CompanyArtifactGroup[] = [
   {
-    id: "parent_task:root-1",
+    id: "parent_task:dddddddd-dddd-4ddd-8ddd-ddddddddd020",
     groupBy: "parent_task",
-    taskIdentifier: "PAP-10300",
-    taskTitle: "Launch readiness epic",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd020", taskNumber: 10300, identifier: "PAP-10300", title: "Launch readiness epic" },
+    title: "Launch readiness epic",
     count: 14,
-    preview: makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE }),
+    mediaKinds: ["image"],
+    previewArtifacts: [makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE })],
     updatedAt: new Date("2026-06-04T12:00:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=parent_task&groupTaskId=root-1",
   },
   {
-    id: "parent_task:root-2",
+    id: "parent_task:dddddddd-dddd-4ddd-8ddd-ddddddddd021",
     groupBy: "parent_task",
-    taskIdentifier: "PAP-10200",
-    taskTitle: "Marketing site rebuild",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd021", taskNumber: 10200, identifier: "PAP-10200", title: "Marketing site rebuild" },
+    title: "Marketing site rebuild",
     count: 9,
-    preview: makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE_TEAL }),
+    mediaKinds: ["image"],
+    previewArtifacts: [makeArtifact({ mediaKind: "image", contentPath: SAMPLE_IMAGE_TEAL })],
     updatedAt: new Date("2026-06-03T14:25:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=parent_task&groupTaskId=root-2",
   },
   {
-    id: "parent_task:root-3",
+    id: "parent_task:dddddddd-dddd-4ddd-8ddd-ddddddddd022",
     groupBy: "parent_task",
-    taskIdentifier: "PAP-10180",
-    taskTitle: "Pricing experiment",
+    task: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd022", taskNumber: 10180, identifier: "PAP-10180", title: "Pricing experiment" },
+    title: "Pricing experiment",
     count: 1,
-    preview: makeArtifact({ mediaKind: "document", previewText: "Decision log" }),
+    mediaKinds: ["document"],
+    previewArtifacts: [makeArtifact({ mediaKind: "document", previewText: "Decision log" })],
     updatedAt: new Date("2026-05-30T08:11:00Z").toISOString(),
-    href: "/PAP/artifacts?groupBy=parent_task&groupTaskId=root-3",
   },
 ];
 
 const SELECTED_GROUP_ARTIFACTS: CompanyArtifact[] = [
   makeArtifact({
-    id: "img-hero",
+    id: "b6000000-0000-4000-8000-000000000003",
     mediaKind: "image",
     title: "Hero render.png",
     contentType: "image/png",
@@ -444,21 +371,21 @@ const SELECTED_GROUP_ARTIFACTS: CompanyArtifact[] = [
     downloadPath: SAMPLE_IMAGE,
   }),
   makeArtifact({
-    id: "img-teal",
+    id: "b6000000-0000-4000-8000-000000000004",
     mediaKind: "image",
     title: "nav-revised.png",
     contentType: "image/png",
     contentPath: SAMPLE_IMAGE_TEAL,
   }),
   makeArtifact({
-    id: "img-amber",
+    id: "b6000000-0000-4000-8000-000000000005",
     mediaKind: "image",
     title: "hero-warm.png",
     contentType: "image/png",
     contentPath: SAMPLE_IMAGE_AMBER,
   }),
   makeArtifact({
-    id: "file-zip",
+    id: "b6000000-0000-4000-8000-00000000000a",
     mediaKind: "file",
     title: "design-assets.zip",
     contentType: "application/zip",
@@ -466,11 +393,11 @@ const SELECTED_GROUP_ARTIFACTS: CompanyArtifact[] = [
     downloadPath: "/files/design-assets.zip?download=1",
   }),
   makeArtifact({
-    id: "txt-spec",
+    id: "b6000000-0000-4000-8000-000000000009",
     mediaKind: "text",
     title: "design-spec.txt",
     previewText:
-      "Hero retains pearl gradient. Nav collapses to icon-rail under 640px. Card radius is 8px throughout. Keep accent button consistent with /design-guide.",
+      "Hero retains pearl gradient. Nav collapses to icon-rail under 640px. Card radius is 8px throughout. Keep the accent button consistent with the design tokens.",
   }),
 ];
 
@@ -589,13 +516,15 @@ export const SelectedStack: Story = {
 
         <div className="flex flex-col gap-2 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 min-w-0">
-            <a
-              href="/PAP/artifacts?groupBy=task"
+            <Link
+              to="/$companyId/artifacts"
+              params={{ companyId: "11111111-1111-4111-8111-111111111111" }}
+              search={{}}
               className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
               All stacks
-            </a>
+            </Link>
             <span className="text-muted-foreground/40" aria-hidden="true">
               /
             </span>

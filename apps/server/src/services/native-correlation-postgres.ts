@@ -32,7 +32,9 @@ function canonicalJson(value: unknown): string {
     return `[${value.map(canonicalJson).join(",")}]`;
   }
   return `{${Object.keys(value)
-    .filter((key) => Object.getOwnPropertyDescriptor(value, key)?.value !== undefined)
+    .filter(
+      (key) => Object.getOwnPropertyDescriptor(value, key)?.value !== undefined,
+    )
     .sort()
     .map(
       (key) =>
@@ -45,7 +47,9 @@ function canonicalJson(value: unknown): string {
 
 function secretBytes(secret: string | Uint8Array): Buffer {
   const value =
-    typeof secret === "string" ? Buffer.from(secret, "utf8") : Buffer.from(secret);
+    typeof secret === "string"
+      ? Buffer.from(secret, "utf8")
+      : Buffer.from(secret);
   if (value.byteLength < 32) {
     throw new Error(
       "Native-correlation protection secret must contain at least 32 bytes",
@@ -54,10 +58,7 @@ function secretBytes(secret: string | Uint8Array): Buffer {
   return value;
 }
 
-function derivedKey(
-  secret: Buffer,
-  purpose: "encryption" | "digest",
-): Buffer {
+function derivedKey(secret: Buffer, purpose: "encryption" | "digest"): Buffer {
   return Buffer.from(
     hkdfSync(
       "sha256",
@@ -144,7 +145,10 @@ export function createAuthenticatedNativeCorrelationProtector(options: {
           throw new Error("invalid envelope contract");
         }
         const parts = protectedCorrelation.ciphertext.split(".");
-        if (parts.length !== 5 || `${parts[0]}.${parts[1]}` !== CIPHERTEXT_PREFIX) {
+        if (
+          parts.length !== 5 ||
+          `${parts[0]}.${parts[1]}` !== CIPHERTEXT_PREFIX
+        ) {
           throw new Error("invalid ciphertext version");
         }
         const nonce = Buffer.from(parts[2]!, "base64url");
@@ -178,7 +182,3 @@ export function createAuthenticatedNativeCorrelationProtector(options: {
     },
   };
 }
-
-export type PostgresNativeCorrelationProtector = ReturnType<
-  typeof createAuthenticatedNativeCorrelationProtector
->;

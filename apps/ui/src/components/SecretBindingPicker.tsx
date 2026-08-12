@@ -4,7 +4,7 @@ import { AlertCircle, KeyRound, Loader2, Plus, X } from "lucide-react";
 import type { CompanySecret, SecretVersionSelector } from "@paperclipai/shared";
 import { secretsApi } from "../api/secrets";
 import { queryKeys } from "../lib/queryKeys";
-import { useCompany } from "../context/CompanyContext";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -76,7 +76,7 @@ export function SecretBindingPicker({
   statusFilter = ["active"],
 }: SecretBindingPickerProps) {
   const queryClient = useQueryClient();
-  const { selectedCompanyId } = useCompany();
+  const companyId = useCompanyRouteId();
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createValue, setCreateValue] = useState("");
@@ -85,11 +85,8 @@ export function SecretBindingPicker({
   const secretSelectId = useId();
 
   const secretsQuery = useQuery({
-    queryKey: selectedCompanyId
-      ? queryKeys.secrets.list(selectedCompanyId)
-      : ["secrets", "__disabled__"],
-    queryFn: () => secretsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
+    queryKey: queryKeys.secrets.list(companyId),
+    queryFn: () => secretsApi.list(companyId),
   });
 
   const filteredSecrets = useMemo(() => {
@@ -107,13 +104,13 @@ export function SecretBindingPicker({
 
   const createMutation = useMutation({
     mutationFn: () =>
-      secretsApi.create(selectedCompanyId!, {
+      secretsApi.create(companyId, {
         name: createName.trim(),
         value: createValue,
         description: createDescription.trim() || null,
       }),
     onSuccess: (created) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(companyId) });
       onChange({ secretId: created.id, version: VERSION_LATEST });
       setCreateOpen(false);
       setCreateName("");
@@ -224,7 +221,7 @@ export function SecretBindingPicker({
           variant="outline"
           size="sm"
           onClick={() => setCreateOpen(true)}
-          disabled={disabled || !selectedCompanyId}
+          disabled={disabled}
           aria-label="Create secret"
         >
           <Plus className="h-3.5 w-3.5" />

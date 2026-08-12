@@ -1,11 +1,11 @@
-import { inferBindModeFromHost, normalizePublicOrigin } from "@paperclipai/shared";
+import { parseExactPublicOrigin } from "@paperclipai/shared";
 import type { PaperclipConfig } from "../config/schema.js";
 import type { CheckResult } from "./index.js";
 
 export function authCheck(config: PaperclipConfig): CheckResult {
   const exposure = config.server.exposure;
   const auth = config.auth;
-  const bind = config.server.bind ?? inferBindModeFromHost(config.server.host);
+  const bind = config.server.bind;
 
   const secret = process.env.BETTER_AUTH_SECRET?.trim();
   if (!secret) {
@@ -27,7 +27,7 @@ export function authCheck(config: PaperclipConfig): CheckResult {
       };
     }
     try {
-      normalizePublicOrigin(auth.publicBaseUrl);
+      parseExactPublicOrigin(auth.publicBaseUrl);
     } catch (error) {
       return {
         name: "Authentication",

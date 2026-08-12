@@ -55,7 +55,7 @@ function writeStoredSidebarWidth(storageKey: string, width: number) {
 
 type SidebarShellProps = {
   children: ReactNode;
-  /** Whether the sidebar occupies space at all (mobile back-compat / hidden). */
+  /** Whether the sidebar is visible and occupies space. */
   open: boolean;
   /** Pinned collapsed (rail) mode. Desktop-only; the caller gates this. */
   collapsed?: boolean;

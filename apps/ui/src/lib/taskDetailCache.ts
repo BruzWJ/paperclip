@@ -3,27 +3,10 @@ import type { Task } from "@paperclipai/shared";
 import { tasksApi } from "@/api/tasks";
 import { queryKeys } from "@/lib/queryKeys";
 
-const TASK_DETAIL_QUERY_PREFIX = ["tasks", "detail"] as const;
 export const TASK_DETAIL_STALE_TIME_MS = 60_000;
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
-}
-
-function collectTaskRefs(
-  taskRef: string | null | undefined,
-  task?: Pick<Task, "id" | "identifier"> | null,
-): string[] {
-  const refs = new Set<string>();
-  if (isNonEmptyString(taskRef)) refs.add(taskRef);
-  if (isNonEmptyString(task?.id)) refs.add(task.id);
-  if (isNonEmptyString(task?.identifier)) refs.add(task.identifier);
-  return Array.from(refs);
-}
-
-function matchesTaskRef(task: Pick<Task, "id" | "identifier">, refs: Iterable<string>) {
-  const refSet = refs instanceof Set ? refs : new Set(refs);
-  return refSet.has(task.id) || (!!task.identifier && refSet.has(task.identifier));
 }
 
 function isCompleteTaskSnapshot(value: unknown): value is Task {
@@ -40,7 +23,7 @@ function isCompleteTaskSnapshot(value: unknown): value is Task {
     && typeof task.priority === "string"
     && (task.projectId === null || typeof task.projectId === "string")
     && (task.parentId === null || typeof task.parentId === "string")
-    && (task.identifier === null || typeof task.identifier === "string")
+    && isNonEmptyString(task.identifier)
     && (
       (task.ownerKind === "agent" && isNonEmptyString(task.ownerAgentId) && task.ownerUserId === null)
       || (task.ownerKind === "user" && task.ownerAgentId === null && isNonEmptyString(task.ownerUserId))
@@ -48,7 +31,9 @@ function isCompleteTaskSnapshot(value: unknown): value is Task {
     )
     && typeof task.ownershipEpoch === "number"
     && typeof task.creatorKind === "string"
-    && (task.taskNumber === null || typeof task.taskNumber === "number")
+    && typeof task.taskNumber === "number"
+    && Number.isInteger(task.taskNumber)
+    && task.taskNumber > 0
     && typeof task.requestDepth === "number"
     && task.createdAt != null
     && task.updatedAt != null
@@ -56,96 +41,60 @@ function isCompleteTaskSnapshot(value: unknown): value is Task {
 }
 
 function mergeTaskSnapshots(existing: Task | undefined, incoming: Task): Task {
-  if (!existing) return incoming;
-  return {
-    ...existing,
-    ...incoming,
-  };
-}
-
-export function getTaskDetailCacheRefs(task: Pick<Task, "id" | "identifier">): string[] {
-  return collectTaskRefs(null, task);
+  return existing ? { ...existing, ...incoming } : incoming;
 }
 
 export function getCachedTaskDetail(
   queryClient: QueryClient,
-  taskRef: string | null | undefined,
-  task?: Pick<Task, "id" | "identifier"> | null,
+  taskId: string | null | undefined,
 ): Task | undefined {
-  const refs = collectTaskRefs(taskRef, task);
-
-  for (const ref of refs) {
-    const cached = queryClient.getQueryData<Task>(queryKeys.tasks.detail(ref));
-    if (isCompleteTaskSnapshot(cached)) return cached;
-  }
-
-  const cachedEntries = queryClient.getQueriesData<Task>({ queryKey: TASK_DETAIL_QUERY_PREFIX });
-  return cachedEntries
-    .map(([, cachedTask]) => cachedTask)
-    .find((cachedTask): cachedTask is Task =>
-      isCompleteTaskSnapshot(cachedTask) && matchesTaskRef(cachedTask, refs)
-    );
+  if (!isNonEmptyString(taskId)) return undefined;
+  const cached = queryClient.getQueryData<Task>(queryKeys.tasks.detail(taskId));
+  return isCompleteTaskSnapshot(cached) ? cached : undefined;
 }
 
-export function seedTaskDetailCache(
-  queryClient: QueryClient,
-  task: Task,
-  options?: {
-    taskRef?: string | null;
-  },
-): Task {
+export function seedTaskDetailCache(queryClient: QueryClient, task: Task): Task {
   if (!isCompleteTaskSnapshot(task)) return task;
-
-  const refs = collectTaskRefs(options?.taskRef, task);
-  const merged = mergeTaskSnapshots(getCachedTaskDetail(queryClient, options?.taskRef, task), task);
-
-  for (const ref of refs) {
-    queryClient.setQueryData<Task>(
-      queryKeys.tasks.detail(ref),
-      (existing) => mergeTaskSnapshots(existing, merged),
-    );
-  }
-
+  const merged = mergeTaskSnapshots(getCachedTaskDetail(queryClient, task.id), task);
+  queryClient.setQueryData<Task>(
+    queryKeys.tasks.detail(task.id),
+    (existing) => mergeTaskSnapshots(existing, merged),
+  );
   return merged;
 }
 
 export async function fetchTaskDetail(
   queryClient: QueryClient,
-  taskRef: string,
+  taskId: string,
   options?: { signal?: AbortSignal },
 ): Promise<Task> {
-  const task = options ? await tasksApi.get(taskRef, options) : await tasksApi.get(taskRef);
-  return seedTaskDetailCache(queryClient, task, { taskRef });
+  const task = options ? await tasksApi.get(taskId, options) : await tasksApi.get(taskId);
+  return seedTaskDetailCache(queryClient, task);
 }
 
 export function getTaskDetailQueryOptions(
   queryClient: QueryClient,
-  taskRef: string,
-  options?: {
-    placeholderTask?: Pick<Task, "id" | "identifier"> | null;
-  },
+  taskId: string,
 ) {
   return {
-    queryKey: queryKeys.tasks.detail(taskRef),
-    queryFn: ({ signal }: { signal?: AbortSignal }) => fetchTaskDetail(queryClient, taskRef, { signal }),
-    placeholderData: getCachedTaskDetail(queryClient, taskRef, options?.placeholderTask ?? undefined),
+    queryKey: queryKeys.tasks.detail(taskId),
+    queryFn: ({ signal }: { signal?: AbortSignal }) => fetchTaskDetail(queryClient, taskId, { signal }),
+    placeholderData: getCachedTaskDetail(queryClient, taskId),
   };
 }
 
 export function prefetchTaskDetail(
   queryClient: QueryClient,
-  taskRef: string,
-  options?: {
-    task?: Task | null;
-  },
+  taskId: string,
+  options?: { task?: Task | null },
 ) {
-  if (isCompleteTaskSnapshot(options?.task)) {
-    seedTaskDetailCache(queryClient, options.task, { taskRef });
+  if (isCompleteTaskSnapshot(options?.task) && options.task.id === taskId) {
+    seedTaskDetailCache(queryClient, options.task);
   }
 
   return queryClient.prefetchQuery({
-    queryKey: queryKeys.tasks.detail(taskRef),
-    queryFn: () => fetchTaskDetail(queryClient, taskRef),
+    queryKey: queryKeys.tasks.detail(taskId),
+    queryFn: () => fetchTaskDetail(queryClient, taskId),
     staleTime: TASK_DETAIL_STALE_TIME_MS,
   });
 }

@@ -13,7 +13,6 @@ import {
   Loader2,
   Play,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import {
   ChartCard,
@@ -33,10 +32,10 @@ import {
   buildFileTree,
   collectAllPaths,
   countFiles,
-  PackageFileTree,
+  FileTree,
   parseFrontmatter,
   type FileTreeNode,
-} from "@/components/PackageFileTree";
+} from "@/components/FileTree";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SwipeToArchive } from "@/components/SwipeToArchive";
@@ -53,8 +52,8 @@ import {
   storybookTaskRuns,
 } from "../fixtures/paperclipData";
 
-const companyId = "company-storybook";
-const primaryTaskId = "task-storybook-1";
+const companyId = "11111111-1111-4111-8111-111111111111";
+const primaryTaskId = "dddddddd-dddd-4ddd-8ddd-ddddddddd001";
 
 function StoryShell({ children }: { children: React.ReactNode }) {
   return (
@@ -100,7 +99,7 @@ function makeRun(
     currentAttemptId: null,
     currentLeaseId: null,
     terminalClassification: "succeeded",
-    terminalFinalizationId: "finalization-run-fixture",
+    terminalFinalizationId: "93000000-0000-4000-8000-000000000001",
     startedAt: createdAt,
     finishedAt: new Date(new Date(createdAt).getTime() + 11 * 60_000).toISOString(),
     createdAt,
@@ -110,14 +109,14 @@ function makeRun(
 }
 
 const activityRuns: TaskExecutionRunEnvelopeRecord[] = [
-  makeRun({ id: "run-chart-1", createdAt: daysAgo(13).toISOString(), startedAt: daysAgo(13).toISOString() }),
-  makeRun({ id: "run-chart-2", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10).toISOString() }),
-  makeRun({ id: "run-chart-3", status: "failed", terminalClassification: "failed", terminalReasonCode: "process_exit", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10, 15).toISOString() }),
-  makeRun({ id: "run-chart-4", status: "running", terminalClassification: null, terminalFinalizationId: null, currentAttemptId: "attempt-run-chart-4", currentLeaseId: "lease-run-chart-4", createdAt: daysAgo(7).toISOString(), startedAt: daysAgo(7).toISOString(), finishedAt: null }),
-  makeRun({ id: "run-chart-5", createdAt: daysAgo(5).toISOString(), startedAt: daysAgo(5).toISOString() }),
-  makeRun({ id: "run-chart-6", status: "timed_out", terminalClassification: "timed_out", terminalReasonCode: "timeout", createdAt: daysAgo(3).toISOString(), startedAt: daysAgo(3).toISOString() }),
-  makeRun({ id: "run-chart-7", createdAt: daysAgo(1).toISOString(), startedAt: daysAgo(1).toISOString() }),
-  makeRun({ id: "run-chart-8", createdAt: daysAgo(1, 16).toISOString(), startedAt: daysAgo(1, 16).toISOString() }),
+  makeRun({ id: "90000000-0000-4000-8000-000000000007", createdAt: daysAgo(13).toISOString(), startedAt: daysAgo(13).toISOString() }),
+  makeRun({ id: "90000000-0000-4000-8000-000000000008", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10).toISOString() }),
+  makeRun({ id: "90000000-0000-4000-8000-000000000009", status: "failed", terminalClassification: "failed", terminalReasonCode: "process_exit", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10, 15).toISOString() }),
+  makeRun({ id: "90000000-0000-4000-8000-00000000000a", status: "running", terminalClassification: null, terminalFinalizationId: null, currentAttemptId: "91000000-0000-4000-8000-000000000001", currentLeaseId: "92000000-0000-4000-8000-000000000001", createdAt: daysAgo(7).toISOString(), startedAt: daysAgo(7).toISOString(), finishedAt: null }),
+  makeRun({ id: "90000000-0000-4000-8000-00000000000b", createdAt: daysAgo(5).toISOString(), startedAt: daysAgo(5).toISOString() }),
+  makeRun({ id: "90000000-0000-4000-8000-00000000000c", status: "timed_out", terminalClassification: "timed_out", terminalReasonCode: "timeout", createdAt: daysAgo(3).toISOString(), startedAt: daysAgo(3).toISOString() }),
+  makeRun({ id: "90000000-0000-4000-8000-00000000000d", createdAt: daysAgo(1).toISOString(), startedAt: daysAgo(1).toISOString() }),
+  makeRun({ id: "90000000-0000-4000-8000-00000000000e", createdAt: daysAgo(1, 16).toISOString(), startedAt: daysAgo(1, 16).toISOString() }),
 ];
 
 const activityTasks = [
@@ -134,16 +133,16 @@ const activityTasks = [
 const kanbanTasks: Task[] = [
   ...storybookTasks,
   createTask({
-    id: "task-kanban-backlog",
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddd016",
     identifier: "PAP-1701",
     taskNumber: 1701,
     title: "Sketch company analytics dashboard",
     boardPresentationStatus: "backlog",
     priority: "low",
-    owner: { kind: "agent", agentId: "agent-cto" },
+    owner: { kind: "agent", agentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3" },
   }),
   createTask({
-    id: "task-kanban-cancelled",
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddd017",
     identifier: "PAP-1702",
     taskNumber: 1702,
     title: "Remove obsolete color token migration",
@@ -155,12 +154,11 @@ const kanbanTasks: Task[] = [
 
 const packageFiles: Record<string, string> = {
   "COMPANY.md": "---\nname: Paperclip Storybook\nkind: company\n---\nFixture company package for UI review.",
-  "agents/codexcoder/AGENTS.md": "---\nname: CodexCoder\nskills:\n  - frontend-design\n  - paperclip\n---\nShips product UI and verifies changes.",
-  "agents/qachecker/AGENTS.md": "---\nname: QAChecker\nskills:\n  - web-design-guidelines\n---\nReviews browser behavior and acceptance criteria.",
+  "agents/codexcoder/AGENTS.md": "---\nname: CodexCoder\n---\nShips product UI and verifies changes.",
+  "agents/qachecker/AGENTS.md": "---\nname: QAChecker\n---\nReviews browser behavior and acceptance criteria.",
   "projects/board-ui/PROJECT.md": "---\ntitle: Board UI\nstatus: in_progress\n---\nStorybook and operator control-plane surfaces.",
   "tasks/PAP-1641.md": "---\ntitle: Create super-detailed storybooks\npriority: high\n---\nParent task for Storybook coverage.",
   "tasks/PAP-1677.md": "---\ntitle: Data Visualization & Misc stories\npriority: medium\n---\nFixture task for this story file.",
-  "skills/frontend-design/SKILL.md": "---\nname: frontend-design\n---\nDesign quality guidance.",
 };
 
 const actionMap = new Map([
@@ -198,7 +196,7 @@ function ActivityChartsMatrix({ empty = false }: { empty?: boolean }) {
 
 function KanbanBoardDemo({ empty = false }: { empty?: boolean }) {
   const tasks: Task[] = empty ? [] : kanbanTasks;
-  const liveTaskIds = useMemo(() => new Set(["task-storybook-1", "task-kanban-backlog"]), []);
+  const liveTaskIds = useMemo(() => new Set(["dddddddd-dddd-4ddd-8ddd-ddddddddd001", "dddddddd-dddd-4ddd-8ddd-ddddddddd016"]), []);
 
   return (
     <StoryShell>
@@ -273,7 +271,10 @@ function LiveRunWidgetStory({ empty = false, loading = false }: { empty?: boolea
   return (
     <StoryShell>
       <Section eyebrow="LiveRunWidget" title={empty ? "No active run" : "Streaming run indicator"}>
-        <LiveRunWidget taskId={primaryTaskId} />
+        <LiveRunWidget
+          companyId="11111111-1111-4111-8111-111111111111"
+          taskId={primaryTaskId}
+        />
         {empty && (
           <div className="flex items-center gap-3 rounded-xl border border-border bg-background/70 p-4 text-sm text-muted-foreground">
             <Clock3 className="h-4 w-4" />
@@ -296,7 +297,7 @@ function OpenOnboardingOnMount({ initialStep }: { initialStep: 1 | 2 }) {
   return <OnboardingWizard />;
 }
 
-function PackageFileTreeDemo({ empty = false }: { empty?: boolean }) {
+function FileTreeDemo({ empty = false }: { empty?: boolean }) {
   const nodes = useMemo(
     () => (empty ? [] : buildFileTree(packageFiles, actionMap)),
     [empty],
@@ -342,7 +343,7 @@ function PackageFileTreeDemo({ empty = false }: { empty?: boolean }) {
 
   return (
     <StoryShell>
-      <Section eyebrow="PackageFileTree" title={empty ? "Empty package export" : "Selectable company package tree"}>
+      <Section eyebrow="FileTree" title={empty ? "Empty package export" : "Selectable company package tree"}>
         {empty ? (
           <div className="rounded-lg border border-dashed border-border bg-background/70 p-6 text-sm text-muted-foreground">
             No files are included in this package preview.
@@ -354,7 +355,7 @@ function PackageFileTreeDemo({ empty = false }: { empty?: boolean }) {
                 <span className="font-medium">Package contents</span>
                 <Badge variant="outline">{countFiles(nodes)} files</Badge>
               </div>
-              <PackageFileTree
+              <FileTree
                 nodes={nodes}
                 selectedFile={selectedFile}
                 expandedDirs={expandedDirs}
@@ -455,7 +456,13 @@ function EntityRowsDemo({ empty = false }: { empty?: boolean }) {
               subtitle={row.subtitle}
               trailing={row.trailing}
               selected={row.selected}
-              to={row.id === "task" ? "/PAP/tasks/PAP-1677" : undefined}
+              linkOptions={row.id === "task" ? {
+                to: "/$companyId/tasks/$taskNumber",
+                params: {
+                  companyId: "11111111-1111-4111-8111-111111111111",
+                  taskNumber: "1677",
+                },
+              } : undefined}
             />
           ))}
           {rows.length === 0 && (
@@ -551,7 +558,7 @@ function CompanyPatternIconMatrix() {
 function AsciiArtAnimationDemo({ loading = false }: { loading?: boolean }) {
   return (
     <StoryShell>
-      <Section eyebrow="AsciiArtAnimation" title={loading ? "Loading art surface" : "Animated ASCII paperclip field"}>
+      <Section eyebrow="AsciiArtAnimation" title={loading ? "Loading b6000000-0000-4000-8000-000000000001 surface" : "Animated ASCII paperclip field"}>
         <div className="h-[360px] overflow-hidden rounded-xl border border-border bg-background">
           {loading ? (
             <div className="flex h-full items-center justify-center gap-3 text-sm text-muted-foreground">
@@ -672,14 +679,14 @@ export const OnboardingWizardAgentStep: Story = {
   render: () => <OpenOnboardingOnMount initialStep={2} />,
 };
 
-export const PackageFileTreePopulated: Story = {
-  name: "PackageFileTree / Populated",
-  render: () => <PackageFileTreeDemo />,
+export const FileTreePopulated: Story = {
+  name: "FileTree / Populated",
+  render: () => <FileTreeDemo />,
 };
 
-export const PackageFileTreeEmpty: Story = {
-  name: "PackageFileTree / Empty",
-  render: () => <PackageFileTreeDemo empty />,
+export const FileTreeEmpty: Story = {
+  name: "FileTree / Empty",
+  render: () => <FileTreeDemo empty />,
 };
 
 export const EntityRowPopulated: Story = {

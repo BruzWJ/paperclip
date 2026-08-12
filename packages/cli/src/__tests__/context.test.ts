@@ -15,6 +15,8 @@ function createTempContextPath(): string {
   return path.join(dir, "context.json");
 }
 
+const COMPANY_ID = "abcdef12-3456-4789-8abc-def012345678";
+
 describe("client context store", () => {
   it("returns default context when file does not exist", () => {
     const contextPath = createTempContextPath();
@@ -29,7 +31,7 @@ describe("client context store", () => {
       "work",
       {
         apiBase: "http://localhost:3100",
-        companyId: "company-123",
+        companyId: COMPANY_ID,
         apiKeyEnvVarName: "PAPERCLIP_BOARD_TOKEN",
       },
       contextPath,
@@ -41,7 +43,7 @@ describe("client context store", () => {
     expect(context.currentProfile).toBe("work");
     expect(context.profiles.work).toEqual({
       apiBase: "http://localhost:3100",
-      companyId: "company-123",
+      companyId: COMPANY_ID,
       apiKeyEnvVarName: "PAPERCLIP_BOARD_TOKEN",
     });
   });
@@ -61,7 +63,7 @@ describe("client context store", () => {
       "default",
       {
         apiBase: undefined,
-        companyId: "company-123",
+        companyId: COMPANY_ID,
       },
       contextPath,
     );
@@ -69,11 +71,11 @@ describe("client context store", () => {
     const context = readContext(contextPath);
     expect(context.profiles.default).toEqual({
       apiBase: "http://127.0.0.1:3197",
-      companyId: "company-123",
+      companyId: COMPANY_ID,
     });
   });
 
-  it("migrates version 1 context files to board-only version 2 profiles", () => {
+  it("rejects retired context versions and fields", () => {
     const contextPath = createTempContextPath();
     fs.writeFileSync(
       contextPath,
@@ -83,7 +85,7 @@ describe("client context store", () => {
         profiles: {
           legacy: {
             apiBase: "http://localhost:3101",
-            companyId: "company-legacy",
+            companyId: COMPANY_ID,
             persona: "board",
             apiKeyEnvVarName: "PAPERCLIP_BOARD_TOKEN",
           },
@@ -91,35 +93,44 @@ describe("client context store", () => {
       }),
     );
 
-    const context = readContext(contextPath);
-
-    expect(context.version).toBe(2);
-    expect(context.profiles.legacy).toEqual({
-      apiBase: "http://localhost:3101",
-      companyId: "company-legacy",
-      apiKeyEnvVarName: "PAPERCLIP_BOARD_TOKEN",
-    });
+    expect(() => readContext(contextPath)).toThrow(/version must be exactly 2/);
   });
 
-  it("normalizes invalid file content to safe defaults", () => {
+  it("rejects blank profile fields instead of silently dropping them", () => {
     const contextPath = createTempContextPath();
-    writeContext(
-      {
-        version: 2,
-        currentProfile: "x",
-        profiles: {
-          x: {
-            apiBase: " ",
-            companyId: " ",
-            apiKeyEnvVarName: " ",
-          },
+    expect(() =>
+      writeContext(
+        {
+          version: 2,
+          currentProfile: "x",
+          profiles: { x: { apiBase: " ", apiKeyEnvVarName: " " } },
         },
-      },
-      contextPath,
-    );
+        contextPath,
+      ),
+    ).toThrow(/must be exact and non-empty/);
+  });
 
-    const context = readContext(contextPath);
-    expect(context.currentProfile).toBe("x");
-    expect(context.profiles.x).toEqual({});
+  it("rejects an invalid stored company ID without normalizing it", () => {
+    const contextPath = createTempContextPath();
+    for (const companyId of [` ${COMPANY_ID}`, COMPANY_ID.toUpperCase()]) {
+      fs.writeFileSync(
+        contextPath,
+        JSON.stringify({
+          version: 2,
+          currentProfile: "x",
+          profiles: { x: { companyId } },
+        }),
+      );
+      expect(() => readContext(contextPath)).toThrow(
+        /exact canonical company UUID/,
+      );
+    }
+  });
+
+  it("rejects an invalid company ID before writing a profile", () => {
+    const contextPath = createTempContextPath();
+    expect(() =>
+      upsertProfile("x", { companyId: "company-123" }, contextPath),
+    ).toThrow(/exact canonical company UUID/);
   });
 });

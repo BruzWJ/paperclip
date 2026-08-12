@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { Loader2, ShieldCheck, Terminal, TriangleAlert } from "lucide-react";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { BOOTSTRAP_FALLBACK_COMMAND } from "@/bootstrapSetup";
+import { BOOTSTRAP_ADMIN_COMMAND } from "@/bootstrapSetup";
 import type { AuthSession } from "@paperclipai/shared";
 import { Card } from "@/components/ui/card";
 
@@ -16,7 +16,7 @@ type BootstrapPendingPageProps = {
   onClaim: () => void;
 };
 
-function CliFallback({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
+function HostSetupCommand({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
   return (
     <div className="mt-6 border-t border-border pt-5">
       <div className="flex items-center gap-2 text-sm font-medium">
@@ -29,7 +29,7 @@ function CliFallback({ hasActiveInvite = false }: { hasActiveInvite?: boolean })
           : "Run this command on the host that runs Paperclip to print a one-time first-admin invite URL:"}
       </p>
       <pre className="mt-3 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-xs">
-{BOOTSTRAP_FALLBACK_COMMAND}
+{BOOTSTRAP_ADMIN_COMMAND}
       </pre>
     </div>
   );
@@ -83,7 +83,7 @@ export function BootstrapPendingPage({
           This instance runs in invite-only mode. The operator must generate a one-time first-admin invite URL
           from the host. Once you have the link, open it from this browser to finish setup.
         </p>
-        <CliFallback hasActiveInvite={hasActiveInvite} />
+        <HostSetupCommand hasActiveInvite={hasActiveInvite} />
         <p className="mt-4 text-xs text-muted-foreground">
           Browser-based claim is intentionally disabled in public mode so anyone on the network can't promote
           themselves.
@@ -112,7 +112,7 @@ export function BootstrapPendingPage({
         </div>
         <div className="mt-5">
           <Button asChild variant="outline">
-            <a href="/">Continue to dashboard</a>
+            <Link to="/">Continue to dashboard</Link>
           </Button>
         </div>
       </StateChrome>
@@ -129,10 +129,10 @@ export function BootstrapPendingPage({
         </p>
         <div className="mt-5">
           <Button asChild>
-            <Link to="/auth?next=/">Sign in / Create account</Link>
+            <Link to="/auth" search={{ next: "/" }}>Sign in / Create account</Link>
           </Button>
         </div>
-        <CliFallback hasActiveInvite={hasActiveInvite} />
+        <HostSetupCommand hasActiveInvite={hasActiveInvite} />
       </StateChrome>
     );
   }
@@ -155,7 +155,7 @@ export function BootstrapPendingPage({
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
         Wrong account?{" "}
-        <Link to="/auth?next=/" className="underline underline-offset-2">
+        <Link to="/auth" search={{ next: "/" }} className="underline underline-offset-2">
           Switch account
         </Link>
         .
@@ -172,7 +172,7 @@ export function BootstrapPendingPage({
           </div>
         </div>
       )}
-      <CliFallback hasActiveInvite={hasActiveInvite} />
+      <HostSetupCommand hasActiveInvite={hasActiveInvite} />
     </StateChrome>
   );
 }

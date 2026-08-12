@@ -5,7 +5,6 @@ import { promises as fs } from "node:fs";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginConfig, PluginRecord } from "@paperclipai/shared";
-import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockRegistry = vi.hoisted(() => ({
@@ -89,7 +88,6 @@ async function createApp(
     req.actor = actor as typeof req.actor;
     next();
   });
-  app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", pluginRoutes(
     (routeOverrides.db ?? createAuditDb()) as never,
     mockLifecycle as never,
@@ -102,9 +100,10 @@ async function createApp(
 
 const companyA = "22222222-2222-4222-8222-222222222222";
 const companyB = "33333333-3333-4333-8333-333333333333";
-const agentA = "44444444-4444-4444-8444-444444444444";
-const runA = "55555555-5555-4555-8555-555555555555";
 const pluginId = "11111111-1111-4111-8111-111111111111";
+const scopedCompanyId = "22222222-2222-4222-8222-222222222222";
+const jobId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const jobRunId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const installedAt = new Date("2026-08-05T01:02:03.000Z");
 const updatedAt = new Date("2026-08-06T04:05:06.000Z");
 
@@ -161,17 +160,6 @@ function boardActor(
     companyIds: [companyA],
     ...overrides,
   });
-}
-
-function agentActor(overrides: Record<string, unknown> = {}) {
-  return {
-    type: "agent",
-    agentId: agentA,
-    companyId: companyA,
-    runId: runA,
-    source: "internal",
-    ...overrides,
-  };
 }
 
 function readyPlugin() {
@@ -679,14 +667,14 @@ describe.sequential("scoped plugin API routes", () => {
         userEmail: "admin-1@paperclip.test",
         sessionId: "session-admin-1",
         isInstanceAdmin: false,
-        companyIds: ["company-1"],
+        companyIds: [scopedCompanyId],
       }),
       { runtime: { workerManager } },
     );
 
     const res = await request(app)
       .get(`/api/plugins/${pluginId}/api/smoke`)
-      .query({ companyId: "company-1" });
+      .query({ companyId: scopedCompanyId });
 
     expect(res.status).toBe(202);
     expect(res.body).toEqual({ ok: true });
@@ -696,8 +684,8 @@ describe.sequential("scoped plugin API routes", () => {
       expect.objectContaining({
         routeKey: "smoke",
         method: "GET",
-        companyId: "company-1",
-        query: { companyId: "company-1" },
+        companyId: scopedCompanyId,
+        query: { companyId: scopedCompanyId },
       }),
     );
   }, 20_000);
@@ -944,53 +932,6 @@ describe.sequential("plugin bridge authz", () => {
     expect(call).not.toHaveBeenCalled();
   });
 
-  it("rejects agent-scoped plugin actions at the generic REST boundary", async () => {
-    readyPlugin();
-    const call = vi.fn().mockResolvedValue({ ok: true });
-    const { app } = await createApp(agentActor(), {
-      runtime: {
-        workerManager: { call },
-      },
-    });
-
-    const res = await request(app)
-      .post(`/api/plugins/${pluginId}/actions/sync`)
-      .send({
-        companyId: companyA,
-        params: {
-          companyId: companyB,
-          reviewerAgentId: "spoofed-agent",
-        },
-      });
-
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({
-      code: "compiled_run_interface_required",
-    });
-    expect(call).not.toHaveBeenCalled();
-
-  });
-
-  it("rejects agent plugin actions outside the authenticated company scope", async () => {
-    readyPlugin();
-    const call = vi.fn().mockResolvedValue({ ok: true });
-    const { app } = await createApp(agentActor(), {
-      runtime: {
-        workerManager: { call },
-      },
-    });
-
-    const res = await request(app)
-      .post(`/api/plugins/${pluginId}/actions/sync`)
-      .send({ companyId: companyB });
-
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({
-      code: "compiled_run_interface_required",
-    });
-    expect(call).not.toHaveBeenCalled();
-  });
-
   it("attaches worker bridge errors to the HTTP logger context", async () => {
     readyPlugin();
     const call = vi.fn().mockRejectedValue(new Error("missing source_objects column"));
@@ -1043,8 +984,8 @@ describe.sequential("plugin bridge authz", () => {
 
   it("allows manual job triggers for instance admins", async () => {
     readyPlugin();
-    const scheduler = { triggerJob: vi.fn().mockResolvedValue({ runId: "run-1", jobId: "job-1" }) };
-    const jobStore = { getJobByIdForPlugin: vi.fn().mockResolvedValue({ id: "job-1" }) };
+    const scheduler = { triggerJob: vi.fn().mockResolvedValue({ runId: jobRunId, jobId }) };
+    const jobStore = { getJobByIdForPlugin: vi.fn().mockResolvedValue({ id: jobId }) };
     const { app } = await createApp(boardActor({
       userId: "admin-1",
       isInstanceAdmin: true,
@@ -1054,12 +995,33 @@ describe.sequential("plugin bridge authz", () => {
     });
 
     const res = await request(app)
-      .post(`/api/plugins/${pluginId}/jobs/job-1/trigger`)
+      .post(`/api/plugins/${pluginId}/jobs/${jobId}/trigger`)
       .send({});
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ runId: "run-1", jobId: "job-1" });
-    expect(scheduler.triggerJob).toHaveBeenCalledWith("job-1");
+    expect(res.body).toEqual({ runId: jobRunId, jobId });
+    expect(scheduler.triggerJob).toHaveBeenCalledWith(jobId);
+  });
+
+  it("rejects noncanonical job identity aliases before lookup", async () => {
+    readyPlugin();
+    const scheduler = { triggerJob: vi.fn() };
+    const jobStore = { getJobByIdForPlugin: vi.fn() };
+    const { app } = await createApp(boardActor({
+      userId: "admin-1",
+      isInstanceAdmin: true,
+      companyIds: [],
+    }), {
+      runtime: { scheduler, jobStore },
+    });
+
+    const res = await request(app)
+      .post(`/api/plugins/${pluginId}/jobs/${jobId.toUpperCase()}/trigger`)
+      .send({});
+
+    expect(res.status).toBe(404);
+    expect(jobStore.getJobByIdForPlugin).not.toHaveBeenCalled();
+    expect(scheduler.triggerJob).not.toHaveBeenCalled();
   });
 
 });

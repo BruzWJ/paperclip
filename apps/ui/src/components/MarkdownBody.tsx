@@ -1,18 +1,42 @@
-import { isValidElement, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import {
+  isValidElement,
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, ExternalLink, Github, WrapText } from "lucide-react";
-import Markdown, { defaultUrlTransform, type Components, type Options } from "react-markdown";
+import Markdown, {
+  defaultUrlTransform,
+  type Components,
+  type Options,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "../lib/utils";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
 import { useTheme } from "../context/ThemeContext";
 import { useOptionalCompany } from "../context/CompanyContext";
-import { mentionChipInlineStyle, parseMentionChipHref } from "../lib/mention-chips";
-import { tasksApi } from "../api/tasks";
-import { queryKeys } from "../lib/queryKeys";
-import { parseTaskReferenceFromHref, remarkLinkTaskReferences } from "../lib/task-reference";
+import {
+  mentionChipInlineStyle,
+  parseMentionChipHref,
+} from "../lib/mention-chips";
+import {
+  getTaskDetailQueryOptions,
+} from "../lib/taskDetailCache";
+import {
+  parseTaskReferenceFromHref,
+  remarkLinkTaskReferences,
+} from "../lib/task-reference";
 import { remarkSoftBreaks } from "../lib/remark-soft-breaks";
 import { StatusIcon } from "./StatusIcon";
+import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
+import { resolvePluginNavigationHref } from "@paperclipai/shared";
+import { copyTextToClipboard } from "@/lib/clipboard";
 
 interface MarkdownBodyProps {
   children: string;
@@ -25,36 +49,45 @@ interface MarkdownBodyProps {
   /** Base href used for wikilinks when no resolver is supplied. */
   wikiLinkRoot?: string;
   /** Optional href resolver for wikilinks. Return null to leave a token as plain text. */
-  resolveWikiLinkHref?: (target: string, label: string) => string | null | undefined;
+  resolveWikiLinkHref?: (
+    target: string,
+    label: string,
+  ) => string | null | undefined;
   /** Optional resolver for relative image paths (e.g. within export packages) */
   resolveImageSrc?: (src: string) => string | null;
   /** Called when a user clicks an inline image */
   onImageClick?: (src: string) => void;
 }
 
-let mermaidLoaderPromise: Promise<typeof import("mermaid").default> | null = null;
+let mermaidLoaderPromise: Promise<typeof import("mermaid").default> | null =
+  null;
 
 function MarkdownTaskLink({
-  taskPathId,
+  taskId,
   children,
 }: {
-  taskPathId: string;
+  taskId: string;
   children: ReactNode;
 }) {
+  const queryClient = useQueryClient();
   const { data } = useQuery({
-    queryKey: queryKeys.tasks.detail(taskPathId),
-    queryFn: () => tasksApi.get(taskPathId),
+    ...getTaskDetailQueryOptions(queryClient, taskId),
     staleTime: 60_000,
   });
 
-  const identifier = data?.identifier ?? taskPathId;
+  const identifier = data?.identifier ?? "Task unavailable";
   const title = data?.title ?? identifier;
   const status = data?.boardPresentationStatus;
-  const taskLabel = title !== identifier ? `Task ${identifier}: ${title}` : `Task ${identifier}`;
+  const taskLabel =
+    title !== identifier
+      ? `Task ${identifier}: ${title}`
+      : `Task ${identifier}`;
 
   return (
-    <Link
-      to={`/tasks/${identifier}`}
+    <TaskLinkQuicklook
+      taskId={taskId}
+      taskNumber={data?.taskNumber ?? null}
+      taskPrefetch={data}
       data-mention-kind="task"
       // Boxless inline mention: the unified status glyph + a regular-weight
       // underlined link, optically centered with the body text.
@@ -63,8 +96,57 @@ function MarkdownTaskLink({
       aria-label={taskLabel}
     >
       {status ? (
-        <StatusIcon status={status} size="lg" className="relative -top-px mr-1 inline-block h-5 w-5 align-middle" />
+        <StatusIcon
+          status={status}
+          size="lg"
+          className="relative -top-px mr-1 inline-block h-5 w-5 align-middle"
+        />
       ) : null}
+      {children}
+    </TaskLinkQuicklook>
+  );
+}
+
+type MarkdownEntityMentionLinkProps = {
+  companyId: string;
+  entityId: string;
+  children: ReactNode;
+  linkProps: {
+    className: string;
+    "data-mention-kind": string;
+    style: React.CSSProperties | undefined;
+  };
+};
+
+function MarkdownAgentMentionLink({
+  companyId,
+  entityId,
+  children,
+  linkProps,
+}: MarkdownEntityMentionLinkProps) {
+  return (
+    <Link
+      to="/$companyId/agents/$agentId"
+      params={{ companyId, agentId: entityId }}
+      {...linkProps}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function MarkdownProjectMentionLink({
+  companyId,
+  entityId,
+  children,
+  linkProps,
+}: MarkdownEntityMentionLinkProps) {
+  return (
+    <Link
+      to="/$companyId/projects/$projectId"
+      params={{ companyId, projectId: entityId }}
+      {...linkProps}
+    >
       {children}
     </Link>
   );
@@ -107,7 +189,8 @@ const codeBlockActionStyle: React.CSSProperties = {
   padding: "0.2rem 0.4rem",
   borderRadius: "calc(var(--radius) - 4px)",
   border: "1px solid color-mix(in oklab, var(--foreground) 14%, transparent)",
-  backgroundColor: "color-mix(in oklab, var(--muted) 92%, var(--background) 8%)",
+  backgroundColor:
+    "color-mix(in oklab, var(--muted) 92%, var(--background) 8%)",
   color: "var(--muted-foreground)",
   fontSize: "var(--text-micro)",
   lineHeight: 1,
@@ -126,13 +209,20 @@ const tableCellWrapStyle: React.CSSProperties = {
 };
 
 function isHtmlCommentNode(node: MarkdownAstNode) {
-  return node.type === "html" && typeof node.value === "string" && /^<!--[\s\S]*-->$/.test(node.value.trim());
+  return (
+    node.type === "html" &&
+    typeof node.value === "string" &&
+    /^<!--[\s\S]*-->$/.test(node.value.trim())
+  );
 }
 
 function isEscapedHtmlCommentPlaceholder(node: MarkdownAstNode) {
   if (node.type !== "text" || typeof node.value !== "string") return false;
   const value = node.value.trim();
-  return /^\\?<!--(?:\s*-{0,2}>?)?$/.test(value) || /^&lt;!--(?:\s*-{0,2}(?:&gt;)?)?$/.test(value);
+  return (
+    /^\\?<!--(?:\s*-{0,2}>?)?$/.test(value) ||
+    /^&lt;!--(?:\s*-{0,2}(?:&gt;)?)?$/.test(value)
+  );
 }
 
 function remarkDropHtmlComments() {
@@ -140,7 +230,10 @@ function remarkDropHtmlComments() {
     const visit = (node: MarkdownAstNode) => {
       const children = node.children;
       if (!children) return;
-      node.children = children.filter((child) => !isHtmlCommentNode(child) && !isEscapedHtmlCommentPlaceholder(child));
+      node.children = children.filter(
+        (child) =>
+          !isHtmlCommentNode(child) && !isEscapedHtmlCommentPlaceholder(child),
+      );
       for (const child of node.children) {
         visit(child);
       }
@@ -163,7 +256,9 @@ function mergeTableCellStyle(style?: React.CSSProperties): React.CSSProperties {
   };
 }
 
-function mergeScrollableBlockStyle(style?: React.CSSProperties): React.CSSProperties {
+function mergeScrollableBlockStyle(
+  style?: React.CSSProperties,
+): React.CSSProperties {
   return {
     ...scrollableBlockStyle,
     ...style,
@@ -172,14 +267,19 @@ function mergeScrollableBlockStyle(style?: React.CSSProperties): React.CSSProper
 
 function flattenText(value: ReactNode): string {
   if (value == null) return "";
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  if (Array.isArray(value)) return value.map((item) => flattenText(item)).join("");
+  if (typeof value === "string" || typeof value === "number")
+    return String(value);
+  if (Array.isArray(value))
+    return value.map((item) => flattenText(item)).join("");
   return "";
 }
 
 function extractMermaidSource(children: ReactNode): string | null {
   if (!isValidElement(children)) return null;
-  const childProps = children.props as { className?: unknown; children?: ReactNode };
+  const childProps = children.props as {
+    className?: unknown;
+    children?: ReactNode;
+  };
   if (typeof childProps.className !== "string") return null;
   if (!/\blanguage-mermaid\b/i.test(childProps.className)) return null;
   return flattenText(childProps.children).replace(/\n$/, "");
@@ -217,7 +317,8 @@ const WIKI_LINK_SKIP_PARENT_TYPES = new Set([
 function parseWikiLinkBody(body: string): ParsedWikiLink | null {
   const [rawTarget, ...rawLabelParts] = body.split("|");
   const target = rawTarget?.trim() ?? "";
-  const label = rawLabelParts.length > 0 ? rawLabelParts.join("|").trim() : target;
+  const label =
+    rawLabelParts.length > 0 ? rawLabelParts.join("|").trim() : target;
   if (!target || target.includes("[") || target.includes("]")) return null;
   return {
     target,
@@ -227,7 +328,12 @@ function parseWikiLinkBody(body: string): ParsedWikiLink | null {
 
 function encodeWikiLinkTarget(target: string): string | null {
   const trimmed = target.trim();
-  if (!trimmed || /^[a-z][a-z\d+.-]*:/i.test(trimmed) || trimmed.startsWith("//")) return null;
+  if (
+    !trimmed ||
+    /^[a-z][a-z\d+.-]*:/i.test(trimmed) ||
+    trimmed.startsWith("//")
+  )
+    return null;
 
   const hashIndex = trimmed.indexOf("#");
   const rawPath = (hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed)
@@ -236,24 +342,37 @@ function encodeWikiLinkTarget(target: string): string | null {
   if (
     !rawPath ||
     rawPath.includes("\\") ||
-    rawPath.split("/").some((segment) => !segment || segment === "." || segment === "..")
+    rawPath
+      .split("/")
+      .some((segment) => !segment || segment === "." || segment === "..")
   ) {
     return null;
   }
 
-  const encodedPath = rawPath.split("/").map((segment) => encodeURIComponent(segment)).join("/");
+  const encodedPath = rawPath
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
   const rawHash = hashIndex >= 0 ? trimmed.slice(hashIndex + 1).trim() : "";
-  return rawHash ? `${encodedPath}#${encodeURIComponent(rawHash)}` : encodedPath;
+  return rawHash
+    ? `${encodedPath}#${encodeURIComponent(rawHash)}`
+    : encodedPath;
 }
 
-function defaultWikiLinkHref(target: string, wikiLinkRoot?: string): string | null {
+function defaultWikiLinkHref(
+  target: string,
+  wikiLinkRoot?: string,
+): string | null {
   const encodedTarget = encodeWikiLinkTarget(target);
   if (!encodedTarget) return null;
   const root = wikiLinkRoot?.trim().replace(/\/+$/, "") ?? "";
   return root ? `${root}/${encodedTarget}` : encodedTarget;
 }
 
-function createWikiLinkNode(href: string, wikiLink: ParsedWikiLink): MarkdownAstNode {
+function createWikiLinkNode(
+  href: string,
+  wikiLink: ParsedWikiLink,
+): MarkdownAstNode {
   return {
     type: "link",
     url: href,
@@ -272,7 +391,10 @@ function splitTextByWikiLinks(
   value: string,
   options: {
     wikiLinkRoot?: string;
-    resolveWikiLinkHref?: (target: string, label: string) => string | null | undefined;
+    resolveWikiLinkHref?: (
+      target: string,
+      label: string,
+    ) => string | null | undefined;
   },
 ): MarkdownAstNode[] {
   const nodes: MarkdownAstNode[] = [];
@@ -290,12 +412,19 @@ function splitTextByWikiLinks(
     let resolvedHref: string | null = null;
     if (wikiLink) {
       if (options.resolveWikiLinkHref) {
-        const customHref = options.resolveWikiLinkHref(wikiLink.target, wikiLink.label);
-        resolvedHref = customHref === undefined
-          ? defaultWikiLinkHref(wikiLink.target, options.wikiLinkRoot)
-          : customHref;
+        const customHref = options.resolveWikiLinkHref(
+          wikiLink.target,
+          wikiLink.label,
+        );
+        resolvedHref =
+          customHref === undefined
+            ? defaultWikiLinkHref(wikiLink.target, options.wikiLinkRoot)
+            : customHref;
       } else {
-        resolvedHref = defaultWikiLinkHref(wikiLink.target, options.wikiLinkRoot);
+        resolvedHref = defaultWikiLinkHref(
+          wikiLink.target,
+          options.wikiLinkRoot,
+        );
       }
     }
 
@@ -318,13 +447,21 @@ function transformWikiLinkChildren(
   node: MarkdownAstNode,
   options: {
     wikiLinkRoot?: string;
-    resolveWikiLinkHref?: (target: string, label: string) => string | null | undefined;
+    resolveWikiLinkHref?: (
+      target: string,
+      label: string,
+    ) => string | null | undefined;
   },
 ) {
-  if (!node.children || WIKI_LINK_SKIP_PARENT_TYPES.has(node.type ?? "")) return;
+  if (!node.children || WIKI_LINK_SKIP_PARENT_TYPES.has(node.type ?? ""))
+    return;
 
   node.children = node.children.flatMap((child) => {
-    if (child.type === "text" && typeof child.value === "string" && child.value.includes("[[")) {
+    if (
+      child.type === "text" &&
+      typeof child.value === "string" &&
+      child.value.includes("[[")
+    ) {
       return splitTextByWikiLinks(child.value, options);
     }
     transformWikiLinkChildren(child, options);
@@ -334,7 +471,10 @@ function transformWikiLinkChildren(
 
 function createRemarkWikiLinks(options: {
   wikiLinkRoot?: string;
-  resolveWikiLinkHref?: (target: string, label: string) => string | null | undefined;
+  resolveWikiLinkHref?: (
+    target: string,
+    label: string,
+  ) => string | null | undefined;
 }) {
   return function remarkWikiLinks() {
     return (tree: MarkdownAstNode) => {
@@ -347,7 +487,10 @@ function isGitHubUrl(href: string | null | undefined): boolean {
   if (!href) return false;
   try {
     const url = new URL(href);
-    return url.protocol === "https:" && (url.hostname === "github.com" || url.hostname === "www.github.com");
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "github.com" || url.hostname === "www.github.com")
+    );
   } catch {
     return false;
   }
@@ -363,6 +506,18 @@ function isExternalHttpUrl(href: string | null | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+function isNonRouterAnchor(
+  href: string | null | undefined,
+  download: unknown,
+): boolean {
+  if (!href) return false;
+  const trimmed = href.trim();
+  if (!trimmed) return false;
+  if (download !== undefined) return true;
+  if (trimmed.startsWith("#") || trimmed.startsWith("/api/")) return true;
+  return /^(?:blob:|data:|mailto:|tel:)/i.test(trimmed);
 }
 
 function renderLinkBody(
@@ -394,14 +549,18 @@ function renderLinkBody(
             {leadingIcon}
             {first}
           </span>
-        ) : first}
+        ) : (
+          first
+        )}
         {middle}
         {trailingIcon ? (
           <span style={{ whiteSpace: "nowrap" }}>
             {last}
             {trailingIcon}
           </span>
-        ) : last}
+        ) : (
+          last
+        )}
       </>
     );
   }
@@ -433,22 +592,7 @@ function CodeBlock({
   const handleCopy = useCallback(async () => {
     const text = preRef.current?.innerText ?? flattenText(children);
     try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement("textarea");
-        textarea.value = text;
-        textarea.style.position = "fixed";
-        textarea.style.left = "-9999px";
-        document.body.appendChild(textarea);
-        try {
-          textarea.select();
-          const success = document.execCommand("copy");
-          if (!success) throw new Error("execCommand copy failed");
-        } finally {
-          document.body.removeChild(textarea);
-        }
-      }
+      await copyTextToClipboard(text);
       setFailed(false);
       setCopied(true);
     } catch {
@@ -466,12 +610,17 @@ function CodeBlock({
   const wrapLabel = wrapLines ? "Unwrap lines" : "Wrap lines";
 
   return (
-    <div className="paperclip-markdown-codeblock" data-wrap-lines={wrapLines || undefined}>
+    <div
+      className="paperclip-markdown-codeblock"
+      data-wrap-lines={wrapLines || undefined}
+    >
       <pre
         {...preProps}
         ref={preRef}
         style={{
-          ...mergeScrollableBlockStyle(preProps.style as React.CSSProperties | undefined),
+          ...mergeScrollableBlockStyle(
+            preProps.style as React.CSSProperties | undefined,
+          ),
           ...(wrapLines
             ? {
                 overflowX: "hidden",
@@ -495,13 +644,16 @@ function CodeBlock({
           aria-label={wrapLabel}
           title={wrapLabel}
           className="paperclip-markdown-codeblock-action paperclip-markdown-codeblock-wrap"
-          style={wrapLines
-            ? {
-                ...codeBlockWrapActionStyle,
-                borderColor: "color-mix(in oklab, var(--primary) 38%, transparent)",
-                color: "var(--primary)",
-              }
-            : codeBlockWrapActionStyle}
+          style={
+            wrapLines
+              ? {
+                  ...codeBlockWrapActionStyle,
+                  borderColor:
+                    "color-mix(in oklab, var(--primary) 38%, transparent)",
+                  color: "var(--primary)",
+                }
+              : codeBlockWrapActionStyle
+          }
           aria-pressed={wrapLines}
           data-active={wrapLines || undefined}
         >
@@ -522,14 +674,22 @@ function CodeBlock({
           ) : (
             <Copy aria-hidden="true" className="h-3.5 w-3.5" />
           )}
-          <span className="paperclip-markdown-codeblock-action-label">{copyLabel}</span>
+          <span className="paperclip-markdown-codeblock-action-label">
+            {copyLabel}
+          </span>
         </button>
       </div>
     </div>
   );
 }
 
-function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: boolean }) {
+function MermaidDiagramBlock({
+  source,
+  darkMode,
+}: {
+  source: string;
+  darkMode: boolean;
+}) {
   const renderId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -548,7 +708,10 @@ function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: b
           fontFamily: "inherit",
           suppressErrorRendering: true,
         });
-        const rendered = await mermaid.render(`paperclip-mermaid-${renderId}`, source);
+        const rendered = await mermaid.render(
+          `paperclip-mermaid-${renderId}`,
+          source,
+        );
         if (!active) return;
         setSvg(rendered.svg);
       })
@@ -572,8 +735,15 @@ function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: b
         <div dangerouslySetInnerHTML={{ __html: svg }} />
       ) : (
         <>
-          <p className={cn("paperclip-mermaid-status", error && "paperclip-mermaid-status-error")}>
-            {error ? `Unable to render Mermaid diagram: ${error}` : "Rendering Mermaid diagram..."}
+          <p
+            className={cn(
+              "paperclip-mermaid-status",
+              error && "paperclip-mermaid-status-error",
+            )}
+          >
+            {error
+              ? `Unable to render Mermaid diagram: ${error}`
+              : "Rendering Mermaid diagram..."}
           </p>
           <pre className="paperclip-mermaid-source">
             <code className="language-mermaid">{source}</code>
@@ -597,16 +767,11 @@ function MarkdownBodyImpl({
   onImageClick,
 }: MarkdownBodyProps) {
   const { theme } = useTheme();
-  // MarkdownBody also renders outside CompanyProvider; those surfaces have no
-  // authority to auto-link bare task identifiers.
-  const company = useOptionalCompany();
-  const companies = company?.companies;
+  // MarkdownBody also renders outside CompanyProvider; those surfaces can
+  // render task:// references but cannot resolve them into company routes.
+  const companyId = useOptionalCompany()?.selectedCompany?.id ?? null;
   // Stable identity so it can feed the memoized remark plugins without
   // re-creating them (and forcing a full markdown re-parse) every render.
-  const knownPrefixes = useMemo(
-    () => companies?.map((c) => c.taskPrefix) ?? [],
-    [companies],
-  );
   // react-markdown treats the values of `components` as component *types* and
   // the `remarkPlugins` array by identity. Rebuilding either on every render
   // forces react-markdown to unmount/remount the rendered tree, which discards
@@ -614,137 +779,286 @@ function MarkdownBodyImpl({
   // parent re-renders frequently (see PAP-10767). Memoize both so re-renders
   // that don't change the inputs are cheap and non-destructive.
   const remarkPlugins = useMemo<NonNullable<Options["remarkPlugins"]>>(() => {
-    const plugins: NonNullable<Options["remarkPlugins"]> = [remarkGfm, remarkDropHtmlComments];
+    const plugins: NonNullable<Options["remarkPlugins"]> = [
+      remarkGfm,
+      remarkDropHtmlComments,
+    ];
     if (enableWikiLinks) {
-      plugins.push(createRemarkWikiLinks({ wikiLinkRoot, resolveWikiLinkHref }));
+      plugins.push(
+        createRemarkWikiLinks({ wikiLinkRoot, resolveWikiLinkHref }),
+      );
     }
     if (linkTaskReferences) {
-      plugins.push([remarkLinkTaskReferences, { knownPrefixes }]);
+      plugins.push(remarkLinkTaskReferences);
     }
     if (softBreaks) {
       plugins.push(remarkSoftBreaks);
     }
     return plugins;
-  }, [enableWikiLinks, wikiLinkRoot, resolveWikiLinkHref, linkTaskReferences, knownPrefixes, softBreaks]);
+  }, [
+    enableWikiLinks,
+    wikiLinkRoot,
+    resolveWikiLinkHref,
+    linkTaskReferences,
+    softBreaks,
+  ]);
   const components = useMemo<Components>(() => {
     const map: Components = {
-    p: ({ node: _node, style: paragraphStyle, children: paragraphChildren, ...paragraphProps }) => (
-      <p {...paragraphProps} style={mergeWrapStyle(paragraphStyle as React.CSSProperties | undefined)}>
-        {paragraphChildren}
-      </p>
-    ),
-    li: ({ node: _node, style: listItemStyle, children: listItemChildren, ...listItemProps }) => (
-      <li {...listItemProps} style={mergeWrapStyle(listItemStyle as React.CSSProperties | undefined)}>
-        {listItemChildren}
-      </li>
-    ),
-    blockquote: ({ node: _node, style: blockquoteStyle, children: blockquoteChildren, ...blockquoteProps }) => (
-      <blockquote {...blockquoteProps} style={mergeWrapStyle(blockquoteStyle as React.CSSProperties | undefined)}>
-        {blockquoteChildren}
-      </blockquote>
-    ),
-    table: ({ node: _node, style: tableStyle, children: tableChildren, ...tableProps }) => (
-      <div className="paperclip-markdown-table-scroll" role="region" aria-label="Scrollable table" tabIndex={0}>
-        <table {...tableProps} style={tableStyle as React.CSSProperties | undefined}>
-          {tableChildren}
-        </table>
-      </div>
-    ),
-    td: ({ node: _node, style: tableCellStyle, children: tableCellChildren, ...tableCellProps }) => (
-      <td {...tableCellProps} style={mergeTableCellStyle(tableCellStyle as React.CSSProperties | undefined)}>
-        {tableCellChildren}
-      </td>
-    ),
-    th: ({ node: _node, style: tableHeaderStyle, children: tableHeaderChildren, ...tableHeaderProps }) => (
-      <th {...tableHeaderProps} style={mergeTableCellStyle(tableHeaderStyle as React.CSSProperties | undefined)}>
-        {tableHeaderChildren}
-      </th>
-    ),
-    pre: ({ node: _node, children: preChildren, ...preProps }) => {
-      const mermaidSource = extractMermaidSource(preChildren);
-      if (mermaidSource) {
-        return <MermaidDiagramBlock source={mermaidSource} darkMode={theme === "dark"} />;
-      }
-      return <CodeBlock preProps={preProps}>{preChildren}</CodeBlock>;
-    },
-    code: ({ node: _node, style: codeStyle, children: codeChildren, ...codeProps }) => (
-      <code {...codeProps} style={mergeWrapStyle(codeStyle as React.CSSProperties | undefined)}>
-        {codeChildren}
-      </code>
-    ),
-    a: ({ node: _node, href, style: linkStyle, children: linkChildren, ...anchorProps }) => {
-      const dataProps = anchorProps as Record<string, unknown>;
-      const isWikiLink = dataProps["data-paperclip-wiki-link"] === "true";
-      if (isWikiLink && href && !/^[a-z][a-z\d+.-]*:/i.test(href) && !href.startsWith("//")) {
-        return (
-          <Link
-            to={href}
-            {...anchorProps}
-            rel="noreferrer"
-            style={mergeWrapStyle(linkStyle as React.CSSProperties | undefined)}
+      p: ({
+        node: _node,
+        style: paragraphStyle,
+        children: paragraphChildren,
+        ...paragraphProps
+      }) => (
+        <p
+          {...paragraphProps}
+          style={mergeWrapStyle(
+            paragraphStyle as React.CSSProperties | undefined,
+          )}
+        >
+          {paragraphChildren}
+        </p>
+      ),
+      li: ({
+        node: _node,
+        style: listItemStyle,
+        children: listItemChildren,
+        ...listItemProps
+      }) => (
+        <li
+          {...listItemProps}
+          style={mergeWrapStyle(
+            listItemStyle as React.CSSProperties | undefined,
+          )}
+        >
+          {listItemChildren}
+        </li>
+      ),
+      blockquote: ({
+        node: _node,
+        style: blockquoteStyle,
+        children: blockquoteChildren,
+        ...blockquoteProps
+      }) => (
+        <blockquote
+          {...blockquoteProps}
+          style={mergeWrapStyle(
+            blockquoteStyle as React.CSSProperties | undefined,
+          )}
+        >
+          {blockquoteChildren}
+        </blockquote>
+      ),
+      table: ({
+        node: _node,
+        style: tableStyle,
+        children: tableChildren,
+        ...tableProps
+      }) => (
+        <div
+          className="paperclip-markdown-table-scroll"
+          role="region"
+          aria-label="Scrollable table"
+          tabIndex={0}
+        >
+          <table
+            {...tableProps}
+            style={tableStyle as React.CSSProperties | undefined}
           >
-            {linkChildren}
-          </Link>
-        );
-      }
+            {tableChildren}
+          </table>
+        </div>
+      ),
+      td: ({
+        node: _node,
+        style: tableCellStyle,
+        children: tableCellChildren,
+        ...tableCellProps
+      }) => (
+        <td
+          {...tableCellProps}
+          style={mergeTableCellStyle(
+            tableCellStyle as React.CSSProperties | undefined,
+          )}
+        >
+          {tableCellChildren}
+        </td>
+      ),
+      th: ({
+        node: _node,
+        style: tableHeaderStyle,
+        children: tableHeaderChildren,
+        ...tableHeaderProps
+      }) => (
+        <th
+          {...tableHeaderProps}
+          style={mergeTableCellStyle(
+            tableHeaderStyle as React.CSSProperties | undefined,
+          )}
+        >
+          {tableHeaderChildren}
+        </th>
+      ),
+      pre: ({ node: _node, children: preChildren, ...preProps }) => {
+        const mermaidSource = extractMermaidSource(preChildren);
+        if (mermaidSource) {
+          return (
+            <MermaidDiagramBlock
+              source={mermaidSource}
+              darkMode={theme === "dark"}
+            />
+          );
+        }
+        return <CodeBlock preProps={preProps}>{preChildren}</CodeBlock>;
+      },
+      code: ({
+        node: _node,
+        style: codeStyle,
+        children: codeChildren,
+        ...codeProps
+      }) => (
+        <code
+          {...codeProps}
+          style={mergeWrapStyle(codeStyle as React.CSSProperties | undefined)}
+        >
+          {codeChildren}
+        </code>
+      ),
+      a: ({
+        node: _node,
+        href,
+        style: linkStyle,
+        children: linkChildren,
+        ...anchorProps
+      }) => {
+        const dataProps = anchorProps as Record<string, unknown>;
+        const isWikiLink = dataProps["data-paperclip-wiki-link"] === "true";
+        if (
+          isWikiLink &&
+          href &&
+          companyId &&
+          !/^[a-z][a-z\d+.-]*:/i.test(href) &&
+          !href.startsWith("//")
+        ) {
+          return (
+            <Link
+              to={resolvePluginNavigationHref(href, companyId)}
+              {...anchorProps}
+              rel="noreferrer"
+              style={mergeWrapStyle(
+                linkStyle as React.CSSProperties | undefined,
+              )}
+            >
+              {linkChildren}
+            </Link>
+          );
+        }
 
-      const taskRef = linkTaskReferences ? parseTaskReferenceFromHref(href) : null;
-      if (taskRef) {
-        return (
-          <MarkdownTaskLink taskPathId={taskRef.taskPathId}>
-            {linkChildren}
-          </MarkdownTaskLink>
-        );
-      }
+        const taskRef = linkTaskReferences
+          ? parseTaskReferenceFromHref(href)
+          : null;
+        if (taskRef) {
+          return (
+            <MarkdownTaskLink taskId={taskRef.taskId}>
+              {linkChildren}
+            </MarkdownTaskLink>
+          );
+        }
 
-      const parsed = href ? parseMentionChipHref(href) : null;
-      if (parsed) {
-        const targetHref = parsed.kind === "project"
-          ? `/projects/${parsed.projectId}`
-          : parsed.kind === "task"
-            ? `/tasks/${parsed.identifier}`
-            : parsed.kind === "skill"
-              ? `/skills/${parsed.skillId}`
-              : parsed.kind === "routine"
-                ? `/routines/${parsed.routineId}`
-                : parsed.kind === "user"
-                  ? "/company/settings/members"
-                  : `/agents/${parsed.agentId}`;
-        return (
-          <a
-            href={targetHref}
-            className={cn(
+        const parsed = href ? parseMentionChipHref(href) : null;
+        if (parsed && companyId) {
+          const mentionLinkProps = {
+            className: cn(
               "paperclip-mention-chip",
               `paperclip-mention-chip--${parsed.kind}`,
               parsed.kind === "project" && "paperclip-project-mention-chip",
-            )}
-            data-mention-kind={parsed.kind}
-            style={{ ...mergeWrapStyle(linkStyle as React.CSSProperties | undefined), ...mentionChipInlineStyle(parsed) }}
+            ),
+            "data-mention-kind": parsed.kind,
+            style: {
+              ...mergeWrapStyle(linkStyle as React.CSSProperties | undefined),
+              ...mentionChipInlineStyle(parsed),
+            },
+          };
+          return parsed.kind === "task" ? (
+            <TaskLinkQuicklook
+              taskId={parsed.taskId}
+              taskNumber={null}
+              {...mentionLinkProps}
+            >
+              {linkChildren}
+            </TaskLinkQuicklook>
+          ) : parsed.kind === "project" ? (
+            <MarkdownProjectMentionLink
+              companyId={companyId}
+              entityId={parsed.projectId}
+              linkProps={mentionLinkProps}
+            >
+              {linkChildren}
+            </MarkdownProjectMentionLink>
+          ) : parsed.kind === "routine" ? (
+            <Link
+              to="/$companyId/routines/$routineId"
+              params={{ companyId, routineId: parsed.routineId }}
+              {...mentionLinkProps}
+            >
+              {linkChildren}
+            </Link>
+          ) : parsed.kind === "user" ? (
+            <Link
+              to="/$companyId/company/settings/members"
+              params={{ companyId }}
+              {...mentionLinkProps}
+            >
+              {linkChildren}
+            </Link>
+          ) : (
+            <MarkdownAgentMentionLink
+              companyId={companyId}
+              entityId={parsed.agentId}
+              linkProps={mentionLinkProps}
+            >
+              {linkChildren}
+            </MarkdownAgentMentionLink>
+          );
+        }
+        const isGitHubLink = isGitHubUrl(href);
+        const isExternal = isExternalHttpUrl(href);
+        const leadingIcon = isGitHubLink ? (
+          <Github
+            aria-hidden="true"
+            className="mr-1 inline h-3.5 w-3.5 align-(--va-0_125em)"
+          />
+        ) : null;
+        const trailingIcon =
+          isExternal && !isGitHubLink ? (
+            <ExternalLink
+              aria-hidden="true"
+              className="ml-1 inline h-3 w-3 align-(--va-0_125em)"
+            />
+          ) : null;
+        if (!isExternal && !isNonRouterAnchor(href, anchorProps.download)) {
+          return (
+            <span
+              style={mergeWrapStyle(
+                linkStyle as React.CSSProperties | undefined,
+              )}
+            >
+              {linkChildren}
+            </span>
+          );
+        }
+        return (
+          <a
+            href={href}
+            {...(isExternal
+              ? { target: "_blank", rel: "noopener noreferrer" }
+              : { rel: "noreferrer" })}
+            style={mergeWrapStyle(linkStyle as React.CSSProperties | undefined)}
           >
-            {linkChildren}
+            {renderLinkBody(linkChildren, leadingIcon, trailingIcon)}
           </a>
         );
-      }
-      const isGitHubLink = isGitHubUrl(href);
-      const isExternal = isExternalHttpUrl(href);
-      const leadingIcon = isGitHubLink ? (
-        <Github aria-hidden="true" className="mr-1 inline h-3.5 w-3.5 align-(--va-0_125em)" />
-      ) : null;
-      const trailingIcon = isExternal && !isGitHubLink ? (
-        <ExternalLink aria-hidden="true" className="ml-1 inline h-3 w-3 align-(--va-0_125em)" />
-      ) : null;
-      return (
-        <a
-          href={href}
-          {...(isExternal
-            ? { target: "_blank", rel: "noopener noreferrer" }
-            : { rel: "noreferrer" })}
-          style={mergeWrapStyle(linkStyle as React.CSSProperties | undefined)}
-        >
-          {renderLinkBody(linkChildren, leadingIcon, trailingIcon)}
-        </a>
-      );
-    },
+      },
     };
     if (resolveImageSrc || onImageClick) {
       map.img = ({ node: _node, src, alt, ...imgProps }) => {
@@ -755,14 +1069,28 @@ function MarkdownBodyImpl({
             {...imgProps}
             src={finalSrc}
             alt={alt ?? ""}
-            onClick={onImageClick && finalSrc ? (e) => { e.preventDefault(); onImageClick(finalSrc); } : undefined}
-            style={onImageClick ? { cursor: "pointer", ...(imgProps.style as React.CSSProperties | undefined) } : imgProps.style as React.CSSProperties | undefined}
+            onClick={
+              onImageClick && finalSrc
+                ? (e) => {
+                    e.preventDefault();
+                    onImageClick(finalSrc);
+                  }
+                : undefined
+            }
+            style={
+              onImageClick
+                ? {
+                    cursor: "pointer",
+                    ...(imgProps.style as React.CSSProperties | undefined),
+                  }
+                : (imgProps.style as React.CSSProperties | undefined)
+            }
           />
         );
       };
     }
     return map;
-  }, [theme, linkTaskReferences, resolveImageSrc, onImageClick]);
+  }, [companyId, theme, linkTaskReferences, resolveImageSrc, onImageClick]);
 
   return (
     <div

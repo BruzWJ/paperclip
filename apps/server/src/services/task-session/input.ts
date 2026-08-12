@@ -11,7 +11,6 @@ import {
   taskExecutionHistoryViewMessages,
   taskExecutionHistoryViews,
   taskExecutionRefs,
-  taskExecutionRunRefs,
   taskExecutionWorkspaceBindings,
   tasks,
   taskSessionEvents,

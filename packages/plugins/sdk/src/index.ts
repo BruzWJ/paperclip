@@ -56,7 +56,7 @@ export {
   assertPluginEventSubscription,
   pluginEventMatchesFilter,
 } from "./event-filter.js";
-export { normalizePluginScopeId } from "./plugin-scope.js";
+export { requireExactPluginScopeId } from "./plugin-scope.js";
 export { createHostClientHandlers } from "./host-client-factory.js";
 
 // JSON-RPC protocol helpers and constants
@@ -148,9 +148,9 @@ export type {
   PluginActivityLogEntry,
   PluginStateClient,
   PluginEntitiesClient,
+  PluginListWindow,
   PluginProjectsClient,
   PluginRoutinesClient,
-  PluginSkillsClient,
   PluginCompaniesClient,
   PluginTasksClient,
   PluginContextAccess,
@@ -173,6 +173,7 @@ export type {
   PluginAssignmentPreviewInput,
   PluginAuthorizationDecisionResult,
   PluginAuthorizationAuditEntry,
+  PluginAuthorizationAuditDecision,
   PluginGoalsClient,
   PluginDataClient,
   PluginActionsClient,
@@ -227,7 +228,7 @@ export type {
   PrincipalPermissionGrant,
   PrincipalType,
   PluginDatabaseClient,
-  HumanCompanyMembershipRole,
+  UserCompanyMembershipRole,
   MembershipStatus,
   TaskExecutionSessionOperation,
 } from "./types.js";
@@ -246,10 +247,6 @@ export type {
   PluginManagedProjectResolution,
   PluginManagedRoutineDeclaration,
   PluginManagedRoutineResolution,
-  PluginManagedSkillDeclaration,
-  PluginManagedSkillFileDeclaration,
-  PluginManagedSkillResolution,
-  CompanySkill,
   PluginManagedResourceKind,
   PluginManagedResourceRef,
   PluginUiSlotDeclaration,
@@ -284,6 +281,7 @@ export type {
 
 export {
   pluginManifestV1Schema,
+  pluginManagedRoutineOriginIdSchema,
   PLUGIN_API_VERSION,
   PLUGIN_CATEGORIES,
   PLUGIN_CAPABILITIES,
@@ -296,8 +294,8 @@ export {
   PLUGIN_BRIDGE_ERROR_CODES,
   pluginAgentToolName,
   PERMISSION_KEYS,
-  HUMAN_COMPANY_MEMBERSHIP_ROLES,
-  HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS,
+  USER_COMPANY_MEMBERSHIP_ROLES,
+  USER_COMPANY_MEMBERSHIP_ROLE_LABELS,
   MEMBERSHIP_STATUSES,
   PRINCIPAL_TYPES,
 } from "@paperclipai/shared";

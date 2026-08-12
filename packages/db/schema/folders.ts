@@ -1,4 +1,5 @@
 import {
+  check,
   type AnyPgColumn,
   index,
   integer,
@@ -28,6 +29,10 @@ export const folders = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    routineKindCheck: check(
+      "folders_routine_kind_check",
+      sql`${table.kind} = 'routine'`,
+    ),
     companyKindPositionIdx: index("folders_company_kind_position_idx").on(
       table.companyId,
       table.kind,

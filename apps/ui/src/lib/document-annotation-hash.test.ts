@@ -4,6 +4,9 @@ import {
   parseDocumentAnnotationHash,
 } from "./document-annotation-hash";
 
+const THREAD_ID = "11111111-1111-4111-8111-111111111111";
+const COMMENT_ID = "22222222-2222-4222-8222-222222222222";
+
 describe("parseDocumentAnnotationHash", () => {
   it("returns null for non-document hashes", () => {
     expect(parseDocumentAnnotationHash("")).toBeNull();
@@ -20,44 +23,70 @@ describe("parseDocumentAnnotationHash", () => {
 
   it("parses thread and comment targets", () => {
     expect(
-      parseDocumentAnnotationHash("#document-plan&thread=t1&comment=c2"),
+      parseDocumentAnnotationHash(
+        `#document-plan&thread=${THREAD_ID}&comment=${COMMENT_ID}`,
+      ),
     ).toEqual({
       documentKey: "plan",
-      threadId: "t1",
-      commentId: "c2",
+      threadId: THREAD_ID,
+      commentId: COMMENT_ID,
     });
   });
 
-  it("decodes URI-encoded keys", () => {
-    expect(parseDocumentAnnotationHash("#document-my%20notes&thread=abc")).toEqual({
-      documentKey: "my notes",
-      threadId: "abc",
-      commentId: null,
-    });
+  it.each([
+    "#document-%70lan",
+    "#document-my%20notes",
+    `#document-plan&thread=%31${THREAD_ID.slice(1)}`,
+    `#document-plan&comment=${COMMENT_ID}`,
+    `#document-plan&thread=${THREAD_ID}&thread=${THREAD_ID}`,
+    `#document-plan&thread=${THREAD_ID}&comment=not-a-uuid`,
+    `#document-plan&comment=${COMMENT_ID}&thread=${THREAD_ID}`,
+    "#document-plan&unknown=value",
+    "#document-%ZZ",
+  ])("rejects the alias or malformed selector %s", (hash) => {
+    expect(parseDocumentAnnotationHash(hash)).toBeNull();
   });
 });
 
 describe("buildDocumentAnnotationHash", () => {
   it("builds a hash without thread or comment", () => {
-    expect(buildDocumentAnnotationHash({ documentKey: "plan", threadId: null, commentId: null })).toBe(
-      "#document-plan",
-    );
+    expect(
+      buildDocumentAnnotationHash({
+        documentKey: "plan",
+        threadId: null,
+        commentId: null,
+      }),
+    ).toBe("#document-plan");
   });
 
   it("includes thread target", () => {
     expect(
-      buildDocumentAnnotationHash({ documentKey: "plan", threadId: "t1", commentId: null }),
-    ).toBe("#document-plan&thread=t1");
+      buildDocumentAnnotationHash({
+        documentKey: "plan",
+        threadId: THREAD_ID,
+        commentId: null,
+      }),
+    ).toBe(`#document-plan&thread=${THREAD_ID}`);
   });
 
   it("includes both targets", () => {
     expect(
-      buildDocumentAnnotationHash({ documentKey: "plan", threadId: "t1", commentId: "c2" }),
-    ).toBe("#document-plan&thread=t1&comment=c2");
+      buildDocumentAnnotationHash({
+        documentKey: "plan",
+        threadId: THREAD_ID,
+        commentId: COMMENT_ID,
+      }),
+    ).toBe(`#document-plan&thread=${THREAD_ID}&comment=${COMMENT_ID}`);
   });
 
   it("survives a round trip", () => {
-    const target = { documentKey: "plan-2", threadId: "t-abc", commentId: "c-xyz" };
-    expect(parseDocumentAnnotationHash(buildDocumentAnnotationHash(target))).toEqual(target);
+    const target = {
+      documentKey: "plan-2",
+      threadId: THREAD_ID,
+      commentId: COMMENT_ID,
+    };
+    expect(
+      parseDocumentAnnotationHash(buildDocumentAnnotationHash(target)),
+    ).toEqual(target);
   });
 });

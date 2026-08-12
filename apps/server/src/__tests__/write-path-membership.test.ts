@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 vi.unmock("http");
@@ -118,6 +118,10 @@ function resetMocks() {
 }
 
 describe.sequential("write-path membership checks (viewer / inactive)", () => {
+  beforeAll(async () => {
+    await loadRouteModules();
+  });
+
   beforeEach(() => {
     resetMocks();
   });

@@ -9,8 +9,7 @@ Providers have no generic secret-list or value-fetch REST surface. Paperclip
 resolves an explicitly configured provider-native credential or environment
 binding server-side at the invocation boundary and records its provenance.
 That resolution does not mint an agent identity, general API bearer, or
-provider-side profile bridge, and selected company skills cannot fetch
-control-plane secrets.
+provider-side profile bridge.
 
 All routes in this document require board authentication and company access
 unless stated otherwise. Metadata responses never include decrypted values.

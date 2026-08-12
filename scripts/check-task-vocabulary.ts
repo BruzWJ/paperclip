@@ -96,6 +96,7 @@ const SKIPPED_DIRECTORY_NAMES = new Set([
   "playwright-report",
   "storybook-static",
   "test-results",
+  "ui-dist",
 ]);
 
 export const RETIRED_WORK_OBJECT_LEXEME = String.fromCharCode(
@@ -159,7 +160,7 @@ export const TASK_VOCABULARY_RETAINED_CONTRACTS: readonly RetainedContract[] =
     },
     {
       owner: "apps/server/src/app.ts",
-      expected: /\bapi\.use\(taskRoutes\(/u,
+      expected: /\bapi\.use\(\s*taskRoutes\(/u,
       message: "the canonical task router must remain mounted",
     },
     {

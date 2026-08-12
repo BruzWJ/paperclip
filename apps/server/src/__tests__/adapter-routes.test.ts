@@ -91,37 +91,14 @@ describe("ACPX adapter routes", () => {
         (candidate) => candidate.type === adapter.type,
       )!.definition;
       expect(adapter).toMatchObject({
-        source: "acpx",
-        registryName: adapter.type,
         loaded: true,
-        configSchema: definition.configSchema,
+        configOptions: definition.configOptions,
       });
       expect(adapter).not.toHaveProperty("disabled");
       expect(adapter).not.toHaveProperty("frontendPackage");
       expect(adapter).not.toHaveProperty("frontendVersion");
       expect(adapter).not.toHaveProperty("frontendDigest");
     }
-  });
-
-  it("serves an ACPX-discovered definition without executable metadata", async () => {
-    const res = await request(app()).get("/api/adapters/fixture-agent-alpha");
-
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    const serialized = JSON.stringify(res.body);
-    expect(serialized).not.toContain("execute");
-    expect(serialized).not.toContain("providerInput");
-    expect(serialized).not.toContain("nativeCorrelation");
-    expect(serialized).not.toContain("parser");
-  });
-
-  it("serves the exact ACPX-derived configuration schema", async () => {
-    const adapter = catalog.adapters[0]!;
-    const res = await request(app()).get(
-      `/api/adapters/${adapter.type}/config-schema`,
-    );
-
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(res.body).toEqual(adapter.definition.configSchema);
   });
 
   it("reports a failed ACPX probe without admitting it as a selectable adapter", async () => {
@@ -140,20 +117,13 @@ describe("ACPX adapter routes", () => {
     ).toEqual({
       type: "fixture-agent-unavailable",
       label: "fixture-agent-unavailable",
-      source: "acpx",
       modelsCount: 0,
       loaded: false,
       diagnostic: {
         code: "acpx_probe_failed",
         message: "This local agent did not pass its readiness check.",
       },
-      registryName: "fixture-agent-unavailable",
     });
-
-    const detail = await request(app()).get(
-      "/api/adapters/fixture-agent-unavailable",
-    );
-    expect(detail.status, JSON.stringify(detail.body)).toBe(404);
   });
 
   it("reports rejected ACPX catalog metadata without hiding ready agents", async () => {

@@ -7,10 +7,10 @@ import { testBoardSessionActor } from "./helpers/request-actor.js";
 import { errorHandler } from "../middleware/index.js";
 import { userProfileRoutes } from "../routes/user-profiles.js";
 
-describe("GET /companies/:companyId/users/:userSlug/profile", () => {
-  it("resolves a user slug and returns task, activity, and attributed cost stats", async () => {
+describe("GET /companies/:companyId/users/:userId/profile", () => {
+  it("loads an exact stored user ID and returns task, activity, and attributed cost stats", async () => {
     const companyId = randomUUID();
-    const userId = randomUUID();
+    const userId = "auth-user_01HZX";
     const agentId = randomUUID();
     const openTaskId = randomUUID();
     const doneTaskId = randomUUID();
@@ -88,15 +88,15 @@ describe("GET /companies/:companyId/users/:userSlug/profile", () => {
     app.use(errorHandler);
 
     const response = await request(app)
-      .get(`/api/companies/${companyId}/users/dotta/profile`);
+      .get(`/api/companies/${companyId}/users/${userId}/profile`);
 
     expect(response.status, JSON.stringify(response.body)).toBe(200);
     expect(response.body.user).toMatchObject({
       id: userId,
-      slug: "dotta",
       membershipRole: "owner",
       membershipStatus: "active",
     });
+    expect(response.body.user).not.toHaveProperty("slug");
     expect(response.body.budgetCurrency).toBe("USD");
     expect(response.body.stats).toHaveLength(3);
     const all = response.body.stats.find((entry: { key: string }) => entry.key === "all");
@@ -124,4 +124,52 @@ describe("GET /companies/:companyId/users/:userSlug/profile", () => {
     });
     expect(harness.remaining("select")).toBe(0);
   });
+
+  it("does not resolve a display name or email-derived alias", async () => {
+    const companyId = randomUUID();
+    const boardUserId = "board-user";
+    const harness = createMockDb({ select: [[]] });
+    const app = express();
+    app.use((req, _res, next) => {
+      req.actor = testBoardSessionActor({
+        userId: boardUserId,
+        companyIds: [companyId],
+      });
+      next();
+    });
+    app.use("/api", userProfileRoutes(harness.db));
+    app.use(errorHandler);
+
+    const response = await request(app).get(
+      `/api/companies/${companyId}/users/dotta/profile`,
+    );
+
+    expect(response.status).toBe(404);
+    expect(harness.remaining("select")).toBe(0);
+  });
+
+  it.each(["%20auth-user", "auth-user%20", "%09auth-user"])(
+    "rejects non-exact stored user ID %s before database lookup",
+    async (userId) => {
+      const companyId = randomUUID();
+      const harness = createMockDb();
+      const app = express();
+      app.use((req, _res, next) => {
+        req.actor = testBoardSessionActor({
+          userId: "board-user",
+          companyIds: [companyId],
+        });
+        next();
+      });
+      app.use("/api", userProfileRoutes(harness.db));
+      app.use(errorHandler);
+
+      const response = await request(app).get(
+        `/api/companies/${companyId}/users/${userId}/profile`,
+      );
+
+      expect(response.status).toBe(400);
+      expect(harness.calls).toEqual([]);
+    },
+  );
 });

@@ -22,9 +22,6 @@ import { validateJsonSchemaValue } from "./plugin-config-validator.js";
 
 const PAPERCLIP_RUNTIME_TOOL_NAMES = PAPERCLIP_MANAGED_TOOL_NAMES;
 
-export type PaperclipRuntimeToolName =
-  (typeof PAPERCLIP_RUNTIME_TOOL_NAMES)[number];
-
 export type RuntimeToolSource = "paperclip" | "plugin";
 export type RuntimeToolTurn = "bootstrap" | "work";
 type RuntimeToolAvailability = RuntimeToolTurn | "both";
@@ -75,8 +72,7 @@ export interface RuntimePluginTool {
   bootstrapEnabled?: boolean;
 }
 
-export interface RuntimeInterfaceCompileInput
-  extends PaperclipManagedToolRuntimeProjectionInput {
+export interface RuntimeInterfaceCompileInput extends PaperclipManagedToolRuntimeProjectionInput {
   /** Exact provider turn derived from the current execution ref. */
   turn: RuntimeToolTurn;
   mentionReachGrants?: Readonly<
@@ -115,9 +111,11 @@ function pluginDescriptors(
       );
       if (!validation.valid) {
         throw new RuntimeToolArgumentsInvalid(
-          `Invalid arguments for ${tool.name}: ${validation.errors
-            ?.map((error) => `${error.field} ${error.message}`)
-            .join("; ") ?? "schema validation failed"}`,
+          `Invalid arguments for ${tool.name}: ${
+            validation.errors
+              ?.map((error) => `${error.field} ${error.message}`)
+              .join("; ") ?? "schema validation failed"
+          }`,
         );
       }
       return argumentsValue;
@@ -134,7 +132,9 @@ function validateCompileInput(input: RuntimeInterfaceCompileInput): void {
       input.actionGrants[key] !== undefined &&
       typeof input.actionGrants[key] !== "boolean"
     ) {
-      throw new RuntimeInterfaceConflict(`Invalid action grant value for ${key}`);
+      throw new RuntimeInterfaceConflict(
+        `Invalid action grant value for ${key}`,
+      );
     }
   }
   for (const key of AGENT_MENTION_REACH_GRANT_KEYS) {
@@ -242,8 +242,7 @@ function canonicalDescriptorJson(value: unknown): string {
     .filter((key) => record[key] !== undefined)
     .sort()
     .map(
-      (key) =>
-        `${JSON.stringify(key)}:${canonicalDescriptorJson(record[key])}`,
+      (key) => `${JSON.stringify(key)}:${canonicalDescriptorJson(record[key])}`,
     )
     .join(",")}}`;
 }

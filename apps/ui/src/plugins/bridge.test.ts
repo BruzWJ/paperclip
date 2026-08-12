@@ -6,7 +6,6 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FileTree as SdkFileTree,
@@ -18,17 +17,28 @@ import {
 import { SidebarProvider, useSidebar } from "@/context/SidebarContext";
 import {
   PluginBridgeContext,
-  resolveHostNavigationHref,
   serializePluginBridgeParams,
   shouldHandleHostNavigationClick,
   useHostNavigation,
   type PluginBridgeContextValue,
 } from "./bridge";
+import { resolvePluginNavigationHref } from "@paperclipai/shared";
 import { initPluginBridge } from "./bridge-init";
 import {
-  _createBridgeModuleShimSourceForTests,
-  _rewriteBareSpecifiersForTests,
+  createBridgeModuleShimSource,
+  rewriteBareSpecifiers,
 } from "./slots";
+
+const routerNavigate = vi.hoisted(() => vi.fn());
+
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => routerNavigate,
+  useLocation: () => ({
+    pathname: "/11111111-1111-4111-8111-111111111111/wiki",
+    searchStr: "",
+    hash: "",
+  }),
+}));
 
 vi.mock("@/components/MarkdownEditor", () => ({
   MarkdownEditor: () => null,
@@ -60,25 +70,55 @@ function act(callback: () => void) {
 }
 
 describe("plugin host navigation", () => {
-  it("resolves plugin page routes into the active company prefix", () => {
-    expect(resolveHostNavigationHref("/wiki", "PAP")).toBe("/PAP/wiki");
-    expect(resolveHostNavigationHref("/wiki?tab=browse#page", "pap")).toBe(
-      "/PAP/wiki?tab=browse#page",
+  it("resolves plugin page routes into the active company UUID", () => {
+    expect(resolvePluginNavigationHref("/wiki", "11111111-1111-4111-8111-111111111111")).toBe(
+      "/11111111-1111-4111-8111-111111111111/wiki",
+    );
+    expect(
+      resolvePluginNavigationHref(
+        "/wiki?tab=browse#page",
+        "11111111-1111-4111-8111-111111111111",
+      ),
+    ).toBe(
+      "/11111111-1111-4111-8111-111111111111/wiki?tab=browse#page",
+    );
+    expect(() => resolvePluginNavigationHref("/wiki", "not-a-uuid")).toThrow(
+      "requires a canonical company UUID",
     );
   });
 
-  it("does not double-prefix active company paths or global host paths", () => {
-    expect(resolveHostNavigationHref("/PAP/wiki", "PAP")).toBe("/PAP/wiki");
-    expect(resolveHostNavigationHref("/pap/wiki", "PAP")).toBe("/pap/wiki");
+  it("rejects pre-scoped plugin paths so the host has one navigation contract", () => {
+    expect(() => resolvePluginNavigationHref(
+      "/11111111-1111-4111-8111-111111111111/wiki",
+      "11111111-1111-4111-8111-111111111111",
+    )).toThrow(
+      "absolute company-relative path",
+    );
+    expect(() => resolvePluginNavigationHref(
+      "/22222222-2222-4222-8222-222222222222/wiki",
+      "11111111-1111-4111-8111-111111111111",
+    )).toThrow(
+      "absolute company-relative path",
+    );
   });
 
   it("intercepts only same-origin plain left-click navigation", () => {
-    expect(shouldHandleHostNavigationClick(clickEvent(), "/PAP/wiki")).toBe(true);
+    expect(shouldHandleHostNavigationClick(
+      clickEvent(),
+      "/11111111-1111-4111-8111-111111111111/wiki",
+    )).toBe(true);
     expect(
-      shouldHandleHostNavigationClick(clickEvent({ ctrlKey: true }), "/PAP/wiki"),
+      shouldHandleHostNavigationClick(
+        clickEvent({ ctrlKey: true }),
+        "/11111111-1111-4111-8111-111111111111/wiki",
+      ),
     ).toBe(false);
     expect(
-      shouldHandleHostNavigationClick(clickEvent(), "/PAP/wiki", "_blank"),
+      shouldHandleHostNavigationClick(
+        clickEvent(),
+        "/11111111-1111-4111-8111-111111111111/wiki",
+        "_blank",
+      ),
     ).toBe(false);
     expect(
       shouldHandleHostNavigationClick(clickEvent(), "https://example.com/wiki"),
@@ -120,10 +160,8 @@ describe("useHostNavigation mobile drawer behavior", () => {
     return {
       pluginId: "test-plugin",
       hostContext: {
-        companyId: "co",
-        companyPrefix: "PAP",
+        companyId: "11111111-1111-4111-8111-111111111111",
         projectId: null,
-        projectRef: null,
         entityId: null,
         entityType: null,
         userId: null,
@@ -174,15 +212,13 @@ describe("useHostNavigation mobile drawer behavior", () => {
     act(() => {
       root.render(
         React.createElement(
-          MemoryRouter,
-          { initialEntries: ["/PAP/wiki"] },
+          SidebarProvider,
+          null,
           React.createElement(
-            SidebarProvider,
-            null,
+            PluginBridgeContext.Provider,
+            { value: makeBridgeValue() },
             React.createElement(
-              PluginBridgeContext.Provider,
-              { value: makeBridgeValue() },
-              React.createElement(Probe),
+              Probe,
             ),
           ),
         ),
@@ -195,6 +231,11 @@ describe("useHostNavigation mobile drawer behavior", () => {
 
     act(() => nav!.navigate("/wiki?section=ingest"));
     expect(sidebar!.sidebarOpen).toBe(false);
+    expect(routerNavigate).toHaveBeenCalledWith({
+      href: "/11111111-1111-4111-8111-111111111111/wiki?section=ingest",
+      replace: undefined,
+      state: undefined,
+    });
 
     act(() => root.unmount());
     container.remove();
@@ -218,15 +259,13 @@ describe("useHostNavigation mobile drawer behavior", () => {
     act(() => {
       root.render(
         React.createElement(
-          MemoryRouter,
-          { initialEntries: ["/PAP/wiki"] },
+          SidebarProvider,
+          null,
           React.createElement(
-            SidebarProvider,
-            null,
+            PluginBridgeContext.Provider,
+            { value: makeBridgeValue() },
             React.createElement(
-              PluginBridgeContext.Provider,
-              { value: makeBridgeValue() },
-              React.createElement(Probe),
+              Probe,
             ),
           ),
         ),
@@ -333,7 +372,7 @@ describe("plugin React shim", () => {
     ["ReactDOM", ReactDOM, "globalThis.__paperclipPluginBridge__?.reactDom"],
     ["ReactDOM client", ReactDOMClient, "globalThis.__paperclipPluginBridge__?.reactDomClient"],
   ])("re-exports every named export from the host %s module", (_name, module, bridgeExpression) => {
-    const source = _createBridgeModuleShimSourceForTests(
+    const source = createBridgeModuleShimSource(
       module,
       bridgeExpression,
       "missing",
@@ -357,9 +396,9 @@ describe("plugin React shim", () => {
       'import type { PluginHostContext } from "@paperclipai/plugin-sdk/ui/types";',
     ];
 
-    expect(_rewriteBareSpecifiersForTests(canonical)).not.toContain('from "@paperclipai/plugin-sdk/ui"');
+    expect(rewriteBareSpecifiers(canonical)).not.toContain('from "@paperclipai/plugin-sdk/ui"');
     for (const source of nonCanonicalSpecifiers) {
-      expect(_rewriteBareSpecifiersForTests(source)).toBe(source);
+      expect(rewriteBareSpecifiers(source)).toBe(source);
     }
   });
 
@@ -368,7 +407,7 @@ describe("plugin React shim", () => {
       useHostContext: () => null,
       MetricCard: () => null,
     };
-    const source = _createBridgeModuleShimSourceForTests(
+    const source = createBridgeModuleShimSource(
       sdkUi,
       "globalThis.__paperclipPluginBridge__?.sdkUi",
       "missing",

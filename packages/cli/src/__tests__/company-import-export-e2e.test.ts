@@ -1,5 +1,4 @@
 import {
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -29,12 +28,11 @@ const INCLUDE_ALL = {
   agents: true,
   projects: true,
   tasks: true,
-  skills: false,
 } as const;
 
 function portabilityManifest(): CompanyPortabilityManifest {
   return {
-    schemaVersion: 1,
+    schemaVersion: 5,
     generatedAt: "2026-08-02T00:00:00.000Z",
     source: {
       companyId: COMPANY_ID,
@@ -54,7 +52,6 @@ function portabilityManifest(): CompanyPortabilityManifest {
     },
     sidebar: null,
     agents: [],
-    skills: [],
     projects: [],
     tasks: [],
     envInputs: [],
@@ -222,11 +219,6 @@ describe("paperclipai company import/export HTTP boundary", () => {
     );
     expect(parseRequestBody(fetchMock.mock.calls[0]!)).toEqual({
       include: INCLUDE_ALL,
-      skills: [],
-      projects: [],
-      tasks: [],
-      projectTasks: [],
-      expandReferencedSkills: false,
     });
     expect(readFileSync(path.join(exportDir, "COMPANY.md"), "utf8")).toBe(
       exported.files["COMPANY.md"],

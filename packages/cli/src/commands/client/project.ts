@@ -1,6 +1,9 @@
 import { Command } from "commander";
 import type { Project } from "@paperclipai/shared";
-import { createProjectSchema, updateProjectSchema } from "@paperclipai/shared";
+import {
+  createProjectSchema,
+  updateProjectSchema,
+} from "@paperclipai/shared";
 import {
   addCommonClientOptions,
   apiPath,
@@ -10,6 +13,7 @@ import {
   resolveCommandContext,
   type BaseClientOptions,
 } from "./common.js";
+import { parseExactCanonicalUuidList } from "./exact-uuid-list.js";
 
 interface ProjectListOptions extends BaseClientOptions {
   companyId?: string;
@@ -66,7 +70,6 @@ export function registerProjectCommands(program: Command): void {
               id: row.id,
               name: row.name,
               status: row.status,
-              urlKey: row.urlKey,
               goalIds: row.goalIds?.join(",") ?? "",
               leadAgentId: row.leadAgentId,
             }));
@@ -81,14 +84,12 @@ export function registerProjectCommands(program: Command): void {
   addCommonClientOptions(
     project
       .command("get")
-      .description("Get one project by ID or shortname")
-      .argument("<project>", "Project ID or shortname")
-      .option("-C, --company-id <id>", "Company ID for shortname lookup")
-      .action(async (projectRef: string, opts: ProjectListOptions) => {
+      .description("Get one project by UUID")
+      .argument("<projectId>", "Project UUID")
+      .action(async (projectId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const query = ctx.companyId ? `?${new URLSearchParams({ companyId: ctx.companyId }).toString()}` : "";
-          const row = await ctx.api.get<Project>(`${apiPath`/api/projects/${projectRef}`}${query}`);
+          const row = await ctx.api.get<Project>(apiPath`/api/projects/${projectId}`);
           printOutput(row, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -116,7 +117,7 @@ export function registerProjectCommands(program: Command): void {
             name: opts.name,
             description: opts.description,
             status: opts.status,
-            goalIds: parseCsv(opts.goalIds),
+            goalIds: parseExactCanonicalUuidList(opts.goalIds, "--goal-ids"),
             leadAgentId: parseNullableString(opts.leadAgentId),
             targetDate: parseNullableString(opts.targetDate),
             color: parseNullableString(opts.color),
@@ -134,8 +135,7 @@ export function registerProjectCommands(program: Command): void {
     project
       .command("update")
       .description("Update a project")
-      .argument("<project>", "Project ID or shortname")
-      .option("-C, --company-id <id>", "Company ID for shortname lookup")
+      .argument("<projectId>", "Project UUID")
       .option("--name <name>", "Project name")
       .option("--description <text|null>", "Project description")
       .option("--status <status>", "Project status")
@@ -144,21 +144,20 @@ export function registerProjectCommands(program: Command): void {
       .option("--target-date <date|null>", "Target date")
       .option("--color <value|null>", "Project color")
       .option("--archived-at <iso8601|null>", "Archive timestamp or null")
-      .action(async (projectRef: string, opts: ProjectUpdateOptions) => {
+      .action(async (projectId: string, opts: ProjectUpdateOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
           const payload = updateProjectSchema.parse({
             name: opts.name,
             description: parseNullableString(opts.description),
             status: opts.status,
-            goalIds: opts.goalIds === undefined ? undefined : parseCsv(opts.goalIds),
+            goalIds: parseExactCanonicalUuidList(opts.goalIds, "--goal-ids"),
             leadAgentId: parseNullableString(opts.leadAgentId),
             targetDate: parseNullableString(opts.targetDate),
             color: parseNullableString(opts.color),
             archivedAt: parseNullableString(opts.archivedAt),
           });
-          const query = ctx.companyId ? `?${new URLSearchParams({ companyId: ctx.companyId }).toString()}` : "";
-          const updated = await ctx.api.patch<Project>(`${apiPath`/api/projects/${projectRef}`}${query}`, payload);
+          const updated = await ctx.api.patch<Project>(apiPath`/api/projects/${projectId}`, payload);
           printOutput(updated, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -171,15 +170,13 @@ export function registerProjectCommands(program: Command): void {
     project
       .command("delete")
       .description("Delete a project")
-      .argument("<project>", "Project ID or shortname")
-      .option("-C, --company-id <id>", "Company ID for shortname lookup")
+      .argument("<projectId>", "Project UUID")
       .option("--yes", "Confirm deletion")
-      .action(async (projectRef: string, opts: ProjectDeleteOptions) => {
+      .action(async (projectId: string, opts: ProjectDeleteOptions) => {
         try {
           if (!opts.yes) throw new Error("Deletion requires --yes.");
           const ctx = resolveCommandContext(opts);
-          const query = ctx.companyId ? `?${new URLSearchParams({ companyId: ctx.companyId }).toString()}` : "";
-          const deleted = await ctx.api.delete<Project>(`${apiPath`/api/projects/${projectRef}`}${query}`);
+          const deleted = await ctx.api.delete<Project>(apiPath`/api/projects/${projectId}`);
           printOutput(deleted, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -189,12 +186,7 @@ export function registerProjectCommands(program: Command): void {
   );
 }
 
-function parseCsv(value: string | undefined): string[] | undefined {
-  if (value === undefined) return undefined;
-  return value.split(",").map((part) => part.trim()).filter(Boolean);
-}
-
 function parseNullableString(value: string | undefined): string | null | undefined {
   if (value === undefined) return undefined;
-  return value.trim().toLowerCase() === "null" ? null : value;
+  return value === "null" ? null : value;
 }

@@ -13,8 +13,8 @@ organizes that contract as an authoring workflow.
 - Worker-side host APIs are capability-gated.
 - Plugin UI is not sandboxed by manifest capabilities.
 - Plugin database migrations are restricted to a host-derived plugin namespace.
-- Plugin-managed surfaces are first-class records (agents, projects, routines, and
-  skills) rather than private plugin-only state.
+- Plugin-managed surfaces are first-class records (agents, projects, and
+  routines) rather than private plugin-only state.
 - Plugin-owned JSON API routes must be declared in the manifest and are mounted
   only under `/api/plugins/:pluginId/api/*`.
 - The host provides a small shared React component kit through
@@ -71,7 +71,6 @@ Worker:
 - tasks, comments, namespaced `plugin:<pluginKey>` origins, blocker relations, and callback-bound ordinary-task creation
 - agents and plugin-managed agents
 - plugin-managed routines
-- plugin-managed skills
 - goals
 - access membership/invites and authorization policy/grant administration
 - data/actions
@@ -126,6 +125,8 @@ The host resolves the plugin, checks that it is ready, enforces
 and dispatches to the worker's `onApiRequest` handler.
 Every route declares `companyResolution`; task resolution names an exact
 `:param` in the route path, and GET routes cannot resolve from a request body.
+Paths match exactly: `/` is the sole root spelling, and non-root paths have no
+trailing slash, doubled slash, dot segment, or repeated parameter name.
 The worker receives sanitized headers, route params, query, parsed JSON
 body, actor context, and company id. Do not use plugin routes to claim core
 paths; they always remain under `/api/plugins/:pluginId/api/*`.
@@ -152,15 +153,15 @@ credential.
 
 Plugins that provide durable Paperclip business objects should declare them in
 the manifest and let the host create or relink the actual records per company.
-Do this for plugin-owned agents, projects, routines, and skills.
+Do this for plugin-owned agents, projects, and routines.
 Do not hide long-lived work behind private plugin state when it should be visible
 to the board, scoped to a company, audited, budgeted, and assigned like normal
 Paperclip work.
 
 Content-oriented plugins, such as source ingestion or durable knowledge
 systems, should use the same pattern: managed projects for operation tasks,
-managed agents plus managed skills for LLM work, and managed routines for
-ingest, lint, refresh, or maintenance runs.
+managed agents for LLM work, and managed routines for ingest, lint, refresh,
+or maintenance runs.
 
 Use these surfaces:
 
@@ -178,14 +179,10 @@ Use these surfaces:
   jobs that should create visible Paperclip tasks. Prefer managed routines over
   plugin `jobs[]` for recurring business work; plugin jobs are for plugin
   runtime maintenance that does not need a board-visible task trail.
-- Managed skills: declare top-level `skills[]` and require `skills.managed`.
-  Use this for reusable plugin capabilities that should be surfaced to operators and
-  selected for ordinary managed agents.
 
 Managed resources are resolved by stable plugin keys, not hardcoded database
 ids. In a worker action or data handler, call `ctx.agents.managed.reconcile()`,
-`ctx.projects.managed.reconcile()`, `ctx.routines.managed.reconcile()`, and
-`ctx.skills.managed.reconcile()` for
+`ctx.projects.managed.reconcile()`, and `ctx.routines.managed.reconcile()` for
 the current `companyId`. `reconcile()` creates the missing resource, relinks a
 recoverable binding, or returns the existing resource. `reset()` reapplies the
 manifest defaults when the operator wants to restore the plugin's suggested
@@ -212,7 +209,6 @@ const manifest: PaperclipPluginManifestV1 = {
     "agents.managed",
     "projects.managed",
     "routines.managed",
-    "skills.managed",
     "instance.settings.register",
   ],
   entrypoints: {
@@ -254,13 +250,6 @@ const manifest: PaperclipPluginManifestV1 = {
       ],
     },
   ],
-  skills: [
-    {
-      skillKey: "weekly-brief-skills",
-      displayName: "Weekly Briefer",
-      description: "Reusable skill for the managed research workflow.",
-    },
-  ],
   ui: {
     slots: [
       {
@@ -291,9 +280,8 @@ export default definePlugin({
       const project = await ctx.projects.managed.reconcile("research", companyId);
       const agent = await ctx.agents.managed.reconcile("researcher", companyId);
       const routine = await ctx.routines.managed.reconcile("weekly-brief", companyId);
-      const skill = await ctx.skills.managed.reconcile("weekly-brief-skills", companyId);
 
-      return { project, agent, routine, skill };
+      return { project, agent, routine };
     });
   },
 });
@@ -304,9 +292,8 @@ Authoring rules:
 - Treat action parameters as plugin input, not authority. Read the authenticated
   company only from the immutable `context.actor.companyId` supplied to the
   action handler.
-- Keep keys stable once published. Renaming `agentKey`, `projectKey`,
-  `routineKey`, or `skillKey` creates a new managed resource from the host's
-  point of view.
+- Keep keys stable once published. Renaming `agentKey`, `projectKey`, or
+  `routineKey` creates a new managed resource from the host's point of view.
 - Use managed agents for plugin-provided labor. Provider work starts only by
   creating an ordinary task with an explicit eligible owner through
   `ctx.tasks.create`; plugins cannot invoke an agent or open an agent session
@@ -319,9 +306,6 @@ Authoring rules:
 - Use managed routines for recurring or externally triggered work that should
   produce tasks. Schedule, webhook, and API triggers are visible routine
   triggers, and each run has the normal Paperclip task/audit trail.
-- Use managed skills for reusable operator-visible capabilities that are shared
-  by managed agents. Reconcile skill declarations by `skillKey` and keep the
-  declared skill markdown and files in sync with agent behavior.
 - Use managed projects to keep plugin-generated work organized and to give
   project-scoped plugin UI a stable home.
 - Keep defaults conservative. Managed declarations are suggestions owned by the
@@ -567,7 +551,7 @@ per data source, not per plugin.
 Plugins may declare a `page` slot with `routePath` to own a company route like:
 
 ```text
-/:companyPrefix/<routePath>
+/:companyId/<routePath>
 ```
 
 Rules:

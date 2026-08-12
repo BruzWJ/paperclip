@@ -297,12 +297,12 @@ export interface PaperclipPluginManifestV1 {
   agents?: PluginManagedAgentDeclaration[];
   projects?: PluginManagedProjectDeclaration[];
   routines?: PluginManagedRoutineDeclaration[];
-  skills?: PluginManagedSkillDeclaration[];
   localFolders?: PluginLocalFolderDeclaration[];
   ui?: {
     launchers?: PluginLauncherDeclaration[];
     slots?: Array<{
-      type: "page"
+      type:
+        | "page"
         | "detailTab"
         | "taskDetailView"
         | "dashboardWidget"
@@ -342,7 +342,6 @@ Rules:
   - `agents` → `agents.managed`
   - `projects` → `projects.managed`
   - `routines` → `routines.managed`
-  - `skills` → `skills.managed`
 
 ## 11. Agent Tools
 
@@ -662,7 +661,6 @@ Required SDK clients:
 - `ctx.entities`
 - `ctx.projects`
 - `ctx.routines`
-- `ctx.skills`
 - `ctx.companies`
 - `ctx.tasks`
 - `ctx.agents`
@@ -693,13 +691,11 @@ Plugins that perform durable work should declare managed Paperclip resources rat
 - `agents` + `ctx.agents.managed.*` for named, invokable operators (`agents.managed` required)
 - `projects` + `ctx.projects.managed.*` for stable, scoped task/workspace ownership (`projects.managed` required)
 - `routines` + `ctx.routines.managed.*` for schedule/webhook/manual execution with task trails (`routines.managed` required)
-- `skills` + `ctx.skills.managed.*` for reusable agent capabilities (`skills.managed` required)
 
 Content-oriented plugins should follow this model instead of running
 unmanaged background loops: make the LLM-facing worker an operator-visible
-managed agent, attach reusable prompt/tool guidance as managed skills, keep
-operation tasks in a managed project, and drive recurring work through managed
-routines.
+managed agent, keep operation tasks in a managed project, and drive recurring
+work through managed routines.
 
 Provider work starts only through `ctx.tasks.create` with an explicit
 eligible owner. Creator updates are either an exact message or reassignment to
@@ -716,6 +712,9 @@ Scoped API routes:
 
 - `apiRoutes[]` declares `routeKey`, `method`, plugin-local `path`, and required
   `companyResolution`.
+- Route paths match exactly. `/` is the sole root spelling; every non-root path
+  has concrete literal or `:param` segments with no trailing slash, empty/dot
+  segment, or repeated parameter name. The host does not normalize requests.
 - The host enforces auth, company access, `api.routes.register`, route matching,
   and company scope before worker dispatch.
 - The worker implements `onApiRequest(input)` and returns a JSON response shape
@@ -763,7 +762,6 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 - `tasks.withdraw`
 - `projects.managed`
 - `routines.managed`
-- `skills.managed`
 - `agents.pause`
 - `agents.resume`
 - `agents.managed`
@@ -944,15 +942,21 @@ import {
 } from "@paperclipai/plugin-sdk/ui";
 
 export function DashboardWidget({ context }: PluginHostContextProps) {
-  const { data, loading } = usePluginData("sync-health", { companyId: context.companyId });
+  const { data, loading } = usePluginData("sync-health", {
+    companyId: context.companyId,
+  });
   const resync = usePluginAction("resync");
 
   if (loading) return <Spinner />;
 
   return (
     <div>
-      <MetricCard label="Synced Tasks" value={data.syncedCount} trend={data.trend} />
-      {data.mappings.map(m => (
+      <MetricCard
+        label="Synced Tasks"
+        value={data.syncedCount}
+        trend={data.trend}
+      />
+      {data.mappings.map((m) => (
         <StatusBadge key={m.id} label={m.label} status={m.status} />
       ))}
       <button onClick={() => resync({})}>Resync Now</button>
@@ -996,10 +1000,13 @@ Paperclip-internal pages. It exposes `resolveHref(to)`, `navigate(to,
 options?)`, and `linkProps(to, options?)`. Plugin links should prefer
 `linkProps()` so anchors keep real `href` values for copy-link, modifier-click,
 middle-click, and open-in-new-tab behavior while plain left-clicks route through
-the host SPA router. The host resolves company-scoped paths against the active
-company prefix without double-prefixing already-prefixed paths. Plugin UI should
-not use raw same-origin `href`s or `window.location.assign()` for internal
-Paperclip navigation because those can force a full document reload.
+the host SPA router. Every target is an absolute company-relative path such as
+`/wiki`, optionally followed by a query and fragment. Bare, dot-relative,
+query/hash-only, trailing-slash, empty-segment, external, and already
+company-UUID-scoped targets are rejected. The host prefixes the one active
+canonical company UUID. Plugin UI should not use raw same-origin `href`s or
+`window.location.assign()` for internal Paperclip navigation because those can
+force a full document reload.
 
 ### 19.0.2 Bundle Isolation
 
@@ -1038,16 +1045,16 @@ origin or package root used by this route.
 
 ## 19.1 Instance-Admin Routes
 
-- `/:companyPrefix/company/settings/instance/plugins`
-- `/:companyPrefix/company/settings/instance/plugins/:pluginId`
+- `/:companyId/company/settings/instance/plugins`
+- `/:companyId/company/settings/instance/plugins/:pluginId`
 
-These routes are instance-admin surfaces. The company prefix supplies normal
+These routes are instance-admin surfaces. The company UUID supplies normal
 board routing context; plugin installation and configuration remain
 instance-wide.
 
 ## 19.2 Company-Context Routes
 
-- `/:companyPrefix/:routePath/*`
+- `/:companyId/:routePath/*`
 
 Each `page` slot must claim one non-reserved `routePath`. The route is keyed
 only by that manifest declaration; installation UUIDs and plugin keys are not
@@ -1059,28 +1066,28 @@ plugin installation.
 Every declared slot has one concrete production mount. Entity-scoped
 declarations are accepted only for the entity kinds listed here.
 
-| Slot | Host mount | Entity types | Capability |
-| --- | --- | --- | --- |
-| `page` | Company plugin route | — | `ui.page.register` |
-| `routeSidebar` | Secondary sidebar for its paired `page` | — | `ui.sidebar.register` |
-| `detailTab` | Project and task detail tabs | `project`, `task` | `ui.detailTab.register` |
-| `taskDetailView` | Inline task detail region | `task` | `ui.detailTab.register` |
-| `dashboardWidget` | Company dashboard | — | `ui.dashboardWidget.register` |
-| `sidebar` | Main company sidebar navigation | — | `ui.sidebar.register` |
-| `sidebarPanel` | Main company sidebar panel region | — | `ui.sidebar.register` |
-| `projectSidebarItem` | Each project row in the sidebar | `project` | `ui.sidebar.register` |
-| `globalToolbarButton` | Global breadcrumb toolbar | — | `ui.action.register` |
-| `toolbarButton` | Project and task action rows | `project`, `task` | `ui.action.register` |
-| `settingsPage` | Instance plugin settings detail | — | `instance.settings.register` |
-| `companySettingsPage` | Company Settings route and sidebar | — | `instance.settings.register` |
+| Slot                  | Host mount                              | Entity types      | Capability                    |
+| --------------------- | --------------------------------------- | ----------------- | ----------------------------- |
+| `page`                | Company plugin route                    | —                 | `ui.page.register`            |
+| `routeSidebar`        | Secondary sidebar for its paired `page` | —                 | `ui.sidebar.register`         |
+| `detailTab`           | Project and task detail tabs            | `project`, `task` | `ui.detailTab.register`       |
+| `taskDetailView`      | Inline task detail region               | `task`            | `ui.detailTab.register`       |
+| `dashboardWidget`     | Company dashboard                       | —                 | `ui.dashboardWidget.register` |
+| `sidebar`             | Main company sidebar navigation         | —                 | `ui.sidebar.register`         |
+| `sidebarPanel`        | Main company sidebar panel region       | —                 | `ui.sidebar.register`         |
+| `projectSidebarItem`  | Each project row in the sidebar         | `project`         | `ui.sidebar.register`         |
+| `globalToolbarButton` | Global breadcrumb toolbar               | —                 | `ui.action.register`          |
+| `toolbarButton`       | Project and task action rows            | `project`, `task` | `ui.action.register`          |
+| `settingsPage`        | Instance plugin settings detail         | —                 | `instance.settings.register`  |
+| `companySettingsPage` | Company Settings route and sidebar      | —                 | `instance.settings.register`  |
 
 Launcher placements are a separate closed vocabulary:
 
-| Placement | Host mount | Entity types | Capability |
-| --- | --- | --- | --- |
-| `sidebar` | Main company sidebar navigation | — | `ui.sidebar.register` |
-| `globalToolbarButton` | Global breadcrumb toolbar | — | `ui.action.register` |
-| `toolbarButton` | Project and task action rows | `project`, `task` | `ui.action.register` |
+| Placement             | Host mount                      | Entity types      | Capability            |
+| --------------------- | ------------------------------- | ----------------- | --------------------- |
+| `sidebar`             | Main company sidebar navigation | —                 | `ui.sidebar.register` |
+| `globalToolbarButton` | Global breadcrumb toolbar       | —                 | `ui.action.register`  |
+| `toolbarButton`       | Project and task action rows    | `project`, `task` | `ui.action.register`  |
 
 Launcher actions are also a closed contract. `navigate` resolves a Paperclip
 route, `deepLink` opens an absolute HTTP(S) URL in a new tab, and
@@ -1090,6 +1097,11 @@ route, `deepLink` opens an absolute HTTP(S) URL in a new tab, and
 `hostOverlay` and targets a named export from the plugin UI bundle. Non-overlay
 actions cannot declare `render` metadata. The supported overlay bounds are
 `inline`, `compact`, `default`, `wide`, and `full`.
+
+`navigate` uses the same absolute company-relative grammar as
+`useHostNavigation()`. It does not accept a bare or dot-relative path, a
+query/hash-only target, a trailing or doubled slash, an external URL, or a path
+already prefixed with a company UUID.
 
 `page`, `routeSidebar`, and `companySettingsPage` require a single-segment
 `routePath`. A `routeSidebar` is valid only when it is the sole sidebar paired
@@ -1104,7 +1116,7 @@ Plugins may add tabs to:
 
 Recommended route pattern:
 
-- `/:companyPrefix/<entity>/:id?tab=<plugin-tab-id>`
+- `/:companyId/<entity>/:id?tab=<plugin-tab-id>`
 
 ## 19.4 Dashboard Widgets
 
@@ -1132,7 +1144,7 @@ otherwise attempt to collapse the app sidebar from a `routeSidebar` — the host
 applies the collapse while the route is mounted and restores the previous state
 on navigation away. The collapse is a **hard invariant**: while a secondary
 sidebar is shown the app rail is forced collapsed and its expand/toggle
-affordance is hidden, *overriding* any user pin. Crucially, this force is
+affordance is hidden, _overriding_ any user pin. Crucially, this force is
 ephemeral — it never mutates the user's persisted expanded/collapsed preference,
 so navigating back to a normal route restores exactly what the user chose.
 Precedence is therefore: secondary-sidebar force > explicit user pin >
@@ -1142,20 +1154,20 @@ route-requested collapse (`RequestCollapsedSidebar`) > default expanded.
 
 The host SDK ships shared components that plugins can import to quickly build UIs that match the host's look and feel. These are convenience building blocks, not a requirement.
 
-| Component | What it renders | Typical use |
-|---|---|---|
-| `MetricCard` | Single number with label, optional trend/sparkline | KPIs, counts, rates |
-| `StatusBadge` | Inline status indicator (ok/warning/error/info) | Sync health, connection status |
-| `DataTable` | Rows and columns with optional sorting and pagination | Task lists, job history, process lists |
-| `MarkdownBlock` | Rendered markdown text | Descriptions, help text, notes |
-| `KeyValueList` | Label/value pairs in a definition-list layout | Entity metadata, config summary |
-| `JsonTree` | Collapsible JSON tree for debugging | Raw API responses, plugin state inspection |
-| `Spinner` | Loading indicator | Data fetch states |
-| `FileTree` | Host-styled file/directory tree | Plugin-owned file trees and import previews |
-| `TasksList` | Host task list | Plugin pages that need a native task view |
-| `OwnerPicker` | Agent-only canonical task-owner picker | Creating and reassigning ordinary plugin tasks |
-| `ProjectPicker` | Host project picker | Creating tasks, scoping dashboards, filtering work |
-| `ManagedRoutinesList` | Host routine list | Plugin settings pages that manage routines |
+| Component             | What it renders                                       | Typical use                                        |
+| --------------------- | ----------------------------------------------------- | -------------------------------------------------- |
+| `MetricCard`          | Single number with label, optional trend/sparkline    | KPIs, counts, rates                                |
+| `StatusBadge`         | Inline status indicator (ok/warning/error/info)       | Sync health, connection status                     |
+| `DataTable`           | Rows and columns with optional sorting and pagination | Task lists, job history, process lists             |
+| `MarkdownBlock`       | Rendered markdown text                                | Descriptions, help text, notes                     |
+| `KeyValueList`        | Label/value pairs in a definition-list layout         | Entity metadata, config summary                    |
+| `JsonTree`            | Collapsible JSON tree for debugging                   | Raw API responses, plugin state inspection         |
+| `Spinner`             | Loading indicator                                     | Data fetch states                                  |
+| `FileTree`            | Host-styled file/directory tree                       | Plugin-owned file trees and import previews        |
+| `TasksList`           | Host task list                                        | Plugin pages that need a native task view          |
+| `OwnerPicker`         | Agent-only canonical task-owner picker                | Creating and reassigning ordinary plugin tasks     |
+| `ProjectPicker`       | Host project picker                                   | Creating tasks, scoping dashboards, filtering work |
+| `ManagedRoutinesList` | Host routine list                                     | Plugin settings pages that manage routines         |
 
 Plugins may also use entirely custom components. The shared components exist to reduce boilerplate and keep visual consistency, not to limit what plugins can render.
 
@@ -1179,7 +1191,12 @@ The bridge hooks must return structured errors so plugin UI can handle failures 
 
 ```ts
 interface PluginBridgeError {
-  code: "WORKER_UNAVAILABLE" | "CAPABILITY_DENIED" | "WORKER_ERROR" | "TIMEOUT" | "UNKNOWN";
+  code:
+    | "WORKER_UNAVAILABLE"
+    | "CAPABILITY_DENIED"
+    | "WORKER_ERROR"
+    | "TIMEOUT"
+    | "UNKNOWN";
   message: string;
   /** Original error details from the worker, if available */
   details?: unknown;
@@ -1198,7 +1215,7 @@ The `@paperclipai/plugin-sdk/ui` subpath should also export an `ErrorBoundary` c
 
 ## 19.8 Plugin Settings UI
 
-Each plugin that declares an `instanceConfigSchema` in its manifest gets one auto-generated instance settings form at `/:companyPrefix/company/settings/instance/plugins/:pluginId`. Only an instance administrator can read, test, or update it; no selected company is involved.
+Each plugin that declares an `instanceConfigSchema` in its manifest gets one auto-generated instance settings form at `/:companyId/company/settings/instance/plugins/:pluginId`. Only an instance administrator can read, test, or update it; no selected company is involved.
 
 The auto-generated form supports:
 
@@ -1214,7 +1231,7 @@ checked again before a worker is activated.
 
 For plugins that need richer settings UX beyond what JSON Schema can express, the plugin may declare a `settingsPage` slot in `ui.slots`. When present, the host renders the plugin's own React component instead of the auto-generated form. The plugin component communicates with its worker through the standard bridge to read and write config.
 
-For plugins that need a company-scoped settings surface, declare a `companySettingsPage` slot with a `routePath`. The host renders a sidebar item under Company Settings and mounts the component at `/:companyPrefix/company/settings/:routePath`. The page receives `companyId` and `companyPrefix` in its host context. The exact host-owned settings segments `members`, `invites`, `secrets`, and `instance` are reserved and cannot be shadowed by plugin declarations.
+For plugins that need a company-scoped settings surface, declare a `companySettingsPage` slot with a `routePath`. The host renders a sidebar item under Company Settings and mounts the component at `/:companyId/company/settings/:routePath`. The page receives `companyId` in its host context. The exact host-owned settings segments `members`, `invites`, `secrets`, and `instance` are reserved and cannot be shadowed by plugin declarations.
 
 ## 20. Local Tooling
 
@@ -1450,13 +1467,13 @@ Each plugin may expose:
 
 Route:
 
-- `/:companyPrefix/company/settings/instance/plugins/:pluginId`
+- `/:companyId/company/settings/instance/plugins/:pluginId`
 
 ## 24.3 Company-Context Plugin Page
 
 Each plugin may expose a company-context main page:
 
-- `/:companyPrefix/:routePath/*`
+- `/:companyId/:routePath/*`
 
 The `routePath` is required on the plugin's `page` slot and is the sole route
 identity for that page.
@@ -1465,7 +1482,7 @@ identity for that page.
 
 Each ready plugin may expose a company settings page:
 
-- `/:companyPrefix/company/settings/:routePath`
+- `/:companyId/company/settings/:routePath`
 
 The host adds a matching Company Settings sidebar item using the slot `displayName`. Plugin settings route segments are single-segment slugs and must not collide with core company settings pages.
 
@@ -1628,16 +1645,22 @@ await plugin.definition.setup(harness.ctx);
 
 // Simulate an event
 await harness.emit("task.board.comment.created", {
-  taskId: "task-1",
-  commentId: "comment-1",
+  taskId: "22222222-2222-4222-8222-222222222222",
+  commentId: "33333333-3333-4333-8333-333333333333",
 });
 
 // Verify state was written
-const state = harness.getState({ scopeKind: "task", scopeId: "task-1", stateKey: "external-id" });
+const state = harness.getState({
+  scopeKind: "task",
+  scopeId: "22222222-2222-4222-8222-222222222222",
+  stateKey: "external-id",
+});
 expect(state).toBeDefined();
 
 // Simulate a UI data request
-const data = await harness.getData("sync-health", { companyId: "comp-1" });
+const data = await harness.getData("sync-health", {
+  companyId: "11111111-1111-4111-8111-111111111111",
+});
 expect(data.syncedCount).toBeGreaterThan(0);
 ```
 

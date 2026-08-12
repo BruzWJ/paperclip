@@ -5,7 +5,7 @@ import {
   listUIAdapters,
   syncServerAdapters,
 } from "./registry";
-import { SchemaConfigFields } from "./schema-config-fields";
+import { AcpxConfigOptions } from "./acpx-config-options";
 
 describe("server-admitted UI adapter catalog", () => {
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe("server-admitted UI adapter catalog", () => {
     expect(findUIAdapter("codex")).toMatchObject({
       type: "codex",
       label: "Codex",
-      ConfigFields: SchemaConfigFields,
+      ConfigFields: AcpxConfigOptions,
     });
   });
 

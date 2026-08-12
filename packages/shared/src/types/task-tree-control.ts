@@ -27,7 +27,8 @@ export interface TaskTreePreviewAgent {
 
 export interface TaskTreePreviewTask {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: TaskStatus;
   parentId: string | null;
@@ -78,7 +79,8 @@ export interface TaskTreeHoldMember {
   taskId: string;
   parentTaskId: string | null;
   depth: number;
-  taskIdentifier: string | null;
+  taskNumber: number;
+  taskIdentifier: string;
   taskTitle: string | null;
   taskStatus: TaskStatus;
   ownerAgentId: string | null;

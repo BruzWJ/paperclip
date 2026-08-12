@@ -58,10 +58,6 @@ describe("AgentStatusBadge", () => {
       expect(html).toContain(`var(${cssVar})`);
     }
   });
-
-  it('renders "active" as the idle label', () => {
-    expect(renderToStaticMarkup(<AgentStatusBadge status="active" />)).toContain("idle");
-  });
 });
 
 describe("StatusBadge", () => {

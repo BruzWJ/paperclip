@@ -12,7 +12,7 @@ const baseAgent = {
   id: "agent-1",
   companyId: "co-1",
   name: "ClaudeCoder",
-  status: "active",
+  status: "idle",
 } as unknown as Agent;
 
 let container: HTMLDivElement;

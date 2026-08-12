@@ -10,13 +10,13 @@ import type {
 } from "../task-runtime.js";
 import type { TaskCommentMetadata, TaskCommentPresentation } from "./task.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
+import type { AgentAdapterAcpConfiguration } from "./agent.js";
 
 export interface CompanyPortabilityInclude {
   company: boolean;
   agents: boolean;
   projects: boolean;
   tasks: boolean;
-  skills: boolean;
 }
 
 export interface CompanyPortabilityEnvInput {
@@ -49,9 +49,16 @@ export interface CompanyPortabilityCompanyManifestEntry {
   requireBoardApprovalForNewAgents: boolean;
 }
 
+/** Package-internal ordering expressed with manifest slugs. */
 export interface CompanyPortabilitySidebarOrder {
   agents: string[];
   projects: string[];
+}
+
+/** UUID order supplied when exporting live resources into package slugs. */
+export interface CompanyPortabilityExportSidebarOrder {
+  agents?: string[];
+  projects?: string[];
 }
 
 export interface CompanyPortabilityProjectManifestEntry {
@@ -98,7 +105,6 @@ export interface CompanyPortabilityTaskCommentManifestEntry {
 
 export interface CompanyPortabilityTaskManifestEntry {
   slug: string;
-  identifier: string | null;
   title: string | null;
   path: string;
   projectSlug: string | null;
@@ -120,7 +126,6 @@ export interface CompanyPortabilityAgentManifestEntry {
   slug: string;
   name: string;
   path: string;
-  skills: string[];
   title: string | null;
   icon: string | null;
   capabilities: string | null;
@@ -129,9 +134,7 @@ export interface CompanyPortabilityAgentManifestEntry {
   reportsToExistingAgentSlug: string | null;
   adapterRevision: {
     sourceRevisionId: string;
-    adapterType: string;
-    adapterConfig: Record<string, unknown>;
-    runtimeConfig: Record<string, unknown>;
+    acpConfiguration: AgentAdapterAcpConfiguration;
   };
   contextGrants: Record<AgentContextGrantKey, boolean>;
   actionGrants: Record<PaperclipActionKey, boolean>;
@@ -143,26 +146,8 @@ export interface CompanyPortabilityAgentManifestEntry {
   budgetMonthlyAmount: MoneyAmount;
 }
 
-export interface CompanyPortabilitySkillManifestEntry {
-  key: string;
-  slug: string;
-  name: string;
-  path: string;
-  description: string | null;
-  sourceType: string;
-  sourceLocator: string | null;
-  sourceRef: string | null;
-  trustLevel: string | null;
-  compatibility: string | null;
-  metadata: Record<string, unknown> | null;
-  fileInventory: Array<{
-    path: string;
-    kind: string;
-  }>;
-}
-
 export interface CompanyPortabilityManifest {
-  schemaVersion: number;
+  schemaVersion: 5;
   generatedAt: string;
   source: {
     companyId: string;
@@ -172,7 +157,6 @@ export interface CompanyPortabilityManifest {
   company: CompanyPortabilityCompanyManifestEntry | null;
   sidebar: CompanyPortabilitySidebarOrder | null;
   agents: CompanyPortabilityAgentManifestEntry[];
-  skills: CompanyPortabilitySkillManifestEntry[];
   projects: CompanyPortabilityProjectManifestEntry[];
   tasks: CompanyPortabilityTaskManifestEntry[];
   envInputs: CompanyPortabilityEnvInput[];
@@ -188,7 +172,7 @@ export interface CompanyPortabilityExportResult {
 
 export interface CompanyPortabilityExportPreviewFile {
   path: string;
-  kind: "company" | "agent" | "skill" | "project" | "task" | "extension" | "readme" | "other";
+  kind: "company" | "agent" | "project" | "task" | "extension" | "readme" | "other";
 }
 
 export interface CompanyPortabilityExportPreviewResult {
@@ -199,7 +183,6 @@ export interface CompanyPortabilityExportPreviewResult {
   counts: {
     files: number;
     agents: number;
-    skills: number;
     projects: number;
     tasks: number;
   };
@@ -321,11 +304,9 @@ export interface CompanyPortabilityImportResult {
 export interface CompanyPortabilityExportRequest {
   include?: Partial<CompanyPortabilityInclude>;
   agents?: string[];
-  skills?: string[];
   projects?: string[];
   tasks?: string[];
   projectTasks?: string[];
   selectedFiles?: string[];
-  expandReferencedSkills?: boolean;
-  sidebarOrder?: Partial<CompanyPortabilitySidebarOrder>;
+  sidebarOrder?: CompanyPortabilityExportSidebarOrder;
 }

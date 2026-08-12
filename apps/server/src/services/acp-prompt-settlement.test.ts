@@ -51,25 +51,19 @@ describe("canonical ACP prompt settlement boundary", () => {
     ).toEqual({ selectedModelId: null, contextTokenLimit: 100 });
     expect(
       resolveAcpPromptAccountingModel(
-        { id: "target-selected", limits: null },
+        { value: "target-selected" },
         100,
       ),
     ).toEqual({ selectedModelId: "target-selected", contextTokenLimit: 100 });
   });
 
-  it("keeps an advertised model limit as an immutable consistency fence", () => {
+  it("uses observed occupancy as the sole accounting window", () => {
     expect(
       resolveAcpPromptAccountingModel(
-        { id: "target-selected", limits: { contextTokenLimit: 100 } },
-        100,
-      ),
-    ).toEqual({ selectedModelId: "target-selected", contextTokenLimit: 100 });
-    expect(() =>
-      resolveAcpPromptAccountingModel(
-        { id: "target-selected", limits: { contextTokenLimit: 100 } },
+        { value: "target-selected" },
         99,
       ),
-    ).toThrow("differs from the immutable prompt model");
+    ).toEqual({ selectedModelId: "target-selected", contextTokenLimit: 99 });
   });
 
   it("rejects malformed terminal occupancy before reaching persistence", async () => {

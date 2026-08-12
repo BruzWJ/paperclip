@@ -1,4 +1,5 @@
 import { URL } from "node:url";
+import { parseExactApiBase } from "./api-base.js";
 
 export class ApiRequestError extends Error {
   status: number;
@@ -56,8 +57,8 @@ export class PaperclipApiClient {
   readonly recoverAuth?: (input: RecoverAuthInput) => Promise<string | null>;
 
   constructor(opts: ApiClientOptions) {
-    this.apiBase = opts.apiBase.replace(/\/+$/, "");
-    this.apiKey = opts.apiKey?.trim() || undefined;
+    this.apiBase = parseExactApiBase(opts.apiBase);
+    this.apiKey = opts.apiKey;
     this.recoverAuth = opts.recoverAuth;
   }
 
@@ -91,7 +92,7 @@ export class PaperclipApiClient {
   }
 
   setApiKey(apiKey: string | undefined) {
-    this.apiKey = apiKey?.trim() || undefined;
+    this.apiKey = apiKey;
   }
 
   private async request<T>(

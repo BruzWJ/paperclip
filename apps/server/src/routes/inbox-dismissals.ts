@@ -8,10 +8,14 @@ import { inboxDismissalService, logActivity } from "../services/index.js";
 
 const ITEM_KEY_RE = /^(approval|join|run|attention):.+$/;
 
+const exactItemKeySchema = z.string().min(1)
+  .regex(ITEM_KEY_RE, "Unsupported inbox item key")
+  .refine((value) => value.trim() === value);
+
 const inboxDismissalSchema = z.object({
-  itemKey: z.string().trim().min(1).regex(ITEM_KEY_RE, "Unsupported inbox item key"),
+  itemKey: exactItemKeySchema,
   kind: z.enum(["dismiss", "snooze"]).default("dismiss"),
-  snoozedUntil: z.string().trim().optional(),
+  snoozedUntil: z.string().datetime().refine((value) => new Date(value).toISOString() === value).optional(),
 }).superRefine((value, ctx) => {
   if (value.kind === "dismiss") {
     if (value.snoozedUntil != null) {
@@ -35,7 +39,7 @@ const inboxDismissalSchema = z.object({
 });
 
 export function inboxDismissalRoutes(db: Db) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = inboxDismissalService(db);
 
   router.get("/companies/:companyId/inbox-dismissals", async (req, res) => {

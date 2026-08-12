@@ -10,7 +10,7 @@
       "id": "agent:66b3c071-6cb8-4424-b833-9d9b6318de0b",
       "type": "agent",
       "name": "CTO",
-      "avatar": "file-code"
+      "avatar": "b6000000-0000-4000-8000-00000000000b"
     },
     {
       "id": "agent:a9f9a532-690a-45c2-8da7-64789e7cbb06",
@@ -457,7 +457,7 @@
       "runId": "8e58708e-88df-4681-84c5-f6a676d1dd6a",
       "taskId": "e3afbdcf-98b8-4971-a094-9a92d78736d1",
       "taskIdentifier": "PAP-10273",
-      "taskTitle": "Defect (Minor): preview emits noisy \"skill not present in package\" warnings for catalog-skill references",
+      "taskTitle": "Defect (Minor): preview emits noisy warnings for missing package references",
       "start": "2026-07-02T15:20:20.734Z",
       "end": "2026-07-02T15:25:39.352Z",
       "status": "succeeded",
@@ -565,7 +565,7 @@
       "runId": "9eb8e7ba-53b5-4d22-8f8d-cbba6a5c5bb5",
       "taskId": "9ae0377a-8040-4221-9376-4ae64270e3b4",
       "taskIdentifier": "PAP-12440",
-      "taskTitle": "Defect (Minor): bulk import is not atomic — mid-import failure can orphan skills/agents",
+      "taskTitle": "Defect (Minor): bulk import is not atomic — mid-import failure can orphan agents",
       "start": "2026-07-02T15:27:39.339Z",
       "end": "2026-07-02T15:37:04.236Z",
       "status": "succeeded",

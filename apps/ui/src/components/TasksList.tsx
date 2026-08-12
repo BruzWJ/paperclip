@@ -8,11 +8,11 @@ import {
   useRef,
 } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useVisibilityRefetchInterval } from "@/lib/polling";
 import { accessApi } from "../api/access";
 import { useDialogActions } from "../context/DialogContext";
-import { useCompany } from "../context/CompanyContext";
-import { Link, useNavigate } from "@/lib/router";
+import { useNavigate } from "@tanstack/react-router";
+import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { tasksApi } from "../api/tasks";
 import { authApi } from "../api/auth";
 import { queryKeys } from "../lib/queryKeys";
@@ -26,8 +26,6 @@ import {
   buildCompanyUserProfileMap,
 } from "../lib/company-members";
 import {
-  createTaskDetailPath,
-  rememberTaskDetailLocationState,
   withTaskDetailHeaderSeed,
 } from "../lib/taskDetailBreadcrumb";
 import {
@@ -45,6 +43,7 @@ import {
   normalizeTaskFilterState,
   taskStatusOrder,
   type TaskFilterState,
+  type TaskOwnerFilter,
 } from "../lib/task-filters";
 import {
   DEFAULT_INBOX_TASK_COLUMNS,
@@ -200,7 +199,6 @@ export type TaskSortField =
   "status" | "priority" | "title" | "created" | "updated" | "workflow";
 export type BoardCardDensity = "auto" | "compact" | "comfortable";
 export type BoardColdLaneMode = "auto" | "collapsed" | "expanded";
-export type BoardColumnPageSize = KanbanColumnPageSize;
 
 export type TaskViewState = TaskFilterState & {
   sortField: TaskSortField;
@@ -218,7 +216,7 @@ export type TaskViewState = TaskFilterState & {
   collapsedParents: string[];
   boardCardDensity: BoardCardDensity;
   boardColdLaneMode: BoardColdLaneMode;
-  boardColumnPageSize: BoardColumnPageSize;
+  boardColumnPageSize: KanbanColumnPageSize;
 };
 
 const defaultViewState: TaskViewState = {
@@ -247,9 +245,9 @@ function normalizeBoardColdLaneMode(value: unknown): BoardColdLaneMode {
     : "auto";
 }
 
-function normalizeBoardColumnPageSize(value: unknown): BoardColumnPageSize {
-  return KANBAN_COLUMN_PAGE_SIZE_OPTIONS.includes(value as BoardColumnPageSize)
-    ? (value as BoardColumnPageSize)
+function normalizeBoardColumnPageSize(value: unknown): KanbanColumnPageSize {
+  return KANBAN_COLUMN_PAGE_SIZE_OPTIONS.includes(value as KanbanColumnPageSize)
+    ? (value as KanbanColumnPageSize)
     : KANBAN_COLUMN_DEFAULT_PAGE_SIZE;
 }
 
@@ -281,7 +279,7 @@ function saveViewState(key: string, state: TaskViewState) {
 
 function getInitialViewState(
   key: string,
-  initialOwners?: string[],
+  initialOwners?: TaskOwnerFilter[],
   defaultSortField?: TaskSortField,
 ): TaskViewState {
   const hasStored = hasStoredViewState(key);
@@ -496,11 +494,11 @@ interface TasksListProps {
   projectId?: string;
   viewStateKey: string;
   taskLinkState?: unknown;
-  initialOwners?: string[];
+  initialOwners?: TaskOwnerFilter[];
   initialSearch?: string;
   searchFilters?: Omit<
     TaskListRequestFilters,
-    "q" | "projectId" | "limit" | "includeRoutineExecutions"
+    "q" | "projectId" | "limit"
   >;
   searchWithinLoadedTasks?: boolean;
   baseCreateTaskDefaults?: Record<string, unknown>;
@@ -600,7 +598,6 @@ function SubTaskProgressSummaryStrip({
 }) {
   const target = summary.target;
   const targetTask = target?.task ?? null;
-  const targetPathId = targetTask?.identifier ?? targetTask?.id ?? "";
   const targetState = targetTask
     ? withTaskDetailHeaderSeed(taskLinkState, targetTask)
     : undefined;
@@ -609,12 +606,6 @@ function SubTaskProgressSummaryStrip({
     count: summary.countsByStatus[status] ?? 0,
   })).filter((entry) => entry.count > 0);
 
-  // Refresh fast enough that the runtime ticks up while a sub-task is still
-  // running, but slow enough not to hammer the recursive CTE on idle trees.
-  const hasInProgress = summary.inProgressCount > 0;
-  const costRefetchInterval = useVisibilityRefetchInterval({
-    visibleMs: 5_000,
-  });
   const { data: costSummary } = useQuery({
     queryKey: queryKeys.tasks.costSummary(
       parentTaskIdForCostSummary ?? "pending",
@@ -625,7 +616,6 @@ function SubTaskProgressSummaryStrip({
         excludeRoot: true,
       }),
     enabled: !!parentTaskIdForCostSummary,
-    refetchInterval: hasInProgress ? costRefetchInterval : false,
   });
 
   const showCostSummary =
@@ -696,17 +686,18 @@ function SubTaskProgressSummaryStrip({
               <div className="text-xs font-medium text-muted-foreground">
                 {target.kind === "next" ? "Next up" : "Waiting on blockers"}
               </div>
-              <Link
-                to={createTaskDetailPath(targetPathId)}
+              <TaskLinkQuicklook
+                taskId={targetTask.id}
+                taskNumber={targetTask.taskNumber}
                 state={targetState}
                 taskPrefetch={targetTask}
                 className="mt-1 block min-w-0 text-foreground underline-offset-2 hover:underline"
               >
                 <span className="font-mono text-xs text-muted-foreground">
-                  {targetTask.identifier ?? targetTask.id.slice(0, 8)}
+                  {targetTask.identifier}
                 </span>{" "}
                 <span>{targetTask.title}</span>
-              </Link>
+              </TaskLinkQuicklook>
             </>
           ) : summary.totalCount === 0 ? (
             <div className="text-sm font-medium text-foreground">
@@ -765,6 +756,7 @@ export function TasksList({
 }: TasksListProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
+  const companyId = useCompanyRouteId();
   const { keyboardShortcutsEnabled } = useGeneralSettings();
   // Keyboard selection for the list view (mirrors the inbox). Hover moves the
   // selection only after real pointer movement, so keyboard-driven scrolling
@@ -791,24 +783,20 @@ export function TasksList({
     // null, so continuous hovering triggers no re-render.
     setSelectedNavKey((prev) => (prev === null ? prev : null));
   }, []);
-  const { selectedCompanyId } = useCompany();
   const { openNewTask } = useDialogActions();
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
   });
   const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
-    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.access.companyUserDirectory(companyId),
+    queryFn: () => accessApi.listUserDirectory(companyId),
   });
-  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const currentUserId = session?.user.id ?? null;
 
   // Scope the storage key per company so folding/view state is independent across companies.
-  const scopedKey = selectedCompanyId
-    ? `${viewStateKey}:${selectedCompanyId}`
-    : viewStateKey;
-  const initialOwnersKey = initialOwners?.join("|") ?? "";
+  const scopedKey = `${viewStateKey}:${companyId}`;
+  const initialOwnersKey = JSON.stringify(initialOwners ?? []);
 
   const [viewState, setViewState] = useState<TaskViewState>(() =>
     getInitialViewState(scopedKey, initialOwners, defaultSortField),
@@ -884,7 +872,7 @@ export function TasksList({
   const { data: searchedTasks = [] } = useQuery({
     queryKey: [
       ...queryKeys.tasks.search(
-        selectedCompanyId!,
+        companyId,
         normalizedTaskSearch,
         projectId,
       ),
@@ -898,29 +886,24 @@ export function TasksList({
     queryFn: ({ signal }) =>
       tasksApi
         .listCompact(
-          selectedCompanyId!,
+          companyId,
           {
             q: normalizedTaskSearch,
             projectId,
             limit: TASK_SEARCH_RESULT_LIMIT,
             ...searchFilters,
-            ...(enableRoutineVisibilityFilter
-              ? { includeRoutineExecutions: true }
-              : {}),
           },
           { signal },
         )
         .then((rows) => rows as Task[]),
     enabled:
-      !!selectedCompanyId &&
-      normalizedTaskSearch.length > 0 &&
-      !searchWithinLoadedTasks,
+      normalizedTaskSearch.length > 0 && !searchWithinLoadedTasks,
     placeholderData: (previousData) => previousData,
   });
   const boardTaskQueries = useQueries({
     queries: boardTaskStatuses.map((status) => ({
       queryKey: [
-        ...queryKeys.tasks.list(selectedCompanyId ?? "__no-company__"),
+        ...queryKeys.tasks.list(companyId),
         "board-column",
         status,
         normalizedTaskSearch,
@@ -935,26 +918,21 @@ export function TasksList({
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         tasksApi
           .listCompact(
-            selectedCompanyId!,
+            companyId,
             {
               ...searchFilters,
               ...(normalizedTaskSearch.length > 0
                 ? { q: normalizedTaskSearch }
                 : {}),
               projectId,
-              status,
+              status: [status],
               limit: TASK_BOARD_COLUMN_RESULT_LIMIT,
-              ...(enableRoutineVisibilityFilter
-                ? { includeRoutineExecutions: true }
-                : {}),
             },
             { signal },
           )
           .then((rows) => rows as Task[]),
       enabled:
-        !!selectedCompanyId &&
-        viewState.viewMode === "board" &&
-        !searchWithinLoadedTasks,
+        viewState.viewMode === "board" && !searchWithinLoadedTasks,
       placeholderData: (previousData: Task[] | undefined) => previousData,
     })),
   });
@@ -974,6 +952,18 @@ export function TasksList({
     () => buildCompanyUserProfileMap(companyMembers?.users),
     [companyMembers?.users],
   );
+  const ownerUserOptions = useMemo(
+    () =>
+      (companyMembers?.users ?? []).map((member) => ({
+        id: member.principalId,
+        name:
+          member.principalId === currentUserId
+            ? "Me"
+            : (companyUserLabelMap.get(member.principalId) ??
+              member.principalId.slice(0, 5)),
+      })),
+    [companyMembers?.users, companyUserLabelMap, currentUserId],
+  );
 
   const projectById = useMemo(() => {
     const map = new Map<string, { name: string; color: string | null }>();
@@ -992,7 +982,7 @@ export function TasksList({
         id: `user:${currentUserId}`,
         label: "Me",
         kind: "user",
-        searchText: `me user human ${currentUserId}`,
+        searchText: `me user ${currentUserId}`,
       });
     }
 
@@ -1007,7 +997,7 @@ export function TasksList({
               formatOwnerUserLabel(creator.id, currentUserId) ??
               creator.id.slice(0, 5),
             kind: "user",
-            searchText: `${creator.id} board user human`,
+            searchText: `${creator.id} board user`,
           });
         }
       }
@@ -1141,7 +1131,6 @@ export function TasksList({
     const filteredByControls = applyTaskFilters(
       searchScopedTasks,
       viewState,
-      currentUserId,
       enableRoutineVisibilityFilter,
       liveTaskIds,
     );
@@ -1149,7 +1138,6 @@ export function TasksList({
   }, [
     searchScopedTasks,
     viewState,
-    currentUserId,
     enableRoutineVisibilityFilter,
     liveTaskIds,
   ]);
@@ -1224,9 +1212,8 @@ export function TasksList({
   ]);
 
   const { data: labels } = useQuery({
-    queryKey: queryKeys.tasks.labels(selectedCompanyId!),
-    queryFn: () => tasksApi.listLabels(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.tasks.labels(companyId),
+    queryFn: () => tasksApi.listLabels(companyId),
   });
 
   const activeFilterCount = countActiveTaskFilters(
@@ -1320,21 +1307,24 @@ export function TasksList({
     const groups = groupBy(
       filtered,
       (task) =>
-        task.ownerAgentId ??
-        (task.ownerUserId ? `__user:${task.ownerUserId}` : "__board"),
+        task.ownerAgentId
+          ? `agent:${task.ownerAgentId}`
+          : task.ownerUserId
+            ? `user:${task.ownerUserId}`
+            : "board",
     );
     return Object.keys(groups).map((key) => ({
       key,
       label:
-        key === "__board"
+        key === "board"
           ? "Board escalation"
-          : key.startsWith("__user:")
+          : key.startsWith("user:")
             ? (formatOwnerUserLabel(
-                key.slice("__user:".length),
+                key.slice("user:".length),
                 currentUserId,
                 companyUserLabelMap,
               ) ?? "User")
-            : (agentName(key) ?? key.slice(0, 8)),
+            : (agentName(key.slice("agent:".length)) ?? key.slice("agent:".length, "agent:".length + 8)),
       items: groups[key]!,
     }));
   }, [
@@ -1518,17 +1508,19 @@ export function TasksList({
         case "Enter": {
           const entry = st.flatNavEntries[currentIndex];
           if (!entry || entry.type !== "task") return;
-          e.preventDefault();
           // Navigate from the entry data (like the inbox) rather than the DOM
           // row — the selected row may sit past the mounted render batch.
           const task = entry.task;
-          const pathId = task.identifier ?? task.id;
+          e.preventDefault();
           const detailState = withTaskDetailHeaderSeed(
             st.taskLinkState,
             task,
           );
-          rememberTaskDetailLocationState(pathId, detailState);
-          navigate(createTaskDetailPath(pathId), { state: detailState });
+          void navigate({
+            to: "/$companyId/tasks/$taskNumber",
+            params: { companyId, taskNumber: String(task.taskNumber) },
+            state: detailState,
+          });
           break;
         }
         default:
@@ -1537,7 +1529,7 @@ export function TasksList({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [keyboardShortcutsEnabled, navigate]);
+  }, [companyId, keyboardShortcutsEnabled, navigate]);
 
   // Keep the keyboard selection visible while navigating. Depends on the
   // render budget too: a selection past the mounted batch scrolls once its
@@ -1672,10 +1664,9 @@ export function TasksList({
         else if (viewState.groupBy === "priority") defaults.priority = groupKey;
         else if (
           viewState.groupBy === "owner" &&
-          groupKey !== "__board" &&
-          !groupKey.startsWith("__user:")
+          groupKey.startsWith("agent:")
         ) {
-          defaults.ownerAgentId = groupKey;
+          defaults.ownerAgentId = groupKey.slice("agent:".length);
         } else if (
           viewState.groupBy === "project" &&
           groupKey !== "__no_project"
@@ -1948,6 +1939,7 @@ export function TasksList({
             buttonVariant="outline"
             activeFilterCount={activeFilterCount}
             agents={agents}
+            users={ownerUserOptions}
             creators={creatorOptions}
             projects={projects?.map((project) => ({
               id: project.id,
@@ -2244,9 +2236,7 @@ export function TasksList({
                         .map((blockerId) => {
                           const blockerTask = taskById.get(blockerId);
                           if (!blockerTask) return null;
-                          const label =
-                            blockerTask.identifier ??
-                            blockerTask.id.slice(0, 8);
+                          const label = blockerTask.identifier;
                           const blockerStep =
                             checklistMeta?.stepNumberByTaskId.get(blockerId);
                           const blockerStepSuffix = blockerStep

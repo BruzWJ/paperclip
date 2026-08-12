@@ -23,6 +23,17 @@ describe("access validators", () => {
     }).success).toBe(false);
   });
 
+  it("rejects padded profile fields instead of rewriting them", () => {
+    expect(updateCurrentUserProfileSchema.safeParse({
+      name: " Ada Lovelace",
+      image: null,
+    }).success).toBe(false);
+    expect(updateCurrentUserProfileSchema.safeParse({
+      name: "Ada Lovelace",
+      image: " https://example.com/avatar.png",
+    }).success).toBe(false);
+  });
+
   it("defaults omitted combined member grants to an empty list", () => {
     const result = updateCompanyMemberWithPermissionsSchema.parse({
       membershipRole: "operator",

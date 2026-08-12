@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
+import { isCanonicalUuid } from "@paperclipai/shared";
 import type { StorageService, StorageProvider, PutFileInput, PutFileResult } from "./types.js";
-import { badRequest, forbidden, unprocessable } from "../errors.js";
+import { forbidden, unprocessable } from "../errors.js";
+import { requireExactStorageObjectKey } from "./object-key.js";
 
 const MAX_SEGMENT_LENGTH = 120;
 
@@ -15,14 +17,28 @@ function sanitizeSegment(value: string): string {
   return cleaned.slice(0, MAX_SEGMENT_LENGTH);
 }
 
-function normalizeNamespace(namespace: string): string {
-  const normalized = namespace
-    .split("/")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0)
-    .map((entry) => sanitizeSegment(entry));
-  if (normalized.length === 0) return "misc";
-  return normalized.join("/");
+function requireExactNamespace(namespace: string): string {
+  if (
+    namespace.length === 0
+    || namespace !== namespace.trim()
+    || namespace.startsWith("/")
+    || namespace.endsWith("/")
+    || namespace.includes("//")
+  ) {
+    throw unprocessable("namespace must be an exact non-empty path");
+  }
+  const segments = namespace.split("/");
+  if (segments.some((segment) => {
+    return segment === "."
+      || segment === ".."
+      || segment.length > MAX_SEGMENT_LENGTH
+      || !/^[a-zA-Z0-9._-]+$/.test(segment);
+  })) {
+    throw unprocessable(
+      "namespace segments may contain only letters, numbers, dot, underscore, and hyphen",
+    );
+  }
+  return namespace;
 }
 
 function splitFilename(filename: string | null): { stem: string; ext: string } {
@@ -43,14 +59,15 @@ function splitFilename(filename: string | null): { stem: string; ext: string } {
   };
 }
 
-function ensureCompanyPrefix(companyId: string, objectKey: string): void {
-  const expectedPrefix = `${companyId}/`;
-  if (!objectKey.startsWith(expectedPrefix)) {
+function requireCompanyObjectKey(companyId: string, objectKey: string): string {
+  const exactObjectKey = requireExactStorageObjectKey(objectKey);
+  if (!isCanonicalUuid(companyId)) {
+    throw unprocessable("companyId must be an exact canonical UUID");
+  }
+  if (exactObjectKey.split("/", 1)[0] !== companyId) {
     throw forbidden("Object does not belong to company");
   }
-  if (objectKey.includes("..")) {
-    throw badRequest("Invalid object key");
-  }
+  return exactObjectKey;
 }
 
 function hashBuffer(input: Buffer): string {
@@ -58,7 +75,7 @@ function hashBuffer(input: Buffer): string {
 }
 
 function buildObjectKey(companyId: string, namespace: string, originalFilename: string | null): string {
-  const ns = normalizeNamespace(namespace);
+  const ns = requireExactNamespace(namespace);
   const now = new Date();
   const year = String(now.getUTCFullYear());
   const month = String(now.getUTCMonth() + 1).padStart(2, "0");
@@ -70,14 +87,16 @@ function buildObjectKey(companyId: string, namespace: string, originalFilename: 
 }
 
 function assertPutFileInput(input: PutFileInput): void {
-  if (!input.companyId || input.companyId.trim().length === 0) {
-    throw unprocessable("companyId is required");
+  if (!isCanonicalUuid(input.companyId)) {
+    throw unprocessable("companyId must be an exact canonical UUID");
   }
-  if (!input.namespace || input.namespace.trim().length === 0) {
-    throw unprocessable("namespace is required");
-  }
-  if (!input.contentType || input.contentType.trim().length === 0) {
-    throw unprocessable("contentType is required");
+  requireExactNamespace(input.namespace);
+  if (
+    input.contentType.length === 0
+    || input.contentType !== input.contentType.trim()
+    || input.contentType !== input.contentType.toLowerCase()
+  ) {
+    throw unprocessable("contentType must be exact, lowercase, and non-empty");
   }
   if (!(input.body instanceof Buffer)) {
     throw unprocessable("body must be a Buffer");
@@ -93,20 +112,21 @@ export function createStorageService(provider: StorageProvider): StorageService 
 
     async putFile(input: PutFileInput): Promise<PutFileResult> {
       assertPutFileInput(input);
-      const objectKey = buildObjectKey(input.companyId, input.namespace, input.originalFilename);
+      const objectKey = requireExactStorageObjectKey(
+        buildObjectKey(input.companyId, input.namespace, input.originalFilename),
+      );
       const byteSize = input.body.length;
-      const contentType = input.contentType.trim().toLowerCase();
       await provider.putObject({
         objectKey,
         body: input.body,
-        contentType,
+        contentType: input.contentType,
         contentLength: byteSize,
       });
 
       return {
         provider: provider.id,
         objectKey,
-        contentType,
+        contentType: input.contentType,
         byteSize,
         sha256: hashBuffer(input.body),
         originalFilename: input.originalFilename,
@@ -114,18 +134,18 @@ export function createStorageService(provider: StorageProvider): StorageService 
     },
 
     async getObject(companyId: string, objectKey: string, options) {
-      ensureCompanyPrefix(companyId, objectKey);
-      return provider.getObject({ objectKey, range: options?.range });
+      const exactObjectKey = requireCompanyObjectKey(companyId, objectKey);
+      return provider.getObject({ objectKey: exactObjectKey, range: options?.range });
     },
 
     async headObject(companyId: string, objectKey: string) {
-      ensureCompanyPrefix(companyId, objectKey);
-      return provider.headObject({ objectKey });
+      const exactObjectKey = requireCompanyObjectKey(companyId, objectKey);
+      return provider.headObject({ objectKey: exactObjectKey });
     },
 
     async deleteObject(companyId: string, objectKey: string) {
-      ensureCompanyPrefix(companyId, objectKey);
-      await provider.deleteObject({ objectKey });
+      const exactObjectKey = requireCompanyObjectKey(companyId, objectKey);
+      await provider.deleteObject({ objectKey: exactObjectKey });
     },
   };
 }

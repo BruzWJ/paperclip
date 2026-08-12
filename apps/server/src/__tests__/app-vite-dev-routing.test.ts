@@ -16,7 +16,6 @@ describe("shouldServeViteDevHtml", () => {
   });
 
   it("skips public assets even when the client accepts */*", () => {
-    expect(shouldServeViteDevHtml(createRequest("/sw.js", "html"))).toBe(false);
     expect(shouldServeViteDevHtml(createRequest("/site.webmanifest", "html"))).toBe(false);
   });
 

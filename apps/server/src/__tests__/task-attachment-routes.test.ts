@@ -54,9 +54,10 @@ function registerRouteMocks() {
     agentService: () => ({
       getById: vi.fn(),
     }),
-    companySkillService: () => ({}),
     companyService: () => mockCompanyService,
-    documentAnnotationService: () => ({ remapOpenThreadsForDocument: async () => [] }),
+    documentAnnotationService: () => ({
+      remapOpenThreadsForDocument: async () => [],
+    }),
     documentService: () => ({}),
     executionWorkspaceService: () => ({}),
     goalService: () => ({}),
@@ -113,17 +114,19 @@ function createStorageService(body = Buffer.from("test")): TestStorageService {
     putFile: async (input) => {
       calls.putFile = input;
       return {
-      provider: "local_disk",
-      objectKey: `${input.namespace}/${input.originalFilename ?? "upload"}`,
-      contentType: input.contentType,
-      byteSize: input.body.length,
-      sha256: "sha256-sample",
-      originalFilename: input.originalFilename,
+        provider: "local_disk",
+        objectKey: `${input.namespace}/${input.originalFilename ?? "upload"}`,
+        contentType: input.contentType,
+        byteSize: input.body.length,
+        sha256: "sha256-sample",
+        originalFilename: input.originalFilename,
       };
     },
     getObject: vi.fn(async (_companyId, _objectKey, options) => {
       const range = options?.range;
-      const streamBody = range ? body.subarray(range.start, range.end + 1) : body;
+      const streamBody = range
+        ? body.subarray(range.start, range.end + 1)
+        : body;
       return {
         stream: Readable.from(streamBody),
         contentLength: streamBody.length,
@@ -134,9 +137,14 @@ function createStorageService(body = Buffer.from("test")): TestStorageService {
   };
 }
 
-async function createApp(storage: StorageService, options?: { companyIds?: string[]; source?: string }) {
+async function createApp(
+  storage: StorageService,
+  options?: { companyIds?: string[]; source?: string },
+) {
   const [{ errorHandler }, { taskRoutes }] = await Promise.all([
-    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+    vi.importActual<typeof import("../middleware/index.js")>(
+      "../middleware/index.js",
+    ),
     vi.importActual<typeof import("../routes/tasks.js")>("../routes/tasks.js"),
   ]);
   const app = express();
@@ -149,14 +157,7 @@ async function createApp(storage: StorageService, options?: { companyIds?: strin
     });
     next();
   });
-  app.use(
-    "/api",
-    taskRoutes(
-      {} as any,
-      storage,
-      { ordinaryTasks: {} as any },
-    ),
-  );
+  app.use("/api", taskRoutes({} as any, storage, { ordinaryTasks: {} as any }));
   app.use(errorHandler);
   return app;
 }
@@ -182,9 +183,14 @@ function makeAttachment(contentType: string, originalFilename: string) {
   };
 }
 
-function parseBinaryResponse(res: IncomingMessage, callback: (error: Error | null, body?: Buffer) => void) {
+function parseBinaryResponse(
+  res: IncomingMessage,
+  callback: (error: Error | null, body?: Buffer) => void,
+) {
   const chunks: Buffer[] = [];
-  res.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+  res.on("data", (chunk) =>
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)),
+  );
   res.on("end", () => callback(null, Buffer.concat(chunks)));
   res.on("error", callback);
 }
@@ -195,10 +201,29 @@ describe("normalizeTaskAttachmentMaxBytes", () => {
     process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES = "5";
     vi.resetModules();
     try {
-      const { normalizeTaskAttachmentMaxBytes } = await import("../attachment-types.js");
+      const { normalizeTaskAttachmentMaxBytes } =
+        await import("../attachment-types.js");
       expect(normalizeTaskAttachmentMaxBytes(null)).toBe(5);
       expect(normalizeTaskAttachmentMaxBytes(10)).toBe(5);
       expect(normalizeTaskAttachmentMaxBytes(3)).toBe(3);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES;
+      } else {
+        process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES = previous;
+      }
+      vi.resetModules();
+    }
+  });
+
+  it("rejects a non-canonical process-level attachment cap", async () => {
+    const previous = process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES;
+    process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES = " 5";
+    vi.resetModules();
+    try {
+      await expect(import("../attachment-types.js")).rejects.toThrow(
+        /PAPERCLIP_ATTACHMENT_MAX_BYTES/,
+      );
     } finally {
       if (previous === undefined) {
         delete process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES;
@@ -254,12 +279,19 @@ describe("task attachment routes", () => {
       companyId: "company-1",
       identifier: "PAP-1",
     });
-    mockTaskService.createAttachment.mockResolvedValue(makeAttachment("application/zip", "bundle.zip"));
+    mockTaskService.createAttachment.mockResolvedValue(
+      makeAttachment("application/zip", "bundle.zip"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app)
-      .post("/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments")
-      .attach("file", Buffer.from("zip"), { filename: "bundle.zip", contentType: "application/zip" });
+      .post(
+        "/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments",
+      )
+      .attach("file", Buffer.from("zip"), {
+        filename: "bundle.zip",
+        contentType: "application/zip",
+      });
 
     expect([200, 201]).toContain(res.status);
     const putFileCall = storage.__calls.putFile;
@@ -287,12 +319,19 @@ describe("task attachment routes", () => {
       companyId: "company-1",
       identifier: "PAP-1",
     });
-    mockTaskService.createAttachment.mockResolvedValue(makeAttachment("video/mp4", "clip.mp4"));
+    mockTaskService.createAttachment.mockResolvedValue(
+      makeAttachment("video/mp4", "clip.mp4"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app)
-      .post("/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments")
-      .attach("file", Buffer.from("mp4"), { filename: "clip.mp4", contentType: "video/mp4" });
+      .post(
+        "/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments",
+      )
+      .attach("file", Buffer.from("mp4"), {
+        filename: "clip.mp4",
+        contentType: "video/mp4",
+      });
 
     expect(res.status).toBe(201);
     expect(storage.__calls.putFile).toMatchObject({
@@ -314,12 +353,19 @@ describe("task attachment routes", () => {
       companyId: "company-1",
       identifier: "PAP-1",
     });
-    mockTaskService.createAttachment.mockResolvedValue(makeAttachment("application/x-msdownload", "payload.exe"));
+    mockTaskService.createAttachment.mockResolvedValue(
+      makeAttachment("application/x-msdownload", "payload.exe"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app)
-      .post("/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments")
-      .attach("file", Buffer.from("exe"), { filename: "payload.exe", contentType: "application/x-msdownload" });
+      .post(
+        "/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments",
+      )
+      .attach("file", Buffer.from("exe"), {
+        filename: "payload.exe",
+        contentType: "application/x-msdownload",
+      });
 
     expect(res.status).toBe(201);
     expect(storage.__calls.putFile).toMatchObject({
@@ -336,19 +382,27 @@ describe("task attachment routes", () => {
   });
 
   it("accepts Office uploads with official MIME types for task attachments", async () => {
-    const contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    const contentType =
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     const storage = createStorageService();
     mockTaskService.getById.mockResolvedValue({
       id: "11111111-1111-4111-8111-111111111111",
       companyId: "company-1",
       identifier: "PAP-1",
     });
-    mockTaskService.createAttachment.mockResolvedValue(makeAttachment(contentType, "raw-data.xlsx"));
+    mockTaskService.createAttachment.mockResolvedValue(
+      makeAttachment(contentType, "raw-data.xlsx"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app)
-      .post("/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments")
-      .attach("file", Buffer.from("xlsx"), { filename: "raw-data.xlsx", contentType });
+      .post(
+        "/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments",
+      )
+      .attach("file", Buffer.from("xlsx"), {
+        filename: "raw-data.xlsx",
+        contentType,
+      });
 
     expect(res.status).toBe(201);
     expect(storage.__calls.putFile).toMatchObject({
@@ -364,18 +418,23 @@ describe("task attachment routes", () => {
   });
 
   it("infers Office MIME types for generic binary task attachment uploads", async () => {
-    const contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    const contentType =
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     const storage = createStorageService();
     mockTaskService.getById.mockResolvedValue({
       id: "11111111-1111-4111-8111-111111111111",
       companyId: "company-1",
       identifier: "PAP-1",
     });
-    mockTaskService.createAttachment.mockResolvedValue(makeAttachment(contentType, "raw-data.xlsx"));
+    mockTaskService.createAttachment.mockResolvedValue(
+      makeAttachment(contentType, "raw-data.xlsx"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app)
-      .post("/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments")
+      .post(
+        "/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments",
+      )
       .attach("file", Buffer.from("xlsx"), {
         filename: "raw-data.xlsx",
         contentType: "application/octet-stream",
@@ -401,12 +460,19 @@ describe("task attachment routes", () => {
       companyId: "company-1",
       identifier: "PAP-1",
     });
-    mockTaskService.createAttachment.mockResolvedValue(makeAttachment("application/octet-stream", "payload.bin"));
+    mockTaskService.createAttachment.mockResolvedValue(
+      makeAttachment("application/octet-stream", "payload.bin"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app)
-      .post("/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments")
-      .attach("file", Buffer.from("bin"), { filename: "payload.bin", contentType: "application/octet-stream" });
+      .post(
+        "/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments",
+      )
+      .attach("file", Buffer.from("bin"), {
+        filename: "payload.bin",
+        contentType: "application/octet-stream",
+      });
 
     expect(res.status).toBe(201);
     expect(storage.__calls.putFile).toMatchObject({
@@ -429,11 +495,15 @@ describe("task attachment routes", () => {
       companyId: "company-1",
       identifier: "PAP-1",
     });
-    mockTaskService.createAttachment.mockResolvedValue(makeAttachment("application/octet-stream", "large.bin"));
+    mockTaskService.createAttachment.mockResolvedValue(
+      makeAttachment("application/octet-stream", "large.bin"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app)
-      .post("/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments")
+      .post(
+        "/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments",
+      )
       .attach("file", Buffer.alloc(10 * 1024 * 1024 + 1), {
         filename: "large.bin",
         contentType: "application/octet-stream",
@@ -458,8 +528,13 @@ describe("task attachment routes", () => {
 
     const app = await createApp(storage);
     const res = await request(app)
-      .post("/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments")
-      .attach("file", Buffer.from("large"), { filename: "large.txt", contentType: "text/plain" });
+      .post(
+        "/api/companies/company-1/tasks/11111111-1111-4111-8111-111111111111/attachments",
+      )
+      .attach("file", Buffer.from("large"), {
+        filename: "large.txt",
+        contentType: "text/plain",
+      });
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("Attachment exceeds 4 bytes");
@@ -468,7 +543,9 @@ describe("task attachment routes", () => {
 
   it("serves html attachments as downloads with nosniff", async () => {
     const storage = createStorageService();
-    mockTaskService.getAttachmentById.mockResolvedValue(makeAttachment("text/html", "report.html"));
+    mockTaskService.getAttachmentById.mockResolvedValue(
+      makeAttachment("text/html", "report.html"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app)
@@ -477,16 +554,17 @@ describe("task attachment routes", () => {
       .parse(parseBinaryResponse);
 
     expect(res.status).toBe(200);
-    expect([
-      undefined,
-      'attachment; filename="report.html"',
-    ]).toContain(res.headers["content-disposition"]);
+    expect([undefined, 'attachment; filename="report.html"']).toContain(
+      res.headers["content-disposition"],
+    );
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
   });
 
   it("serves arbitrary binary attachments as downloads with nosniff", async () => {
     const storage = createStorageService();
-    mockTaskService.getAttachmentById.mockResolvedValue(makeAttachment("application/x-msdownload", "payload.exe"));
+    mockTaskService.getAttachmentById.mockResolvedValue(
+      makeAttachment("application/x-msdownload", "payload.exe"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app)
@@ -496,22 +574,25 @@ describe("task attachment routes", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("application/x-msdownload");
-    expect(res.headers["content-disposition"]).toBe('attachment; filename="payload.exe"');
+    expect(res.headers["content-disposition"]).toBe(
+      'attachment; filename="payload.exe"',
+    );
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
   });
 
   it("keeps image attachments inline for previews", async () => {
     const storage = createStorageService();
-    mockTaskService.getAttachmentById.mockResolvedValue(makeAttachment("image/png", "preview.png"));
+    mockTaskService.getAttachmentById.mockResolvedValue(
+      makeAttachment("image/png", "preview.png"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app).get("/api/attachments/attachment-1/content");
 
     expect(res.status).toBe(200);
-    expect([
-      undefined,
-      'inline; filename="preview.png"',
-    ]).toContain(res.headers["content-disposition"]);
+    expect([undefined, 'inline; filename="preview.png"']).toContain(
+      res.headers["content-disposition"],
+    );
   });
 
   it("serves video attachments inline with byte-range support", async () => {
@@ -531,7 +612,9 @@ describe("task attachment routes", () => {
     expect(res.headers["accept-ranges"]).toBe("bytes");
     expect(res.headers["content-range"]).toBe("bytes 1-3/6");
     expect(res.headers["content-length"]).toBe("3");
-    expect(res.headers["content-disposition"]).toBe('inline; filename="clip.mp4"');
+    expect(res.headers["content-disposition"]).toBe(
+      'inline; filename="clip.mp4"',
+    );
     expect(Buffer.from(res.body).toString("utf8")).toBe("bcd");
     expect(storage.getObject).toHaveBeenCalledWith(
       "company-1",
@@ -554,25 +637,40 @@ describe("task attachment routes", () => {
 
     expect(res.status).toBe(206);
     expect(res.headers["content-type"]).toContain("video/mp4");
-    expect(res.headers["content-disposition"]).toBe('inline; filename="clip.mp4"');
+    expect(res.headers["content-disposition"]).toBe(
+      'inline; filename="clip.mp4"',
+    );
     expect(res.headers["content-range"]).toBe("bytes 1-3/6");
     expect(Buffer.from(res.body).toString("utf8")).toBe("bcd");
   });
 
   it("forces video downloads when the download path is requested", async () => {
     const storage = createStorageService();
-    mockTaskService.getAttachmentById.mockResolvedValue(makeAttachment("video/webm", "clip.webm"));
+    mockTaskService.getAttachmentById.mockResolvedValue(
+      makeAttachment("video/webm", "clip.webm"),
+    );
 
     const app = await createApp(storage);
-    const res = await request(app).get("/api/attachments/attachment-1/content?download=1");
+    const res = await request(app).get(
+      "/api/attachments/attachment-1/content?download=1",
+    );
 
     expect(res.status).toBe(200);
-    expect(res.headers["content-disposition"]).toBe('attachment; filename="clip.webm"');
+    expect(res.headers["content-disposition"]).toBe(
+      'attachment; filename="clip.webm"',
+    );
+
+    const noncanonical = await request(app).get(
+      "/api/attachments/attachment-1/content?download=true",
+    );
+    expect(noncanonical.status).toBe(422);
   });
 
   it("rejects invalid byte ranges without streaming the object", async () => {
     const storage = createStorageService();
-    mockTaskService.getAttachmentById.mockResolvedValue(makeAttachment("video/mp4", "clip.mp4"));
+    mockTaskService.getAttachmentById.mockResolvedValue(
+      makeAttachment("video/mp4", "clip.mp4"),
+    );
 
     const app = await createApp(storage);
     const res = await request(app)
@@ -586,9 +684,14 @@ describe("task attachment routes", () => {
 
   it("rejects cross-company attachment content reads", async () => {
     const storage = createStorageService();
-    mockTaskService.getAttachmentById.mockResolvedValue(makeAttachment("video/mp4", "clip.mp4"));
+    mockTaskService.getAttachmentById.mockResolvedValue(
+      makeAttachment("video/mp4", "clip.mp4"),
+    );
 
-    const app = await createApp(storage, { companyIds: ["company-2"], source: "session" });
+    const app = await createApp(storage, {
+      companyIds: ["company-2"],
+      source: "session",
+    });
     const res = await request(app).get("/api/attachments/attachment-1/content");
 
     // Cross-tenant reads return 404 (not 403) so the status code cannot be
@@ -600,7 +703,9 @@ describe("task attachment routes", () => {
 
   it("allows same-company board attachment reads without a legacy task permission boundary", async () => {
     const storage = createStorageService();
-    mockTaskService.getAttachmentById.mockResolvedValue(makeAttachment("video/mp4", "clip.mp4"));
+    mockTaskService.getAttachmentById.mockResolvedValue(
+      makeAttachment("video/mp4", "clip.mp4"),
+    );
     mockAccessService.decide.mockResolvedValue({
       allowed: false,
       explanation: "Denied by test mock",
@@ -667,9 +772,12 @@ describe("task attachment routes", () => {
           attachmentId: "22222222-2222-4222-8222-222222222222",
           contentType: "video/mp4",
           byteSize: 6,
-          contentPath: "/api/attachments/22222222-2222-4222-8222-222222222222/content",
-          openPath: "/api/attachments/22222222-2222-4222-8222-222222222222/content",
-          downloadPath: "/api/attachments/22222222-2222-4222-8222-222222222222/content?download=1",
+          contentPath:
+            "/api/attachments/22222222-2222-4222-8222-222222222222/content",
+          openPath:
+            "/api/attachments/22222222-2222-4222-8222-222222222222/content",
+          downloadPath:
+            "/api/attachments/22222222-2222-4222-8222-222222222222/content?download=1",
           originalFilename: "clip.mp4",
         },
       }),
@@ -704,7 +812,9 @@ describe("task attachment routes", () => {
       });
 
     expect(res.status).toBe(422);
-    expect(res.body.error).toBe("Attachment artifact must reference an attachment on the same task");
+    expect(res.body.error).toBe(
+      "Attachment artifact must reference an attachment on the same task",
+    );
     expect(mockWorkProductService.createForTask).not.toHaveBeenCalled();
   });
 
@@ -760,9 +870,12 @@ describe("task attachment routes", () => {
           attachmentId: "22222222-2222-4222-8222-222222222222",
           contentType: "video/webm",
           byteSize: 8,
-          contentPath: "/api/attachments/22222222-2222-4222-8222-222222222222/content",
-          openPath: "/api/attachments/22222222-2222-4222-8222-222222222222/content",
-          downloadPath: "/api/attachments/22222222-2222-4222-8222-222222222222/content?download=1",
+          contentPath:
+            "/api/attachments/22222222-2222-4222-8222-222222222222/content",
+          openPath:
+            "/api/attachments/22222222-2222-4222-8222-222222222222/content",
+          downloadPath:
+            "/api/attachments/22222222-2222-4222-8222-222222222222/content?download=1",
           originalFilename: "clip.webm",
         },
       }),

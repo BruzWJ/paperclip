@@ -7,17 +7,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getKanbanColumnTone, KanbanBoard } from "./KanbanBoard";
 import { createTestTask } from "../test-utils/task";
 
-vi.mock("@/lib/router", () => ({
-  Link: ({
+vi.mock("./TaskLinkQuicklook", () => ({
+  TaskLinkQuicklook: ({
     children,
-    to,
+    taskId: _taskId,
+    taskNumber,
     disableTaskQuicklook: _disableTaskQuicklook,
     ...props
   }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
-    to: string;
+    taskId: string;
+    taskNumber: number | null;
     disableTaskQuicklook?: boolean;
   }) => (
-    <a href={to} {...props}>{children}</a>
+    <a href={`/11111111-1111-4111-8111-111111111111/tasks/${taskNumber}`} {...props}>{children}</a>
   ),
 }));
 
@@ -177,7 +179,9 @@ describe("KanbanBoard", () => {
       tasks: createTasks(1, "cancelled"),
     });
 
-    const card = container.querySelector('a[href="/tasks/PAP-1"]')?.parentElement;
+    const card = container.querySelector(
+      'a[href="/11111111-1111-4111-8111-111111111111/tasks/1"]',
+    )?.parentElement;
 
     expect(card?.className).toContain("bg-muted/35");
     expect(card?.className).toContain("opacity-80");

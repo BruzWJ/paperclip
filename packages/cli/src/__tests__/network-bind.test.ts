@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { resolveRuntimeBind, validateConfiguredBindMode } from "@paperclipai/shared";
 import {
+  resolveRuntimeBind,
+  validateConfiguredBindMode,
+} from "@paperclipai/shared";
+import {
+  buildCustomServerConfig,
   buildPresetServerConfig,
-  resolveQuickstartServerConfig,
 } from "../config/server-bind.js";
-
-const ORIGINAL_PATH = process.env.PATH;
 
 describe("network bind helpers", () => {
   it("rejects public exposure on a tailnet-only bind", () => {
@@ -13,63 +14,72 @@ describe("network bind helpers", () => {
       validateConfiguredBindMode({
         exposure: "public",
         bind: "tailnet",
-        host: "100.64.0.8",
       }),
-    ).toContain("server.bind=tailnet is only supported when server.exposure=private");
-
-    expect(() =>
-      resolveQuickstartServerConfig({
-        bind: "tailnet",
-        exposure: "public",
-        port: 3100,
-        allowedHostnames: [],
-        serveUi: true,
-        publicBaseUrl: "https://paperclip.example.com",
-      }),
-    ).toThrow(
+    ).toContain(
       "server.bind=tailnet is only supported when server.exposure=private",
     );
   });
 
-  it("resolves tailnet bind using the detected tailscale address", () => {
-    const resolved = resolveRuntimeBind({
-      bind: "tailnet",
-      host: "127.0.0.1",
-      tailnetBindHost: "100.64.0.8",
-    });
+  it("resolves tailnet bind using the detected Tailscale address", () => {
+    expect(
+      resolveRuntimeBind({
+        exposure: "private",
+        bind: "tailnet",
+        tailnetBindHost: "100.64.0.8",
+      }),
+    ).toEqual({ bind: "tailnet", host: "100.64.0.8" });
+  });
 
-    expect(resolved.errors).toEqual([]);
-    expect(resolved.host).toBe("100.64.0.8");
+  it("fails closed when a tailnet address is unavailable", () => {
+    expect(() =>
+      resolveRuntimeBind({ exposure: "private", bind: "tailnet" }),
+    ).toThrow(
+      "server.bind=tailnet requires one exact detected Tailscale address or PAPERCLIP_TAILNET_BIND_HOST",
+    );
   });
 
   it("requires a custom bind host when bind=custom", () => {
-    const resolved = resolveRuntimeBind({
-      bind: "custom",
-      host: "127.0.0.1",
-    });
+    expect(() =>
+      resolveRuntimeBind({ exposure: "private", bind: "custom" }),
+    ).toThrow("server.customBindHost is required when server.bind=custom");
+  });
 
-    expect(resolved.errors).toContain("server.customBindHost is required when server.bind=custom");
+  it("rejects duplicate special-host representations", () => {
+    expect(
+      validateConfiguredBindMode({
+        exposure: "private",
+        bind: "custom",
+        customBindHost: "127.0.0.1",
+      }),
+    ).toContain(
+      "Use server.bind=loopback instead of a loopback server.customBindHost",
+    );
+    expect(
+      validateConfiguredBindMode({
+        exposure: "private",
+        bind: "lan",
+        customBindHost: "10.0.0.2",
+      }),
+    ).toContain("server.customBindHost is only valid when server.bind=custom");
   });
 
   it("requires an explicit Better Auth URL for public exposure", () => {
     expect(() =>
-      resolveQuickstartServerConfig({
-        bind: "lan",
+      buildCustomServerConfig({
         exposure: "public",
+        customBindHost: "192.0.2.10",
         port: 3100,
         allowedHostnames: [],
         serveUi: true,
       }),
-    ).toThrow(
-      "auth.publicBaseUrl is required when server.exposure=public",
-    );
+    ).toThrow("auth.publicBaseUrl is required when server.exposure=public");
   });
 
   it("rejects an HTTP origin for public exposure", () => {
     expect(() =>
-      resolveQuickstartServerConfig({
-        bind: "lan",
+      buildCustomServerConfig({
         exposure: "public",
+        customBindHost: "192.0.2.10",
         port: 3100,
         allowedHostnames: [],
         serveUi: true,
@@ -78,34 +88,32 @@ describe("network bind helpers", () => {
     ).toThrow("Public origin must use https://");
   });
 
-  it("stores the detected tailscale address for tailnet presets", () => {
-    process.env.PAPERCLIP_TAILNET_BIND_HOST = "100.64.0.8";
+  it.each([
+    ["127.0.0.1", "loopback bind mode"],
+    ["localhost", "loopback bind mode"],
+    ["0.0.0.0", "lan bind mode"],
+    ["::", "lan bind mode"],
+  ])("rejects custom bind alias %s", (customBindHost, message) => {
+    expect(() =>
+      buildCustomServerConfig({
+        exposure: "private",
+        customBindHost,
+        port: 3100,
+        allowedHostnames: [],
+        serveUi: true,
+      }),
+    ).toThrow(message);
+  });
 
+  it("persists only the canonical tailnet bind mode", () => {
     const preset = buildPresetServerConfig("tailnet", {
       port: 3100,
       allowedHostnames: [],
       serveUi: true,
     });
 
-    expect(preset.server.host).toBe("100.64.0.8");
-
-    delete process.env.PAPERCLIP_TAILNET_BIND_HOST;
-  });
-
-  it("falls back to loopback when no tailscale address is available for tailnet presets", () => {
-    delete process.env.PAPERCLIP_TAILNET_BIND_HOST;
-    process.env.PATH = "";
-
-    try {
-      const preset = buildPresetServerConfig("tailnet", {
-        port: 3100,
-        allowedHostnames: [],
-        serveUi: true,
-      });
-
-      expect(preset.server.host).toBe("127.0.0.1");
-    } finally {
-      process.env.PATH = ORIGINAL_PATH;
-    }
+    expect(preset.server.bind).toBe("tailnet");
+    expect(preset.server).not.toHaveProperty("host");
+    expect(preset.server).not.toHaveProperty("customBindHost");
   });
 });

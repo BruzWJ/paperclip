@@ -13,7 +13,7 @@ export interface PaperclipMessageActor {
 
 export interface PaperclipMessageTask {
   id: string;
-  identifier?: string | null;
+  identifier: string;
 }
 
 export type PaperclipPromptOwnerArgument =
@@ -121,10 +121,8 @@ function actor(value: PaperclipMessageActor): string {
 
 function taskLines(task: PaperclipMessageTask): string[] {
   const id = oneLine(task.id, "Paperclip message task id");
-  const identifier = task.identifier?.trim()
-    ? oneLine(task.identifier, "Paperclip message task identifier")
-    : null;
-  return [`Task: ${identifier ? `${identifier} (${id})` : id}`];
+  const identifier = oneLine(task.identifier, "Paperclip message task identifier");
+  return [`Task: ${identifier} (${id})`];
 }
 
 function envelope(lines: readonly string[], exactBody: string): string {

@@ -3,7 +3,6 @@ import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import {
   createProjectSchema,
-  isUuidLike,
   updateProjectCodebaseSchema,
   updateProjectSchema,
   type ProjectCodebaseInput,
@@ -11,74 +10,67 @@ import {
 } from "@paperclipai/shared";
 import { trackProjectCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
-import { accessService, projectService, logActivity, toPublicProject } from "../services/index.js";
-import { conflict } from "../errors.js";
+import {
+  accessService,
+  projectService,
+  logActivity,
+  toPublicProject,
+} from "../services/index.js";
 
-import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
+import {
+  assertBoard,
+  assertCompanyAccess,
+  getAccessibleResource,
+} from "./authz.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { secretService } from "../services/secrets.js";
+import type { SecretsRuntimeConfig } from "../secrets/types.js";
 
-export function projectRoutes(db: Db) {
-  const router = Router();
+export function projectRoutes(db: Db, secretsRuntime: SecretsRuntimeConfig) {
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = projectService(db);
   const access = accessService(db);
-  const secretsSvc = secretService(db);
-  const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
+  const secretsSvc = secretService(db, secretsRuntime);
 
-  async function resolveCompanyIdForProjectReference(req: Request) {
-    const companyIdQuery = req.query.companyId;
-    const requestedCompanyId =
-      typeof companyIdQuery === "string" && companyIdQuery.trim().length > 0
-        ? companyIdQuery.trim()
-        : null;
-    if (requestedCompanyId) {
-      assertCompanyAccess(req, requestedCompanyId);
-      return requestedCompanyId;
-    }
-    return null;
-  }
-
-  async function normalizeProjectReference(req: Request, rawId: string) {
-    if (isUuidLike(rawId)) return rawId;
-    const companyId = await resolveCompanyIdForProjectReference(req);
-    if (!companyId) return rawId;
-    const resolved = await svc.resolveByReference(companyId, rawId);
-    if (resolved.ambiguous) {
-      throw conflict("Project shortname is ambiguous in this company. Use the project ID.");
-    }
-    return resolved.project?.id ?? rawId;
-  }
-
-  async function assertProjectReadAllowed(req: Request, res: Response, project: { id: string; companyId: string }) {
+  async function assertProjectReadAllowed(
+    req: Request,
+    res: Response,
+    project: { id: string; companyId: string },
+  ) {
     const decision = await access.decide({
       actor: req.actor,
       action: "project:read",
-      resource: { type: "project", companyId: project.companyId, projectId: project.id },
+      resource: {
+        type: "project",
+        companyId: project.companyId,
+        projectId: project.id,
+      },
     });
     if (decision.allowed) return true;
-    res.status(403).json({ error: "Project is outside this actor's authorization boundary" });
+    res.status(403).json({
+      error: "Project is outside this actor's authorization boundary",
+    });
     return false;
   }
 
-  async function filterProjectsForActor<T extends { id: string; companyId: string }>(req: Request, rows: T[]) {
-    const decisions = await Promise.all(rows.map((project) =>
-      access.decide({
-        actor: req.actor,
-        action: "project:read",
-        resource: { type: "project", companyId: project.companyId, projectId: project.id },
-      })
-    ));
+  async function filterProjectsForActor<
+    T extends { id: string; companyId: string },
+  >(req: Request, rows: T[]) {
+    const decisions = await Promise.all(
+      rows.map((project) =>
+        access.decide({
+          actor: req.actor,
+          action: "project:read",
+          resource: {
+            type: "project",
+            companyId: project.companyId,
+            projectId: project.id,
+          },
+        }),
+      ),
+    );
     return rows.filter((_, index) => decisions[index]?.allowed);
   }
-
-  router.param("id", async (req, _res, next, rawId) => {
-    try {
-      req.params.id = await normalizeProjectReference(req, rawId);
-      next();
-    } catch (err) {
-      next(err);
-    }
-  });
 
   router.get("/companies/:companyId/projects", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -89,79 +81,95 @@ export function projectRoutes(db: Db) {
 
   router.get("/projects/:id", async (req, res) => {
     const id = req.params.id as string;
-    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    const project = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Project not found",
+    );
     if (!project) return;
     if (!(await assertProjectReadAllowed(req, res, project))) return;
     res.json(toPublicProject(project));
   });
 
-  router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    type CreateProjectPayload = Parameters<typeof svc.create>[1] & {
-      codebase?: ProjectCodebaseInput;
-    };
-    const { codebase, ...projectData } = req.body as CreateProjectPayload;
-    if (codebase?.localFolder && !path.isAbsolute(codebase.localFolder)) {
-      res.status(422).json({ error: "Local project folder must be absolute on the server host" });
-      return;
-    }
-    if (projectData.env !== undefined) {
-      projectData.env = await secretsSvc.normalizeEnvBindingsForPersistence(
-        companyId,
-        projectData.env,
-        { strictMode: strictSecretsMode, fieldPath: "env" },
-      );
-    }
-    const project = await svc.create(companyId, projectData);
-    if (project.env) {
-      await secretsSvc.syncEnvBindingsForTarget(
-        companyId,
-        { targetType: "project", targetId: project.id },
-        project.env,
-        { actor: { type: "user", userId: req.actor.userId } },
-      );
-    }
-    let createdWorkspaceId: string | null = null;
-    if (codebase && (codebase.localFolder || codebase.repoUrl)) {
-      const createdWorkspace = await svc.createWorkspace(project.id, {
-        cwd: codebase.localFolder ?? null,
-        repoUrl: codebase.repoUrl ?? null,
-      });
-      if (!createdWorkspace) {
-        await svc.remove(project.id);
-        res.status(422).json({ error: "Invalid project codebase" });
+  router.post(
+    "/companies/:companyId/projects",
+    validate(createProjectSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      type CreateProjectPayload = Parameters<typeof svc.create>[1] & {
+        codebase?: ProjectCodebaseInput;
+      };
+      const { codebase, ...projectData } = req.body as CreateProjectPayload;
+      if (codebase?.localFolder && !path.isAbsolute(codebase.localFolder)) {
+        res.status(422).json({
+          error: "Local project folder must be absolute on the server host",
+        });
         return;
       }
-      createdWorkspaceId = createdWorkspace.id;
-    }
-    const hydratedProject = createdWorkspaceId
-      ? await svc.getById(project.id)
-      : project;
-    await logActivity(db, {
-      companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "project.created",
-      entityType: "project",
-      entityId: project.id,
-      details: {
-        name: project.name,
-        codebaseWorkspaceId: createdWorkspaceId,
-        envKeys: project.env ? Object.keys(project.env).sort() : [],
-      },
-    });
-    const telemetryClient = getTelemetryClient();
-    if (telemetryClient) {
-      trackProjectCreated(telemetryClient);
-    }
-    res.status(201).json(toPublicProject(hydratedProject ?? project));
-  });
+      if (projectData.env !== undefined) {
+        projectData.env = await secretsSvc.normalizeEnvBindingsForPersistence(
+          companyId,
+          projectData.env,
+          { strictMode: secretsRuntime.strictMode, fieldPath: "env" },
+        );
+      }
+      const project = await svc.create(companyId, projectData);
+      if (project.env) {
+        await secretsSvc.syncEnvBindingsForTarget(
+          companyId,
+          { targetType: "project", targetId: project.id },
+          project.env,
+          { actor: { type: "user", userId: req.actor.userId } },
+        );
+      }
+      let createdWorkspaceId: string | null = null;
+      if (codebase && (codebase.localFolder || codebase.repoUrl)) {
+        const createdWorkspace = await svc.createWorkspace(project.id, {
+          cwd: codebase.localFolder ?? null,
+          repoUrl: codebase.repoUrl ?? null,
+        });
+        if (!createdWorkspace) {
+          await svc.remove(project.id);
+          res.status(422).json({ error: "Invalid project codebase" });
+          return;
+        }
+        createdWorkspaceId = createdWorkspace.id;
+      }
+      const hydratedProject = createdWorkspaceId
+        ? await svc.getById(project.id)
+        : project;
+      await logActivity(db, {
+        companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "project.created",
+        entityType: "project",
+        entityId: project.id,
+        details: {
+          name: project.name,
+          codebaseWorkspaceId: createdWorkspaceId,
+          envKeys: project.env ? Object.keys(project.env).sort() : [],
+        },
+      });
+      const telemetryClient = getTelemetryClient();
+      if (telemetryClient) {
+        trackProjectCreated(telemetryClient);
+      }
+      res.status(201).json(toPublicProject(hydratedProject ?? project));
+    },
+  );
 
   router.get("/projects/:id/codebase", async (req, res) => {
     assertBoard(req);
     const id = req.params.id as string;
-    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    const project = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Project not found",
+    );
     if (!project) return;
     if (!(await assertProjectReadAllowed(req, res, project))) return;
     res.json(project.codebase);
@@ -173,20 +181,27 @@ export function projectRoutes(db: Db) {
     async (req, res) => {
       assertBoard(req);
       const id = req.params.id as string;
-      const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+      const existing = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Project not found",
+      );
       if (!existing) return;
 
       const body = req.body as UpdateProjectCodebase;
       if (body.localFolder && !path.isAbsolute(body.localFolder)) {
-        res.status(422).json({ error: "Local project folder must be absolute on the server host" });
+        res.status(422).json({
+          error: "Local project folder must be absolute on the server host",
+        });
         return;
       }
-      const nextLocalFolder = body.localFolder !== undefined
-        ? body.localFolder
-        : existing.codebase.localFolder;
-      const nextRepoUrl = body.repoUrl !== undefined
-        ? body.repoUrl
-        : existing.codebase.repoUrl;
+      const nextLocalFolder =
+        body.localFolder !== undefined
+          ? body.localFolder
+          : existing.codebase.localFolder;
+      const nextRepoUrl =
+        body.repoUrl !== undefined ? body.repoUrl : existing.codebase.repoUrl;
       let workspaceId: string | null = existing.primaryWorkspace?.id ?? null;
 
       if (!nextLocalFolder && !nextRepoUrl) {
@@ -242,57 +257,78 @@ export function projectRoutes(db: Db) {
     },
   );
 
-  router.patch("/projects/:id", validate(updateProjectSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
-    if (!existing) return;
-    assertBoard(req);
-    const body = { ...req.body } as Record<string, unknown>;
-    if (typeof body.archivedAt === "string") {
-      body.archivedAt = new Date(body.archivedAt);
-    }
-    if (body.env !== undefined) {
-      body.env = await secretsSvc.normalizeEnvBindingsForPersistence(existing.companyId, body.env, {
-        strictMode: strictSecretsMode,
-        fieldPath: "env",
-      });
-    }
-    const project = await svc.update(id, body as Parameters<typeof svc.update>[1]);
-    if (!project) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-    if (body.env !== undefined) {
-      await secretsSvc.syncEnvBindingsForTarget(
-        project.companyId,
-        { targetType: "project", targetId: project.id },
-        project.env,
-        { actor: { type: "user", userId: req.actor.userId } },
+  router.patch(
+    "/projects/:id",
+    validate(updateProjectSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const existing = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Project not found",
       );
-    }
+      if (!existing) return;
+      assertBoard(req);
+      const body = { ...req.body } as Record<string, unknown>;
+      if (typeof body.archivedAt === "string") {
+        body.archivedAt = new Date(body.archivedAt);
+      }
+      if (body.env !== undefined) {
+        body.env = await secretsSvc.normalizeEnvBindingsForPersistence(
+          existing.companyId,
+          body.env,
+          {
+            strictMode: secretsRuntime.strictMode,
+            fieldPath: "env",
+          },
+        );
+      }
+      const project = await svc.update(
+        id,
+        body as Parameters<typeof svc.update>[1],
+      );
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      if (body.env !== undefined) {
+        await secretsSvc.syncEnvBindingsForTarget(
+          project.companyId,
+          { targetType: "project", targetId: project.id },
+          project.env,
+          { actor: { type: "user", userId: req.actor.userId } },
+        );
+      }
 
-    await logActivity(db, {
-      companyId: project.companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "project.updated",
-      entityType: "project",
-      entityId: project.id,
-      details: {
-        changedKeys: Object.keys(req.body).sort(),
-        envKeys:
-          body.env && typeof body.env === "object" && !Array.isArray(body.env)
-            ? Object.keys(body.env as Record<string, unknown>).sort()
-            : undefined,
-      },
-    });
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "project.updated",
+        entityType: "project",
+        entityId: project.id,
+        details: {
+          changedKeys: Object.keys(req.body).sort(),
+          envKeys:
+            body.env && typeof body.env === "object" && !Array.isArray(body.env)
+              ? Object.keys(body.env as Record<string, unknown>).sort()
+              : undefined,
+        },
+      });
 
-    res.json(toPublicProject(project));
-  });
+      res.json(toPublicProject(project));
+    },
+  );
 
   router.delete("/projects/:id", async (req, res) => {
     const id = req.params.id as string;
-    const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    const existing = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Project not found",
+    );
     if (!existing) return;
     assertBoard(req);
     const project = await svc.remove(id);

@@ -6,17 +6,19 @@ import type { Task } from "@paperclipai/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskSiblingNavigation } from "./TaskSiblingNavigation";
 
-vi.mock("@/lib/router", () => ({
-  Link: ({
+vi.mock("./TaskLinkQuicklook", () => ({
+  TaskLinkQuicklook: ({
     children,
-    to,
+    taskId: _taskId,
+    taskNumber,
     taskQuicklookAlign,
     taskQuicklookSide,
     taskPrefetch: _taskPrefetch,
     state: _state,
     ...props
   }: AnchorHTMLAttributes<HTMLAnchorElement> & {
-    to: string;
+    taskId: string;
+    taskNumber: number | null;
     taskQuicklookAlign?: string;
     taskQuicklookSide?: string;
     taskPrefetch?: unknown;
@@ -24,7 +26,7 @@ vi.mock("@/lib/router", () => ({
     children?: ReactNode;
   }) => (
     <a
-      href={to}
+      href={`/11111111-1111-4111-8111-111111111111/tasks/${taskNumber}`}
       data-quicklook-align={taskQuicklookAlign}
       data-quicklook-side={taskQuicklookSide}
       {...props}
@@ -40,6 +42,7 @@ vi.mock("@/lib/router", () => ({
 function task(id: string, overrides: Partial<Task> = {}): Task {
   return {
     id,
+    taskNumber: Number(id),
     identifier: `PAP-${id}`,
     title: `Sibling ${id}`,
     boardPresentationStatus: "todo",

@@ -1,13 +1,10 @@
 import type {
-  AgentAdapterType,
   CompanyStatus,
-  HumanCompanyMembershipRole,
+  UserCompanyMembershipRole,
   InstanceUserRole,
-  InviteJoinType,
   InviteSource,
   InviteType,
   JoinRequestStatus,
-  JoinRequestType,
   MembershipStatus,
   PermissionKey,
   PrincipalType,
@@ -19,7 +16,7 @@ export interface CompanyMembership {
   principalType: PrincipalType;
   principalId: string;
   status: MembershipStatus;
-  membershipRole: string | null;
+  membershipRole: UserCompanyMembershipRole | "member";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,7 +42,7 @@ export interface AccessUserProfile {
 
 export interface CompanyMemberRecord extends CompanyMembership {
   principalType: "user";
-  membershipRole: HumanCompanyMembershipRole | null;
+  membershipRole: UserCompanyMembershipRole;
   user: AccessUserProfile | null;
   grants: PrincipalPermissionGrant[];
   removal?: {
@@ -57,7 +54,7 @@ export interface CompanyMemberRecord extends CompanyMembership {
 export interface CompanyMembersResponse {
   members: CompanyMemberRecord[];
   access: {
-    currentUserRole: HumanCompanyMembershipRole | null;
+    currentUserRole: UserCompanyMembershipRole | null;
     canManageMembers: boolean;
     canInviteUsers: boolean;
     canApproveJoinRequests: boolean;
@@ -73,7 +70,6 @@ export interface Invite {
   companyId: string | null;
   inviteType: InviteType;
   tokenHash: string;
-  allowedJoinTypes: InviteJoinType;
   defaultsPayload: Record<string, unknown> | null;
   expiresAt: Date;
   source: InviteSource;
@@ -88,8 +84,7 @@ export type InviteState = "active" | "revoked" | "accepted" | "expired";
 
 export interface CompanyInviteRecord extends Invite {
   companyName: string | null;
-  humanRole: HumanCompanyMembershipRole | null;
-  inviteMessage: string | null;
+  userRole: UserCompanyMembershipRole | null;
   state: InviteState;
   invitedByUser: AccessUserProfile | null;
   relatedJoinRequestId: string | null;
@@ -104,17 +99,10 @@ export interface JoinRequest {
   id: string;
   inviteId: string;
   companyId: string;
-  requestType: JoinRequestType;
   status: JoinRequestStatus;
   requestIp: string;
   requestingUserId: string | null;
   requestEmailSnapshot: string | null;
-  agentName: string | null;
-  adapterType: AgentAdapterType | null;
-  capabilities: string | null;
-  agentDefaultsPayload: Record<string, unknown> | null;
-  createdAgentId: string | null;
-  createdAgentAdapterConfigRevisionId: string | null;
   approvedByUserId: string | null;
   approvedAt: Date | null;
   rejectedByUserId: string | null;
@@ -126,9 +114,7 @@ export interface JoinRequest {
 export interface JoinRequestInviteSummary {
   id: string;
   inviteType: InviteType;
-  allowedJoinTypes: InviteJoinType;
-  humanRole: HumanCompanyMembershipRole | null;
-  inviteMessage: string | null;
+  userRole: UserCompanyMembershipRole | null;
   createdAt: Date;
   expiresAt: Date;
   revokedAt: Date | null;
@@ -158,13 +144,16 @@ export interface AdminUserDirectoryEntry extends AccessUserProfile {
 
 export interface UserCompanyAccessEntry extends CompanyMembership {
   principalType: "user";
+  membershipRole: UserCompanyMembershipRole;
   companyName: string | null;
   companyStatus: CompanyStatus | null;
 }
 
 export interface UserCompanyAccessResponse {
-  user: (AccessUserProfile & {
-    isInstanceAdmin: boolean;
-  }) | null;
+  user:
+    | (AccessUserProfile & {
+        isInstanceAdmin: boolean;
+      })
+    | null;
   companyAccess: UserCompanyAccessEntry[];
 }

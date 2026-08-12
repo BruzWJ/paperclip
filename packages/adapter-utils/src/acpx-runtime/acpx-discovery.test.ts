@@ -46,17 +46,13 @@ describe("dynamic ACPX discovery", () => {
           configOptions: [
             {
               id: "model",
-              name: " Model ",
+              name: "Model",
               type: "select",
-              category: " model ",
+              category: "model",
               currentValue: "model-a",
               options: [
-                {
-                  group: "recommended",
-                  name: " Recommended ",
-                  options: [{ value: "model-a", name: " Model A " }],
-                },
-                { value: "model-b", name: "   " },
+                { value: "model-a", name: "Model A" },
+                { value: "model-b", name: "Model B" },
               ],
             },
             {
@@ -88,13 +84,8 @@ describe("dynamic ACPX discovery", () => {
           category: "model",
           currentValue: "model-a",
           options: [
-            {
-              kind: "group",
-              group: "recommended",
-              name: "Recommended",
-              options: [{ kind: "value", value: "model-a", name: "Model A" }],
-            },
-            { kind: "value", value: "model-b", name: "model-b" },
+            { value: "model-a", name: "Model A" },
+            { value: "model-b", name: "Model B" },
           ],
         },
         {
@@ -102,7 +93,6 @@ describe("dynamic ACPX discovery", () => {
           name: "Enabled",
           type: "boolean",
           currentValue: true,
-          options: [],
         },
       ],
     });
@@ -112,5 +102,31 @@ describe("dynamic ACPX discovery", () => {
       configSelections: [],
       timeoutMs: 4_000,
     });
+  });
+
+  it("rejects grouped or otherwise non-native ACPX config options", async () => {
+    probeMocks.run.mockResolvedValue({
+      capabilities: { controls: [], configOptionKeys: ["model"] },
+      status: {
+        details: {
+          configOptions: [{
+            id: "model",
+            name: "Model",
+            type: "select",
+            currentValue: "model-a",
+            options: [{
+              group: "recommended",
+              name: "Recommended",
+              options: [{ value: "model-a", name: "Model A" }],
+            }],
+          }],
+        },
+      },
+    });
+
+    await expect(probeAcpxAgent({
+      cwd: "/workspace",
+      agentName: "fixture",
+    })).rejects.toThrow("ACPX select option value must use exact value and name strings");
   });
 });

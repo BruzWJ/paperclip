@@ -241,18 +241,19 @@ describe("scoped execution cancellation", () => {
 
 describe("direct run cancellation", () => {
   it("uses the canonical detached-run transaction and publishes its exact terminal event", async () => {
+    const runId = "00000000-0000-4000-8000-000000000101";
     const at = new Date("2026-08-05T12:00:00.000Z");
     const publish = vi.fn(async () => undefined);
     const terminalizeDetachedCancelledRunInTransaction = vi.fn(
       async () => true,
     );
     const terminalizeCancelledRun = vi.fn(async () => undefined);
-    const lockRun = vi.fn(async () => activeRun("run-queued", "queued"));
+    const lockRun = vi.fn(async () => activeRun(runId, "queued"));
     const { db } = createMockDb({
       select: [[{
         companyId: "company-1",
         taskId: "task-1",
-        runId: "run-queued",
+        runId,
       }]],
     });
     const service = createTaskExecutionCancellationService({
@@ -267,9 +268,9 @@ describe("direct run cancellation", () => {
       now: () => at,
     });
 
-    await expect(service.cancelRun("run-queued", " board_cancelled "))
+    await expect(service.cancelRun(runId, "board_cancelled"))
       .resolves.toEqual({
-        runId: "run-queued",
+        runId,
         alreadyTerminal: false,
         cancellationIntentId: null,
         state: "terminalized",
@@ -280,7 +281,7 @@ describe("direct run cancellation", () => {
       {
         companyId: "company-1",
         taskId: "task-1",
-        runId: "run-queued",
+        runId,
         reason: "board_cancelled",
         finishedAt: at,
       },
@@ -289,7 +290,7 @@ describe("direct run cancellation", () => {
     expect(publish).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "agent.run.cancelled",
       companyId: "company-1",
-      entityId: "run-queued",
+      entityId: runId,
       payload: expect.objectContaining({
         taskId: "task-1",
         agentId: "agent-1",

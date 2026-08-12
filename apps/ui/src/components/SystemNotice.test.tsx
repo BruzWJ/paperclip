@@ -2,8 +2,27 @@
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { ReactElement } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import type { ReactElement, ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to, params }: {
+    children: ReactNode;
+    to: string;
+    params?: Record<string, string>;
+  }) => {
+    const href = Object.entries(params ?? {}).reduce(
+      (path, [key, value]) => path.replace(`$${key}`, value),
+      to,
+    );
+    return <a href={href}>{children}</a>;
+  },
+}));
+
 import { SystemNotice } from "./SystemNotice";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -76,8 +95,9 @@ describe("SystemNotice", () => {
               {
                 kind: "task",
                 label: "Source task",
+                taskNumber: 3440,
                 identifier: "PAP-3440",
-                href: "/PAP/tasks/PAP-3440",
+                link: true,
               },
             ],
           },
@@ -126,7 +146,7 @@ describe("SystemNotice", () => {
     expect(node.querySelector("button[aria-expanded]")).toBeNull();
   });
 
-  it("renders typed metadata rows with hrefs when present", () => {
+  it("renders typed metadata rows with native route targets when present", () => {
     const node = render(
       <SystemNotice
         tone="danger"
@@ -138,21 +158,22 @@ describe("SystemNotice", () => {
               {
                 kind: "task",
                 label: "Recovery task",
+                taskNumber: 3440,
                 identifier: "PAP-3440",
-                href: "/PAP/tasks/PAP-3440",
+                link: true,
                 title: "Disposition recovery",
               },
               {
                 kind: "agent",
                 label: "Owner",
                 name: "Architect",
-                href: "/PAP/agents/architect",
+                agentId: "223e4567-e89b-42d3-a456-426614174000",
               },
               {
                 kind: "run",
                 label: "Source run",
                 runId: "9cdba892-c7ca-4d93-8604-4843873b127c",
-                href: "/PAP/agents/codexcoder/runs/9cdba892",
+                agentId: "323e4567-e89b-42d3-a456-426614174000",
                 status: "succeeded",
               },
             ],
@@ -162,16 +183,16 @@ describe("SystemNotice", () => {
     );
 
     const links = Array.from(node.querySelectorAll("a")).map((a) => a.getAttribute("href"));
-    expect(links).toContain("/PAP/tasks/PAP-3440");
-    expect(links).toContain("/PAP/agents/architect");
-    expect(links).toContain("/PAP/agents/codexcoder/runs/9cdba892");
+    expect(links).toContain("/11111111-1111-4111-8111-111111111111/tasks/3440");
+    expect(links).toContain("/11111111-1111-4111-8111-111111111111/agents/223e4567-e89b-42d3-a456-426614174000");
+    expect(links).toContain("/11111111-1111-4111-8111-111111111111/agents/323e4567-e89b-42d3-a456-426614174000/runs/9cdba892-c7ca-4d93-8604-4843873b127c");
     expect(node.textContent).toContain("PAP-3440");
     expect(node.textContent).toContain("Disposition recovery");
     expect(node.textContent).toContain("Architect");
     expect(node.textContent).toContain("succeeded");
   });
 
-  it("renders metadata link rows as plain text when href is missing", () => {
+  it("renders metadata link rows as plain text when route targets are missing", () => {
     const node = render(
       <SystemNotice
         tone="neutral"
@@ -182,7 +203,12 @@ describe("SystemNotice", () => {
             rows: [
               { kind: "agent", label: "Reassigned to", name: "ClaudeFixer" },
               { kind: "run", label: "Run", runId: "abc12345" },
-              { kind: "task", label: "Task", identifier: "PAP-1" },
+              {
+                kind: "task",
+                label: "Task",
+                taskNumber: null,
+                identifier: "PAP-1",
+              },
             ],
           },
         ]}

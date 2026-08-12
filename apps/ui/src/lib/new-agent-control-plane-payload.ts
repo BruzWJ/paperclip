@@ -1,13 +1,11 @@
 import type {
   AgentAdapterRevisionConfigurationInput,
   AgentOperationalConfigurationUpdateInput,
-  CompanySkillPin,
   RuntimeAgentCreateConfigurationInput,
 } from "@paperclipai/shared";
-import { parseCompanySkillPins, parseMoneyAmount } from "@paperclipai/shared";
+import { parseMoneyAmount } from "@paperclipai/shared";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import type { RuntimeAgentConfigurationValues } from "../components/RuntimeAgentConfigurationFields";
-import { buildNewAgentRuntimeConfig } from "./new-agent-runtime-config";
 
 export interface NewAgentControlPlanePayloads {
   runtimeAgent: RuntimeAgentCreateConfigurationInput;
@@ -23,8 +21,7 @@ export function buildNewAgentControlPlanePayloads(input: {
   reportsTo?: string | null;
   runtimeAccess: RuntimeAgentConfigurationValues;
   configValues: CreateConfigValues;
-  adapterConfig: Record<string, unknown>;
-  companySkillPins: readonly CompanySkillPin[];
+  adapterConfig: Record<string, string | boolean>;
 }): NewAgentControlPlanePayloads {
   return {
     runtimeAgent: {
@@ -40,11 +37,6 @@ export function buildNewAgentControlPlanePayloads(input: {
     adapterRevision: {
       adapterType: input.configValues.adapterType,
       adapterConfig: input.adapterConfig,
-      runtimeConfig: buildNewAgentRuntimeConfig({
-        cheapModel: input.configValues.cheapModel,
-        cheapModelEnabled: input.configValues.cheapModelEnabled,
-      }),
-      companySkillPins: parseCompanySkillPins(input.companySkillPins),
     },
     operational: {
       budgetMonthlyAmount: parseMoneyAmount("0"),

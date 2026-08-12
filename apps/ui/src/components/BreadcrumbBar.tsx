@@ -1,9 +1,8 @@
-import { Link } from "@/lib/router";
 import { cn } from "@/lib/utils";
 import { Menu } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
-import { useCompany } from "../context/CompanyContext";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { Button } from "@/components/ui/button";
 import {
   Breadcrumb,
@@ -17,7 +16,7 @@ import { Fragment, useMemo } from "react";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 
-type GlobalToolbarContext = { companyId: string | null; companyPrefix: string | null };
+type GlobalToolbarContext = { companyId: string | null };
 
 function GlobalToolbar({ context }: { context: GlobalToolbarContext }) {
   return (
@@ -31,14 +30,13 @@ function GlobalToolbar({ context }: { context: GlobalToolbarContext }) {
 export function BreadcrumbBar() {
   const { breadcrumbs, mobileToolbar } = useBreadcrumbs();
   const { toggleSidebar, isMobile } = useSidebar();
-  const { selectedCompanyId, selectedCompany } = useCompany();
+  const companyId = useCompanyRouteId();
 
   const globalToolbarSlotContext = useMemo(
     () => ({
-      companyId: selectedCompanyId ?? null,
-      companyPrefix: selectedCompany?.taskPrefix ?? null,
+      companyId,
     }),
-    [selectedCompanyId, selectedCompany?.taskPrefix],
+    [companyId],
   );
 
   const globalToolbarSlots = <GlobalToolbar context={globalToolbarSlotContext} />;
@@ -107,7 +105,7 @@ export function BreadcrumbBar() {
                 <Fragment key={i}>
                   {i > 0 && <BreadcrumbSeparator />}
                   <BreadcrumbItem className={isLast ? "min-w-0" : "shrink-0"}>
-                    {isLast || !crumb.href ? (
+                    {isLast || !crumb.renderLink ? (
                       crumb.leading ? (
                         <BreadcrumbPage className="flex min-w-0 items-center gap-1.5">
                           <span className="flex shrink-0 items-center">{crumb.leading}</span>
@@ -118,13 +116,13 @@ export function BreadcrumbBar() {
                       )
                     ) : (
                       <BreadcrumbLink asChild>
-                        {crumb.leading ? (
-                          <Link to={crumb.href} className="flex items-center gap-1.5">
+                        {crumb.renderLink(
+                          crumb.leading ? (
+                            <span className="inline-flex items-center gap-1.5">
                             <span className="flex shrink-0 items-center">{crumb.leading}</span>
                             <span className="truncate">{crumb.label}</span>
-                          </Link>
-                        ) : (
-                          <Link to={crumb.href}>{crumb.label}</Link>
+                            </span>
+                          ) : crumb.label,
                         )}
                       </BreadcrumbLink>
                     )}

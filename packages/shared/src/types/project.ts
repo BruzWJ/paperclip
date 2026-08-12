@@ -43,7 +43,6 @@ export interface ProjectManagedByPlugin {
 export interface Project {
   id: string;
   companyId: string;
-  urlKey: string;
   goalIds: string[];
   goals: ProjectGoalRef[];
   name: string;

@@ -13,7 +13,7 @@
     "dev:ui": "pnpm --filter @paperclipai/ui dev",
     "storybook": "pnpm --filter @paperclipai/ui storybook",
     "build-storybook": "pnpm run preflight:workspace-links && turbo run build-storybook --filter=@paperclipai/ui",
-    "build": "pnpm run preflight:workspace-links && turbo run build",
+    "build": "pnpm run preflight:workspace-links && turbo run build && bash scripts/prepare-server-ui-dist.sh",
     "typecheck": "pnpm run preflight:workspace-links && turbo run typecheck",
     "typecheck:build-gaps": "pnpm run preflight:workspace-links && pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && pnpm --filter @paperclipai/server build && node scripts/run-typecheck-build-gaps.mjs",
     "test": "pnpm run test:run",
@@ -43,12 +43,10 @@
     "test:e2e": "npx playwright test --config tests/e2e/playwright.config.ts",
     "test:e2e:headed": "npx playwright test --config tests/e2e/playwright.config.ts --headed",
     "test:e2e:multiuser-authenticated": "npx playwright test --config tests/e2e/playwright-multiuser-authenticated.config.ts",
-    "metrics:paperclip-commits": "tsx scripts/paperclip-commit-metrics.ts",
-    "perf:task-chat-long-thread": "node scripts/measure-task-chat-long-thread.mjs"
+    "metrics:paperclip-commits": "pnpm --filter @paperclipai/server exec tsx ../../scripts/paperclip-commit-metrics.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
-    "cross-env": "^10.1.0",
     "esbuild": "^0.28.1",
     "turbo": "2.9.16",
     "typescript": "^5.7.3",

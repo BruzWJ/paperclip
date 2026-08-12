@@ -29,7 +29,16 @@ function buildItem(overrides: Partial<AttentionItem> = {}): AttentionItem {
     id: "a1",
     companyId: "c1",
     sourceKind: "approval",
-    subject: { kind: "approval", id: "s1", companyId: "c1", title: "t", identifier: null, status: null, href: null },
+    subject: {
+      kind: "approval",
+      id: "s1",
+      companyId: "c1",
+      title: "t",
+      taskNumber: null,
+      identifier: null,
+      status: null,
+      routeTarget: null,
+    },
     whyNow: "why",
     decisionVerbs: [],
     inlineResolvable: true,
@@ -266,7 +275,7 @@ describe("groupAttentionItems", () => {
 
   it("groups by project, keeping a 'No project' bucket for unassigned rows", () => {
     const items = [
-      buildItem({ id: "p1", activityAt: "2026-07-10T10:00:00Z", project: { id: "proj-1", name: "Alpha", urlKey: "alpha", color: null, icon: null } }),
+      buildItem({ id: "p1", activityAt: "2026-07-10T10:00:00Z", project: { id: "proj-1", name: "Alpha", color: null, icon: null } }),
       buildItem({ id: "none", activityAt: "2026-07-10T11:00:00Z", project: null }),
     ];
     const groups = groupAttentionItems(items, "project");
@@ -304,7 +313,7 @@ describe("groupAttentionItems", () => {
 });
 
 describe("filterAttentionItems", () => {
-  const approval = buildItem({ id: "ap", sourceKind: "approval", severity: "high", project: { id: "p1", name: "Alpha", urlKey: "a", color: null, icon: null } });
+  const approval = buildItem({ id: "ap", sourceKind: "approval", severity: "high", project: { id: "p1", name: "Alpha", color: null, icon: null } });
   const join = buildItem({ id: "jn", sourceKind: "join_request", severity: "low", project: null });
   const items = [approval, join];
 
@@ -343,7 +352,7 @@ describe("filterAttentionItems", () => {
 describe("buildAttentionFilterOptions", () => {
   it("collects the distinct dimensions present in the feed", () => {
     const items = [
-      buildItem({ sourceKind: "approval", severity: "high", project: { id: "p1", name: "Alpha", urlKey: "a", color: null, icon: null }, workspace: { id: "w1", name: "WS" } }),
+      buildItem({ sourceKind: "approval", severity: "high", project: { id: "p1", name: "Alpha", color: null, icon: null }, workspace: { id: "w1", name: "WS" } }),
       buildItem({ sourceKind: "join_request", severity: "low", project: null, workspace: null }),
     ];
     const options = buildAttentionFilterOptions(items);

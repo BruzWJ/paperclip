@@ -42,32 +42,55 @@ import {
   buildRoutineMentionHref,
   buildUserMentionHref,
 } from "@paperclipai/shared";
-import { Boxes, CalendarClock, Hash, User } from "lucide-react";
+import { CalendarClock, Hash, User } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
-import { applyMentionChipDecoration, clearMentionChipDecoration, parseMentionChipHref } from "../lib/mention-chips";
-import { MentionAwareLinkNode, mentionAwareLinkNodeReplacement } from "../lib/mention-aware-link-node";
+import {
+  applyMentionChipDecoration,
+  clearMentionChipDecoration,
+  parseMentionChipHref,
+} from "../lib/mention-chips";
+import {
+  MentionAwareLinkNode,
+  mentionAwareLinkNodeReplacement,
+} from "../lib/mention-aware-link-node";
 import { mentionDeletionPlugin } from "../lib/mention-deletion";
 import { looksLikeMarkdownPaste } from "../lib/markdownPaste";
 import { normalizeMarkdown } from "../lib/normalize-markdown";
 import { pasteNormalizationPlugin } from "../lib/paste-normalization";
 import { cn } from "../lib/utils";
-import { useEditorAutocomplete, type SlashCommandOption } from "../context/EditorAutocompleteContext";
+import {
+  useEditorAutocomplete,
+  type RoutineCommandOption,
+} from "../context/EditorAutocompleteContext";
 
 /* ---- Mention types ---- */
 
-export interface MentionOption {
+interface MentionOptionBase {
   id: string;
   name: string;
-  kind?: "agent" | "project" | "user" | "task";
-  agentId?: string;
-  agentIcon?: string | null;
-  projectId?: string;
-  projectColor?: string | null;
-  userId?: string;
-  /** Task references (PAP-95f). `name` carries the searchable identifier + title. */
-  taskId?: string;
-  taskIdentifier?: string;
 }
+
+export type MentionOption =
+  | (MentionOptionBase & {
+      kind: "agent";
+      agentId: string;
+      agentIcon?: string | null;
+    })
+  | (MentionOptionBase & {
+      kind: "project";
+      projectId: string;
+      projectColor?: string | null;
+    })
+  | (MentionOptionBase & {
+      kind: "user";
+      userId: string;
+    })
+  | (MentionOptionBase & {
+      kind: "task";
+      /** Task references (PAP-95f). `name` carries the searchable identifier + title. */
+      taskId: string;
+      taskIdentifier: string;
+    });
 
 /* ---- Editor props ---- */
 
@@ -122,7 +145,10 @@ class MarkdownEditorRichErrorBoundary extends Component<
 }
 
 function readHtmlAttribute(attrs: string, name: string): string | null {
-  const match = new RegExp(`${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(attrs);
+  const match = new RegExp(
+    `${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
+    "i",
+  ).exec(attrs);
   return match?.[2] ?? match?.[3] ?? match?.[4] ?? null;
 }
 
@@ -141,7 +167,9 @@ function convertHtmlImagesToMarkdown(text: string): string {
 }
 
 function prepareMarkdownForEditor(value: string): string {
-  const normalizedLineEndings = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const normalizedLineEndings = value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
   return convertHtmlImagesToMarkdown(normalizedLineEndings);
 }
 
@@ -163,7 +191,9 @@ function hasMeaningfulEditorContent(node: Node | null): boolean {
     return true;
   }
 
-  return Array.from(element.childNodes).some((child) => hasMeaningfulEditorContent(child));
+  return Array.from(element.childNodes).some((child) =>
+    hasMeaningfulEditorContent(child),
+  );
 }
 
 function hasMarkdownImage(value: string): boolean {
@@ -182,14 +212,16 @@ function isRichEditorDomEmpty(
   const visibleText = (editable.textContent ?? "").trim();
   if (visibleText.length === 0) {
     if (expectedHasImage) return false;
-    return !Array.from(editable.childNodes).some((child) => hasMeaningfulEditorContent(child));
+    return !Array.from(editable.childNodes).some((child) =>
+      hasMeaningfulEditorContent(child),
+    );
   }
 
   const normalizedPlaceholder = placeholder?.trim();
   if (
-    normalizedPlaceholder
-    && visibleText === normalizedPlaceholder
-    && expectedText !== normalizedPlaceholder
+    normalizedPlaceholder &&
+    visibleText === normalizedPlaceholder &&
+    expectedText !== normalizedPlaceholder
   ) {
     if (expectedHasImage) return false;
     return true;
@@ -213,7 +245,7 @@ function richEditorErrorMessage(error: unknown): string {
 /* ---- Mention detection helpers ---- */
 
 interface MentionState {
-  trigger: "mention" | "skill";
+  trigger: "mention" | "command";
   marker: "@" | "/";
   query: string;
   top: number;
@@ -232,7 +264,7 @@ interface MentionState {
   endPos: number;
 }
 
-type AutocompleteOption = MentionOption | SlashCommandOption;
+type AutocompleteOption = MentionOption | RoutineCommandOption;
 
 interface MentionMenuViewport {
   offsetLeft: number;
@@ -286,7 +318,10 @@ const FALLBACK_CODE_BLOCK_DESCRIPTOR: CodeBlockEditorDescriptor = {
 export function findMentionMatch(
   text: string,
   offset: number,
-): Pick<MentionState, "trigger" | "marker" | "query" | "atPos" | "endPos"> | null {
+): Pick<
+  MentionState,
+  "trigger" | "marker" | "query" | "atPos" | "endPos"
+> | null {
   let atPos = -1;
   let trigger: MentionState["trigger"] | null = null;
   let marker: MentionState["marker"] | null = null;
@@ -295,7 +330,7 @@ export function findMentionMatch(
     if (ch === "@" || ch === "/") {
       if (i === 0 || /\s/.test(text[i - 1])) {
         atPos = i;
-        trigger = ch === "@" ? "mention" : "skill";
+        trigger = ch === "@" ? "mention" : "command";
         marker = ch;
       }
       break;
@@ -305,7 +340,11 @@ export function findMentionMatch(
 
   if (atPos === -1) return null;
   const query = text.slice(atPos + 1, offset);
-  if (trigger === "skill" && /\s/.test(query) && !query.toLowerCase().startsWith("routine:")) {
+  if (
+    trigger === "command" &&
+    /\s/.test(query) &&
+    !query.toLowerCase().startsWith("routine:")
+  ) {
     return null;
   }
 
@@ -325,26 +364,37 @@ interface CaretRect {
   x: number;
 }
 
-function measureCaretRect(textNode: Text, offset: number, atPos: number): CaretRect {
+function measureCaretRect(
+  textNode: Text,
+  offset: number,
+  atPos: number,
+): CaretRect {
   const length = textNode.textContent?.length ?? 0;
-  const rectFromRange = (start: number, end: number, side: "right" | "left"): CaretRect | null => {
+  const rectFromRange = (
+    start: number,
+    end: number,
+    side: "right" | "left",
+  ): CaretRect | null => {
     if (start < 0 || end > length || end <= start) return null;
     const range = document.createRange();
     range.setStart(textNode, start);
     range.setEnd(textNode, end);
     const rect = range.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return null;
-    return { top: rect.top, bottom: rect.bottom, x: side === "right" ? rect.right : rect.left };
+    return {
+      top: rect.top,
+      bottom: rect.bottom,
+      x: side === "right" ? rect.right : rect.left,
+    };
   };
 
   // Prefer the character immediately before the caret — its right edge IS the caret X
   // and its top/bottom describe the active line. Falls back to the char after the caret
   // and finally the @ marker if nothing else gives us a valid rect.
   return (
-    rectFromRange(Math.max(0, offset - 1), offset, "right")
-    ?? rectFromRange(offset, Math.min(length, offset + 1), "left")
-    ?? rectFromRange(atPos, atPos + 1, "right")
-    ?? { top: 0, bottom: 0, x: 0 }
+    rectFromRange(Math.max(0, offset - 1), offset, "right") ??
+    rectFromRange(offset, Math.min(length, offset + 1), "left") ??
+    rectFromRange(atPos, atPos + 1, "right") ?? { top: 0, bottom: 0, x: 0 }
   );
 }
 
@@ -404,7 +454,10 @@ function getMentionMenuViewport(): MentionMenuViewport {
 export function computeMentionMenuPosition(
   anchor: Pick<MentionState, "viewportTop" | "viewportBottom" | "viewportLeft">,
   viewport: MentionMenuViewport,
-  menuSize: MentionMenuSize = { width: MENTION_MENU_WIDTH, height: MENTION_MENU_HEIGHT },
+  menuSize: MentionMenuSize = {
+    width: MENTION_MENU_WIDTH,
+    height: MENTION_MENU_HEIGHT,
+  },
 ) {
   const minLeft = viewport.offsetLeft + MENTION_MENU_PADDING;
   const maxLeft = viewport.offsetLeft + viewport.width - menuSize.width;
@@ -416,7 +469,8 @@ export function computeMentionMenuPosition(
   const desiredTop = viewport.offsetTop + anchor.viewportTop;
   let top: number;
   if (desiredTop > maxTop) {
-    const flipped = viewport.offsetTop + anchor.viewportBottom - menuSize.height;
+    const flipped =
+      viewport.offsetTop + anchor.viewportBottom - menuSize.height;
     top = Math.max(minTop, Math.min(flipped, maxTop));
   } else {
     top = Math.max(minTop, desiredTop);
@@ -424,7 +478,8 @@ export function computeMentionMenuPosition(
 
   // Place the menu's left edge a small gap to the right of the caret X so
   // there's roughly a space-width of breathing room between cursor and menu.
-  const desiredLeft = viewport.offsetLeft + anchor.viewportLeft + MENTION_MENU_CARET_GAP;
+  const desiredLeft =
+    viewport.offsetLeft + anchor.viewportLeft + MENTION_MENU_CARET_GAP;
   const left = Math.max(minLeft, Math.min(desiredLeft, maxLeft));
 
   return { top, left };
@@ -441,11 +496,15 @@ function getMentionMenuSize(optionCount: number): MentionMenuSize {
   };
 }
 
-function nodeInsideCodeLike(container: HTMLElement, node: Node | null): boolean {
+function nodeInsideCodeLike(
+  container: HTMLElement,
+  node: Node | null,
+): boolean {
   if (!node || !container.contains(node)) return false;
-  const el = node.nodeType === Node.ELEMENT_NODE
-    ? (node as HTMLElement)
-    : node.parentElement;
+  const el =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as HTMLElement)
+      : node.parentElement;
   return Boolean(el?.closest("pre, code"));
 }
 
@@ -460,7 +519,10 @@ function isSelectionInsideCodeLikeElement(container: HTMLElement | null) {
 }
 
 /** The human title of a task mention — `name` minus its leading identifier. */
-export function taskMentionTitle(option: MentionOption): string {
+export function taskMentionTitle(option: {
+  name: string;
+  taskIdentifier?: string;
+}): string {
   const name = option.name.trim();
   const identifier = option.taskIdentifier?.trim();
   if (identifier && name.toLowerCase().startsWith(identifier.toLowerCase())) {
@@ -470,35 +532,28 @@ export function taskMentionTitle(option: MentionOption): string {
 }
 
 function mentionMarkdown(option: MentionOption): string {
-  if (option.kind === "task" && option.taskIdentifier) {
-    // Insert a compact task link (e.g. `[PAP-123](/tasks/PAP-123)`). The chip
-    // decorator recognizes this href as a `task` mention and renders it as a
-    // task chip; MarkdownBody linkifies the same href on display.
-    return `[${option.taskIdentifier}](${buildTaskReferenceHref(option.taskIdentifier)}) `;
+  if (option.kind === "task") {
+    return `[${option.taskIdentifier}](${buildTaskReferenceHref(option.taskId)}) `;
   }
-  if (option.kind === "project" && option.projectId) {
+  if (option.kind === "project") {
     return `[@${option.name}](${buildProjectMentionHref(option.projectId, option.projectColor ?? null)}) `;
   }
-  if (option.kind === "user" && option.userId) {
+  if (option.kind === "user") {
     return `[@${option.name}](${buildUserMentionHref(option.userId)}) `;
   }
-  const agentId = option.agentId ?? option.id.replace(/^agent:/, "");
-  return `[@${option.name}](${buildAgentMentionHref(agentId, option.agentIcon ?? null)}) `;
+  return `[@${option.name}](${buildAgentMentionHref(option.agentId, option.agentIcon ?? null)}) `;
 }
 
-function slashCommandLabel(option: SlashCommandOption): string {
-  return option.kind === "routine" ? `/routine:${option.name}` : `/${option.slug}`;
+function slashCommandLabel(option: RoutineCommandOption): string {
+  return `/routine:${option.name}`;
 }
 
-function slashCommandMarkdown(option: SlashCommandOption): string {
-  if (option.kind === "routine") {
-    return `[${slashCommandLabel(option)}](${buildRoutineMentionHref(option.routineId)}) `;
-  }
-  return `[/${option.slug}](${option.href}) `;
+function slashCommandMarkdown(option: RoutineCommandOption): string {
+  return `[${slashCommandLabel(option)}](${buildRoutineMentionHref(option.routineId)}) `;
 }
 
 function autocompleteMarkdown(option: AutocompleteOption): string {
-  return option.kind === "skill" || option.kind === "routine"
+  return option.kind === "routine"
     ? slashCommandMarkdown(option)
     : mentionMarkdown(option);
 }
@@ -506,49 +561,55 @@ function autocompleteMarkdown(option: AutocompleteOption): string {
 export function shouldAcceptAutocompleteKey(
   key: string,
   trigger: MentionState["trigger"] | null,
-  skillEnterArmed = false,
+  commandEnterArmed = false,
 ): boolean {
   if (key === "Tab") return true;
   if (key !== "Enter") return false;
-  return trigger === "mention" || (trigger === "skill" && skillEnterArmed);
+  return trigger === "mention" || (trigger === "command" && commandEnterArmed);
 }
 
 export function isSameAutocompleteSession(
-  left: Pick<MentionState, "trigger" | "marker" | "query" | "textNode" | "atPos" | "endPos"> | null,
-  right: Pick<MentionState, "trigger" | "marker" | "query" | "textNode" | "atPos" | "endPos"> | null,
+  left: Pick<
+    MentionState,
+    "trigger" | "marker" | "query" | "textNode" | "atPos" | "endPos"
+  > | null,
+  right: Pick<
+    MentionState,
+    "trigger" | "marker" | "query" | "textNode" | "atPos" | "endPos"
+  > | null,
 ): boolean {
   if (!left || !right) return false;
-  return left.trigger === right.trigger
-    && left.marker === right.marker
-    && left.query === right.query
-    && left.textNode === right.textNode
-    && left.atPos === right.atPos
-    && left.endPos === right.endPos;
+  return (
+    left.trigger === right.trigger &&
+    left.marker === right.marker &&
+    left.query === right.query &&
+    left.textNode === right.textNode &&
+    left.atPos === right.atPos &&
+    left.endPos === right.endPos
+  );
 }
 
-function autocompleteOptionMatchesLink(option: AutocompleteOption, href: string): boolean {
+function autocompleteOptionMatchesLink(
+  option: AutocompleteOption,
+  href: string,
+): boolean {
   const parsed = parseMentionChipHref(href);
   if (!parsed) return false;
 
-  if (option.kind === "skill") {
-    return parsed.kind === "skill" && parsed.skillId === option.skillId;
-  }
   if (option.kind === "routine") {
     return parsed.kind === "routine" && parsed.routineId === option.routineId;
   }
 
-  if (option.kind === "task" && option.taskIdentifier) {
-    return parsed.kind === "task" && parsed.identifier === option.taskIdentifier;
+  if (option.kind === "task") {
+    return parsed.kind === "task" && parsed.taskId === option.taskId;
   }
-  if (option.kind === "project" && option.projectId) {
+  if (option.kind === "project") {
     return parsed.kind === "project" && parsed.projectId === option.projectId;
   }
-  if (option.kind === "user" && option.userId) {
+  if (option.kind === "user") {
     return parsed.kind === "user" && parsed.userId === option.userId;
   }
-
-  const agentId = option.agentId ?? option.id.replace(/^agent:/, "");
-  return parsed.kind === "agent" && parsed.agentId === agentId;
+  return parsed.kind === "agent" && parsed.agentId === option.agentId;
 }
 
 export function findClosestAutocompleteAnchor(
@@ -557,27 +618,35 @@ export function findClosestAutocompleteAnchor(
   origin?: Pick<MentionState, "left" | "top"> | null,
 ): HTMLAnchorElement | null {
   const matchingMentions = Array.from(editable.querySelectorAll("a"))
-    .filter((node): node is HTMLAnchorElement => node instanceof HTMLAnchorElement)
-    .filter((link) => autocompleteOptionMatchesLink(option, link.getAttribute("href") ?? ""));
+    .filter(
+      (node): node is HTMLAnchorElement => node instanceof HTMLAnchorElement,
+    )
+    .filter((link) =>
+      autocompleteOptionMatchesLink(option, link.getAttribute("href") ?? ""),
+    );
 
   if (matchingMentions.length === 0) return null;
   if (!origin) return matchingMentions[0] ?? null;
 
   const containerRect = editable.getBoundingClientRect();
-  return matchingMentions.sort((a, b) => {
-    const rectA = a.getBoundingClientRect();
-    const rectB = b.getBoundingClientRect();
-    const leftA = rectA.left - containerRect.left;
-    const topA = rectA.top - containerRect.top;
-    const leftB = rectB.left - containerRect.left;
-    const topB = rectB.top - containerRect.top;
-    const distA = Math.hypot(leftA - origin.left, topA - origin.top);
-    const distB = Math.hypot(leftB - origin.left, topB - origin.top);
-    return distA - distB;
-  })[0] ?? null;
+  return (
+    matchingMentions.sort((a, b) => {
+      const rectA = a.getBoundingClientRect();
+      const rectB = b.getBoundingClientRect();
+      const leftA = rectA.left - containerRect.left;
+      const topA = rectA.top - containerRect.top;
+      const leftB = rectB.left - containerRect.left;
+      const topB = rectB.top - containerRect.top;
+      const distA = Math.hypot(leftA - origin.left, topA - origin.top);
+      const distB = Math.hypot(leftB - origin.left, topB - origin.top);
+      return distA - distB;
+    })[0] ?? null
+  );
 }
 
-export function placeCaretAfterMentionAnchor(target: HTMLAnchorElement): boolean {
+export function placeCaretAfterMentionAnchor(
+  target: HTMLAnchorElement,
+): boolean {
   const selection = window.getSelection();
   if (!selection) return false;
 
@@ -609,31 +678,43 @@ export function placeCaretAfterMentionAnchor(target: HTMLAnchorElement): boolean
 }
 
 /** Replace the active autocomplete token in the markdown string with the selected token. */
-function applyMention(markdown: string, state: MentionState, option: AutocompleteOption): string {
+function applyMention(
+  markdown: string,
+  state: MentionState,
+  option: AutocompleteOption,
+): string {
   const search = `${state.marker}${state.query}`;
   const replacement = autocompleteMarkdown(option);
   const idx = markdown.lastIndexOf(search);
   if (idx === -1) return markdown;
-  return markdown.slice(0, idx) + replacement + markdown.slice(idx + search.length);
+  return (
+    markdown.slice(0, idx) + replacement + markdown.slice(idx + search.length)
+  );
 }
 
 /* ---- Component ---- */
 
-export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(function MarkdownEditor({
-  value,
-  onChange,
-  placeholder,
-  className,
-  contentClassName,
-  onBlur,
-  imageUploadHandler,
-  onDropFile,
-  fileDropTarget = "editor",
-  bordered = true,
-  mentions,
-  onSubmit,
-  readOnly = false,
-}: MarkdownEditorProps, forwardedRef) {
+export const MarkdownEditor = forwardRef<
+  MarkdownEditorRef,
+  MarkdownEditorProps
+>(function MarkdownEditor(
+  {
+    value,
+    onChange,
+    placeholder,
+    className,
+    contentClassName,
+    onBlur,
+    imageUploadHandler,
+    onDropFile,
+    fileDropTarget = "editor",
+    bordered = true,
+    mentions,
+    onSubmit,
+    readOnly = false,
+  }: MarkdownEditorProps,
+  forwardedRef,
+) {
   const editorValue = useMemo(() => prepareMarkdownForEditor(value), [value]);
   const { slashCommands } = useEditorAutocomplete();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -663,23 +744,22 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const mentionStateRef = useRef<MentionState | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const autocompleteOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const skillEnterArmedRef = useRef(false);
+  const commandEnterArmedRef = useRef(false);
   const autocompleteSelectionHandledRef = useRef(false);
-  const mentionActive = mentionState !== null && (
-    (mentionState.trigger === "mention" && Boolean(mentions?.length))
-    || (mentionState.trigger === "skill" && slashCommands.length > 0)
-  );
+  const mentionActive =
+    mentionState !== null &&
+    ((mentionState.trigger === "mention" && Boolean(mentions?.length)) ||
+      (mentionState.trigger === "command" && slashCommands.length > 0));
   const mentionOptionByKey = useMemo(() => {
     const map = new Map<string, MentionOption>();
     for (const mention of mentions ?? []) {
       if (mention.kind === "agent") {
-        const agentId = mention.agentId ?? mention.id.replace(/^agent:/, "");
-        map.set(`agent:${agentId}`, mention);
+        map.set(`agent:${mention.agentId}`, mention);
       }
-      if (mention.kind === "user" && mention.userId) {
+      if (mention.kind === "user") {
         map.set(`user:${mention.userId}`, mention);
       }
-      if (mention.kind === "project" && mention.projectId) {
+      if (mention.kind === "project") {
         map.set(`project:${mention.projectId}`, mention);
       }
     }
@@ -702,11 +782,13 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const filteredMentions = useMemo<AutocompleteOption[]>(() => {
     if (!mentionState) return [];
     const q = mentionState.query.trim().toLowerCase();
-    if (mentionState.trigger === "skill") {
+    if (mentionState.trigger === "command") {
       return slashCommands
         .filter((command) => {
           if (!q) return true;
-          return command.aliases.some((alias) => alias.toLowerCase().includes(q));
+          return command.aliases.some((alias) =>
+            alias.toLowerCase().includes(q),
+          );
         })
         .slice(0, MAX_AUTOCOMPLETE_OPTIONS);
     }
@@ -716,44 +798,54 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       .slice(0, MAX_AUTOCOMPLETE_OPTIONS);
   }, [mentionState, mentions, slashCommands]);
 
-  const insertMarkdown = useCallback((markdown: string) => {
-    if (readOnly) return;
-    if (!richEditorError && ref.current) {
-      ref.current.insertMarkdown(markdown);
-      return;
-    }
-    const textarea = fallbackTextareaRef.current;
-    if (!textarea) {
-      onChange(`${value}${markdown}`);
-      return;
-    }
-    const start = textarea.selectionStart ?? value.length;
-    const end = textarea.selectionEnd ?? value.length;
-    const next = `${value.slice(0, start)}${markdown}${value.slice(end)}`;
-    onChange(next);
-    requestAnimationFrame(() => {
-      textarea.focus();
-      const cursor = start + markdown.length;
-      textarea.setSelectionRange(cursor, cursor);
-    });
-  }, [onChange, readOnly, richEditorError, value]);
-
-  useImperativeHandle(forwardedRef, () => ({
-    focus: () => {
-      if (richEditorError) {
-        fallbackTextareaRef.current?.focus();
+  const insertMarkdown = useCallback(
+    (markdown: string) => {
+      if (readOnly) return;
+      if (!richEditorError && ref.current) {
+        ref.current.insertMarkdown(markdown);
         return;
       }
-      ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
+      const textarea = fallbackTextareaRef.current;
+      if (!textarea) {
+        onChange(`${value}${markdown}`);
+        return;
+      }
+      const start = textarea.selectionStart ?? value.length;
+      const end = textarea.selectionEnd ?? value.length;
+      const next = `${value.slice(0, start)}${markdown}${value.slice(end)}`;
+      onChange(next);
+      requestAnimationFrame(() => {
+        textarea.focus();
+        const cursor = start + markdown.length;
+        textarea.setSelectionRange(cursor, cursor);
+      });
     },
-    insertMarkdown,
-  }), [insertMarkdown, richEditorError]);
+    [onChange, readOnly, richEditorError, value],
+  );
 
-  const autoSizeFallbackTextarea = useCallback((element: HTMLTextAreaElement | null) => {
-    if (!element) return;
-    element.style.height = "auto";
-    element.style.height = `${element.scrollHeight}px`;
-  }, []);
+  useImperativeHandle(
+    forwardedRef,
+    () => ({
+      focus: () => {
+        if (richEditorError) {
+          fallbackTextareaRef.current?.focus();
+          return;
+        }
+        ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
+      },
+      insertMarkdown,
+    }),
+    [insertMarkdown, richEditorError],
+  );
+
+  const autoSizeFallbackTextarea = useCallback(
+    (element: HTMLTextAreaElement | null) => {
+      if (!element) return;
+      element.style.height = "auto";
+      element.style.height = `${element.scrollHeight}px`;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!richEditorError) return;
@@ -772,7 +864,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         const editable = container.querySelector('[contenteditable="true"]');
         if (!(editable instanceof HTMLElement)) return;
         const activeElement = document.activeElement;
-        if (activeElement === editable || editable.contains(activeElement)) return;
+        if (activeElement === editable || editable.contains(activeElement))
+          return;
         if (isRichEditorDomEmpty(editable, editorValue, placeholder)) {
           setRichEditorError("Rich editor failed to load content");
         }
@@ -813,7 +906,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
               const current = latestValueRef.current;
               const escapedSrc = escapeRegExp(src);
               const updated = current.replace(
-                new RegExp(`(!\\[[^\\]]*\\]\\(${escapedSrc}\\))(?!\\n\\n)`, "g"),
+                new RegExp(
+                  `(!\\[[^\\]]*\\]\\(${escapedSrc}\\))(?!\\n\\n)`,
+                  "g",
+                ),
                 "$1\n\n",
               );
               if (updated !== current) {
@@ -822,13 +918,16 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                 ref.current?.setMarkdown(updated);
                 onChange(updated);
                 requestAnimationFrame(() => {
-                  ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
+                  ref.current?.focus(undefined, {
+                    defaultSelection: "rootEnd",
+                  });
                 });
               }
             }, 100);
             return src;
           } catch (err) {
-            const message = err instanceof Error ? err.message : "Image upload failed";
+            const message =
+              err instanceof Error ? err.message : "Image upload failed";
             setUploadError(message);
             throw err;
           }
@@ -869,7 +968,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   }, [editorValue]);
 
   const decorateProjectMentions = useCallback(() => {
-    const editable = containerRef.current?.querySelector('[contenteditable="true"]');
+    const editable = containerRef.current?.querySelector(
+      '[contenteditable="true"]',
+    );
     if (!editable) return;
     const links = editable.querySelectorAll("a");
     for (const node of links) {
@@ -884,12 +985,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         const option = mentionOptionByKey.get(`project:${parsed.projectId}`);
         applyMentionChipDecoration(link, {
           ...parsed,
-          color: parsed.color ?? option?.projectColor ?? null,
+          color:
+            parsed.color ??
+            (option?.kind === "project" ? option.projectColor : null) ??
+            null,
         });
         continue;
       }
 
-      if (parsed.kind === "skill" || parsed.kind === "routine") {
+      if (parsed.kind === "routine") {
         applyMentionChipDecoration(link, parsed);
         continue;
       }
@@ -902,37 +1006,39 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       const option = mentionOptionByKey.get(`agent:${parsed.agentId}`);
       applyMentionChipDecoration(link, {
         ...parsed,
-        icon: parsed.icon ?? option?.agentIcon ?? null,
+        icon:
+          parsed.icon ??
+          (option?.kind === "agent" ? option.agentIcon : null) ??
+          null,
       });
     }
   }, [mentionOptionByKey]);
 
   // Mention detection: listen for selection changes and input events
   const checkMention = useCallback(() => {
-    if (!containerRef.current || isSelectionInsideCodeLikeElement(containerRef.current)) {
+    if (
+      !containerRef.current ||
+      isSelectionInsideCodeLikeElement(containerRef.current)
+    ) {
       mentionStateRef.current = null;
-      skillEnterArmedRef.current = false;
+      commandEnterArmedRef.current = false;
       setMentionState(null);
       return;
     }
     const result = detectMention(containerRef.current);
     if (
-      result
-      && result.trigger === "mention"
-      && (!mentions || mentions.length === 0)
+      result &&
+      result.trigger === "mention" &&
+      (!mentions || mentions.length === 0)
     ) {
       mentionStateRef.current = null;
-      skillEnterArmedRef.current = false;
+      commandEnterArmedRef.current = false;
       setMentionState(null);
       return;
     }
-    if (
-      result
-      && result.trigger === "skill"
-      && slashCommands.length === 0
-    ) {
+    if (result && result.trigger === "command" && slashCommands.length === 0) {
       mentionStateRef.current = null;
-      skillEnterArmedRef.current = false;
+      commandEnterArmedRef.current = false;
       setMentionState(null);
       return;
     }
@@ -940,14 +1046,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     const sameSession = isSameAutocompleteSession(previous, result);
     mentionStateRef.current = result;
     if (!sameSession) {
-      skillEnterArmedRef.current = false;
+      commandEnterArmedRef.current = false;
       setMentionIndex(0);
     }
     setMentionState(result);
   }, [mentions, slashCommands.length]);
 
   useEffect(() => {
-    if ((!mentions || mentions.length === 0) && slashCommands.length === 0) return;
+    if ((!mentions || mentions.length === 0) && slashCommands.length === 0)
+      return;
 
     const el = containerRef.current;
     // Listen for input events on the container so mention detection
@@ -989,7 +1096,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       return;
     }
     const activeOption = autocompleteOptionRefs.current[mentionIndex];
-    if (!activeOption || typeof activeOption.scrollIntoView !== "function") return;
+    if (!activeOption || typeof activeOption.scrollIntoView !== "function")
+      return;
     activeOption.scrollIntoView({ block: "nearest" });
   }, [filteredMentions.length, mentionActive, mentionIndex]);
 
@@ -999,7 +1107,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   }, [mentionActive]);
 
   useEffect(() => {
-    const editable = containerRef.current?.querySelector('[contenteditable="true"]');
+    const editable = containerRef.current?.querySelector(
+      '[contenteditable="true"]',
+    );
     if (!editable) return;
     let frameId: number | null = null;
     let disposed = false;
@@ -1051,7 +1161,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       }
 
       const restoreSelection = (attemptsRemaining: number) => {
-        const editable = containerRef.current?.querySelector('[contenteditable="true"]');
+        const editable = containerRef.current?.querySelector(
+          '[contenteditable="true"]',
+        );
         if (!(editable instanceof HTMLElement)) return;
 
         decorateProjectMentions();
@@ -1060,7 +1172,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         const target = findClosestAutocompleteAnchor(editable, option, state);
         if (!target) {
           if (attemptsRemaining > 0) {
-            requestAnimationFrame(() => restoreSelection(attemptsRemaining - 1));
+            requestAnimationFrame(() =>
+              restoreSelection(attemptsRemaining - 1),
+            );
           }
           return;
         }
@@ -1071,25 +1185,31 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       requestAnimationFrame(() => restoreSelection(4));
 
       mentionStateRef.current = null;
-      skillEnterArmedRef.current = false;
+      commandEnterArmedRef.current = false;
       setMentionState(null);
       return true;
     },
     [decorateProjectMentions, onChange],
   );
 
-  const handleAutocompletePress = useCallback((
-    event: ReactMouseEvent<HTMLButtonElement> | ReactPointerEvent<HTMLButtonElement> | ReactTouchEvent<HTMLButtonElement>,
-    option: AutocompleteOption,
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (autocompleteSelectionHandledRef.current) return;
-    const handled = selectMention(option);
-    if (handled) {
-      autocompleteSelectionHandledRef.current = true;
-    }
-  }, [selectMention]);
+  const handleAutocompletePress = useCallback(
+    (
+      event:
+        | ReactMouseEvent<HTMLButtonElement>
+        | ReactPointerEvent<HTMLButtonElement>
+        | ReactTouchEvent<HTMLButtonElement>,
+      option: AutocompleteOption,
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (autocompleteSelectionHandledRef.current) return;
+      const handled = selectMention(option);
+      if (handled) {
+        autocompleteSelectionHandledRef.current = true;
+      }
+    },
+    [selectMention],
+  );
 
   // Touch handling for the mention menu. We deliberately do NOT preventDefault
   // on touchstart so the browser can still scroll the menu vertically; instead
@@ -1098,55 +1218,71 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const touchStartPointRef = useRef<{ x: number; y: number } | null>(null);
   const TOUCH_TAP_THRESHOLD_PX = 8;
 
-  const handleAutocompleteTouchStart = useCallback((event: ReactTouchEvent<HTMLButtonElement>) => {
-    const touch = event.touches[0];
-    if (!touch) return;
-    touchStartPointRef.current = { x: touch.clientX, y: touch.clientY };
-  }, []);
+  const handleAutocompleteTouchStart = useCallback(
+    (event: ReactTouchEvent<HTMLButtonElement>) => {
+      const touch = event.touches[0];
+      if (!touch) return;
+      touchStartPointRef.current = { x: touch.clientX, y: touch.clientY };
+    },
+    [],
+  );
 
-  const handleAutocompleteTouchMove = useCallback((event: ReactTouchEvent<HTMLButtonElement>) => {
-    const start = touchStartPointRef.current;
-    if (!start) return;
-    const touch = event.touches[0];
-    if (!touch) return;
-    if (Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > TOUCH_TAP_THRESHOLD_PX) {
+  const handleAutocompleteTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLButtonElement>) => {
+      const start = touchStartPointRef.current;
+      if (!start) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      if (
+        Math.hypot(touch.clientX - start.x, touch.clientY - start.y) >
+        TOUCH_TAP_THRESHOLD_PX
+      ) {
+        touchStartPointRef.current = null;
+      }
+    },
+    [],
+  );
+
+  const handleAutocompleteTouchEnd = useCallback(
+    (event: ReactTouchEvent<HTMLButtonElement>, option: AutocompleteOption) => {
+      const start = touchStartPointRef.current;
       touchStartPointRef.current = null;
-    }
-  }, []);
-
-  const handleAutocompleteTouchEnd = useCallback((
-    event: ReactTouchEvent<HTMLButtonElement>,
-    option: AutocompleteOption,
-  ) => {
-    const start = touchStartPointRef.current;
-    touchStartPointRef.current = null;
-    if (!start) return;
-    const touch = event.changedTouches[0];
-    if (!touch) return;
-    if (Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > TOUCH_TAP_THRESHOLD_PX) {
-      return;
-    }
-    handleAutocompletePress(event, option);
-  }, [handleAutocompletePress]);
+      if (!start) return;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      if (
+        Math.hypot(touch.clientX - start.x, touch.clientY - start.y) >
+        TOUCH_TAP_THRESHOLD_PX
+      ) {
+        return;
+      }
+      handleAutocompletePress(event, option);
+    },
+    [handleAutocompletePress],
+  );
 
   function hasFilePayload(evt: DragEvent<HTMLDivElement>) {
     return Array.from(evt.dataTransfer?.types ?? []).includes("Files");
   }
 
-  const canDropFile = fileDropTarget === "editor" && Boolean(imageUploadHandler || onDropFile);
-  const handlePasteCapture = useCallback((event: ClipboardEvent<HTMLDivElement>) => {
-    const clipboard = event.clipboardData;
-    if (!clipboard || !ref.current) return;
-    const types = new Set(Array.from(clipboard.types));
-    if (types.has("Files") || types.has("text/html")) return;
-    if (isSelectionInsideCodeLikeElement(containerRef.current)) return;
+  const canDropFile =
+    fileDropTarget === "editor" && Boolean(imageUploadHandler || onDropFile);
+  const handlePasteCapture = useCallback(
+    (event: ClipboardEvent<HTMLDivElement>) => {
+      const clipboard = event.clipboardData;
+      if (!clipboard || !ref.current) return;
+      const types = new Set(Array.from(clipboard.types));
+      if (types.has("Files") || types.has("text/html")) return;
+      if (isSelectionInsideCodeLikeElement(containerRef.current)) return;
 
-    const rawText = clipboard.getData("text/plain");
-    if (!looksLikeMarkdownPaste(rawText)) return;
+      const rawText = clipboard.getData("text/plain");
+      if (!looksLikeMarkdownPaste(rawText)) return;
 
-    event.preventDefault();
-    ref.current.insertMarkdown(normalizeMarkdown(rawText));
-  }, []);
+      event.preventDefault();
+      ref.current.insertMarkdown(normalizeMarkdown(rawText));
+    },
+    [],
+  );
 
   const handleRichEditorError = useCallback((error: unknown) => {
     setRichEditorError(richEditorErrorMessage(error));
@@ -1166,12 +1302,17 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         ref={containerRef}
         className={cn(
           "relative paperclip-mdxeditor-scope",
-          bordered ? "rounded-md border border-border bg-transparent" : "bg-transparent",
+          bordered
+            ? "rounded-md border border-border bg-transparent"
+            : "bg-transparent",
           className,
         )}
       >
         <div className="flex items-start justify-between gap-3 px-3 pt-2 text-xs text-muted-foreground">
-          <p>Rich editor unavailable for this markdown. Showing raw source instead.</p>
+          <p>
+            Rich editor unavailable for this markdown. Showing raw source
+            instead.
+          </p>
           <button
             type="button"
             className="shrink-0 underline underline-offset-2 hover:text-foreground"
@@ -1195,7 +1336,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           }}
           onBlur={() => onBlur?.()}
           onKeyDown={(event) => {
-            if (onSubmit && event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            if (
+              onSubmit &&
+              event.key === "Enter" &&
+              (event.metaKey || event.ctrlKey)
+            ) {
               event.preventDefault();
               onSubmit();
             }
@@ -1214,7 +1359,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       ref={containerRef}
       className={cn(
         "relative paperclip-mdxeditor-scope",
-        bordered ? "rounded-md border border-border bg-transparent" : "bg-transparent",
+        bordered
+          ? "rounded-md border border-border bg-transparent"
+          : "bg-transparent",
         isDragOver && "ring-1 ring-primary/60 bg-accent/20",
         className,
       )}
@@ -1230,9 +1377,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
 
         // Mention keyboard handling
         if (mentionActive) {
-          if (e.key === " " && mentionStateRef.current?.trigger === "skill") {
+          if (e.key === " " && mentionStateRef.current?.trigger === "command") {
             mentionStateRef.current = null;
-            skillEnterArmedRef.current = false;
+            commandEnterArmedRef.current = false;
             setMentionState(null);
             return;
           }
@@ -1241,7 +1388,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
             e.preventDefault();
             e.stopPropagation();
             mentionStateRef.current = null;
-            skillEnterArmedRef.current = false;
+            commandEnterArmedRef.current = false;
             setMentionState(null);
             return;
           }
@@ -1250,14 +1397,18 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
             if (e.key === "ArrowDown") {
               e.preventDefault();
               e.stopPropagation();
-              skillEnterArmedRef.current = mentionStateRef.current?.trigger === "skill";
-              setMentionIndex((prev) => Math.min(prev + 1, filteredMentions.length - 1));
+              commandEnterArmedRef.current =
+                mentionStateRef.current?.trigger === "command";
+              setMentionIndex((prev) =>
+                Math.min(prev + 1, filteredMentions.length - 1),
+              );
               return;
             }
             if (e.key === "ArrowUp") {
               e.preventDefault();
               e.stopPropagation();
-              skillEnterArmedRef.current = mentionStateRef.current?.trigger === "skill";
+              commandEnterArmedRef.current =
+                mentionStateRef.current?.trigger === "command";
               setMentionIndex((prev) => Math.max(prev - 1, 0));
               return;
             }
@@ -1265,7 +1416,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
               shouldAcceptAutocompleteKey(
                 e.key,
                 mentionStateRef.current?.trigger ?? null,
-                skillEnterArmedRef.current,
+                commandEnterArmedRef.current,
               )
             ) {
               e.preventDefault();
@@ -1353,18 +1504,26 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           onError={(payload) => {
             handleRichEditorError(payload.error);
           }}
-          className={cn("paperclip-mdxeditor", !bordered && "paperclip-mdxeditor--borderless")}
+          className={cn(
+            "paperclip-mdxeditor",
+            !bordered && "paperclip-mdxeditor--borderless",
+          )}
           contentEditableClassName={cn(
             "paperclip-mdxeditor-content focus:outline-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:list-item",
             contentClassName,
           )}
-          additionalLexicalNodes={[MentionAwareLinkNode, mentionAwareLinkNodeReplacement]}
+          additionalLexicalNodes={[
+            MentionAwareLinkNode,
+            mentionAwareLinkNodeReplacement,
+          ]}
           plugins={plugins}
         />
       </MarkdownEditorRichErrorBoundary>
 
       {/* Mention dropdown — rendered via portal so it isn't clipped by overflow containers */}
-      {mentionActive && filteredMentions.length > 0 && mentionMenuPosition &&
+      {mentionActive &&
+        filteredMentions.length > 0 &&
+        mentionMenuPosition &&
         createPortal(
           <div
             data-paperclip-floating-ui=""
@@ -1400,22 +1559,23 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                 onTouchMove={handleAutocompleteTouchMove}
                 onTouchEnd={(e) => handleAutocompleteTouchEnd(e, option)}
                 onMouseEnter={() => {
-                  if (mentionStateRef.current?.trigger === "skill") {
-                    skillEnterArmedRef.current = true;
+                  if (mentionStateRef.current?.trigger === "command") {
+                    commandEnterArmedRef.current = true;
                   }
                   setMentionIndex(i);
                 }}
               >
                 {option.kind === "routine" ? (
                   <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                ) : option.kind === "skill" ? (
-                  <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 ) : option.kind === "task" ? (
                   <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                ) : option.kind === "project" && option.projectId ? (
+                ) : option.kind === "project" ? (
                   <span
                     className="inline-flex h-2 w-2 rounded-full border border-border/50"
-                    style={{ backgroundColor: option.projectColor ?? "var(--project-none)" }}
+                    style={{
+                      backgroundColor:
+                        option.projectColor ?? "var(--project-none)",
+                    }}
                   />
                 ) : option.kind === "user" ? (
                   <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -1434,7 +1594,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                   </span>
                 ) : (
                   <span className="truncate">
-                    {option.kind === "skill" || option.kind === "routine"
+                    {option.kind === "routine"
                       ? slashCommandLabel(option)
                       : option.name}
                   </span>
@@ -1452,11 +1612,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                 {option.kind === "user" && (
                   <span className="ml-auto text-(length:--text-nano) uppercase tracking-wide text-muted-foreground">
                     User
-                  </span>
-                )}
-                {option.kind === "skill" && (
-                  <span className="ml-auto text-(length:--text-nano) uppercase tracking-wide text-muted-foreground">
-                    Skill
                   </span>
                 )}
                 {option.kind === "routine" && (

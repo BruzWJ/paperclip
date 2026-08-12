@@ -19,7 +19,7 @@
       ],
       "environment": [
         { "name": "NODE_ENV", "value": "production" },
-        { "name": "HOST", "value": "0.0.0.0" },
+        { "name": "PAPERCLIP_BIND", "value": "lan" },
         { "name": "PORT", "value": "3100" },
         { "name": "SERVE_UI", "value": "true" },
         { "name": "PAPERCLIP_HOME", "value": "/paperclip" },

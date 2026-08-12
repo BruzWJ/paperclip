@@ -1,7 +1,7 @@
 import {
-  adapterConfigSchemaFieldErrors,
-  useAdapterConfigSchema,
-} from "./schema-config-fields";
+  adapterConfigOptionErrors,
+  useAdapterConfigOptions,
+} from "./acpx-config-options";
 
 /**
  * Validate a draft against the adapter-owned form schema without starting a
@@ -11,29 +11,29 @@ import {
  */
 export function useStructuralAdapterConfiguration(input: {
   adapterType: string;
-  adapterConfig: Record<string, unknown>;
+  adapterConfig: Record<string, string | boolean>;
   enabled?: boolean;
 }) {
   const enabled = input.enabled ?? true;
   const {
-    schema,
+    configOptions,
     isLoading,
     error,
-  } = useAdapterConfigSchema(input.adapterType, { enabled });
-  const fieldErrors = adapterConfigSchemaFieldErrors(
-    schema,
+  } = useAdapterConfigOptions(input.adapterType, { enabled });
+  const fieldErrors = adapterConfigOptionErrors(
+    configOptions,
     input.adapterConfig,
   );
   const valid = Boolean(
     enabled &&
       !isLoading &&
       !error &&
-      schema &&
+      configOptions &&
       fieldErrors.length === 0,
   );
 
   return {
-    schema,
+    configOptions,
     isLoading,
     error,
     fieldErrors,

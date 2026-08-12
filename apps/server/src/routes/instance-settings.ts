@@ -8,13 +8,8 @@ import { instanceSettingsService, logActivity } from "../services/index.js";
 import { assertBoardOrgAccess, assertInstanceAdmin } from "./authz.js";
 
 export function instanceSettingsRoutes(db: Db) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = instanceSettingsService(db);
-
-  router.get("/instance/settings", async (req, res) => {
-    assertBoardOrgAccess(req);
-    res.json(await svc.get());
-  });
 
   router.get("/instance/settings/general", async (req, res) => {
     // General settings (e.g. keyboardShortcuts) are readable by any

@@ -19,9 +19,9 @@ export function createPluginDomainEventPublisher(
     async publish(event: PluginEvent): Promise<void> {
       try {
         const { errors } = await eventBus.emit(event);
-        for (const { pluginId, error } of errors) {
+        for (const { pluginKey, error } of errors) {
           logger.warn(
-            { pluginId, eventType: event.eventType, err: error },
+            { pluginKey, eventType: event.eventType, err: error },
             "plugin event handler failed",
           );
         }

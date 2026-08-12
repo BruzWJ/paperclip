@@ -4,18 +4,28 @@ export const SIDEBAR_SCROLL_RESET_STATE = {
   paperclipSidebarScrollReset: true,
 } as const;
 
+export type NavigationScrollRoute =
+  | { matchId: string; kind: "other" | "task-index" }
+  | { matchId: string; kind: "task-detail"; taskRef: string };
+
 export function shouldResetScrollOnNavigation(params: {
-  previousPathname: string | null;
-  pathname: string;
+  previousRoute: NavigationScrollRoute | null;
+  route: NavigationScrollRoute;
   navigationType: NavigationType;
   state: unknown;
 }): boolean {
-  const { previousPathname, pathname, navigationType, state } = params;
-  if (previousPathname === null) return false;
-  if (previousPathname === pathname) return false;
+  const { previousRoute, route, navigationType, state } = params;
+  if (previousRoute === null) return false;
+  if (previousRoute.matchId === route.matchId) return false;
   if (navigationType === "POP") return false;
-  if (isTaskIndexPath(pathname)) return true;
-  if (isTaskDetailPathChange(previousPathname, pathname)) return true;
+  if (route.kind === "task-index") return true;
+  if (
+    previousRoute.kind === "task-detail" &&
+    route.kind === "task-detail" &&
+    previousRoute.taskRef !== route.taskRef
+  ) {
+    return true;
+  }
   return hasSidebarScrollResetState(state);
 }
 
@@ -67,30 +77,5 @@ export function resetNavigationScroll(mainElement: HTMLElement | null): void {
 
 function hasSidebarScrollResetState(state: unknown): boolean {
   if (!state || typeof state !== "object") return false;
-  return (state as Record<string, unknown>).paperclipSidebarScrollReset === true;
-}
-
-function isTaskDetailPathChange(previousPathname: string, pathname: string): boolean {
-  const previousTaskRef = readTaskDetailPathRef(previousPathname);
-  const nextTaskRef = readTaskDetailPathRef(pathname);
-  return previousTaskRef !== null && nextTaskRef !== null && previousTaskRef !== nextTaskRef;
-}
-
-function isTaskIndexPath(pathname: string): boolean {
-  const segments = pathname.split("/").filter(Boolean);
-  return (
-    (segments.length === 1 && segments[0] === "tasks")
-    || (segments.length === 2 && segments[1] === "tasks")
-  );
-}
-
-function readTaskDetailPathRef(pathname: string): string | null {
-  const segments = pathname.split("/").filter(Boolean);
-  if (segments.length === 2 && segments[0] === "tasks") {
-    return segments[1] ?? null;
-  }
-  if (segments.length === 3 && segments[1] === "tasks") {
-    return segments[2] ?? null;
-  }
-  return null;
+  return Reflect.get(state, "paperclipSidebarScrollReset") === true;
 }

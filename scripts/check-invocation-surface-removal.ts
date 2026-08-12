@@ -1,9 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   assertNoGateViolations,
-  listRepositoryTextFiles,
   literalRemovalViolations,
   requireFileTokens,
 } from "./static-removal-gate-utils.ts";
@@ -76,10 +75,6 @@ const PREFLIGHT_FORBIDDEN_EFFECTS = [
   "Respond with",
 ] as const;
 
-function normalizePath(path: string): string {
-  return path.replaceAll("\\", "/");
-}
-
 export function invocationSurfaceRemovalViolations(
   repositoryRoot: string,
 ): string[] {
@@ -87,17 +82,6 @@ export function invocationSurfaceRemovalViolations(
     forbiddenTokens: FORBIDDEN_TOKENS,
     ignoredPaths: IGNORED_PATHS,
   });
-
-  for (const absolutePath of listRepositoryTextFiles(repositoryRoot, [
-    "packages/adapters",
-  ])) {
-    const path = normalizePath(relative(repositoryRoot, absolutePath));
-    if (/^packages\/adapters\/[^/]+\/src\/server\/test\.[^.]+$/.test(path)) {
-      violations.push(
-        `${path}: retired model-producing adapter readiness module exists`,
-      );
-    }
-  }
 
   violations.push(
     ...requireFileTokens(

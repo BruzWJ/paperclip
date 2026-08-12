@@ -11,7 +11,7 @@ describe("runRowSubtitle", () => {
   it("shows inline variable values for successful runs", () => {
     const subtitle = runRowSubtitle(
       {
-        status: "succeeded",
+        status: "completed",
         failureReason: null,
         triggerPayload: { customer: "Acme", retries: 3, PROVIDER_RUN_NOISE: "ignored" },
       },
@@ -22,7 +22,7 @@ describe("runRowSubtitle", () => {
 
   it("only includes declared routine variables, not builtin payload keys", () => {
     const subtitle = runRowSubtitle(
-      { status: "succeeded", failureReason: null, triggerPayload: { PROVIDER_RUN_NOISE: "x" } },
+      { status: "completed", failureReason: null, triggerPayload: { PROVIDER_RUN_NOISE: "x" } },
       variables,
     );
     expect(subtitle).toBe("");
@@ -46,7 +46,7 @@ describe("runRowSubtitle", () => {
 
   it("returns empty when there is no payload", () => {
     expect(
-      runRowSubtitle({ status: "succeeded", failureReason: null, triggerPayload: null }, variables),
+      runRowSubtitle({ status: "completed", failureReason: null, triggerPayload: null }, variables),
     ).toBe("");
   });
 });

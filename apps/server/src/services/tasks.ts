@@ -1,21 +1,30 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gt, gte, inArray, isNull, like, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  notInArray,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   activityLog,
   agents,
   approvals,
   assets,
-  companies,
-  companyMemberships,
-  documentRevisions,
-  routineRuns,
   taskApprovals,
   taskAttachments,
-  taskCreateIdempotencyKeys,
   taskExecutionWorkspaceBindings,
-  taskExecutionRefs,
   taskInboxArchives,
   taskLabels,
   taskRelations,
@@ -40,7 +49,6 @@ import type {
   BoardTaskRunSegmentEntry,
   BoardTaskRunSegmentPart,
   BoardTaskThreadEntry,
-  TaskComment,
   TaskCommentAuthorType,
   TaskCommentMetadata,
   TaskCommentPresentation,
@@ -58,13 +66,12 @@ import {
   extractProjectMentionIds,
   taskCommentMetadataSchema,
   taskCommentPresentationSchema,
-  isUuidLike,
-  normalizeTaskIdentifier as normalizeTaskReferenceIdentifier,
+  isCanonicalUuid,
+  isCanonicalTaskNumber,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { redactCurrentUserText } from "../log-redaction.js";
-import { redactSensitiveText } from "../redaction.js";
 import { resolveNextTaskGoalId } from "./task-goal-fallback.js";
 import { syncTask } from "./task-references.js";
 import { getDefaultCompanyGoal } from "./goals.js";
@@ -113,7 +120,11 @@ function decodeBoardCommentCursor(
   if (!encoded) return null;
   let value: unknown;
   try {
-    value = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    const bytes = Buffer.from(encoded, "base64url");
+    if (bytes.toString("base64url") !== encoded) {
+      throw new Error("Non-canonical base64url");
+    }
+    value = JSON.parse(bytes.toString("utf8"));
   } catch {
     throw unprocessable("Invalid task comment cursor");
   }
@@ -122,6 +133,8 @@ function decodeBoardCommentCursor(
   }
   const candidate = value as Partial<BoardCommentCursor>;
   if (
+    Object.keys(candidate).sort().join(",") !==
+      "id,kind,rootCommentId,sequence,taskId,version" ||
     candidate.version !== 1 ||
     candidate.kind !== expected.kind ||
     candidate.taskId !== expected.taskId ||
@@ -129,7 +142,7 @@ function decodeBoardCommentCursor(
     !Number.isSafeInteger(candidate.sequence) ||
     Number(candidate.sequence) < 0 ||
     typeof candidate.id !== "string" ||
-    candidate.id.length === 0
+    !isCanonicalUuid(candidate.id)
   ) {
     throw unprocessable("Task comment cursor does not belong to this view");
   }
@@ -141,10 +154,16 @@ function boundedBoardCommentPageSize(
   fallback: number,
 ): number {
   if (requested == null) return fallback;
-  if (!Number.isSafeInteger(requested) || requested < 1) {
-    throw unprocessable("Task comment page limit must be a positive integer");
+  if (
+    !Number.isSafeInteger(requested) ||
+    requested < 1 ||
+    requested > MAX_TASK_COMMENT_PAGE_LIMIT
+  ) {
+    throw unprocessable(
+      `Task comment page limit must be between 1 and ${MAX_TASK_COMMENT_PAGE_LIMIT}`,
+    );
   }
-  return Math.min(requested, MAX_TASK_COMMENT_PAGE_LIMIT);
+  return requested;
 }
 
 function boardRunState(
@@ -159,7 +178,10 @@ function compareCanonicalEntry(
   left: { canonicalSequence: number; id: string },
   right: { canonicalSequence: number; id: string },
 ): number {
-  return left.canonicalSequence - right.canonicalSequence || left.id.localeCompare(right.id);
+  return (
+    left.canonicalSequence - right.canonicalSequence ||
+    left.id.localeCompare(right.id)
+  );
 }
 
 function isAfterBoardCommentCursor(
@@ -167,8 +189,10 @@ function isAfterBoardCommentCursor(
   cursor: BoardCommentCursor | null,
 ): boolean {
   if (!cursor) return true;
-  return entry.canonicalSequence > cursor.sequence ||
-    (entry.canonicalSequence === cursor.sequence && entry.id > cursor.id);
+  return (
+    entry.canonicalSequence > cursor.sequence ||
+    (entry.canonicalSequence === cursor.sequence && entry.id > cursor.id)
+  );
 }
 export const TASK_LIST_DEFAULT_LIMIT = 500;
 export const TASK_LIST_MAX_LIMIT = 1000;
@@ -202,36 +226,28 @@ function applyStatusSideEffects(
   return patch;
 }
 
-// Express's default `qs` parser binds repeated query keys to a `string[]`,
-// so a request like `?status=todo&status=in_progress` arrives here as an
-// array. Single-key + comma-separated forms remain valid too; normalize the
-// supported shapes once so the service contract matches runtime reality.
-export function parseStatusFilter(
-  input: string | readonly string[] | undefined,
-): TaskStatus[] {
-  if (input === undefined || input === null) return [];
-  const entries = Array.isArray(input) ? input : typeof input === "string" ? [input] : [];
-  return entries
-    .flatMap((entry) => (typeof entry === "string" ? entry.split(",") : []))
-    .map((status) => status.trim())
-    .filter(
-      (status): status is TaskStatus =>
-        (ALL_TASK_STATUSES as readonly string[]).includes(status),
+export function parseStatusFilter(input: unknown): TaskStatus[] {
+  if (input === undefined) return [];
+  const entries = Array.isArray(input) ? [...input] : [input];
+  if (
+    entries.length === 0 ||
+    entries.some(
+      (status) =>
+        typeof status !== "string" ||
+        !(ALL_TASK_STATUSES as readonly string[]).includes(status),
+    ) ||
+    new Set(entries).size !== entries.length
+  ) {
+    throw unprocessable(
+      "status must contain unique canonical task status values",
     );
+  }
+  return entries as TaskStatus[];
 }
 
 export interface TaskFilters {
   attention?: "blocked";
-  status?: string | readonly string[];
-  /**
-   * Filter by owner agent ID.
-   * - `string` (UUID): match tasks owned by that agent.
-   * - `null`: match tasks without an agent owner (IS NULL).
-   * - The literal string `"null"` is also accepted as a sentinel for `null`
-   *   so that query-string callers can pass `?ownerAgentId=null` directly.
-   *   The route layer normalises it before calling the service, but the service
-   *   also normalises it for direct callers.
-   */
+  status?: readonly TaskStatus[];
   ownerAgentId?: string | null;
   participantAgentId?: string;
   ownerUserId?: string;
@@ -243,11 +259,8 @@ export interface TaskFilters {
   descendantOf?: string;
   labelId?: string;
   originKind?: string;
-  originKindPrefix?: string;
   originId?: string;
-  includeRoutineExecutions?: boolean;
   excludeRoutineExecutions?: boolean;
-  includePluginOperations?: boolean;
   includeBlockedBy?: boolean;
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
@@ -314,8 +327,6 @@ type TaskLabelEnrichment = {
   labels: TaskLabelRow[];
   labelIds: string[];
 };
-type TaskWithLabels = TaskRow & TaskLabelEnrichment;
-type TaskWithLabelsAndRun = TaskWithLabels & { activeRun: TaskActiveRunRow | null };
 type CanonicalTaskListRow = TaskRow;
 type CanonicalTaskWithLabels = CanonicalTaskListRow & TaskLabelEnrichment;
 type CanonicalTaskWithLabelsAndRun = CanonicalTaskWithLabels & {
@@ -352,9 +363,10 @@ type TaskBlockerDiagnosticsTaskRow = {
   companyId: string;
   projectId: string | null;
   parentId: string | null;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
-  boardPresentationStatus: typeof ALL_TASK_STATUSES[number];
+  boardPresentationStatus: (typeof ALL_TASK_STATUSES)[number];
   priority: string;
   ownerAgentId: string | null;
   ownerUserId: string | null;
@@ -368,9 +380,10 @@ type TaskSubtreeDiagnosticsBlockerRow = TaskBlockerDiagnosticsTaskRow & {
   blockedTaskId: string;
   relationCreatedAt: Date;
 };
-type TaskSubtreeDiagnosticsBlockerResultRow = TaskSubtreeDiagnosticsBlockerRow & {
-  rowNumber: number | string;
-};
+type TaskSubtreeDiagnosticsBlockerResultRow =
+  TaskSubtreeDiagnosticsBlockerRow & {
+    rowNumber: number | string;
+  };
 export type TaskDependencyReadiness = {
   taskId: string;
   blockerTaskIds: string[];
@@ -384,10 +397,6 @@ const TASK_LIST_REQUEST_MAX_BYTES = TASK_LIST_REQUEST_MAX_CHARS * 4;
 
 function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, "\\$&");
-}
-
-export function clampTaskListLimit(limit: number): number {
-  return Math.min(TASK_LIST_MAX_LIMIT, Math.max(1, Math.floor(limit)));
 }
 
 function chunkList<T>(values: T[], size: number): T[][] {
@@ -404,10 +413,15 @@ function truncateByCodePoint(value: string, maxChars: number): string {
 }
 
 function decodeDatabaseTextPreview(value: string, maxChars: number): string {
-  return truncateByCodePoint(Buffer.from(value, "base64").toString("utf8"), maxChars);
+  return truncateByCodePoint(
+    Buffer.from(value, "base64").toString("utf8"),
+    maxChars,
+  );
 }
 
-function createTaskDependencyReadiness(taskId: string): TaskDependencyReadiness {
+function createTaskDependencyReadiness(
+  taskId: string,
+): TaskDependencyReadiness {
   return {
     taskId,
     blockerTaskIds: [],
@@ -447,7 +461,8 @@ async function listTaskDependencyReadinessMap(
     );
 
   for (const row of blockerRows) {
-    const current = readinessMap.get(row.taskId) ?? createTaskDependencyReadiness(row.taskId);
+    const current =
+      readinessMap.get(row.taskId) ?? createTaskDependencyReadiness(row.taskId);
     current.blockerTaskIds.push(row.blockerTaskId);
     // Only done blockers resolve dependents; cancelled blockers stay unresolved
     // until an operator removes or replaces the blocker relationship explicitly.
@@ -680,25 +695,16 @@ function inboxVisibleForUserCondition(companyId: string, userId: string) {
   `;
 }
 
-const LEGACY_PLUGIN_OPERATION_ORIGIN_KINDS = [
-  "plugin:paperclipai.content-machine:case",
-  "plugin:paperclipai.content-machine:evaluation",
-  "plugin:paperclipai.content-machine:source-sync",
-] as const;
-
 function nonPluginOperationTaskCondition() {
   return sql<boolean>`NOT (
     ${tasks.originKind} LIKE 'plugin:%:operation'
     OR ${tasks.originKind} LIKE 'plugin:%:operation:%'
-    OR ${inArray(tasks.originKind, LEGACY_PLUGIN_OPERATION_ORIGIN_KINDS)}
   )`;
 }
 
 function shouldIncludePluginOperationTasks(filters: TaskFilters | undefined) {
   return Boolean(
-    filters?.includePluginOperations ||
     filters?.originKind ||
-    filters?.originKindPrefix ||
     filters?.originId ||
     filters?.projectId,
   );
@@ -709,27 +715,31 @@ export function deriveTaskUserContext(
   userId: string,
   stats:
     | {
-      myLastCommentAt: Date | string | null;
-      myLastReadAt: Date | string | null;
-      lastExternalCommentAt: Date | string | null;
-    }
+        myLastCommentAt: Date | string | null;
+        myLastReadAt: Date | string | null;
+        lastExternalCommentAt: Date | string | null;
+      }
     | null
     | undefined,
 ) {
   const normalizeDate = (value: Date | string | null | undefined) => {
     if (!value) return null;
-    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+    if (value instanceof Date)
+      return Number.isNaN(value.getTime()) ? null : value;
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   };
 
   const myLastCommentAt = normalizeDate(stats?.myLastCommentAt);
   const myLastReadAt = normalizeDate(stats?.myLastReadAt);
-  const createdTouchAt = task.creatorUserId === userId ? normalizeDate(task.createdAt) : null;
-  const ownedTouchAt = task.ownerUserId === userId ? normalizeDate(task.updatedAt) : null;
-  const myLastTouchAt = [myLastCommentAt, myLastReadAt, createdTouchAt, ownedTouchAt]
-    .filter((value): value is Date => value instanceof Date)
-    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const createdTouchAt =
+    task.creatorUserId === userId ? normalizeDate(task.createdAt) : null;
+  const ownedTouchAt =
+    task.ownerUserId === userId ? normalizeDate(task.updatedAt) : null;
+  const myLastTouchAt =
+    [myLastCommentAt, myLastReadAt, createdTouchAt, ownedTouchAt]
+      .filter((value): value is Date => value instanceof Date)
+      .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
   const lastExternalCommentAt = normalizeDate(stats?.lastExternalCommentAt);
   const isUnreadForMe = Boolean(
     myLastTouchAt &&
@@ -744,11 +754,14 @@ export function deriveTaskUserContext(
   };
 }
 
-function latestTaskActivityAt(...values: Array<Date | string | null | undefined>): Date | null {
+function latestTaskActivityAt(
+  ...values: Array<Date | string | null | undefined>
+): Date | null {
   const normalized = values
     .map((value) => {
       if (!value) return null;
-      if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+      if (value instanceof Date)
+        return Number.isNaN(value.getTime()) ? null : value;
       const parsed = new Date(value);
       return Number.isNaN(parsed.getTime()) ? null : parsed;
     })
@@ -781,18 +794,21 @@ async function inboxArchiveRowsForTasks(
       archivedByRunId: taskInboxArchives.archivedByRunId,
     })
     .from(taskInboxArchives)
-    .where(and(
-      eq(taskInboxArchives.companyId, companyId),
-      eq(taskInboxArchives.userId, userId),
-      inArray(taskInboxArchives.taskId, taskIds),
-    ));
+    .where(
+      and(
+        eq(taskInboxArchives.companyId, companyId),
+        eq(taskInboxArchives.userId, userId),
+        inArray(taskInboxArchives.taskId, taskIds),
+      ),
+    );
 }
 
 function activeInboxArchiveFields(
   archive: InboxArchiveAttributionRow | undefined,
   lastActivityAt: Date,
 ) {
-  if (!archive || archive.archivedAt.getTime() < lastActivityAt.getTime()) return {};
+  if (!archive || archive.archivedAt.getTime() < lastActivityAt.getTime())
+    return {};
   return {
     archivedAt: archive.archivedAt,
     archivedByActorType: archive.archivedByActorType,
@@ -819,10 +835,12 @@ function taskListOrderBy(
 ) {
   const canonicalLastActivityAt = taskCanonicalLastActivityAtExpr(companyId);
   if (sortField === "updated") {
-    const activityOrder = sortDir === "asc"
-      ? asc(canonicalLastActivityAt)
-      : desc(canonicalLastActivityAt);
-    const updatedOrder = sortDir === "asc" ? asc(tasks.updatedAt) : desc(tasks.updatedAt);
+    const activityOrder =
+      sortDir === "asc"
+        ? asc(canonicalLastActivityAt)
+        : desc(canonicalLastActivityAt);
+    const updatedOrder =
+      sortDir === "asc" ? asc(tasks.updatedAt) : desc(tasks.updatedAt);
     const idOrder = sortDir === "asc" ? asc(tasks.id) : desc(tasks.id);
     return hasSearch
       ? [asc(searchOrder), activityOrder, updatedOrder, idOrder]
@@ -838,10 +856,16 @@ function taskListOrderBy(
   ];
 }
 
-async function labelMapForTasks(dbOrTx: any, taskIds: string[]): Promise<Map<string, TaskLabelRow[]>> {
+async function labelMapForTasks(
+  dbOrTx: any,
+  taskIds: string[],
+): Promise<Map<string, TaskLabelRow[]>> {
   const map = new Map<string, TaskLabelRow[]>();
   if (taskIds.length === 0) return map;
-  for (const taskIdChunk of chunkList(taskIds, TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+  for (const taskIdChunk of chunkList(
+    taskIds,
+    TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+  )) {
     const rows = await dbOrTx
       .select({
         taskId: taskLabels.taskId,
@@ -876,7 +900,8 @@ async function withTaskLabels<
         companyId: taskExecutionWorkspaceBindings.companyId,
         taskId: taskExecutionWorkspaceBindings.taskId,
         ownershipEpoch: taskExecutionWorkspaceBindings.ownershipEpoch,
-        executionWorkspaceId: taskExecutionWorkspaceBindings.executionWorkspaceId,
+        executionWorkspaceId:
+          taskExecutionWorkspaceBindings.executionWorkspaceId,
       })
       .from(taskExecutionWorkspaceBindings)
       .where(inArray(taskExecutionWorkspaceBindings.taskId, taskIds)),
@@ -913,7 +938,10 @@ async function withTaskLabels<
   });
 }
 
-const BLOCKER_ATTENTION_PENDING_APPROVAL_STATUSES = ["pending", "revision_requested"];
+const BLOCKER_ATTENTION_PENDING_APPROVAL_STATUSES = [
+  "pending",
+  "revision_requested",
+];
 const BLOCKER_ATTENTION_CHILD_TERMINAL_STATUSES = [
   "done",
   "cancelled",
@@ -953,30 +981,29 @@ function lowTrustBoundaryTaskCondition(
 
 const BLOCKER_ATTENTION_MAX_DEPTH = 8;
 const BLOCKER_ATTENTION_MAX_NODES = 2000;
-const BLOCKER_ATTENTION_INVOKABLE_AGENT_STATUSES = new Set(["active", "idle", "running", "error"]);
+const BLOCKER_ATTENTION_INVOKABLE_AGENT_STATUSES = new Set(["idle", "error"]);
 
 type TaskBlockerAttentionNode = {
   id: string;
   companyId: string;
   parentId: string | null;
-  identifier: string | null;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: string;
   ownerAgentId: string | null;
   ownerUserId: string | null;
 };
-type TaskBlockerAttentionInputNode =
-  Pick<
-    TaskRow,
-    | "id"
-    | "companyId"
-    | "parentId"
-    | "identifier"
-    | "title"
-    | "boardPresentationStatus"
-    | "ownerAgentId"
-    | "ownerUserId"
-  >;
+type TaskBlockerAttentionInputNode = Pick<
+  TaskRow,
+  | "id"
+  | "companyId"
+  | "parentId"
+  | "identifier"
+  | "title"
+  | "boardPresentationStatus"
+  | "ownerAgentId"
+  | "ownerUserId"
+>;
 
 type TaskBlockerAttentionEdge = {
   taskId: string;
@@ -994,10 +1021,7 @@ type TaskBlockerAttentionAgentRow = {
 
 async function activeRunMapForTasks<
   T extends Pick<TaskRow, "id" | "companyId">,
->(
-  dbOrTx: any,
-  taskRows: T[],
-): Promise<Map<string, TaskActiveRunRow>> {
+>(dbOrTx: any, taskRows: T[]): Promise<Map<string, TaskActiveRunRow>> {
   const map = new Map<string, TaskActiveRunRow>();
   const taskIdsByCompany = new Map<string, string[]>();
   for (const row of taskRows) {
@@ -1007,7 +1031,10 @@ async function activeRunMapForTasks<
   }
 
   for (const [companyId, taskIds] of taskIdsByCompany) {
-    for (const taskIdChunk of chunkList([...new Set(taskIds)], TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+    for (const taskIdChunk of chunkList(
+      [...new Set(taskIds)],
+      TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+    )) {
       const linkages = await resolveCurrentTaskOwnerRunLinkages(dbOrTx as Db, {
         companyId,
         taskIds: taskIdChunk,
@@ -1045,7 +1072,10 @@ async function liveDescendantCountMapForTasks(
     (taskId) => sql`(${taskId}::uuid)`,
   );
 
-  for (const taskIdChunk of chunkList(uniqueTaskIds, TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+  for (const taskIdChunk of chunkList(
+    uniqueTaskIds,
+    TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+  )) {
     const targetRows = taskIdChunk.map((taskId) => sql`(${taskId}::uuid)`);
     const rows = await dbOrTx.execute(sql<{
       taskId: string;
@@ -1064,7 +1094,6 @@ async function liveDescendantCountMapForTasks(
           JOIN tasks live_task ON live_task.id = live_run.task_id
           WHERE live_task.company_id = ${companyId}
             AND live_task.hidden_at IS NULL
-            AND live_task.harness_kind IS NULL
         ),
         live_ancestors(live_task_id, ancestor_id, next_parent_id, visited_task_ids) AS (
           SELECT live_tasks.live_task_id, parent.id, parent.parent_id, ARRAY[live_tasks.live_task_id, parent.id]
@@ -1072,7 +1101,6 @@ async function liveDescendantCountMapForTasks(
           JOIN tasks parent ON parent.id = live_tasks.parent_id
           WHERE parent.company_id = ${companyId}
             AND parent.hidden_at IS NULL
-            AND parent.harness_kind IS NULL
           UNION ALL
           SELECT
             live_ancestors.live_task_id,
@@ -1083,7 +1111,6 @@ async function liveDescendantCountMapForTasks(
           JOIN tasks parent ON parent.id = live_ancestors.next_parent_id
           WHERE parent.company_id = ${companyId}
             AND parent.hidden_at IS NULL
-            AND parent.harness_kind IS NULL
             AND NOT parent.id = ANY(live_ancestors.visited_task_ids)
         )
       SELECT
@@ -1095,15 +1122,19 @@ async function liveDescendantCountMapForTasks(
       GROUP BY live_ancestors.ancestor_id
     `);
 
-    const resultRows = Array.isArray(rows) ? rows : Array.from(rows as Iterable<unknown>);
+    const resultRows = Array.isArray(rows)
+      ? rows
+      : Array.from(rows as Iterable<unknown>);
     for (const row of resultRows) {
       if (typeof row !== "object" || row === null) continue;
       const taskId = (row as { taskId?: unknown }).taskId;
-      const liveDescendantCount = (row as { liveDescendantCount?: unknown }).liveDescendantCount;
+      const liveDescendantCount = (row as { liveDescendantCount?: unknown })
+        .liveDescendantCount;
       if (typeof taskId !== "string") continue;
-      const count = typeof liveDescendantCount === "number"
-        ? liveDescendantCount
-        : Number(liveDescendantCount);
+      const count =
+        typeof liveDescendantCount === "number"
+          ? liveDescendantCount
+          : Number(liveDescendantCount);
       if (Number.isFinite(count)) map.set(taskId, count);
     }
   }
@@ -1111,7 +1142,9 @@ async function liveDescendantCountMapForTasks(
   return map;
 }
 
-function createTaskBlockerAttention(input: Partial<TaskBlockerAttention> = {}): TaskBlockerAttention {
+function createTaskBlockerAttention(
+  input: Partial<TaskBlockerAttention> = {},
+): TaskBlockerAttention {
   return {
     state: input.state ?? "none",
     reason: input.reason ?? null,
@@ -1120,12 +1153,15 @@ function createTaskBlockerAttention(input: Partial<TaskBlockerAttention> = {}): 
     stalledBlockerCount: input.stalledBlockerCount ?? 0,
     attentionBlockerCount: input.attentionBlockerCount ?? 0,
     sampleBlockerIdentifier: input.sampleBlockerIdentifier ?? null,
-    sampleStalledBlockerIdentifier: input.sampleStalledBlockerIdentifier ?? null,
+    sampleStalledBlockerIdentifier:
+      input.sampleStalledBlockerIdentifier ?? null,
   };
 }
 
-function blockerSampleIdentifier(node: TaskBlockerAttentionNode | null | undefined) {
-  return node?.identifier ?? node?.id ?? null;
+function blockerSampleIdentifier(
+  node: TaskBlockerAttentionNode | null | undefined,
+) {
+  return node?.identifier ?? null;
 }
 
 function appendBlockerAttentionEdges(
@@ -1143,7 +1179,8 @@ function appendBlockerAttentionEdges(
 
 type TaskRelationSummaryRow = {
   relatedId: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: string;
   priority: string;
@@ -1151,9 +1188,12 @@ type TaskRelationSummaryRow = {
   ownerUserId: string | null;
 };
 
-function summarizeTaskRelationRow(row: TaskRelationSummaryRow): TaskRelationTaskSummary {
+function summarizeTaskRelationRow(
+  row: TaskRelationSummaryRow,
+): TaskRelationTaskSummary {
   return {
     id: row.relatedId,
+    taskNumber: row.taskNumber,
     identifier: row.identifier,
     title: row.title,
     boardPresentationStatus:
@@ -1164,8 +1204,10 @@ function summarizeTaskRelationRow(row: TaskRelationSummaryRow): TaskRelationTask
   };
 }
 
-function taskRelationSortLabel(task: Pick<TaskRelationTaskSummary, "id" | "identifier" | "title">) {
-  return task.title ?? task.identifier ?? task.id;
+function taskRelationSortLabel(
+  task: Pick<TaskRelationTaskSummary, "id" | "identifier" | "title">,
+) {
+  return task.title ?? task.identifier;
 }
 
 async function terminalExplicitBlockersByRoot(
@@ -1182,13 +1224,21 @@ async function terminalExplicitBlockersByRoot(
   for (const root of roots) nodesById.set(root.id, root);
 
   let frontier = rootIds;
-  for (let depth = 0; frontier.length > 0 && depth < BLOCKER_ATTENTION_MAX_DEPTH; depth += 1) {
+  for (
+    let depth = 0;
+    frontier.length > 0 && depth < BLOCKER_ATTENTION_MAX_DEPTH;
+    depth += 1
+  ) {
     const nextFrontier = new Set<string>();
-    for (const chunk of chunkList([...new Set(frontier)], TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+    for (const chunk of chunkList(
+      [...new Set(frontier)],
+      TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+    )) {
       const rows = await dbOrTx
         .select({
           currentTaskId: taskRelations.relatedTaskId,
           relatedId: tasks.id,
+          taskNumber: tasks.taskNumber,
           identifier: tasks.identifier,
           title: tasks.title,
           boardPresentationStatus: tasks.boardPresentationStatus,
@@ -1225,7 +1275,10 @@ async function terminalExplicitBlockersByRoot(
     frontier = [...nextFrontier];
   }
 
-  const collectTerminal = (taskId: string, seen: Set<string>): TaskRelationTaskSummary[] => {
+  const collectTerminal = (
+    taskId: string,
+    seen: Set<string>,
+  ): TaskRelationTaskSummary[] => {
     if (seen.has(taskId)) return [];
     const node = nodesById.get(taskId);
     if (!node || node.boardPresentationStatus === "done") return [];
@@ -1233,7 +1286,9 @@ async function terminalExplicitBlockersByRoot(
     nextSeen.add(taskId);
     const downstreamIds = edgesByTaskId.get(taskId) ?? [];
     if (downstreamIds.length === 0) return [node];
-    return downstreamIds.flatMap((downstreamId) => collectTerminal(downstreamId, nextSeen));
+    return downstreamIds.flatMap((downstreamId) =>
+      collectTerminal(downstreamId, nextSeen),
+    );
   };
 
   for (const rootId of rootIds) {
@@ -1244,7 +1299,9 @@ async function terminalExplicitBlockersByRoot(
     if (deduped.size > 0) {
       terminalByRoot.set(
         rootId,
-        [...deduped.values()].sort((a, b) => taskRelationSortLabel(a).localeCompare(taskRelationSortLabel(b))),
+        [...deduped.values()].sort((a, b) =>
+          taskRelationSortLabel(a).localeCompare(taskRelationSortLabel(b)),
+        ),
       );
     }
   }
@@ -1259,7 +1316,8 @@ async function listTaskBlockerAttentionMap(
 ): Promise<Map<string, TaskBlockerAttention>> {
   const statusRows: TaskBlockerAttentionNode[] = taskRows;
   const roots = statusRows.filter(
-    (row) => row.companyId === companyId && row.boardPresentationStatus === "blocked",
+    (row) =>
+      row.companyId === companyId && row.boardPresentationStatus === "blocked",
   );
   const attentionMap = new Map<string, TaskBlockerAttention>();
   for (const row of statusRows) {
@@ -1275,11 +1333,20 @@ async function listTaskBlockerAttentionMap(
 
   let frontier = roots.map((root) => root.id);
   let truncated = false;
-  for (let depth = 0; frontier.length > 0 && depth < BLOCKER_ATTENTION_MAX_DEPTH; depth += 1) {
+  for (
+    let depth = 0;
+    frontier.length > 0 && depth < BLOCKER_ATTENTION_MAX_DEPTH;
+    depth += 1
+  ) {
     const nextFrontier = new Set<string>();
 
-    for (const chunk of chunkList([...new Set(frontier)], TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
-      const explicitBlockerRowsPromise: Promise<TaskBlockerAttentionQueryRow[]> = dbOrTx
+    for (const chunk of chunkList(
+      [...new Set(frontier)],
+      TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+    )) {
+      const explicitBlockerRowsPromise: Promise<
+        TaskBlockerAttentionQueryRow[]
+      > = dbOrTx
         .select({
           taskId: taskRelations.relatedTaskId,
           blockerTaskId: tasks.id,
@@ -1321,10 +1388,9 @@ async function listTaskBlockerAttentionMap(
           and(
             eq(tasks.companyId, companyId),
             inArray(tasks.parentId, chunk),
-            notInArray(
-              tasks.boardPresentationStatus,
-              [...BLOCKER_ATTENTION_CHILD_TERMINAL_STATUSES],
-            ),
+            notInArray(tasks.boardPresentationStatus, [
+              ...BLOCKER_ATTENTION_CHILD_TERMINAL_STATUSES,
+            ]),
           ),
         );
       const [explicitBlockerRows, childRows] = await Promise.all([
@@ -1334,11 +1400,23 @@ async function listTaskBlockerAttentionMap(
 
       appendBlockerAttentionEdges(edgesByTaskId, [
         ...explicitBlockerRows
-          .filter((row): row is TaskBlockerAttentionQueryRow & { taskId: string } => row.taskId !== null)
-          .map((row) => ({ taskId: row.taskId, blockerTaskId: row.blockerTaskId })),
+          .filter(
+            (row): row is TaskBlockerAttentionQueryRow & { taskId: string } =>
+              row.taskId !== null,
+          )
+          .map((row) => ({
+            taskId: row.taskId,
+            blockerTaskId: row.blockerTaskId,
+          })),
         ...childRows
-          .filter((row): row is TaskBlockerAttentionQueryRow & { taskId: string } => row.taskId !== null)
-          .map((row) => ({ taskId: row.taskId, blockerTaskId: row.blockerTaskId })),
+          .filter(
+            (row): row is TaskBlockerAttentionQueryRow & { taskId: string } =>
+              row.taskId !== null,
+          )
+          .map((row) => ({
+            taskId: row.taskId,
+            blockerTaskId: row.blockerTaskId,
+          })),
       ]);
 
       for (const row of [...explicitBlockerRows, ...childRows]) {
@@ -1385,7 +1463,10 @@ async function listTaskBlockerAttentionMap(
     .map((node) => node.id);
   const explicitWaitingTaskIds = new Set<string>();
   if (explicitWaitCandidateIds.length > 0) {
-    for (const chunk of chunkList(explicitWaitCandidateIds, TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+    for (const chunk of chunkList(
+      explicitWaitCandidateIds,
+      TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+    )) {
       const approvalRows: Array<{ taskId: string }> = await dbOrTx
         .select({ taskId: taskApprovals.taskId })
         .from(taskApprovals)
@@ -1393,25 +1474,33 @@ async function listTaskBlockerAttentionMap(
         .where(
           and(
             eq(taskApprovals.companyId, companyId),
-            inArray(approvals.status, BLOCKER_ATTENTION_PENDING_APPROVAL_STATUSES),
+            inArray(
+              approvals.status,
+              BLOCKER_ATTENTION_PENDING_APPROVAL_STATUSES,
+            ),
             inArray(taskApprovals.taskId, chunk),
           ),
         );
       for (const row of approvalRows) explicitWaitingTaskIds.add(row.taskId);
     }
-
   }
 
-  const agentRows: TaskBlockerAttentionAgentRow[] = agentIds.size > 0
-    ? await dbOrTx
-        .select({
-          id: agents.id,
-          companyId: agents.companyId,
-          status: agents.status,
-        })
-        .from(agents)
-        .where(and(eq(agents.companyId, companyId), inArray(agents.id, [...agentIds])))
-    : [];
+  const agentRows: TaskBlockerAttentionAgentRow[] =
+    agentIds.size > 0
+      ? await dbOrTx
+          .select({
+            id: agents.id,
+            companyId: agents.companyId,
+            status: agents.status,
+          })
+          .from(agents)
+          .where(
+            and(
+              eq(agents.companyId, companyId),
+              inArray(agents.id, [...agentIds]),
+            ),
+          )
+      : [];
   const agentsById = new Map(agentRows.map((agent) => [agent.id, agent]));
 
   type PathClassification = {
@@ -1426,49 +1515,108 @@ async function listTaskBlockerAttentionMap(
   ): PathClassification => {
     const sample = blockerSampleIdentifier(nodesById.get(nodeId));
     if (truncated || seen.has(nodeId)) {
-      return { covered: false, stalled: false, sampleBlockerIdentifier: sample, sampleStalledBlockerIdentifier: null };
+      return {
+        covered: false,
+        stalled: false,
+        sampleBlockerIdentifier: sample,
+        sampleStalledBlockerIdentifier: null,
+      };
     }
     const node = nodesById.get(nodeId);
     if (!node || node.companyId !== companyId) {
-      return { covered: false, stalled: false, sampleBlockerIdentifier: nodeId, sampleStalledBlockerIdentifier: null };
+      return {
+        covered: false,
+        stalled: false,
+        sampleBlockerIdentifier: nodeId,
+        sampleStalledBlockerIdentifier: null,
+      };
     }
     const nodeSample = blockerSampleIdentifier(node);
     if (node.boardPresentationStatus === "done") {
-      return { covered: true, stalled: false, sampleBlockerIdentifier: nodeSample, sampleStalledBlockerIdentifier: null };
+      return {
+        covered: true,
+        stalled: false,
+        sampleBlockerIdentifier: nodeSample,
+        sampleStalledBlockerIdentifier: null,
+      };
     }
     if (explicitWaitingTaskIds.has(node.id)) {
-      return { covered: true, stalled: false, sampleBlockerIdentifier: nodeSample, sampleStalledBlockerIdentifier: null };
+      return {
+        covered: true,
+        stalled: false,
+        sampleBlockerIdentifier: nodeSample,
+        sampleStalledBlockerIdentifier: null,
+      };
     }
     if (node.ownerUserId && node.boardPresentationStatus !== "cancelled") {
-      return { covered: true, stalled: false, sampleBlockerIdentifier: nodeSample, sampleStalledBlockerIdentifier: null };
+      return {
+        covered: true,
+        stalled: false,
+        sampleBlockerIdentifier: nodeSample,
+        sampleStalledBlockerIdentifier: null,
+      };
     }
     if (node.boardPresentationStatus === "in_review") {
-      const hasWaitingPath = activeTaskIds.has(node.id) || Boolean(node.ownerUserId);
+      const hasWaitingPath =
+        activeTaskIds.has(node.id) || Boolean(node.ownerUserId);
       if (hasWaitingPath) {
-        return { covered: true, stalled: false, sampleBlockerIdentifier: nodeSample, sampleStalledBlockerIdentifier: null };
+        return {
+          covered: true,
+          stalled: false,
+          sampleBlockerIdentifier: nodeSample,
+          sampleStalledBlockerIdentifier: null,
+        };
       }
-      return { covered: false, stalled: true, sampleBlockerIdentifier: nodeSample, sampleStalledBlockerIdentifier: nodeSample };
+      return {
+        covered: false,
+        stalled: true,
+        sampleBlockerIdentifier: nodeSample,
+        sampleStalledBlockerIdentifier: nodeSample,
+      };
     }
     if (activeTaskIds.has(node.id)) {
-      return { covered: true, stalled: false, sampleBlockerIdentifier: nodeSample, sampleStalledBlockerIdentifier: null };
+      return {
+        covered: true,
+        stalled: false,
+        sampleBlockerIdentifier: nodeSample,
+        sampleStalledBlockerIdentifier: null,
+      };
     }
     if (node.boardPresentationStatus === "cancelled") {
-      return { covered: false, stalled: false, sampleBlockerIdentifier: nodeSample, sampleStalledBlockerIdentifier: null };
+      return {
+        covered: false,
+        stalled: false,
+        sampleBlockerIdentifier: nodeSample,
+        sampleStalledBlockerIdentifier: null,
+      };
     }
     if (node.boardPresentationStatus === "backlog" && node.ownerAgentId) {
-      return { covered: false, stalled: false, sampleBlockerIdentifier: nodeSample, sampleStalledBlockerIdentifier: null };
+      return {
+        covered: false,
+        stalled: false,
+        sampleBlockerIdentifier: nodeSample,
+        sampleStalledBlockerIdentifier: null,
+      };
     }
 
     const downstream = (edgesByTaskId.get(node.id) ?? []).filter(
-      (edge) => nodesById.get(edge.blockerTaskId)?.boardPresentationStatus !== "done",
+      (edge) =>
+        nodesById.get(edge.blockerTaskId)?.boardPresentationStatus !== "done",
     );
     if (downstream.length > 0) {
       const nextSeen = new Set(seen);
       nextSeen.add(nodeId);
-      const classified = downstream.map((edge) => classifyPath(edge.blockerTaskId, nextSeen));
-      const stalledChild = classified.find((result) => result.stalled || result.sampleStalledBlockerIdentifier);
-      const sampleStalled = stalledChild?.sampleStalledBlockerIdentifier ?? null;
-      const hardAttention = classified.find((result) => !result.covered && !result.stalled);
+      const classified = downstream.map((edge) =>
+        classifyPath(edge.blockerTaskId, nextSeen),
+      );
+      const stalledChild = classified.find(
+        (result) => result.stalled || result.sampleStalledBlockerIdentifier,
+      );
+      const sampleStalled =
+        stalledChild?.sampleStalledBlockerIdentifier ?? null;
+      const hardAttention = classified.find(
+        (result) => !result.covered && !result.stalled,
+      );
       if (hardAttention) {
         return {
           covered: false,
@@ -1489,30 +1637,49 @@ async function listTaskBlockerAttentionMap(
       return {
         covered: true,
         stalled: false,
-        sampleBlockerIdentifier: classified[0]?.sampleBlockerIdentifier ?? nodeSample,
+        sampleBlockerIdentifier:
+          classified[0]?.sampleBlockerIdentifier ?? nodeSample,
         sampleStalledBlockerIdentifier: null,
       };
     }
 
     if (node.ownerAgentId) {
       const owner = agentsById.get(node.ownerAgentId);
-      if (!owner || owner.companyId !== companyId || !BLOCKER_ATTENTION_INVOKABLE_AGENT_STATUSES.has(owner.status)) {
-        return { covered: false, stalled: false, sampleBlockerIdentifier: nodeSample, sampleStalledBlockerIdentifier: null };
+      if (
+        !owner ||
+        owner.companyId !== companyId ||
+        !BLOCKER_ATTENTION_INVOKABLE_AGENT_STATUSES.has(owner.status)
+      ) {
+        return {
+          covered: false,
+          stalled: false,
+          sampleBlockerIdentifier: nodeSample,
+          sampleStalledBlockerIdentifier: null,
+        };
       }
     }
 
-    return { covered: false, stalled: false, sampleBlockerIdentifier: nodeSample, sampleStalledBlockerIdentifier: null };
+    return {
+      covered: false,
+      stalled: false,
+      sampleBlockerIdentifier: nodeSample,
+      sampleStalledBlockerIdentifier: null,
+    };
   };
 
   for (const root of roots) {
     const topLevelEdges = (edgesByTaskId.get(root.id) ?? []).filter(
-      (edge) => nodesById.get(edge.blockerTaskId)?.boardPresentationStatus !== "done",
+      (edge) =>
+        nodesById.get(edge.blockerTaskId)?.boardPresentationStatus !== "done",
     );
     if (topLevelEdges.length === 0) {
-      attentionMap.set(root.id, createTaskBlockerAttention({
-        state: "needs_attention",
-        reason: "attention_required",
-      }));
+      attentionMap.set(
+        root.id,
+        createTaskBlockerAttention({
+          state: "needs_attention",
+          reason: "attention_required",
+        }),
+      );
       continue;
     }
 
@@ -1520,13 +1687,23 @@ async function listTaskBlockerAttentionMap(
       edge,
       result: classifyPath(edge.blockerTaskId, new Set([root.id])),
     }));
-    const coveredBlockerCount = classified.filter((entry) => entry.result.covered).length;
-    const stalledBlockerCount = classified.filter((entry) => entry.result.stalled).length;
-    const attentionBlockerCount = classified.length - coveredBlockerCount - stalledBlockerCount;
-    const hardAttentionEntry = classified.find((entry) => !entry.result.covered && !entry.result.stalled);
+    const coveredBlockerCount = classified.filter(
+      (entry) => entry.result.covered,
+    ).length;
+    const stalledBlockerCount = classified.filter(
+      (entry) => entry.result.stalled,
+    ).length;
+    const attentionBlockerCount =
+      classified.length - coveredBlockerCount - stalledBlockerCount;
+    const hardAttentionEntry = classified.find(
+      (entry) => !entry.result.covered && !entry.result.stalled,
+    );
     const stalledEntry = classified.find((entry) => entry.result.stalled);
-    const sampleEntry = hardAttentionEntry ?? stalledEntry ?? classified[0] ?? null;
-    const sampleNode = sampleEntry ? nodesById.get(sampleEntry.edge.blockerTaskId) : null;
+    const sampleEntry =
+      hardAttentionEntry ?? stalledEntry ?? classified[0] ?? null;
+    const sampleNode = sampleEntry
+      ? nodesById.get(sampleEntry.edge.blockerTaskId)
+      : null;
     const sampleStalledFromChain = classified
       .map((entry) => entry.result.sampleStalledBlockerIdentifier)
       .find((value) => value);
@@ -1541,22 +1718,31 @@ async function listTaskBlockerAttentionMap(
       reason = "stalled_review";
     } else {
       state = "covered";
-      reason = topLevelEdges.every((edge) => nodesById.get(edge.blockerTaskId)?.parentId === root.id)
+      reason = topLevelEdges.every(
+        (edge) => nodesById.get(edge.blockerTaskId)?.parentId === root.id,
+      )
         ? "active_child"
         : "active_dependency";
     }
 
-    attentionMap.set(root.id, createTaskBlockerAttention({
-      state,
-      reason,
-      unresolvedBlockerCount: topLevelEdges.length,
-      coveredBlockerCount,
-      stalledBlockerCount,
-      attentionBlockerCount,
-      sampleBlockerIdentifier: sampleEntry?.result.sampleBlockerIdentifier ?? blockerSampleIdentifier(sampleNode),
-      sampleStalledBlockerIdentifier:
-        stalledEntry?.result.sampleStalledBlockerIdentifier ?? sampleStalledFromChain ?? null,
-    }));
+    attentionMap.set(
+      root.id,
+      createTaskBlockerAttention({
+        state,
+        reason,
+        unresolvedBlockerCount: topLevelEdges.length,
+        coveredBlockerCount,
+        stalledBlockerCount,
+        attentionBlockerCount,
+        sampleBlockerIdentifier:
+          sampleEntry?.result.sampleBlockerIdentifier ??
+          blockerSampleIdentifier(sampleNode),
+        sampleStalledBlockerIdentifier:
+          stalledEntry?.result.sampleStalledBlockerIdentifier ??
+          sampleStalledFromChain ??
+          null,
+      }),
+    );
   }
 
   return attentionMap;
@@ -1584,7 +1770,6 @@ const taskListSelect = {
   boardPresentationStatus: tasks.boardPresentationStatus,
   disposition: tasks.disposition,
   workMode: tasks.workMode,
-  harnessKind: tasks.harnessKind,
   priority: tasks.priority,
   ownerKind: tasks.ownerKind,
   ownerAgentId: tasks.ownerAgentId,
@@ -1640,9 +1825,7 @@ const taskListSelect = {
   updatedAt: tasks.updatedAt,
 };
 
-function withActiveRuns<
-  T extends Pick<TaskRow, "id">,
->(
+function withActiveRuns<T extends Pick<TaskRow, "id">>(
   taskRows: T[],
   runMap: Map<string, TaskActiveRunRow>,
 ): Array<T & { activeRun: TaskActiveRunRow | null }> {
@@ -1659,7 +1842,10 @@ async function userCommentStatsForTasks(
   taskIds: string[],
 ): Promise<TaskUserCommentStats[]> {
   const stats: TaskUserCommentStats[] = [];
-  for (const taskIdChunk of chunkList(taskIds, TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+  for (const taskIdChunk of chunkList(
+    taskIds,
+    TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+  )) {
     const rows = await dbOrTx
       .select({
         taskId: taskComments.taskId,
@@ -1695,7 +1881,10 @@ async function userReadStatsForTasks(
   taskIds: string[],
 ): Promise<TaskReadStat[]> {
   const stats: TaskReadStat[] = [];
-  for (const taskIdChunk of chunkList(taskIds, TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+  for (const taskIdChunk of chunkList(
+    taskIds,
+    TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+  )) {
     const rows = await dbOrTx
       .select({
         taskId: taskReadStates.taskId,
@@ -1720,7 +1909,10 @@ async function lastActivityStatsForTasks(
   taskIds: string[],
 ): Promise<TaskLastActivityStat[]> {
   const byTaskId = new Map<string, TaskLastActivityStat>();
-  for (const taskIdChunk of chunkList(taskIds, TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+  for (const taskIdChunk of chunkList(
+    taskIds,
+    TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+  )) {
     const [commentRows, logRows] = await Promise.all([
       dbOrTx
         .select({
@@ -1790,11 +1982,15 @@ async function blockedByMapForTasks(
     map.set(taskId, []);
   }
 
-  for (const taskIdChunk of chunkList(uniqueTaskIds, TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+  for (const taskIdChunk of chunkList(
+    uniqueTaskIds,
+    TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+  )) {
     const rows = await dbOrTx
       .select({
         currentTaskId: taskRelations.relatedTaskId,
         relatedId: tasks.id,
+        taskNumber: tasks.taskNumber,
         identifier: tasks.identifier,
         title: tasks.title,
         boardPresentationStatus: tasks.boardPresentationStatus,
@@ -1817,6 +2013,7 @@ async function blockedByMapForTasks(
       if (!blockedBy) continue;
       blockedBy.push({
         id: row.relatedId,
+        taskNumber: row.taskNumber,
         identifier: row.identifier,
         title: row.title,
         boardPresentationStatus:
@@ -1829,14 +2026,19 @@ async function blockedByMapForTasks(
   }
 
   for (const blockedBy of map.values()) {
-    blockedBy.sort((a, b) => taskRelationSortLabel(a).localeCompare(taskRelationSortLabel(b)));
+    blockedBy.sort((a, b) =>
+      taskRelationSortLabel(a).localeCompare(taskRelationSortLabel(b)),
+    );
   }
 
   return map;
 }
 
 const BLOCKED_INBOX_TERMINAL_STATUSES = ["done", "cancelled"] as const;
-const BLOCKED_INBOX_PENDING_APPROVAL_STATUSES = ["pending", "revision_requested"] as const;
+const BLOCKED_INBOX_PENDING_APPROVAL_STATUSES = [
+  "pending",
+  "revision_requested",
+] as const;
 
 type BlockedInboxTaskRow = TaskRow & {
   labels?: TaskLabelRow[];
@@ -1848,13 +2050,26 @@ type BlockedInboxApprovalRow = {
   createdAt: Date;
 };
 
-function taskRef(row: Pick<
-  TaskRow,
-  "id" | "identifier" | "title" | "boardPresentationStatus" | "priority" | "ownerAgentId" | "ownerUserId"
-> | null | undefined): TaskBlockedInboxTaskRef | null {
+function taskRef(
+  row:
+    | Pick<
+        TaskRow,
+        | "id"
+        | "taskNumber"
+        | "identifier"
+        | "title"
+        | "boardPresentationStatus"
+        | "priority"
+        | "ownerAgentId"
+        | "ownerUserId"
+      >
+    | null
+    | undefined,
+): TaskBlockedInboxTaskRef | null {
   if (!row) return null;
   return {
     id: row.id,
+    taskNumber: row.taskNumber,
     identifier: row.identifier,
     title: row.title,
     boardPresentationStatus: row.boardPresentationStatus,
@@ -1864,7 +2079,10 @@ function taskRef(row: Pick<
   };
 }
 
-function hasPlanDocumentCondition(companyId: string, hasPlanDocument: boolean): SQL {
+function hasPlanDocumentCondition(
+  companyId: string,
+  hasPlanDocument: boolean,
+): SQL {
   const existsPlanDocument = sql<boolean>`
     EXISTS (
       SELECT 1
@@ -1874,7 +2092,9 @@ function hasPlanDocumentCondition(companyId: string, hasPlanDocument: boolean): 
         AND ${taskDocuments.key} = 'plan'
     )
   `;
-  return hasPlanDocument ? existsPlanDocument : sql<boolean>`NOT ${existsPlanDocument}`;
+  return hasPlanDocument
+    ? existsPlanDocument
+    : sql<boolean>`NOT ${existsPlanDocument}`;
 }
 
 function isoDate(value: Date | string | null | undefined): string | null {
@@ -1908,10 +2128,10 @@ function attentionBase(input: {
     leafTask: input.leafTask ?? null,
     approvalId: input.approvalId ?? null,
     sampleTaskIdentifier:
-      input.sampleTaskIdentifier
-      ?? input.leafTask?.identifier
-      ?? input.sourceTask?.identifier
-      ?? null,
+      input.sampleTaskIdentifier ??
+      input.leafTask?.identifier ??
+      input.sourceTask?.identifier ??
+      null,
     redaction: {
       externalDetailsRedacted: input.externalDetailsRedacted ?? false,
       secretFieldsOmitted: true,
@@ -1919,10 +2139,14 @@ function attentionBase(input: {
   };
 }
 
-function externalWaitFromRequest(request: string | null): { owner: string; action: string } | null {
+function externalWaitFromRequest(
+  request: string | null,
+): { owner: string; action: string } | null {
   if (!request) return null;
   const owner = request.match(/^\s*external owner\s*:\s*(.+)$/im)?.[1]?.trim();
-  const action = request.match(/^\s*external action\s*:\s*(.+)$/im)?.[1]?.trim();
+  const action = request
+    .match(/^\s*external action\s*:\s*(.+)$/im)?.[1]
+    ?.trim();
   if (!owner || !action) return null;
   return {
     owner: owner.slice(0, 120),
@@ -1946,14 +2170,20 @@ function redactExternalWaitRequest(
 
   for (const value of [external?.owner, external?.action]) {
     if (!value) continue;
-    redacted = redacted.replace(new RegExp(escapeRegExp(value), "gi"), "[redacted external wait detail]");
+    redacted = redacted.replace(
+      new RegExp(escapeRegExp(value), "gi"),
+      "[redacted external wait detail]",
+    );
   }
 
   redacted = redacted.replace(/\n{3,}/g, "\n\n").trim();
   return redacted.length > 0 ? redacted : null;
 }
 
-function blockedInboxResponseRequest(attention: TaskBlockedInboxAttention, row: BlockedInboxTaskRow) {
+function blockedInboxResponseRequest(
+  attention: TaskBlockedInboxAttention,
+  row: BlockedInboxTaskRow,
+) {
   if (!attention.redaction.externalDetailsRedacted) return row.request;
   return (
     redactExternalWaitRequest(
@@ -1963,7 +2193,10 @@ function blockedInboxResponseRequest(attention: TaskBlockedInboxAttention, row: 
   );
 }
 
-function blockedInboxSearchText(attention: TaskBlockedInboxAttention, row: BlockedInboxTaskRow) {
+function blockedInboxSearchText(
+  attention: TaskBlockedInboxAttention,
+  row: BlockedInboxTaskRow,
+) {
   return [
     row.identifier,
     row.title,
@@ -1976,12 +2209,16 @@ function blockedInboxSearchText(attention: TaskBlockedInboxAttention, row: Block
     attention.action.label,
     attention.action.detail,
   ]
-    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .filter(
+      (value): value is string => typeof value === "string" && value.length > 0,
+    )
     .join(" ")
     .toLowerCase();
 }
 
-function blockedInboxSeverityRank(severity: TaskBlockedInboxAttention["severity"]) {
+function blockedInboxSeverityRank(
+  severity: TaskBlockedInboxAttention["severity"],
+) {
   switch (severity) {
     case "critical":
       return 0;
@@ -2010,13 +2247,20 @@ function taskPriorityRank(priority: string) {
 }
 
 function compareBlockedInboxRows(
-  left: BlockedInboxTaskRow & { blockedInboxAttention: TaskBlockedInboxAttention; lastActivityAt?: Date | null },
-  right: BlockedInboxTaskRow & { blockedInboxAttention: TaskBlockedInboxAttention; lastActivityAt?: Date | null },
+  left: BlockedInboxTaskRow & {
+    blockedInboxAttention: TaskBlockedInboxAttention;
+    lastActivityAt?: Date | null;
+  },
+  right: BlockedInboxTaskRow & {
+    blockedInboxAttention: TaskBlockedInboxAttention;
+    lastActivityAt?: Date | null;
+  },
 ) {
   const leftAttention = left.blockedInboxAttention;
   const rightAttention = right.blockedInboxAttention;
-  const severity = blockedInboxSeverityRank(leftAttention.severity)
-    - blockedInboxSeverityRank(rightAttention.severity);
+  const severity =
+    blockedInboxSeverityRank(leftAttention.severity) -
+    blockedInboxSeverityRank(rightAttention.severity);
   if (severity !== 0) return severity;
 
   const leftStopped = leftAttention.stoppedSinceAt
@@ -2027,11 +2271,16 @@ function compareBlockedInboxRows(
     : Number.POSITIVE_INFINITY;
   if (leftStopped !== rightStopped) return leftStopped - rightStopped;
 
-  const priority = taskPriorityRank(left.priority) - taskPriorityRank(right.priority);
+  const priority =
+    taskPriorityRank(left.priority) - taskPriorityRank(right.priority);
   if (priority !== 0) return priority;
 
-  const leftActivity = left.lastActivityAt ? new Date(left.lastActivityAt).getTime() : new Date(left.updatedAt).getTime();
-  const rightActivity = right.lastActivityAt ? new Date(right.lastActivityAt).getTime() : new Date(right.updatedAt).getTime();
+  const leftActivity = left.lastActivityAt
+    ? new Date(left.lastActivityAt).getTime()
+    : new Date(left.updatedAt).getTime();
+  const rightActivity = right.lastActivityAt
+    ? new Date(right.lastActivityAt).getTime()
+    : new Date(right.updatedAt).getTime();
   if (leftActivity !== rightActivity) return rightActivity - leftActivity;
 
   return right.id.localeCompare(left.id);
@@ -2054,25 +2303,32 @@ async function listTaskBlockedInboxAttentionMap(
     })
     .from(taskApprovals)
     .innerJoin(approvals, eq(taskApprovals.approvalId, approvals.id))
-    .where(and(
-      eq(taskApprovals.companyId, companyId),
-      eq(approvals.companyId, companyId),
-      inArray(approvals.status, [...BLOCKED_INBOX_PENDING_APPROVAL_STATUSES]),
-      inArray(taskApprovals.taskId, rowTaskIds),
-    ));
-  const blockerAttention = await listTaskBlockerAttentionMap(dbOrTx, companyId, taskRows);
+    .where(
+      and(
+        eq(taskApprovals.companyId, companyId),
+        eq(approvals.companyId, companyId),
+        inArray(approvals.status, [...BLOCKED_INBOX_PENDING_APPROVAL_STATUSES]),
+        inArray(taskApprovals.taskId, rowTaskIds),
+      ),
+    );
+  const blockerAttention = await listTaskBlockerAttentionMap(
+    dbOrTx,
+    companyId,
+    taskRows,
+  );
 
   const approvalByTaskId = new Map<string, BlockedInboxApprovalRow>();
   for (const row of approvalRows) {
-    if (!approvalByTaskId.has(row.taskId)) approvalByTaskId.set(row.taskId, row);
+    if (!approvalByTaskId.has(row.taskId))
+      approvalByTaskId.set(row.taskId, row);
   }
   for (const row of taskRows) {
     if (
-      row.companyId !== companyId
-      || BLOCKED_INBOX_TERMINAL_STATUSES.includes(
-        row.boardPresentationStatus as typeof BLOCKED_INBOX_TERMINAL_STATUSES[number],
-      )
-      || row.hiddenAt
+      row.companyId !== companyId ||
+      BLOCKED_INBOX_TERMINAL_STATUSES.includes(
+        row.boardPresentationStatus as (typeof BLOCKED_INBOX_TERMINAL_STATUSES)[number],
+      ) ||
+      row.hiddenAt
     ) {
       continue;
     }
@@ -2080,84 +2336,91 @@ async function listTaskBlockedInboxAttentionMap(
 
     const approval = approvalByTaskId.get(row.id);
     if (approval) {
-      result.set(row.id, attentionBase({
-        state: "awaiting_decision",
-        reason: "pending_board_decision",
-        severity: "medium",
-        stoppedSinceAt: approval.createdAt,
-        owner: { type: "board", agentId: null, userId: null, label: "Board" },
-        action: {
-          label: "Decide approval",
-          detail: "Approve, reject, or request revision on the linked approval.",
-        },
-        sourceTask: source,
-        approvalId: approval.approvalId,
-      }));
+      result.set(
+        row.id,
+        attentionBase({
+          state: "awaiting_decision",
+          reason: "pending_board_decision",
+          severity: "medium",
+          stoppedSinceAt: approval.createdAt,
+          owner: { type: "board", agentId: null, userId: null, label: "Board" },
+          action: {
+            label: "Decide approval",
+            detail:
+              "Approve, reject, or request revision on the linked approval.",
+          },
+          sourceTask: source,
+          approvalId: approval.approvalId,
+        }),
+      );
       continue;
     }
 
-    const hasMonitor = Boolean(row.monitorNextCheckAt && row.monitorNextCheckAt.getTime() > Date.now());
+    const hasMonitor = Boolean(
+      row.monitorNextCheckAt && row.monitorNextCheckAt.getTime() > Date.now(),
+    );
     const external =
       row.boardPresentationStatus === "blocked" && !hasMonitor
         ? externalWaitFromRequest(row.request)
         : null;
     if (external) {
-      result.set(row.id, attentionBase({
-        state: "external_wait",
-        reason: "external_owner_action",
-        severity: "medium",
-        stoppedSinceAt: row.updatedAt,
-        owner: { type: "external", agentId: null, userId: null, label: null },
-        action: {
-          label: "External owner action",
-          detail: null,
-        },
-        sourceTask: source,
-        externalDetailsRedacted: true,
-      }));
+      result.set(
+        row.id,
+        attentionBase({
+          state: "external_wait",
+          reason: "external_owner_action",
+          severity: "medium",
+          stoppedSinceAt: row.updatedAt,
+          owner: { type: "external", agentId: null, userId: null, label: null },
+          action: {
+            label: "External owner action",
+            detail: null,
+          },
+          sourceTask: source,
+          externalDetailsRedacted: true,
+        }),
+      );
       continue;
     }
 
     const blockerState = blockerAttention.get(row.id);
     if (
-      row.boardPresentationStatus === "blocked"
-      && (
-        blockerState?.state === "needs_attention"
-        || blockerState?.state === "stalled"
-      )
+      row.boardPresentationStatus === "blocked" &&
+      (blockerState?.state === "needs_attention" ||
+        blockerState?.state === "stalled")
     ) {
-      result.set(row.id, attentionBase({
-        state: "needs_attention",
-        reason: "blocked_chain_stalled",
-        severity: "high",
-        stoppedSinceAt: row.updatedAt,
-        owner: { type: "unknown", agentId: null, userId: null, label: null },
-        action: {
-          label: "Inspect blocker chain",
-          detail: "Inspect the stalled blocker or review leaf and make the next owner/action explicit.",
-        },
-        sourceTask: source,
-        sampleTaskIdentifier: blockerState.sampleStalledBlockerIdentifier ?? blockerState.sampleBlockerIdentifier,
-      }));
+      result.set(
+        row.id,
+        attentionBase({
+          state: "needs_attention",
+          reason: "blocked_chain_stalled",
+          severity: "high",
+          stoppedSinceAt: row.updatedAt,
+          owner: { type: "unknown", agentId: null, userId: null, label: null },
+          action: {
+            label: "Inspect blocker chain",
+            detail:
+              "Inspect the stalled blocker or review leaf and make the next owner/action explicit.",
+          },
+          sourceTask: source,
+          sampleTaskIdentifier:
+            blockerState.sampleStalledBlockerIdentifier ??
+            blockerState.sampleBlockerIdentifier,
+        }),
+      );
     }
   }
 
   return result;
 }
 
-function parseTaskOwnerAgentFilter(
+function taskOwnerAgentFilter(
   ownerAgentId: TaskFilters["ownerAgentId"],
 ): string | null | undefined {
-  const normalizedRaw = typeof ownerAgentId === "string" ? ownerAgentId.trim() : ownerAgentId;
-  const normalized = normalizedRaw === "" ? undefined : normalizedRaw;
-  if (typeof normalized !== "string") return normalized;
-  return normalized.toLowerCase() === "null" ? null : normalized;
-}
-
-function assertValidOwnerAgentFilter(ownerAgentFilter: string | null | undefined) {
-  if (typeof ownerAgentFilter === "string" && !isUuidLike(ownerAgentFilter)) {
-    throw unprocessable("ownerAgentId must be a UUID or 'null'");
+  if (typeof ownerAgentId === "string" && !isCanonicalUuid(ownerAgentId)) {
+    throw unprocessable("ownerAgentId must be an exact canonical UUID");
   }
+  return ownerAgentId;
 }
 
 async function blockedInboxTaskConditions(
@@ -2168,12 +2431,15 @@ async function blockedInboxTaskConditions(
   const conditions = [
     eq(tasks.companyId, companyId),
     visibleTaskCondition(),
-    notInArray(tasks.boardPresentationStatus, [...BLOCKED_INBOX_TERMINAL_STATUSES]),
+    notInArray(tasks.boardPresentationStatus, [
+      ...BLOCKED_INBOX_TERMINAL_STATUSES,
+    ]),
   ];
-  const touchedByUserId = filters?.touchedByUserId?.trim() || undefined;
-  const inboxArchivedByUserId = filters?.inboxArchivedByUserId?.trim() || undefined;
-  const unreadForUserId = filters?.unreadForUserId?.trim() || undefined;
-  const contextUserId = unreadForUserId ?? touchedByUserId ?? inboxArchivedByUserId;
+  const touchedByUserId = filters?.touchedByUserId;
+  const inboxArchivedByUserId = filters?.inboxArchivedByUserId;
+  const unreadForUserId = filters?.unreadForUserId;
+  const contextUserId =
+    unreadForUserId ?? touchedByUserId ?? inboxArchivedByUserId;
 
   if (filters?.descendantOf) {
     conditions.push(sql<boolean>`
@@ -2193,42 +2459,76 @@ async function blockedInboxTaskConditions(
       )
     `);
   }
-  const lowTrustCondition = lowTrustBoundaryTaskCondition(companyId, filters?.lowTrustBoundary);
+  const lowTrustCondition = lowTrustBoundaryTaskCondition(
+    companyId,
+    filters?.lowTrustBoundary,
+  );
   if (lowTrustCondition) conditions.push(lowTrustCondition);
-  const statuses = parseStatusFilter(filters?.status);
+  const statuses = filters?.status ?? [];
   if (statuses.length > 0) {
-    conditions.push(statuses.length === 1 ? eq(tasks.boardPresentationStatus, statuses[0]!) : inArray(tasks.boardPresentationStatus, statuses));
+    conditions.push(
+      statuses.length === 1
+        ? eq(tasks.boardPresentationStatus, statuses[0]!)
+        : inArray(tasks.boardPresentationStatus, statuses),
+    );
   }
-  const ownerAgentFilter = parseTaskOwnerAgentFilter(filters?.ownerAgentId);
-  assertValidOwnerAgentFilter(ownerAgentFilter);
+  const ownerAgentFilter = taskOwnerAgentFilter(filters?.ownerAgentId);
   if (ownerAgentFilter === null) {
     conditions.push(isNull(tasks.ownerAgentId));
   } else if (ownerAgentFilter) {
     conditions.push(eq(tasks.ownerAgentId, ownerAgentFilter));
   }
-  if (filters?.participantAgentId) conditions.push(participatedByAgentCondition(companyId, filters.participantAgentId));
-  if (filters?.ownerUserId) conditions.push(eq(tasks.ownerUserId, filters.ownerUserId));
-  if (touchedByUserId) conditions.push(touchedByUserCondition(companyId, touchedByUserId));
-  if (inboxArchivedByUserId) conditions.push(inboxVisibleForUserCondition(companyId, inboxArchivedByUserId));
-  if (unreadForUserId) conditions.push(unreadForUserCondition(companyId, unreadForUserId));
-  if (filters?.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
+  if (filters?.participantAgentId)
+    conditions.push(
+      participatedByAgentCondition(companyId, filters.participantAgentId),
+    );
+  if (filters?.ownerUserId)
+    conditions.push(eq(tasks.ownerUserId, filters.ownerUserId));
+  if (touchedByUserId)
+    conditions.push(touchedByUserCondition(companyId, touchedByUserId));
+  if (inboxArchivedByUserId)
+    conditions.push(
+      inboxVisibleForUserCondition(companyId, inboxArchivedByUserId),
+    );
+  if (unreadForUserId)
+    conditions.push(unreadForUserCondition(companyId, unreadForUserId));
+  if (filters?.projectId)
+    conditions.push(eq(tasks.projectId, filters.projectId));
   if (filters?.parentId) conditions.push(eq(tasks.parentId, filters.parentId));
-  if (filters?.originKind) conditions.push(eq(tasks.originKind, filters.originKind));
-  if (filters?.originKindPrefix) conditions.push(like(tasks.originKind, `${filters.originKindPrefix}%`));
+  if (filters?.originKind)
+    conditions.push(eq(tasks.originKind, filters.originKind));
   if (filters?.originId) conditions.push(eq(tasks.originId, filters.originId));
   if (filters?.hasPlanDocument !== undefined) {
-    conditions.push(hasPlanDocumentCondition(companyId, filters.hasPlanDocument));
+    conditions.push(
+      hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
+    );
   }
-  if (!shouldIncludePluginOperationTasks(filters)) conditions.push(nonPluginOperationTaskCondition());
+  if (!shouldIncludePluginOperationTasks(filters))
+    conditions.push(nonPluginOperationTaskCondition());
   if (filters?.labelId) {
     const labeledTaskIds = await dbOrTx
       .select({ taskId: taskLabels.taskId })
       .from(taskLabels)
-      .where(and(eq(taskLabels.companyId, companyId), eq(taskLabels.labelId, filters.labelId)));
-    if (labeledTaskIds.length === 0) return { conditions: [sql<boolean>`false`], contextUserId };
-    conditions.push(inArray(tasks.id, labeledTaskIds.map((row: { taskId: string }) => row.taskId)));
+      .where(
+        and(
+          eq(taskLabels.companyId, companyId),
+          eq(taskLabels.labelId, filters.labelId),
+        ),
+      );
+    if (labeledTaskIds.length === 0)
+      return { conditions: [sql<boolean>`false`], contextUserId };
+    conditions.push(
+      inArray(
+        tasks.id,
+        labeledTaskIds.map((row: { taskId: string }) => row.taskId),
+      ),
+    );
   }
-  if (filters?.excludeRoutineExecutions && !filters?.originKind && !filters?.originId) {
+  if (
+    filters?.excludeRoutineExecutions &&
+    !filters?.originKind &&
+    !filters?.originId
+  ) {
     conditions.push(ne(tasks.originKind, "routine_execution"));
   }
 
@@ -2239,33 +2539,53 @@ async function listBlockedInboxTasks(
   dbOrTx: any,
   companyId: string,
   filters?: TaskFilters,
-): Promise<Array<CanonicalTaskWithLabelsAndRun & {
-  blockedBy?: TaskRelationTaskSummary[];
-  blockerAttention?: TaskBlockerAttention;
-  blockedInboxAttention: TaskBlockedInboxAttention;
-  liveDescendantCount?: number;
-  lastActivityAt: Date;
-  myLastTouchAt?: Date | null;
-  lastExternalCommentAt?: Date | null;
-  isUnreadForMe?: boolean;
-}>> {
-  const { conditions, contextUserId } = await blockedInboxTaskConditions(dbOrTx, companyId, filters);
+): Promise<
+  Array<
+    CanonicalTaskWithLabelsAndRun & {
+      blockedBy?: TaskRelationTaskSummary[];
+      blockerAttention?: TaskBlockerAttention;
+      blockedInboxAttention: TaskBlockedInboxAttention;
+      liveDescendantCount?: number;
+      lastActivityAt: Date;
+      myLastTouchAt?: Date | null;
+      lastExternalCommentAt?: Date | null;
+      isUnreadForMe?: boolean;
+    }
+  >
+> {
+  const { conditions, contextUserId } = await blockedInboxTaskConditions(
+    dbOrTx,
+    companyId,
+    filters,
+  );
 
-  const rows: CanonicalTaskListRow[] = (await dbOrTx
-    .select(taskListSelect)
-    .from(tasks)
-    .where(and(...conditions))
-    .orderBy(desc(taskCanonicalLastActivityAtExpr(companyId)), desc(tasks.updatedAt), desc(tasks.id)))
-    .map((row: CanonicalTaskListRow) => ({
-      ...row,
-      request: decodeDatabaseTextPreview(row.request, TASK_LIST_REQUEST_MAX_CHARS),
-    }));
+  const rows: CanonicalTaskListRow[] = (
+    await dbOrTx
+      .select(taskListSelect)
+      .from(tasks)
+      .where(and(...conditions))
+      .orderBy(
+        desc(taskCanonicalLastActivityAtExpr(companyId)),
+        desc(tasks.updatedAt),
+        desc(tasks.id),
+      )
+  ).map((row: CanonicalTaskListRow) => ({
+    ...row,
+    request: decodeDatabaseTextPreview(
+      row.request,
+      TASK_LIST_REQUEST_MAX_CHARS,
+    ),
+  }));
   const withLabels = await withTaskLabels(dbOrTx, rows);
-  const withRuns = withActiveRuns(withLabels, await activeRunMapForTasks(dbOrTx, withLabels));
+  const withRuns = withActiveRuns(
+    withLabels,
+    await activeRunMapForTasks(dbOrTx, withLabels),
+  );
   if (withRuns.length === 0) return [];
 
   const taskIds = withRuns.map((row) => row.id);
-  const includeLiveDescendantSummary = filters?.includeLiveDescendantSummary === true;
+  const includeLiveDescendantSummary =
+    filters?.includeLiveDescendantSummary === true;
   const [
     statsRows,
     readRows,
@@ -2275,8 +2595,12 @@ async function listBlockedInboxTasks(
     blockedInboxAttentionByTaskId,
     liveDescendantCountByTaskId,
   ] = await Promise.all([
-    contextUserId ? userCommentStatsForTasks(dbOrTx, companyId, contextUserId, taskIds) : Promise.resolve([]),
-    contextUserId ? userReadStatsForTasks(dbOrTx, companyId, contextUserId, taskIds) : Promise.resolve([]),
+    contextUserId
+      ? userCommentStatsForTasks(dbOrTx, companyId, contextUserId, taskIds)
+      : Promise.resolve([]),
+    contextUserId
+      ? userReadStatsForTasks(dbOrTx, companyId, contextUserId, taskIds)
+      : Promise.resolve([]),
     lastActivityStatsForTasks(dbOrTx, companyId, taskIds),
     blockedByMapForTasks(dbOrTx, companyId, taskIds),
     listTaskBlockerAttentionMap(dbOrTx, companyId, withRuns),
@@ -2286,71 +2610,110 @@ async function listBlockedInboxTasks(
       : Promise.resolve(new Map<string, number>()),
   ]);
 
-  const rawSearchInput = filters?.q?.trim() ?? "";
+  const rawSearchInput = filters?.q ?? "";
   const rawSearch = rawSearchInput.toLowerCase();
   const commentSearchMatchTaskIds = new Set<string>();
   if (rawSearchInput) {
     const containsPattern = `%${escapeLikePattern(rawSearchInput)}%`;
-    for (const taskIdChunk of chunkList(taskIds, TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+    for (const taskIdChunk of chunkList(
+      taskIds,
+      TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+    )) {
       const rows = await dbOrTx
         .select({ taskId: taskComments.taskId })
         .from(taskComments)
-        .where(and(
-          eq(taskComments.companyId, companyId),
-          inArray(taskComments.taskId, taskIdChunk),
-          sql<boolean>`${taskComments.body} ILIKE ${containsPattern} ESCAPE '\\'`,
-        ));
-      for (const row of rows as Array<{ taskId: string }>) commentSearchMatchTaskIds.add(row.taskId);
+        .where(
+          and(
+            eq(taskComments.companyId, companyId),
+            inArray(taskComments.taskId, taskIdChunk),
+            sql<boolean>`${taskComments.body} ILIKE ${containsPattern} ESCAPE '\\'`,
+          ),
+        );
+      for (const row of rows as Array<{ taskId: string }>)
+        commentSearchMatchTaskIds.add(row.taskId);
     }
   }
   const statsByTaskId = new Map(statsRows.map((row) => [row.taskId, row]));
-  const readByTaskId = new Map(readRows.map((row) => [row.taskId, row.myLastReadAt]));
-  const lastActivityByTaskId = new Map(lastActivityRows.map((row) => [row.taskId, row]));
+  const readByTaskId = new Map(
+    readRows.map((row) => [row.taskId, row.myLastReadAt]),
+  );
+  const lastActivityByTaskId = new Map(
+    lastActivityRows.map((row) => [row.taskId, row]),
+  );
 
-  const enriched = withRuns.flatMap((row) => {
-    const blockedInboxAttention = blockedInboxAttentionByTaskId.get(row.id);
-    if (!blockedInboxAttention) return [];
-    if (
-      rawSearch
-      && !blockedInboxSearchText(blockedInboxAttention, row).includes(rawSearch)
-      && !commentSearchMatchTaskIds.has(row.id)
-    ) return [];
+  const enriched = withRuns
+    .flatMap((row) => {
+      const blockedInboxAttention = blockedInboxAttentionByTaskId.get(row.id);
+      if (!blockedInboxAttention) return [];
+      if (
+        rawSearch &&
+        !blockedInboxSearchText(blockedInboxAttention, row).includes(
+          rawSearch,
+        ) &&
+        !commentSearchMatchTaskIds.has(row.id)
+      )
+        return [];
 
-    const activity = lastActivityByTaskId.get(row.id);
-    const lastActivityAt = latestTaskActivityAt(
-      row.updatedAt,
-      activity?.latestCommentAt ?? null,
-      activity?.latestLogAt ?? null,
-    ) ?? row.updatedAt;
-    return [{
-      ...row,
-      request: blockedInboxResponseRequest(blockedInboxAttention, row),
-      blockedBy: blockedByMap.get(row.id) ?? [],
-      lastActivityAt,
-      ...(blockerAttentionByTaskId.has(row.id) ? { blockerAttention: blockerAttentionByTaskId.get(row.id) } : {}),
-      blockedInboxAttention,
-      ...(includeLiveDescendantSummary ? { liveDescendantCount: liveDescendantCountByTaskId.get(row.id) ?? 0 } : {}),
-      ...(contextUserId
-        ? deriveTaskUserContext(row, contextUserId, {
-            myLastCommentAt: statsByTaskId.get(row.id)?.myLastCommentAt ?? null,
-            myLastReadAt: readByTaskId.get(row.id) ?? null,
-            lastExternalCommentAt: statsByTaskId.get(row.id)?.lastExternalCommentAt ?? null,
-          })
-        : {}),
-    }];
-  }).sort(compareBlockedInboxRows);
+      const activity = lastActivityByTaskId.get(row.id);
+      const lastActivityAt =
+        latestTaskActivityAt(
+          row.updatedAt,
+          activity?.latestCommentAt ?? null,
+          activity?.latestLogAt ?? null,
+        ) ?? row.updatedAt;
+      return [
+        {
+          ...row,
+          request: blockedInboxResponseRequest(blockedInboxAttention, row),
+          blockedBy: blockedByMap.get(row.id) ?? [],
+          lastActivityAt,
+          ...(blockerAttentionByTaskId.has(row.id)
+            ? { blockerAttention: blockerAttentionByTaskId.get(row.id) }
+            : {}),
+          blockedInboxAttention,
+          ...(includeLiveDescendantSummary
+            ? {
+                liveDescendantCount:
+                  liveDescendantCountByTaskId.get(row.id) ?? 0,
+              }
+            : {}),
+          ...(contextUserId
+            ? deriveTaskUserContext(row, contextUserId, {
+                myLastCommentAt:
+                  statsByTaskId.get(row.id)?.myLastCommentAt ?? null,
+                myLastReadAt: readByTaskId.get(row.id) ?? null,
+                lastExternalCommentAt:
+                  statsByTaskId.get(row.id)?.lastExternalCommentAt ?? null,
+              })
+            : {}),
+        },
+      ];
+    })
+    .sort(compareBlockedInboxRows);
 
-  const offset = typeof filters?.offset === "number" && Number.isFinite(filters.offset)
-    ? Math.max(0, Math.floor(filters.offset))
-    : 0;
-  const limit = typeof filters?.limit === "number" && Number.isFinite(filters.limit)
-    ? Math.max(1, Math.floor(filters.limit))
-    : undefined;
-  return limit === undefined ? enriched.slice(offset) : enriched.slice(offset, offset + limit);
+  const offset =
+    typeof filters?.offset === "number" && Number.isFinite(filters.offset)
+      ? Math.max(0, Math.floor(filters.offset))
+      : 0;
+  const limit =
+    typeof filters?.limit === "number" && Number.isFinite(filters.limit)
+      ? Math.max(1, Math.floor(filters.limit))
+      : undefined;
+  return limit === undefined
+    ? enriched.slice(offset)
+    : enriched.slice(offset, offset + limit);
 }
 
-async function countBlockedInboxTasks(dbOrTx: any, companyId: string, filters?: TaskFilters): Promise<number> {
-  const { conditions } = await blockedInboxTaskConditions(dbOrTx, companyId, filters);
+async function countBlockedInboxTasks(
+  dbOrTx: any,
+  companyId: string,
+  filters?: TaskFilters,
+): Promise<number> {
+  const { conditions } = await blockedInboxTaskConditions(
+    dbOrTx,
+    companyId,
+    filters,
+  );
   const rawRows = (await dbOrTx
     .select()
     .from(tasks)
@@ -2358,23 +2721,33 @@ async function countBlockedInboxTasks(dbOrTx: any, companyId: string, filters?: 
   if (rawRows.length === 0) return 0;
   const rows = await withTaskLabels(dbOrTx, rawRows);
 
-  const blockedInboxAttentionByTaskId = await listTaskBlockedInboxAttentionMap(dbOrTx, companyId, rows);
-  const rawSearchInput = filters?.q?.trim() ?? "";
+  const blockedInboxAttentionByTaskId = await listTaskBlockedInboxAttentionMap(
+    dbOrTx,
+    companyId,
+    rows,
+  );
+  const rawSearchInput = filters?.q ?? "";
   const rawSearch = rawSearchInput.toLowerCase();
   const commentSearchMatchTaskIds = new Set<string>();
   if (rawSearchInput) {
     const taskIds = rows.map((row) => row.id);
     const containsPattern = `%${escapeLikePattern(rawSearchInput)}%`;
-    for (const taskIdChunk of chunkList(taskIds, TASK_LIST_RELATED_QUERY_CHUNK_SIZE)) {
+    for (const taskIdChunk of chunkList(
+      taskIds,
+      TASK_LIST_RELATED_QUERY_CHUNK_SIZE,
+    )) {
       const commentRows = await dbOrTx
         .select({ taskId: taskComments.taskId })
         .from(taskComments)
-        .where(and(
-          eq(taskComments.companyId, companyId),
-          inArray(taskComments.taskId, taskIdChunk),
-          sql<boolean>`${taskComments.body} ILIKE ${containsPattern} ESCAPE '\\'`,
-        ));
-      for (const row of commentRows as Array<{ taskId: string }>) commentSearchMatchTaskIds.add(row.taskId);
+        .where(
+          and(
+            eq(taskComments.companyId, companyId),
+            inArray(taskComments.taskId, taskIdChunk),
+            sql<boolean>`${taskComments.body} ILIKE ${containsPattern} ESCAPE '\\'`,
+          ),
+        );
+      for (const row of commentRows as Array<{ taskId: string }>)
+        commentSearchMatchTaskIds.add(row.taskId);
     }
   }
 
@@ -2382,10 +2755,11 @@ async function countBlockedInboxTasks(dbOrTx: any, companyId: string, filters?: 
     const attention = blockedInboxAttentionByTaskId.get(row.id);
     if (!attention) return count;
     if (
-      rawSearch
-      && !blockedInboxSearchText(attention, row).includes(rawSearch)
-      && !commentSearchMatchTaskIds.has(row.id)
-    ) return count;
+      rawSearch &&
+      !blockedInboxSearchText(attention, row).includes(rawSearch) &&
+      !commentSearchMatchTaskIds.has(row.id)
+    )
+      return count;
     return count + 1;
   }, 0);
 }
@@ -2404,23 +2778,37 @@ export function taskService(db: Db) {
     return enriched;
   }
 
-  async function getTaskByIdentifier(identifier: string) {
-    const row = await db
+  async function getTaskByCompanyTaskNumber(
+    companyId: string,
+    taskNumber: number,
+  ) {
+    if (!isCanonicalUuid(companyId) || !isCanonicalTaskNumber(taskNumber)) {
+      return null;
+    }
+    const rows = await db
       .select()
       .from(tasks)
-      .where(eq(tasks.identifier, identifier.toUpperCase()))
-      .then((rows) => rows[0] ?? null);
-    if (!row) return null;
+      .where(
+        and(eq(tasks.companyId, companyId), eq(tasks.taskNumber, taskNumber)),
+      )
+      .limit(2);
+    if (rows.length === 0) return null;
+    if (rows.length > 1) {
+      throw new Error("Task number is not unique within its company");
+    }
+    const row = rows[0]!;
     const [enriched] = await withTaskLabels(db, [row]);
     return enriched;
   }
 
-  function redactTaskComment<T extends {
-    body: string;
-    authorType: TaskCommentAuthorType;
-    presentation?: unknown;
-    metadata?: unknown;
-  }>(
+  function redactTaskComment<
+    T extends {
+      body: string;
+      authorType: TaskCommentAuthorType;
+      presentation?: unknown;
+      metadata?: unknown;
+    },
+  >(
     comment: T,
     censorUsernameInLogs: boolean,
   ): T & {
@@ -2429,9 +2817,17 @@ export function taskService(db: Db) {
   } {
     return {
       ...comment,
-      body: redactCurrentUserText(comment.body, { enabled: censorUsernameInLogs }),
-      presentation: taskCommentPresentationSchema.nullable().catch(null).parse(comment.presentation ?? null),
-      metadata: taskCommentMetadataSchema.nullable().catch(null).parse(comment.metadata ?? null),
+      body: redactCurrentUserText(comment.body, {
+        enabled: censorUsernameInLogs,
+      }),
+      presentation: taskCommentPresentationSchema
+        .nullable()
+        .catch(null)
+        .parse(comment.presentation ?? null),
+      metadata: taskCommentMetadataSchema
+        .nullable()
+        .catch(null)
+        .parse(comment.metadata ?? null),
     };
   }
 
@@ -2442,19 +2838,24 @@ export function taskService(db: Db) {
   };
 
   async function loadBoardAuthorLabels(
-    comments: readonly Pick<
-      TaskCommentRow,
-      "authorAgentId" | "authorUserId"
-    >[],
+    comments: readonly Pick<TaskCommentRow, "authorAgentId" | "authorUserId">[],
     extraAgentIds: readonly (string | null)[] = [],
   ): Promise<BoardAuthorLabels> {
-    const agentIds = [...new Set([
-      ...comments.map((comment) => comment.authorAgentId),
-      ...extraAgentIds,
-    ].filter((value): value is string => Boolean(value)))];
-    const userIds = [...new Set(comments
-      .map((comment) => comment.authorUserId)
-      .filter((value): value is string => Boolean(value)))];
+    const agentIds = [
+      ...new Set(
+        [
+          ...comments.map((comment) => comment.authorAgentId),
+          ...extraAgentIds,
+        ].filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    const userIds = [
+      ...new Set(
+        comments
+          .map((comment) => comment.authorUserId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
     const [agentRows, userRows] = await Promise.all([
       agentIds.length > 0
         ? db
@@ -2478,20 +2879,18 @@ export function taskService(db: Db) {
   function boardCommentAuthor(
     comment: Pick<
       TaskCommentRow,
-      | "authorType"
-      | "authorAgentId"
-      | "authorUserId"
-      | "authorPluginKey"
+      "authorType" | "authorAgentId" | "authorUserId" | "authorPluginKey"
     >,
     labels: BoardAuthorLabels,
   ): BoardTaskCommentAuthor {
-    const label = comment.authorType === "agent"
-      ? labels.agents.get(comment.authorAgentId ?? "") ?? "Agent"
-      : comment.authorType === "user"
-        ? labels.users.get(comment.authorUserId ?? "") ?? "User"
-        : comment.authorType === "plugin"
-          ? comment.authorPluginKey ?? "Plugin"
-          : "Paperclip";
+    const label =
+      comment.authorType === "agent"
+        ? (labels.agents.get(comment.authorAgentId ?? "") ?? "Agent")
+        : comment.authorType === "user"
+          ? (labels.users.get(comment.authorUserId ?? "") ?? "User")
+          : comment.authorType === "plugin"
+            ? (comment.authorPluginKey ?? "Plugin")
+            : "Paperclip";
     return {
       type: comment.authorType,
       label,
@@ -2517,13 +2916,14 @@ export function taskService(db: Db) {
     const body = redactCurrentUserText(parent.body, {
       enabled: censorUsernameInLogs,
     });
-    const derivedBody = parent.presentation?.kind === "run_progress" && body.length === 0
-      ? parentRunState === "queued"
-        ? "Queued…"
-        : parentRunState === "working"
-          ? "Working…"
-          : "Run finished"
-      : body;
+    const derivedBody =
+      parent.presentation?.kind === "run_progress" && body.length === 0
+        ? parentRunState === "queued"
+          ? "Queued…"
+          : parentRunState === "working"
+            ? "Working…"
+            : "Run finished"
+        : body;
     return {
       authorLabel: author.label,
       excerpt: boardCommentExcerpt(derivedBody),
@@ -2569,15 +2969,19 @@ export function taskService(db: Db) {
     censorUsernameInLogs: boolean;
     parentRunStatus?: TaskExecutionRunStatus | null;
   }): BoardTaskRunSegmentEntry {
-    const data = input.message.data && typeof input.message.data === "object"
-      ? input.message.data as Record<string, unknown>
-      : {};
+    const data =
+      input.message.data && typeof input.message.data === "object"
+        ? (input.message.data as Record<string, unknown>)
+        : {};
     const content = Array.isArray(data.content) ? data.content : [];
     const parts: BoardTaskRunSegmentPart[] = [];
     for (const raw of content) {
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
       const part = raw as Record<string, unknown>;
-      if ((part.type === "text" || part.type === "reasoning") && typeof part.text === "string") {
+      if (
+        (part.type === "text" || part.type === "reasoning") &&
+        typeof part.text === "string"
+      ) {
         parts.push({
           type: part.type,
           text: redactCurrentUserText(part.text, {
@@ -2587,9 +2991,12 @@ export function taskService(db: Db) {
         continue;
       }
       if (part.type !== "tool" || typeof part.name !== "string") continue;
-      const state = part.state && typeof part.state === "object" && !Array.isArray(part.state)
-        ? part.state as Record<string, unknown>
-        : null;
+      const state =
+        part.state &&
+        typeof part.state === "object" &&
+        !Array.isArray(part.state)
+          ? (part.state as Record<string, unknown>)
+          : null;
       const status = state?.status;
       if (
         status === "pending" ||
@@ -2600,22 +3007,25 @@ export function taskService(db: Db) {
         parts.push({ type: "tool", name: part.name, status });
       }
     }
-    const time = data.time && typeof data.time === "object" && !Array.isArray(data.time)
-      ? data.time as Record<string, unknown>
-      : null;
+    const time =
+      data.time && typeof data.time === "object" && !Array.isArray(data.time)
+        ? (data.time as Record<string, unknown>)
+        : null;
     const complete = typeof time?.completed === "number";
     const hasError = Boolean(data.error) || data.finish === "error";
     const author: BoardTaskCommentAuthor = {
       type: "agent",
       label: input.message.agentId
-        ? input.labels.agents.get(input.message.agentId) ?? "Agent"
+        ? (input.labels.agents.get(input.message.agentId) ?? "Agent")
         : "Agent",
       agentId: input.message.agentId,
       userId: null,
       pluginKey: null,
     };
     const id = `segment_${createHash("sha256")
-      .update(`board-run-segment/v1\u0000${input.message.companyId}\u0000${input.message.taskId}\u0000${input.message.id}`)
+      .update(
+        `board-run-segment/v1\u0000${input.message.companyId}\u0000${input.message.taskId}\u0000${input.message.id}`,
+      )
       .digest("hex")
       .slice(0, 32)}`;
     return {
@@ -2639,17 +3049,19 @@ export function taskService(db: Db) {
   async function loadRunStatuses(
     runIds: readonly (string | null)[],
   ): Promise<Map<string, TaskExecutionRunStatus>> {
-    const ids = [...new Set(runIds.filter((value): value is string => Boolean(value)))];
+    const ids = [
+      ...new Set(runIds.filter((value): value is string => Boolean(value))),
+    ];
     if (ids.length === 0) return new Map();
-    const runs = await Promise.all(ids.map(async (runId) => {
-      const identity = await resolveTaskExecutionRunIdentityById(db, runId);
-      if (!identity) return null;
-      return readTaskExecutionRun(db, identity);
-    }));
+    const runs = await Promise.all(
+      ids.map(async (runId) => {
+        const identity = await resolveTaskExecutionRunIdentityById(db, runId);
+        if (!identity) return null;
+        return readTaskExecutionRun(db, identity);
+      }),
+    );
     return new Map(
-      runs
-        .filter((run) => run !== null)
-        .map((run) => [run.runId, run.status]),
+      runs.filter((run) => run !== null).map((run) => [run.runId, run.status]),
     );
   }
 
@@ -2657,10 +3069,12 @@ export function taskService(db: Db) {
     root: TaskCommentRow;
     cursor?: string | null;
     limit?: number | null;
-  }): Promise<BoardTaskCommentThreadPage & {
-    replyCount: number;
-    runSegmentCount: number;
-  }> {
+  }): Promise<
+    BoardTaskCommentThreadPage & {
+      replyCount: number;
+      runSegmentCount: number;
+    }
+  > {
     const { root } = input;
     const limit = boundedBoardCommentPageSize(
       input.limit,
@@ -2724,7 +3138,10 @@ export function taskService(db: Db) {
               })
               .from(taskSessionMessages)
               .where(and(...messageConditions))
-              .orderBy(asc(taskSessionMessages.seq), asc(taskSessionMessages.id))
+              .orderBy(
+                asc(taskSessionMessages.seq),
+                asc(taskSessionMessages.id),
+              )
               .limit(limit + 1)
           : Promise.resolve([]),
         db
@@ -2763,22 +3180,27 @@ export function taskService(db: Db) {
           : Promise.resolve({ count: 0 }),
       ]);
 
-    const parentIds = [...new Set([
-      ...descendantRows.map((comment) => comment.replyToCommentId),
-      ...assistantRows.map((row) => row.steeringParentCommentId ?? root.id),
-    ].filter((value): value is string => Boolean(value)))];
-    const parentRows = parentIds.length > 0
-      ? await db
-          .select()
-          .from(taskComments)
-          .where(
-            and(
-              eq(taskComments.companyId, root.companyId),
-              eq(taskComments.taskId, root.taskId),
-              inArray(taskComments.id, parentIds),
-            ),
-          )
-      : [];
+    const parentIds = [
+      ...new Set(
+        [
+          ...descendantRows.map((comment) => comment.replyToCommentId),
+          ...assistantRows.map((row) => row.steeringParentCommentId ?? root.id),
+        ].filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    const parentRows =
+      parentIds.length > 0
+        ? await db
+            .select()
+            .from(taskComments)
+            .where(
+              and(
+                eq(taskComments.companyId, root.companyId),
+                eq(taskComments.taskId, root.taskId),
+                inArray(taskComments.id, parentIds),
+              ),
+            )
+        : [];
     const parents = new Map(parentRows.map((comment) => [comment.id, comment]));
     const labels = await loadBoardAuthorLabels(
       [...descendantRows, ...parentRows],
@@ -2797,18 +3219,21 @@ export function taskService(db: Db) {
         ...projectBoardTaskComment({
           comment,
           parent: comment.replyToCommentId
-            ? parents.get(comment.replyToCommentId) ?? null
+            ? (parents.get(comment.replyToCommentId) ?? null)
             : null,
           labels,
           censorUsernameInLogs,
           runStatus: comment.runId ? runStatuses.get(comment.runId) : null,
           parentRunStatus: comment.replyToCommentId
-            ? runStatuses.get(parents.get(comment.replyToCommentId)?.runId ?? "")
+            ? runStatuses.get(
+                parents.get(comment.replyToCommentId)?.runId ?? "",
+              )
             : null,
         }),
       })),
       ...assistantRows.map((row) => {
-        const parent = parents.get(row.steeringParentCommentId ?? root.id) ?? root;
+        const parent =
+          parents.get(row.steeringParentCommentId ?? root.id) ?? root;
         return projectBoardRunSegment({
           message: row.message,
           parent,
@@ -2824,16 +3249,17 @@ export function taskService(db: Db) {
     const finalEntry = pageEntries.at(-1);
     return {
       entries: pageEntries,
-      nextCursor: entries.length > limit && finalEntry
-        ? encodeBoardCommentCursor({
-            version: 1,
-            kind: "thread",
-            taskId: root.taskId,
-            rootCommentId: root.id,
-            sequence: finalEntry.canonicalSequence,
-            id: finalEntry.id,
-          })
-        : null,
+      nextCursor:
+        entries.length > limit && finalEntry
+          ? encodeBoardCommentCursor({
+              version: 1,
+              kind: "thread",
+              taskId: root.taskId,
+              rootCommentId: root.id,
+              sequence: finalEntry.canonicalSequence,
+              id: finalEntry.id,
+            })
+          : null,
       replyCount: Number(replyCountRow.count),
       runSegmentCount: Number(runSegmentCountRow.count),
     };
@@ -2848,18 +3274,29 @@ export function taskService(db: Db) {
   async function loadBoardCommentThreadPages(
     roots: readonly TaskCommentRow[],
     limit: number,
-  ): Promise<Map<string, BoardTaskCommentThreadPage & {
-    replyCount: number;
-    runSegmentCount: number;
-  }>> {
-    const pages = new Map<string, BoardTaskCommentThreadPage & {
-      replyCount: number;
-      runSegmentCount: number;
-    }>();
+  ): Promise<
+    Map<
+      string,
+      BoardTaskCommentThreadPage & {
+        replyCount: number;
+        runSegmentCount: number;
+      }
+    >
+  > {
+    const pages = new Map<
+      string,
+      BoardTaskCommentThreadPage & {
+        replyCount: number;
+        runSegmentCount: number;
+      }
+    >();
     if (roots.length === 0) return pages;
 
     const rootIds = roots.map((root) => root.id);
-    const rootIdSql = sql.join(rootIds.map((id) => sql`${id}::uuid`), sql`, `);
+    const rootIdSql = sql.join(
+      rootIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
     type RankedCommentIdentity = {
       rootCommentId: string;
       sourceId: string;
@@ -2981,23 +3418,30 @@ export function taskService(db: Db) {
     const segmentIdentityByMessageId = new Map(
       segmentIdentities.map((row) => [row.sourceId, row]),
     );
-    const parentIds = [...new Set([
-      ...descendantRows.map((comment) => comment.replyToCommentId),
-      ...segmentIdentities.map((row) => row.steeringParentCommentId ?? row.rootCommentId),
-    ].filter((value): value is string => Boolean(value)))];
+    const parentIds = [
+      ...new Set(
+        [
+          ...descendantRows.map((comment) => comment.replyToCommentId),
+          ...segmentIdentities.map(
+            (row) => row.steeringParentCommentId ?? row.rootCommentId,
+          ),
+        ].filter((value): value is string => Boolean(value)),
+      ),
+    ];
     const missingParentIds = parentIds.filter((id) => !rootsById.has(id));
-    const parentRows = missingParentIds.length > 0
-      ? await db
-          .select()
-          .from(taskComments)
-          .where(
-            and(
-              eq(taskComments.companyId, roots[0]!.companyId),
-              eq(taskComments.taskId, roots[0]!.taskId),
-              inArray(taskComments.id, missingParentIds),
-            ),
-          )
-      : [];
+    const parentRows =
+      missingParentIds.length > 0
+        ? await db
+            .select()
+            .from(taskComments)
+            .where(
+              and(
+                eq(taskComments.companyId, roots[0]!.companyId),
+                eq(taskComments.taskId, roots[0]!.taskId),
+                inArray(taskComments.id, missingParentIds),
+              ),
+            )
+        : [];
     const parents = new Map([
       ...roots.map((root) => [root.id, root] as const),
       ...parentRows.map((parent) => [parent.id, parent] as const),
@@ -3036,54 +3480,66 @@ export function taskService(db: Db) {
       return Number.isSafeInteger(count) && count >= 0 ? count : 0;
     };
     for (const root of roots) {
-      const commentEntries = (commentsByRoot.get(root.id) ?? []).map((comment) => ({
-        kind: "comment" as const,
-        ...projectBoardTaskComment({
-          comment,
-          parent: comment.replyToCommentId
-            ? parents.get(comment.replyToCommentId) ?? null
-            : null,
-          labels,
-          censorUsernameInLogs: general.censorUsernameInLogs,
-          runStatus: comment.runId ? runStatuses.get(comment.runId) : null,
-          parentRunStatus: comment.replyToCommentId
-            ? runStatuses.get(parents.get(comment.replyToCommentId)?.runId ?? "")
-            : null,
+      const commentEntries = (commentsByRoot.get(root.id) ?? []).map(
+        (comment) => ({
+          kind: "comment" as const,
+          ...projectBoardTaskComment({
+            comment,
+            parent: comment.replyToCommentId
+              ? (parents.get(comment.replyToCommentId) ?? null)
+              : null,
+            labels,
+            censorUsernameInLogs: general.censorUsernameInLogs,
+            runStatus: comment.runId ? runStatuses.get(comment.runId) : null,
+            parentRunStatus: comment.replyToCommentId
+              ? runStatuses.get(
+                  parents.get(comment.replyToCommentId)?.runId ?? "",
+                )
+              : null,
+          }),
         }),
-      }));
-      const segmentEntries = (messagesByRoot.get(root.id) ?? []).map((message) => {
-        const identity = segmentIdentityByMessageId.get(message.id);
-        const parent = parents.get(
-          identity?.steeringParentCommentId ?? root.id,
-        ) ?? root;
-        return projectBoardRunSegment({
-          message,
-          parent,
-          labels,
-          censorUsernameInLogs: general.censorUsernameInLogs,
-          parentRunStatus: parent.runId ? runStatuses.get(parent.runId) : null,
-        });
-      });
-      const merged = [...commentEntries, ...segmentEntries].sort(compareCanonicalEntry);
+      );
+      const segmentEntries = (messagesByRoot.get(root.id) ?? []).map(
+        (message) => {
+          const identity = segmentIdentityByMessageId.get(message.id);
+          const parent =
+            parents.get(identity?.steeringParentCommentId ?? root.id) ?? root;
+          return projectBoardRunSegment({
+            message,
+            parent,
+            labels,
+            censorUsernameInLogs: general.censorUsernameInLogs,
+            parentRunStatus: parent.runId
+              ? runStatuses.get(parent.runId)
+              : null,
+          });
+        },
+      );
+      const merged = [...commentEntries, ...segmentEntries].sort(
+        compareCanonicalEntry,
+      );
       const entries = merged.slice(0, limit);
       const finalEntry = entries.at(-1);
       pages.set(root.id, {
         entries,
-        nextCursor: merged.length > limit && finalEntry
-          ? encodeBoardCommentCursor({
-              version: 1,
-              kind: "thread",
-              taskId: root.taskId,
-              rootCommentId: root.id,
-              sequence: finalEntry.canonicalSequence,
-              id: finalEntry.id,
-            })
-          : null,
+        nextCursor:
+          merged.length > limit && finalEntry
+            ? encodeBoardCommentCursor({
+                version: 1,
+                kind: "thread",
+                taskId: root.taskId,
+                rootCommentId: root.id,
+                sequence: finalEntry.canonicalSequence,
+                id: finalEntry.id,
+              })
+            : null,
         replyCount: countValue(
-          commentIdentities.find((row) => row.rootCommentId === root.id)?.totalCount,
+          commentIdentities.find((row) => row.rootCommentId === root.id)
+            ?.totalCount,
         ),
         runSegmentCount: countValue(
-          segmentIdentities.find((row) => row.rootCommentId === root.id)?.totalCount,
+          segmentIdentities.find((row) => row.rootCommentId === root.id)
+            ?.totalCount,
         ),
       });
     }
@@ -3095,6 +3551,13 @@ export function taskService(db: Db) {
     taskId: string;
     commentId: string;
   }): Promise<BoardTaskComment | null> {
+    if (
+      !isCanonicalUuid(input.companyId) ||
+      !isCanonicalUuid(input.taskId) ||
+      !isCanonicalUuid(input.commentId)
+    ) {
+      return null;
+    }
     const comment = await db
       .select()
       .from(taskComments)
@@ -3135,12 +3598,18 @@ export function taskService(db: Db) {
     });
   }
 
-  async function assertValidLabelIds(companyId: string, labelIds: string[], dbOrTx: any = db) {
+  async function assertValidLabelIds(
+    companyId: string,
+    labelIds: string[],
+    dbOrTx: any = db,
+  ) {
     if (labelIds.length === 0) return;
     const existing = await dbOrTx
       .select({ id: labels.id })
       .from(labels)
-      .where(and(eq(labels.companyId, companyId), inArray(labels.id, labelIds)));
+      .where(
+        and(eq(labels.companyId, companyId), inArray(labels.id, labelIds)),
+      );
     if (existing.length !== new Set(labelIds).size) {
       throw unprocessable("One or more labels are invalid for this company");
     }
@@ -3182,6 +3651,7 @@ export function taskService(db: Db) {
         .select({
           currentTaskId: taskRelations.relatedTaskId,
           relatedId: tasks.id,
+          taskNumber: tasks.taskNumber,
           identifier: tasks.identifier,
           title: tasks.title,
           boardPresentationStatus: tasks.boardPresentationStatus,
@@ -3202,6 +3672,7 @@ export function taskService(db: Db) {
         .select({
           currentTaskId: taskRelations.taskId,
           relatedId: tasks.id,
+          taskNumber: tasks.taskNumber,
           identifier: tasks.identifier,
           title: tasks.title,
           boardPresentationStatus: tasks.boardPresentationStatus,
@@ -3221,7 +3692,9 @@ export function taskService(db: Db) {
     ]);
 
     for (const row of blockedByRows) {
-      empty.get(row.currentTaskId)?.blockedBy.push(summarizeTaskRelationRow(row));
+      empty
+        .get(row.currentTaskId)
+        ?.blockedBy.push(summarizeTaskRelationRow(row));
     }
     for (const row of blockingRows) {
       empty.get(row.currentTaskId)?.blocks.push(summarizeTaskRelationRow(row));
@@ -3234,14 +3707,18 @@ export function taskService(db: Db) {
     );
 
     for (const relations of empty.values()) {
-      relations.blockedBy.sort((a, b) => taskRelationSortLabel(a).localeCompare(taskRelationSortLabel(b)));
+      relations.blockedBy.sort((a, b) =>
+        taskRelationSortLabel(a).localeCompare(taskRelationSortLabel(b)),
+      );
       for (const blocker of relations.blockedBy) {
         const terminalBlockers = terminalByRoot.get(blocker.id);
         if (terminalBlockers && terminalBlockers.length > 0) {
           blocker.terminalBlockers = terminalBlockers;
         }
       }
-      relations.blocks.sort((a, b) => taskRelationSortLabel(a).localeCompare(taskRelationSortLabel(b)));
+      relations.blocks.sort((a, b) =>
+        taskRelationSortLabel(a).localeCompare(taskRelationSortLabel(b)),
+      );
     }
 
     return empty;
@@ -3261,7 +3738,12 @@ export function taskService(db: Db) {
         blockedTaskId: taskRelations.relatedTaskId,
       })
       .from(taskRelations)
-      .where(and(eq(taskRelations.companyId, companyId), eq(taskRelations.type, "blocks")));
+      .where(
+        and(
+          eq(taskRelations.companyId, companyId),
+          eq(taskRelations.type, "blocks"),
+        ),
+      );
 
     const adjacency = new Map<string, string[]>();
     for (const row of rows) {
@@ -3349,23 +3831,30 @@ export function taskService(db: Db) {
         });
       }
 
-      const conditions = [eq(tasks.companyId, companyId), visibleTaskCondition()];
-      const ownerAgentFilter = parseTaskOwnerAgentFilter(filters?.ownerAgentId);
-      assertValidOwnerAgentFilter(ownerAgentFilter);
-      const limit = typeof filters?.limit === "number" && Number.isFinite(filters.limit)
-        ? Math.max(1, Math.floor(filters.limit))
-        : undefined;
-      const offset = typeof filters?.offset === "number" && Number.isFinite(filters.offset)
-        ? Math.max(0, Math.floor(filters.offset))
-        : 0;
-      const touchedByUserId = filters?.touchedByUserId?.trim() || undefined;
-      const inboxArchivedByUserId = filters?.inboxArchivedByUserId?.trim() || undefined;
-      const unreadForUserId = filters?.unreadForUserId?.trim() || undefined;
-      const contextUserId = unreadForUserId ?? touchedByUserId ?? inboxArchivedByUserId;
+      const conditions = [
+        eq(tasks.companyId, companyId),
+        visibleTaskCondition(),
+      ];
+      const ownerAgentFilter = taskOwnerAgentFilter(filters?.ownerAgentId);
+      const limit =
+        typeof filters?.limit === "number" && Number.isFinite(filters.limit)
+          ? Math.max(1, Math.floor(filters.limit))
+          : undefined;
+      const offset =
+        typeof filters?.offset === "number" && Number.isFinite(filters.offset)
+          ? Math.max(0, Math.floor(filters.offset))
+          : 0;
+      const touchedByUserId = filters?.touchedByUserId;
+      const inboxArchivedByUserId = filters?.inboxArchivedByUserId;
+      const unreadForUserId = filters?.unreadForUserId;
+      const contextUserId =
+        unreadForUserId ?? touchedByUserId ?? inboxArchivedByUserId;
       const includeBlockedBy = filters?.includeBlockedBy === true;
-      const includeBlockedInboxAttention = filters?.includeBlockedInboxAttention === true;
-      const includeLiveDescendantSummary = filters?.includeLiveDescendantSummary === true;
-      const rawSearch = filters?.q?.trim() ?? "";
+      const includeBlockedInboxAttention =
+        filters?.includeBlockedInboxAttention === true;
+      const includeLiveDescendantSummary =
+        filters?.includeLiveDescendantSummary === true;
+      const rawSearch = filters?.q ?? "";
       const hasSearch = rawSearch.length > 0;
       const escapedSearch = hasSearch ? escapeLikePattern(rawSearch) : "";
       const startsWithPattern = `${escapedSearch}%`;
@@ -3402,9 +3891,12 @@ export function taskService(db: Db) {
           )
         `);
       }
-      const lowTrustCondition = lowTrustBoundaryTaskCondition(companyId, filters?.lowTrustBoundary);
+      const lowTrustCondition = lowTrustBoundaryTaskCondition(
+        companyId,
+        filters?.lowTrustBoundary,
+      );
       if (lowTrustCondition) conditions.push(lowTrustCondition);
-      const statuses = parseStatusFilter(filters?.status);
+      const statuses = filters?.status ?? [];
       if (statuses.length === 1) {
         conditions.push(eq(tasks.boardPresentationStatus, statuses[0]));
       } else if (statuses.length > 1) {
@@ -3416,7 +3908,9 @@ export function taskService(db: Db) {
         conditions.push(eq(tasks.ownerAgentId, ownerAgentFilter));
       }
       if (filters?.participantAgentId) {
-        conditions.push(participatedByAgentCondition(companyId, filters.participantAgentId));
+        conditions.push(
+          participatedByAgentCondition(companyId, filters.participantAgentId),
+        );
       }
       if (filters?.ownerUserId) {
         conditions.push(eq(tasks.ownerUserId, filters.ownerUserId));
@@ -3425,18 +3919,25 @@ export function taskService(db: Db) {
         conditions.push(touchedByUserCondition(companyId, touchedByUserId));
       }
       if (inboxArchivedByUserId) {
-        conditions.push(inboxVisibleForUserCondition(companyId, inboxArchivedByUserId));
+        conditions.push(
+          inboxVisibleForUserCondition(companyId, inboxArchivedByUserId),
+        );
       }
       if (unreadForUserId) {
         conditions.push(unreadForUserCondition(companyId, unreadForUserId));
       }
-      if (filters?.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
-      if (filters?.parentId) conditions.push(eq(tasks.parentId, filters.parentId));
-      if (filters?.originKind) conditions.push(eq(tasks.originKind, filters.originKind));
-      if (filters?.originKindPrefix) conditions.push(like(tasks.originKind, `${filters.originKindPrefix}%`));
-      if (filters?.originId) conditions.push(eq(tasks.originId, filters.originId));
+      if (filters?.projectId)
+        conditions.push(eq(tasks.projectId, filters.projectId));
+      if (filters?.parentId)
+        conditions.push(eq(tasks.parentId, filters.parentId));
+      if (filters?.originKind)
+        conditions.push(eq(tasks.originKind, filters.originKind));
+      if (filters?.originId)
+        conditions.push(eq(tasks.originId, filters.originId));
       if (filters?.hasPlanDocument !== undefined) {
-        conditions.push(hasPlanDocumentCondition(companyId, filters.hasPlanDocument));
+        conditions.push(
+          hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
+        );
       }
       if (!shouldIncludePluginOperationTasks(filters)) {
         conditions.push(nonPluginOperationTaskCondition());
@@ -3445,9 +3946,19 @@ export function taskService(db: Db) {
         const labeledTaskIds = await db
           .select({ taskId: taskLabels.taskId })
           .from(taskLabels)
-          .where(and(eq(taskLabels.companyId, companyId), eq(taskLabels.labelId, filters.labelId)));
+          .where(
+            and(
+              eq(taskLabels.companyId, companyId),
+              eq(taskLabels.labelId, filters.labelId),
+            ),
+          );
         if (labeledTaskIds.length === 0) return [];
-        conditions.push(inArray(tasks.id, labeledTaskIds.map((row) => row.taskId)));
+        conditions.push(
+          inArray(
+            tasks.id,
+            labeledTaskIds.map((row) => row.taskId),
+          ),
+        );
       }
       if (hasSearch) {
         conditions.push(
@@ -3459,7 +3970,11 @@ export function taskService(db: Db) {
           )!,
         );
       }
-      if (filters?.excludeRoutineExecutions && !filters?.originKind && !filters?.originId) {
+      if (
+        filters?.excludeRoutineExecutions &&
+        !filters?.originKind &&
+        !filters?.originId
+      ) {
         conditions.push(ne(tasks.originKind, "routine_execution"));
       }
       const priorityOrder = sql`CASE ${tasks.priority} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
@@ -3478,19 +3993,29 @@ export function taskService(db: Db) {
         .select(taskListSelect)
         .from(tasks)
         .where(and(...conditions))
-        .orderBy(...taskListOrderBy(companyId, {
-          hasSearch,
-          priorityOrder,
-          searchOrder,
-          sortField: filters?.sortField,
-          sortDir: filters?.sortDir,
-        }));
-      const pageQuery = offset > 0
-        ? (limit === undefined ? baseQuery.offset(offset) : baseQuery.limit(limit).offset(offset))
-        : (limit === undefined ? baseQuery : baseQuery.limit(limit));
+        .orderBy(
+          ...taskListOrderBy(companyId, {
+            hasSearch,
+            priorityOrder,
+            searchOrder,
+            sortField: filters?.sortField,
+            sortDir: filters?.sortDir,
+          }),
+        );
+      const pageQuery =
+        offset > 0
+          ? limit === undefined
+            ? baseQuery.offset(offset)
+            : baseQuery.limit(limit).offset(offset)
+          : limit === undefined
+            ? baseQuery
+            : baseQuery.limit(limit);
       const rows: CanonicalTaskListRow[] = (await pageQuery).map((row) => ({
         ...row,
-        request: decodeDatabaseTextPreview(row.request, TASK_LIST_REQUEST_MAX_CHARS),
+        request: decodeDatabaseTextPreview(
+          row.request,
+          TASK_LIST_REQUEST_MAX_CHARS,
+        ),
       }));
       const withLabels = await withTaskLabels(db, rows);
       const runMap = await activeRunMapForTasks(db, withLabels);
@@ -3500,7 +4025,14 @@ export function taskService(db: Db) {
       }
 
       const taskIds = withRuns.map((row) => row.id);
-      const [statsRows, readRows, lastActivityRows, archiveRows, blockedByMap, liveDescendantCountByTaskId] = await Promise.all([
+      const [
+        statsRows,
+        readRows,
+        lastActivityRows,
+        archiveRows,
+        blockedByMap,
+        liveDescendantCountByTaskId,
+      ] = await Promise.all([
         contextUserId
           ? userCommentStatsForTasks(db, companyId, contextUserId, taskIds)
           : Promise.resolve([]),
@@ -3519,55 +4051,96 @@ export function taskService(db: Db) {
           : Promise.resolve(new Map<string, number>()),
       ]);
       const statsByTaskId = new Map(statsRows.map((row) => [row.taskId, row]));
-      const lastActivityByTaskId = new Map(lastActivityRows.map((row) => [row.taskId, row]));
-      const archiveByTaskId = new Map(archiveRows.map((row) => [row.taskId, row]));
-      const [blockerAttentionByTaskId, blockedInboxAttentionByTaskId] = await Promise.all([
-        listTaskBlockerAttentionMap(db, companyId, withRuns),
-        includeBlockedInboxAttention
-          ? listTaskBlockedInboxAttentionMap(db, companyId, withRuns)
-          : Promise.resolve(new Map<string, TaskBlockedInboxAttention>()),
-      ]);
+      const lastActivityByTaskId = new Map(
+        lastActivityRows.map((row) => [row.taskId, row]),
+      );
+      const archiveByTaskId = new Map(
+        archiveRows.map((row) => [row.taskId, row]),
+      );
+      const [blockerAttentionByTaskId, blockedInboxAttentionByTaskId] =
+        await Promise.all([
+          listTaskBlockerAttentionMap(db, companyId, withRuns),
+          includeBlockedInboxAttention
+            ? listTaskBlockedInboxAttentionMap(db, companyId, withRuns)
+            : Promise.resolve(new Map<string, TaskBlockedInboxAttention>()),
+        ]);
 
       if (!contextUserId) {
         return withRuns.map((row) => {
           const activity = lastActivityByTaskId.get(row.id);
-          const lastActivityAt = latestTaskActivityAt(
-            row.updatedAt,
-            activity?.latestCommentAt ?? null,
-            activity?.latestLogAt ?? null,
-          ) ?? row.updatedAt;
+          const lastActivityAt =
+            latestTaskActivityAt(
+              row.updatedAt,
+              activity?.latestCommentAt ?? null,
+              activity?.latestLogAt ?? null,
+            ) ?? row.updatedAt;
           return {
             ...row,
-            ...(includeBlockedBy ? { blockedBy: blockedByMap.get(row.id) ?? [] } : {}),
+            ...(includeBlockedBy
+              ? { blockedBy: blockedByMap.get(row.id) ?? [] }
+              : {}),
             lastActivityAt,
-            ...(blockerAttentionByTaskId.has(row.id) ? { blockerAttention: blockerAttentionByTaskId.get(row.id) } : {}),
-            ...(includeBlockedInboxAttention ? { blockedInboxAttention: blockedInboxAttentionByTaskId.get(row.id) ?? null } : {}),
-            ...(includeLiveDescendantSummary ? { liveDescendantCount: liveDescendantCountByTaskId.get(row.id) ?? 0 } : {}),
+            ...(blockerAttentionByTaskId.has(row.id)
+              ? { blockerAttention: blockerAttentionByTaskId.get(row.id) }
+              : {}),
+            ...(includeBlockedInboxAttention
+              ? {
+                  blockedInboxAttention:
+                    blockedInboxAttentionByTaskId.get(row.id) ?? null,
+                }
+              : {}),
+            ...(includeLiveDescendantSummary
+              ? {
+                  liveDescendantCount:
+                    liveDescendantCountByTaskId.get(row.id) ?? 0,
+                }
+              : {}),
           };
         });
       }
 
-      const readByTaskId = new Map(readRows.map((row) => [row.taskId, row.myLastReadAt]));
+      const readByTaskId = new Map(
+        readRows.map((row) => [row.taskId, row.myLastReadAt]),
+      );
 
       return withRuns.map((row) => {
         const activity = lastActivityByTaskId.get(row.id);
-        const lastActivityAt = latestTaskActivityAt(
-          row.updatedAt,
-          activity?.latestCommentAt ?? null,
-          activity?.latestLogAt ?? null,
-        ) ?? row.updatedAt;
+        const lastActivityAt =
+          latestTaskActivityAt(
+            row.updatedAt,
+            activity?.latestCommentAt ?? null,
+            activity?.latestLogAt ?? null,
+          ) ?? row.updatedAt;
         return {
           ...row,
-          ...activeInboxArchiveFields(archiveByTaskId.get(row.id), lastActivityAt),
-          ...(includeBlockedBy ? { blockedBy: blockedByMap.get(row.id) ?? [] } : {}),
+          ...activeInboxArchiveFields(
+            archiveByTaskId.get(row.id),
+            lastActivityAt,
+          ),
+          ...(includeBlockedBy
+            ? { blockedBy: blockedByMap.get(row.id) ?? [] }
+            : {}),
           lastActivityAt,
-          ...(blockerAttentionByTaskId.has(row.id) ? { blockerAttention: blockerAttentionByTaskId.get(row.id) } : {}),
-          ...(includeBlockedInboxAttention ? { blockedInboxAttention: blockedInboxAttentionByTaskId.get(row.id) ?? null } : {}),
-          ...(includeLiveDescendantSummary ? { liveDescendantCount: liveDescendantCountByTaskId.get(row.id) ?? 0 } : {}),
+          ...(blockerAttentionByTaskId.has(row.id)
+            ? { blockerAttention: blockerAttentionByTaskId.get(row.id) }
+            : {}),
+          ...(includeBlockedInboxAttention
+            ? {
+                blockedInboxAttention:
+                  blockedInboxAttentionByTaskId.get(row.id) ?? null,
+              }
+            : {}),
+          ...(includeLiveDescendantSummary
+            ? {
+                liveDescendantCount:
+                  liveDescendantCountByTaskId.get(row.id) ?? 0,
+              }
+            : {}),
           ...deriveTaskUserContext(row, contextUserId, {
             myLastCommentAt: statsByTaskId.get(row.id)?.myLastCommentAt ?? null,
             myLastReadAt: readByTaskId.get(row.id) ?? null,
-            lastExternalCommentAt: statsByTaskId.get(row.id)?.lastExternalCommentAt ?? null,
+            lastExternalCommentAt:
+              statsByTaskId.get(row.id)?.lastExternalCommentAt ?? null,
           }),
         };
       });
@@ -3578,27 +4151,38 @@ export function taskService(db: Db) {
         return countBlockedInboxTasks(db, companyId, filters);
       }
 
-      const conditions = [eq(tasks.companyId, companyId), visibleTaskCondition()];
-      const statuses = parseStatusFilter(filters?.status);
-      if (statuses.length === 1) conditions.push(eq(tasks.boardPresentationStatus, statuses[0]!));
-      else if (statuses.length > 1) conditions.push(inArray(tasks.boardPresentationStatus, statuses));
-      const ownerAgentFilter = parseTaskOwnerAgentFilter(filters?.ownerAgentId);
-      assertValidOwnerAgentFilter(ownerAgentFilter);
+      const conditions = [
+        eq(tasks.companyId, companyId),
+        visibleTaskCondition(),
+      ];
+      const statuses = filters?.status ?? [];
+      if (statuses.length === 1)
+        conditions.push(eq(tasks.boardPresentationStatus, statuses[0]!));
+      else if (statuses.length > 1)
+        conditions.push(inArray(tasks.boardPresentationStatus, statuses));
+      const ownerAgentFilter = taskOwnerAgentFilter(filters?.ownerAgentId);
       if (ownerAgentFilter === null) {
         conditions.push(isNull(tasks.ownerAgentId));
       } else if (ownerAgentFilter) {
         conditions.push(eq(tasks.ownerAgentId, ownerAgentFilter));
       }
-      if (filters?.ownerUserId) conditions.push(eq(tasks.ownerUserId, filters.ownerUserId));
-      if (filters?.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
-      if (filters?.parentId) conditions.push(eq(tasks.parentId, filters.parentId));
-      if (filters?.originKind) conditions.push(eq(tasks.originKind, filters.originKind));
-      if (filters?.originKindPrefix) conditions.push(like(tasks.originKind, `${filters.originKindPrefix}%`));
-      if (filters?.originId) conditions.push(eq(tasks.originId, filters.originId));
+      if (filters?.ownerUserId)
+        conditions.push(eq(tasks.ownerUserId, filters.ownerUserId));
+      if (filters?.projectId)
+        conditions.push(eq(tasks.projectId, filters.projectId));
+      if (filters?.parentId)
+        conditions.push(eq(tasks.parentId, filters.parentId));
+      if (filters?.originKind)
+        conditions.push(eq(tasks.originKind, filters.originKind));
+      if (filters?.originId)
+        conditions.push(eq(tasks.originId, filters.originId));
       if (filters?.hasPlanDocument !== undefined) {
-        conditions.push(hasPlanDocumentCondition(companyId, filters.hasPlanDocument));
+        conditions.push(
+          hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
+        );
       }
-      if (!shouldIncludePluginOperationTasks(filters)) conditions.push(nonPluginOperationTaskCondition());
+      if (!shouldIncludePluginOperationTasks(filters))
+        conditions.push(nonPluginOperationTaskCondition());
       const [row] = await db
         .select({ count: sql<number>`count(*)` })
         .from(tasks)
@@ -3606,31 +4190,12 @@ export function taskService(db: Db) {
       return Number(row?.count ?? 0);
     },
 
-    countUnreadTouchedByUser: async (
+    markRead: async (
       companyId: string,
+      taskId: string,
       userId: string,
-      status?: string | readonly string[],
+      readAt: Date = new Date(),
     ) => {
-      const conditions = [
-        eq(tasks.companyId, companyId),
-        visibleTaskCondition(),
-        nonPluginOperationTaskCondition(),
-        unreadForUserCondition(companyId, userId),
-      ];
-      const statuses = parseStatusFilter(status);
-      if (statuses.length === 1) {
-        conditions.push(eq(tasks.boardPresentationStatus, statuses[0]));
-      } else if (statuses.length > 1) {
-        conditions.push(inArray(tasks.boardPresentationStatus, statuses));
-      }
-      const [row] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(tasks)
-        .where(and(...conditions));
-      return Number(row?.count ?? 0);
-    },
-
-    markRead: async (companyId: string, taskId: string, userId: string, readAt: Date = new Date()) => {
       const now = new Date();
       const [row] = await db
         .insert(taskReadStates)
@@ -3642,7 +4207,11 @@ export function taskService(db: Db) {
           updatedAt: now,
         })
         .onConflictDoUpdate({
-          target: [taskReadStates.companyId, taskReadStates.taskId, taskReadStates.userId],
+          target: [
+            taskReadStates.companyId,
+            taskReadStates.taskId,
+            taskReadStates.userId,
+          ],
           set: {
             lastReadAt: readAt,
             updatedAt: now,
@@ -3691,7 +4260,11 @@ export function taskService(db: Db) {
           updatedAt: now,
         })
         .onConflictDoUpdate({
-          target: [taskInboxArchives.companyId, taskInboxArchives.taskId, taskInboxArchives.userId],
+          target: [
+            taskInboxArchives.companyId,
+            taskInboxArchives.taskId,
+            taskInboxArchives.userId,
+          ],
           set: {
             archivedAt,
             archivedByActorType: attribution?.archivedByActorType ?? "user",
@@ -3704,7 +4277,11 @@ export function taskService(db: Db) {
       return row;
     },
 
-    unarchiveInbox: async (companyId: string, taskId: string, userId: string) => {
+    unarchiveInbox: async (
+      companyId: string,
+      taskId: string,
+      userId: string,
+    ) => {
       const [row] = await db
         .delete(taskInboxArchives)
         .where(
@@ -3726,29 +4303,19 @@ export function taskService(db: Db) {
         lastActivityStatsForTasks(db, task.companyId, [task.id]),
         inboxArchiveRowsForTasks(db, task.companyId, userId, [task.id]),
       ]);
-      const lastActivityAt = latestTaskActivityAt(
-        task.updatedAt,
-        activity?.latestCommentAt ?? null,
-        activity?.latestLogAt ?? null,
-      ) ?? task.updatedAt;
+      const lastActivityAt =
+        latestTaskActivityAt(
+          task.updatedAt,
+          activity?.latestCommentAt ?? null,
+          activity?.latestLogAt ?? null,
+        ) ?? task.updatedAt;
       return activeInboxArchiveFields(archive, lastActivityAt);
     },
 
-    getById: async (raw: string) => {
-      const id = raw.trim();
-      const identifier = normalizeTaskReferenceIdentifier(id);
-      if (identifier) {
-        return getTaskByIdentifier(identifier);
-      }
-      if (!isUuidLike(id)) {
-        return null;
-      }
-      return getTaskByUuid(id);
-    },
+    getById: async (id: string) =>
+      isCanonicalUuid(id) ? getTaskByUuid(id) : null,
 
-    getByIdentifier: async (identifier: string) => {
-      return getTaskByIdentifier(identifier);
-    },
+    getByCompanyTaskNumber: getTaskByCompanyTaskNumber,
 
     getRelationSummaries: async (taskId: string) => {
       const task = await db
@@ -3757,7 +4324,11 @@ export function taskService(db: Db) {
         .where(eq(tasks.id, taskId))
         .then((rows) => rows[0] ?? null);
       if (!task) throw notFound("Task not found");
-      const relations = await getTaskRelationSummaryMap(task.companyId, [taskId], db);
+      const relations = await getTaskRelationSummaryMap(
+        task.companyId,
+        [taskId],
+        db,
+      );
       return relations.get(taskId) ?? { blockedBy: [], blocks: [] };
     },
 
@@ -3772,13 +4343,17 @@ export function taskService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!task) throw notFound("Task not found");
 
-      const cappedMax = Math.max(0, Math.min(maxBlockers, TASK_BLOCKER_DIAGNOSTICS_MAX_BLOCKERS));
+      const cappedMax = Math.max(
+        0,
+        Math.min(maxBlockers, TASK_BLOCKER_DIAGNOSTICS_MAX_BLOCKERS),
+      );
       const blockerRows = await db
         .select({
           id: tasks.id,
           companyId: tasks.companyId,
           projectId: tasks.projectId,
           parentId: tasks.parentId,
+          taskNumber: tasks.taskNumber,
           identifier: tasks.identifier,
           title: tasks.title,
           boardPresentationStatus: tasks.boardPresentationStatus,
@@ -3799,11 +4374,19 @@ export function taskService(db: Db) {
         .orderBy(asc(tasks.title), asc(tasks.id))
         .limit(cappedMax + 1);
 
-      const readiness = await listTaskDependencyReadinessMap(db, task.companyId, [task.id]);
+      const readiness = await listTaskDependencyReadinessMap(
+        db,
+        task.companyId,
+        [task.id],
+      );
 
       return {
-        blockers: blockerRows.slice(0, cappedMax) as TaskBlockerDiagnosticsTaskRow[],
-        readiness: readiness.get(task.id) ?? createTaskDependencyReadiness(task.id),
+        blockers: blockerRows.slice(
+          0,
+          cappedMax,
+        ) as TaskBlockerDiagnosticsTaskRow[],
+        readiness:
+          readiness.get(task.id) ?? createTaskDependencyReadiness(task.id),
         truncated: blockerRows.length > cappedMax,
       };
     },
@@ -3825,26 +4408,35 @@ export function taskService(db: Db) {
 
       const maxDepth = Math.max(
         0,
-        Math.min(opts?.maxDepth ?? TASK_SUBTREE_DIAGNOSTICS_MAX_DEPTH, TASK_SUBTREE_DIAGNOSTICS_MAX_DEPTH),
+        Math.min(
+          opts?.maxDepth ?? TASK_SUBTREE_DIAGNOSTICS_MAX_DEPTH,
+          TASK_SUBTREE_DIAGNOSTICS_MAX_DEPTH,
+        ),
       );
       const maxNodes = Math.max(
         1,
-        Math.min(opts?.maxNodes ?? TASK_SUBTREE_DIAGNOSTICS_MAX_NODES, TASK_SUBTREE_DIAGNOSTICS_MAX_NODES),
+        Math.min(
+          opts?.maxNodes ?? TASK_SUBTREE_DIAGNOSTICS_MAX_NODES,
+          TASK_SUBTREE_DIAGNOSTICS_MAX_NODES,
+        ),
       );
       const maxBlockersPerNode = Math.max(
         0,
         Math.min(
-          opts?.maxBlockersPerNode ?? TASK_SUBTREE_DIAGNOSTICS_MAX_BLOCKERS_PER_NODE,
+          opts?.maxBlockersPerNode ??
+            TASK_SUBTREE_DIAGNOSTICS_MAX_BLOCKERS_PER_NODE,
           TASK_SUBTREE_DIAGNOSTICS_MAX_BLOCKERS_PER_NODE,
         ),
       );
-      const rawSubtreeRows = await db.execute(sql<TaskSubtreeDiagnosticsTaskRow>`
+      const rawSubtreeRows =
+        await db.execute(sql<TaskSubtreeDiagnosticsTaskRow>`
         WITH RECURSIVE task_tree AS (
           SELECT
             id,
             company_id,
             project_id,
             parent_id,
+            task_number,
             identifier,
             title,
             board_presentation_status AS "boardPresentationStatus",
@@ -3859,13 +4451,13 @@ export function taskService(db: Db) {
           WHERE company_id = ${task.companyId}
             AND id = ${task.id}
             AND hidden_at IS NULL
-            AND harness_kind IS NULL
           UNION ALL
           SELECT
             child.id,
             child.company_id,
             child.project_id,
             child.parent_id,
+            child.task_number,
             child.identifier,
             child.title,
             child.board_presentation_status AS "boardPresentationStatus",
@@ -3880,7 +4472,6 @@ export function taskService(db: Db) {
           JOIN task_tree ON child.parent_id = task_tree.id
           WHERE child.company_id = ${task.companyId}
             AND child.hidden_at IS NULL
-            AND child.harness_kind IS NULL
             AND task_tree.depth < ${maxDepth + 1}
             AND NOT child.id = ANY(task_tree.path)
         )
@@ -3889,6 +4480,7 @@ export function taskService(db: Db) {
           company_id AS "companyId",
           project_id AS "projectId",
           parent_id AS "parentId",
+          task_number AS "taskNumber",
           identifier,
           title,
           "boardPresentationStatus",
@@ -3902,29 +4494,46 @@ export function taskService(db: Db) {
         ORDER BY depth ASC, created_at ASC, id ASC
         LIMIT ${maxNodes + 1}
       `);
-      const subtreeRows = Array.from(rawSubtreeRows)
-        .map((row) => ({ ...row, depth: Number(row.depth) }));
-      const rowsWithinDepth = subtreeRows.filter((row) => row.depth <= maxDepth);
-      const nodes = rowsWithinDepth.slice(0, maxNodes) as TaskSubtreeDiagnosticsTaskRow[];
+      const subtreeRows = Array.from(rawSubtreeRows).map((row) => ({
+        ...row,
+        depth: Number(row.depth),
+      }));
+      const rowsWithinDepth = subtreeRows.filter(
+        (row) => row.depth <= maxDepth,
+      );
+      const nodes = rowsWithinDepth.slice(
+        0,
+        maxNodes,
+      ) as TaskSubtreeDiagnosticsTaskRow[];
       const truncatedNodes = rowsWithinDepth.length > maxNodes;
-      const truncatedDepth = truncatedNodes || subtreeRows.some((row) => row.depth > maxDepth);
+      const truncatedDepth =
+        truncatedNodes || subtreeRows.some((row) => row.depth > maxDepth);
       const nodeIds = nodes.map((node) => node.id);
 
-      const readiness = nodeIds.length > 0
-        ? await listTaskDependencyReadinessMap(db, task.companyId, nodeIds)
-        : new Map<string, TaskDependencyReadiness>();
-      const blockersByTaskId = new Map<string, TaskSubtreeDiagnosticsBlockerRow[]>();
+      const readiness =
+        nodeIds.length > 0
+          ? await listTaskDependencyReadinessMap(db, task.companyId, nodeIds)
+          : new Map<string, TaskDependencyReadiness>();
+      const blockersByTaskId = new Map<
+        string,
+        TaskSubtreeDiagnosticsBlockerRow[]
+      >();
       const truncatedBlockerTaskIds = new Set<string>();
 
       if (nodeIds.length > 0) {
-        const nodeIdValues = sql.join(nodeIds.map((id) => sql`${id}`), sql`, `);
-        const rawBlockerRows = Array.from(await db.execute(sql`
+        const nodeIdValues = sql.join(
+          nodeIds.map((id) => sql`${id}`),
+          sql`, `,
+        );
+        const rawBlockerRows = Array.from(
+          await db.execute(sql`
           WITH blocker_rows AS (
             SELECT
               blocker.id,
               blocker.company_id AS "companyId",
               blocker.project_id AS "projectId",
               blocker.parent_id AS "parentId",
+              blocker.task_number AS "taskNumber",
               blocker.identifier,
               blocker.title,
               blocker.board_presentation_status AS "boardPresentationStatus",
@@ -3943,14 +4552,14 @@ export function taskService(db: Db) {
               AND relation.type = 'blocks'
               AND blocker.company_id = ${task.companyId}
               AND blocker.hidden_at IS NULL
-              AND blocker.harness_kind IS NULL
               AND relation.related_task_id::text IN (${nodeIdValues})
           )
           SELECT *
           FROM blocker_rows
           WHERE "rowNumber" <= ${maxBlockersPerNode + 1}
           ORDER BY "blockedTaskId" ASC, "rowNumber" ASC
-        `)) as TaskSubtreeDiagnosticsBlockerResultRow[];
+        `),
+        ) as TaskSubtreeDiagnosticsBlockerResultRow[];
         for (const row of rawBlockerRows) {
           const normalized = { ...row, rowNumber: Number(row.rowNumber) };
           if (normalized.rowNumber > maxBlockersPerNode) {
@@ -3961,7 +4570,6 @@ export function taskService(db: Db) {
           rows.push(normalized);
           blockersByTaskId.set(normalized.blockedTaskId, rows);
         }
-
       }
 
       return {
@@ -3984,13 +4592,23 @@ export function taskService(db: Db) {
         .select({ id: tasks.id, companyId: tasks.companyId })
         .from(tasks)
         .where(eq(tasks.id, taskId))
-        .then((rows: Array<{ id: string; companyId: string }>) => rows[0] ?? null);
+        .then(
+          (rows: Array<{ id: string; companyId: string }>) => rows[0] ?? null,
+        );
       if (!task) throw notFound("Task not found");
-      const readiness = await listTaskDependencyReadinessMap(dbOrTx, task.companyId, [taskId]);
+      const readiness = await listTaskDependencyReadinessMap(
+        dbOrTx,
+        task.companyId,
+        [taskId],
+      );
       return readiness.get(taskId) ?? createTaskDependencyReadiness(taskId);
     },
 
-    listDependencyReadiness: async (companyId: string, taskIds: string[], dbOrTx: any = db) => {
+    listDependencyReadiness: async (
+      companyId: string,
+      taskIds: string[],
+      dbOrTx: any = db,
+    ) => {
       return listTaskDependencyReadinessMap(dbOrTx, companyId, taskIds);
     },
 
@@ -4097,13 +4715,24 @@ export function taskService(db: Db) {
         throw unprocessable("in_progress tasks require an owner");
       }
       if (patch.boardPresentationStatus === "in_progress") {
-        const unresolvedBlockerTaskIds = blockedByTaskIds !== undefined
-          ? await listUnresolvedBlockerTaskIds(dbOrTx, existing.companyId, blockedByTaskIds)
-          : (
-              await listTaskDependencyReadinessMap(dbOrTx, existing.companyId, [id])
-            ).get(id)?.unresolvedBlockerTaskIds ?? [];
+        const unresolvedBlockerTaskIds =
+          blockedByTaskIds !== undefined
+            ? await listUnresolvedBlockerTaskIds(
+                dbOrTx,
+                existing.companyId,
+                blockedByTaskIds,
+              )
+            : ((
+                await listTaskDependencyReadinessMap(
+                  dbOrTx,
+                  existing.companyId,
+                  [id],
+                )
+              ).get(id)?.unresolvedBlockerTaskIds ?? []);
         if (unresolvedBlockerTaskIds.length > 0) {
-          throw unprocessable("Task is blocked by unresolved blockers", { unresolvedBlockerTaskIds });
+          throw unprocessable("Task is blocked by unresolved blockers", {
+            unresolvedBlockerTaskIds,
+          });
         }
       }
       if (
@@ -4143,7 +4772,10 @@ export function taskService(db: Db) {
         patch.cancelledAt = null;
       }
       const runUpdate = async (tx: any) => {
-        const defaultCompanyGoal = await getDefaultCompanyGoal(tx, existing.companyId);
+        const defaultCompanyGoal = await getDefaultCompanyGoal(
+          tx,
+          existing.companyId,
+        );
 
         patch.goalId = resolveNextTaskGoalId({
           currentProjectId: existing.projectId,
@@ -4160,7 +4792,12 @@ export function taskService(db: Db) {
           .then((rows: Array<typeof tasks.$inferSelect>) => rows[0] ?? null);
         if (!updated) return null;
         if (nextLabelIds !== undefined) {
-          await syncTaskLabels(updated.id, existing.companyId, nextLabelIds, tx);
+          await syncTaskLabels(
+            updated.id,
+            existing.companyId,
+            nextLabelIds,
+            tx,
+          );
         }
         if (blockedByTaskIds !== undefined) {
           await syncBlockedByTaskIds(
@@ -4182,16 +4819,25 @@ export function taskService(db: Db) {
     },
 
     listLabels: (companyId: string) =>
-      db.select().from(labels).where(eq(labels.companyId, companyId)).orderBy(asc(labels.name), asc(labels.id)),
-
-    getLabelById: (id: string) =>
       db
         .select()
         .from(labels)
-        .where(eq(labels.id, id))
-        .then((rows) => rows[0] ?? null),
+        .where(eq(labels.companyId, companyId))
+        .orderBy(asc(labels.name), asc(labels.id)),
 
-    createLabel: async (companyId: string, data: Pick<typeof labels.$inferInsert, "name" | "color">) => {
+    getLabelById: (id: string) => {
+      if (!isCanonicalUuid(id)) return Promise.resolve(null);
+      return db
+        .select()
+        .from(labels)
+        .where(eq(labels.id, id))
+        .then((rows) => rows[0] ?? null);
+    },
+
+    createLabel: async (
+      companyId: string,
+      data: Pick<typeof labels.$inferInsert, "name" | "color">,
+    ) => {
       const [created] = await db
         .insert(labels)
         .values({
@@ -4203,12 +4849,14 @@ export function taskService(db: Db) {
       return created;
     },
 
-    deleteLabel: async (id: string) =>
-      db
+    deleteLabel: async (id: string) => {
+      if (!isCanonicalUuid(id)) return null;
+      return db
         .delete(labels)
         .where(eq(labels.id, id))
         .returning()
-        .then((rows) => rows[0] ?? null),
+        .then((rows) => rows[0] ?? null);
+    },
 
     listBoardCommentGroups: async (
       companyId: string,
@@ -4280,24 +4928,22 @@ export function taskService(db: Db) {
       const finalRoot = roots.at(-1);
       return {
         groups,
-        nextCursor: rows.length > limit && finalRoot
-          ? encodeBoardCommentCursor({
-              version: 1,
-              kind: "roots",
-              taskId,
-              rootCommentId: null,
-              sequence: finalRoot.projectedEventSeq,
-              id: finalRoot.id,
-            })
-          : null,
+        nextCursor:
+          rows.length > limit && finalRoot
+            ? encodeBoardCommentCursor({
+                version: 1,
+                kind: "roots",
+                taskId,
+                rootCommentId: null,
+                sequence: finalRoot.projectedEventSeq,
+                id: finalRoot.id,
+              })
+            : null,
       };
     },
 
-    getBoardComment: (
-      companyId: string,
-      taskId: string,
-      commentId: string,
-    ) => getBoardCommentProjection({ companyId, taskId, commentId }),
+    getBoardComment: (companyId: string, taskId: string, commentId: string) =>
+      getBoardCommentProjection({ companyId, taskId, commentId }),
 
     getBoardCommentThread: async (
       companyId: string,
@@ -4305,6 +4951,13 @@ export function taskService(db: Db) {
       rootCommentId: string,
       opts?: { cursor?: string | null; limit?: number | null },
     ): Promise<BoardTaskCommentThreadPage | null> => {
+      if (
+        !isCanonicalUuid(companyId) ||
+        !isCanonicalUuid(taskId) ||
+        !isCanonicalUuid(rootCommentId)
+      ) {
+        return null;
+      }
       const root = await db
         .select()
         .from(taskComments)
@@ -4335,11 +4988,21 @@ export function taskService(db: Db) {
       },
     ) => {
       const order = opts?.order === "asc" ? "asc" : "desc";
-      const afterCommentId = opts?.afterCommentId?.trim() || null;
-      const limit =
-        opts?.limit && opts.limit > 0
-          ? Math.min(Math.floor(opts.limit), MAX_TASK_COMMENT_PAGE_LIMIT)
-          : null;
+      const afterCommentId = opts?.afterCommentId ?? null;
+      if (afterCommentId !== null && !isCanonicalUuid(afterCommentId)) {
+        throw unprocessable("afterCommentId must be an exact canonical UUID");
+      }
+      const limit = opts?.limit ?? null;
+      if (
+        limit !== null &&
+        (!Number.isSafeInteger(limit) ||
+          limit < 1 ||
+          limit > MAX_TASK_COMMENT_PAGE_LIMIT)
+      ) {
+        throw unprocessable(
+          `Task comment page limit must be between 1 and ${MAX_TASK_COMMENT_PAGE_LIMIT}`,
+        );
+      }
 
       const conditions = [eq(taskComments.taskId, taskId)];
       if (afterCommentId) {
@@ -4349,7 +5012,12 @@ export function taskService(db: Db) {
             createdAt: taskComments.createdAt,
           })
           .from(taskComments)
-          .where(and(eq(taskComments.taskId, taskId), eq(taskComments.id, afterCommentId)))
+          .where(
+            and(
+              eq(taskComments.taskId, taskId),
+              eq(taskComments.id, afterCommentId),
+            ),
+          )
           .then((rows) => rows[0] ?? null);
 
         if (!anchor) return [];
@@ -4381,7 +5049,9 @@ export function taskService(db: Db) {
         .from(taskComments)
         .where(and(...conditions))
         .orderBy(
-          order === "asc" ? asc(taskComments.createdAt) : desc(taskComments.createdAt),
+          order === "asc"
+            ? asc(taskComments.createdAt)
+            : desc(taskComments.createdAt),
           order === "asc" ? asc(taskComments.id) : desc(taskComments.id),
         );
 
@@ -4421,6 +5091,7 @@ export function taskService(db: Db) {
     },
 
     getComment: async (commentId: string) => {
+      if (!isCanonicalUuid(commentId)) return null;
       const { censorUsernameInLogs } = await instanceSettings.getGeneral();
       const comment = await db
         .select()
@@ -4452,13 +5123,22 @@ export function taskService(db: Db) {
 
       if (input.taskCommentId) {
         const comment = await db
-          .select({ id: taskComments.id, companyId: taskComments.companyId, taskId: taskComments.taskId })
+          .select({
+            id: taskComments.id,
+            companyId: taskComments.companyId,
+            taskId: taskComments.taskId,
+          })
           .from(taskComments)
           .where(eq(taskComments.id, input.taskCommentId))
           .then((rows) => rows[0] ?? null);
         if (!comment) throw notFound("Task comment not found");
-        if (comment.companyId !== task.companyId || comment.taskId !== task.id) {
-          throw unprocessable("Attachment comment must belong to same task and company");
+        if (
+          comment.companyId !== task.companyId ||
+          comment.taskId !== task.id
+        ) {
+          throw unprocessable(
+            "Attachment comment must belong to same task and company",
+          );
         }
       }
 
@@ -4532,8 +5212,9 @@ export function taskService(db: Db) {
         .where(eq(taskAttachments.taskId, taskId))
         .orderBy(desc(taskAttachments.createdAt)),
 
-    getAttachmentById: async (id: string) =>
-      db
+    getAttachmentById: async (id: string) => {
+      if (!isCanonicalUuid(id)) return null;
+      return db
         .select({
           id: taskAttachments.id,
           companyId: taskAttachments.companyId,
@@ -4554,10 +5235,12 @@ export function taskService(db: Db) {
         .from(taskAttachments)
         .innerJoin(assets, eq(taskAttachments.assetId, assets.id))
         .where(eq(taskAttachments.id, id))
-        .then((rows) => rows[0] ?? null),
+        .then((rows) => rows[0] ?? null);
+    },
 
-    removeAttachment: async (id: string) =>
-      db.transaction(async (tx) => {
+    removeAttachment: async (id: string) => {
+      if (!isCanonicalUuid(id)) return null;
+      return db.transaction(async (tx) => {
         const existing = await tx
           .select({
             id: taskAttachments.id,
@@ -4585,16 +5268,21 @@ export function taskService(db: Db) {
         await tx.delete(taskAttachments).where(eq(taskAttachments.id, id));
         await tx.delete(assets).where(eq(assets.id, existing.assetId));
         return existing;
-      }),
+      });
+    },
 
     findMentionedAgents: async (companyId: string, body: string) => {
       const explicitAgentMentionIds = extractAgentMentionIds(body);
       if (explicitAgentMentionIds.length === 0) return [];
 
-      const rows = await db.select({ id: agents.id })
-        .from(agents).where(eq(agents.companyId, companyId));
+      const rows = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.companyId, companyId));
       const companyAgentIds = new Set(rows.map((agent) => agent.id));
-      return explicitAgentMentionIds.filter((agentId) => companyAgentIds.has(agentId));
+      return explicitAgentMentionIds.filter((agentId) =>
+        companyAgentIds.has(agentId),
+      );
     },
 
     findMentionedProjectIds: async (
@@ -4650,66 +5338,127 @@ export function taskService(db: Db) {
 
     getAncestors: async (taskId: string) => {
       const raw: Array<{
-        id: string; identifier: string | null; title: string | null; request: string | null;
-        boardPresentationStatus: TaskStatus; priority: string;
-        ownerAgentId: string | null; ownerUserId: string | null; projectId: string | null; goalId: string | null;
+        id: string;
+        taskNumber: number;
+        identifier: string;
+        title: string | null;
+        request: string | null;
+        boardPresentationStatus: TaskStatus;
+        priority: string;
+        ownerAgentId: string | null;
+        ownerUserId: string | null;
+        projectId: string | null;
+        goalId: string | null;
       }> = [];
       const visited = new Set<string>([taskId]);
-      const start = await db.select().from(tasks).where(eq(tasks.id, taskId)).then(r => r[0] ?? null);
+      const start = await db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, taskId))
+        .then((r) => r[0] ?? null);
       let currentId = start?.parentId ?? null;
       while (currentId && !visited.has(currentId) && raw.length < 50) {
         visited.add(currentId);
-        const parent = await db.select({
-          id: tasks.id, identifier: tasks.identifier, title: tasks.title, request: tasks.request,
-          boardPresentationStatus: tasks.boardPresentationStatus, priority: tasks.priority,
-          ownerAgentId: tasks.ownerAgentId, ownerUserId: tasks.ownerUserId, projectId: tasks.projectId,
-          goalId: tasks.goalId, parentId: tasks.parentId,
-        }).from(tasks).where(eq(tasks.id, currentId)).then(r => r[0] ?? null);
+        const parent = await db
+          .select({
+            id: tasks.id,
+            taskNumber: tasks.taskNumber,
+            identifier: tasks.identifier,
+            title: tasks.title,
+            request: tasks.request,
+            boardPresentationStatus: tasks.boardPresentationStatus,
+            priority: tasks.priority,
+            ownerAgentId: tasks.ownerAgentId,
+            ownerUserId: tasks.ownerUserId,
+            projectId: tasks.projectId,
+            goalId: tasks.goalId,
+            parentId: tasks.parentId,
+          })
+          .from(tasks)
+          .where(eq(tasks.id, currentId))
+          .then((r) => r[0] ?? null);
         if (!parent) break;
         raw.push({
-          id: parent.id, identifier: parent.identifier ?? null, title: parent.title, request: parent.request,
-          boardPresentationStatus: parent.boardPresentationStatus, priority: parent.priority,
+          id: parent.id,
+          taskNumber: parent.taskNumber,
+          identifier: parent.identifier,
+          title: parent.title,
+          request: parent.request,
+          boardPresentationStatus: parent.boardPresentationStatus,
+          priority: parent.priority,
           ownerAgentId: parent.ownerAgentId ?? null,
           ownerUserId: parent.ownerUserId ?? null,
-          projectId: parent.projectId ?? null, goalId: parent.goalId ?? null,
+          projectId: parent.projectId ?? null,
+          goalId: parent.goalId ?? null,
         });
         currentId = parent.parentId ?? null;
       }
 
       // Batch-fetch referenced projects and goals.
-      const projectIds = [...new Set(raw.map(a => a.projectId).filter((id): id is string => id != null))];
-      const goalIds = [...new Set(raw.map(a => a.goalId).filter((id): id is string => id != null))];
+      const projectIds = [
+        ...new Set(
+          raw.map((a) => a.projectId).filter((id): id is string => id != null),
+        ),
+      ];
+      const goalIds = [
+        ...new Set(
+          raw.map((a) => a.goalId).filter((id): id is string => id != null),
+        ),
+      ];
 
-      const projectMap = new Map<string, {
-        id: string;
-        name: string;
-        description: string | null;
-        status: string;
-      }>();
-      const goalMap = new Map<string, { id: string; title: string; description: string | null; level: string; status: string }>();
+      const projectMap = new Map<
+        string,
+        {
+          id: string;
+          name: string;
+          description: string | null;
+          status: string;
+        }
+      >();
+      const goalMap = new Map<
+        string,
+        {
+          id: string;
+          title: string;
+          description: string | null;
+          level: string;
+          status: string;
+        }
+      >();
 
       if (projectIds.length > 0) {
-        const rows = await db.select({
-          id: projects.id, name: projects.name, description: projects.description,
-          status: projects.status,
-        }).from(projects).where(inArray(projects.id, projectIds));
+        const rows = await db
+          .select({
+            id: projects.id,
+            name: projects.name,
+            description: projects.description,
+            status: projects.status,
+          })
+          .from(projects)
+          .where(inArray(projects.id, projectIds));
         for (const r of rows) {
           projectMap.set(r.id, r);
         }
       }
 
       if (goalIds.length > 0) {
-        const rows = await db.select({
-          id: goals.id, title: goals.title, description: goals.description,
-          level: goals.level, status: goals.status,
-        }).from(goals).where(inArray(goals.id, goalIds));
+        const rows = await db
+          .select({
+            id: goals.id,
+            title: goals.title,
+            description: goals.description,
+            level: goals.level,
+            status: goals.status,
+          })
+          .from(goals)
+          .where(inArray(goals.id, goalIds));
         for (const r of rows) goalMap.set(r.id, r);
       }
 
-      return raw.map(a => ({
+      return raw.map((a) => ({
         ...a,
-        project: a.projectId ? projectMap.get(a.projectId) ?? null : null,
-        goal: a.goalId ? goalMap.get(a.goalId) ?? null : null,
+        project: a.projectId ? (projectMap.get(a.projectId) ?? null) : null,
+        goal: a.goalId ? (goalMap.get(a.goalId) ?? null) : null,
       }));
     },
   };

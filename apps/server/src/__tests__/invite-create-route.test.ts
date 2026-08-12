@@ -26,7 +26,6 @@ function registerModuleMocks() {
     createAgentAdapterConfigurationService: () => ({}),
     createAgentOperationalConfigurationService: () => ({}),
     createJoinRequestApprovalService: () => ({}),
-    deduplicateAgentName: vi.fn(),
     logActivity: (...args: unknown[]) => logActivityMock(...args),
   }));
 }
@@ -37,9 +36,8 @@ function createDbStub() {
     companyId: "company-1",
     inviteType: "company_join",
     source: "board_api",
-    allowedJoinTypes: "human",
     tokenHash: "hash",
-    defaultsPayload: { humanRole: "viewer" },
+    defaultsPayload: { user: { role: "viewer", grants: [] } },
     expiresAt: new Date("2027-03-10T00:00:00.000Z"),
     invitedByUserId: "board-user",
     revokedAt: null,
@@ -68,11 +66,13 @@ function createDbStub() {
               return query;
             },
             where() {
-              return Promise.resolve([{
-                name: "Acme Robotics",
-                brandColor: "#114488",
-                logoAssetId: "logo-1",
-              }]);
+              return Promise.resolve([
+                {
+                  name: "Acme Robotics",
+                  brandColor: "#114488",
+                  logoAssetId: "logo-1",
+                },
+              ]);
             },
           };
           return query;
@@ -99,11 +99,13 @@ function createApp() {
       userName: "Board User",
       userEmail: "board@example.com",
       companyIds: ["company-1"],
-      memberships: [{
-        companyId: "company-1",
-        membershipRole: "owner",
-        status: "active",
-      }],
+      memberships: [
+        {
+          companyId: "company-1",
+          membershipRole: "owner",
+          status: "active",
+        },
+      ],
       isInstanceAdmin: true,
     });
     next();
@@ -145,13 +147,14 @@ describe("POST /companies/:companyId/invites", () => {
       .set("host", "paperclip.example")
       .set("x-forwarded-proto", "https")
       .send({
-        allowedJoinTypes: "human",
-        humanRole: "viewer",
+        userRole: "viewer",
       });
 
     expect(res.status).toBe(201);
     expect(res.body.companyName).toBe("Acme Robotics");
     expect(res.body.invitePath).toMatch(/^\/invite\/pcp_invite_/);
-    expect(res.body.inviteUrl).toMatch(/^https:\/\/paperclip\.example\/invite\/pcp_invite_/);
+    expect(res.body.inviteUrl).toMatch(
+      /^https:\/\/paperclip\.example\/invite\/pcp_invite_/,
+    );
   });
 });

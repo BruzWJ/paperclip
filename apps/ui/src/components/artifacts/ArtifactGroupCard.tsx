@@ -1,15 +1,22 @@
 import { Layers } from "lucide-react";
-import type { To } from "react-router-dom";
 import type { CompanyArtifactGroup } from "@/api/artifacts";
-import { Link } from "@/lib/router";
+import {
+  Link,
+  type RegisteredRouter,
+  type ValidateLinkOptions,
+} from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { ArtifactPreview } from "@/components/artifacts/ArtifactCard";
 import { formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
-interface ArtifactGroupCardProps {
+interface ArtifactGroupCardProps<
+  TRouter extends RegisteredRouter = RegisteredRouter,
+  TOptions = unknown,
+> {
   group: CompanyArtifactGroup;
-  /** Destination for opening this stack (preserves active filters/search). */
-  to: To;
+  /** Native destination for opening this stack while preserving active search state. */
+  linkOptions: ValidateLinkOptions<TRouter, TOptions>;
 }
 
 /**
@@ -18,7 +25,11 @@ interface ArtifactGroupCardProps {
  * layers a subtle "stack" effect behind the card only when it represents more
  * than one artifact.
  */
-export function ArtifactGroupCard({ group, to }: ArtifactGroupCardProps) {
+export function ArtifactGroupCard<
+  TRouter extends RegisteredRouter,
+  TOptions,
+>(props: ArtifactGroupCardProps<TRouter, TOptions>): ReactNode;
+export function ArtifactGroupCard({ group, linkOptions }: ArtifactGroupCardProps) {
   const stacked = group.count > 1;
   const preview = group.previewArtifacts[0];
   const countLabel = `${group.count} artifact${group.count === 1 ? "" : "s"}`;
@@ -42,7 +53,7 @@ export function ArtifactGroupCard({ group, to }: ArtifactGroupCardProps) {
 
       {/* design-allow(card-pattern): navigation <Link> card; Card renders a div and would break anchor semantics (C5a Run 3) */}
       <Link
-        to={to}
+        {...linkOptions}
         title={countLabel}
         data-testid="artifact-group-card"
         data-group-id={group.id}

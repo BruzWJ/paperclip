@@ -83,7 +83,7 @@ function sanitizeSvgBuffer(input: Buffer): Buffer | null {
 }
 
 export function assetRoutes(db: Db, storage: StorageService) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = assetService(db);
   const assetUpload = multer({
     storage: multer.memoryStorage(),

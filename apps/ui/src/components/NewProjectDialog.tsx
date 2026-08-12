@@ -1,7 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  isAbsoluteProjectFolder,
+  isCanonicalProjectRepositoryUrl,
+} from "@paperclipai/shared";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { accessApi } from "../api/access";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
@@ -9,11 +14,7 @@ import { goalsApi } from "../api/goals";
 import { assetsApi } from "../api/assets";
 import { buildMarkdownMentionOptions } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -38,13 +39,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "../lib/utils";
-import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
+import {
+  MarkdownEditor,
+  type MarkdownEditorRef,
+  type MentionOption,
+} from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
 import { ChoosePathButton } from "./PathInstructionsModal";
-import {
-  isAbsoluteProjectFolder,
-  isValidProjectRepositoryUrl,
-} from "../lib/project-codebase";
 
 const projectStatuses = [
   { value: "backlog", label: "Backlog" },
@@ -56,7 +57,8 @@ const projectStatuses = [
 
 export function NewProjectDialog() {
   const { newProjectOpen, closeNewProject } = useDialog();
-  const { selectedCompanyId, selectedCompany } = useCompany();
+  const companyId = useCompanyRouteId();
+  const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -71,21 +73,21 @@ export function NewProjectDialog() {
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
   const { data: goals } = useQuery({
-    queryKey: queryKeys.goals.list(selectedCompanyId!),
-    queryFn: () => goalsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && newProjectOpen,
+    queryKey: queryKeys.goals.list(companyId),
+    queryFn: () => goalsApi.list(companyId),
+    enabled: newProjectOpen,
   });
 
   const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId!),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && newProjectOpen,
+    queryKey: queryKeys.agents.list(companyId),
+    queryFn: () => agentsApi.list(companyId),
+    enabled: newProjectOpen,
   });
 
   const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
-    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
-    enabled: !!selectedCompanyId && newProjectOpen,
+    queryKey: queryKeys.access.companyUserDirectory(companyId),
+    queryFn: () => accessApi.listUserDirectory(companyId),
+    enabled: newProjectOpen,
   });
 
   const mentionOptions = useMemo<MentionOption[]>(() => {
@@ -97,13 +99,12 @@ export function NewProjectDialog() {
 
   const createProject = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
-      projectsApi.create(selectedCompanyId!, data),
+      projectsApi.create(companyId, data),
   });
 
   const uploadDescriptionImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!selectedCompanyId) throw new Error("No company selected");
-      return assetsApi.uploadImage(selectedCompanyId, file, "projects/drafts");
+      return assetsApi.uploadImage(companyId, file, "projects/drafts");
     },
   });
 
@@ -120,16 +121,16 @@ export function NewProjectDialog() {
   }
 
   async function handleSubmit() {
-    if (!selectedCompanyId || !name.trim()) return;
-    const normalizedLocalFolder = localFolder.trim();
-    const normalizedRepoUrl = repoUrl.trim();
+    if (!name.trim()) return;
+    const exactLocalFolder = localFolder;
+    const exactRepoUrl = repoUrl;
 
-    if (normalizedLocalFolder && !isAbsoluteProjectFolder(normalizedLocalFolder)) {
+    if (exactLocalFolder && !isAbsoluteProjectFolder(exactLocalFolder)) {
       setCodebaseError("Local folder must be a full absolute path.");
       return;
     }
-    if (normalizedRepoUrl && !isValidProjectRepositoryUrl(normalizedRepoUrl)) {
-      setCodebaseError("Repo must use a valid HTTPS repository URL.");
+    if (exactRepoUrl && !isCanonicalProjectRepositoryUrl(exactRepoUrl)) {
+      setCodebaseError("Repo must use its exact canonical HTTPS URL.");
       return;
     }
     setCodebaseError(null);
@@ -142,18 +143,22 @@ export function NewProjectDialog() {
         // No color is sent — new projects persist color = null (neutral gray). See PAP-68.
         ...(goalIds.length > 0 ? { goalIds } : {}),
         ...(targetDate ? { targetDate } : {}),
-        ...(normalizedLocalFolder || normalizedRepoUrl
+        ...(exactLocalFolder || exactRepoUrl
           ? {
               codebase: {
-                ...(normalizedLocalFolder ? { localFolder: normalizedLocalFolder } : {}),
-                ...(normalizedRepoUrl ? { repoUrl: normalizedRepoUrl } : {}),
+                ...(exactLocalFolder ? { localFolder: exactLocalFolder } : {}),
+                ...(exactRepoUrl ? { repoUrl: exactRepoUrl } : {}),
               },
             }
           : {}),
       });
 
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(created.id) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.list(companyId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.detail(created.id),
+      });
       reset();
       closeNewProject();
     } catch {
@@ -206,13 +211,20 @@ export function NewProjectDialog() {
               onClick={() => setExpanded(!expanded)}
               aria-label="Toggle expanded layout"
             >
-              {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              {expanded ? (
+                <Minimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" />
+              )}
             </Button>
             <Button
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
-              onClick={() => { reset(); closeNewProject(); }}
+              onClick={() => {
+                reset();
+                closeNewProject();
+              }}
               aria-label="Close new project dialog"
             >
               <span className="text-lg leading-none">&times;</span>
@@ -247,7 +259,10 @@ export function NewProjectDialog() {
             placeholder="Add description..."
             bordered={false}
             mentions={mentionOptions}
-            contentClassName={cn("text-sm text-muted-foreground", expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)")}
+            contentClassName={cn(
+              "text-sm text-muted-foreground",
+              expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)",
+            )}
             imageUploadHandler={async (file) => {
               const asset = await uploadDescriptionImage.mutateAsync(file);
               return asset.contentPath;
@@ -258,7 +273,10 @@ export function NewProjectDialog() {
         <div className="space-y-3 border-t border-border px-4 pb-3 pt-3">
           <div>
             <div className="mb-1 flex items-center gap-1.5">
-              <label htmlFor="new-project-repo-url" className="block text-xs text-muted-foreground">
+              <label
+                htmlFor="new-project-repo-url"
+                className="block text-xs text-muted-foreground"
+              >
                 Repo URL
               </label>
               <span className="text-xs text-muted-foreground/50">optional</span>
@@ -266,8 +284,12 @@ export function NewProjectDialog() {
                 <TooltipTrigger asChild>
                   <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/50" />
                 </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
-                  Record the HTTPS repository that owns this project&apos;s source code.
+                <TooltipContent
+                  side="top"
+                  className="max-w-(--sz-240px) text-xs"
+                >
+                  Record the HTTPS repository that owns this project&apos;s
+                  source code.
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -285,7 +307,10 @@ export function NewProjectDialog() {
 
           <div>
             <div className="mb-1 flex items-center gap-1.5">
-              <label htmlFor="new-project-local-folder" className="block text-xs text-muted-foreground">
+              <label
+                htmlFor="new-project-local-folder"
+                className="block text-xs text-muted-foreground"
+              >
                 Local folder
               </label>
               <span className="text-xs text-muted-foreground/50">optional</span>
@@ -293,8 +318,12 @@ export function NewProjectDialog() {
                 <TooltipTrigger asChild>
                   <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/50" />
                 </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
-                  Set the absolute directory where agents assigned to this project run and write files.
+                <TooltipContent
+                  side="top"
+                  className="max-w-(--sz-240px) text-xs"
+                >
+                  Set the absolute directory where agents assigned to this
+                  project run and write files.
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -314,7 +343,9 @@ export function NewProjectDialog() {
           </div>
 
           {codebaseError ? (
-            <p className="text-xs text-destructive" role="alert">{codebaseError}</p>
+            <p className="text-xs text-destructive" role="alert">
+              {codebaseError}
+            </p>
           ) : null}
         </div>
 
@@ -334,7 +365,11 @@ export function NewProjectDialog() {
             <DropdownMenuContent align="start">
               <DropdownMenuRadioGroup value={status} onValueChange={setStatus}>
                 {projectStatuses.map((s) => (
-                  <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
+                  <DropdownMenuRadioItem
+                    key={s.value}
+                    value={s.value}
+                    className="text-xs"
+                  >
                     {s.label}
                   </DropdownMenuRadioItem>
                 ))}
@@ -351,7 +386,9 @@ export function NewProjectDialog() {
               <span className="max-w-(--sz-160px) truncate">{goal.title}</span>
               <button
                 className="text-muted-foreground hover:text-foreground"
-                onClick={() => setGoalIds((prev) => prev.filter((id) => id !== goal.id))}
+                onClick={() =>
+                  setGoalIds((prev) => prev.filter((id) => id !== goal.id))
+                }
                 aria-label={`Remove goal ${goal.title}`}
                 type="button"
               >
@@ -364,15 +401,24 @@ export function NewProjectDialog() {
             <DropdownMenuTrigger asChild>
               <button
                 className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors disabled:opacity-60"
-                disabled={selectedGoals.length > 0 && availableGoals.length === 0}
+                disabled={
+                  selectedGoals.length > 0 && availableGoals.length === 0
+                }
               >
-                {selectedGoals.length > 0 ? <Plus className="h-3 w-3 text-muted-foreground" /> : <Target className="h-3 w-3 text-muted-foreground" />}
+                {selectedGoals.length > 0 ? (
+                  <Plus className="h-3 w-3 text-muted-foreground" />
+                ) : (
+                  <Target className="h-3 w-3 text-muted-foreground" />
+                )}
                 {selectedGoals.length > 0 ? "+ Goal" : "Goal"}
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="start">
               {selectedGoals.length === 0 && (
-                <DropdownMenuItem className="text-xs text-muted-foreground" disabled>
+                <DropdownMenuItem
+                  className="text-xs text-muted-foreground"
+                  disabled
+                >
                   No goal
                 </DropdownMenuItem>
               )}
@@ -386,7 +432,10 @@ export function NewProjectDialog() {
                 </DropdownMenuItem>
               ))}
               {selectedGoals.length > 0 && availableGoals.length === 0 && (
-                <DropdownMenuItem className="text-xs text-muted-foreground" disabled>
+                <DropdownMenuItem
+                  className="text-xs text-muted-foreground"
+                  disabled
+                >
                   All goals already selected.
                 </DropdownMenuItem>
               )}
@@ -410,9 +459,13 @@ export function NewProjectDialog() {
         {/* Footer */}
         <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
           {createProject.isPending ? (
-            <p role="status" className="text-xs text-muted-foreground">Creating project…</p>
+            <p role="status" className="text-xs text-muted-foreground">
+              Creating project…
+            </p>
           ) : createProject.isError ? (
-            <p role="alert" className="text-xs text-destructive">Failed to create project.</p>
+            <p role="alert" className="text-xs text-destructive">
+              Failed to create project.
+            </p>
           ) : (
             <span />
           )}

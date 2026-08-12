@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { PaperclipConfig } from "../config/schema.js";
 import type { CheckResult } from "./index.js";
-import { resolveRuntimeLikePath } from "./path-resolver.js";
+import { resolveRuntimeLikePath } from "../utils/path-resolver.js";
 
 export function storageCheck(config: PaperclipConfig, configPath?: string): CheckResult {
   if (config.storage.provider === "local_disk") {

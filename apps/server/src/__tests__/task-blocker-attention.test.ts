@@ -25,7 +25,6 @@ function taskListRow(overrides: Record<string, unknown> = {}) {
     boardPresentationStatus: "blocked",
     disposition: null,
     workMode: "standard",
-    harnessKind: null,
     priority: "medium",
     ownerKind: "board",
     ownerAgentId: null,
@@ -129,7 +128,7 @@ async function classify(input: {
   if (input.agents) select.push(input.agents);
   const harness = createMockDb({ select });
   const rows = await taskService(harness.db).list(companyId, {
-    status: "blocked",
+    status: ["blocked"],
   });
   expect(harness.remaining("select")).toBe(0);
   return rows[0]!;

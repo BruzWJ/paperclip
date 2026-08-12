@@ -33,7 +33,7 @@ import type {
   TaskCreatorEdgeTerminalReason,
   TaskExecutionRefSourceKind,
 } from "@paperclipai/shared";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   InvokableTaskOwnerRejected,
   resolveInvokableTaskOwnerInTransaction,
@@ -47,7 +47,10 @@ import {
   type TaskSessionProjectedCommentSource,
 } from "./task-session/admission.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
-import { persistCanonicalTaskAggregateInTx } from "./canonical-task-aggregate.js";
+import {
+  allocateCanonicalTaskIdentityInTx,
+  persistCanonicalTaskAggregateInTx,
+} from "./canonical-task-aggregate.js";
 import {
   createTaskFormCommitRuntime,
   revokeOutgoingOwnershipEpoch,
@@ -62,9 +65,7 @@ import {
   TaskExecutionWorkspaceReservationRejected,
   reserveTaskExecutionWorkspaceBinding,
 } from "./execution-workspaces.js";
-import {
-  assertPluginPermittedTaskOwnerInTransaction,
-} from "./plugin-task-authorization.js";
+import { assertPluginPermittedTaskOwnerInTransaction } from "./plugin-task-authorization.js";
 import {
   TaskExecutionRunInvariantViolation,
   TaskExecutionSteeringRejected,
@@ -76,11 +77,14 @@ import type {
   TaskExecutionCancellationService,
   RequestedScopedRunCancellations,
 } from "./task-execution-cancellation.js";
+import {
+  persistActivityLog,
+  publishCommittedActivity,
+} from "./activity-log.js";
 
 type TaskRow = typeof tasks.$inferSelect;
 type CreatorEdgeRow = typeof taskCreatorEdgeReceivability.$inferSelect;
 type TaskSessionRow = typeof taskSessions.$inferSelect;
-type BoardReopenCommandRow = typeof taskBoardReopenCommands.$inferSelect;
 type SystemEscalationIdentityRow =
   typeof systemEscalationIdentities.$inferSelect;
 type ReopenCreatorEndpointState = {
@@ -171,7 +175,8 @@ function pluginWithdrawalTaskSnapshot(task: TaskRow): Record<string, unknown> {
 }
 
 function recordedPluginWithdrawalTask(result: unknown): TaskRow | null {
-  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  if (!result || typeof result !== "object" || Array.isArray(result))
+    return null;
   const task = (result as Record<string, unknown>).task;
   if (!task || typeof task !== "object" || Array.isArray(task)) return null;
   const snapshot = { ...(task as Record<string, unknown>) };
@@ -190,7 +195,8 @@ function recordedPluginWithdrawalRejection(result: unknown): {
   message: string;
   reason: string;
 } | null {
-  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  if (!result || typeof result !== "object" || Array.isArray(result))
+    return null;
   const record = result as Record<string, unknown>;
   return typeof record.message === "string" && typeof record.reason === "string"
     ? { message: record.message, reason: record.reason }
@@ -217,8 +223,6 @@ export type OrdinaryTaskCreator =
     };
 
 export interface OrdinaryTaskCreateInput {
-  /** Caller-reserved UUID for an atomically correlated producer row. */
-  taskId?: string;
   companyId: string;
   request: string;
   ownerAgentId: string;
@@ -242,7 +246,6 @@ export interface OrdinaryTaskCreateInput {
   originFingerprint?: string | null;
   billingCode?: string | null;
   workMode?: string;
-  harnessKind?: string | null;
   /**
    * Optional producer-side correlation written in the same transaction as
    * the task, Session, authority, and initial execution ref.
@@ -341,13 +344,11 @@ export interface OrdinaryTaskRuntimeOptions {
   clock?: () => Date;
   taskExecutionRunService: Pick<
     TaskExecutionRunService,
-    | "requestSteeringInTransaction"
-    | "continuePendingSteeringForSource"
+    "requestSteeringInTransaction" | "continuePendingSteeringForSource"
   >;
   taskExecutionCancellation: Pick<
     TaskExecutionCancellationService,
-    | "requestScopeCancellationsInTransaction"
-    | "reconcileRequestedCancellations"
+    "requestScopeCancellationsInTransaction" | "reconcileRequestedCancellations"
   >;
   /**
    * The only execution trigger exposed to causal producers. Implementations
@@ -430,7 +431,7 @@ async function withOrdinaryHumanSteeringErrors<T>(
       throw new OrdinaryTaskRuntimeRejected(
         error.message,
         error instanceof TaskExecutionSteeringRejected &&
-            error.reason !== "invalid_request"
+          error.reason !== "invalid_request"
           ? "human_reply_steering_ambiguous"
           : "human_reply_run_not_steerable",
       );
@@ -439,12 +440,14 @@ async function withOrdinaryHumanSteeringErrors<T>(
   }
 }
 
-function nonEmpty(value: string, label: string): string {
-  const normalized = value.trim();
-  if (!normalized) {
-    throw new OrdinaryTaskRuntimeRejected(`${label} is required`, `${label}_required`);
+function exactNonBlank(value: string, label: string): string {
+  if (!value || value.trim() !== value) {
+    throw new OrdinaryTaskRuntimeRejected(
+      `${label} must be exact and non-blank`,
+      `${label}_required`,
+    );
   }
-  return normalized;
+  return value;
 }
 
 function nonBlankPreservingBytes(value: string, label: string): string {
@@ -534,9 +537,7 @@ function executionSourceForOrdinaryCreate(
   | Extract<TaskSessionExecutionSource, { sourceKind: "routine_dispatch" }> {
   const sourceKind =
     input.sourceKind ??
-    (input.creator.kind === "routine"
-      ? "routine_dispatch"
-      : "task_request");
+    (input.creator.kind === "routine" ? "routine_dispatch" : "task_request");
   if (sourceKind === "routine_dispatch") {
     if (input.creator.kind !== "routine") {
       throw new OrdinaryTaskRuntimeRejected(
@@ -561,11 +562,7 @@ function executionSourceForOrdinaryCreate(
 
 function creatorEndpoint(task: TaskRow): {
   endpointKind:
-    | "agent-execution"
-    | "user/board"
-    | "plugin"
-    | "routine"
-    | "system";
+    "agent-execution" | "user/board" | "plugin" | "routine" | "system";
   endpointId: string | null;
   endpointSnapshot: Record<string, unknown>;
 } {
@@ -579,8 +576,7 @@ function creatorEndpoint(task: TaskRow): {
       endpointId: task.creatorAuthorityId,
       endpointSnapshot: {
         authorityId: task.creatorAuthorityId,
-        originatingAdapterConfigRevisionId:
-          task.creatorAdapterConfigRevisionId,
+        originatingAdapterConfigRevisionId: task.creatorAdapterConfigRevisionId,
       },
     };
   }
@@ -680,12 +676,10 @@ async function insertCreatorEdge(
       state: terminal ? "terminal" : "receivable",
       terminalReason,
       terminalSourceKind: terminal
-        ? options.terminalSourceKind ?? "board_reopen"
+        ? (options.terminalSourceKind ?? "board_reopen")
         : null,
-      terminalSourceId: terminal
-        ? options.terminalSourceId ?? task.id
-        : null,
-      terminalAudit: terminal ? options.terminalAudit ?? {} : null,
+      terminalSourceId: terminal ? (options.terminalSourceId ?? task.id) : null,
+      terminalAudit: terminal ? (options.terminalAudit ?? {}) : null,
       terminalizedAt: terminal ? now : null,
       createdAt: now,
       updatedAt: now,
@@ -713,14 +707,8 @@ async function inspectCreatorEndpoint(
             .from(taskExecutionAuthorities)
             .where(
               and(
-                eq(
-                  taskExecutionAuthorities.companyId,
-                  task.companyId,
-                ),
-                eq(
-                  taskExecutionAuthorities.id,
-                  task.creatorAuthorityId,
-                ),
+                eq(taskExecutionAuthorities.companyId, task.companyId),
+                eq(taskExecutionAuthorities.id, task.creatorAuthorityId),
               ),
             )
             .for("update")
@@ -769,10 +757,7 @@ async function inspectCreatorEndpoint(
             .for("update")
             .then((rows) => rows[0] ?? null)
         : null;
-      if (
-        !plugin ||
-        plugin.pluginKey !== task.creatorPluginKey
-      ) {
+      if (!plugin || plugin.pluginKey !== task.creatorPluginKey) {
         return {
           terminalReason: "plugin_uninstalled",
           endpointTombstone: {
@@ -842,10 +827,7 @@ async function lockReopenCreatorEdge(
       and(
         eq(taskCreatorEdgeReceivability.companyId, task.companyId),
         eq(taskCreatorEdgeReceivability.taskId, task.id),
-        eq(
-          taskCreatorEdgeReceivability.ownershipEpoch,
-          task.ownershipEpoch!,
-        ),
+        eq(taskCreatorEdgeReceivability.ownershipEpoch, task.ownershipEpoch!),
       ),
     )
     .for("update")
@@ -1012,14 +994,8 @@ async function lockSystemEscalationReopenIdentity(
     .from(taskCreatorEdgeReceivability)
     .where(
       and(
-        eq(
-          taskCreatorEdgeReceivability.companyId,
-          identity.companyId,
-        ),
-        eq(
-          taskCreatorEdgeReceivability.id,
-          identity.terminalCreatorEdgeId,
-        ),
+        eq(taskCreatorEdgeReceivability.companyId, identity.companyId),
+        eq(taskCreatorEdgeReceivability.id, identity.terminalCreatorEdgeId),
       ),
     )
     .limit(2)
@@ -1051,19 +1027,14 @@ async function applyBoardReopenContinuityFence(
       and(
         eq(taskExecutionSessions.companyId, input.companyId),
         eq(taskExecutionSessions.taskId, input.taskId),
-        eq(
-          taskExecutionSessions.ownershipEpoch,
-          input.ownershipEpoch,
-        ),
+        eq(taskExecutionSessions.ownershipEpoch, input.ownershipEpoch),
       ),
     )
     .for("update");
   const liveCapabilities = await tx
     .select({
-      connectionId:
-        taskExecutionPromptCapabilities.capabilityConnectionId,
-      generation:
-        taskExecutionPromptCapabilities.capabilityGeneration,
+      connectionId: taskExecutionPromptCapabilities.capabilityConnectionId,
+      generation: taskExecutionPromptCapabilities.capabilityGeneration,
     })
     .from(taskExecutionPromptCapabilities)
     .where(
@@ -1133,10 +1104,8 @@ async function applyBoardReopenContinuityFence(
       ),
     )
     .returning({
-      connectionId:
-        taskExecutionPromptCapabilities.capabilityConnectionId,
-      generation:
-        taskExecutionPromptCapabilities.capabilityGeneration,
+      connectionId: taskExecutionPromptCapabilities.capabilityConnectionId,
+      generation: taskExecutionPromptCapabilities.capabilityGeneration,
     });
   if (revoked.length !== liveCapabilities.length) {
     throw new OrdinaryTaskRuntimeRejected(
@@ -1196,10 +1165,7 @@ async function assertCreateReferences(
       .select({ id: tasks.id })
       .from(tasks)
       .where(
-        and(
-          eq(tasks.companyId, input.companyId),
-          eq(tasks.id, input.parentId),
-        ),
+        and(eq(tasks.companyId, input.companyId), eq(tasks.id, input.parentId)),
       )
       .then((rows) => rows[0] ?? null);
     if (!parent) {
@@ -1229,14 +1195,10 @@ async function assertCreateReferences(
   }
 }
 
-function sameCreator(
-  task: TaskRow,
-  creator: OrdinaryTaskCreator,
-): boolean {
+function sameCreator(task: TaskRow, creator: OrdinaryTaskCreator): boolean {
   if (creator.kind === "user/board") {
     return (
-      task.creatorKind === creator.kind &&
-      task.creatorUserId === creator.userId
+      task.creatorKind === creator.kind && task.creatorUserId === creator.userId
     );
   }
   if (creator.kind === "plugin") {
@@ -1285,9 +1247,7 @@ export function createOrdinaryTaskRuntime(
         { kind: "user/board" | "agent-execution" | "plugin" }
       >;
       provenanceUserId: string | null;
-      ownerResolution: Awaited<
-        ReturnType<typeof resolveOrdinaryTaskOwner>
-      >;
+      ownerResolution: Awaited<ReturnType<typeof resolveOrdinaryTaskOwner>>;
     },
   ) {
     const task = input.task;
@@ -1329,14 +1289,8 @@ export function createOrdinaryTaskRuntime(
         and(
           eq(taskExecutionAuthorities.companyId, task.companyId),
           eq(taskExecutionAuthorities.taskId, task.id),
-          eq(
-            taskExecutionAuthorities.ownershipEpoch,
-            task.ownershipEpoch,
-          ),
-          eq(
-            taskExecutionAuthorities.agentId,
-            task.ownerAgentId,
-          ),
+          eq(taskExecutionAuthorities.ownershipEpoch, task.ownershipEpoch),
+          eq(taskExecutionAuthorities.agentId, task.ownerAgentId),
           eq(taskExecutionAuthorities.state, "current"),
         ),
       )
@@ -1349,22 +1303,21 @@ export function createOrdinaryTaskRuntime(
       );
     }
     const now = clock();
-    const revocation =
-      await revokeOutgoingOwnershipEpoch(
-        tx,
-        sessions,
-        options.taskExecutionCancellation,
-        {
-          companyId: task.companyId,
-          taskId: task.id,
-          sessionId: session.id,
-          ownershipEpoch: task.ownershipEpoch,
-          authorityId: outgoingAuthority.id,
-          sourceAuthorityId: input.sourceAuthorityId,
-          cancellationActor: input.cancellationActor,
-          now,
-        },
-      );
+    const revocation = await revokeOutgoingOwnershipEpoch(
+      tx,
+      sessions,
+      options.taskExecutionCancellation,
+      {
+        companyId: task.companyId,
+        taskId: task.id,
+        sessionId: session.id,
+        ownershipEpoch: task.ownershipEpoch,
+        authorityId: outgoingAuthority.id,
+        sourceAuthorityId: input.sourceAuthorityId,
+        cancellationActor: input.cancellationActor,
+        now,
+      },
+    );
     const ownershipEpoch = task.ownershipEpoch + 1;
     const authorityId = deterministicUuid(
       "task-execution-authority",
@@ -1395,8 +1348,8 @@ export function createOrdinaryTaskRuntime(
         "reassignment_epoch_conflict",
       );
     }
-    const workspaceReservation =
-      await withOrdinaryWorkspaceReservationErrors(() =>
+    const workspaceReservation = await withOrdinaryWorkspaceReservationErrors(
+      () =>
         reserveTaskExecutionWorkspaceBinding(tx, {
           task: reassigned,
           session: {
@@ -1408,7 +1361,7 @@ export function createOrdinaryTaskRuntime(
             userId: input.provenanceUserId,
           },
         }),
-      );
+    );
     await tx.insert(taskExecutionAuthorities).values({
       id: authorityId,
       companyId: task.companyId,
@@ -1416,8 +1369,7 @@ export function createOrdinaryTaskRuntime(
       sessionId: session.id,
       ownershipEpoch,
       agentId: input.ownerAgentId,
-      auditAdapterConfigRevisionId:
-        input.ownerResolution.revisionId,
+      auditAdapterConfigRevisionId: input.ownerResolution.revisionId,
       state: "current",
       createdAt: now,
     });
@@ -1433,10 +1385,8 @@ export function createOrdinaryTaskRuntime(
         targetAgentId: input.ownerAgentId,
         taskExecutionAuthorityId: authorityId,
         consultExecutionId: null,
-        adapterConfigRevisionId:
-          input.ownerResolution.revisionId,
-        contextEpoch:
-          workspaceReservation.contextEpochGeneration,
+        adapterConfigRevisionId: input.ownerResolution.revisionId,
+        contextEpoch: workspaceReservation.contextEpochGeneration,
         mode: "owner",
         sourceKind: "task_reassignment",
         actor: input.sourceActor,
@@ -1457,8 +1407,7 @@ export function createOrdinaryTaskRuntime(
     return {
       task: reassigned,
       ref: admission.ref,
-      escalationDispatchRefIds:
-        revocation.escalationDispatchRefIds,
+      escalationDispatchRefIds: revocation.escalationDispatchRefIds,
       cancellations: revocation.cancellations,
       retried: false as const,
     };
@@ -1472,8 +1421,8 @@ export function createOrdinaryTaskRuntime(
       const input = {
         ...rawInput,
         request: nonBlankPreservingBytes(rawInput.request, "request"),
-        ownerAgentId: nonEmpty(rawInput.ownerAgentId, "ownerAgentId"),
-        idempotencyKey: nonEmpty(rawInput.idempotencyKey, "idempotencyKey"),
+        ownerAgentId: exactNonBlank(rawInput.ownerAgentId, "ownerAgentId"),
+        idempotencyKey: exactNonBlank(rawInput.idempotencyKey, "idempotencyKey"),
         labelIds: [...new Set(rawInput.labelIds ?? [])],
       };
       if (input.priority && !PRIORITIES.has(input.priority)) {
@@ -1483,7 +1432,7 @@ export function createOrdinaryTaskRuntime(
         );
       }
       const key = `ordinary-task-create:${input.companyId}:${input.idempotencyKey}`;
-      const taskId = input.taskId?.trim() || deterministicUuid("ordinary-task", key);
+      const taskId = deterministicUuid("ordinary-task", key);
       const sessionId = stableSessionId(key);
 
       const result = await db.transaction(async (tx) => {
@@ -1494,8 +1443,7 @@ export function createOrdinaryTaskRuntime(
           input.creator.kind === "plugin"
             ? await assertPluginPermittedTaskOwnerInTransaction(tx, {
                 companyId: input.companyId,
-                pluginInstallationId:
-                  input.creator.pluginInstallationId,
+                pluginInstallationId: input.creator.pluginInstallationId,
                 pluginKey: input.creator.pluginKey,
                 operation: "tasks.create",
                 ownerAgentId: input.ownerAgentId,
@@ -1504,10 +1452,7 @@ export function createOrdinaryTaskRuntime(
         const existing = await tx
           .select({ task: tasks })
           .from(taskCreateIdempotencyKeys)
-          .innerJoin(
-            tasks,
-            eq(tasks.id, taskCreateIdempotencyKeys.taskId),
-          )
+          .innerJoin(tasks, eq(tasks.id, taskCreateIdempotencyKeys.taskId))
           .where(
             and(
               eq(taskCreateIdempotencyKeys.companyId, input.companyId),
@@ -1528,13 +1473,11 @@ export function createOrdinaryTaskRuntime(
             existing.goalId !== (input.goalId ?? null) ||
             existing.parentId !== (input.parentId ?? null) ||
             existing.priority !== (input.priority ?? "medium") ||
-            existing.responsibleUserId !==
-              (input.responsibleUserId ?? null) ||
+            existing.responsibleUserId !== (input.responsibleUserId ?? null) ||
             existing.originKind !== (input.originKind ?? "manual") ||
             existing.originId !== (input.originId ?? null) ||
             existing.originRunId !== (input.originRunId ?? null) ||
-            existing.originFingerprint !==
-              (input.originFingerprint ?? key) ||
+            existing.originFingerprint !== (input.originFingerprint ?? key) ||
             existing.billingCode !== (input.billingCode ?? null) ||
             !sameCreator(existing, input.creator)
           ) {
@@ -1623,59 +1566,49 @@ export function createOrdinaryTaskRuntime(
                 input.ownerAgentId,
               );
         const now = clock();
-        const maxTaskNumber = await tx
-          .select({
-            value: sql<number>`coalesce(max(${tasks.taskNumber}), 0)`,
-          })
-          .from(tasks)
-          .where(eq(tasks.companyId, input.companyId))
-          .then((rows) => rows[0]?.value ?? 0);
-        const taskNumber =
-          Math.max(company.taskCounter, maxTaskNumber) + 1;
-        await tx
-          .update(companies)
-          .set({ taskCounter: taskNumber, updatedAt: now })
-          .where(eq(companies.id, input.companyId));
-        const identifier = `${company.taskPrefix}-${taskNumber}`;
+        const { taskNumber, identifier } =
+          await allocateCanonicalTaskIdentityInTx(
+            tx,
+            input.companyId,
+            now,
+          );
         const authorityId = deterministicUuid(
           "task-execution-authority",
           `${taskId}:1:${owner.id}`,
         );
-        const aggregate =
-          await withOrdinaryWorkspaceReservationErrors(() =>
-            persistCanonicalTaskAggregateInTx(tx, {
+        const aggregate = await withOrdinaryWorkspaceReservationErrors(() =>
+          persistCanonicalTaskAggregateInTx(tx, {
             task: {
-            id: taskId,
-            companyId: input.companyId,
-            projectId: input.projectId ?? null,
-            projectWorkspaceId: input.projectWorkspaceId ?? null,
-            goalId: input.goalId ?? null,
-            parentId: input.parentId ?? null,
-            title: input.title?.trim() || null,
-            request: input.request,
-            boardPresentationStatus: "todo",
-            lifecycleStatus: "open",
-            disposition: null,
-            workMode: input.workMode ?? "standard",
-            harnessKind: input.harnessKind ?? null,
-            priority: input.priority ?? "medium",
-            ownerKind: "agent",
-            ownerAgentId: owner.id,
-            ownerUserId: null,
-            ownerAssignmentSource: null,
-            ownershipEpoch: 1,
-            ...creatorColumns(input.creator),
-            responsibleUserId: input.responsibleUserId ?? null,
-            taskNumber,
-            identifier,
-            originKind: input.originKind ?? "manual",
-            originId: input.originId ?? null,
-            originRunId: input.originRunId ?? null,
-            originFingerprint: input.originFingerprint ?? key,
-            billingCode: input.billingCode ?? null,
-            requestDepth: input.parentId ? 1 : 0,
-            createdAt: now,
-            updatedAt: now,
+              id: taskId,
+              companyId: input.companyId,
+              projectId: input.projectId ?? null,
+              projectWorkspaceId: input.projectWorkspaceId ?? null,
+              goalId: input.goalId ?? null,
+              parentId: input.parentId ?? null,
+              title: input.title?.trim() || null,
+              request: input.request,
+              boardPresentationStatus: "todo",
+              lifecycleStatus: "open",
+              disposition: null,
+              workMode: input.workMode ?? "standard",
+              priority: input.priority ?? "medium",
+              ownerKind: "agent",
+              ownerAgentId: owner.id,
+              ownerUserId: null,
+              ownerAssignmentSource: null,
+              ownershipEpoch: 1,
+              ...creatorColumns(input.creator),
+              responsibleUserId: input.responsibleUserId ?? null,
+              taskNumber,
+              identifier,
+              originKind: input.originKind ?? "manual",
+              originId: input.originId ?? null,
+              originRunId: input.originRunId ?? null,
+              originFingerprint: input.originFingerprint ?? key,
+              billingCode: input.billingCode ?? null,
+              requestDepth: input.parentId ? 1 : 0,
+              createdAt: now,
+              updatedAt: now,
             },
             session: {
               id: sessionId,
@@ -1685,9 +1618,9 @@ export function createOrdinaryTaskRuntime(
               provenance: {
                 agentId: null,
                 userId:
-                input.creator.kind === "user/board"
-                  ? input.creator.userId
-                  : null,
+                  input.creator.kind === "user/board"
+                    ? input.creator.userId
+                    : null,
               },
             },
             authority: {
@@ -1697,8 +1630,8 @@ export function createOrdinaryTaskRuntime(
               createdAt: now,
             },
             idempotency: { key },
-            }),
-          );
+          }),
+        );
         const created = aggregate.task;
         if (input.labelIds.length > 0) {
           await tx.insert(taskLabels).values(
@@ -1762,12 +1695,9 @@ export function createOrdinaryTaskRuntime(
     },
 
     async boardReopen(input: OrdinaryTaskBoardReopenInput) {
-      const actorUserId = nonEmpty(input.actorUserId, "actorUserId");
+      const actorUserId = exactNonBlank(input.actorUserId, "actorUserId");
       const reason = nonBlankPreservingBytes(input.reason, "reason");
-      const idempotencyKey = nonEmpty(
-        input.idempotencyKey,
-        "idempotencyKey",
-      );
+      const idempotencyKey = exactNonBlank(input.idempotencyKey, "idempotencyKey");
       const commandId = deterministicUuid(
         "board-reopen-command",
         `${input.companyId}:${idempotencyKey}`,
@@ -1806,10 +1736,7 @@ export function createOrdinaryTaskRuntime(
           .where(
             and(
               eq(taskBoardReopenCommands.companyId, input.companyId),
-              eq(
-                taskBoardReopenCommands.idempotencyKey,
-                idempotencyKey,
-              ),
+              eq(taskBoardReopenCommands.idempotencyKey, idempotencyKey),
             ),
           )
           .limit(2)
@@ -1849,22 +1776,13 @@ export function createOrdinaryTaskRuntime(
             .from(taskCreatorEdgeReceivability)
             .where(
               and(
-                eq(
-                  taskCreatorEdgeReceivability.companyId,
-                  input.companyId,
-                ),
-                eq(
-                  taskCreatorEdgeReceivability.taskId,
-                  priorCommand.taskId,
-                ),
+                eq(taskCreatorEdgeReceivability.companyId, input.companyId),
+                eq(taskCreatorEdgeReceivability.taskId, priorCommand.taskId),
                 eq(
                   taskCreatorEdgeReceivability.ownershipEpoch,
                   priorCommand.ownershipEpoch,
                 ),
-                eq(
-                  taskCreatorEdgeReceivability.id,
-                  priorCommand.creatorEdgeId,
-                ),
+                eq(taskCreatorEdgeReceivability.id, priorCommand.creatorEdgeId),
               ),
             )
             .limit(2)
@@ -1928,8 +1846,7 @@ export function createOrdinaryTaskRuntime(
               command: priorCommand,
               dispatch: {
                 kind: "agent_execution",
-                executionRef:
-                  projectPersistedTaskExecutionRef(executionRef),
+                executionRef: projectPersistedTaskExecutionRef(executionRef),
               } satisfies TaskBoardReopenDispatch,
               escalationDispatchRefId: null,
               cancellations: null,
@@ -1938,9 +1855,7 @@ export function createOrdinaryTaskRuntime(
           }
           if (
             priorCommand.branch !== "board_only" ||
-            !["user", "board"].includes(
-              priorCommand.preservedOwnerKind,
-            ) ||
+            !["user", "board"].includes(priorCommand.preservedOwnerKind) ||
             priorCommand.executionRefId !== null ||
             !priorCommand.systemEscalationIdentityId
           ) {
@@ -1949,11 +1864,12 @@ export function createOrdinaryTaskRuntime(
               "board_reopen_incomplete",
             );
           }
-          const escalationIdentity =
-            await lockSystemEscalationReopenIdentity(tx, task);
+          const escalationIdentity = await lockSystemEscalationReopenIdentity(
+            tx,
+            task,
+          );
           if (
-            escalationIdentity.id !==
-            priorCommand.systemEscalationIdentityId
+            escalationIdentity.id !== priorCommand.systemEscalationIdentityId
           ) {
             throw new OrdinaryTaskRuntimeRejected(
               "Accepted board-only reopen lost its exact escalation identity",
@@ -2041,10 +1957,7 @@ export function createOrdinaryTaskRuntime(
                   taskExecutionAuthorities.ownershipEpoch,
                   task.ownershipEpoch,
                 ),
-                eq(
-                  taskExecutionAuthorities.agentId,
-                  task.ownerAgentId,
-                ),
+                eq(taskExecutionAuthorities.agentId, task.ownerAgentId),
                 eq(taskExecutionAuthorities.state, "current"),
               ),
             )
@@ -2085,8 +1998,10 @@ export function createOrdinaryTaskRuntime(
               "board_reopen_target_invalid",
             );
           }
-          escalationIdentity =
-            await lockSystemEscalationReopenIdentity(tx, task);
+          escalationIdentity = await lockSystemEscalationReopenIdentity(
+            tx,
+            task,
+          );
           branch = "board_only";
           preservedOwnerKind = task.ownerKind;
         } else {
@@ -2098,8 +2013,9 @@ export function createOrdinaryTaskRuntime(
 
         const now = clock();
         const cancellations =
-          await options.taskExecutionCancellation
-            .requestScopeCancellationsInTransaction(tx, {
+          await options.taskExecutionCancellation.requestScopeCancellationsInTransaction(
+            tx,
+            {
               companyId: input.companyId,
               taskId: task.id,
               selector: {
@@ -2109,14 +2025,17 @@ export function createOrdinaryTaskRuntime(
               reason: "board_reopen_continuity_fence",
               actor: { kind: "user", userId: actorUserId },
               now,
-            });
-        const continuityFenceGeneration =
-          await applyBoardReopenContinuityFence(tx, {
+            },
+          );
+        const continuityFenceGeneration = await applyBoardReopenContinuityFence(
+          tx,
+          {
             companyId: input.companyId,
             taskId: task.id,
             ownershipEpoch: task.ownershipEpoch,
             at: now,
-          });
+          },
+        );
         const reopened = await tx
           .update(tasks)
           .set({
@@ -2160,8 +2079,7 @@ export function createOrdinaryTaskRuntime(
               "board_reopen_authority_missing",
             );
           }
-          const sourceKey =
-            `board-reopen:${input.companyId}:${idempotencyKey}`;
+          const sourceKey = `board-reopen:${input.companyId}:${idempotencyKey}`;
           const admission = await sessions.admitExecutionSource(
             {
               companyId: input.companyId,
@@ -2254,8 +2172,7 @@ export function createOrdinaryTaskRuntime(
             command,
             dispatch: {
               kind: "agent_execution",
-              executionRef:
-                projectPersistedTaskExecutionRef(executionRef),
+              executionRef: projectPersistedTaskExecutionRef(executionRef),
             } satisfies TaskBoardReopenDispatch,
             escalationDispatchRefId: escalation?.dispatchRefId ?? null,
             cancellations,
@@ -2294,25 +2211,23 @@ export function createOrdinaryTaskRuntime(
     },
 
     async userComment(input: OrdinaryTaskUserCommentInput) {
-      const actorUserId = nonEmpty(input.actorUserId, "actorUserId");
+      const actorUserId = exactNonBlank(input.actorUserId, "actorUserId");
       const message = nonBlankPreservingBytes(input.message, "message");
-      const idempotencyKey = nonEmpty(
-        input.idempotencyKey,
-        "idempotencyKey",
-      );
+      const idempotencyKey = exactNonBlank(input.idempotencyKey, "idempotencyKey");
       const mention =
         input.mention == null
           ? null
           : {
-              targetAgentId: nonEmpty(
+              targetAgentId: exactNonBlank(
                 input.mention.targetAgentId,
                 "mention.targetAgentId",
               ),
               ownershipEpoch: input.mention.ownershipEpoch,
             };
-      const replyToCommentId = input.replyToCommentId == null
-        ? null
-        : nonEmpty(input.replyToCommentId, "replyToCommentId");
+      const replyToCommentId =
+        input.replyToCommentId == null
+          ? null
+          : exactNonBlank(input.replyToCommentId, "replyToCommentId");
       if (mention && replyToCommentId) {
         throw new OrdinaryTaskRuntimeRejected(
           "A board comment cannot mention an agent and reply to a comment at the same time",
@@ -2393,12 +2308,7 @@ export function createOrdinaryTaskRuntime(
               ? tx
                   .select()
                   .from(taskExecutionRefs)
-                  .where(
-                    eq(
-                      taskExecutionRefs.id,
-                      priorCommand.executionRefId,
-                    ),
-                  )
+                  .where(eq(taskExecutionRefs.id, priorCommand.executionRefId))
                   .then((rows) => rows[0] ?? null)
               : Promise.resolve(null),
             tx
@@ -2430,9 +2340,7 @@ export function createOrdinaryTaskRuntime(
             ref,
             command: priorCommand,
             steeringSourceCommentId:
-              commentSource.steeringTargetRunId === null
-                ? null
-                : comment.id,
+              commentSource.steeringTargetRunId === null ? null : comment.id,
             retried: true,
           };
         }
@@ -2512,19 +2420,13 @@ export function createOrdinaryTaskRuntime(
             .from(taskExecutionAuthorities)
             .where(
               and(
-                eq(
-                  taskExecutionAuthorities.companyId,
-                  input.companyId,
-                ),
+                eq(taskExecutionAuthorities.companyId, input.companyId),
                 eq(taskExecutionAuthorities.taskId, task.id),
                 eq(
                   taskExecutionAuthorities.ownershipEpoch,
                   mention.ownershipEpoch,
                 ),
-                eq(
-                  taskExecutionAuthorities.agentId,
-                  mention.targetAgentId,
-                ),
+                eq(taskExecutionAuthorities.agentId, mention.targetAgentId),
                 eq(taskExecutionAuthorities.state, "current"),
               ),
             )
@@ -2593,21 +2495,18 @@ export function createOrdinaryTaskRuntime(
             );
           }
           await withOrdinaryHumanSteeringErrors(() =>
-            options.taskExecutionRunService.requestSteeringInTransaction(
-              tx,
-              {
-                companyId: input.companyId,
-                taskId: task.id,
-                ownershipEpoch: task.ownershipEpoch,
-                runId: replyParent.runId!,
-                targetAgentId: replyParent.authorAgentId!,
-                exactMessage: message,
-                sourceCommentId: admission.comment!.id,
-                sourceMessageId: admission.source.messageId,
-                sourceInputId: admission.input!.id,
-                actor: { kind: "user", userId: actorUserId },
-              },
-            ),
+            options.taskExecutionRunService.requestSteeringInTransaction(tx, {
+              companyId: input.companyId,
+              taskId: task.id,
+              ownershipEpoch: task.ownershipEpoch,
+              runId: replyParent.runId!,
+              targetAgentId: replyParent.authorAgentId!,
+              exactMessage: message,
+              sourceCommentId: admission.comment!.id,
+              sourceMessageId: admission.source.messageId,
+              sourceInputId: admission.input!.id,
+              actor: { kind: "user", userId: actorUserId },
+            }),
           );
           steeringRequested = true;
         } else {
@@ -2696,11 +2595,7 @@ export function createOrdinaryTaskRuntime(
       ownerAuthority: CanonicalOwnerFormAuthority,
     ) {
       return withOrdinaryTaskFormErrors(() =>
-        taskForms.commitOwnerFormUpdate(
-          taskId,
-          input,
-          ownerAuthority,
-        ),
+        taskForms.commitOwnerFormUpdate(taskId, input, ownerAuthority),
       );
     },
 
@@ -2710,20 +2605,13 @@ export function createOrdinaryTaskRuntime(
       creatorAuthority: CanonicalCreatorFormAuthority,
     ) {
       return withOrdinaryTaskFormErrors(() =>
-        taskForms.commitCreatorFormUpdate(
-          taskId,
-          message,
-          creatorAuthority,
-        ),
+        taskForms.commitCreatorFormUpdate(taskId, message, creatorAuthority),
       );
     },
 
     async reassign(input: OrdinaryTaskReassignInput) {
-      const ownerAgentId = nonEmpty(input.ownerAgentId, "ownerAgentId");
-      const idempotencyKey = nonEmpty(
-        input.idempotencyKey,
-        "idempotencyKey",
-      );
+      const ownerAgentId = exactNonBlank(input.ownerAgentId, "ownerAgentId");
+      const idempotencyKey = exactNonBlank(input.idempotencyKey, "idempotencyKey");
       const result = await db.transaction(async (tx) => {
         await tx.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${`${input.companyId}:${input.taskId}`}, 0))`,
@@ -2732,8 +2620,7 @@ export function createOrdinaryTaskRuntime(
           input.creator.kind === "plugin"
             ? await assertPluginPermittedTaskOwnerInTransaction(tx, {
                 companyId: input.companyId,
-                pluginInstallationId:
-                  input.creator.pluginInstallationId,
+                pluginInstallationId: input.creator.pluginInstallationId,
                 pluginKey: input.creator.pluginKey,
                 operation: "tasks.update",
                 ownerAgentId,
@@ -2746,10 +2633,7 @@ export function createOrdinaryTaskRuntime(
             and(
               eq(taskExecutionRefs.companyId, input.companyId),
               eq(taskExecutionRefs.sourceKind, "task_reassignment"),
-              eq(
-                taskExecutionRefs.deliveryIdempotencyKey,
-                idempotencyKey,
-              ),
+              eq(taskExecutionRefs.deliveryIdempotencyKey, idempotencyKey),
             ),
           )
           .limit(1)
@@ -2819,11 +2703,7 @@ export function createOrdinaryTaskRuntime(
         const ownerResolution =
           input.creator.kind === "plugin"
             ? pluginOwnerResolution!
-            : await resolveOrdinaryTaskOwner(
-                tx,
-                input.companyId,
-                ownerAgentId,
-              );
+            : await resolveOrdinaryTaskOwner(tx, input.companyId, ownerAgentId);
         return commitAgentOwnerReassignmentInTransaction(tx, {
           task,
           ownerAgentId,
@@ -2844,8 +2724,7 @@ export function createOrdinaryTaskRuntime(
               ? {
                   author: {
                     kind: "plugin",
-                    pluginInstallationId:
-                      input.creator.pluginInstallationId,
+                    pluginInstallationId: input.creator.pluginInstallationId,
                     pluginKey: input.creator.pluginKey,
                   },
                   producingRun: null,
@@ -2858,9 +2737,7 @@ export function createOrdinaryTaskRuntime(
                   producingRun: null,
                 },
           provenanceUserId:
-            input.creator.kind === "user/board"
-              ? input.creator.userId
-              : null,
+            input.creator.kind === "user/board" ? input.creator.userId : null,
           sourceActor:
             input.creator.kind === "user/board"
               ? {
@@ -2869,18 +2746,16 @@ export function createOrdinaryTaskRuntime(
                 }
               : {
                   kind: "plugin",
-                  pluginInstallationId:
-                    input.creator.pluginInstallationId,
+                  pluginInstallationId: input.creator.pluginInstallationId,
                   pluginKey: input.creator.pluginKey,
                 },
           ownerResolution,
         });
       });
       if (result.cancellations) {
-        await options.taskExecutionCancellation
-          .reconcileRequestedCancellations(
-            result.cancellations,
-          );
+        await options.taskExecutionCancellation.reconcileRequestedCancellations(
+          result.cancellations,
+        );
       }
       for (const refId of result.escalationDispatchRefIds) {
         await dispatch(refId);
@@ -2890,12 +2765,9 @@ export function createOrdinaryTaskRuntime(
     },
 
     async boardReassign(input: OrdinaryTaskBoardReassignInput) {
-      const ownerAgentId = nonEmpty(input.ownerAgentId, "ownerAgentId");
-      const actorUserId = nonEmpty(input.actorUserId, "actorUserId");
-      const idempotencyKey = nonEmpty(
-        input.idempotencyKey,
-        "idempotencyKey",
-      );
+      const ownerAgentId = exactNonBlank(input.ownerAgentId, "ownerAgentId");
+      const actorUserId = exactNonBlank(input.actorUserId, "actorUserId");
+      const idempotencyKey = exactNonBlank(input.idempotencyKey, "idempotencyKey");
       const auditId = deterministicUuid(
         "board-task-reassignment-audit",
         `${input.companyId}:${idempotencyKey}`,
@@ -2911,10 +2783,7 @@ export function createOrdinaryTaskRuntime(
             and(
               eq(taskExecutionRefs.companyId, input.companyId),
               eq(taskExecutionRefs.sourceKind, "task_reassignment"),
-              eq(
-                taskExecutionRefs.deliveryIdempotencyKey,
-                idempotencyKey,
-              ),
+              eq(taskExecutionRefs.deliveryIdempotencyKey, idempotencyKey),
             ),
           )
           .limit(1)
@@ -2961,6 +2830,7 @@ export function createOrdinaryTaskRuntime(
             task,
             ref: priorRef,
             auditId,
+            committedActivity: null,
             escalationDispatchRefIds: [] as string[],
             cancellations: null,
             retried: true as const,
@@ -2990,70 +2860,70 @@ export function createOrdinaryTaskRuntime(
         );
         const previousOwnerAgentId = task.ownerAgentId;
         const previousOwnershipEpoch = task.ownershipEpoch;
-        const reassigned =
-          await commitAgentOwnerReassignmentInTransaction(tx, {
-            task,
-            ownerAgentId,
-            idempotencyKey,
-            sourceAuthorityId: actorUserId,
-            cancellationActor: {
-              kind: "user",
-              userId: actorUserId,
-            },
-            comment: {
-              author: { kind: "user", userId: actorUserId },
-              producingRun: null,
-            },
-            sourceActor: {
-              kind: "user/board",
-              userId: actorUserId,
-            },
-            provenanceUserId: actorUserId,
-            ownerResolution,
-          });
-        await tx.insert(activityLog).values({
-          id: auditId,
-          companyId: input.companyId,
-          actorType: "user",
-          actorId: actorUserId,
-          action: "task.board_reassigned",
-          entityType: "task",
-          entityId: task.id,
-          responsibleUserId: actorUserId,
-          details: {
-            contract: "board-task-reassignment/v1",
-            idempotencyKey,
-            previousOwnerAgentId,
-            previousOwnershipEpoch,
-            ownerAgentId,
-            ownershipEpoch: reassigned.task.ownershipEpoch,
-            executionRefId: reassigned.ref.id,
+        const reassigned = await commitAgentOwnerReassignmentInTransaction(tx, {
+          task,
+          ownerAgentId,
+          idempotencyKey,
+          sourceAuthorityId: actorUserId,
+          cancellationActor: {
+            kind: "user",
+            userId: actorUserId,
           },
-          createdAt: clock(),
+          comment: {
+            author: { kind: "user", userId: actorUserId },
+            producingRun: null,
+          },
+          sourceActor: {
+            kind: "user/board",
+            userId: actorUserId,
+          },
+          provenanceUserId: actorUserId,
+          ownerResolution,
         });
-        return { ...reassigned, auditId };
+        const committedActivity = await persistActivityLog(
+          tx as unknown as Db,
+          {
+            companyId: input.companyId,
+            actorType: "user",
+            actorId: actorUserId,
+            action: "task.board_reassigned",
+            entityType: "task",
+            entityId: task.id,
+            details: {
+              contract: "board-task-reassignment/v1",
+              idempotencyKey,
+              previousOwnerAgentId,
+              previousOwnershipEpoch,
+              ownerAgentId,
+              ownershipEpoch: reassigned.task.ownershipEpoch,
+              executionRefId: reassigned.ref.id,
+            },
+          },
+          { id: auditId, createdAt: clock() },
+        );
+        return { ...reassigned, auditId, committedActivity };
       });
+      if (result.committedActivity) {
+        publishCommittedActivity(result.committedActivity);
+      }
       if (result.cancellations) {
-        await options.taskExecutionCancellation
-          .reconcileRequestedCancellations(
-            result.cancellations,
-          );
+        await options.taskExecutionCancellation.reconcileRequestedCancellations(
+          result.cancellations,
+        );
       }
       for (const refId of result.escalationDispatchRefIds) {
         await dispatch(refId);
       }
       await dispatch(result.ref.id);
-      return result;
+      const { committedActivity: _committedActivity, ...publicResult } = result;
+      return publicResult;
     },
 
     async userCreatorWithdrawalSelfAssign(
       input: OrdinaryTaskUserWithdrawalSelfAssignmentInput,
     ) {
-      const actorUserId = nonEmpty(input.actorUserId, "actorUserId");
-      const idempotencyKey = nonEmpty(
-        input.idempotencyKey,
-        "idempotencyKey",
-      );
+      const actorUserId = exactNonBlank(input.actorUserId, "actorUserId");
+      const idempotencyKey = exactNonBlank(input.idempotencyKey, "idempotencyKey");
       const auditId = deterministicUuid(
         "user-creator-withdrawal-self-assignment",
         `${input.companyId}:${idempotencyKey}`,
@@ -3076,8 +2946,7 @@ export function createOrdinaryTaskRuntime(
             priorAudit.companyId !== input.companyId ||
             priorAudit.entityId !== input.taskId ||
             priorAudit.actorId !== actorUserId ||
-            priorAudit.action !==
-              "task.user_creator_withdrawal_self_assigned"
+            priorAudit.action !== "task.user_creator_withdrawal_self_assigned"
           ) {
             throw new OrdinaryTaskRuntimeRejected(
               "Withdrawal self-assignment idempotency key changed immutable input",
@@ -3098,12 +2967,7 @@ export function createOrdinaryTaskRuntime(
             tx
               .select()
               .from(taskCreatorWithdrawalCommands)
-              .where(
-                eq(
-                  taskCreatorWithdrawalCommands.id,
-                  withdrawalCommandId,
-                ),
-              )
+              .where(eq(taskCreatorWithdrawalCommands.id, withdrawalCommandId))
               .limit(1)
               .then((rows) => rows[0] ?? null),
           ]);
@@ -3127,6 +2991,7 @@ export function createOrdinaryTaskRuntime(
           return {
             task,
             auditId,
+            committedActivity: null,
             command,
             escalationDispatchRefIds: [] as string[],
             cancellations: null,
@@ -3177,14 +3042,8 @@ export function createOrdinaryTaskRuntime(
             and(
               eq(taskExecutionAuthorities.companyId, input.companyId),
               eq(taskExecutionAuthorities.taskId, task.id),
-              eq(
-                taskExecutionAuthorities.ownershipEpoch,
-                task.ownershipEpoch,
-              ),
-              eq(
-                taskExecutionAuthorities.agentId,
-                task.ownerAgentId,
-              ),
+              eq(taskExecutionAuthorities.ownershipEpoch, task.ownershipEpoch),
+              eq(taskExecutionAuthorities.agentId, task.ownerAgentId),
               eq(taskExecutionAuthorities.state, "current"),
             ),
           )
@@ -3197,25 +3056,24 @@ export function createOrdinaryTaskRuntime(
           );
         }
         const now = clock();
-        const revocation =
-          await revokeOutgoingOwnershipEpoch(
-            tx,
-            sessions,
-            options.taskExecutionCancellation,
-            {
-              companyId: input.companyId,
-              taskId: task.id,
-              sessionId: sessionState.session.id,
-              ownershipEpoch: task.ownershipEpoch,
-              authorityId: outgoingAuthority.id,
-              sourceAuthorityId: actorUserId,
-              cancellationActor: {
-                kind: "user",
-                userId: actorUserId,
-              },
-              now,
+        const revocation = await revokeOutgoingOwnershipEpoch(
+          tx,
+          sessions,
+          options.taskExecutionCancellation,
+          {
+            companyId: input.companyId,
+            taskId: task.id,
+            sessionId: sessionState.session.id,
+            ownershipEpoch: task.ownershipEpoch,
+            authorityId: outgoingAuthority.id,
+            sourceAuthorityId: actorUserId,
+            cancellationActor: {
+              kind: "user",
+              userId: actorUserId,
             },
-          );
+            now,
+          },
+        );
         const ownershipEpoch = task.ownershipEpoch + 1;
         const reassigned = await tx
           .update(tasks)
@@ -3287,52 +3145,55 @@ export function createOrdinaryTaskRuntime(
             "withdrawal_self_assignment_command_missing",
           );
         }
-        await tx.insert(activityLog).values({
-          id: auditId,
-          companyId: input.companyId,
-          actorType: "user",
-          actorId: actorUserId,
-          action: "task.user_creator_withdrawal_self_assigned",
-          entityType: "task",
-          entityId: task.id,
-          responsibleUserId: actorUserId,
-          details: {
-            contract: "user-creator-withdrawal-self-assignment/v1",
-            idempotencyKey,
-            outgoingOwnerAgentId: task.ownerAgentId,
-            outgoingOwnershipEpoch: task.ownershipEpoch,
-            ownershipEpoch,
-            ownerAssignmentSource: "user_creator_withdrawal",
+        const committedActivity = await persistActivityLog(
+          tx as unknown as Db,
+          {
+            companyId: input.companyId,
+            actorType: "user",
+            actorId: actorUserId,
+            action: "task.user_creator_withdrawal_self_assigned",
+            entityType: "task",
+            entityId: task.id,
+            details: {
+              contract: "user-creator-withdrawal-self-assignment/v1",
+              idempotencyKey,
+              outgoingOwnerAgentId: task.ownerAgentId,
+              outgoingOwnershipEpoch: task.ownershipEpoch,
+              ownershipEpoch,
+              ownerAssignmentSource: "user_creator_withdrawal",
+            },
           },
-          createdAt: now,
-        });
+          { id: auditId, createdAt: now },
+        );
         return {
           task: reassigned,
           auditId,
+          committedActivity,
           command,
-          escalationDispatchRefIds:
-            revocation.escalationDispatchRefIds,
+          escalationDispatchRefIds: revocation.escalationDispatchRefIds,
           cancellations: revocation.cancellations,
           retried: false as const,
         };
       });
+      if (committed.committedActivity) {
+        publishCommittedActivity(committed.committedActivity);
+      }
       if (committed.cancellations) {
-        await options.taskExecutionCancellation
-          .reconcileRequestedCancellations(
-            committed.cancellations,
-          );
+        await options.taskExecutionCancellation.reconcileRequestedCancellations(
+          committed.cancellations,
+        );
       }
       for (const refId of committed.escalationDispatchRefIds) {
         await dispatch(refId);
       }
-      return committed;
+      const { committedActivity: _committedActivity, ...publicResult } =
+        committed;
+      return publicResult;
     },
 
-    async preparePluginWithdrawal(
-      input: OrdinaryPluginWithdrawalPrepareInput,
-    ) {
+    async preparePluginWithdrawal(input: OrdinaryPluginWithdrawalPrepareInput) {
       const message = nonBlankPreservingBytes(input.message, "message");
-      const operationId = nonEmpty(input.operationId, "operationId");
+      const operationId = exactNonBlank(input.operationId, "operationId");
       const identityDigest = createHash("sha256")
         .update(
           canonicalJson({
@@ -3374,10 +3235,7 @@ export function createOrdinaryTaskRuntime(
                 pluginWithdrawalOperations.pluginInstallationId,
                 input.pluginInstallationId,
               ),
-              eq(
-                pluginWithdrawalOperations.hostRpcOperationId,
-                operationId,
-              ),
+              eq(pluginWithdrawalOperations.hostRpcOperationId, operationId),
             ),
           )
           .limit(1)
@@ -3399,177 +3257,165 @@ export function createOrdinaryTaskRuntime(
     },
 
     async withdrawPluginTask(input: OrdinaryPluginWithdrawalInput) {
-      const operationId = nonEmpty(input.operationId, "operationId");
+      const operationId = exactNonBlank(input.operationId, "operationId");
       const outcome: PluginWithdrawalCommitOutcome = await db.transaction(
         async (tx): Promise<PluginWithdrawalCommitOutcome> => {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${`${input.pluginInstallationId}:${operationId}`}, 0))`,
-        );
-        const operation = await tx
-          .select()
-          .from(pluginWithdrawalOperations)
-          .where(
-            and(
-              eq(
-                pluginWithdrawalOperations.pluginInstallationId,
-                input.pluginInstallationId,
-              ),
-              eq(
-                pluginWithdrawalOperations.hostRpcOperationId,
-                operationId,
-              ),
-            ),
-          )
-          .for("update")
-          .then((rows) => rows[0] ?? null);
-        if (
-          !operation ||
-          operation.companyId !== input.companyId ||
-          operation.pluginKey !== input.pluginKey
-        ) {
-          throw new OrdinaryTaskRuntimeRejected(
-            "Plugin withdrawal operation was not prepared by this installation",
-            "plugin_withdrawal_not_prepared",
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${`${input.pluginInstallationId}:${operationId}`}, 0))`,
           );
-        }
-        const withdrawalCommandId = deterministicUuid(
-          "plugin-creator-withdrawal-command",
-          operation.id,
-        );
-        if (operation.state === "accepted") {
-          const task = recordedPluginWithdrawalTask(operation.result);
-          const command = await tx
+          const operation = await tx
             .select()
-            .from(taskCreatorWithdrawalCommands)
+            .from(pluginWithdrawalOperations)
             .where(
-              eq(
-                taskCreatorWithdrawalCommands.id,
-                withdrawalCommandId,
+              and(
+                eq(
+                  pluginWithdrawalOperations.pluginInstallationId,
+                  input.pluginInstallationId,
+                ),
+                eq(pluginWithdrawalOperations.hostRpcOperationId, operationId),
               ),
             )
-            .limit(1)
+            .for("update")
+            .then((rows) => rows[0] ?? null);
+          if (
+            !operation ||
+            operation.companyId !== input.companyId ||
+            operation.pluginKey !== input.pluginKey
+          ) {
+            throw new OrdinaryTaskRuntimeRejected(
+              "Plugin withdrawal operation was not prepared by this installation",
+              "plugin_withdrawal_not_prepared",
+            );
+          }
+          const withdrawalCommandId = deterministicUuid(
+            "plugin-creator-withdrawal-command",
+            operation.id,
+          );
+          if (operation.state === "accepted") {
+            const task = recordedPluginWithdrawalTask(operation.result);
+            const command = await tx
+              .select()
+              .from(taskCreatorWithdrawalCommands)
+              .where(eq(taskCreatorWithdrawalCommands.id, withdrawalCommandId))
+              .limit(1)
+              .then((rows) => rows[0] ?? null);
+            if (
+              !task ||
+              !command ||
+              command.companyId !== input.companyId ||
+              command.taskId !== operation.taskId ||
+              command.actorKind !== "plugin" ||
+              command.actorUserId !== null ||
+              command.actorPluginInstallationId !==
+                input.pluginInstallationId ||
+              command.actorPluginKey !== input.pluginKey ||
+              command.pluginWithdrawalOperationId !== operation.id ||
+              command.taskUpdateId !== operation.taskUpdateId ||
+              command.resultingCreatorEdgeId !== null ||
+              command.resultingOwnershipEpoch !== task.ownershipEpoch ||
+              command.outgoingOwnershipEpoch + 1 !==
+                command.resultingOwnershipEpoch
+            ) {
+              throw new OrdinaryTaskRuntimeRejected(
+                "Accepted plugin withdrawal is missing its canonical command",
+                "plugin_withdrawal_result_missing",
+              );
+            }
+            return {
+              kind: "accepted",
+              operationId,
+              task,
+              escalationDispatchRefIds: [] as string[],
+              cancellations: null,
+              retried: true,
+            };
+          }
+          if (operation.state === "rejected") {
+            const rejection = recordedPluginWithdrawalRejection(
+              operation.result,
+            );
+            if (!rejection) {
+              throw new OrdinaryTaskRuntimeRejected(
+                "Rejected plugin withdrawal is missing its recorded result",
+                "plugin_withdrawal_result_missing",
+              );
+            }
+            return { kind: "rejected", ...rejection };
+          }
+          const task = await tx
+            .select()
+            .from(tasks)
+            .where(
+              and(
+                eq(tasks.companyId, input.companyId),
+                eq(tasks.id, operation.taskId),
+              ),
+            )
+            .for("update")
             .then((rows) => rows[0] ?? null);
           if (
             !task ||
-            !command ||
-            command.companyId !== input.companyId ||
-            command.taskId !== operation.taskId ||
-            command.actorKind !== "plugin" ||
-            command.actorUserId !== null ||
-            command.actorPluginInstallationId !==
-              input.pluginInstallationId ||
-            command.actorPluginKey !== input.pluginKey ||
-            command.pluginWithdrawalOperationId !== operation.id ||
-            command.taskUpdateId !== operation.taskUpdateId ||
-            command.resultingCreatorEdgeId !== null ||
-            command.resultingOwnershipEpoch !== task.ownershipEpoch ||
-            command.outgoingOwnershipEpoch + 1 !==
-              command.resultingOwnershipEpoch
+            !task.ownershipEpoch ||
+            task.creatorKind !== "plugin" ||
+            task.creatorPluginInstallationId !== input.pluginInstallationId ||
+            task.creatorPluginKey !== input.pluginKey ||
+            task.ownerKind !== "agent" ||
+            !task.ownerAgentId ||
+            !task.lifecycleStatus ||
+            !NONTERMINAL.has(task.lifecycleStatus)
           ) {
+            const now = clock();
+            const rejection = {
+              message: "Task is not a matching nonterminal plugin-created task",
+              reason: "plugin_withdrawal_target_invalid",
+            };
+            await tx
+              .update(pluginWithdrawalOperations)
+              .set({
+                state: "rejected",
+                result: { kind: "rejected", ...rejection },
+                completedAt: now,
+                updatedAt: now,
+              })
+              .where(eq(pluginWithdrawalOperations.id, operation.id));
+            return { kind: "rejected", ...rejection };
+          }
+          const session = await tx
+            .select()
+            .from(taskSessions)
+            .where(
+              and(
+                eq(taskSessions.companyId, input.companyId),
+                eq(taskSessions.taskId, task.id),
+              ),
+            )
+            .for("update")
+            .then((rows) => rows[0] ?? null);
+          const authority = await tx
+            .select()
+            .from(taskExecutionAuthorities)
+            .where(
+              and(
+                eq(taskExecutionAuthorities.companyId, input.companyId),
+                eq(taskExecutionAuthorities.taskId, task.id),
+                eq(
+                  taskExecutionAuthorities.ownershipEpoch,
+                  task.ownershipEpoch,
+                ),
+                eq(taskExecutionAuthorities.agentId, task.ownerAgentId),
+                eq(taskExecutionAuthorities.state, "current"),
+              ),
+            )
+            .for("update")
+            .then((rows) => rows[0] ?? null);
+          if (!session || !authority) {
             throw new OrdinaryTaskRuntimeRejected(
-              "Accepted plugin withdrawal is missing its canonical command",
-              "plugin_withdrawal_result_missing",
+              "Plugin withdrawal target has no current Session authority",
+              "plugin_withdrawal_authority_missing",
             );
           }
-          return {
-            kind: "accepted",
-            operationId,
-            task,
-            escalationDispatchRefIds: [] as string[],
-            cancellations: null,
-            retried: true,
-          };
-        }
-        if (operation.state === "rejected") {
-          const rejection = recordedPluginWithdrawalRejection(operation.result);
-          if (!rejection) {
-            throw new OrdinaryTaskRuntimeRejected(
-              "Rejected plugin withdrawal is missing its recorded result",
-              "plugin_withdrawal_result_missing",
-            );
-          }
-          return { kind: "rejected", ...rejection };
-        }
-        const task = await tx
-          .select()
-          .from(tasks)
-          .where(
-            and(
-              eq(tasks.companyId, input.companyId),
-              eq(tasks.id, operation.taskId),
-            ),
-          )
-          .for("update")
-          .then((rows) => rows[0] ?? null);
-        if (
-          !task ||
-          !task.ownershipEpoch ||
-          task.creatorKind !== "plugin" ||
-          task.creatorPluginInstallationId !==
-            input.pluginInstallationId ||
-          task.creatorPluginKey !== input.pluginKey ||
-          task.ownerKind !== "agent" ||
-          !task.ownerAgentId ||
-          !task.lifecycleStatus ||
-          !NONTERMINAL.has(task.lifecycleStatus)
-        ) {
           const now = clock();
-          const rejection = {
-            message:
-              "Task is not a matching nonterminal plugin-created task",
-            reason: "plugin_withdrawal_target_invalid",
-          };
-          await tx
-            .update(pluginWithdrawalOperations)
-            .set({
-              state: "rejected",
-              result: { kind: "rejected", ...rejection },
-              completedAt: now,
-              updatedAt: now,
-            })
-            .where(eq(pluginWithdrawalOperations.id, operation.id));
-          return { kind: "rejected", ...rejection };
-        }
-        const session = await tx
-          .select()
-          .from(taskSessions)
-          .where(
-            and(
-              eq(taskSessions.companyId, input.companyId),
-              eq(taskSessions.taskId, task.id),
-            ),
-          )
-          .for("update")
-          .then((rows) => rows[0] ?? null);
-        const authority = await tx
-          .select()
-          .from(taskExecutionAuthorities)
-          .where(
-            and(
-              eq(taskExecutionAuthorities.companyId, input.companyId),
-              eq(taskExecutionAuthorities.taskId, task.id),
-              eq(
-                taskExecutionAuthorities.ownershipEpoch,
-                task.ownershipEpoch,
-              ),
-              eq(
-                taskExecutionAuthorities.agentId,
-                task.ownerAgentId,
-              ),
-              eq(taskExecutionAuthorities.state, "current"),
-            ),
-          )
-          .for("update")
-          .then((rows) => rows[0] ?? null);
-        if (!session || !authority) {
-          throw new OrdinaryTaskRuntimeRejected(
-            "Plugin withdrawal target has no current Session authority",
-            "plugin_withdrawal_authority_missing",
-          );
-        }
-        const now = clock();
-        const revocation =
-          await revokeOutgoingOwnershipEpoch(
+          const revocation = await revokeOutgoingOwnershipEpoch(
             tx,
             sessions,
             options.taskExecutionCancellation,
@@ -3584,184 +3430,176 @@ export function createOrdinaryTaskRuntime(
               now,
             },
           );
-        const ownershipEpoch = task.ownershipEpoch + 1;
-        const withdrawn = await tx
-          .update(tasks)
-          .set({
-            boardPresentationStatus: "cancelled",
-            lifecycleStatus: "cancelled",
-            disposition: {
-              message: operation.message,
-              structuredResult: {
-                reason: "plugin_creator_withdrawal",
-                outgoingOwnershipEpoch: task.ownershipEpoch,
+          const ownershipEpoch = task.ownershipEpoch + 1;
+          const withdrawn = await tx
+            .update(tasks)
+            .set({
+              boardPresentationStatus: "cancelled",
+              lifecycleStatus: "cancelled",
+              disposition: {
+                message: operation.message,
+                structuredResult: {
+                  reason: "plugin_creator_withdrawal",
+                  outgoingOwnershipEpoch: task.ownershipEpoch,
+                },
               },
-            },
-            ownershipEpoch,
-            cancelledAt: now,
-            completedAt: null,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(tasks.id, task.id),
-              eq(tasks.ownershipEpoch, task.ownershipEpoch),
-            ),
-          )
-          .returning()
-          .then((rows) => rows[0] ?? null);
-        if (!withdrawn) {
-          throw new OrdinaryTaskRuntimeRejected(
-            "Ownership epoch changed during plugin withdrawal",
-            "plugin_withdrawal_epoch_conflict",
+              ownershipEpoch,
+              cancelledAt: now,
+              completedAt: null,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(tasks.id, task.id),
+                eq(tasks.ownershipEpoch, task.ownershipEpoch),
+              ),
+            )
+            .returning()
+            .then((rows) => rows[0] ?? null);
+          if (!withdrawn) {
+            throw new OrdinaryTaskRuntimeRejected(
+              "Ownership epoch changed during plugin withdrawal",
+              "plugin_withdrawal_epoch_conflict",
+            );
+          }
+          await withOrdinaryWorkspaceReservationErrors(() =>
+            reserveTaskExecutionWorkspaceBinding(tx, {
+              task: withdrawn,
+              session: {
+                id: session.id,
+                now,
+              },
+            }),
           );
-        }
-        await withOrdinaryWorkspaceReservationErrors(() =>
-          reserveTaskExecutionWorkspaceBinding(tx, {
-            task: withdrawn,
-            session: {
-              id: session.id,
-              now,
+          const comment = await sessions.appendNonDispatchControlNotice(
+            {
+              companyId: input.companyId,
+              taskId: task.id,
+              sessionId: session.id,
+              sourceKind: "plugin_withdrawal",
+              immutableSourceKey: operation.id,
+              sourceRecordId: operation.id,
+              exactText: operation.message,
+              comment: {
+                author: {
+                  kind: "plugin",
+                  pluginInstallationId: input.pluginInstallationId,
+                  pluginKey: input.pluginKey,
+                },
+                producingRun: null,
+              },
+              allowTerminal: true,
             },
-          }),
-        );
-        const comment = await sessions.appendNonDispatchControlNotice(
-          {
-            companyId: input.companyId,
-            taskId: task.id,
-            sessionId: session.id,
-            sourceKind: "plugin_withdrawal",
-            immutableSourceKey: operation.id,
-            sourceRecordId: operation.id,
-            exactText: operation.message,
-            comment: {
-              author: {
-                kind: "plugin",
+            tx,
+          );
+          if (!comment.comment) {
+            throw new OrdinaryTaskRuntimeRejected(
+              "Plugin withdrawal comment was not persisted",
+              "plugin_withdrawal_comment_missing",
+            );
+          }
+          const update = await tx
+            .insert(taskUpdates)
+            .values({
+              id: deterministicUuid("plugin-withdrawal-update", operation.id),
+              companyId: input.companyId,
+              taskId: task.id,
+              sessionId: session.id,
+              ownershipEpoch,
+              form: "owner",
+              sourceKind: "plugin",
+              sourceAuthorityId: null,
+              sourceIdentity: {
                 pluginInstallationId: input.pluginInstallationId,
                 pluginKey: input.pluginKey,
+                withdrawalOperationId: operation.id,
               },
-              producingRun: null,
-            },
-            allowTerminal: true,
-          },
-          tx,
-        );
-        if (!comment.comment) {
-          throw new OrdinaryTaskRuntimeRejected(
-            "Plugin withdrawal comment was not persisted",
-            "plugin_withdrawal_comment_missing",
-          );
-        }
-        const update = await tx
-          .insert(taskUpdates)
-          .values({
-            id: deterministicUuid(
-              "plugin-withdrawal-update",
-              operation.id,
-            ),
-            companyId: input.companyId,
-            taskId: task.id,
-            sessionId: session.id,
-            ownershipEpoch,
-            form: "owner",
-            sourceKind: "plugin",
-            sourceAuthorityId: null,
-            sourceIdentity: {
-              pluginInstallationId: input.pluginInstallationId,
-              pluginKey: input.pluginKey,
-              withdrawalOperationId: operation.id,
-            },
-            runId: null,
-            gatewayInvocationId: `plugin-withdrawal:${operation.id}`,
-            runSequence: 0,
-            message: operation.message,
-            status: "cancelled",
-            disposition: withdrawn.disposition,
-            commentId: comment.comment.id,
-            creatorEdgeId: null,
-            createdAt: now,
-          })
-          .returning()
-          .then((rows) => rows[0] ?? null);
-        if (!update) {
-          throw new OrdinaryTaskRuntimeRejected(
-            "Plugin withdrawal update was not persisted",
-            "plugin_withdrawal_update_missing",
-          );
-        }
-        const acceptedOperation = await tx
-          .update(pluginWithdrawalOperations)
-          .set({
-            state: "accepted",
-            result: {
-              kind: "accepted",
-              operationId,
-              taskId: task.id,
-              ownershipEpoch,
+              runId: null,
+              gatewayInvocationId: `plugin-withdrawal:${operation.id}`,
+              runSequence: 0,
+              message: operation.message,
               status: "cancelled",
-              task: pluginWithdrawalTaskSnapshot(withdrawn),
-            },
-            taskUpdateId: update.id,
-            mutationCommentId: comment.comment.id,
-            completedAt: now,
-            updatedAt: now,
-          })
-          .where(eq(pluginWithdrawalOperations.id, operation.id))
-          .returning()
-          .then((rows) => rows[0] ?? null);
-        if (!acceptedOperation) {
-          throw new OrdinaryTaskRuntimeRejected(
-            "Plugin withdrawal operation was not accepted",
-            "plugin_withdrawal_operation_missing",
-          );
-        }
-        const command = await tx
-          .insert(taskCreatorWithdrawalCommands)
-          .values({
-            id: withdrawalCommandId,
-            companyId: input.companyId,
-            taskId: task.id,
-            outgoingOwnershipEpoch: task.ownershipEpoch,
-            resultingOwnershipEpoch: ownershipEpoch,
-            resultingCreatorEdgeId: null,
-            actorKind: "plugin",
-            actorUserId: null,
-            actorPluginInstallationId: input.pluginInstallationId,
-            actorPluginKey: input.pluginKey,
-            pluginWithdrawalOperationId: operation.id,
-            taskUpdateId: update.id,
-            acceptedAt: now,
-          })
-          .returning()
-          .then((rows) => rows[0] ?? null);
-        if (!command) {
-          throw new OrdinaryTaskRuntimeRejected(
-            "Plugin withdrawal command was not persisted",
-            "plugin_withdrawal_command_missing",
-          );
-        }
-        return {
-          kind: "accepted",
-          operationId,
-          task: withdrawn,
-          escalationDispatchRefIds:
-            revocation.escalationDispatchRefIds,
-          cancellations: revocation.cancellations,
-          retried: false,
-        };
+              disposition: withdrawn.disposition,
+              commentId: comment.comment.id,
+              creatorEdgeId: null,
+              createdAt: now,
+            })
+            .returning()
+            .then((rows) => rows[0] ?? null);
+          if (!update) {
+            throw new OrdinaryTaskRuntimeRejected(
+              "Plugin withdrawal update was not persisted",
+              "plugin_withdrawal_update_missing",
+            );
+          }
+          const acceptedOperation = await tx
+            .update(pluginWithdrawalOperations)
+            .set({
+              state: "accepted",
+              result: {
+                kind: "accepted",
+                operationId,
+                taskId: task.id,
+                ownershipEpoch,
+                status: "cancelled",
+                task: pluginWithdrawalTaskSnapshot(withdrawn),
+              },
+              taskUpdateId: update.id,
+              mutationCommentId: comment.comment.id,
+              completedAt: now,
+              updatedAt: now,
+            })
+            .where(eq(pluginWithdrawalOperations.id, operation.id))
+            .returning()
+            .then((rows) => rows[0] ?? null);
+          if (!acceptedOperation) {
+            throw new OrdinaryTaskRuntimeRejected(
+              "Plugin withdrawal operation was not accepted",
+              "plugin_withdrawal_operation_missing",
+            );
+          }
+          const command = await tx
+            .insert(taskCreatorWithdrawalCommands)
+            .values({
+              id: withdrawalCommandId,
+              companyId: input.companyId,
+              taskId: task.id,
+              outgoingOwnershipEpoch: task.ownershipEpoch,
+              resultingOwnershipEpoch: ownershipEpoch,
+              resultingCreatorEdgeId: null,
+              actorKind: "plugin",
+              actorUserId: null,
+              actorPluginInstallationId: input.pluginInstallationId,
+              actorPluginKey: input.pluginKey,
+              pluginWithdrawalOperationId: operation.id,
+              taskUpdateId: update.id,
+              acceptedAt: now,
+            })
+            .returning()
+            .then((rows) => rows[0] ?? null);
+          if (!command) {
+            throw new OrdinaryTaskRuntimeRejected(
+              "Plugin withdrawal command was not persisted",
+              "plugin_withdrawal_command_missing",
+            );
+          }
+          return {
+            kind: "accepted",
+            operationId,
+            task: withdrawn,
+            escalationDispatchRefIds: revocation.escalationDispatchRefIds,
+            cancellations: revocation.cancellations,
+            retried: false,
+          };
         },
       );
       if (outcome.kind === "rejected") {
-        throw new OrdinaryTaskRuntimeRejected(
-          outcome.message,
-          outcome.reason,
-        );
+        throw new OrdinaryTaskRuntimeRejected(outcome.message, outcome.reason);
       }
       if (outcome.cancellations) {
-        await options.taskExecutionCancellation
-          .reconcileRequestedCancellations(
-            outcome.cancellations,
-          );
+        await options.taskExecutionCancellation.reconcileRequestedCancellations(
+          outcome.cancellations,
+        );
       }
       for (const refId of outcome.escalationDispatchRefIds) {
         await dispatch(refId);
@@ -3772,10 +3610,7 @@ export function createOrdinaryTaskRuntime(
         retried: outcome.retried,
       };
     },
-
   };
 }
 
-export type OrdinaryTaskRuntime = ReturnType<
-  typeof createOrdinaryTaskRuntime
->;
+export type OrdinaryTaskRuntime = ReturnType<typeof createOrdinaryTaskRuntime>;

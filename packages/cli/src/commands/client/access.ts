@@ -2,8 +2,10 @@ import { Command } from "commander";
 import {
   addCommonClientOptions,
   apiPath,
+  assertExactAuthUserId,
   handleCommandError,
   printOutput,
+  requireCurrentUserId,
   resolveCommandContext,
   type BaseClientOptions,
 } from "./common.js";
@@ -19,7 +21,6 @@ interface JsonPayloadOptions extends CompanyOptions {
 interface QueryOptions extends CompanyOptions {
   query?: string;
   status?: string;
-  requestType?: string;
   url?: string;
 }
 
@@ -39,7 +40,9 @@ export function registerAccessCommands(program: Command): void {
       }),
   );
 
-  const access = program.command("access").description("Access and auth inspection operations");
+  const access = program
+    .command("access")
+    .description("Access and auth inspection operations");
   addWhoamiCommand(access);
 
   addCommonClientOptions(
@@ -56,18 +59,25 @@ export function registerAccessCommands(program: Command): void {
       }),
   );
 
-  const profile = program.command("profile").description("Current user profile operations");
+  const profile = program
+    .command("profile")
+    .description("User profile operations");
   addSimpleGet(profile, "session", "Get auth session", "/api/auth/get-session");
   addCommonClientOptions(
     profile
       .command("company-user")
-      .description("Get a user profile within a company")
-      .argument("<userSlug>", "User slug")
+      .description("Get a company user profile by exact auth user ID")
+      .argument("<userId>", "Exact auth user ID")
       .option("-C, --company-id <id>", "Company ID")
-      .action(async (userSlug: string, opts: CompanyOptions) => {
+      .action(async (userId: string, opts: CompanyOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
-          printOutput(await ctx.api.get(apiPath`/api/companies/${ctx.companyId}/users/${userSlug}/profile`), { json: ctx.json });
+          printOutput(
+            await ctx.api.get(
+              apiPath`/api/companies/${ctx.companyId}/users/${assertExactAuthUserId(userId)}/profile`,
+            ),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
@@ -86,7 +96,10 @@ export function registerAccessCommands(program: Command): void {
       .action(async (inviteId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.post(apiPath`/api/invites/${inviteId}/revoke`, {}), { json: ctx.json });
+          printOutput(
+            await ctx.api.post(apiPath`/api/invites/${inviteId}/revoke`, {}),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
@@ -95,8 +108,6 @@ export function registerAccessCommands(program: Command): void {
   for (const [name, suffix] of [
     ["show", ""],
     ["logo", "logo"],
-    ["onboarding", "onboarding"],
-    ["onboarding:text", "onboarding.txt"],
   ] as const) {
     addCommonClientOptions(
       invite
@@ -111,7 +122,7 @@ export function registerAccessCommands(program: Command): void {
           } catch (err) {
             handleCommandError(err);
           }
-      }),
+        }),
     );
   }
   addCommonClientOptions(
@@ -119,11 +130,13 @@ export function registerAccessCommands(program: Command): void {
       .command("accept")
       .description("Accept an invite")
       .argument("<token>", "Invite token")
-      .option("--payload-json <json>", "Invite accept JSON payload", "{}")
-      .action(async (token: string, opts: JsonPayloadOptions) => {
+      .action(async (token: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.post(apiPath`/api/invites/${token}/accept`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
+          printOutput(
+            await ctx.api.post(apiPath`/api/invites/${token}/accept`, {}),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
@@ -136,16 +149,22 @@ export function registerAccessCommands(program: Command): void {
       .command("list")
       .description("List join requests")
       .option("-C, --company-id <id>", "Company ID")
-      .option("--status <status>", "Filter by status (pending_approval, approved, rejected)")
-      .option("--request-type <type>", "Filter by request type")
+      .option(
+        "--status <status>",
+        "Filter by status (pending_approval, approved, rejected)",
+      )
       .action(async (opts: QueryOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
           const params = new URLSearchParams();
           if (opts.status) params.set("status", opts.status);
-          if (opts.requestType) params.set("requestType", opts.requestType);
           const query = params.toString();
-          printOutput(await ctx.api.get(`${apiPath`/api/companies/${ctx.companyId}/join-requests`}${query ? `?${query}` : ""}`), { json: ctx.json });
+          printOutput(
+            await ctx.api.get(
+              `${apiPath`/api/companies/${ctx.companyId}/join-requests`}${query ? `?${query}` : ""}`,
+            ),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
@@ -155,15 +174,24 @@ export function registerAccessCommands(program: Command): void {
   addJoinAction(join, "approve");
   addJoinAction(join, "reject");
 
-  const member = program.command("member").description("Company member operations");
+  const member = program
+    .command("member")
+    .description("Company member operations");
   addCompanyList(member, "list", "List company members", "members");
-  addCompanyList(member, "user-directory", "List company user directory", "user-directory");
+  addCompanyList(
+    member,
+    "user-directory",
+    "List company user directory",
+    "user-directory",
+  );
   addMemberPatch(member, "update", "members");
   addMemberPatch(member, "role-and-grants", "members", "role-and-grants");
   addMemberPatch(member, "permissions", "members", "permissions");
   addMemberPost(member, "archive", "members", "archive");
 
-  const admin = program.command("admin").description("Instance admin operations");
+  const admin = program
+    .command("admin")
+    .description("Instance admin operations");
   const user = admin.command("user").description("Admin user operations");
   addCommonClientOptions(
     user
@@ -173,8 +201,12 @@ export function registerAccessCommands(program: Command): void {
       .action(async (opts: QueryOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const query = opts.query ? `?${new URLSearchParams({ query: opts.query }).toString()}` : "";
-          printOutput(await ctx.api.get(`/api/admin/users${query}`), { json: ctx.json });
+          const query = opts.query
+            ? `?${new URLSearchParams({ query: opts.query }).toString()}`
+            : "";
+          printOutput(await ctx.api.get(`/api/admin/users${query}`), {
+            json: ctx.json,
+          });
         } catch (err) {
           handleCommandError(err);
         }
@@ -190,7 +222,12 @@ export function registerAccessCommands(program: Command): void {
       .action(async (userId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.get(apiPath`/api/admin/users/${userId}/company-access`), { json: ctx.json });
+          printOutput(
+            await ctx.api.get(
+              apiPath`/api/admin/users/${assertExactAuthUserId(userId)}/company-access`,
+            ),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
@@ -201,49 +238,73 @@ export function registerAccessCommands(program: Command): void {
       .command("company-access:update")
       .description("Update user company access")
       .argument("<userId>", "User ID")
-      .requiredOption("--payload-json <json>", "UpdateUserCompanyAccess JSON payload")
+      .requiredOption(
+        "--payload-json <json>",
+        "UpdateUserCompanyAccess JSON payload",
+      )
       .action(async (userId: string, opts: JsonPayloadOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.put(apiPath`/api/admin/users/${userId}/company-access`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
+          printOutput(
+            await ctx.api.put(
+              apiPath`/api/admin/users/${assertExactAuthUserId(userId)}/company-access`,
+              parseJson(opts.payloadJson ?? "{}"),
+            ),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
       }),
   );
 
-  const instance = program.command("instance").description("Instance operations");
-  addSimpleGet(instance, "settings:general", "Get general instance settings", "/api/instance/settings/general");
-  addJsonPatch(instance, "settings:general:update", "Update general instance settings", "/api/instance/settings/general");
+  const instance = program
+    .command("instance")
+    .description("Instance operations");
+  addSimpleGet(
+    instance,
+    "settings:general",
+    "Get general instance settings",
+    "/api/instance/settings/general",
+  );
+  addJsonPatch(
+    instance,
+    "settings:general:update",
+    "Update general instance settings",
+    "/api/instance/settings/general",
+  );
 
-  const sidebar = program.command("sidebar").description("Sidebar preference and badge operations");
-  addSimpleGet(sidebar, "preferences", "Get current sidebar preferences", "/api/sidebar-preferences/me");
-  addJsonPut(sidebar, "preferences:update", "Update current sidebar preferences", "/api/sidebar-preferences/me");
-  addCompanyList(sidebar, "project-preferences", "Get current project sidebar preferences", "sidebar-preferences/me");
-  addCompanyPut(sidebar, "project-preferences:update", "Update current project sidebar preferences", "sidebar-preferences/me");
+  const sidebar = program
+    .command("sidebar")
+    .description("Sidebar preference and badge operations");
+  addCurrentUserGet(sidebar, "preferences", "Get current sidebar preferences");
+  addCurrentUserPut(
+    sidebar,
+    "preferences:update",
+    "Update current sidebar preferences",
+  );
+  addCompanyList(
+    sidebar,
+    "project-preferences",
+    "Get current project sidebar preferences",
+    (userId) => `users/${encodeURIComponent(userId)}/sidebar-preferences`,
+  );
+  addCompanyPut(
+    sidebar,
+    "project-preferences:update",
+    "Update current project sidebar preferences",
+    (userId) => `users/${encodeURIComponent(userId)}/sidebar-preferences`,
+  );
   addCompanyList(sidebar, "badges", "Get sidebar badges", "sidebar-badges");
 
   const inbox = program.command("inbox").description("Board inbox operations");
-  addCompanyList(inbox, "dismissals", "List dismissed inbox items", "inbox-dismissals");
-  addCompanyPost(inbox, "dismiss", "Dismiss an inbox item", "inbox-dismissals");
-
-  const llm = program.command("llm").description("LLM prompt documentation");
-  addSimpleGet(llm, "agent-configuration", "Get agent configuration prompt docs", "/api/llms/agent-configuration.txt");
-  addSimpleGet(llm, "agent-icons", "Get agent icon prompt docs", "/api/llms/agent-icons.txt");
-  addCommonClientOptions(
-    llm
-      .command("agent-configuration:adapter")
-      .description("Get adapter-specific agent configuration prompt docs")
-      .argument("<adapterType>", "Adapter type")
-      .action(async (adapterType: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.get(`${apiPath`/api/llms/agent-configuration/${adapterType}`}.txt`), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
+  addCompanyList(
+    inbox,
+    "dismissals",
+    "List dismissed inbox items",
+    "inbox-dismissals",
   );
+  addCompanyPost(inbox, "dismiss", "Dismiss an inbox item", "inbox-dismissals");
 }
 
 function addWhoamiCommand(parent: Command): void {
@@ -254,7 +315,11 @@ function addWhoamiCommand(parent: Command): void {
       .action(async (opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.get("/api/cli-auth/me"), { json: ctx.json });
+          const userId = requireCurrentUserId(ctx);
+          printOutput(
+            await ctx.api.get(apiPath`/api/cli-auth/users/${userId}`),
+            { json: ctx.json },
+          );
         } catch (err) {
           handleCommandError(err);
         }
@@ -262,77 +327,194 @@ function addWhoamiCommand(parent: Command): void {
   );
 }
 
-function addSimpleGet(parent: Command, name: string, description: string, path: string): void {
-  addCommonClientOptions(parent.command(name).description(description).action(async (opts: BaseClientOptions) => {
-    try {
-      const ctx = resolveCommandContext(opts);
-      printOutput(await ctx.api.get(path), { json: ctx.json });
-    } catch (err) {
-      handleCommandError(err);
-    }
-  }));
-}
-
-function addJsonPatch(parent: Command, name: string, description: string, path: string): void {
-  addCommonClientOptions(parent.command(name).description(description).requiredOption("--payload-json <json>", "JSON payload").action(async (opts: JsonPayloadOptions) => {
-    try {
-      const ctx = resolveCommandContext(opts);
-      printOutput(await ctx.api.patch(path, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-    } catch (err) {
-      handleCommandError(err);
-    }
-  }));
-}
-
-function addJsonPut(parent: Command, name: string, description: string, path: string): void {
-  addCommonClientOptions(parent.command(name).description(description).requiredOption("--payload-json <json>", "JSON payload").action(async (opts: JsonPayloadOptions) => {
-    try {
-      const ctx = resolveCommandContext(opts);
-      printOutput(await ctx.api.put(path, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-    } catch (err) {
-      handleCommandError(err);
-    }
-  }));
-}
-
-function addCompanyList(parent: Command, name: string, description: string, path: string): void {
+function addCurrentUserGet(
+  parent: Command,
+  name: string,
+  description: string,
+): void {
   addCommonClientOptions(
-    parent.command(name).description(description).option("-C, --company-id <id>", "Company ID").action(async (opts: CompanyOptions) => {
-      try {
-        const ctx = resolveCommandContext(opts, { requireCompany: true });
-        printOutput(await ctx.api.get(`${apiPath`/api/companies/${ctx.companyId}`}/${path}`), { json: ctx.json });
-      } catch (err) {
-        handleCommandError(err);
-      }
-    }),
+    parent
+      .command(name)
+      .description(description)
+      .action(async (opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const userId = requireCurrentUserId(ctx);
+          printOutput(
+            await ctx.api.get(
+              apiPath`/api/users/${userId}/sidebar-preferences`,
+            ),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+}
+
+function addCurrentUserPut(
+  parent: Command,
+  name: string,
+  description: string,
+): void {
+  addCommonClientOptions(
+    parent
+      .command(name)
+      .description(description)
+      .requiredOption("--payload-json <json>", "JSON payload")
+      .action(async (opts: JsonPayloadOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const userId = requireCurrentUserId(ctx);
+          printOutput(
+            await ctx.api.put(
+              apiPath`/api/users/${userId}/sidebar-preferences`,
+              parseJson(opts.payloadJson ?? "{}"),
+            ),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+}
+
+function addSimpleGet(
+  parent: Command,
+  name: string,
+  description: string,
+  path: string,
+): void {
+  addCommonClientOptions(
+    parent
+      .command(name)
+      .description(description)
+      .action(async (opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(await ctx.api.get(path), { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+}
+
+function addJsonPatch(
+  parent: Command,
+  name: string,
+  description: string,
+  path: string,
+): void {
+  addCommonClientOptions(
+    parent
+      .command(name)
+      .description(description)
+      .requiredOption("--payload-json <json>", "JSON payload")
+      .action(async (opts: JsonPayloadOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(
+            await ctx.api.patch(path, parseJson(opts.payloadJson ?? "{}")),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+}
+
+function addCompanyList(
+  parent: Command,
+  name: string,
+  description: string,
+  path: string | ((userId: string) => string),
+): void {
+  addCommonClientOptions(
+    parent
+      .command(name)
+      .description(description)
+      .option("-C, --company-id <id>", "Company ID")
+      .action(async (opts: CompanyOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const resolvedPath =
+            typeof path === "string" ? path : path(requireCurrentUserId(ctx));
+          printOutput(
+            await ctx.api.get(
+              `${apiPath`/api/companies/${ctx.companyId}`}/${resolvedPath}`,
+            ),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
     { includeCompany: false },
   );
 }
 
-function addCompanyPut(parent: Command, name: string, description: string, path: string): void {
+function addCompanyPut(
+  parent: Command,
+  name: string,
+  description: string,
+  path: string | ((userId: string) => string),
+): void {
   addCommonClientOptions(
-    parent.command(name).description(description).option("-C, --company-id <id>", "Company ID").requiredOption("--payload-json <json>", "JSON payload").action(async (opts: JsonPayloadOptions) => {
-      try {
-        const ctx = resolveCommandContext(opts, { requireCompany: true });
-        printOutput(await ctx.api.put(`${apiPath`/api/companies/${ctx.companyId}`}/${path}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-      } catch (err) {
-        handleCommandError(err);
-      }
-    }),
+    parent
+      .command(name)
+      .description(description)
+      .option("-C, --company-id <id>", "Company ID")
+      .requiredOption("--payload-json <json>", "JSON payload")
+      .action(async (opts: JsonPayloadOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const resolvedPath =
+            typeof path === "string" ? path : path(requireCurrentUserId(ctx));
+          printOutput(
+            await ctx.api.put(
+              `${apiPath`/api/companies/${ctx.companyId}`}/${resolvedPath}`,
+              parseJson(opts.payloadJson ?? "{}"),
+            ),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
     { includeCompany: false },
   );
 }
 
-function addCompanyPost(parent: Command, name: string, description: string, path: string): void {
+function addCompanyPost(
+  parent: Command,
+  name: string,
+  description: string,
+  path: string,
+): void {
   addCommonClientOptions(
-    parent.command(name).description(description).option("-C, --company-id <id>", "Company ID").requiredOption("--payload-json <json>", "JSON payload").action(async (opts: JsonPayloadOptions) => {
-      try {
-        const ctx = resolveCommandContext(opts, { requireCompany: true });
-        printOutput(await ctx.api.post(`${apiPath`/api/companies/${ctx.companyId}`}/${path}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-      } catch (err) {
-        handleCommandError(err);
-      }
-    }),
+    parent
+      .command(name)
+      .description(description)
+      .option("-C, --company-id <id>", "Company ID")
+      .requiredOption("--payload-json <json>", "JSON payload")
+      .action(async (opts: JsonPayloadOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          printOutput(
+            await ctx.api.post(
+              `${apiPath`/api/companies/${ctx.companyId}`}/${path}`,
+              parseJson(opts.payloadJson ?? "{}"),
+            ),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
     { includeCompany: false },
   );
 }
@@ -347,7 +529,13 @@ function addJoinAction(parent: Command, action: "approve" | "reject"): void {
     command.action(async (requestId: string, opts: CompanyOptions) => {
       try {
         const ctx = resolveCommandContext(opts, { requireCompany: true });
-        printOutput(await ctx.api.post(`${apiPath`/api/companies/${ctx.companyId}/join-requests/${requestId}`}/${action}`, {}), { json: ctx.json });
+        printOutput(
+          await ctx.api.post(
+            `${apiPath`/api/companies/${ctx.companyId}/join-requests/${requestId}`}/${action}`,
+            {},
+          ),
+          { json: ctx.json },
+        );
       } catch (err) {
         handleCommandError(err);
       }
@@ -356,44 +544,87 @@ function addJoinAction(parent: Command, action: "approve" | "reject"): void {
   );
 }
 
-function addMemberPatch(parent: Command, name: string, path: string, suffix?: string): void {
+function addMemberPatch(
+  parent: Command,
+  name: string,
+  path: string,
+  suffix?: string,
+): void {
   addCommonClientOptions(
-    parent.command(name).description(`${name} a member`).argument("<memberId>", "Member ID").option("-C, --company-id <id>", "Company ID").requiredOption("--payload-json <json>", "JSON payload").action(async (memberId: string, opts: JsonPayloadOptions) => {
-      try {
-        const ctx = resolveCommandContext(opts, { requireCompany: true });
-        const route = `${apiPath`/api/companies/${ctx.companyId}`}/${path}/${encodeURIComponent(memberId)}${suffix ? `/${suffix}` : ""}`;
-        printOutput(await ctx.api.patch(route, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-      } catch (err) {
-        handleCommandError(err);
-      }
-    }),
+    parent
+      .command(name)
+      .description(`${name} a member`)
+      .argument("<memberId>", "Member ID")
+      .option("-C, --company-id <id>", "Company ID")
+      .requiredOption("--payload-json <json>", "JSON payload")
+      .action(async (memberId: string, opts: JsonPayloadOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const route = `${apiPath`/api/companies/${ctx.companyId}`}/${path}/${encodeURIComponent(memberId)}${suffix ? `/${suffix}` : ""}`;
+          printOutput(
+            await ctx.api.patch(route, parseJson(opts.payloadJson ?? "{}")),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
     { includeCompany: false },
   );
 }
 
-function addMemberPost(parent: Command, name: string, path: string, suffix: string): void {
+function addMemberPost(
+  parent: Command,
+  name: string,
+  path: string,
+  suffix: string,
+): void {
   addCommonClientOptions(
-    parent.command(name).description(`${name} a member`).argument("<memberId>", "Member ID").option("-C, --company-id <id>", "Company ID").option("--payload-json <json>", "JSON payload", "{}").action(async (memberId: string, opts: JsonPayloadOptions) => {
-      try {
-        const ctx = resolveCommandContext(opts, { requireCompany: true });
-        printOutput(await ctx.api.post(`${apiPath`/api/companies/${ctx.companyId}`}/${path}/${encodeURIComponent(memberId)}/${suffix}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-      } catch (err) {
-        handleCommandError(err);
-      }
-    }),
+    parent
+      .command(name)
+      .description(`${name} a member`)
+      .argument("<memberId>", "Member ID")
+      .option("-C, --company-id <id>", "Company ID")
+      .option("--payload-json <json>", "JSON payload", "{}")
+      .action(async (memberId: string, opts: JsonPayloadOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          printOutput(
+            await ctx.api.post(
+              `${apiPath`/api/companies/${ctx.companyId}`}/${path}/${encodeURIComponent(memberId)}/${suffix}`,
+              parseJson(opts.payloadJson ?? "{}"),
+            ),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
     { includeCompany: false },
   );
 }
 
 function addAdminUserPost(parent: Command, name: string, suffix: string): void {
-  addCommonClientOptions(parent.command(name).description(`${name} instance admin`).argument("<userId>", "User ID").action(async (userId: string, opts: BaseClientOptions) => {
-    try {
-      const ctx = resolveCommandContext(opts);
-      printOutput(await ctx.api.post(`${apiPath`/api/admin/users/${userId}`}/${suffix}`, {}), { json: ctx.json });
-    } catch (err) {
-      handleCommandError(err);
-    }
-  }));
+  addCommonClientOptions(
+    parent
+      .command(name)
+      .description(`${name} instance admin`)
+      .argument("<userId>", "User ID")
+      .action(async (userId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(
+            await ctx.api.post(
+              `${apiPath`/api/admin/users/${assertExactAuthUserId(userId)}`}/${suffix}`,
+              {},
+            ),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
 }
 
 function parseJson(value: string): unknown {

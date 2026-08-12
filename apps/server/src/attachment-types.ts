@@ -17,6 +17,7 @@
 import {
   DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES,
   MAX_COMPANY_ATTACHMENT_MAX_BYTES,
+  parseOptionalIntegerEnvironmentValue,
 } from "@paperclipai/shared";
 
 export const DEFAULT_ALLOWED_TYPES: readonly string[] = [
@@ -83,7 +84,10 @@ export function parseAllowedTypes(raw: string | undefined): string[] {
  * Supports exact matches ("application/pdf") and wildcard / prefix
  * patterns ("image/*", "application/vnd.openxmlformats-officedocument.*").
  */
-export function matchesContentType(contentType: string, allowedPatterns: string[]): boolean {
+export function matchesContentType(
+  contentType: string,
+  allowedPatterns: string[],
+): boolean {
   const ct = contentType.toLowerCase();
   return allowedPatterns.some((pattern) => {
     if (pattern === "*") return true;
@@ -94,7 +98,9 @@ export function matchesContentType(contentType: string, allowedPatterns: string[
   });
 }
 
-export function normalizeContentType(contentType: string | null | undefined): string {
+export function normalizeContentType(
+  contentType: string | null | undefined,
+): string {
   const normalized = (contentType ?? "").trim().toLowerCase();
   return normalized || DEFAULT_ATTACHMENT_CONTENT_TYPE;
 }
@@ -125,9 +131,12 @@ export function normalizeUploadAttachmentContentType(input: {
 }): string {
   const normalized = normalizeContentType(input.contentType);
   if (!GENERIC_ATTACHMENT_CONTENT_TYPES.includes(normalized)) return normalized;
-  const inferred = inferOfficeAttachmentContentTypeFromFilename(input.originalFilename);
+  const inferred = inferOfficeAttachmentContentTypeFromFilename(
+    input.originalFilename,
+  );
   if (!inferred) return normalized;
-  if (input.isAllowedContentType && !input.isAllowedContentType(inferred)) return normalized;
+  if (input.isAllowedContentType && !input.isAllowedContentType(inferred))
+    return normalized;
   return inferred;
 }
 
@@ -147,11 +156,21 @@ export function isAllowedContentType(contentType: string): boolean {
 }
 
 export const MAX_ATTACHMENT_BYTES =
-  Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
+  parseOptionalIntegerEnvironmentValue(
+    process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES,
+    "PAPERCLIP_ATTACHMENT_MAX_BYTES",
+    { min: 1 },
+  ) ?? 10 * 1024 * 1024;
 
-export function normalizeTaskAttachmentMaxBytes(value: number | null | undefined): number {
+export function normalizeTaskAttachmentMaxBytes(
+  value: number | null | undefined,
+): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return Math.min(DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES, MAX_ATTACHMENT_BYTES);
   }
-  return Math.min(Math.floor(value), MAX_COMPANY_ATTACHMENT_MAX_BYTES, MAX_ATTACHMENT_BYTES);
+  return Math.min(
+    Math.floor(value),
+    MAX_COMPANY_ATTACHMENT_MAX_BYTES,
+    MAX_ATTACHMENT_BYTES,
+  );
 }

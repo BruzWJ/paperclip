@@ -36,7 +36,7 @@ The application workspaces live under `apps/`: the product backend and frontend
 are `apps/server/` and `apps/ui/`, while `apps/docs/` is the
 published documentation site. Reusable and publishable workspaces live under
 `packages/`, including `packages/cli/`, `packages/db/`, `packages/shared/`,
-catalog packages, MCP fixtures, and the plugin packages. Turbo discovers these
+`packages/adapter-utils/`, and the plugin packages. Turbo discovers these
 workspace roots through `pnpm-workspace.yaml`.
 
 The orchestration smoke fixture below `packages/plugins/examples/` remains a
@@ -51,6 +51,40 @@ belong in `apps/docs/`; internal repository documentation remains in `doc/`.
 `pnpm dev` remains Paperclip's managed same-origin development supervisor, and
 `pnpm test` remains the stable repository-wide Vitest runner so its isolation,
 serialization, and CI sharding contracts stay intact.
+
+## Board UI Runtime
+
+The board is a client-rendered React + Vite application. Its native TanStack
+Router file routes live under `apps/ui/src/routes/`; the Router Vite plugin
+generates `apps/ui/src/routeTree.gen.ts`, which is checked in and must not be
+edited by hand. Keep the Router plugin before the React plugin in both the
+normal and browser-test Vite configurations so route generation and automatic
+route code splitting use the same contract.
+
+Each route-owned screen is the route branch's actual `index.tsx` module. That
+file exports `Route = createFileRoute(...)` and the component it renders; do not
+insert another page or component directory between the route and its screen.
+Route-specific tests may sit beside the route module and are excluded by the
+Router plugin's test-file ignore pattern. Prefix non-route helper files with
+`-`, and keep reusable UI in `apps/ui/src/components/`. There is no parallel
+`src/pages/` tree and this Vite application does not use Next.js App Router
+conventions.
+
+The tenant route root uses the canonical lowercase company UUID. Agent,
+project, routine, and approval parameters use canonical UUIDs directly. Task
+detail has one board URL, `/<company-uuid>/tasks/<task-number>`, where the task
+number is the exact positive per-company counter. Do not add name,
+URL-key, task-identifier, task-UUID board URLs, aliases, or resolver routes.
+Markdown task references have one format: `task://<task-uuid>`.
+
+TanStack Query owns the browser's REST snapshots. The Express API remains the
+source of record for reads and mutations. The same Node HTTP server also hosts
+the authenticated, company-scoped Socket.IO endpoint at
+`/api/live/socket.io`. Its typed `live:event:v1` messages are cache-invalidation
+hints; consumers refresh the affected REST-backed queries instead of treating
+the message payload as canonical data. There is no parallel domain polling,
+cross-tab leader election, or BroadcastChannel cache transport. The UI has no
+server-rendering runtime.
 
 ## Start Dev
 
@@ -230,7 +264,7 @@ Build and run Paperclip in Docker:
 docker build -t paperclip-local .
 docker run --name paperclip \
   -p 3100:3100 \
-  -e HOST=0.0.0.0 \
+  -e PAPERCLIP_BIND=lan \
   -e PAPERCLIP_HOME=/paperclip \
   -v "$(pwd)/data/docker-paperclip:/paperclip" \
   paperclip-local
@@ -243,7 +277,7 @@ docker compose -f docker/docker-compose.quickstart.yml up --build
 ```
 
 See `doc/DOCKER.md` for the target-scoped provider-native configuration
-boundary used by containerized adapters.
+boundary used by ACPX agents in containers.
 
 ## Docker For Untrusted PR Review
 
@@ -311,8 +345,8 @@ pnpm paperclipai task work-product:create <task-id> \
   --payload-json '{"type":"artifact","title":"Demo video render"}'
 ```
 
-Paperclip does not inject an operational upload skill or general REST credential
-into provider runtimes.
+Paperclip does not inject an upload instruction package or general REST
+credential into provider runtimes.
 
 ## Agent Runtime
 
@@ -382,80 +416,24 @@ Better Auth flow and explicitly claims instance-admin authorization.
 **`pnpm paperclipai worktree init --database-url <url> [options]`** — Create a
 new repo-local Paperclip instance for the current linked worktree.
 
-| Option | Description |
-|---|---|
-| `--database-url <url>` | Required newly provisioned empty external PostgreSQL target |
-| `--name <name>` | Display name used to derive the instance id |
-| `--instance <id>` | Explicit isolated instance id |
-| `--home <path>` | Home root for worktree instances (default: `~/.paperclip-worktrees`) |
-| `--server-port <port>` | Preferred server port |
+| Option                 | Description                                                          |
+| ---------------------- | -------------------------------------------------------------------- |
+| `--database-url <url>` | Required newly provisioned empty external PostgreSQL target          |
+| `--name <name>`        | Display name used to derive the instance id                          |
+| `--instance <id>`      | Explicit isolated instance id                                        |
+| `--home <path>`        | Home root for worktree instances (default: `~/.paperclip-worktrees`) |
+| `--server-port <port>` | Preferred server port                                                |
 
 **`pnpm paperclipai worktree:make <name> --database-url <url> [options]`** —
 Create `~/NAME` as a git worktree, then initialize a new Paperclip instance.
 
-| Option | Description |
-|---|---|
-| `--database-url <url>` | Required newly provisioned empty external PostgreSQL target |
-| `--start-point <ref>` | Remote ref to base the new branch on (e.g. `origin/main`) |
-| `--instance <id>` | Explicit isolated instance id |
-| `--home <path>` | Home root for worktree instances (default: `~/.paperclip-worktrees`) |
-| `--server-port <port>` | Preferred server port |
-
-## App-Shipped Skills Catalog
-
-The Paperclip app ships a curated catalog of company skills out of the box. The
-catalog is a workspace package at `packages/skills-catalog`:
-
-```text
-packages/skills-catalog/
-  catalog/
-    bundled/<category>/<slug>/SKILL.md   # recommended defaults
-    optional/<category>/<slug>/SKILL.md  # role/domain-specific
-  generated/catalog.json                  # checked-in manifest
-  scripts/
-    build-catalog-manifest.ts             # regenerate generated/catalog.json
-    validate-catalog.ts                   # validation only
-  src/                                    # builder + types consumed by server and CLI
-```
-
-Server and CLI import the generated manifest; they do not crawl repository
-paths at request time. Root `skills/` remains reserved for Paperclip runtime
-skills and is not part of the catalog.
-
-Validate the catalog without writing the manifest:
-
-```sh
-pnpm --filter @paperclipai/skills-catalog validate
-```
-
-Regenerate `generated/catalog.json` after editing any catalog `SKILL.md`,
-frontmatter, file inventory, category, or slug:
-
-```sh
-pnpm --filter @paperclipai/skills-catalog build:manifest
-```
-
-The package's `build` script runs `build:manifest` and then `tsc`; tests live
-under `pnpm --filter @paperclipai/skills-catalog test`. Validation fails when:
-
-- a catalog entry is not under `catalog/bundled/<category>/<slug>` or
-  `catalog/optional/<category>/<slug>`
-- `SKILL.md` is missing or the frontmatter `name`/`description` is empty
-- the frontmatter `key` disagrees with the generated canonical key
-- two catalog entries share an `id`, `key`, or `slug`
-- file inventory contains absolute paths, `..`, broken symlinks, or files
-  outside the skill directory
-- the regenerated manifest differs from the checked-in
-  `generated/catalog.json`
-
-Trust level is derived from inventory: `markdown_only` (markdown + references
-only), `assets` (other non-script files), or `scripts_executables` (any
-executable script). The build contract is documented in
-`doc/plans/2026-05-26-skills-cli-catalog-contract.md`.
-
-CI runs `pnpm --filter @paperclipai/skills-catalog validate` and the package's
-vitest suite, so always regenerate the manifest in the same commit as the
-catalog change.
+| Option                 | Description                                                          |
+| ---------------------- | -------------------------------------------------------------------- |
+| `--database-url <url>` | Required newly provisioned empty external PostgreSQL target          |
+| `--start-point <ref>`  | Remote ref to base the new branch on (e.g. `origin/main`)            |
+| `--instance <id>`      | Explicit isolated instance id                                        |
+| `--home <path>`        | Home root for worktree instances (default: `~/.paperclip-worktrees`) |
+| `--server-port <port>` | Preferred server port                                                |
 
 ## Quick Health Checks
 
@@ -553,24 +531,3 @@ pnpm paperclipai dashboard get
 ```
 
 See full command reference in `doc/CLI.md`.
-
-## External Agent Invite Onboarding
-
-External-agent invites expose machine-readable and plain-text onboarding instructions:
-
-The board UI creates the invite from the agent-management surface.
-
-- `GET /api/invites/:token` returns the invite summary.
-- `GET /api/invites/:token/onboarding` returns the external registration contract.
-- `GET /api/invites/:token/onboarding.txt` returns the same contract as plain text.
-
-The external runtime submits an agent join request and waits for board approval. Approval creates/configures the ordinary agent; it does not mint or return a Paperclip agent key, claim secret, generic REST bridge, or operational skill.
-
-The submitted adapter type must exactly match a currently discovered local ACPX
-agent. Adapter configuration contains only the non-secret stable ACPX options
-that ACPX advertises, plus the separately selected execution target and skill
-channel. Paperclip rejects command/endpoint/provider-payload fields, generic
-bridge credentials, provider secrets, and native-session selectors. When a
-canonical task-execution ref is dispatched, the worker supplies a fresh
-request-scoped compiled tool interface through that prompt's ACPX `mcpServers`
-input. Paperclip never retains a prior request's tool authority.

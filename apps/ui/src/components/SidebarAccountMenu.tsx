@@ -8,7 +8,8 @@ import {
   UserRound,
   UserRoundPen,
 } from "lucide-react";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSidebar } from "../context/SidebarContext";
@@ -23,7 +24,6 @@ import { ThemeToggle } from "./ThemeToggle";
 import { SidebarServerInfo } from "./SidebarServerInfo";
 import { Badge } from "@/components/ui/badge";
 
-const PROFILE_SETTINGS_PATH = "/company/settings/instance/profile";
 const DOCS_URL = "https://docs.paperclip.ing/";
 const FEEDBACK_URL = "https://paperclip.ing/feedback";
 
@@ -37,8 +37,10 @@ interface MenuActionProps {
   description: string;
   icon: LucideIcon;
   onClick?: () => void;
-  href?: string;
-  external?: boolean;
+  destination?:
+    | { type: "user-profile"; userId: string }
+    | { type: "profile-settings" };
+  externalHref?: string;
 }
 
 function deriveInitials(name: string) {
@@ -49,32 +51,15 @@ function deriveInitials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
-function deriveUserSlug(
-  name: string | null | undefined,
-  email: string | null | undefined,
-  id: string | null | undefined,
-) {
-  const candidates = [name, email?.split("@")[0], email, id];
-  for (const candidate of candidates) {
-    const slug = candidate
-      ?.trim()
-      .toLowerCase()
-      .replace(/['"]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    if (slug) return slug;
-  }
-  return "me";
-}
-
 function MenuAction({
   label,
   description,
   icon: Icon,
   onClick,
-  href,
-  external = false,
+  destination,
+  externalHref,
 }: MenuActionProps) {
+  const companyId = useCompanyRouteId();
   const className =
     "flex w-full items-start gap-3 rounded-sm px-3 py-3 text-left transition-colors hover:bg-accent/60";
 
@@ -94,25 +79,39 @@ function MenuAction({
     </>
   );
 
-  if (href) {
-    if (external) {
-      return (
-        <a
-          href={href}
-          target="_blank"
-          rel="noreferrer"
-          className={className}
-          onClick={onClick}
-        >
-          {content}
-        </a>
-      );
-    }
-
-    return (
-      <Link to={href} className={className} onClick={onClick}>
+  if (destination) {
+    return destination.type === "user-profile" ? (
+      <Link
+        to="/$companyId/u/$userId"
+        params={{ companyId, userId: destination.userId }}
+        className={className}
+        onClick={onClick}
+      >
         {content}
       </Link>
+    ) : (
+      <Link
+        to="/$companyId/company/settings/instance/profile"
+        params={{ companyId }}
+        className={className}
+        onClick={onClick}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  if (externalHref) {
+    return (
+      <a
+        href={externalHref}
+        target="_blank"
+        rel="noreferrer"
+        className={className}
+        onClick={onClick}
+      >
+        {content}
+      </a>
     );
   }
 
@@ -151,7 +150,7 @@ export function SidebarAccountMenu({
     session?.user.name?.trim() || session?.user.email?.trim() || "Account";
   const secondaryLabel = session?.user.email?.trim() || "Signed in";
   const initials = deriveInitials(displayName);
-  const profileHref = `/u/${deriveUserSlug(session?.user.name, session?.user.email, session?.user.id)}`;
+  const userId = session?.user.id;
 
   function closeNavigationChrome() {
     setOpen(false);
@@ -218,34 +217,34 @@ export function SidebarAccountMenu({
             </div>
 
             <div className="mt-4 space-y-1">
-              <MenuAction
-                label="View profile"
-                description="Open your activity, task, and usage ledger."
-                icon={UserRound}
-                href={profileHref}
-                onClick={closeNavigationChrome}
-              />
+              {userId ? (
+                <MenuAction
+                  label="View profile"
+                  description="Open your activity, task, and usage ledger."
+                  icon={UserRound}
+                  destination={{ type: "user-profile", userId }}
+                  onClick={closeNavigationChrome}
+                />
+              ) : null}
               <MenuAction
                 label="Edit profile"
                 description="Update your display name and avatar."
                 icon={UserRoundPen}
-                href={PROFILE_SETTINGS_PATH}
+                destination={{ type: "profile-settings" }}
                 onClick={closeNavigationChrome}
               />
               <MenuAction
                 label="Documentation"
                 description="Open Paperclip docs in a new tab."
                 icon={BookOpen}
-                href={DOCS_URL}
-                external
+                externalHref={DOCS_URL}
                 onClick={() => setOpen(false)}
               />
               <MenuAction
                 label="Feedback"
                 description="Share feedback or report a problem."
                 icon={Megaphone}
-                href={FEEDBACK_URL}
-                external
+                externalHref={FEEDBACK_URL}
                 onClick={() => setOpen(false)}
               />
               <ThemeToggle

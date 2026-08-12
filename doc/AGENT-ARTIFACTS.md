@@ -40,7 +40,7 @@ type, byte size, storage paths, and original filename.
 ## Boundary
 
 Board-side artifact APIs are control-plane operations. They are not provider
-tools, provider environment conventions, operational skills, or implicit
+tools, provider environment conventions, provider instruction packages, or implicit
 post-run upload hooks. Paperclip does not copy arbitrary provider files,
 translate a model-supplied local path into a board attachment, or grant a
 provider general API access so it can do so itself.

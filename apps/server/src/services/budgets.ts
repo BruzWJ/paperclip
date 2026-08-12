@@ -14,6 +14,7 @@ import {
   canonicalizeMoneyAmount,
   addMoneyAmounts,
   compareMoneyAmounts,
+  isCanonicalUuid,
   moneyAmountUtilizationPercent,
   parseBudgetCurrency,
   parseMoneyAmount,
@@ -75,6 +76,12 @@ export type CanonicalAgentCreation = Omit<
 
 const ZERO_AMOUNT = parseMoneyAmount("0");
 const COMPANY_PREFIX_FALLBACK = "CMP";
+
+function assertCanonicalBudgetIncidentId(incidentId: string): void {
+  if (!isCanonicalUuid(incidentId)) {
+    throw notFound("Budget incident not found");
+  }
+}
 
 function currentUtcMonthWindow(now = new Date()) {
   const start = new Date(
@@ -376,7 +383,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         .where(
           and(
             eq(agents.id, policy.scopeId),
-            inArray(agents.status, ["active", "idle", "running", "error"]),
+            inArray(agents.status, ["idle", "error"]),
           ),
         );
       return;
@@ -1283,6 +1290,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
       actorUserId: string,
       owner?: "agent_operational_configuration",
     ): Promise<BudgetIncident> => {
+      assertCanonicalBudgetIncidentId(incidentId);
       const result = await db.transaction(async (tx) => {
         const transaction = tx as unknown as Db;
         const budgetCurrency = await companyCurrency(transaction, companyId, true);
@@ -1422,6 +1430,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
     },
 
     getIncidentScope: async (companyId: string, incidentId: string) => {
+      assertCanonicalBudgetIncidentId(incidentId);
       const incident = await db
         .select({
           companyId: budgetIncidents.companyId,

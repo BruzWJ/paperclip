@@ -2,7 +2,6 @@
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
 import type { Task } from "@paperclipai/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +13,25 @@ const mockTasksApiGet = vi.hoisted(() => vi.fn());
 vi.mock("@/api/tasks", () => ({
   tasksApi: {
     get: mockTasksApiGet,
+  },
+}));
+
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to, params, hash, state: _state, ...props }: React.ComponentProps<"a"> & {
+    to: string;
+    params?: Record<string, string>;
+    hash?: string;
+    state?: unknown;
+  }) => {
+    const pathname = Object.entries(params ?? {}).reduce(
+      (path, [key, value]) => path.replace(`$${key}`, value),
+      to,
+    );
+    return <a href={`${pathname}${hash ? `#${hash}` : ""}`} {...props}>{children}</a>;
   },
 }));
 
@@ -69,15 +87,13 @@ describe("TaskLinkQuicklook", () => {
     act(() => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <MemoryRouter>
-            <TaskLinkQuicklook
-              taskPathId="PAP-1"
-              taskPrefetch={task}
-              to="/companies/company-1/tasks/PAP-1"
-            >
-              PAP-1
-            </TaskLinkQuicklook>
-          </MemoryRouter>
+          <TaskLinkQuicklook
+            taskId={task.id}
+            taskNumber={task.taskNumber}
+            taskPrefetch={task}
+          >
+            PAP-1
+          </TaskLinkQuicklook>
         </QueryClientProvider>,
       );
     });

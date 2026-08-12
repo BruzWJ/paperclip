@@ -1,3 +1,17 @@
+<!-- intent-skills:start -->
+
+## Skill Loading
+
+Before editing files for a substantial task:
+
+- Run `pnpm dlx @tanstack/intent@latest list` from the workspace root to see available local skills.
+- If a listed skill matches the task, run `pnpm dlx @tanstack/intent@latest load <package>#<skill>` before changing files.
+- Use the loaded `SKILL.md` guidance while making the change.
+- Monorepos: when working across packages, run the skill check from the workspace root and prefer the local skill for the package being changed.
+- Multiple matches: prefer the most specific local skill for the package or concern you are changing; load additional skills only when the task spans multiple packages or concerns.
+
+<!-- intent-skills:end -->
+
 # AGENTS.md
 
 Guidance for human and AI contributors working in this repository.
@@ -22,14 +36,13 @@ Before making changes, read in this order:
 
 ## 3. Repo Map
 
-- `apps/server/`: Express REST API and orchestration services
-- `apps/ui/`: React + Vite board UI
+- `apps/server/`: Express REST API, Socket.IO live invalidation, and orchestration services
+- `apps/ui/`: client-rendered React + Vite board UI with native TanStack Router file routes
 - `apps/docs/`: published Mintlify documentation site and its assets
 - `packages/cli/`: publishable Paperclip CLI
 - `packages/db/`: Drizzle schema, migrations, DB clients
 - `packages/shared/`: shared types, constants, validators, API path constants
 - `packages/adapter-utils/`: ACPX public-runtime discovery and execution bridge
-- `packages/skills-catalog/`: bundled skill catalog and generated manifest
 - `packages/plugins/`: plugin SDK, tooling, first-party plugins, and examples
 - `doc/`: repository-internal product, engineering, operations, and planning docs
 
@@ -67,16 +80,18 @@ reapply migrations.
 ## 5. Core Engineering Rules
 
 1. Keep changes company-scoped.
-Every domain entity should be scoped to a company and company boundaries must be enforced in routes/services.
+   Every domain entity should be scoped to a company and company boundaries must be enforced in routes/services.
 
 2. Keep contracts synchronized.
-If you change schema/API behavior, update all impacted layers:
+   If you change schema/API behavior, update all impacted layers:
+
 - `packages/db` schema and exports
 - `packages/shared` types/constants/validators
 - `apps/server` routes/services
 - `apps/ui` API clients and pages
 
 3. Preserve control-plane invariants.
+
 - Exactly one checked task owner record
 - Task-execution refs as the only provider invocation source
 - Approval gates for governed actions
@@ -84,17 +99,17 @@ If you change schema/API behavior, update all impacted layers:
 - Activity logging for mutating actions
 
 4. Do not replace strategic docs wholesale unless asked.
-Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` aligned.
+   Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` aligned.
 
 5. Keep repo plan docs dated and centralized.
-When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip task planning: if a Paperclip task asks for a plan, update the task `plan` document per the `paperclip` skill instead of creating a repo markdown file.
+   When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip task planning: if a Paperclip task asks for a plan, update the task `plan` document per the `paperclip` skill instead of creating a repo markdown file.
 
 6. Keep provider output inside the execution boundary.
-Write generated files beneath the current execution workspace, verify them, and
-name workspace-relative paths in the final response. Providers do not receive a
-generic Paperclip API credential and must not upload attachments or create work
-products through REST. Board users decide which workspace files become durable
-artifacts. See `doc/AGENT-ARTIFACTS.md`.
+   Write generated files beneath the current execution workspace, verify them, and
+   name workspace-relative paths in the final response. Providers do not receive a
+   generic Paperclip API credential and must not upload attachments or create work
+   products through REST. Board users decide which workspace files become durable
+   artifacts. See `doc/AGENT-ARTIFACTS.md`.
 
 ## 6. Database Change Workflow
 
@@ -115,6 +130,7 @@ pnpm typecheck
 ```
 
 Notes:
+
 - `packages/db/drizzle.config.ts` reads the root TypeScript `schema.ts` directly.
 - Generated SQL and Drizzle metadata live in `packages/db/migrations/`.
 
@@ -151,8 +167,8 @@ If anything cannot be run, explicitly report what was not run and why.
 
 - Base path: `/api`
 - Board access is treated as full-control operator context
-- Agent access uses bearer API keys (`agent_api_keys`), hashed at rest
-- Agent keys must not access other companies
+- Agent executions use request-scoped ACPX prompt capabilities, never generic
+  REST credentials
 
 When adding endpoints:
 
@@ -164,6 +180,8 @@ When adding endpoints:
 ## 9. UI Expectations
 
 - Keep routes and nav aligned with available API surface
+- Make each route-owned screen its TanStack branch's actual `index.tsx` route
+  module; do not add an intermediate page directory or recreate `src/pages/`
 - Use company selection context for company-scoped pages
 - Surface failures clearly; do not silently ignore API errors
 
@@ -206,7 +224,7 @@ An ACPX built-in name by itself is not evidence of local availability.
 
 Paperclip must not add an agent/model/configuration catalog, aliases,
 provider-specific executable mapping or parser, ACPX runtime/session state,
-authentication, or tools. The generic no-install fence may inspect only the
+authentication, provider instruction packages, or tools. The generic no-install fence may inspect only the
 launch returned by ACPX and must never execute or materialize a package. ACPX
 owns resolution and lifecycle of the local provider CLI; Paperclip
 owns durable authority fences, request-scoped MCP, safe event projection,
@@ -215,21 +233,21 @@ state store is deleted after each bounded execution; only an opaque provider
 backend session id may be retained in Paperclip's scoped correlation record
 for the queued bootstrap handoff or an eligible ordinary resume.
 
+Board MCP is a separate authenticated board-user ingress, not an agent/provider
+communication contract. A human-operated local coding client may use the
+existing board API-key lifecycle and the user's active company memberships via
+`/api/mcp`. Board MCP must never be injected into a provider execution or used
+as an ACPX fallback; provider runs continue to receive only their short-lived,
+task-scoped request capability through `/api/run-tools`.
+
 ### Local Dev
 
-- Fork runs on port 3101+ (auto-detects if 3100 is taken by upstream instance)
+- Set `PORT=3101` (or another explicit free port) for a fork when an upstream
+  instance already owns 3100; startup fails if the configured port is occupied.
 - `npx vite build` hangs on NTFS — use `node node_modules/vite/bin/vite.js build` instead
 - Server startup from NTFS takes 30-60s — don't assume failure immediately
 - Kill ALL paperclip processes before starting: `pkill -f "paperclip"; pkill -f "tsx.*index.ts"`
 - Vite cache survives `rm -rf dist` — delete both: `rm -rf apps/ui/dist apps/ui/node_modules/.vite`
-
-### Fork QoL Patches (not in upstream)
-
-These are local modifications in the fork's UI. If re-copying source, these must be re-applied:
-
-1. **stderr_group** — amber accordion for MCP init noise in `RunTranscriptView.tsx`
-2. **tool_group** — accordion for consecutive non-terminal tools (write, read, search, browser)
-3. **Dashboard excerpt** — `LatestRunCard` strips markdown, shows first 3 lines/280 chars
 
 ### External adapter packages
 
@@ -239,9 +257,9 @@ models, and settings dynamically. Declare an ACPX `agents` entry only for a
 custom name or launch override. A generic advertised option,
 including a reasoning setting when the agent exposes one, is persisted as an
 immutable ACPX session configuration selection and applied through ACPX before
-the prompt. The current ACPX public runtime advertises only local execution
-targets and `operator_native` skills; unsupported remote targets and isolated
-skills homes fail closed.
+the prompt. ACPX is the sole provider communication and execution contract.
+Paperclip does not maintain a parallel instruction-package channel or provider
+home, and request-scoped MCP is its only tool-injection boundary.
 
 Pre-save agent testing uses the same dynamic contract: Paperclip applies the
 exact unsaved ACPX selections in a disposable no-prompt ACPX session, persists
@@ -249,4 +267,4 @@ nothing, and does not treat that observation as execution-workspace readiness.
 
 ## Design system
 
-`DESIGN.md` at the repo root is the source of truth for UI design decisions. The token-only rule applies to all `apps/ui/` changes: every color, spacing, radius, type, shadow, and motion value in `apps/ui/src/components/**` and `apps/ui/src/pages/**` comes from the token layer in `apps/ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `apps/ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.
+`DESIGN.md` at the repo root is the source of truth for UI design decisions. The token-only rule applies to all `apps/ui/` changes: every color, spacing, radius, type, shadow, and motion value in `apps/ui/src/components/**` and `apps/ui/src/routes/**` comes from the token layer in `apps/ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `apps/ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.

@@ -56,16 +56,16 @@ describe("client auth API commands", () => {
     }
 
     await run(["challenge", "create", "--payload-json", "{}"]);
-    await run(["challenge", "get", "challenge-1", "--token", "secret"]);
-    await run(["challenge", "approve", "challenge-1", "--token", "secret"]);
     process.env.PAPERCLIP_TEST_CHALLENGE_TOKEN = "env-secret";
+    await run(["challenge", "get", "challenge-1", "--token-env", "PAPERCLIP_TEST_CHALLENGE_TOKEN"]);
+    await run(["challenge", "approve", "challenge-1", "--token-env", "PAPERCLIP_TEST_CHALLENGE_TOKEN"]);
     await run(["challenge", "approve", "challenge/2", "--token-env", "PAPERCLIP_TEST_CHALLENGE_TOKEN"]);
-    await run(["challenge", "cancel", "challenge-1", "--token", "secret"]);
+    await run(["challenge", "cancel", "challenge-1", "--token-env", "PAPERCLIP_TEST_CHALLENGE_TOKEN"]);
     await run(["revoke-current"]);
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["POST", "http://localhost:3100/api/cli-auth/challenges"],
-      ["GET", "http://localhost:3100/api/cli-auth/challenges/challenge-1?token=secret"],
+      ["GET", "http://localhost:3100/api/cli-auth/challenges/challenge-1?token=env-secret"],
       ["POST", "http://localhost:3100/api/cli-auth/challenges/challenge-1/approve"],
       ["POST", "http://localhost:3100/api/cli-auth/challenges/challenge%2F2/approve"],
       ["POST", "http://localhost:3100/api/cli-auth/challenges/challenge-1/cancel"],

@@ -10,7 +10,7 @@ import type {
   TaskExecutionRunStatus,
   TaskExecutionSessionOperation,
 } from "@paperclipai/shared";
-import { api } from "./client";
+import { api, type RequestOptions } from "./client";
 
 export const ACTIVE_TASK_EXECUTION_RUN_STATUSES = [
   "queued",
@@ -269,7 +269,7 @@ export interface TaskExecutionRunJoinedDetail {
 function runListQuery(filters: TaskExecutionRunListFilters = {}): string {
   const searchParams = new URLSearchParams();
   if (filters.agentId) searchParams.set("agentId", filters.agentId);
-  if (filters.status?.length) searchParams.set("status", filters.status.join(","));
+  for (const status of filters.status ?? []) searchParams.append("status", status);
   if (filters.cursor) searchParams.set("cursor", filters.cursor);
   if (filters.limit !== undefined) searchParams.set("limit", String(filters.limit));
   const query = searchParams.toString();
@@ -291,8 +291,9 @@ export const runsApi = {
     api.get<TaskExecutionRunListPageRecord>(
       `/tasks/${taskId}/runs${runListQuery(filters)}`,
     ),
-  get: (runId: string, limit = 200) =>
+  get: (runId: string, limit = 200, options?: RequestOptions) =>
     api.get<TaskExecutionRunJoinedDetail>(
       `/runs/${runId}?limit=${encodeURIComponent(String(limit))}`,
+      options,
     ),
 };

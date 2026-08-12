@@ -1,4 +1,4 @@
-import { Navigate, Outlet, useLocation } from "@/lib/router";
+import { Navigate, Outlet, useLocation } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
@@ -67,8 +67,10 @@ export function AuthenticatedAppGate() {
   });
 
   const boardAccessQuery = useQuery({
-    queryKey: queryKeys.access.currentBoardAccess,
-    queryFn: () => accessApi.getCurrentBoardAccess(),
+    queryKey: sessionQuery.data
+      ? queryKeys.access.currentBoardAccess(sessionQuery.data.user.id)
+      : ["access", "current-board-access", null] as const,
+    queryFn: () => accessApi.getCurrentBoardAccess(sessionQuery.data!.user.id),
     enabled: !isBootstrapPending && !!sessionQuery.data,
     retry: false,
   });
@@ -84,7 +86,7 @@ export function AuthenticatedAppGate() {
         queryKey: queryKeys.companies.stats,
       });
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.access.currentBoardAccess,
+        queryKey: ["access", "current-board-access"],
       });
     },
   });
@@ -93,7 +95,7 @@ export function AuthenticatedAppGate() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.auth.session });
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.access.currentBoardAccess,
+        queryKey: ["access", "current-board-access"],
       });
     },
   });
@@ -154,8 +156,8 @@ export function AuthenticatedAppGate() {
   }
 
   if (!sessionQuery.data) {
-    const next = encodeURIComponent(`${location.pathname}${location.search}`);
-    return <Navigate to={`/auth?next=${next}`} replace />;
+    const next = `${location.pathname}${location.searchStr}`;
+    return <Navigate to="/auth" search={{ next }} replace />;
   }
 
   if (

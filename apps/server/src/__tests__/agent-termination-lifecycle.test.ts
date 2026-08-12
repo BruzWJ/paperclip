@@ -9,35 +9,38 @@ import { createMockDb } from "./helpers/mock-db.js";
 const dependencies = vi.hoisted(() => ({
   lockGraph: vi.fn(),
   terminalizeEdges: vi.fn(),
-  logActivity: vi.fn(),
+  persistedActivity: { row: { id: "activity-1" }, taskId: null },
+  persistActivityLog: vi.fn(),
+  publishCommittedActivity: vi.fn(),
   monthlySpend: vi.fn(),
 }));
 
 vi.mock("../services/agent-org-graph-lock.js", async () => ({
-  ...await vi.importActual<typeof import("../services/agent-org-graph-lock.js")>(
-    "../services/agent-org-graph-lock.js",
-  ),
+  ...(await vi.importActual<
+    typeof import("../services/agent-org-graph-lock.js")
+  >("../services/agent-org-graph-lock.js")),
   lockCompanyAgentGraph: dependencies.lockGraph,
 }));
 
 vi.mock("../services/system-escalation-postgres.js", async () => ({
-  ...await vi.importActual<typeof import("../services/system-escalation-postgres.js")>(
-    "../services/system-escalation-postgres.js",
-  ),
+  ...(await vi.importActual<
+    typeof import("../services/system-escalation-postgres.js")
+  >("../services/system-escalation-postgres.js")),
   terminalizeAgentCreatorEdgesInTransaction: dependencies.terminalizeEdges,
 }));
 
 vi.mock("../services/activity-log.js", async () => ({
-  ...await vi.importActual<typeof import("../services/activity-log.js")>(
+  ...(await vi.importActual<typeof import("../services/activity-log.js")>(
     "../services/activity-log.js",
-  ),
-  logActivity: dependencies.logActivity,
+  )),
+  persistActivityLog: dependencies.persistActivityLog,
+  publishCommittedActivity: dependencies.publishCommittedActivity,
 }));
 
 vi.mock("../services/budgets.js", async () => ({
-  ...await vi.importActual<typeof import("../services/budgets.js")>(
+  ...(await vi.importActual<typeof import("../services/budgets.js")>(
     "../services/budgets.js",
-  ),
+  )),
   budgetService: () => ({
     getAgentMonthlyKnownSpend: dependencies.monthlySpend,
   }),
@@ -51,23 +54,29 @@ const terminatedId = "00000000-0000-4000-8000-000000000013";
 const unrelatedId = "00000000-0000-4000-8000-000000000014";
 const now = new Date("2026-07-30T18:00:00.000Z");
 
-function agent(id: string, input: {
-  status?: string;
-  reportsTo?: string | null;
-  name?: string;
-} = {}) {
+function agent(
+  id: string,
+  input: {
+    status?: string;
+    reportsTo?: string | null;
+    name?: string;
+  } = {},
+) {
   return {
     id,
     companyId,
     name: input.name ?? id,
-    status: input.status ?? "active",
+    status: input.status ?? "idle",
     reportsTo: input.reportsTo ?? null,
   } as never;
 }
 
 const target = agent(targetId, { name: "Target manager" });
 const child = agent(childId, { status: "error", reportsTo: targetId });
-const grandchild = agent(grandchildId, { status: "running", reportsTo: childId });
+const grandchild = agent(grandchildId, {
+  status: "idle",
+  reportsTo: childId,
+});
 const terminated = agent(terminatedId, {
   status: "terminated",
   reportsTo: grandchildId,
@@ -117,12 +126,17 @@ function setValues(calls: ReturnType<typeof createMockDb>["calls"]) {
 describe("canonical agent termination lifecycle", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    dependencies.lockGraph.mockResolvedValue({ company: { id: companyId }, agents: graph });
+    dependencies.lockGraph.mockResolvedValue({
+      company: { id: companyId },
+      agents: graph,
+    });
     dependencies.terminalizeEdges.mockResolvedValue([
       { dispatchRefId: "creator-ref" },
       { dispatchRefId: null },
     ]);
-    dependencies.logActivity.mockResolvedValue(undefined);
+    dependencies.persistActivityLog.mockResolvedValue(
+      dependencies.persistedActivity,
+    );
     dependencies.monthlySpend.mockResolvedValue(new Map([[targetId, "0.00"]]));
   });
 
@@ -150,24 +164,41 @@ describe("canonical agent termination lifecycle", () => {
       dispatchRefIds: ["creator-ref"],
     });
     expect(setValues(harness.calls)).toEqual([
-      expect.objectContaining({ status: "terminated", pauseReason: null, errorReason: null }),
-      expect.objectContaining({ status: "paused", pauseReason: "system", errorReason: null }),
-    ]);
-    expect(cancellation.cancel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      companyId,
-      agentIds: [targetId],
-    }));
-    expect(cancellation.suspend).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      companyId,
-      agentIds: [childId, grandchildId],
-    }));
-    expect(dependencies.terminalizeEdges).toHaveBeenCalledTimes(1);
-    expect(dependencies.logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "agent.terminated",
-      details: expect.objectContaining({
-        descendantPausedAgentIds: [childId, grandchildId],
+      expect.objectContaining({
+        status: "terminated",
+        pauseReason: null,
+        errorReason: null,
       }),
-    }));
+      expect.objectContaining({
+        status: "paused",
+        pauseReason: "system",
+        errorReason: null,
+      }),
+    ]);
+    expect(cancellation.cancel).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId,
+        agentIds: [targetId],
+      }),
+    );
+    expect(cancellation.suspend).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId,
+        agentIds: [childId, grandchildId],
+      }),
+    );
+    expect(dependencies.terminalizeEdges).toHaveBeenCalledTimes(1);
+    expect(dependencies.persistActivityLog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "agent.terminated",
+        details: expect.objectContaining({
+          descendantPausedAgentIds: [childId, grandchildId],
+        }),
+      }),
+    );
     expect(harness.remaining("select")).toBe(0);
   });
 
@@ -180,17 +211,19 @@ describe("canonical agent termination lifecycle", () => {
     const harness = createMockDb();
     const cancellation = cancellationRecorder();
 
-    await expect(terminateAgentToTombstoneInTransaction(
-      harness.db as never,
-      {
-        companyId,
-        agentId: targetId,
-        sourceId: `agent-termination:${targetId}`,
-        actor: { kind: "system" },
-        now,
-      },
-      cancellation.service,
-    )).resolves.toMatchObject({ tombstone: alreadyTerminated });
+    await expect(
+      terminateAgentToTombstoneInTransaction(
+        harness.db as never,
+        {
+          companyId,
+          agentId: targetId,
+          sourceId: `agent-termination:${targetId}`,
+          actor: { kind: "system" },
+          now,
+        },
+        cancellation.service,
+      ),
+    ).resolves.toMatchObject({ tombstone: alreadyTerminated });
 
     expect(harness.calls).toHaveLength(0);
     expect(cancellation.cancel).not.toHaveBeenCalled();
@@ -203,31 +236,28 @@ describe("canonical agent termination lifecycle", () => {
     });
     const cancellation = cancellationRecorder();
 
-    await expect(terminateAgentToTombstoneInTransaction(
-      harness.db as never,
-      {
-        companyId,
-        agentId: targetId,
-        sourceId: `agent-termination:${targetId}`,
-        actor: { kind: "system" },
-        now,
-      },
-      cancellation.service,
-    )).rejects.toMatchObject({ status: 409 });
+    await expect(
+      terminateAgentToTombstoneInTransaction(
+        harness.db as never,
+        {
+          companyId,
+          agentId: targetId,
+          sourceId: `agent-termination:${targetId}`,
+          actor: { kind: "system" },
+          now,
+        },
+        cancellation.service,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
 
     expect(cancellation.cancel).not.toHaveBeenCalled();
     expect(dependencies.terminalizeEdges).not.toHaveBeenCalled();
-    expect(dependencies.logActivity).not.toHaveBeenCalled();
+    expect(dependencies.persistActivityLog).not.toHaveBeenCalled();
   });
 
   it("reconciles committed fences and dispatches creator work after commit", async () => {
     const harness = createMockDb({
-      select: [
-        [{ companyId }],
-        [],
-        [tombstone],
-        [tombstone],
-      ],
+      select: [[{ companyId }], [], [tombstone], [tombstone]],
       update: [[tombstone], [{ id: childId }, { id: grandchildId }]],
     });
     const cancellation = cancellationRecorder();
@@ -242,7 +272,12 @@ describe("canonical agent termination lifecycle", () => {
     expect(result).toMatchObject({ id: targetId, status: "terminated" });
     expect(cancellation.reconcile).toHaveBeenCalledTimes(2);
     expect(dispatchRef).toHaveBeenCalledWith("creator-ref");
-    expect(dependencies.monthlySpend).toHaveBeenCalledWith(companyId, [targetId]);
+    expect(dependencies.monthlySpend).toHaveBeenCalledWith(companyId, [
+      targetId,
+    ]);
+    expect(
+      dependencies.publishCommittedActivity,
+    ).toHaveBeenCalledExactlyOnceWith(dependencies.persistedActivity);
     expect(harness.remaining("select")).toBe(0);
   });
 });

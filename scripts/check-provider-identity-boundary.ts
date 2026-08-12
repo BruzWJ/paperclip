@@ -7,7 +7,6 @@ import {
   requireFileTokens,
 } from "./static-removal-gate-utils.ts";
 
-const SHARED_BOUNDARY = "packages/shared/src/provider-child-boundary.ts";
 const ADAPTER_VALIDATOR = "packages/shared/src/validators/agent.ts";
 const ATTEMPT_EXECUTOR =
   "apps/server/src/services/task-execution-attempt-executor.ts";
@@ -106,21 +105,14 @@ export function providerIdentityBoundaryViolations(
         "ROADMAP.md",
       ],
     }),
-    ...requireFileTokens(repositoryRoot, SHARED_BOUNDARY, [
-      "export function isProviderChildReservedEnvironmentKey",
-      'const prefix = "PAPERCLIP_"',
-      "PAPERCLIP_PROVIDER_CHILD_RESERVED_SUFFIXES.has(",
-      "SERVER_SECRET_ENV_KEYS.has(normalized)",
-    ]),
     ...requireFileTokens(repositoryRoot, ADAPTER_VALIDATOR, [
-      'from "../provider-child-boundary.js"',
-      "isEnvironmentEntry && isProviderChildReservedEnvironmentKey(key)",
-      "if (typeof value === \"string\") return;",
+      "export const adapterConfigSchema = z.record(",
+      "z.union([z.string().min(1), z.boolean()])",
     ]),
     ...requireFileTokens(repositoryRoot, ATTEMPT_EXECUTOR, [
       "executeAcpxOneShotPrompt",
       "mcpServers: Object.freeze([",
-      "message: input.request.message",
+      "message: input.message",
     ]),
     ...requireFileTokens(repositoryRoot, AGENT_ACTION_PORT, [
       ") => Promise<void>",
@@ -152,9 +144,9 @@ export function providerIdentityBoundaryViolations(
       repositoryRoot,
       "packages/shared/src/validators/runtime-agent-configuration.test.ts",
       [
-        "keeps explicit provider-native configuration opaque without a prefix ban",
-        "PAPERCLIP_CLOUD_PROD_PROVIDER_TOKEN",
-        "expect(adapterConfigSchema.parse(adapterConfig)).toEqual(adapterConfig)",
+        "accepts only exact string and boolean session values",
+        'adapterConfigSchema.parse({ model: "gpt-5.6", enabled: true })',
+        'adapterConfigSchema.safeParse({ nested: { value: "x" } }).success',
       ],
     ),
   ];

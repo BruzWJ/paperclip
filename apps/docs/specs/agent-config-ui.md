@@ -10,8 +10,8 @@ summary: Canonical agent identity, explicit grants, provider configuration, and 
 - Paperclip has no generic prompt template, provider home, generic API key, or
   agent-wide session. Its optional board-owned Instruction is delivered once
   as the first queued run for a new task.
-- Context grants, five configurable action grants, mention reach, and genuine
-  company skills are selected explicitly.
+- Context grants, five configurable action grants, and mention reach are
+  selected explicitly.
   Task updates are relationship-derived: the owner receives its active-task
   update and an exact creator execution receives eligible-child updates. Both
   use one canonical comment with an automatic counterpart mention. A creator may
@@ -45,9 +45,9 @@ Select an adapter and configure only its supported operator-owned native fields.
 - five configurable action grants, including one combined create-and-assign
   grant
 - two mention-reach grants
-- selected genuine company skills
 
-The creation request writes explicit values. Missing grants resolve false and missing selections resolve empty; the UI never stamps privileged defaults for the first agent.
+The creation request writes explicit values. Missing grants resolve false; the
+UI never stamps privileged defaults for the first agent.
 
 ## Agent detail
 
@@ -70,7 +70,7 @@ Show:
 Board users can edit identity metadata, the canonical instruction,
 provider-native declaration, runtime limits, and explicit grants/selections.
 Present the nine context cells as a 3×3
-matrix and the action/mention/skill grants as independent controls. Do not
+matrix and the action/mention grants as independent controls. Do not
 render separate assign or lifecycle controls: create-and-assign is one grant,
 while the canonical lifecycle/creator update follows the task owner/creator
 relationship and automatically mentions its counterpart.
@@ -84,11 +84,11 @@ prepended to work messages or replayed into an existing session.
 
 List structured productive and consult task-execution runs. Show status, task, epoch, adapter revision, model, timing, token/cost data, and structured transcript. Never display a provider-native session handle.
 
-### Skills and tools
+### Tools
 
-Skills list only the genuine company skills explicitly selected for this agent,
-including version/provenance. Skill selection grants no Paperclip task
-authority.
+Paperclip exposes tools only through the run's compiled interface and the
+fresh request-scoped MCP server set passed to ACPX. There is no parallel
+provider-instruction channel.
 
 ## Task-scoped controls
 
@@ -104,4 +104,4 @@ These are distinct operations. Editing agent configuration does not perform any 
 
 ## API surface
 
-Board/operator APIs provide agent CRUD, lifecycle control, immutable config revisions, explicit grant/selection administration, and run inspection/cancellation. Provider executions cannot call those general routes; `agent_configure` is available only through a compiled run interface with a live grant and dynamic target authority.
+Board/operator APIs provide agent CRUD, lifecycle control, immutable config revisions, explicit grant administration, and run inspection/cancellation. Provider executions cannot call those general routes; `agent_configure` is available only through a compiled run interface with a live grant and dynamic target authority.

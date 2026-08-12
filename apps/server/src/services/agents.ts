@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
-  agentConfigRevisions,
   agentRuntimeState,
   approvals,
   taskCreatorEdgeReceivability,
@@ -15,13 +14,12 @@ import {
 import {
   canonicalizeMoneyAmount,
   getAgentWorkEligibility,
-  isUuidLike,
-  normalizeAgentUrlKey,
+  isCanonicalUuid,
   type AgentRuntimeState,
   type AgentEligibilityAgent,
   type MoneyAmount,
 } from "@paperclipai/shared";
-import { conflict, notFound } from "../errors.js";
+import { conflict } from "../errors.js";
 import { createTaskSessionAdmissionService } from "./task-session/admission.js";
 import { terminalizeAgentCreatorEdgesInTransaction } from "./system-escalation-postgres.js";
 import {
@@ -33,21 +31,27 @@ import {
   lockCompanyAgentGraph,
 } from "./agent-org-graph-lock.js";
 import { budgetService } from "./budgets.js";
-import { logActivity } from "./activity-log.js";
+import {
+  persistActivityLog,
+  publishCommittedActivity,
+  type PersistedActivityLog,
+} from "./activity-log.js";
 import type {
   TaskExecutionCancellationActor,
   TaskExecutionCancellationService,
   RequestedAgentRunCancellations,
 } from "./task-execution-cancellation.js";
 
-export type AgentLifecycleTransaction =
-  Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type AgentLifecycleTransaction = Parameters<
+  Parameters<Db["transaction"]>[0]
+>[0];
 
 export interface AgentTerminationCommit {
   tombstone: typeof agents.$inferSelect;
   dispatchRefIds: string[];
   cancellationRequests: RequestedAgentRunCancellations | null;
   suspensionRequests: RequestedAgentRunCancellations | null;
+  activities: PersistedActivityLog[];
 }
 
 export type AgentLifecycleCancellationService = Pick<
@@ -59,8 +63,7 @@ export type AgentLifecycleCancellationService = Pick<
 
 export type AgentSuspensionService = Pick<
   TaskExecutionCancellationService,
-  | "requestAgentSuspensionsInTransaction"
-  | "reconcileRequestedCancellations"
+  "requestAgentSuspensionsInTransaction" | "reconcileRequestedCancellations"
 >;
 
 export interface AgentSuspensionPostCommit {
@@ -106,9 +109,7 @@ async function admitOwnedTaskTerminationRecoveryInTransaction(
     now: Date;
   },
 ): Promise<string[]> {
-  const sessions = createTaskSessionAdmissionService(
-    tx as unknown as Db,
-  );
+  const sessions = createTaskSessionAdmissionService(tx as unknown as Db);
   const ownedTasks = await tx
     .select()
     .from(tasks)
@@ -127,9 +128,7 @@ async function admitOwnedTaskTerminationRecoveryInTransaction(
   const dispatchRefIds: string[] = [];
   for (const task of ownedTasks) {
     if (!task.ownershipEpoch) {
-      throw new Error(
-        `Owned task ${task.id} has no current ownership epoch`,
-      );
+      throw new Error(`Owned task ${task.id} has no current ownership epoch`);
     }
     const session = await tx
       .select()
@@ -147,15 +146,9 @@ async function admitOwnedTaskTerminationRecoveryInTransaction(
       .from(taskExecutionAuthorities)
       .where(
         and(
-          eq(
-            taskExecutionAuthorities.companyId,
-            input.companyId,
-          ),
+          eq(taskExecutionAuthorities.companyId, input.companyId),
           eq(taskExecutionAuthorities.taskId, task.id),
-          eq(
-            taskExecutionAuthorities.ownershipEpoch,
-            task.ownershipEpoch,
-          ),
+          eq(taskExecutionAuthorities.ownershipEpoch, task.ownershipEpoch),
           eq(taskExecutionAuthorities.agentId, input.agentId),
           eq(taskExecutionAuthorities.state, "current"),
         ),
@@ -167,18 +160,9 @@ async function admitOwnedTaskTerminationRecoveryInTransaction(
       .from(taskCreatorEdgeReceivability)
       .where(
         and(
-          eq(
-            taskCreatorEdgeReceivability.companyId,
-            input.companyId,
-          ),
-          eq(
-            taskCreatorEdgeReceivability.taskId,
-            task.id,
-          ),
-          eq(
-            taskCreatorEdgeReceivability.ownershipEpoch,
-            task.ownershipEpoch,
-          ),
+          eq(taskCreatorEdgeReceivability.companyId, input.companyId),
+          eq(taskCreatorEdgeReceivability.taskId, task.id),
+          eq(taskCreatorEdgeReceivability.ownershipEpoch, task.ownershipEpoch),
         ),
       )
       .for("update")
@@ -188,10 +172,8 @@ async function admitOwnedTaskTerminationRecoveryInTransaction(
         `Owned task ${task.id} is missing its canonical recovery graph`,
       );
     }
-    const recoveryKey =
-      `${input.sourceId}:owned-task:${task.id}:${task.ownershipEpoch}`;
-    const exactText =
-      `Agent ${input.agentName} was terminated. This task is blocked because its owner is no longer executable.`;
+    const recoveryKey = `${input.sourceId}:owned-task:${task.id}:${task.ownershipEpoch}`;
+    const exactText = `Agent ${input.agentName} was terminated. This task is blocked because its owner is no longer executable.`;
     const blockedTask = await tx
       .update(tasks)
       .set({
@@ -222,35 +204,31 @@ async function admitOwnedTaskTerminationRecoveryInTransaction(
       recoveryKey,
     );
     const targetTaskId = task.parentId ?? task.id;
-    const admission = await admitCounterpartTaskUpdate(
-      sessions,
-      tx as never,
-      {
-        companyId: input.companyId,
-        target: await lockTaskMentionRecipient(
-          tx as never,
-          input.companyId,
-          targetTaskId,
-        ),
-        actor: {
-          kind: "system",
-          sourceKind: "agent_termination",
-          sourceId: input.sourceId,
-        },
-        comment: {
-          author: { kind: "system", source: "recovery" },
-          producingRun: null,
-        },
-        sourceAgentTarget: {
-          taskId: task.id,
-          agentId: input.agentId,
-        },
-        sourceKind: "task_update",
-        immutableSourceKey: recoveryKey,
-        sourceRecordId: updateId,
-        message: exactText,
+    const admission = await admitCounterpartTaskUpdate(sessions, tx as never, {
+      companyId: input.companyId,
+      target: await lockTaskMentionRecipient(
+        tx as never,
+        input.companyId,
+        targetTaskId,
+      ),
+      actor: {
+        kind: "system",
+        sourceKind: "agent_termination",
+        sourceId: input.sourceId,
       },
-    );
+      comment: {
+        author: { kind: "system", source: "recovery" },
+        producingRun: null,
+      },
+      sourceAgentTarget: {
+        taskId: task.id,
+        agentId: input.agentId,
+      },
+      sourceKind: "task_update",
+      immutableSourceKey: recoveryKey,
+      sourceRecordId: updateId,
+      message: exactText,
+    });
     if (!admission.comment) {
       throw new Error(
         `Owned task ${task.id} termination recovery has no canonical comment`,
@@ -334,6 +312,7 @@ export async function terminateAgentToTombstoneInTransaction(
       dispatchRefIds: [],
       cancellationRequests: null,
       suspensionRequests: null,
+      activities: [],
     };
   }
 
@@ -414,21 +393,21 @@ export async function terminateAgentToTombstoneInTransaction(
     await cancellation.requestAgentCancellationsInTransaction(tx, {
       companyId: existing.companyId,
       agentIds: [existing.id],
-      reason:
-        "Cancelled because the agent was terminated",
+      reason: "Cancelled because the agent was terminated",
       actor: input.actor,
       now: input.now,
     });
-  const suspensionRequests = nonTerminatedDescendantIds.length > 0
-    ? await cancellation.requestAgentSuspensionsInTransaction(tx, {
-        companyId: existing.companyId,
-        agentIds: nonTerminatedDescendantIds,
-        reason:
-          "Suspended because the reporting chain contains a terminated agent",
-        actor: input.actor,
-        now: input.now,
-      })
-    : null;
+  const suspensionRequests =
+    nonTerminatedDescendantIds.length > 0
+      ? await cancellation.requestAgentSuspensionsInTransaction(tx, {
+          companyId: existing.companyId,
+          agentIds: nonTerminatedDescendantIds,
+          reason:
+            "Suspended because the reporting chain contains a terminated agent",
+          actor: input.actor,
+          now: input.now,
+        })
+      : null;
   const recoveryDispatchRefIds =
     await admitOwnedTaskTerminationRecoveryInTransaction(tx, {
       companyId: existing.companyId,
@@ -443,12 +422,10 @@ export async function terminateAgentToTombstoneInTransaction(
     ),
     ...recoveryDispatchRefIds,
   ];
-  await logActivity(tx as unknown as Db, {
+  const activity = await persistActivityLog(tx as unknown as Db, {
     companyId: existing.companyId,
     actorType: input.actor.kind,
-    actorId: input.actor.kind === "user"
-      ? input.actor.userId
-      : input.sourceId,
+    actorId: input.actor.kind === "user" ? input.actor.userId : input.sourceId,
     action: "agent.terminated",
     entityType: "agent",
     entityId: existing.id,
@@ -461,8 +438,7 @@ export async function terminateAgentToTombstoneInTransaction(
       suspensionRequestedRunIds:
         suspensionRequests?.requests.map((request) => request.runId) ?? [],
       fencedExecutionRefIds: cancellationRequests.fence.refIds,
-      fencedTargetCorrelationIds:
-        cancellationRequests.fence.correlationIds,
+      fencedTargetCorrelationIds: cancellationRequests.fence.correlationIds,
       suspendedExecutionRefIds: suspensionRequests?.fence.refIds ?? [],
       supersededDescendantCorrelationIds:
         suspensionRequests?.fence.correlationIds ?? [],
@@ -474,65 +450,19 @@ export async function terminateAgentToTombstoneInTransaction(
     dispatchRefIds,
     cancellationRequests,
     suspensionRequests,
+    activities: [activity],
   };
-}
-
-interface AgentShortnameRow {
-  id: string;
-  name: string;
-  status: string;
-}
-
-interface AgentShortnameCollisionOptions {
-  excludeAgentId?: string | null;
-}
-
-export function hasAgentShortnameCollision(
-  candidateName: string,
-  existingAgents: AgentShortnameRow[],
-  options?: AgentShortnameCollisionOptions,
-): boolean {
-  const candidateShortname = normalizeAgentUrlKey(candidateName);
-  if (!candidateShortname) return false;
-
-  return existingAgents.some((agent) => {
-    if (agent.status === "terminated") return false;
-    if (options?.excludeAgentId && agent.id === options.excludeAgentId) return false;
-    return normalizeAgentUrlKey(agent.name) === candidateShortname;
-  });
-}
-
-export function deduplicateAgentName(
-  candidateName: string,
-  existingAgents: AgentShortnameRow[],
-): string {
-  if (!hasAgentShortnameCollision(candidateName, existingAgents)) {
-    return candidateName;
-  }
-  for (let i = 2; i <= 100; i++) {
-    const suffixed = `${candidateName} ${i}`;
-    if (!hasAgentShortnameCollision(suffixed, existingAgents)) {
-      return suffixed;
-    }
-  }
-  return `${candidateName} ${Date.now()}`;
 }
 
 export function agentService(db: Db) {
   const budgets = budgetService(db);
 
-  function withUrlKey<T extends { id: string; name: string }>(row: T) {
-    return {
-      ...row,
-      urlKey: normalizeAgentUrlKey(row.name) ?? row.id,
-    };
-  }
-
-  function normalizeAgentBaseRow<T extends typeof agents.$inferSelect>(row: T) {
-    return withUrlKey(row);
-  }
-
-  function toEligibilityAgent(row: Pick<typeof agents.$inferSelect, "id" | "companyId" | "name" | "status" | "reportsTo">): AgentEligibilityAgent {
+  function toEligibilityAgent(
+    row: Pick<
+      typeof agents.$inferSelect,
+      "id" | "companyId" | "name" | "status" | "reportsTo"
+    >,
+  ): AgentEligibilityAgent {
     return {
       id: row.id,
       companyId: row.companyId,
@@ -548,9 +478,8 @@ export function agentService(db: Db) {
   ) {
     const eligibilityAgents = allCompanyRows.map(toEligibilityAgent);
     return rows.map((row) => {
-      const base = normalizeAgentBaseRow(row);
       return {
-        ...base,
+        ...row,
         orgChainHealth: getAgentWorkEligibility({
           agent: toEligibilityAgent(row),
           agents: eligibilityAgents,
@@ -570,7 +499,10 @@ export function agentService(db: Db) {
     return db.select().from(agents).where(eq(agents.companyId, companyId));
   }
 
-  async function getMonthlySpendByAgentIds(companyId: string, agentIds: string[]) {
+  async function getMonthlySpendByAgentIds(
+    companyId: string,
+    agentIds: string[],
+  ) {
     return budgets.getAgentMonthlyKnownSpend(companyId, agentIds);
   }
 
@@ -588,6 +520,7 @@ export function agentService(db: Db) {
   }
 
   async function getById(id: string) {
+    if (!isCanonicalUuid(id)) return null;
     const row = await db
       .select()
       .from(agents)
@@ -601,20 +534,20 @@ export function agentService(db: Db) {
     return normalizeAgentRow(hydrated, companyRows);
   }
 
-  async function requireGetById(id: string) {
-    const agent = await getById(id);
-    if (!agent) throw notFound("Agent not found");
-    return agent;
-  }
-
   return {
-    list: async (companyId: string, options?: { includeTerminated?: boolean }) => {
+    list: async (
+      companyId: string,
+      options?: { includeTerminated?: boolean },
+    ) => {
       const conditions = [eq(agents.companyId, companyId)];
       if (!options?.includeTerminated) {
         conditions.push(ne(agents.status, "terminated"));
       }
       const [rows, allCompanyRows] = await Promise.all([
-        db.select().from(agents).where(and(...conditions)),
+        db
+          .select()
+          .from(agents)
+          .where(and(...conditions)),
         listCompanyAgentRows(companyId),
       ]);
       const hydrated = await hydrateAgentSpend(rows);
@@ -623,7 +556,9 @@ export function agentService(db: Db) {
 
     getById,
 
-    getRuntimeState: async (agentId: string): Promise<AgentRuntimeState | null> => {
+    getRuntimeState: async (
+      agentId: string,
+    ): Promise<AgentRuntimeState | null> => {
       const row = await db
         .select()
         .from(agentRuntimeState)
@@ -690,19 +625,22 @@ export function agentService(db: Db) {
         }
 
         const suspensionRequests =
-          await postCommit.taskExecutionCancellation
-            .requestAgentSuspensionsInTransaction(tx, {
+          await postCommit.taskExecutionCancellation.requestAgentSuspensionsInTransaction(
+            tx,
+            {
               companyId: existing.companyId,
               agentIds: [existing.id],
               reason: "Suspended because the agent was paused",
               actor: postCommit.actor,
               now,
-            });
+            },
+          );
         return { agentId: existing.id, suspensionRequests };
       });
       if (!committed) return null;
-      await postCommit.taskExecutionCancellation
-        .reconcileRequestedCancellations(committed.suspensionRequests);
+      await postCommit.taskExecutionCancellation.reconcileRequestedCancellations(
+        committed.suspensionRequests,
+      );
       return getById(committed.agentId);
     },
 
@@ -715,9 +653,7 @@ export function agentService(db: Db) {
           .then((rows) => rows[0]?.companyId ?? null);
         if (!companyId) return null;
         const locked = await lockCompanyAgentGraph(tx, companyId);
-        const existing = locked.agents.find(
-          (candidate) => candidate.id === id,
-        );
+        const existing = locked.agents.find((candidate) => candidate.id === id);
         if (!existing) return null;
         if (existing.status === "terminated") {
           throw conflict("Cannot resume terminated agent");
@@ -761,10 +697,7 @@ export function agentService(db: Db) {
           .orderBy(approvals.id)
           .for("update")
           .then((rows) => rows[0] ?? null);
-        if (
-          existing.status === "pending_approval" ||
-          openHireApproval
-        ) {
+        if (existing.status === "pending_approval" || openHireApproval) {
           throw conflict("Pending approval agents cannot be resumed", {
             code: "pending_hire_requires_approval",
             agentId: existing.id,
@@ -802,12 +735,15 @@ export function agentService(db: Db) {
     clearError: async (id: string) => {
       const existing = await getById(id);
       if (!existing) return null;
-      if (existing.status === "terminated") throw conflict("Cannot clear error on terminated agent");
+      if (existing.status === "terminated")
+        throw conflict("Cannot clear error on terminated agent");
       if (existing.status === "pending_approval") {
         throw conflict("Pending approval agents cannot have errors cleared");
       }
       if (existing.status !== "error") {
-        throw conflict("Only agents in error status can have their error cleared");
+        throw conflict(
+          "Only agents in error status can have their error cleared",
+        );
       }
 
       const updated = await db
@@ -824,15 +760,14 @@ export function agentService(db: Db) {
         .then((rows) => rows[0] ?? null);
 
       if (!updated) {
-        throw conflict("Only agents in error status can have their error cleared");
+        throw conflict(
+          "Only agents in error status can have their error cleared",
+        );
       }
       return getById(updated.id);
     },
 
-    terminate: async (
-      id: string,
-      postCommit: AgentTerminationPostCommit,
-    ) => {
+    terminate: async (id: string, postCommit: AgentTerminationPostCommit) => {
       const committed = await db.transaction(async (tx) => {
         const now = new Date();
         return terminateAgentToTombstoneInTransaction(
@@ -846,17 +781,18 @@ export function agentService(db: Db) {
           postCommit.taskExecutionCancellation,
         );
       });
+      for (const activity of committed?.activities ?? []) {
+        publishCommittedActivity(activity);
+      }
       if (committed?.cancellationRequests) {
-        await postCommit.taskExecutionCancellation
-          .reconcileRequestedCancellations(
-            committed.cancellationRequests,
-          );
+        await postCommit.taskExecutionCancellation.reconcileRequestedCancellations(
+          committed.cancellationRequests,
+        );
       }
       if (committed?.suspensionRequests) {
-        await postCommit.taskExecutionCancellation
-          .reconcileRequestedCancellations(
-            committed.suspensionRequests,
-          );
+        await postCommit.taskExecutionCancellation.reconcileRequestedCancellations(
+          committed.suspensionRequests,
+        );
       }
       for (const refId of committed?.dispatchRefIds ?? []) {
         await postCommit.dispatchRef(refId);
@@ -864,33 +800,25 @@ export function agentService(db: Db) {
       return committed ? getById(id) : null;
     },
 
-    listConfigRevisions: async (id: string) =>
-      db
-        .select()
-        .from(agentConfigRevisions)
-        .where(eq(agentConfigRevisions.agentId, id))
-        .orderBy(desc(agentConfigRevisions.createdAt)),
-
-    getConfigRevision: async (id: string, revisionId: string) =>
-      db
-        .select()
-        .from(agentConfigRevisions)
-        .where(and(eq(agentConfigRevisions.agentId, id), eq(agentConfigRevisions.id, revisionId)))
-        .then((rows) => rows[0] ?? null),
-
     orgForCompany: async (companyId: string) => {
       const allCompanyRows = await listCompanyAgentRows(companyId);
       const rows = allCompanyRows.filter((row) => row.status !== "terminated");
       const normalizedRows = normalizeAgentRows(rows, allCompanyRows);
       const byManager = new Map<string | null, typeof normalizedRows>();
       for (const row of normalizedRows) {
-        const key = row.reportsTo && rows.some((candidate) => candidate.id === row.reportsTo) ? row.reportsTo : null;
+        const key =
+          row.reportsTo &&
+          rows.some((candidate) => candidate.id === row.reportsTo)
+            ? row.reportsTo
+            : null;
         const group = byManager.get(key) ?? [];
         group.push(row);
         byManager.set(key, group);
       }
 
-      const build = (managerId: string | null): Array<Record<string, unknown>> => {
+      const build = (
+        managerId: string | null,
+      ): Array<Record<string, unknown>> => {
         const members = byManager.get(managerId) ?? [];
         return members.map((member) => ({
           ...member,
@@ -914,37 +842,6 @@ export function agentService(db: Db) {
         currentId = mgr.reportsTo ?? null;
       }
       return chain;
-    },
-
-    resolveByReference: async (companyId: string, reference: string) => {
-      const raw = reference.trim();
-      if (raw.length === 0) {
-        return { agent: null, ambiguous: false } as const;
-      }
-
-      if (isUuidLike(raw)) {
-        const byId = await getById(raw);
-        if (!byId || byId.companyId !== companyId) {
-          return { agent: null, ambiguous: false } as const;
-        }
-        return { agent: byId, ambiguous: false } as const;
-      }
-
-      const urlKey = normalizeAgentUrlKey(raw);
-      if (!urlKey) {
-        return { agent: null, ambiguous: false } as const;
-      }
-
-      const rows = await db.select().from(agents).where(eq(agents.companyId, companyId));
-      const matches = normalizeAgentRows(rows, rows)
-        .filter((agent) => agent.urlKey === urlKey && agent.status !== "terminated");
-      if (matches.length === 1) {
-        return { agent: matches[0] ?? null, ambiguous: false } as const;
-      }
-      if (matches.length > 1) {
-        return { agent: null, ambiguous: true } as const;
-      }
-      return { agent: null, ambiguous: false } as const;
     },
   };
 }

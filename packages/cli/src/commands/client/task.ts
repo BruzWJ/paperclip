@@ -173,12 +173,12 @@ export function registerTaskCommands(program: Command): void {
   addCommonClientOptions(
     task
       .command("get")
-      .description("Get a task by UUID or identifier (e.g. PC-12)")
-      .argument("<idOrIdentifier>", "Task ID or identifier")
-      .action(async (idOrIdentifier: string, opts: BaseClientOptions) => {
+      .description("Get a task by UUID")
+      .argument("<taskId>", "Task UUID")
+      .action(async (taskId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const row = await ctx.api.get<Task>(apiPath`/api/tasks/${idOrIdentifier}`);
+          const row = await ctx.api.get<Task>(apiPath`/api/tasks/${taskId}`);
           printOutput(row, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -903,7 +903,7 @@ export function registerTaskCommands(program: Command): void {
     task
       .command("runs")
       .description("List task-execution runs associated with a task")
-      .argument("<taskId>", "Task ID or identifier")
+      .argument("<taskId>", "Task UUID")
       .action(async (taskId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -952,8 +952,11 @@ function parseJson(value: string): unknown {
 }
 
 function parseRequiredPositiveInt(value: string | undefined, label: string): number {
-  const parsed = Number.parseInt(value ?? "", 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  if (value === undefined || !/^[1-9]\d*$/.test(value)) {
+    throw new Error(`Invalid ${label}: ${value ?? ""}`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
     throw new Error(`Invalid ${label}: ${value ?? ""}`);
   }
   return parsed;

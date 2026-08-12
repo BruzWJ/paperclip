@@ -5,7 +5,7 @@ describe("shouldTrackDevServerPath", () => {
   it("ignores generated state, diagnostic reports, and common test file paths", () => {
     expect(
       shouldTrackDevServerPath(
-        ".paperclip/worktrees/PAP-712-for-project-configuration-get-rid-of-the-overview-tab-for-now/.agents/skills/paperclip",
+        ".paperclip/worktrees/PAP-712-project-configuration/.agents/runtime/state",
       ),
     ).toBe(false);
     expect(shouldTrackDevServerPath("apps/server/report.20260416.154629.4965.0.001.json")).toBe(false);

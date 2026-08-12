@@ -52,8 +52,12 @@ async function createApp(
   actor: Record<string, unknown> = { type: "anon" },
 ) {
   const [{ accessRoutes }, { errorHandler }] = await Promise.all([
-    vi.importActual<typeof import("../routes/access.js")>("../routes/access.js"),
-    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+    vi.importActual<typeof import("../routes/access.js")>(
+      "../routes/access.js",
+    ),
+    vi.importActual<typeof import("../middleware/index.js")>(
+      "../middleware/index.js",
+    ),
   ]);
   const app = express();
   installTestRequestAuthority(app);
@@ -79,7 +83,11 @@ describe("GET /invites/:token", () => {
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
     mockStorage.headObject.mockReset();
-    mockStorage.headObject.mockResolvedValue({ exists: true, contentLength: 3, contentType: "image/png" });
+    mockStorage.headObject.mockResolvedValue({
+      exists: true,
+      contentLength: 3,
+      contentType: "image/png",
+    });
   });
 
   it("returns company branding in the invite summary response", async () => {
@@ -88,9 +96,8 @@ describe("GET /invites/:token", () => {
       companyId: "company-1",
       inviteType: "company_join",
       source: "board_api",
-      allowedJoinTypes: "human",
       tokenHash: "hash",
-      defaultsPayload: null,
+      defaultsPayload: { user: { role: "operator", grants: [] } },
       expiresAt: new Date("2027-03-07T00:10:00.000Z"),
       invitedByUserId: "board-user",
       revokedAt: null,
@@ -138,9 +145,8 @@ describe("GET /invites/:token", () => {
       companyId: "company-1",
       inviteType: "company_join",
       source: "board_api",
-      allowedJoinTypes: "human",
       tokenHash: "hash",
-      defaultsPayload: null,
+      defaultsPayload: { user: { role: "operator", grants: [] } },
       expiresAt: new Date("2027-03-07T00:10:00.000Z"),
       invitedByUserId: "board-user",
       revokedAt: null,
@@ -182,9 +188,8 @@ describe("GET /invites/:token", () => {
       companyId: "company-1",
       inviteType: "company_join",
       source: "board_api",
-      allowedJoinTypes: "human",
       tokenHash: "hash",
-      defaultsPayload: null,
+      defaultsPayload: { user: { role: "operator", grants: [] } },
       expiresAt: new Date("2027-03-07T00:10:00.000Z"),
       invitedByUserId: "board-user",
       revokedAt: null,
@@ -195,7 +200,7 @@ describe("GET /invites/:token", () => {
     const app = await createApp(
       createDbStub(
         [invite],
-        [{ requestType: "human", status: "pending_approval" }],
+        [{ status: "pending_approval" }],
         [
           {
             name: "Acme Robotics",
@@ -219,19 +224,17 @@ describe("GET /invites/:token", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.joinRequestStatus).toBe("pending_approval");
-    expect(res.body.joinRequestType).toBe("human");
     expect(res.body.companyName).toBe("Acme Robotics");
   }, 10_000);
 
-  it("falls back to a reusable human join request when the accepted invite reused an existing queue entry", async () => {
+  it("returns the reusable user join request when the accepted invite reused an existing queue entry", async () => {
     const invite = {
       id: "invite-2",
       companyId: "company-1",
       inviteType: "company_join",
       source: "board_api",
-      allowedJoinTypes: "human",
       tokenHash: "hash",
-      defaultsPayload: null,
+      defaultsPayload: { user: { role: "operator", grants: [] } },
       expiresAt: new Date("2027-03-07T00:10:00.000Z"),
       invitedByUserId: "board-user",
       revokedAt: null,
@@ -241,7 +244,6 @@ describe("GET /invites/:token", () => {
     };
     const reusableJoinRequest = {
       id: "join-1",
-      requestType: "human",
       status: "pending_approval",
       requestingUserId: "user-1",
       requestEmailSnapshot: "jane@example.com",
@@ -270,13 +272,12 @@ describe("GET /invites/:token", () => {
         [logoAsset],
         [logoAsset],
       ),
-      testBoardSessionActor({ userId: "user-1",}),
+      testBoardSessionActor({ userId: "user-1" }),
     );
 
     const res = await request(app).get("/api/invites/pcp_invite_test");
 
     expect(res.status).toBe(200);
     expect(res.body.joinRequestStatus).toBe("pending_approval");
-    expect(res.body.joinRequestType).toBe("human");
   }, 10_000);
 });

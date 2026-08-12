@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
+  CANONICAL_UUID_RE,
   PAPERCLIP_ACTION_KEYS,
 } from "@paperclipai/shared";
 import {
@@ -630,7 +631,13 @@ describe("runtime interface compiler", () => {
       anyOf: [{ type: "string", maxLength: 240 }, { type: "null" }],
     });
     expect(configure.inputSchema.properties?.reportsTo).toEqual({
-      anyOf: [{ type: "string", format: "uuid" }, { type: "null" }],
+      anyOf: [
+        {
+          type: "string",
+          pattern: CANONICAL_UUID_RE.source,
+        },
+        { type: "null" },
+      ],
     });
     expect(configure.inputSchema.properties).not.toHaveProperty(
       "adapterConfig",

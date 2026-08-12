@@ -1,60 +1,28 @@
 import { describe, expect, it } from "vitest";
-import {
-  sameAdapterModel,
-  validateAdapterModel,
-  validateAdapterModelLimits,
-} from "./adapter-model.js";
+import { requireAdapterModel, validateAdapterModel } from "./adapter-model.js";
 
-const knownLimits = Object.freeze({
-  contextTokenLimit: 128_000,
-  inputTokenLimit: 96_000,
-  outputTokenLimit: 32_000,
-});
-
-describe("ACP adapter model validation", () => {
-  it("preserves a target's explicit unknown token limits", () => {
-    const model = validateAdapterModel({
-      id: "target-model",
-      label: "Target model",
-      value: "target-model",
-      limits: null,
+describe("adapter model", () => {
+  it("accepts only the exact ACPX value and display label", () => {
+    expect(validateAdapterModel({ value: "model-a", label: "Model A" })).toEqual({
+      value: "model-a",
+      label: "Model A",
     });
-
-    expect(model.limits).toBeNull();
     expect(() =>
-      validateAdapterModel({
-        id: "target-model",
-        label: "Target model",
-        value: "target-model",
-      }),
-    ).toThrow(/limits must be an object/);
+      validateAdapterModel({ value: "model-a", label: "Model A", limits: null }),
+    ).toThrow(/unknown field limits/);
   });
 
-  it("retains strict validation and equality for known limits", () => {
-    const known = validateAdapterModel({
-      id: "target-model",
-      label: "Target model",
-      value: "target-model",
-      limits: knownLimits,
-    });
-    const unknown = validateAdapterModel({
-      id: "target-model",
-      label: "Target model",
-      value: "target-model",
-      limits: null,
-    });
-
-    expect(validateAdapterModelLimits(knownLimits)).toEqual(knownLimits);
-    expect(() =>
-      validateAdapterModelLimits({
-        ...knownLimits,
-        outputTokenLimit: knownLimits.contextTokenLimit + 1,
-      }),
-    ).toThrow(/cannot exceed/);
-    expect(sameAdapterModel(known, { ...known, limits: { ...knownLimits } })).toBe(
-      true,
-    );
-    expect(sameAdapterModel(unknown, unknown)).toBe(true);
-    expect(sameAdapterModel(known, unknown)).toBe(false);
+  it("requires one exact advertised model value", () => {
+    const models = [{ value: "model-a", label: "Model A" }];
+    expect(requireAdapterModel({
+      adapterType: "fixture",
+      selection: "model-a",
+      models,
+    })).toEqual(models[0]);
+    expect(() => requireAdapterModel({
+      adapterType: "fixture",
+      selection: "Model-A",
+      models,
+    })).toThrow(/not one exact advertised value/);
   });
 });

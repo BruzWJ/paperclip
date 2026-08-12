@@ -247,8 +247,10 @@ export function aiAccountingBoundaryViolations(
       "canonicalJson(assistant.tokens) !== canonicalJson(event.data.tokens)",
     ]),
     ...requireFileTokens(repositoryRoot, ACP_EVENT_MAPPER, [
-      'input.event.kind === "usage"',
-      "return;",
+      'input.event.kind === "message_chunk"',
+      'input.event.kind !== "tool_call"',
+      'input.event.kind !== "tool_call_update"',
+      "unsupported ACP productive session update",
     ]),
     ...requireFileTokens(repositoryRoot, ACP_SETTLEMENT, [
       "contextUsedTokens: settlement.occupancy.used",
@@ -268,6 +270,16 @@ export function aiAccountingBoundaryViolations(
     ...throughputAggregationViolations(repositoryRoot),
     ...retiredAcpProvenanceViolations(repositoryRoot),
   ];
+
+  const eventMapper = read(repositoryRoot, ACP_EVENT_MAPPER);
+  if (
+    eventMapper !== null &&
+    /input\.event\.kind\s*===\s*["']usage["']/.test(eventMapper)
+  ) {
+    violations.push(
+      `${ACP_EVENT_MAPPER}: retired ACP usage event branch survives beside terminal occupancy settlement`,
+    );
+  }
 
   const runtime = read(repositoryRoot, RUNTIME_SCHEMA);
   if (runtime !== null) {

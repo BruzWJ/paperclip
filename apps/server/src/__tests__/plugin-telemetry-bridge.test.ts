@@ -28,6 +28,7 @@ function createEventBusStub() {
 const telemetryHostOptions = createPluginHostServicesTestOptions({
   manifest: createPluginManifestFake({ id: "linear" }),
 });
+const PLUGIN_ID = "11111111-1111-4111-8111-111111111111";
 
 describe("plugin telemetry bridge", () => {
   beforeEach(() => {
@@ -40,13 +41,13 @@ describe("plugin telemetry bridge", () => {
 
     const services = buildHostServices(
       {} as never,
-      "plugin-record-id",
+      PLUGIN_ID,
       createEventBusStub(),
       noopPluginEventDelivery,
       telemetryHostOptions,
     );
     const handlers = createHostClientHandlers({
-      pluginId: "linear",
+      pluginKey: "linear",
       capabilities: ["telemetry.track"],
       services,
     });
@@ -67,7 +68,7 @@ describe("plugin telemetry bridge", () => {
 
     const services = buildHostServices(
       {} as never,
-      "plugin-record-id",
+      PLUGIN_ID,
       createEventBusStub(),
       noopPluginEventDelivery,
       telemetryHostOptions,
@@ -78,18 +79,23 @@ describe("plugin telemetry bridge", () => {
     ).rejects.toThrow(
       'Plugin telemetry event names must be lowercase slugs using letters, numbers, "_" or "-".',
     );
+    await expect(
+      services.telemetry.track({ eventName: " sync_completed " }),
+    ).rejects.toThrow(
+      'Plugin telemetry event names must be lowercase slugs using letters, numbers, "_" or "-".',
+    );
   });
 
   it("rejects telemetry tracking when the plugin lacks the capability", async () => {
     const services = buildHostServices(
       {} as never,
-      "plugin-record-id",
+      PLUGIN_ID,
       createEventBusStub(),
       noopPluginEventDelivery,
       telemetryHostOptions,
     );
     const handlers = createHostClientHandlers({
-      pluginId: "linear",
+      pluginKey: "linear",
       capabilities: [],
       services,
     });
@@ -109,13 +115,13 @@ describe("plugin telemetry bridge", () => {
 
     const services = buildHostServices(
       {} as never,
-      "plugin-record-id",
+      PLUGIN_ID,
       createEventBusStub(),
       noopPluginEventDelivery,
       telemetryHostOptions,
     );
     const handlers = createHostClientHandlers({
-      pluginId: "linear",
+      pluginKey: "linear",
       capabilities: ["telemetry.track"],
       services,
     });

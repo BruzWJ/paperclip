@@ -90,7 +90,7 @@ export function isSelectionDebugEnabled(): boolean {
   if (import.meta.env.MODE === "production" || typeof window === "undefined") return false;
   try {
     const value = window.localStorage.getItem(SELECTION_DEBUG_STORAGE_KEY);
-    return value === "1" || value === "true";
+    return value === "true";
   } catch {
     return false;
   }
@@ -99,7 +99,7 @@ export function isSelectionDebugEnabled(): boolean {
 export function initializeSelectionDebug(): SelectionDebugState {
   if (!window.__paperclipSelectionDebug) {
     window.__paperclipSelectionDebug = createState();
-    console.info(`[paperclip selection debug] enabled; set localStorage.${SELECTION_DEBUG_STORAGE_KEY} = "0" and reload to disable`);
+    console.info(`[paperclip selection debug] enabled; set localStorage.${SELECTION_DEBUG_STORAGE_KEY} = "false" and reload to disable`);
   }
   return window.__paperclipSelectionDebug;
 }

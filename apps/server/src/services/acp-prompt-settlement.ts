@@ -131,8 +131,7 @@ type ProductivePromptOwner = {
 };
 
 type AcpPromptAccountingModel = {
-  readonly id: string;
-  readonly limits: { readonly contextTokenLimit: number } | null;
+  readonly value: string;
 } | null;
 
 function reject(message: string): never {
@@ -141,9 +140,8 @@ function reject(message: string): never {
 
 /**
  * ACP reports terminal context occupancy for every settled prompt, but model
- * and model-limit metadata are optional provider extensions. Known immutable
- * limits remain a consistency fence; otherwise the observed occupancy window
- * is the sole canonical accounting limit.
+ * metadata is an optional ACPX extension. The observed terminal occupancy
+ * window is the sole canonical accounting limit.
  */
 export function resolveAcpPromptAccountingModel(
   model: AcpPromptAccountingModel,
@@ -152,17 +150,10 @@ export function resolveAcpPromptAccountingModel(
   readonly selectedModelId: string | null;
   readonly contextTokenLimit: number;
 } {
-  const selectedModelId = model?.id ?? null;
-  const advertisedContextTokenLimit = model?.limits?.contextTokenLimit;
-  if (
-    advertisedContextTokenLimit !== undefined &&
-    occupancySize !== advertisedContextTokenLimit
-  ) {
-    reject("ACP terminal occupancy size differs from the immutable prompt model");
-  }
+  const selectedModelId = model?.value ?? null;
   return {
     selectedModelId,
-    contextTokenLimit: advertisedContextTokenLimit ?? occupancySize,
+    contextTokenLimit: occupancySize,
   };
 }
 
@@ -526,7 +517,6 @@ async function updateRuntimeState(
   input: {
     readonly identity: AcpPromptSettlementIdentity;
     readonly runStatus: TaskExecutionRunStatus;
-    readonly adapterType: string;
     readonly contextUsedTokens: number;
     readonly contextWindowTokens: number;
     readonly cost: AcpCostSettlement;
@@ -538,7 +528,6 @@ async function updateRuntimeState(
     .values({
       agentId: input.identity.agentId,
       companyId: input.identity.companyId,
-      adapterType: input.adapterType,
     })
     .onConflictDoNothing({ target: agentRuntimeState.agentId });
   const existing = await transaction
@@ -575,7 +564,6 @@ async function updateRuntimeState(
   );
   const values = {
     companyId: input.identity.companyId,
-    adapterType: input.adapterType,
     lastRunId: input.identity.runId,
     lastRunStatus: input.runStatus,
     lastContextUsedTokens: input.contextUsedTokens,
@@ -705,7 +693,6 @@ export async function settleAcpPromptInTransaction(
   const revision = await transaction
     .select({
       agentId: agentAdapterConfigRevisions.agentId,
-      adapterType: agentAdapterConfigRevisions.adapterType,
       acpConfiguration: agentAdapterConfigRevisions.acpConfiguration,
     })
     .from(agentAdapterConfigRevisions)
@@ -718,7 +705,7 @@ export async function settleAcpPromptInTransaction(
     )
     .limit(1)
     .then((rows) => rows[0] ?? null);
-  if (!revision || revision.adapterType.trim().length === 0) {
+  if (!revision) {
     reject("ACP prompt immutable adapter revision is missing");
   }
   const acpConfiguration = agentAdapterAcpConfigurationSchema.parse(
@@ -871,7 +858,6 @@ export async function settleAcpPromptInTransaction(
   await updateRuntimeState(transaction, {
     identity,
     runStatus: run.status,
-    adapterType: revision.adapterType,
     contextUsedTokens: settlement.occupancy.used,
     contextWindowTokens: settlement.occupancy.size,
     cost,

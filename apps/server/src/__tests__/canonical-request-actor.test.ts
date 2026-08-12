@@ -1,15 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Request } from "express";
 import {
   isBoardActor,
   type RequestActor,
 } from "../http/request-actor.js";
 import {
-  assertAuthenticated,
   assertBoard,
   getBoardUserId,
 } from "../routes/authz.js";
-import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 
 function requestWithActor(actor: RequestActor): Request {
   return { actor } as Request;
@@ -73,44 +71,5 @@ describe("canonical HTTP request actor", () => {
         source: "none",
       })),
     ).toThrow(/Board access required/);
-  });
-
-  it("does not admit exact runtime identity through generic route authentication", () => {
-    const actor: RequestActor = {
-      type: "agent",
-      source: "internal",
-      agentId: "agent-1",
-      companyId: "company-1",
-      runId: "run-1",
-    };
-    expect(() =>
-      assertAuthenticated(requestWithActor(actor)),
-    ).toThrow(/Board access required/);
-  });
-
-  it("denies runtime-agent identity before a generic REST handler", () => {
-    const middleware = denyGenericAgentRest("REST");
-    const req = requestWithActor({
-      type: "agent",
-      source: "internal",
-      agentId: "agent-1",
-      companyId: "company-1",
-      runId: "run-1",
-    });
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    };
-    const next = vi.fn();
-
-    middleware(req, res as never, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({
-      error:
-        "Agent credentials cannot access the generic REST API; use the run-scoped compiled interface",
-      code: "compiled_run_interface_required",
-    });
   });
 });

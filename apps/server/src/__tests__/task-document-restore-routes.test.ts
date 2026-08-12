@@ -1,7 +1,6 @@
 import express from "express";
 import request from "supertest";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const taskId = "11111111-1111-4111-8111-111111111111";
@@ -29,12 +28,7 @@ const mockAgentService = vi.hoisted(() => ({
 
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
 const mockInstanceSettingsService = vi.hoisted(() => ({
-  get: vi.fn(async () => ({
-    id: "instance-settings-1",
-    general: {
-      censorUsernameInLogs: false,
-    },
-  })),
+  getGeneral: vi.fn(async () => ({ censorUsernameInLogs: false })),
   listCompanyIds: vi.fn(async () => [companyId]),
 }));
 const mockRoutineService = vi.hoisted(() => ({
@@ -80,7 +74,9 @@ function registerModuleMocks() {
   }));
 
   vi.doMock("../services/documents.js", () => ({
-    documentAnnotationService: () => ({ remapOpenThreadsForDocument: async () => [] }),
+    documentAnnotationService: () => ({
+      remapOpenThreadsForDocument: async () => [],
+    }),
     documentService: () => mockDocumentsService,
   }));
 
@@ -98,14 +94,16 @@ function registerModuleMocks() {
 
   vi.doMock("../services/index.js", () => ({
     companyService: () => ({
-      getById: vi.fn(async () => ({ id: "company-1", attachmentMaxBytes: 10 * 1024 * 1024 })),
+      getById: vi.fn(async () => ({
+        id: "company-1",
+        attachmentMaxBytes: 10 * 1024 * 1024,
+      })),
     }),
     accessService: () => mockAccessService,
     agentService: () => mockAgentService,
-    companySkillService: () => ({
-      completeTestRunForTask: vi.fn(async () => null),
+    documentAnnotationService: () => ({
+      remapOpenThreadsForDocument: async () => [],
     }),
-    documentAnnotationService: () => ({ remapOpenThreadsForDocument: async () => [] }),
     documentService: () => mockDocumentsService,
     executionWorkspaceService: () => ({}),
     goalService: () => ({}),
@@ -149,8 +147,10 @@ function createApp(
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", denyGenericAgentRest("REST"));
-  app.use("/api", taskRoutes(db as any, {} as any, { ordinaryTasks: {} as never }));
+  app.use(
+    "/api",
+    taskRoutes(db as any, {} as any, { ordinaryTasks: {} as never }),
+  );
   app.use(errorHandler);
   return app;
 }
@@ -171,9 +171,13 @@ describe("task document revision routes", () => {
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
     [taskRoutes, errorHandler] = await Promise.all([
-      vi.importActual<typeof import("../routes/tasks.js")>("../routes/tasks.js")
+      vi
+        .importActual<typeof import("../routes/tasks.js")>("../routes/tasks.js")
         .then((module) => module.taskRoutes),
-      vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js")
+      vi
+        .importActual<typeof import("../middleware/index.js")>(
+          "../middleware/index.js",
+        )
         .then((module) => module.errorHandler),
     ]);
   }, 15_000);
@@ -195,7 +199,9 @@ describe("task document revision routes", () => {
     });
     mockDocumentsService.listTaskDocuments.mockImplementation(
       async (_taskId, options: { includeSystem?: boolean } | undefined) =>
-        options?.includeSystem ? [planDocument, systemDocument] : [planDocument],
+        options?.includeSystem
+          ? [planDocument, systemDocument]
+          : [planDocument],
     );
     mockDocumentsService.listTaskDocumentRevisions.mockResolvedValue([
       {
@@ -235,11 +241,8 @@ describe("task document revision routes", () => {
         updatedAt: new Date("2026-03-26T12:10:00.000Z"),
       },
     });
-    mockInstanceSettingsService.get.mockResolvedValue({
-      id: "instance-settings-1",
-      general: {
-        censorUsernameInLogs: false,
-      },
+    mockInstanceSettingsService.getGeneral.mockResolvedValue({
+      censorUsernameInLogs: false,
     });
     mockInstanceSettingsService.listCompanyIds.mockResolvedValue([companyId]);
     mockRoutineService.syncRunStatusForTask.mockResolvedValue(undefined);
@@ -247,7 +250,9 @@ describe("task document revision routes", () => {
   });
 
   it("returns revision snapshots including title and format", async () => {
-    const res = await request(createApp()).get(`/api/tasks/${taskId}/documents/plan/revisions`);
+    const res = await request(createApp()).get(
+      `/api/tasks/${taskId}/documents/plan/revisions`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([
@@ -261,7 +266,9 @@ describe("task document revision routes", () => {
   });
 
   it("filters system documents by default on the document list route", async () => {
-    const res = await request(createApp()).get(`/api/tasks/${taskId}/documents`);
+    const res = await request(createApp()).get(
+      `/api/tasks/${taskId}/documents`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([expect.objectContaining({ key: "plan" })]);
@@ -279,13 +286,21 @@ describe("task document revision routes", () => {
     ]);
   });
 
+  it("rejects noncanonical document-list query values", async () => {
+    await request(createApp())
+      .get(`/api/tasks/${taskId}/documents?includeSystem=TRUE`)
+      .expect(422);
+  });
+
   it("restores a revision through the append-only route and logs the action", async () => {
     const res = await request(createApp())
       .post(`/api/tasks/${taskId}/documents/plan/revisions/revision-1/restore`)
       .send({});
 
     expect(res.status).toBe(200);
-    expect(mockDocumentsService.restoreTaskDocumentRevision).toHaveBeenCalledWith({
+    expect(
+      mockDocumentsService.restoreTaskDocumentRevision,
+    ).toHaveBeenCalledWith({
       taskId,
       key: "plan",
       revisionId: "revision-1",
@@ -303,49 +318,28 @@ describe("task document revision routes", () => {
         }),
       }),
     );
-    expect(res.body).toEqual(expect.objectContaining({
-      key: "plan",
-      title: "Plan v1",
-      latestRevisionNumber: 3,
-    }));
-  });
-
-  it("rejects agent credentials at the generic task API boundary", async () => {
-    mockTaskService.getById.mockResolvedValueOnce({
-      id: taskId,
-      companyId,
-      identifier: "PAP-881",
-      title: "Document revisions",
-      status: "todo",
-      ownerKind: "agent",
-      ownerAgentId: "agent-1",
-      ownerUserId: null,
-      ownershipEpoch: 1,
-    });
-
-    const res = await request(createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId,
-      runId: "run-1",
-      source: "internal",
-    }))
-      .post(`/api/tasks/${taskId}/documents/plan/revisions/revision-1/restore`)
-      .send({});
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe(
-      "Agent credentials cannot access the generic REST API; use the run-scoped compiled interface",
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        key: "plan",
+        title: "Plan v1",
+        latestRevisionNumber: 3,
+      }),
     );
-    expect(mockDocumentsService.restoreTaskDocumentRevision).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid document keys before attempting restore", async () => {
-    const res = await request(createApp())
-      .post(`/api/tasks/${taskId}/documents/INVALID KEY/revisions/revision-1/restore`)
-      .send({});
+  it.each(["PLAN", "%20plan", "INVALID%20KEY"])(
+    "rejects noncanonical document key %s before attempting restore",
+    async (documentKey) => {
+      const res = await request(createApp())
+        .post(
+          `/api/tasks/${taskId}/documents/${documentKey}/revisions/revision-1/restore`,
+        )
+        .send({});
 
-    expect(res.status).toBe(400);
-    expect(mockDocumentsService.restoreTaskDocumentRevision).not.toHaveBeenCalled();
-  });
+      expect(res.status).toBe(400);
+      expect(
+        mockDocumentsService.restoreTaskDocumentRevision,
+      ).not.toHaveBeenCalled();
+    },
+  );
 });

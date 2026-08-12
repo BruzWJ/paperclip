@@ -1,4 +1,8 @@
 import { test, expect, type APIRequestContext, type Page } from "./fixtures";
+import {
+  openCreateCompanyOnboarding,
+  prepareOnboardingTestPage,
+} from "./onboarding-test-page";
 
 const COMPANY_NAME = `E2E-Test-${Date.now()}`;
 const MISSION = "Build affordable home robots that handle household chores.";
@@ -23,28 +27,12 @@ type CreatedAgent = {
   adapterConfig: Record<string, unknown> | null;
 };
 
-async function openCreateCompanyPath(page: Page) {
-  await page.goto("/onboarding");
-  const startButton = page.getByRole("button", {
-    name: /Start Onboarding|New Company|Add Agent/,
-  });
-  if (await startButton.count()) {
-    await startButton.first().click();
-  }
-  const createCard = page.getByRole("button", {
-    name: /Build a new company/,
-  });
-  if (await createCard.count()) {
-    await createCard.first().click();
-  }
-}
-
 async function configureCodexAgent(page: Page) {
   await page.getByRole("button", { name: /Codex/ }).first().click();
-  const modelField = page.locator("label").filter({ hasText: /^Model$/ }).locator("../..");
-  await expect(modelField).toBeVisible({ timeout: 15_000 });
-  await modelField.getByRole("button").last().click();
-  await page.getByRole("button", { name: "GPT-5.6", exact: true }).click();
+  const modelSelect = page.getByRole("combobox", { name: "Model", exact: true });
+  await expect(modelSelect).toBeVisible({ timeout: 15_000 });
+  await modelSelect.click();
+  await page.getByRole("option", { name: "GPT-5.6", exact: true }).click();
 
 }
 
@@ -67,7 +55,8 @@ test.describe("Onboarding wizard", () => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
-    await openCreateCompanyPath(page);
+    await prepareOnboardingTestPage(page);
+    await openCreateCompanyOnboarding(page);
 
     await expect(
       page.getByRole("heading", { name: "Name your company" }),

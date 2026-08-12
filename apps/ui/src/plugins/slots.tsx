@@ -94,7 +94,6 @@ export type RegisteredPluginComponent = {
 type SlotFilters = {
   slotTypes: PluginUiSlotType[];
   entityType?: PluginUiSlotEntityType | null;
-  companyId?: string | null;
   enabled?: boolean;
 };
 
@@ -237,7 +236,7 @@ function applyJsxRuntimeKey(
   return { ...(props ?? {}), key };
 }
 
-function createBridgeModuleShimSource(
+export function createBridgeModuleShimSource(
   module: object,
   bridgeExpression: string,
   missingMessage: string,
@@ -334,7 +333,7 @@ function getShimBlobUrl(specifier: "react" | "react-dom" | "react-dom/client" | 
  * Also handles re-exports:
  * - `export { ... } from "react";`
  */
-function rewriteBareSpecifiers(source: string): string {
+export function rewriteBareSpecifiers(source: string): string {
   // Build a mapping of bare specifiers to blob URLs.
   const rewrites: Record<string, string> = {
     '"@paperclipai/plugin-sdk/ui"': `"${getShimBlobUrl("sdk-ui")}"`,
@@ -396,7 +395,7 @@ async function importPluginModule(url: string): Promise<Record<string, unknown>>
   }
 }
 
-function registerPluginModuleExports(
+export function registerPluginModuleExports(
   contribution: PluginUiContribution,
   mod: Record<string, unknown>,
 ): void {
@@ -445,7 +444,7 @@ function registerPluginModuleExports(
  *
  */
 async function loadPluginModule(contribution: PluginUiContribution): Promise<void> {
-  const { pluginId, pluginKey } = contribution;
+  const { pluginKey } = contribution;
   const moduleKey = buildPluginModuleKey(contribution);
 
   // Each installation revision has exactly one load and one in-flight promise.
@@ -709,9 +708,7 @@ function slotContextToHostContext(
 ): PluginHostContext {
   return {
     companyId: pluginSlotContext.companyId ?? null,
-    companyPrefix: pluginSlotContext.companyPrefix ?? null,
     projectId: pluginSlotContext.projectId ?? (pluginSlotContext.entityType === "project" ? pluginSlotContext.entityId ?? null : null),
-    projectRef: pluginSlotContext.projectRef ?? null,
     entityId: pluginSlotContext.entityId ?? null,
     entityType: pluginSlotContext.entityType ?? null,
     userId,
@@ -755,7 +752,7 @@ export function PluginSlotMount({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
   });
-  const userId = session?.user?.id ?? session?.session?.userId ?? null;
+  const userId = session?.user.id ?? null;
   const hostContext = useMemo(
     () => slotContextToHostContext(context, userId),
     [context, userId],
@@ -806,7 +803,6 @@ export function PluginSlotOutlet({
   const { slots, errorMessage } = usePluginSlots({
     slotTypes,
     entityType,
-    companyId: context.companyId,
   });
 
   if (errorMessage) {
@@ -856,7 +852,3 @@ export function _resetPluginModuleLoader(): void {
     delete shimBlobUrls[key];
   }
 }
-
-export const _createBridgeModuleShimSourceForTests = createBridgeModuleShimSource;
-export const _rewriteBareSpecifiersForTests = rewriteBareSpecifiers;
-export const _registerPluginModuleExportsForTests = registerPluginModuleExports;

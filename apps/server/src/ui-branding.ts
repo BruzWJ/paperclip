@@ -1,3 +1,8 @@
+import {
+  parseOptionalBooleanEnvironmentValue,
+  parseOptionalExactNonEmptyEnvironmentValue,
+} from "@paperclipai/shared";
+
 const FAVICON_BLOCK_START = "<!-- PAPERCLIP_FAVICON_START -->";
 const FAVICON_BLOCK_END = "<!-- PAPERCLIP_FAVICON_END -->";
 const RUNTIME_BRANDING_BLOCK_START = "<!-- PAPERCLIP_RUNTIME_BRANDING_START -->";
@@ -24,9 +29,10 @@ export type WorktreeUiBranding = {
 };
 
 function isTruthyEnvValue(value: string | undefined): boolean {
-  if (!value) return false;
-  const normalized = value.trim().toLowerCase();
-  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+  return (
+    parseOptionalBooleanEnvironmentValue(value, "PAPERCLIP_IN_WORKTREE") ??
+    false
+  );
 }
 
 function nonEmpty(value: string | undefined): string | null {
@@ -161,7 +167,12 @@ export function getWorktreeUiBranding(env: NodeJS.ProcessEnv = process.env): Wor
     };
   }
 
-  const name = nonEmpty(env.PAPERCLIP_WORKTREE_NAME) ?? nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? "worktree";
+  const instanceId =
+    parseOptionalExactNonEmptyEnvironmentValue(
+      env.PAPERCLIP_INSTANCE_ID,
+      "PAPERCLIP_INSTANCE_ID",
+    ) ?? null;
+  const name = nonEmpty(env.PAPERCLIP_WORKTREE_NAME) ?? instanceId ?? "worktree";
   const color = normalizeHexColor(env.PAPERCLIP_WORKTREE_COLOR) ?? deriveColorFromSeed(name);
   const textColor = pickReadableTextColor(color);
 
@@ -171,7 +182,7 @@ export function getWorktreeUiBranding(env: NodeJS.ProcessEnv = process.env): Wor
     color,
     textColor,
     faviconHref: createFaviconDataUrl(color, textColor),
-    instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID),
+    instanceId,
   };
 }
 

@@ -1,7 +1,6 @@
 import express from "express";
 import request from "supertest";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockTaskService = vi.hoisted(() => ({
@@ -44,9 +43,6 @@ function registerModuleMocks() {
       hasPermission: vi.fn(),
     }),
     agentService: () => mockAgentService,
-    companySkillService: () => ({
-      completeTestRunForTask: vi.fn(async () => null),
-    }),
     documentAnnotationService: () => ({ remapOpenThreadsForDocument: async () => [] }),
     documentService: () => ({}),
     executionWorkspaceService: () => ({}),
@@ -102,7 +98,6 @@ function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", taskRoutes(mockDb as any, {} as any, { ordinaryTasks: {} as never }));
   app.use(errorHandler);
   return app;
@@ -135,25 +130,6 @@ describe("task telemetry routes", () => {
         Promise.resolve([{ companyId: "company-1" }]).then(onFulfilled, onRejected),
     }));
   });
-
-  it("rejects agent completion patches at the generic task API boundary", async () => {
-    const app = createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId: "company-1",
-      runId: null,
-    });
-    const res = await request(app)
-      .patch("/api/tasks/11111111-1111-4111-8111-111111111111")
-      .send({ status: "done" });
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe(
-      "Agent credentials cannot access the generic REST API; use the run-scoped compiled interface",
-    );
-    expect(mockTrackAgentTaskCompleted).not.toHaveBeenCalled();
-    expect(mockAgentService.getById).not.toHaveBeenCalled();
-  }, 10_000);
 
   it("rejects the retired board status patch without emitting agent completion telemetry", async () => {
     const app = createApp(testBoardSessionActor({

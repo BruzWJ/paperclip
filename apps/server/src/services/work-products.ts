@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { taskWorkProducts } from "@paperclipai/db";
-import type { TaskWorkProduct } from "@paperclipai/shared";
+import { isCanonicalUuid, type TaskWorkProduct } from "@paperclipai/shared";
 
 type TaskWorkProductRow = typeof taskWorkProducts.$inferSelect;
 
@@ -41,6 +41,7 @@ export function workProductService(db: Db) {
     },
 
     getById: async (id: string) => {
+      if (!isCanonicalUuid(id)) return null;
       const row = await db
         .select()
         .from(taskWorkProducts)

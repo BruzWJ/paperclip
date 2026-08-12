@@ -5,7 +5,7 @@ import type {
   AgentOperationalConfigurationUpdateInput,
   RuntimeAgentConfigurationUpdate,
 } from "@paperclipai/shared";
-import { publicAgentAdapterAcpConfigurationSchema } from "@paperclipai/shared";
+import { agentAdapterAcpConfigurationSchema } from "@paperclipai/shared";
 
 const RUNTIME_AGENT_CONFIGURATION_KEYS = [
   "name",
@@ -21,7 +21,6 @@ const OPERATIONAL_KEYS = [] as const;
 const ADAPTER_REVISION_KEYS = [
   "adapterType",
   "adapterConfig",
-  "runtimeConfig",
 ] as const;
 
 function selectOwnKeys(
@@ -69,18 +68,26 @@ export function buildAdapterRevisionConfiguration(input: {
   ) {
     throw new Error("Load the agent's exact current adapter revision before saving.");
   }
-  const acpConfiguration = input.currentRevision
-    ? publicAgentAdapterAcpConfigurationSchema.parse(
-        input.currentRevision.acpConfiguration,
+  if (input.currentRevision) {
+    agentAdapterAcpConfigurationSchema.parse(
+      input.currentRevision.acpConfiguration,
+    );
+  }
+
+  const currentAdapterType =
+    input.currentRevision?.acpConfiguration.launchProfile.registryName ?? null;
+  const currentAdapterConfig = input.currentRevision
+    ? Object.fromEntries(
+        input.currentRevision.acpConfiguration.sessionConfigSelections.map(
+          (selection) => [selection.configId, selection.value],
+        ),
       )
     : null;
-
   const adapterType =
-    (input.patch.adapterType as Agent["adapterType"] | undefined) ??
-    input.agent.adapterType;
+    (input.patch.adapterType as string | undefined) ?? currentAdapterType;
   const adapterConfig =
-    (input.patch.adapterConfig as Record<string, unknown> | undefined) ??
-    input.agent.adapterConfig;
+    (input.patch.adapterConfig as Record<string, string | boolean> | undefined) ??
+    currentAdapterConfig;
   if (!adapterType || !adapterConfig) {
     throw new Error(
       "Select an adapter and complete its configuration before saving.",
@@ -89,9 +96,5 @@ export function buildAdapterRevisionConfiguration(input: {
   return {
     adapterType,
     adapterConfig,
-    runtimeConfig:
-      (input.patch.runtimeConfig as Record<string, unknown> | undefined) ??
-      input.agent.runtimeConfig,
-    companySkillPins: acpConfiguration?.companySkillPins ?? [],
   };
 }

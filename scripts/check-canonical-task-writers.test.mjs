@@ -25,7 +25,12 @@ test("rejects direct, aliased, namespace, helper-returned, and wrapped task inse
       writeAggregate(taskRows);
     `,
   );
-  assert.deepEqual(operations(direct), ["insert", "insert", "insert", "table-wrapper"]);
+  assert.deepEqual(operations(direct), [
+    "insert",
+    "insert",
+    "insert",
+    "table-wrapper",
+  ]);
 
   const namespace = inspectSourceText(
     "apps/server/src/services/namespace-writer.ts",
@@ -119,7 +124,10 @@ test("allows the one statically closed control-state patch contract", () => {
       },
     };
   `;
-  assert.deepEqual(inspectSourceText("apps/server/src/services/tasks.ts", source), []);
+  assert.deepEqual(
+    inspectSourceText("apps/server/src/services/tasks.ts", source),
+    [],
+  );
 });
 
 test("rejects a partial agent-execution creator pair at canonical creation", () => {
@@ -128,6 +136,8 @@ test("rejects a partial agent-execution creator pair at canonical creation", () 
     `
       await persistCanonicalTaskAggregateInTx(tx, {
         task: {
+          taskNumber,
+          identifier,
           creatorKind: "agent-execution",
           creatorAuthorityId: authorityId,
         },
@@ -141,6 +151,8 @@ test("rejects a partial agent-execution creator pair at canonical creation", () 
     `
       await persistCanonicalTaskAggregateInTx(tx, {
         task: {
+          taskNumber,
+          identifier,
           creatorKind: "agent-execution",
           creatorAuthorityId: authorityId,
           creatorAdapterConfigRevisionId: revisionId,
@@ -151,14 +163,28 @@ test("rejects a partial agent-execution creator pair at canonical creation", () 
   assert.deepEqual(complete, []);
 });
 
+test("requires every canonical aggregate caller to supply task number and identifier", () => {
+  const missing = inspectSourceText(
+    "apps/server/src/services/ordinary-task-runtime.ts",
+    `
+      await persistCanonicalTaskAggregateInTx(tx, {
+        task: { taskNumber },
+      });
+    `,
+  );
+  assert.deepEqual(operations(missing), ["missing-canonical-identity"]);
+});
+
 function validOwnerGraph() {
   return new Map([
     [
       "apps/server/src/services/canonical-task-aggregate.ts",
       `
         export interface CanonicalTaskAggregateInput { task: { request: string } }
+        export async function allocateCanonicalTaskIdentityInTx() {}
         export async function persistCanonicalTaskAggregateInTx(tx, input) {
           const { task } = input;
+          await assertCanonicalTaskIdentity(tx, task);
           await assertAgentExecutionCreator(tx, task);
           return tx.insert(tasks).values(task);
         }
@@ -171,7 +197,9 @@ function validOwnerGraph() {
     ],
     [
       "apps/server/src/services/paperclip-managed-tool-registry.ts",
-      `export const boardMcpInputSchemas = {};
+      `export const PAPERCLIP_MANAGED_TOOL_NAMES = [];
+       export const boardMcpInputSchemas = {};
+       export const BOARD_MANAGED_TOOLS = [];
        function projectRuntimeTaskCreate(input) { if (input.mode !== "owner" || input.actionGrants.task_create !== true) return null; return { name: "task_create" }; }
        switch (name) { case "task_create": return projectRuntimeTaskCreate(input); }`,
     ],
@@ -181,6 +209,8 @@ function validOwnerGraph() {
         lockRuntimeActionAuthority(tx, capability, "task_create", now);
         if (!input.capability.taskExecutionAuthorityId) throw denied();
         persistCanonicalTaskAggregateInTx(tx, { task: {
+          taskNumber,
+          identifier,
           creatorAuthorityId: input.capability.taskExecutionAuthorityId,
           creatorAdapterConfigRevisionId: input.capability.adapterConfigIdentity,
         }});
@@ -197,11 +227,23 @@ test("requires compiler, action-port, aggregate, schema, and closed update owner
   assert.deepEqual(requiredOwnershipViolations(validOwnerGraph()), []);
 
   for (const [path, marker] of [
-    ["apps/server/src/services/canonical-task-aggregate.ts", "await assertAgentExecutionCreator(tx, task);"],
+    [
+      "apps/server/src/services/canonical-task-aggregate.ts",
+      "await assertAgentExecutionCreator(tx, task);",
+    ],
     ["apps/server/src/services/tasks.ts", '| "request"'],
-    ["apps/server/src/services/paperclip-managed-tool-registry.ts", "input.actionGrants.task_create !== true"],
-    ["apps/server/src/services/paperclip-managed-tool-registry.ts", 'case "task_create": return projectRuntimeTaskCreate(input);'],
-    ["apps/server/src/services/runtime-task-action-port.ts", "if (!input.capability.taskExecutionAuthorityId)"],
+    [
+      "apps/server/src/services/paperclip-managed-tool-registry.ts",
+      "input.actionGrants.task_create !== true",
+    ],
+    [
+      "apps/server/src/services/paperclip-managed-tool-registry.ts",
+      'case "task_create": return projectRuntimeTaskCreate(input);',
+    ],
+    [
+      "apps/server/src/services/runtime-task-action-port.ts",
+      "if (!input.capability.taskExecutionAuthorityId)",
+    ],
     ["packages/db/schema/tasks.ts", 'request: text("request").notNull()'],
   ]) {
     const mutated = validOwnerGraph();

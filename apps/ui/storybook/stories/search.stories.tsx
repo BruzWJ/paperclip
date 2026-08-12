@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { TaskGroupHeader } from "@/components/TaskGroupHeader";
 import { Input } from "@/components/ui/input";
 import { PageTabBar, type PageTabItem } from "@/components/PageTabBar";
-import { MatchSourceChip } from "@/components/search/MatchSourceChip";
 import { SearchResultRow } from "@/components/search/SearchResultRow";
 import { SearchFilterBar, type SearchFilterDataProps } from "@/components/search/SearchFilterBar";
 import { SearchFilterChips } from "@/components/search/SearchFilterChips";
@@ -44,13 +43,15 @@ import { storybookAgents, storybookProjects, storybookTasks } from "../fixtures/
 
 const agentsById = new Map(storybookAgents.map((agent) => [agent.id, agent]));
 
-type TaskResultOverrides = Omit<Partial<CompanySearchResult>, "task"> & {
+type TaskResultOverrides = Omit<Partial<CompanySearchResult>, "task" | "routeTarget"> & {
   task?: Partial<NonNullable<CompanySearchResult["task"]>>;
+  taskHash?: string | null;
 };
 
 function buildTaskResult(overrides: TaskResultOverrides): CompanySearchResult {
   const baseTask = {
-    id: overrides.task?.id ?? "task-1",
+    id: overrides.task?.id ?? "dddddddd-dddd-4ddd-8ddd-ddddddddd009",
+    taskNumber: overrides.task?.taskNumber ?? 3142,
     identifier: overrides.task?.identifier ?? "PAP-3142",
     title: overrides.task?.title ?? "Auth middleware flakes on cold-start when session token is rotated",
     request: overrides.task?.request ?? storybookTasks[0]?.request ?? "",
@@ -62,12 +63,19 @@ function buildTaskResult(overrides: TaskResultOverrides): CompanySearchResult {
     projectId: overrides.task?.projectId ?? storybookProjects[0]?.id ?? null,
     updatedAt: overrides.task?.updatedAt ?? new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
   } satisfies NonNullable<CompanySearchResult["task"]>;
+  if (!baseTask.identifier) {
+    throw new Error("Storybook search task fixtures require a canonical identifier");
+  }
   return {
     id: overrides.id ?? baseTask.id,
     type: "task",
     score: 100,
     title: `${baseTask.identifier} ${baseTask.title}`,
-    href: `/PAP/tasks/${baseTask.identifier}`,
+    routeTarget: {
+      kind: "task",
+      taskNumber: baseTask.taskNumber,
+      hash: overrides.taskHash ?? null,
+    },
     matchedFields: overrides.matchedFields ?? ["title"],
     sourceLabel: overrides.sourceLabel ?? null,
     snippet: overrides.snippet ?? null,
@@ -80,7 +88,7 @@ function buildTaskResult(overrides: TaskResultOverrides): CompanySearchResult {
 
 const fixtureResults: CompanySearchResult[] = [
   buildTaskResult({
-    id: "task-1",
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddd009",
     matchedFields: ["title", "comment"],
     sourceLabel: "Comment",
     snippet: "we hit another flake in the morning batch — auth middleware",
@@ -100,9 +108,9 @@ const fixtureResults: CompanySearchResult[] = [
     ],
   }),
   buildTaskResult({
-    id: "task-2",
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00a",
     task: {
-      id: "task-2",
+      id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00a",
       identifier: "PAP-3091",
       title: "Audit auth flake telemetry from last quarter",
       boardPresentationStatus: "in_review",
@@ -129,9 +137,9 @@ const fixtureResults: CompanySearchResult[] = [
       "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23a78bfa'/><text x='50' y='55' font-size='14' fill='white' text-anchor='middle' font-family='sans-serif'>chart</text></svg>",
   }),
   buildTaskResult({
-    id: "task-3",
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00b",
     task: {
-      id: "task-3",
+      id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00b",
       identifier: "PAP-2748",
       title: "Pin worker registration to a single auth backend",
       boardPresentationStatus: "done",
@@ -154,7 +162,7 @@ const fixtureAgents: CompanySearchResult[] = storybookAgents.slice(0, 1).map((ag
   type: "agent" as const,
   score: 80,
   title: agent.name,
-  href: `/PAP/agents/${agent.id}`,
+  routeTarget: { kind: "agent", id: agent.id },
   matchedFields: ["agent"],
   sourceLabel: "Agent",
   snippet: agent.capabilities ?? null,
@@ -177,7 +185,7 @@ const fixtureProjects: CompanySearchResult[] = storybookProjects.slice(0, 1).map
   type: "project" as const,
   score: 70,
   title: project.name,
-  href: `/PAP/projects/${project.id}`,
+  routeTarget: { kind: "project", id: project.id },
   matchedFields: ["project"],
   sourceLabel: "Project",
   snippet: project.description ?? null,
@@ -570,7 +578,7 @@ const searchFilterCounts: CompanySearchFilterOptionCounts = {
   ownerAgentId: storybookAgents[0]?.id ? { [storybookAgents[0].id]: 4 } : {},
   ownerUserId: {},
   projectId: storybookProjects[0]?.id ? { [storybookProjects[0].id]: 6 } : {},
-  labelId: { "label-infra": 3 },
+  labelId: { "a1000000-0000-4000-8000-000000000006": 3 },
   updatedWithin: { "24h": 2, "7d": 5, "30d": 9, "90d": 11 },
 };
 
@@ -579,10 +587,10 @@ const searchFilterData: SearchFilterDataProps = {
   agents: storybookAgents.map((agent) => ({ id: agent.id, name: agent.name })),
   projects: storybookProjects.map((project) => ({ id: project.id, name: project.name })),
   labels: [
-    { id: "label-infra", name: "infra", color: "#a78bfa" },
-    { id: "label-auth", name: "auth", color: "#34d399" },
+    { id: "a1000000-0000-4000-8000-000000000006", name: "infra", color: "#a78bfa" },
+    { id: "a1000000-0000-4000-8000-000000000005", name: "auth", color: "#34d399" },
   ],
-  currentUserId: "user-1",
+  currentUserId: "a7000000-0000-4000-8000-000000000001",
 };
 
 const activeSearchFilters: SearchFilters = {
@@ -597,7 +605,7 @@ const searchFilterLookups: FilterChipLookups = {
   userName: () => "Me",
   projectName: (id) => storybookProjects.find((project) => project.id === id)?.name,
   labelName: (id) => searchFilterData.labels.find((label) => label.id === id)?.name,
-  currentUserId: "user-1",
+  currentUserId: "a7000000-0000-4000-8000-000000000001",
 };
 
 const zeroResultsFixture: CompanySearchZeroResults = {
@@ -706,20 +714,6 @@ function SearchStories() {
 
         <section className="paperclip-story__frame overflow-hidden p-4">
           <div className="paperclip-story__title-block">
-            <div className="paperclip-story__label">Match-source chips</div>
-            <h2 className="mt-1 text-lg font-semibold">Type-coded chip variants</h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 p-2">
-            <MatchSourceChip kind="title" />
-            <MatchSourceChip kind="identifier" />
-            <MatchSourceChip kind="comment" count={3} />
-            <MatchSourceChip kind="document" />
-            <MatchSourceChip kind="document" count={2} label="Doc" />
-          </div>
-        </section>
-
-        <section className="paperclip-story__frame overflow-hidden p-4">
-          <div className="paperclip-story__title-block">
             <div className="paperclip-story__label">Cmd+K palette</div>
             <h2 className="mt-1 text-lg font-semibold">Search-all row with quick results</h2>
           </div>
@@ -772,7 +766,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Full search page surfaces and Command K Search-all transition. Reuses StatusIcon, StatusBadge, Identity, TaskGroupHeader, and PageTabBar; adds MatchSourceChip + SearchResultRow.",
+          "Full search page surfaces and Command K Search-all transition. Reuses StatusIcon, StatusBadge, Identity, TaskGroupHeader, PageTabBar, and SearchResultRow.",
       },
     },
   },

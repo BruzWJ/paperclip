@@ -6,20 +6,22 @@ import {
 } from "../services/execution-mode-context-mask.js";
 
 describe("execution-mode context attenuation", () => {
-  it.each([
-    { workMode: "skill_test" },
-    { harnessKind: "skill_test" },
-    {
+  it("fails closed for a low-trust execution policy", () => {
+    const input = {
       taskExecutionPolicy: {
+        reviewPreset: {
+          id: "low_trust_review" as const,
+          version: 1 as const,
+          rawOutputDisposition: "quarantine" as const,
+        },
         authorizationPolicy: {
           trustBoundary: {
-            mode: "low_trust_review",
+            mode: "low_trust_review" as const,
             taskIds: ["task-1"],
           },
         },
       },
-    },
-  ])("fails closed for a restricted execution mode", (input) => {
+    };
     expect(resolveExecutionModeContextMask(input)).toEqual(
       DENY_ALL_EXECUTION_CONTEXT_MASK,
     );
@@ -30,13 +32,29 @@ describe("execution-mode context attenuation", () => {
     ).toBe(true);
   });
 
+  it("does not interpret retired preset locations as execution modes", () => {
+    for (const taskExecutionPolicy of [
+      { trustPreset: "low_trust_review" },
+      {
+        authorizationPolicy: {
+          reviewPreset: {
+            id: "low_trust_review",
+            version: 1,
+            rawOutputDisposition: "quarantine",
+          },
+        },
+      },
+      {
+        authorizationPolicy: {
+          trustBoundary: { mode: "low_trust_review", taskIds: ["task-1"] },
+        },
+      },
+    ]) {
+      expect(resolveExecutionModeContextMask({ taskExecutionPolicy })).toBeNull();
+    }
+  });
+
   it("uses identity for an ordinary execution", () => {
-    expect(
-      resolveExecutionModeContextMask({
-        workMode: "standard",
-        harnessKind: null,
-        originKind: "manual",
-      }),
-    ).toBeNull();
+    expect(resolveExecutionModeContextMask({})).toBeNull();
   });
 });

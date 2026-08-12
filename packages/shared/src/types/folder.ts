@@ -1,4 +1,4 @@
-export type FolderKind = "routine" | "skill";
+export type FolderKind = "routine";
 
 export interface Folder {
   id: string;
@@ -46,10 +46,6 @@ export interface UpdateFolderRequest {
 export interface MoveFolderRequest {
   parentId?: string | null;
   position: number;
-}
-
-export interface EnsureMySkillFolderRequest {
-  slug?: string | null;
 }
 
 export interface MoveFolderItemRequest {

@@ -254,7 +254,7 @@ export type ProviderSafeTaskOwner =
 
 export interface ProviderSafeTaskProjection {
   id: string;
-  identifier: string | null;
+  identifier: string;
   title: string | null;
   request: string;
   status: AgentVisibleTaskStatus;

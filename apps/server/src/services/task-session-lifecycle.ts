@@ -10,7 +10,6 @@ import {
   companyMemberships,
   companySecrets,
   companySessionLifecycleOperations,
-  companySkills,
   costEvents,
   documentRevisions,
   documents,
@@ -1648,7 +1647,6 @@ export async function purgeCompanySessionGraphInTx(
   await tx.delete(invites).where(eq(invites.companyId, input.companyId));
   await tx.delete(principalPermissionGrants).where(eq(principalPermissionGrants.companyId, input.companyId));
   await tx.delete(companyMemberships).where(eq(companyMemberships.companyId, input.companyId));
-  await tx.delete(companySkills).where(eq(companySkills.companyId, input.companyId));
   await tx.delete(routineRuns).where(eq(routineRuns.companyId, input.companyId));
   await tx.delete(routineTriggers).where(eq(routineTriggers.companyId, input.companyId));
   await tx.delete(routineRevisions).where(eq(routineRevisions.companyId, input.companyId));

@@ -531,7 +531,7 @@ async function beginPromptPublication(
       ? {}
       : {
           model: {
-            id: configuration.model.id,
+            id: configuration.model.value,
             providerID: configuration.launchProfile.registryName,
           },
         }),

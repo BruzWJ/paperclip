@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import {
   LOW_TRUST_REVIEW_PRESET,
   LOW_TRUST_REVIEW_PRESET_VERSION,
@@ -10,17 +11,17 @@ export const trustPresetSchema = z.enum(TRUST_PRESETS);
 
 export const lowTrustOutputPromotionTargetSchema = z.object({
   type: z.literal("task"),
-  taskId: z.string().uuid(),
+  taskId: canonicalUuidSchema,
 }).strict();
 
 export const lowTrustBoundarySchema = z.object({
   mode: z.literal(LOW_TRUST_REVIEW_PRESET),
-  companyId: z.string().uuid().optional(),
-  projectIds: z.array(z.string().uuid()).optional(),
-  rootTaskId: z.string().uuid().optional(),
-  taskIds: z.array(z.string().uuid()).optional(),
-  allowedAgentIds: z.array(z.string().uuid()).optional(),
-  allowedSecretBindingIds: z.array(z.string().uuid()).optional(),
+  companyId: canonicalUuidSchema.optional(),
+  projectIds: z.array(canonicalUuidSchema).optional(),
+  rootTaskId: canonicalUuidSchema.optional(),
+  taskIds: z.array(canonicalUuidSchema).optional(),
+  allowedAgentIds: z.array(canonicalUuidSchema).optional(),
+  allowedSecretBindingIds: z.array(canonicalUuidSchema).optional(),
   allowedToolClasses: z.array(z.string().trim().min(1)).optional(),
   outputPromotionTarget: lowTrustOutputPromotionTargetSchema.optional(),
 }).strict();
@@ -32,23 +33,31 @@ export const lowTrustReviewPresetPolicySchema = z.object({
 }).strict();
 
 export const trustAuthorizationPolicySchema = z.object({
-  trustPreset: trustPresetSchema.optional(),
-  reviewPreset: lowTrustReviewPresetPolicySchema.optional(),
   trustBoundary: lowTrustBoundarySchema.optional(),
-}).catchall(z.unknown());
+}).catchall(z.unknown()).superRefine((value, ctx) => {
+  for (const retiredKey of ["trustPreset", "reviewPreset"] as const) {
+    if (Object.prototype.hasOwnProperty.call(value, retiredKey)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${retiredKey} is not an authorization-policy field`,
+        path: [retiredKey],
+      });
+    }
+  }
+});
 
 export const sourceTrustArtifactKindSchema = z.enum(["task", "comment", "document", "work_product"]);
 
 export const sourceTrustMetadataSchema = z.object({
   preset: trustPresetSchema,
   disposition: z.enum(["quarantined", "promoted"]),
-  sourceTaskId: z.string().uuid().nullable().optional(),
-  sourceRunId: z.string().uuid().nullable().optional(),
-  sourceAgentId: z.string().uuid().nullable().optional(),
+  sourceTaskId: canonicalUuidSchema.nullable().optional(),
+  sourceRunId: canonicalUuidSchema.nullable().optional(),
+  sourceAgentId: canonicalUuidSchema.nullable().optional(),
   promotedFrom: z.object({
     artifactKind: sourceTrustArtifactKindSchema,
-    artifactId: z.string().uuid(),
-    taskId: z.string().uuid().nullable().optional(),
+    artifactId: canonicalUuidSchema,
+    taskId: canonicalUuidSchema.nullable().optional(),
   }).strict().nullable().optional(),
   promotedByActorType: z.enum(["agent", "user", "system"]).nullable().optional(),
   promotedByActorId: z.string().trim().min(1).nullable().optional(),

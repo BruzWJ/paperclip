@@ -39,10 +39,6 @@ describe("aliasFromConfigPath", () => {
 });
 
 describe("consumerTypeLabel", () => {
-  it("renders agent_api sensibly", () => {
-    expect(consumerTypeLabel("agent_api")).toBe("Agent API");
-  });
-
   it("capitalizes single-word consumer types", () => {
     expect(consumerTypeLabel("agent")).toBe("Agent");
     expect(consumerTypeLabel("project")).toBe("Project");

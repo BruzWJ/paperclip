@@ -61,13 +61,12 @@ function makeConfig(input: {
       source: "configure",
     },
     database: {
-      connectionString: "postgresql://paperclip.invalid/paperclip"
+      connectionString: "postgresql://paperclip.invalid/paperclip",
     },
     logging: { mode: "file", logDir: path.join(root, "logs") },
     server: {
       exposure: input.exposure,
       bind: input.exposure === "public" ? "lan" : "loopback",
-      host: input.exposure === "public" ? "0.0.0.0" : "127.0.0.1",
       port: 3100,
       allowedHostnames: [],
       serveUi: true,
@@ -96,7 +95,9 @@ function makeConfig(input: {
 }
 
 function writeConfig(config: PaperclipConfig | Record<string, unknown>) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-bootstrap-admin-"));
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), "paperclip-bootstrap-admin-"),
+  );
   tempRoots.push(root);
   const configPath = path.join(root, "config.json");
   fs.writeFileSync(configPath, JSON.stringify(config));
@@ -153,19 +154,21 @@ function makeTransactionalDb(input?: {
   };
 
   const db = {
-    transaction: vi.fn(async (operation: (transaction: typeof tx) => Promise<unknown>) => {
-      operations.push("begin");
-      const snapshot = state.invites.map((invite) => ({ ...invite }));
-      try {
-        const result = await operation(tx);
-        operations.push("commit");
-        return result;
-      } catch (error) {
-        state.invites.splice(0, state.invites.length, ...snapshot);
-        operations.push("rollback");
-        throw error;
-      }
-    }),
+    transaction: vi.fn(
+      async (operation: (transaction: typeof tx) => Promise<unknown>) => {
+        operations.push("begin");
+        const snapshot = state.invites.map((invite) => ({ ...invite }));
+        try {
+          const result = await operation(tx);
+          operations.push("commit");
+          return result;
+        } catch (error) {
+          state.invites.splice(0, state.invites.length, ...snapshot);
+          operations.push("rollback");
+          throw error;
+        }
+      },
+    ),
     $client: { end: vi.fn(async () => undefined) },
   };
 
@@ -241,33 +244,42 @@ describe("bootstrap admin origin validation", () => {
       environmentPublicUrl: undefined,
       expected: /Private exposure derives its auth origin from requests/,
     },
-  ])("makes no database change for a $name origin configuration", async (testCase) => {
-    const fake = makeTransactionalDb({
-      activeInvites: [{
-        tokenHash: "prior-hash",
-        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
-        revokedAt: null,
-      }],
-    });
-    mocks.createDb.mockReturnValue(fake.db);
-    if (testCase.environmentPublicUrl) {
-      process.env.PAPERCLIP_PUBLIC_URL = testCase.environmentPublicUrl;
-    }
+  ])(
+    "makes no database change for a $name origin configuration",
+    async (testCase) => {
+      const fake = makeTransactionalDb({
+        activeInvites: [
+          {
+            tokenHash: "prior-hash",
+            expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+            revokedAt: null,
+          },
+        ],
+      });
+      mocks.createDb.mockReturnValue(fake.db);
+      if (testCase.environmentPublicUrl) {
+        process.env.PAPERCLIP_PUBLIC_URL = testCase.environmentPublicUrl;
+      }
 
-    await expect(bootstrapAdminInvite({
-      config: writeConfig(testCase.config),
-      baseUrl: testCase.explicitBaseUrl,
-    })).rejects.toThrow(testCase.expected);
+      await expect(
+        bootstrapAdminInvite({
+          config: writeConfig(testCase.config),
+          baseUrl: testCase.explicitBaseUrl,
+        }),
+      ).rejects.toThrow(testCase.expected);
 
-    expect(mocks.createDb).not.toHaveBeenCalled();
-    expect(fake.operations).toEqual([]);
-    expect(fake.tx.update).not.toHaveBeenCalled();
-    expect(fake.tx.insert).not.toHaveBeenCalled();
-    expect(fake.state.invites).toEqual([expect.objectContaining({
-      tokenHash: "prior-hash",
-      revokedAt: null,
-    })]);
-  });
+      expect(mocks.createDb).not.toHaveBeenCalled();
+      expect(fake.operations).toEqual([]);
+      expect(fake.tx.update).not.toHaveBeenCalled();
+      expect(fake.tx.insert).not.toHaveBeenCalled();
+      expect(fake.state.invites).toEqual([
+        expect.objectContaining({
+          tokenHash: "prior-hash",
+          revokedAt: null,
+        }),
+      ]);
+    },
+  );
 });
 
 describe("bootstrap admin capability transaction", () => {
@@ -277,13 +289,18 @@ describe("bootstrap admin capability transaction", () => {
       expiresAt: new Date("2027-01-01T00:00:00.000Z"),
       revokedAt: null,
     };
-    const fake = makeTransactionalDb({ activeInvites: [priorInvite], failInsert: true });
+    const fake = makeTransactionalDb({
+      activeInvites: [priorInvite],
+      failInsert: true,
+    });
 
-    await expect(createBootstrapAdminCapability(fake.db, {
-      tokenHash: "replacement-hash",
-      now: new Date("2026-08-02T00:00:00.000Z"),
-      expiresAt: new Date("2026-08-05T00:00:00.000Z"),
-    })).rejects.toThrow("simulated insert failure");
+    await expect(
+      createBootstrapAdminCapability(fake.db, {
+        tokenHash: "replacement-hash",
+        now: new Date("2026-08-02T00:00:00.000Z"),
+        expiresAt: new Date("2026-08-05T00:00:00.000Z"),
+      }),
+    ).rejects.toThrow("simulated insert failure");
 
     expect(fake.operations).toEqual([
       "begin",
@@ -299,11 +316,13 @@ describe("bootstrap admin capability transaction", () => {
 
   it("commits the replacement before printing its usable URL", async () => {
     const fake = makeTransactionalDb({
-      activeInvites: [{
-        tokenHash: "prior-hash",
-        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
-        revokedAt: null,
-      }],
+      activeInvites: [
+        {
+          tokenHash: "prior-hash",
+          expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+          revokedAt: null,
+        },
+      ],
     });
     mocks.createDb.mockReturnValue(fake.db);
     mocks.logSuccess.mockImplementation(() => {
@@ -311,10 +330,12 @@ describe("bootstrap admin capability transaction", () => {
     });
 
     await bootstrapAdminInvite({
-      config: writeConfig(makeConfig({
-        exposure: "public",
-        publicBaseUrl: "https://paperclip.example.test/",
-      })),
+      config: writeConfig(
+        makeConfig({
+          exposure: "public",
+          publicBaseUrl: "https://paperclip.example.test",
+        }),
+      ),
     });
 
     expect(fake.operations).toEqual([
@@ -332,18 +353,22 @@ describe("bootstrap admin capability transaction", () => {
     expect(fake.state.invites[1]).toMatchObject({ revokedAt: null });
     expect(fake.state.invites[1]?.tokenHash).toMatch(/^[a-f0-9]{64}$/);
     expect(mocks.logMessage).toHaveBeenCalledWith(
-      expect.stringMatching(/^Invite URL: https:\/\/paperclip\.example\.test\/invite\/pcp_bootstrap_[a-f0-9]{48}$/),
+      expect.stringMatching(
+        /^Invite URL: https:\/\/paperclip\.example\.test\/invite\/pcp_bootstrap_[a-f0-9]{48}$/,
+      ),
     );
   });
 
   it("does not revoke or insert after an administrator already exists", async () => {
     const fake = makeTransactionalDb({ adminUserIds: ["admin-user"] });
 
-    await expect(createBootstrapAdminCapability(fake.db, {
-      tokenHash: "unused-hash",
-      now: new Date("2026-08-02T00:00:00.000Z"),
-      expiresAt: new Date("2026-08-05T00:00:00.000Z"),
-    })).resolves.toEqual({ status: "closed" });
+    await expect(
+      createBootstrapAdminCapability(fake.db, {
+        tokenHash: "unused-hash",
+        now: new Date("2026-08-02T00:00:00.000Z"),
+        expiresAt: new Date("2026-08-05T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual({ status: "closed" });
 
     expect(fake.operations).toEqual([
       "begin",

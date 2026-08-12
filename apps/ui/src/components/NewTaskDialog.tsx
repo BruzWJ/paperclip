@@ -13,8 +13,9 @@ import {
 import { pickTextColorForSolidBg } from "@/lib/color-contrast";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { tasksApi } from "../api/tasks";
-import { MissingUserSecretsBanner } from "../pages/secrets/MissingUserSecretsBanner";
+import { MissingUserSecretsBanner } from "@/components/secrets/MissingUserSecretsBanner";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
 import { accessApi } from "../api/access";
@@ -57,7 +58,6 @@ import {
   ArrowUp,
   ArrowDown,
   AlertTriangle,
-  Tag,
   Calendar,
   Paperclip,
   FileText,
@@ -351,7 +351,8 @@ const TaskRequestEditor = memo(function TaskRequestEditor({
 
 export function NewTaskDialog() {
   const { newTaskOpen, newTaskDefaults, closeNewTask } = useDialog();
-  const { companies, selectedCompanyId, selectedCompany } = useCompany();
+  const companyId = useCompanyRouteId();
+  const { selectedCompany } = useCompany();
   const workModeOptions = useMemo(() => workModeMetaList(), []);
   const statuses = useMemo(() => buildStatusOptions(), []);
   const queryClient = useQueryClient();
@@ -373,15 +374,12 @@ export function NewTaskDialog() {
   const [projectWorkspaceId, setProjectWorkspaceId] = useState("");
   const [workMode, setWorkMode] = useState<TaskWorkMode>("standard");
   const [expanded, setExpanded] = useState(false);
-  const [dialogCompanyId, setDialogCompanyId] = useState<string | null>(null);
   const [stagedFiles, setStagedFiles] = useState<StagedTaskFile[]>([]);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initializationKeyRef = useRef<string | null>(null);
   const createIdempotencyKeyRef = useRef<string | null>(null);
 
-  const effectiveCompanyId = dialogCompanyId ?? selectedCompanyId;
-  const dialogCompany = companies.find((c) => c.id === effectiveCompanyId) ?? selectedCompany;
   const isSubTaskMode = Boolean(newTaskDefaults.parentId);
   const parentTaskLabel = newTaskDefaults.parentIdentifier
     ?? (newTaskDefaults.parentId ? newTaskDefaults.parentId.slice(0, 8) : "");
@@ -392,33 +390,33 @@ export function NewTaskDialog() {
   const projectSelectorRef = useRef<HTMLButtonElement | null>(null);
 
   const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(effectiveCompanyId!),
-    queryFn: () => agentsApi.list(effectiveCompanyId!),
-    enabled: !!effectiveCompanyId && newTaskOpen,
+    queryKey: queryKeys.agents.list(companyId),
+    queryFn: () => agentsApi.list(companyId),
+    enabled: newTaskOpen,
   });
 
   const { data: projects } = useQuery({
-    queryKey: queryKeys.projects.list(effectiveCompanyId!),
-    queryFn: () => projectsApi.list(effectiveCompanyId!),
-    enabled: !!effectiveCompanyId && newTaskOpen,
+    queryKey: queryKeys.projects.list(companyId),
+    queryFn: () => projectsApi.list(companyId),
+    enabled: newTaskOpen,
   });
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
   });
   const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyUserDirectory(effectiveCompanyId!),
-    queryFn: () => accessApi.listUserDirectory(effectiveCompanyId!),
-    enabled: Boolean(effectiveCompanyId) && newTaskOpen,
+    queryKey: queryKeys.access.companyUserDirectory(companyId),
+    queryFn: () => accessApi.listUserDirectory(companyId),
+    enabled: newTaskOpen,
   });
-  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const currentUserId = session?.user.id ?? null;
   const activeProjects = useMemo(
     () => (projects ?? []).filter((p) => !p.archivedAt),
     [projects],
   );
   const { orderedProjects } = useProjectOrder({
     projects: activeProjects,
-    companyId: effectiveCompanyId,
+    companyId,
     userId: currentUserId,
   });
 
@@ -471,15 +469,15 @@ export function NewTaskDialog() {
       queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(companyId) });
       if (draftTimer.current) clearTimeout(draftTimer.current);
       if (failures.length > 0) {
-        const prefix = (companies.find((company) => company.id === companyId)?.taskPrefix ?? "").trim();
-        const taskRef = task.identifier ?? task.id;
+        const taskLabel = task.identifier;
         pushToast({
-          title: `Created ${taskRef} with upload warnings`,
+          title: `Created ${taskLabel} with upload warnings`,
           body: `${failures.length} staged ${failures.length === 1 ? "file" : "files"} could not be added.`,
           tone: "warn",
-          action: prefix
-            ? { label: `Open ${taskRef}`, href: `/${prefix}/tasks/${taskRef}` }
-            : undefined,
+          action: {
+            label: `Open ${taskLabel}`,
+            target: { kind: "task" as const, taskNumber: task.taskNumber, hash: null },
+          },
         });
       }
       clearDraft();
@@ -490,8 +488,7 @@ export function NewTaskDialog() {
 
   const uploadRequestImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!effectiveCompanyId) throw new Error("No company selected");
-      return assetsApi.uploadImage(effectiveCompanyId, file, "tasks/drafts");
+      return assetsApi.uploadImage(companyId, file, "tasks/drafts");
     },
   });
   const uploadRequestImageHandler = useCallback(async (file: File) => {
@@ -586,10 +583,9 @@ export function NewTaskDialog() {
       createIdempotencyKeyRef.current = null;
       return;
     }
-    const initializationKey = `${selectedCompanyId ?? ""}:${JSON.stringify(newTaskDefaults)}`;
+    const initializationKey = `${companyId}:${JSON.stringify(newTaskDefaults)}`;
     if (initializationKeyRef.current === initializationKey) return;
     initializationKeyRef.current = initializationKey;
-    setDialogCompanyId(selectedCompanyId);
 
     const draft = loadDraft();
     if (newTaskDefaults.parentId) {
@@ -644,7 +640,7 @@ export function NewTaskDialog() {
       setShowReviewerRow(false);
       setShowApproverRow(false);
     }
-  }, [newTaskOpen, newTaskDefaults, orderedProjects, selectedCompanyId, setTaskText]);
+  }, [companyId, newTaskOpen, newTaskDefaults, orderedProjects, setTaskText]);
 
   useEffect(() => {
     if (!ownerAgentId || !agents) {
@@ -680,25 +676,9 @@ export function NewTaskDialog() {
     setProjectWorkspaceId("");
     setWorkMode("standard");
     setExpanded(false);
-    setDialogCompanyId(null);
     setStagedFiles([]);
     setIsFileDragOver(false);
     initializationKeyRef.current = null;
-    createIdempotencyKeyRef.current = null;
-  }
-
-  function handleCompanyChange(companyId: string) {
-    if (isSubTaskMode) return;
-    if (companyId === effectiveCompanyId) return;
-    setDialogCompanyId(companyId);
-    setOwnerAgentId("");
-    setReviewerValue("");
-    setApproverValue("");
-    setShowReviewerRow(false);
-    setShowApproverRow(false);
-    setProjectId("");
-    setProjectWorkspaceId("");
-    setWorkMode("standard");
     createIdempotencyKeyRef.current = null;
   }
 
@@ -712,14 +692,13 @@ export function NewTaskDialog() {
     const currentTitle = titleRef.current.trim();
     const taskRequest = requestRef.current;
     if (
-      !effectiveCompanyId ||
       !taskRequest.trim() ||
       !selectedOwnerAgentId ||
       createTask.isPending
     ) return;
     createIdempotencyKeyRef.current ??= crypto.randomUUID();
     createTask.mutate({
-      companyId: effectiveCompanyId,
+      companyId,
       stagedFiles,
       request: taskRequest,
       ownerAgentId: selectedOwnerAgentId,
@@ -813,19 +792,16 @@ export function NewTaskDialog() {
   const hasDraft = draftHasText || stagedFiles.length > 0;
   const currentStatus = statuses.find((s) => s.value === status) ?? statuses[1]!;
   const currentPriority = priorities.find((p) => p.value === priority);
-  const currentOwner = selectedOwnerAgentId
-    ? (agents ?? []).find((agent) => agent.id === selectedOwnerAgentId)
-    : null;
   const currentProject = orderedProjects.find((project) => project.id === projectId);
+  const currentOwner = (agents ?? []).find((agent) => agent.id === ownerAgentId) ?? null;
   const neededUserSecretKeys = useMemo(
     () => {
       if (!shouldWarnAboutRunUserSecrets(status, selectedOwnerAgentId)) return [];
       return uniqueRequiredUserSecretKeys([
-        isRecord(currentOwner?.adapterConfig) ? currentOwner.adapterConfig.env as Record<string, unknown> : null,
         currentProject?.env ?? null,
       ]);
     },
-    [currentOwner?.adapterConfig, currentProject?.env, selectedOwnerAgentId, status],
+    [currentProject?.env, selectedOwnerAgentId, status],
   );
   const recentOwnerAgentIds = useMemo(() => getRecentAssigneeIds(), [newTaskOpen]);
   const recentOwnerOptionIds = recentOwnerAgentIds;
@@ -935,57 +911,22 @@ export function NewTaskDialog() {
         {/* Header bar */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className={cn(
-                    "px-1.5 py-0.5 rounded text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity",
-                    !dialogCompany?.brandColor && "bg-muted",
-                  )}
-                  disabled={isSubTaskMode}
-                  style={
-                    dialogCompany?.brandColor
-                      ? {
-                          backgroundColor: dialogCompany.brandColor,
-                          color: pickTextColorForSolidBg(dialogCompany.brandColor),
-                        }
-                      : undefined
-                  }
-                >
-                  {(dialogCompany?.name ?? "").slice(0, 3).toUpperCase()}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-48" align="start">
-                {companies.filter((c) => c.status !== "archived").map((c) => (
-                  <DropdownMenuItem
-                    key={c.id}
-                    className={cn(
-                      "text-xs",
-                      c.id === effectiveCompanyId && "bg-accent",
-                    )}
-                    onClick={() => handleCompanyChange(c.id)}
-                  >
-                    <span
-                      className={cn(
-                        "px-1 py-0.5 rounded text-(length:--text-nano) font-semibold leading-none",
-                        !c.brandColor && "bg-muted",
-                      )}
-                      style={
-                        c.brandColor
-                          ? {
-                              backgroundColor: c.brandColor,
-                              color: pickTextColorForSolidBg(c.brandColor),
-                            }
-                          : undefined
-                      }
-                    >
-                      {c.name.slice(0, 3).toUpperCase()}
-                    </span>
-                    <span className="truncate">{c.name}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <span
+              className={cn(
+                "rounded px-1.5 py-0.5 text-xs font-semibold",
+                !selectedCompany?.brandColor && "bg-muted",
+              )}
+              style={
+                selectedCompany?.brandColor
+                  ? {
+                      backgroundColor: selectedCompany.brandColor,
+                      color: pickTextColorForSolidBg(selectedCompany.brandColor),
+                    }
+                  : undefined
+              }
+            >
+              {(selectedCompany?.name ?? "").slice(0, 3).toUpperCase()}
+            </span>
             <span className="text-muted-foreground/60">&rsaquo;</span>
             <span>{isSubTaskMode ? "New sub-task" : "New task"}</span>
           </div>
@@ -1026,16 +967,15 @@ export function NewTaskDialog() {
             />
           </div>
 
-          {effectiveCompanyId ? (
-            <div className="px-4 pb-2">
-              {neededUserSecretKeys.length > 0 ? (
-                <MissingUserSecretsBanner
-                  companyId={effectiveCompanyId}
-                  definitionKeys={neededUserSecretKeys}
-                />
-              ) : null}
-            </div>
-          ) : null}
+          <div className="px-4 pb-2">
+            {neededUserSecretKeys.length > 0 ? (
+              <MissingUserSecretsBanner
+                companyId={companyId}
+                userId={currentUserId}
+                definitionKeys={neededUserSecretKeys}
+              />
+            ) : null}
+          </div>
 
           <div className="px-4 pb-2">
             <div className="overflow-x-auto overscroll-x-contain">

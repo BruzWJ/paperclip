@@ -5,7 +5,6 @@
     "tsconfig.base.json",
     "tsconfig.json",
     "pnpm-workspace.yaml",
-    "scripts/cli-bundled-npm-dependencies.mjs",
     "scripts/ensure-plugin-build-deps.mjs"
   ],
   "tasks": {

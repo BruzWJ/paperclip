@@ -256,7 +256,8 @@ Safe scoping guidance:
 - Point provider vaults at the intended AWS account and Region instead of a
   broad central admin role.
 - Enable `ListSecrets` only in accounts where inventory exposure is acceptable.
-- Keep preview/import board-only; agent API keys must not call these routes.
+- Keep preview/import board-only; only authenticated board sessions and board
+  keys may call these routes.
 - Treat AWS tag/name filters as search UX only, not permission enforcement.
 
 Paperclip also blocks importing refs under its own managed namespace as

@@ -56,7 +56,7 @@ type AgentLookup = Map<string, { id: string; name: string }>;
 type ProjectLookup = Map<string, { id: string; name: string }>;
 type SecretLookup = Map<string, CompanySecret>;
 
-type DirtyFieldDescriptor = {
+export type DirtyFieldDescriptor = {
   key: string;
   label: string;
 };
@@ -540,7 +540,7 @@ function RevisionPreview({
   const snapshot = revision.snapshot.routine;
   const triggers = revision.snapshot.triggers;
   const currentSnapshot = currentRevision?.snapshot.routine ?? null;
-  const restoreLabel = isHistorical ? "Restore this revision" : "Restore this revision";
+  const restoreLabel = "Restore this revision";
   const cardWrapper = `rounded-md border transition-colors duration-1000 ${
     highlighted ? "border-emerald-500/40 bg-emerald-500/10" : "border-border"
   }`;
@@ -1320,5 +1320,3 @@ function compareTriggers(
     }
   }
 }
-
-export type RoutineHistoryDirtyFieldDescriptor = DirtyFieldDescriptor;

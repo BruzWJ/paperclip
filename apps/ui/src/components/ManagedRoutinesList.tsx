@@ -34,7 +34,6 @@ export type ManagedRoutinesListItem = {
   title: string;
   status: string;
   routineId?: string | null;
-  href?: string | null;
   resourceKey?: string | null;
   projectId?: string | null;
   assigneeAgentId?: string | null;
@@ -112,7 +111,6 @@ export function ManagedRoutinesList({
     <div className="rounded-lg border border-border">
       {routines.map((routine) => {
         const row = managedRoutineToRow(routine);
-        const href = routine.href ?? (routine.routineId ? `/routines/${routine.routineId}` : "/routines");
         const missingRefs = routine.missingRefs ?? [];
         const canUseRoutine = Boolean(routine.routineId && routine.resourceKey && missingRefs.length === 0);
         const managedBy = routine.managedByPluginDisplayName ?? pluginDisplayName;
@@ -126,7 +124,7 @@ export function ManagedRoutinesList({
               agentById={agentById}
               runningRoutineId={runningRoutineKey}
               statusMutationRoutineId={statusMutationRoutineKey}
-              href={href}
+              routineRouteId={routine.routineId ?? null}
               configureLabel="Configure"
               managedByLabel={managedBy ? `Managed by ${managedBy}` : null}
               runNowButton

@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { tasks } from "@paperclipai/db";
 import {
+  allocateCanonicalTaskIdentityInTx,
   assertCanonicalTaskCreatorProvenance,
   CanonicalTaskAggregateRejected,
   persistCanonicalTaskAggregateInTx,
 } from "../services/canonical-task-aggregate.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
 vi.mock("../services/execution-workspaces.js", () => ({
   reserveTaskExecutionWorkspaceBinding: vi.fn(),
@@ -26,6 +28,8 @@ function ordinaryCollectiveBoardTask(
     ownershipEpoch: 1,
     creatorKind: "user/board",
     creatorUserId: null,
+    taskNumber: 1,
+    identifier: "PAP-1",
     ...overrides,
   };
 }
@@ -41,6 +45,35 @@ function rejectionReason(task: TaskInsert): string {
 }
 
 describe("canonical task aggregate creator provenance", () => {
+  it("atomically allocates one exact company-prefixed task identity", async () => {
+    const harness = createMockDb({
+      update: [[{ taskNumber: 42, taskPrefix: "PAP" }]],
+    });
+
+    await expect(allocateCanonicalTaskIdentityInTx(
+      harness.db as never,
+      "00000000-0000-4000-8000-000000000002",
+      new Date("2026-08-12T00:00:00.000Z"),
+    )).resolves.toEqual({ taskNumber: 42, identifier: "PAP-42" });
+    expect(harness.remaining("update")).toBe(0);
+  });
+
+  it("rejects an identity that does not exactly match the allocated company state", async () => {
+    const harness = createMockDb({
+      select: [[{ taskPrefix: "PAP", taskCounter: 1 }]],
+    });
+
+    await expect(persistCanonicalTaskAggregateInTx(harness.db as never, {
+      task: ordinaryCollectiveBoardTask({ identifier: "ALT-1" }),
+      session: {
+        id: "ses_canonical_identity",
+        now: new Date("2026-08-12T00:00:00.000Z"),
+      },
+      authority: null,
+    })).rejects.toMatchObject({ reason: "task_identifier_invalid" });
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+  });
+
   it("accepts both named-user and collective-board creators", () => {
     expect(() =>
       assertCanonicalTaskCreatorProvenance(

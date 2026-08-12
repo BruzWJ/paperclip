@@ -8,7 +8,6 @@ import { queryKeys } from "@/lib/queryKeys";
 import { isAgentTaskTarget } from "@/lib/company-members";
 import { AgentIcon } from "./AgentIconPicker";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
@@ -47,14 +46,22 @@ interface Draft {
  * of their agents may archive. The one-click Undo/Unarchive affordance and the
  * "Archived by …" attribution live elsewhere (inbox rows / properties pane).
  */
-export function InboxAgentPolicyControl({ companyId }: { companyId: string | null | undefined }) {
+export function InboxAgentPolicyControl({
+  companyId,
+  userId,
+}: {
+  companyId: string | null | undefined;
+  userId: string;
+}) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Draft | null>(null);
   const lastServerKeyRef = useRef<string | null>(null);
 
   const policyQuery = useQuery({
-    queryKey: companyId ? queryKeys.inboxAgentPolicy.mine(companyId) : ["inbox-agent-policy", "none"],
-    queryFn: () => inboxAgentPolicyApi.getMine(companyId!),
+    queryKey: companyId
+      ? queryKeys.inboxAgentPolicy(companyId, userId)
+      : ["inbox-agent-policy", "none"],
+    queryFn: () => inboxAgentPolicyApi.get(companyId!, userId),
     enabled: !!companyId,
   });
   const policy = policyQuery.data;
@@ -86,12 +93,15 @@ export function InboxAgentPolicyControl({ companyId }: { companyId: string | nul
 
   const updateMutation = useMutation({
     mutationFn: (next: Draft) =>
-      inboxAgentPolicyApi.updateMine(companyId!, {
+      inboxAgentPolicyApi.update(companyId!, userId, {
         mode: next.mode,
         allowedAgentIds: next.mode === "allowlist" ? next.allowedAgentIds : [],
       }),
     onSuccess: (saved) => {
-      queryClient.setQueryData<InboxAgentPolicy>(queryKeys.inboxAgentPolicy.mine(companyId!), saved);
+      queryClient.setQueryData<InboxAgentPolicy>(
+        queryKeys.inboxAgentPolicy(companyId!, userId),
+        saved,
+      );
     },
   });
 

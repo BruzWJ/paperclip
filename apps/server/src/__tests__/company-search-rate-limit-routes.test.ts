@@ -84,7 +84,7 @@ describe("company search route rate limiting", () => {
     });
     expect(limited.headers["retry-after"]).toBe("60");
   });
-  it("resolves ownerUserId=me for board actors before invoking search", async () => {
+  it("passes the exact owner user ID without resolving an alias", async () => {
     const search = vi.fn(async (_companyId: string, query: CompanySearchQuery) => createSearchResponse(query));
     const app = express();
     app.use((req, _res, next) => {
@@ -105,7 +105,7 @@ describe("company search route rate limiting", () => {
       }),
     }));
 
-    await request(app).get("/api/companies/company-1/search?q=wizard&ownerUserId=me").expect(200);
+    await request(app).get("/api/companies/company-1/search?q=wizard&ownerUserId=user-1").expect(200);
 
     expect(search).toHaveBeenCalledTimes(1);
     expect(search.mock.calls[0]?.[1].ownerUserId).toBe("user-1");

@@ -2,12 +2,11 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import { invites } from "@paperclipai/db";
 import {
-  HUMAN_COMPANY_MEMBERSHIP_ROLES,
-  grantsForHumanRole,
-  type HumanCompanyMembershipRole,
-  type InviteJoinType,
+  grantsForUserRole,
+  type UserCompanyMembershipRole,
 } from "@paperclipai/shared";
 import { conflict } from "../errors.js";
+import { requireUserRole } from "./company-member-roles.js";
 
 const INVITE_TOKEN_PREFIX = "pcp_invite_";
 const INVITE_TOKEN_ENTROPY_BYTES = 32;
@@ -15,16 +14,12 @@ const INVITE_TOKEN_MAX_RETRIES = 5;
 const COMPANY_INVITE_TTL_MS = 72 * 60 * 60 * 1000;
 
 export type CompanyInviteProvenance =
-  | { source: "board_api"; invitedByUserId: string }
-  | { source: "plugin_host" };
+  { source: "board_api"; invitedByUserId: string } | { source: "plugin_host" };
 
 export interface CreateCompanyInviteInput {
   companyId: string;
   provenance: CompanyInviteProvenance;
-  allowedJoinTypes?: InviteJoinType;
-  humanRole?: HumanCompanyMembershipRole | string | null;
-  defaultsPayload?: Record<string, unknown> | null;
-  agentMessage?: string | null;
+  userRole?: UserCompanyMembershipRole | string | null;
 }
 
 export function createInviteToken(): string {
@@ -40,37 +35,15 @@ export function companyInviteExpiresAt(nowMs: number = Date.now()): Date {
   return new Date(nowMs + COMPANY_INVITE_TTL_MS);
 }
 
-function requireHumanRole(
-  value: HumanCompanyMembershipRole | string | null | undefined,
-): HumanCompanyMembershipRole {
-  const role = value ?? "operator";
-  if (!HUMAN_COMPANY_MEMBERSHIP_ROLES.some((candidate) => candidate === role)) {
-    throw new Error(`Invalid human invite role: ${role}`);
-  }
-  return role as HumanCompanyMembershipRole;
-}
-
 function mergeCompanyInviteDefaults(input: {
-  defaultsPayload: Record<string, unknown> | null | undefined;
-  agentMessage: string | null;
-  humanRole: HumanCompanyMembershipRole | null;
-}): Record<string, unknown> | null {
-  const merged = { ...(input.defaultsPayload ?? {}) };
-  if (input.humanRole) {
-    const existingHuman =
-      typeof merged.human === "object"
-      && merged.human !== null
-      && !Array.isArray(merged.human)
-        ? { ...merged.human as Record<string, unknown> }
-        : {};
-    merged.human = {
-      ...existingHuman,
-      role: input.humanRole,
-      grants: grantsForHumanRole(input.humanRole),
-    };
-  }
-  if (input.agentMessage) merged.agentMessage = input.agentMessage;
-  return Object.keys(merged).length > 0 ? merged : null;
+  userRole: UserCompanyMembershipRole;
+}): Record<string, unknown> {
+  return {
+    user: {
+      role: input.userRole,
+      grants: grantsForUserRole(input.userRole),
+    },
+  };
 }
 
 function isInviteTokenHashCollision(error: unknown): boolean {
@@ -94,8 +67,8 @@ function isInviteTokenHashCollision(error: unknown): boolean {
         ? candidate.message
         : "";
     if (
-      constraint === "invites_token_hash_unique_idx"
-      || message.includes("invites_token_hash_unique_idx")
+      constraint === "invites_token_hash_unique_idx" ||
+      message.includes("invites_token_hash_unique_idx")
     ) {
       return true;
     }
@@ -109,26 +82,17 @@ export async function createCompanyInvite(
 ): Promise<{
   token: string;
   invite: typeof invites.$inferSelect;
-  normalizedAgentMessage: string | null;
 }> {
-  const allowedJoinTypes = input.allowedJoinTypes ?? "both";
-  const humanRole = allowedJoinTypes === "agent"
-    ? null
-    : requireHumanRole(input.humanRole);
-  const normalizedAgentMessage = typeof input.agentMessage === "string"
-    ? input.agentMessage.trim() || null
-    : null;
-  const invitedByUserId = input.provenance.source === "board_api"
-    ? input.provenance.invitedByUserId
-    : null;
+  const userRole = requireUserRole(input.userRole ?? "operator");
+  const invitedByUserId =
+    input.provenance.source === "board_api"
+      ? input.provenance.invitedByUserId
+      : null;
   const insertValues = {
     companyId: input.companyId,
     inviteType: "company_join" as const,
-    allowedJoinTypes,
     defaultsPayload: mergeCompanyInviteDefaults({
-      defaultsPayload: input.defaultsPayload,
-      agentMessage: normalizedAgentMessage,
-      humanRole,
+      userRole,
     }),
     expiresAt: companyInviteExpiresAt(),
     source: input.provenance.source,
@@ -144,7 +108,7 @@ export async function createCompanyInvite(
         .returning()
         .then((rows) => rows[0] ?? null);
       if (!invite) throw new Error("Company invite insert returned no row");
-      return { token, invite, normalizedAgentMessage };
+      return { token, invite };
     } catch (error) {
       if (!isInviteTokenHashCollision(error)) throw error;
     }

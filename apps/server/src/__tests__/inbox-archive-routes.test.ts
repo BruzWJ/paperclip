@@ -3,7 +3,6 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@paperclipai/db";
 import { errorHandler } from "../middleware/index.js";
-import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { taskRoutes } from "../routes/tasks.js";
 import { taskService as createTaskService } from "../services/tasks.js";
 import { createMockDb } from "./helpers/mock-db.js";
@@ -63,7 +62,6 @@ function createApp(db: Db, actor: Express.Request["actor"] = boardActor()) {
     req.actor = actor;
     next();
   });
-  app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", taskRoutes(db, {} as never, { ordinaryTasks: {} as never }));
   app.use(errorHandler);
   return app;
@@ -132,32 +130,6 @@ describe("inbox archive routes", () => {
     await expect(createTaskService(resurfacedHarness.db).getActiveInboxArchiveFields(task, userId)).resolves.toEqual({});
     expect(activeHarness.remaining("select")).toBe(0);
     expect(resurfacedHarness.remaining("select")).toBe(0);
-  });
-
-  it("rejects agent archive and unarchive requests at the generic REST boundary", async () => {
-    const harness = createMockDb();
-    const actor = {
-      type: "agent",
-      source: "internal",
-      agentId,
-      companyId,
-      runId: "00000000-0000-4000-8000-000000000040",
-      onBehalfOfUserId: userId,
-      onBehalfOfMemberships: [{ companyId, membershipRole: "operator", status: "active" }],
-    } as const;
-    const app = createApp(harness.db, actor);
-
-    const archive = await request(app).post(`/api/tasks/${taskId}/inbox-archive`).send({});
-    const unarchive = await request(app).delete(`/api/tasks/${taskId}/inbox-archive`).send({});
-
-    expect(archive.status).toBe(403);
-    expect(unarchive.status).toBe(403);
-    expect(archive.body.code).toBe("compiled_run_interface_required");
-    expect(unarchive.body.code).toBe("compiled_run_interface_required");
-    expect(routeMocks.getById).not.toHaveBeenCalled();
-    expect(routeMocks.archiveInbox).not.toHaveBeenCalled();
-    expect(routeMocks.unarchiveInbox).not.toHaveBeenCalled();
-    expect(harness.calls).toEqual([]);
   });
 
   it("rejects the retired explicit target-user body before loading the task", async () => {

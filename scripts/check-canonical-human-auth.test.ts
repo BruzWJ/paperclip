@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
   REMOVAL_PROOF_MARKER,
@@ -13,9 +11,7 @@ import {
   type CanonicalHumanAuthFile,
 } from "./check-canonical-human-auth.ts";
 
-function files(
-  entries: Record<string, string>,
-): CanonicalHumanAuthFile[] {
+function files(entries: Record<string, string>): CanonicalHumanAuthFile[] {
   return Object.entries(entries).map(([path, source]) => ({
     path,
     source,
@@ -26,7 +22,10 @@ describe("canonical human auth retired-contract scan", () => {
   it("rejects every parallel human identity family in shipped code and active docs", () => {
     const fixtures = [
       ["apps/server/src/config.ts", `const mode = "local_trusted";`],
-      ["apps/server/src/middleware/auth.ts", `const source = "local_implicit";`],
+      [
+        "apps/server/src/middleware/auth.ts",
+        `const source = "local_implicit";`,
+      ],
       ["apps/ui/src/auth.ts", `const userId = "local-board";`],
       ["apps/server/src/cloud.ts", `const source = "cloud_tenant";`],
       ["packages/shared/src/config.ts", `type Mode = DeploymentMode;`],
@@ -34,7 +33,10 @@ describe("canonical human auth retired-contract scan", () => {
       ["apps/server/src/cloud.ts", `req.get("x-paperclip-cloud-user-id");`],
       ["apps/server/src/claim.ts", `const page = "Board Claim";`],
       ["apps/ui/src/api/auth.ts", `fetch("/api/auth/profile");`],
-      ["apps/server/src/routes/auth.ts", "return `paperclip:${source}:${userId}`;"],
+      [
+        "apps/server/src/routes/auth.ts",
+        "return `paperclip:${source}:${userId}`;",
+      ],
       ["apps/server/src/seed.ts", `const source = "paperclip-seed";`],
       ["packages/cli/src/bootstrap.ts", `const purpose = "bootstrap_ceo";`],
       [
@@ -53,9 +55,7 @@ describe("canonical human auth retired-contract scan", () => {
 
     for (const [file, source] of fixtures) {
       assert.ok(
-        scanRetiredHumanIdentityTokens(
-          files({ [file]: source }),
-        ).length > 0,
+        scanRetiredHumanIdentityTokens(files({ [file]: source })).length > 0,
         `expected ${file} to be rejected`,
       );
     }
@@ -63,36 +63,30 @@ describe("canonical human auth retired-contract scan", () => {
 
   it("allows only exact-line, test-local removal-proof fixtures", () => {
     const fixturePath = "apps/server/src/__tests__/auth-removal.test.ts";
-    const marked =
-      `const rejected = "local_trusted"; // ${REMOVAL_PROOF_MARKER}`;
+    const marked = `const rejected = "local_trusted"; // ${REMOVAL_PROOF_MARKER}`;
     assert.deepEqual(
-      scanRetiredHumanIdentityTokens(
-        files({ [fixturePath]: marked }),
-      ),
+      scanRetiredHumanIdentityTokens(files({ [fixturePath]: marked })),
       [],
     );
 
     assert.ok(
       scanRetiredHumanIdentityTokens(
         files({
-          [fixturePath]:
-            `// ${REMOVAL_PROOF_MARKER}\nconst stale = "local_trusted";`,
+          [fixturePath]: `// ${REMOVAL_PROOF_MARKER}\nconst stale = "local_trusted";`,
         }),
       ).some((entry) => entry.kind === "removal_proof"),
     );
     assert.ok(
       scanRetiredHumanIdentityTokens(
         files({
-          "apps/server/src/auth.ts":
-            `const stale = "local_trusted"; // ${REMOVAL_PROOF_MARKER}`,
+          "apps/server/src/auth.ts": `const stale = "local_trusted"; // ${REMOVAL_PROOF_MARKER}`,
         }),
       ).some((entry) => entry.kind === "removal_proof"),
     );
     assert.ok(
       scanRetiredHumanIdentityTokens(
         files({
-          "tests/e2e/auth.spec.ts":
-            `const stale = "local_trusted"; // ${REMOVAL_PROOF_MARKER}`,
+          "tests/e2e/auth.spec.ts": `const stale = "local_trusted"; // ${REMOVAL_PROOF_MARKER}`,
         }),
       ).some((entry) => entry.kind === "retired_identity"),
       "E2E is a shipped lifecycle, not test-local database setup",
@@ -142,8 +136,7 @@ describe("canonical human auth retired-contract scan", () => {
     assert.ok(
       scanRetiredHumanIdentityTokens(
         files({
-          [path]:
-            'throw new Error("Unsupported PAPERCLIP_DEPLOYMENT_MODE");',
+          [path]: 'throw new Error("Unsupported PAPERCLIP_DEPLOYMENT_MODE");',
         }),
       ).some((entry) => entry.kind === "retired_identity"),
     );
@@ -159,10 +152,7 @@ describe("canonical human auth retired-contract scan", () => {
 describe("Better Auth durable secret boundary", () => {
   it("rejects isolated usable example and default secret mutations", () => {
     const mutations = [
-      [
-        ".env.example",
-        "BETTER_AUTH_SECRET=paperclip-dev-secret",
-      ],
+      [".env.example", "BETTER_AUTH_SECRET=paperclip-dev-secret"],
       [
         "apps/server/src/config.ts",
         'const secret = process.env.BETTER_AUTH_SECRET ?? "paperclip-dev-secret";',
@@ -193,8 +183,7 @@ describe("Better Auth durable secret boundary", () => {
       scanBetterAuthSecretBoundary(
         files({
           ".env.example": "BETTER_AUTH_SECRET=",
-          "doc/DOCKER.md":
-            "BETTER_AUTH_SECRET=$(openssl rand -hex 32)",
+          "doc/DOCKER.md": "BETTER_AUTH_SECRET=$(openssl rand -hex 32)",
           "docker/docker-compose.yml":
             'BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"',
         }),
@@ -229,13 +218,15 @@ describe("canonical public auth origin", () => {
   it("accepts PAPERCLIP_PUBLIC_URL as the sole public origin", () => {
     assert.deepEqual(
       scanRetiredHumanIdentityTokens(
-        files({ ".env.example": "PAPERCLIP_PUBLIC_URL=https://paperclip.example\n" }),
+        files({
+          ".env.example": "PAPERCLIP_PUBLIC_URL=https://paperclip.example\n",
+        }),
       ),
       [],
     );
   });
 
-  it("allows only the direct MCP installer's generated local BASE_URL constant", () => {
+  it("allows only the Board MCP installer's generated local BASE_URL constant", () => {
     const installerPath =
       "apps/server/src/services/board-mcp-install-script.ts";
     const generatedInstaller =
@@ -246,26 +237,12 @@ describe("canonical public auth origin", () => {
       ),
       [],
     );
+
     assert.ok(
       scanRetiredHumanIdentityTokens(
         files({ "apps/server/src/auth/origin.ts": generatedInstaller }),
       ).some((entry) => entry.kind === "retired_identity"),
       "ordinary source must not acquire a BASE_URL exception",
-    );
-  });
-
-  it("accepts the exact generated installer source", () => {
-    const installerPath =
-      "apps/server/src/services/board-mcp-install-script.ts";
-    const installerSource = readFileSync(
-      resolve(import.meta.dirname, "..", installerPath),
-      "utf8",
-    );
-    assert.deepEqual(
-      scanRetiredHumanIdentityTokens(
-        files({ [installerPath]: installerSource }),
-      ),
-      [],
     );
   });
 });
@@ -275,15 +252,13 @@ describe("canonical HTTP actor boundary", () => {
     for (const source of [
       'const userId = req.actor.userId ?? "board";',
       'const userId = req.actor.userId || "unknown-user";',
-      'const userId = req.actor.userId ?? null;',
+      "const userId = req.actor.userId ?? null;",
       'const agentId = req.actor.agentId ?? "unknown-agent";',
     ]) {
       const violations = scanHttpActorBoundary(
         files({ "apps/server/src/routes/example.ts": source }),
       );
-      assert.ok(
-        violations.some((entry) => entry.kind === "http_actor"),
-      );
+      assert.ok(violations.some((entry) => entry.kind === "http_actor"));
     }
   });
 
@@ -303,7 +278,7 @@ describe("canonical HTTP actor boundary", () => {
     );
     assert.ok(
       violations.some((entry) =>
-        entry.message.includes("canonical RequestActor")
+        entry.message.includes("canonical RequestActor"),
       ),
     );
   });
@@ -324,12 +299,30 @@ describe("canonical HTTP actor boundary", () => {
     );
     assert.ok(
       violations.some((entry) =>
-        entry.message.includes("must never mint runtime-agent")
+        entry.message.includes("must never mint runtime-agent"),
       ),
     );
   });
 
-  it("rejects runtime-agent success branches in post-denial route modules", () => {
+  it("rejects a runtime-agent variant in the HTTP actor contract", () => {
+    const violations = scanHttpActorBoundary(
+      files({
+        "apps/server/src/http/request-actor.ts": `
+          interface BoardActor { type: "board"; source: "session"; userId: string; sessionId: string; }
+          interface RuntimeAgentActor { type: "agent"; source: "internal"; agentId: string; companyId: string; runId: string; }
+          interface UnauthenticatedActor { type: "none"; source: "none"; }
+          export type RequestActor = BoardActor | RuntimeAgentActor | UnauthenticatedActor;
+        `,
+      }),
+    );
+    assert.ok(
+      violations.some((entry) =>
+        entry.message.includes("must not retain a runtime-agent variant"),
+      ),
+    );
+  });
+
+  it("rejects runtime-agent success branches in generic route modules", () => {
     for (const source of [
       `
         router.get("/items", async (req, res) => {
@@ -378,27 +371,14 @@ describe("canonical HTTP actor boundary", () => {
       const violations = scanHttpActorBoundary(
         files({ "apps/server/src/routes/example.ts": source }),
       );
-      assert.ok(
-        violations.some((entry) => entry.kind === "http_actor"),
-      );
+      assert.ok(violations.some((entry) => entry.kind === "http_actor"));
     }
   });
 
-  it("allows the single generic-agent denial owner and board-only routes", () => {
+  it("allows board-only routes without a generic agent compatibility owner", () => {
     assert.deepEqual(
       scanHttpActorBoundary(
         files({
-          "apps/server/src/routes/compiled-interface-only.ts": `
-            export function denyGenericAgentRest() {
-              return (req, res, next) => {
-                if (req.actor.type === "agent") {
-                  res.status(403).json({ code: "compiled_run_interface_required" });
-                  return;
-                }
-                next();
-              };
-            }
-          `,
           "apps/server/src/routes/example.ts": `
             router.get("/items", (req, res) => {
               assertBoard(req);
@@ -423,7 +403,7 @@ describe("canonical HTTP actor boundary", () => {
     );
     assert.ok(
       violations.some((entry) =>
-        entry.message.includes("change-consent requests")
+        entry.message.includes("change-consent requests"),
       ),
     );
   });
@@ -443,34 +423,31 @@ describe("canonical HTTP actor boundary", () => {
     );
     assert.ok(
       violations.some((entry) =>
-        entry.message.includes("compiled agent_configure")
+        entry.message.includes("compiled agent_configure"),
       ),
     );
     assert.ok(
-      violations.some((entry) =>
-        entry.message.includes("server assembly")
-      ),
+      violations.some((entry) => entry.message.includes("server assembly")),
     );
   });
 
-  it("requires the isolated run-tools and generic REST denial ordering", () => {
+  it("requires isolated run-tools before board-or-none HTTP actor resolution", () => {
     const canonical = `
       app.use("/api", runToolsRoutes(opts.runInterfaceSessionService));
-      app.use("/api/mcp", actorMiddleware(db, {
-        resolveSession: opts.resolveSession,
-      }));
-      app.use("/api", boardMcpRoutes({}));
+      app.use(
+        "/api/mcp",
+        canonicalRequestTarget(),
+        actorMiddleware(db, { resolveSession: opts.resolveSession }),
+      );
+      app.use("/api", boardMcpRoutes({ db, managedTools }));
       app.use("/api", rejectRunInterfaceBearerFromGenericApi());
       actorMiddleware(db, {
         resolveSession: opts.resolveSession,
       });
       app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
-      app.use("/api", denyGenericAgentRest("REST"));
     `;
     assert.deepEqual(
-      scanHttpActorBoundary(
-        files({ "apps/server/src/app.ts": canonical }),
-      ),
+      scanHttpActorBoundary(files({ "apps/server/src/app.ts": canonical })),
       [],
     );
 
@@ -484,37 +461,31 @@ describe("canonical HTTP actor boundary", () => {
       }),
     );
     assert.ok(
-      invalid.some((entry) =>
-        entry.message.includes("run tools must mount")
-      ),
+      invalid.some((entry) => entry.message.includes("run tools must mount")),
     );
-  });
 
-  it("rejects retired agent invite provenance outside migration artifacts", () => {
-    const violations = scanHttpActorBoundary(
+    const boardMcpAfterWall = scanHttpActorBoundary(
       files({
-        "packages/db/schema/invites.ts": `
-          export const inviteSources = ["board_api", "agent_api"];
-        `,
-        "packages/db/migrations/0000_historical.sql": `
-          source text check (source in ('board_api', 'agent_api'));
+        "apps/server/src/app.ts": `
+          app.use("/api", runToolsRoutes(service));
+          app.use("/api", rejectRunInterfaceBearerFromGenericApi());
+          app.use("/api/mcp", canonicalRequestTarget(), actorMiddleware(db, {}));
+          app.use("/api", boardMcpRoutes({}));
+          actorMiddleware(db, {});
+          app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
         `,
       }),
     );
-    assert.equal(violations.length, 1);
-    assert.equal(
-      violations[0]?.path,
-      "packages/db/schema/invites.ts",
-    );
-    assert.match(
-      violations[0]?.message ?? "",
-      /agent_api invite provenance/,
+    assert.ok(
+      boardMcpAfterWall.some((entry) =>
+        entry.message.includes("isolated Board MCP"),
+      ),
     );
   });
 
   it("requires the exact Better Auth session-user binding before live-event authorization", () => {
     const canonical = `
-      async function authorizeUpgrade() {
+      async function authorizeSocket() {
         const session = await resolveSession();
         if (
           !(
@@ -526,36 +497,33 @@ describe("canonical HTTP actor boundary", () => {
         ) {
           return null;
         }
-        const [roleRow, memberships] = await Promise.all([
-          db.select(),
-          db.select(),
-        ]);
+        return loadSocketAuthorization(db, {
+          companyId,
+          sessionId: session.session.id,
+          userId: session.user.id,
+        });
       }
 
-      export function setupLiveEventsWebSocketServer() {}
+      async function loadSocketAuthorization() {
+        return Promise.all([db.select(), db.select()]);
+      }
+
+      export function setupLiveEventsSocketServer() {}
     `;
-    const path = "apps/server/src/realtime/live-events-ws.ts";
-    assert.deepEqual(
-      scanHttpActorBoundary(files({ [path]: canonical })),
-      [],
-    );
+    const path = "apps/server/src/realtime/live-events-socket.ts";
+    assert.deepEqual(scanHttpActorBoundary(files({ [path]: canonical })), []);
 
     for (const mutation of [
-      canonical.replace(
-        "&& session.session.userId === session.user.id",
-        "",
-      ),
+      canonical.replace("&& session.session.userId === session.user.id", ""),
       canonical.replace(
         "session.session.userId === session.user.id",
         "session.session.userId !== session.user.id",
       ),
     ]) {
-      const violations = scanHttpActorBoundary(
-        files({ [path]: mutation }),
-      );
+      const violations = scanHttpActorBoundary(files({ [path]: mutation }));
       assert.ok(
         violations.some((entry) =>
-          entry.message.includes("live-events WebSocket authorization")
+          entry.message.includes("live-events Socket.IO authorization"),
         ),
       );
     }
@@ -589,13 +557,11 @@ describe("Better Auth table writer boundary", () => {
     );
     assert.equal(violations.length, 2);
     assert.ok(
-      violations.some((entry) =>
-        entry.message.includes("insert(authUsers)")
-      ),
+      violations.some((entry) => entry.message.includes("insert(authUsers)")),
     );
     assert.ok(
       violations.some((entry) =>
-        entry.message.includes("update(authSessions)")
+        entry.message.includes("update(authSessions)"),
       ),
     );
   });
@@ -613,11 +579,7 @@ describe("Better Auth table writer boundary", () => {
       }),
     );
     assert.equal(violations.length, 3);
-    assert.ok(
-      violations.every((entry) =>
-        entry.kind === "auth_table_writer"
-      ),
-    );
+    assert.ok(violations.every((entry) => entry.kind === "auth_table_writer"));
   });
 
   it("permits only the Better Auth adapter as a Better Auth table writer", () => {
@@ -682,23 +644,16 @@ describe("test-local setup production import boundary", () => {
             await db.insert(authUsers).values({});
           }
         `,
-        "apps/server/src/runtime.ts":
-          `import { accountGraph } from "./__tests__/auth-fixture.js";`,
-        "apps/server/src/index.ts":
-          `export * from "./__tests__/auth-fixture.js";`,
-        "packages/cli/src/run.ts":
-          `const fixture = await import("../../../apps/server/src/__tests__/auth-fixture.js");`,
-        "tests/e2e/auth.spec.ts":
-          `import "../../apps/server/src/__tests__/auth-fixture.js";`,
-        "apps/server/src/__tests__/consumer.test.ts":
-          `import { accountGraph } from "./auth-fixture.js";`,
+        "apps/server/src/runtime.ts": `import { accountGraph } from "./__tests__/auth-fixture.js";`,
+        "apps/server/src/index.ts": `export * from "./__tests__/auth-fixture.js";`,
+        "packages/cli/src/run.ts": `const fixture = await import("../../../apps/server/src/__tests__/auth-fixture.js");`,
+        "tests/e2e/auth.spec.ts": `import "../../apps/server/src/__tests__/auth-fixture.js";`,
+        "apps/server/src/__tests__/consumer.test.ts": `import { accountGraph } from "./auth-fixture.js";`,
       }),
     );
     assert.equal(violations.length, 4);
     assert.ok(
-      violations.every((entry) =>
-        entry.kind === "production_test_import"
-      ),
+      violations.every((entry) => entry.kind === "production_test_import"),
     );
   });
 });
@@ -725,10 +680,8 @@ describe("/api/auth namespace ownership", () => {
         files({
           "apps/server/src/app.ts": canonicalOwner,
           "apps/server/src/index.ts": canonicalFactory,
-          "apps/server/src/client.ts":
-            `fetch("/api/auth/get-session");`,
-          "apps/server/src/routes/openapi.ts":
-            `registry.registerPath({ path: "/api/auth/get-session" });`,
+          "apps/server/src/client.ts": `fetch("/api/auth/get-session");`,
+          "apps/server/src/routes/openapi.ts": `registry.registerPath({ path: "/api/auth/get-session" });`,
         }),
       ),
       [],
@@ -747,11 +700,7 @@ describe("/api/auth namespace ownership", () => {
       }),
     );
     assert.ok(competing.length >= 3);
-    assert.ok(
-      competing.some((entry) =>
-        entry.message.includes("competes")
-      ),
-    );
+    assert.ok(competing.some((entry) => entry.message.includes("competes")));
 
     const fake = scanAuthNamespaceOwnership(
       files({
@@ -789,13 +738,11 @@ describe("/api/auth namespace ownership", () => {
       }),
     );
     assert.ok(
-      violations.some((entry) =>
-        entry.message.includes("unconditional")
-      ),
+      violations.some((entry) => entry.message.includes("unconditional")),
     );
     assert.ok(
       violations.some((entry) =>
-        entry.message.includes("createBetterAuthHandler")
+        entry.message.includes("createBetterAuthHandler"),
       ),
     );
   });

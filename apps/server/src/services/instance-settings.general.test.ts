@@ -92,4 +92,25 @@ describe("General worktree execution control", () => {
       reason: "settings_read_error",
     });
   });
+
+  it("rejects worktree environment aliases instead of coercing them", async () => {
+    await expect(
+      resolveWorktreeRunExecutionActivationState({
+        getGeneral: async () => baseGeneral,
+        runtimeEnv: { PAPERCLIP_IN_WORKTREE: "1" },
+      }),
+    ).rejects.toThrow('PAPERCLIP_IN_WORKTREE must be exactly "true" or "false"');
+    expect(() =>
+      applyGeneralSettingsPatch(
+        baseGeneral,
+        { enableWorktreeRunExecution: true },
+        {
+          runtimeEnv: {
+            PAPERCLIP_IN_WORKTREE: "true",
+            PAPERCLIP_INSTANCE_ID: " worktree-1",
+          },
+        },
+      ),
+    ).toThrow(/PAPERCLIP_INSTANCE_ID/);
+  });
 });

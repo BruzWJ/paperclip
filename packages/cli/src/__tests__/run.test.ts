@@ -107,10 +107,10 @@ describe("run inspection commands", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
 
     await createProgram().parseAsync([
-      "task", "runs", "PC-1",
+      "task", "runs", TASK_ID,
       "--api-base", "http://localhost:3100",
       "--api-key", "board-token",
     ], { from: "user" });
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:3100/api/tasks/PC-1/runs");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`http://localhost:3100/api/tasks/${TASK_ID}/runs`);
   });
 });

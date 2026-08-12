@@ -4,92 +4,61 @@
 
 import type {
   AcpSessionConfigSelection,
-  AcpSessionConfigValue,
 } from "./acpx-runtime/contract.js";
 
-/** Immutable token limits for one advertised ACP model selection. */
-export interface AdapterModelLimits {
-  contextTokenLimit: number;
-  /**
-   * Present only when the ACP target advertises an independent input cap.
-   * Absence is retained and never reconstructed from another limit.
-   */
-  inputTokenLimit?: number;
-  outputTokenLimit: number;
-}
-
 /**
- * One model/profile selection accepted by the ACP target's required model
+ * One model selection accepted by the ACP target's required model
  * configuration option. `value` is passed unchanged to
  * `session/set_config_option`; Paperclip never parses it as a provider id.
  */
 export interface AdapterModel {
-  id: string;
-  label: string;
+  /** Exact opaque value advertised and accepted by ACPX. */
   value: string;
-  /**
-   * `null` preserves the target's explicit absence of token-limit metadata.
-   * Paperclip must not infer limits from a model name or another catalog.
-   */
-  limits: AdapterModelLimits | null;
-}
-
-export type AdapterModelProfileKey = "cheap";
-
-export interface AdapterModelProfileDefinition {
-  key: AdapterModelProfileKey;
   label: string;
-  description?: string;
-  modelId: string;
 }
 
-// ---------------------------------------------------------------------------
-// Adapter config schema — declarative UI config for server-admitted ACP adapters
-// ---------------------------------------------------------------------------
-
-export interface ConfigFieldOption {
-  label: string;
-  value: string;
-  /** Optional group key for categorizing options (e.g. provider name) */
-  group?: string;
-}
-
-export interface ConfigFieldSchema {
-  key: string;
-  label: string;
-  type: "text" | "select" | "toggle" | "number" | "textarea" | "combobox";
-  options?: readonly ConfigFieldOption[];
-  default?: unknown;
-  hint?: string;
-  required?: boolean;
-  group?: string;
-  /** Optional metadata — not rendered, but available to custom UI logic */
-  meta?: Record<string, unknown>;
-}
-
-export interface AdapterConfigSchema {
-  fields: readonly ConfigFieldSchema[];
-}
-
-export interface AcpAdapterConfigValue {
-  readonly value: AcpSessionConfigValue;
+export interface AcpAdapterSelectValue {
+  readonly value: string;
   readonly label: string;
 }
 
-/** One closed mapping from an operator-visible field to a stable ACP option. */
-export interface AcpAdapterConfigOption {
+interface AcpAdapterConfigOptionBase {
   readonly id: string;
-  readonly configKey: string;
   readonly label: string;
-  readonly required: true;
-  readonly values: readonly AcpAdapterConfigValue[];
-  /**
-   * ACPX advertised a string setting without a closed value list. Paperclip
-   * preserves its generic value verbatim and lets ACPX validate it at
-   * readiness/execution time; it never invents provider-specific choices.
-   */
-  readonly freeform?: true;
+  readonly description?: string;
 }
+
+/** One native text setting advertised by ACPX. */
+export interface AcpAdapterTextConfigOption
+  extends AcpAdapterConfigOptionBase {
+  readonly type: "text";
+  readonly currentValue?: string;
+}
+
+/** One native closed string selection advertised by ACPX. */
+export interface AcpAdapterSelectConfigOption
+  extends AcpAdapterConfigOptionBase {
+  readonly type: "select";
+  readonly currentValue?: string;
+  readonly values: readonly AcpAdapterSelectValue[];
+}
+
+/** One native boolean setting advertised by ACPX. */
+export interface AcpAdapterToggleConfigOption
+  extends AcpAdapterConfigOptionBase {
+  readonly type: "toggle";
+  readonly currentValue: boolean;
+}
+
+/**
+ * The sole board-facing adapter option contract. It is a direct, closed
+ * projection of ACPX session options and is also the source used to validate
+ * immutable `sessionConfigSelections`.
+ */
+export type AcpAdapterConfigOption =
+  | AcpAdapterTextConfigOption
+  | AcpAdapterSelectConfigOption
+  | AcpAdapterToggleConfigOption;
 
 /**
  * Durable ACPX reference. Command argv belongs to ACPX and is resolved only
@@ -99,13 +68,6 @@ export interface AcpAdapterLaunchProfile {
   readonly registryName: string;
 }
 
-export interface AcpAdapterEnvironmentRequirements {
-  readonly cwd: "execution-workspace";
-  readonly additionalDirectories: "authorized-workspace-only";
-  /** Exact non-secret variables required by the frontend; empty is valid. */
-  readonly environmentKeys: readonly string[];
-}
-
 /** Exact public ACPX controls observed during this agent's disposable probe. */
 export interface AcpAdapterRuntimeContract {
   readonly controls: readonly string[];
@@ -113,8 +75,6 @@ export interface AcpAdapterRuntimeContract {
 
 export interface AcpAdapterUiMetadata {
   readonly label: string;
-  readonly description: string;
-  readonly recommended?: boolean;
 }
 
 /**
@@ -129,18 +89,14 @@ export interface AcpxAdapterDefinition {
    */
   readonly version: "acpx-runtime/v1";
   readonly launchProfile: AcpAdapterLaunchProfile;
-  readonly environment: AcpAdapterEnvironmentRequirements;
   /** Dynamic ACPX runtime controls; never a Paperclip capability declaration. */
   readonly runtime: AcpAdapterRuntimeContract;
   readonly ui: AcpAdapterUiMetadata;
-  readonly configSchema: AdapterConfigSchema;
   readonly configOptions: readonly AcpAdapterConfigOption[];
   /** Null when the ACPX target does not expose a configurable model option. */
   readonly modelConfigOptionId: string | null;
   /** Selectable models, or one ACPX-reported fixed current model. */
   readonly models: readonly AdapterModel[];
-  readonly modelProfiles: readonly AdapterModelProfileDefinition[];
-  readonly configurationDoc: string;
 }
 
 /** Canonical immutable adapter/config portion of one execution revision. */
@@ -164,20 +120,6 @@ export interface ServerAdapterModule {
 
 export interface CreateConfigValues {
   adapterType: string;
-  /**
-   * Optional cheap model profile config for new agents on adapters that
-   * support model profiles. Persisted under
-   * `runtimeConfig.modelProfiles.cheap.adapterConfig`, never on the primary
-   * `adapterConfig`.
-  */
-  cheapModel?: string;
-  cheapModelEnabled?: boolean;
-  workspaceStrategyType?: string;
-  workspaceBaseRef?: string;
-  workspaceBranchTemplate?: string;
-  worktreeParentDir?: string;
-  runtimeServicesJson?: string;
-  /** Arbitrary key-value pairs populated by schema-driven config fields. */
-  adapterSchemaValues?: Record<string, unknown>;
-  timeoutSec?: number;
+  /** Exact ACPX session option values keyed by the advertised option id. */
+  adapterSchemaValues?: Record<string, string | boolean>;
 }

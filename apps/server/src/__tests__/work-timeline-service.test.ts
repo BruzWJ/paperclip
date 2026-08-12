@@ -29,6 +29,7 @@ function taskRow(overrides: Record<string, unknown> = {}) {
     projectId: null,
     goalId: null,
     parentId: null,
+    taskNumber: 1,
     identifier: "PAP-1",
     title: "Canonical redesign",
     creatorKind: "system",
@@ -167,6 +168,7 @@ describe("work timeline aggregation", () => {
       expect.objectContaining({
         runId: "run-1",
         actorId: "agent:agent-owner",
+        taskNumber: 1,
         taskIdentifier: "PAP-1",
         status: "succeeded",
       }),

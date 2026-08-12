@@ -3,7 +3,11 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FileTree, buildFileTree } from "./FileTree";
+import {
+  FileTree,
+  buildFileTree,
+  toggleFileTreeCheckedFiles,
+} from "./FileTree";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -26,11 +30,15 @@ describe("FileTree", () => {
   });
 
   function row(path: string) {
-    return container.querySelector(`[data-file-tree-path="${path}"]`) as HTMLButtonElement | null;
+    return container.querySelector(
+      `[data-file-tree-path="${path}"]`,
+    ) as HTMLButtonElement | null;
   }
 
   function checkbox(path: string) {
-    return container.querySelector(`[data-file-tree-checkbox="${path}"]`) as HTMLInputElement | null;
+    return container.querySelector(
+      `[data-file-tree-checkbox="${path}"]`,
+    ) as HTMLInputElement | null;
   }
 
   it("selects file rows and expands directory rows", () => {
@@ -92,6 +100,30 @@ describe("FileTree", () => {
     expect(row("docs")?.getAttribute("aria-checked")).toBe("mixed");
   });
 
+  it("toggles one file or every file below a directory", () => {
+    const nodes = buildFileTree({
+      "docs/a.md": "",
+      "docs/nested/b.md": "",
+      "README.md": "",
+    });
+
+    const oneFile = toggleFileTreeCheckedFiles(
+      nodes,
+      new Set(),
+      "README.md",
+      "file",
+    );
+    expect([...oneFile]).toEqual(["README.md"]);
+
+    const directory = toggleFileTreeCheckedFiles(nodes, oneFile, "docs", "dir");
+    expect(directory).toEqual(
+      new Set(["README.md", "docs/a.md", "docs/nested/b.md"]),
+    );
+    expect(toggleFileTreeCheckedFiles(nodes, directory, "docs", "dir")).toEqual(
+      new Set(["README.md"]),
+    );
+  });
+
   it("renders file badges and host-only file extras", () => {
     const nodes = buildFileTree({
       "wiki/very-long-page-slug.md": "",
@@ -112,16 +144,20 @@ describe("FileTree", () => {
               tooltip: "Synced",
             },
           }}
-          renderFileExtra={(node) => (
-            node.kind === "file" ? <span data-testid="file-extra">{node.name.length} chars</span> : null
-          )}
+          renderFileExtra={(node) =>
+            node.kind === "file" ? (
+              <span data-testid="file-extra">{node.name.length} chars</span>
+            ) : null
+          }
         />,
       );
     });
 
     expect(container.textContent).toContain("fresh");
     expect(container.querySelector("[title='Synced']")).not.toBeNull();
-    expect(container.querySelector("[data-testid='file-extra']")?.textContent).toBe("22 chars");
+    expect(
+      container.querySelector("[data-testid='file-extra']")?.textContent,
+    ).toBe("22 chars");
   });
 
   it("wraps long labels by default and can opt back into truncation", () => {
@@ -141,7 +177,9 @@ describe("FileTree", () => {
       );
     });
 
-    expect(row("wiki/extremely-long-page-slug-that-wraps-on-mobile.md")?.innerHTML).toContain("break-all");
+    expect(
+      row("wiki/extremely-long-page-slug-that-wraps-on-mobile.md")?.innerHTML,
+    ).toContain("break-all");
 
     act(() => {
       root.render(
@@ -156,7 +194,9 @@ describe("FileTree", () => {
       );
     });
 
-    expect(row("wiki/extremely-long-page-slug-that-wraps-on-mobile.md")?.innerHTML).toContain("truncate");
+    expect(
+      row("wiki/extremely-long-page-slug-that-wraps-on-mobile.md")?.innerHTML,
+    ).toContain("truncate");
   });
 
   it("supports tree keyboard expansion and checkbox toggling", () => {
@@ -182,12 +222,16 @@ describe("FileTree", () => {
     const docsRow = row("docs");
     act(() => {
       docsRow?.focus();
-      docsRow?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      docsRow?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
     });
     expect(onToggleDir).toHaveBeenCalledWith("docs");
 
     act(() => {
-      docsRow?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      docsRow?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+      );
     });
     expect(onToggleCheck).toHaveBeenCalledWith("docs", "dir");
   });

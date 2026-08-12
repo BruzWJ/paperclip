@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { User, UserX } from "lucide-react";
+import { User } from "lucide-react";
 import {
   COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS,
   TASK_PRIORITIES,
@@ -12,12 +12,7 @@ import { StatusIcon } from "@/components/StatusIcon";
 import { PriorityIcon } from "@/components/PriorityIcon";
 import { SearchFilterMenu, type FilterMenuOption } from "./SearchFilterMenu";
 import { SearchSortMenu } from "./SearchSortMenu";
-import {
-  applyOwnerToken,
-  ownerToken,
-  updatedWithinLabel,
-  type SearchFilters,
-} from "@/lib/search-filters";
+import { applyOwnerSelectionId, ownerSelectionId, updatedWithinLabel, type SearchFilters } from "@/lib/search-filters";
 
 export interface SearchFilterAgent {
   id: string;
@@ -42,9 +37,7 @@ export interface SearchFilterDataProps {
 }
 
 // Non-terminal statuses — the single-click "Open items" preset from wireframe screen 2.
-const OPEN_STATUS_PRESET: TaskStatus[] = TASK_STATUSES.filter(
-  (status) => status !== "done" && status !== "cancelled",
-);
+const OPEN_STATUS_PRESET: TaskStatus[] = TASK_STATUSES.filter((status) => status !== "done" && status !== "cancelled");
 
 function humanize(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
@@ -88,22 +81,16 @@ export function buildSearchFilterOptions({
   const owner: FilterMenuOption[] = [];
   if (currentUserId) {
     owner.push({
-      value: "me",
+      value: currentUserId,
       label: "Me",
       icon: <User className="h-3.5 w-3.5 text-muted-foreground" />,
       count: count(counts?.ownerUserId, currentUserId),
       searchText: "me mine",
     });
   }
-  owner.push({
-    value: "board",
-    label: "Board",
-    icon: <UserX className="h-3.5 w-3.5 text-muted-foreground" />,
-    searchText: "board escalation",
-  });
   for (const agent of agents) {
     owner.push({
-      value: `agent:${agent.id}`,
+      value: agent.id,
       label: agent.name,
       count: count(counts?.ownerAgentId, agent.id),
       searchText: agent.name,
@@ -151,13 +138,11 @@ export function SearchFilterBar({
 
   function toggleMulti(dimension: "status" | "priority", value: string) {
     const current = (filters[dimension] ?? []) as string[];
-    const next = current.includes(value)
-      ? current.filter((entry) => entry !== value)
-      : [...current, value];
+    const next = current.includes(value) ? current.filter((entry) => entry !== value) : [...current, value];
     onChange({ ...filters, [dimension]: next });
   }
 
-  const selectedOwner = ownerToken(filters, data.currentUserId);
+  const selectedOwner = ownerSelectionId(filters);
 
   return (
     <div className="flex flex-wrap items-center gap-1.5" data-testid="search-filter-bar">
@@ -174,7 +159,7 @@ export function SearchFilterBar({
         label="Owner"
         options={options.owner}
         selected={selectedOwner ? [selectedOwner] : []}
-        onSelect={(value) => onChange(applyOwnerToken(filters, value, data.currentUserId))}
+        onSelect={(value) => onChange(applyOwnerSelectionId(filters, value, data.currentUserId))}
         searchable
         searchPlaceholder="Search owners…"
         emptyMessage="No owners"

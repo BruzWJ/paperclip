@@ -35,7 +35,7 @@ describe("company-members helpers", () => {
   it("keeps task-owner eligibility narrower than task assignment", () => {
     expect(
       isAgentTaskOwnerTarget({
-        status: "active",
+        status: "idle",
         currentAdapterConfigRevisionId: "revision-1",
       }),
     ).toBe(true);
@@ -52,7 +52,7 @@ describe("company-members helpers", () => {
     ).toBe(false);
     expect(
       isAgentTaskOwnerTarget({
-        status: "active",
+        status: "idle",
         currentAdapterConfigRevisionId: null,
       }),
     ).toBe(false);
@@ -154,7 +154,7 @@ describe("company-members helpers", () => {
         }),
       ],
       agents: [
-        { id: "agent-1", name: "CodexCoder", status: "active", icon: "code" },
+        { id: "agent-1", name: "CodexCoder", status: "idle", icon: "code" },
       ],
       projects: [{ id: "project-1", name: "Paperclip App", color: "#336699" }],
     });
@@ -205,7 +205,7 @@ describe("company-members helpers", () => {
   it("appends task mention options after agents and projects, preserving order", () => {
     const options = buildMarkdownMentionOptions({
       agents: [
-        { id: "agent-1", name: "CodexCoder", status: "active", icon: "code" },
+        { id: "agent-1", name: "CodexCoder", status: "idle", icon: "code" },
       ],
       projects: [{ id: "project-1", name: "Paperclip App", color: "#336699" }],
       tasks: [

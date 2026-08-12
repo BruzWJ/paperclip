@@ -1,10 +1,12 @@
 import pc from "picocolors";
 import type { Command } from "commander";
+import { isCanonicalUuid, LOOPBACK_BIND_HOST, resolveServerPort } from "@paperclipai/shared";
 import { getStoredBoardCredential, loginBoardCli } from "../../client/board-auth.js";
 import { buildCliCommandLabel } from "../../client/command-label.js";
 import { readConfig } from "../../config/store.js";
 import { readContext, resolveProfile, type ClientContextProfile } from "../../client/context.js";
 import { ApiRequestError, PaperclipApiClient } from "../../client/http.js";
+import { parseExactApiBase } from "../../client/api-base.js";
 
 export interface BaseClientOptions {
   config?: string;
@@ -13,6 +15,7 @@ export interface BaseClientOptions {
   profile?: string;
   apiBase?: string;
   apiKey?: string;
+  userId?: string;
   companyId?: string;
   json?: boolean;
 }
@@ -20,6 +23,7 @@ export interface BaseClientOptions {
 export interface ResolvedClientContext {
   api: PaperclipApiClient;
   companyId?: string;
+  currentUserId: string | null;
   profileName: string;
   profile: ClientContextProfile;
   json: boolean;
@@ -34,6 +38,7 @@ export function addCommonClientOptions(command: Command, opts?: { includeCompany
     .option("--profile <name>", "CLI context profile name")
     .option("--api-base <url>", "Base URL for the Paperclip API")
     .option("--api-key <token>", "Board bearer token")
+    .option("--user-id <id>", "Exact board user ID for user-scoped routes")
     .option("--json", "Output raw JSON");
 
   if (opts?.includeCompany) {
@@ -56,11 +61,11 @@ export function resolveCommandContext(
   const explicitApiKey = resolvedApiKey.value;
   const storedBoardCredential = explicitApiKey ? null : getStoredBoardCredential(apiBase);
   const apiKey = explicitApiKey || storedBoardCredential?.token;
+  const currentUserId = options.userId === undefined
+    ? storedBoardCredential?.userId ?? null
+    : assertExactAuthUserId(options.userId);
 
-  const companyId =
-    options.companyId?.trim() ||
-    process.env.PAPERCLIP_BOARD_COMPANY_ID?.trim() ||
-    profile.companyId;
+  const companyId = resolveCanonicalCompanyId(options, profile);
 
   if (opts?.requireCompany && !companyId) {
     throw new Error(
@@ -92,6 +97,7 @@ export function resolveCommandContext(
   return {
     api,
     companyId,
+    currentUserId,
     profileName,
     profile,
     json: Boolean(options.json),
@@ -99,26 +105,65 @@ export function resolveCommandContext(
   };
 }
 
+export function assertExactAuthUserId(userId: string): string {
+  if (userId.length === 0) {
+    throw new Error("Expected an exact non-empty auth user ID.");
+  }
+  if (userId.trim() !== userId) {
+    throw new Error("Auth user IDs cannot contain surrounding whitespace.");
+  }
+  return userId;
+}
+
+export function requireCurrentUserId(ctx: ResolvedClientContext): string {
+  if (!ctx.currentUserId) {
+    throw new Error(
+      "This command requires an exact board user ID. Pass --user-id or run `paperclipai auth login` first.",
+    );
+  }
+  return ctx.currentUserId;
+}
+
+function resolveCanonicalCompanyId(
+  options: BaseClientOptions,
+  profile: ClientContextProfile,
+): string | undefined {
+  const candidates = [
+    { source: "--company-id", value: options.companyId },
+    { source: "PAPERCLIP_BOARD_COMPANY_ID", value: process.env.PAPERCLIP_BOARD_COMPANY_ID },
+    { source: "context profile companyId", value: profile.companyId },
+  ];
+  const selected = candidates.find((candidate) => candidate.value !== undefined);
+  if (!selected) return undefined;
+  if (!isCanonicalUuid(selected.value)) {
+    throw new Error(`${selected.source} must be an exact canonical company UUID.`);
+  }
+  return selected.value;
+}
+
 export function resolveApiBase(options: Pick<BaseClientOptions, "apiBase" | "config">, profile: ClientContextProfile = {}): string {
-  return normalizeApiBase(
-    options.apiBase?.trim() ||
-    process.env.PAPERCLIP_BOARD_API_URL?.trim() ||
+  return parseExactApiBase(
+    options.apiBase ||
+    process.env.PAPERCLIP_BOARD_API_URL ||
     profile.apiBase ||
     inferApiBaseFromConfig(options.config),
   );
 }
 
-export function normalizeApiBase(apiBase: string): string {
-  return apiBase.trim().replace(/\/+$/, "");
-}
-
 export function apiPath(strings: TemplateStringsArray, ...values: Array<string | number | boolean | null | undefined>): string {
   let path = strings[0] ?? "";
   values.forEach((value, index) => {
-    if (value === null || value === undefined || String(value).trim() === "") {
-      throw new Error("Cannot build API path with an empty path segment.");
+    const segment = value === null || value === undefined ? "" : String(value);
+    if (segment.length === 0 || segment.trim() !== segment) {
+      throw new Error("Cannot build API path with an empty or padded path segment.");
     }
-    path += `${encodeURIComponent(String(value))}${strings[index + 1] ?? ""}`;
+    if (
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)
+      && !isCanonicalUuid(segment)
+    ) {
+      throw new Error("Cannot build API path with a noncanonical UUID segment.");
+    }
+    path += `${encodeURIComponent(segment)}${strings[index + 1] ?? ""}`;
   });
   return path;
 }
@@ -159,14 +204,25 @@ function resolveApiKey(
   options: Pick<BaseClientOptions, "apiKey">,
   profile: ClientContextProfile,
 ): { value: string | undefined; source: "explicit" | "env" | "profile_env" | "none" } {
-  const optionValue = options.apiKey?.trim();
-  if (optionValue) return { value: optionValue, source: "explicit" };
+  const exactKey = (value: string | undefined, source: string) => {
+    if (value === undefined) return undefined;
+    if (value.length === 0 || value.trim() !== value) {
+      throw new Error(`${source} must be an exact non-empty API key`);
+    }
+    return value;
+  };
 
-  const envValue = process.env.PAPERCLIP_BOARD_API_KEY?.trim();
-  if (envValue) return { value: envValue, source: "env" };
+  const optionValue = exactKey(options.apiKey, "--api-key");
+  if (optionValue !== undefined) return { value: optionValue, source: "explicit" };
 
-  const profileEnvValue = readKeyFromProfileEnv(profile);
-  if (profileEnvValue) return { value: profileEnvValue, source: "profile_env" };
+  const envValue = exactKey(process.env.PAPERCLIP_BOARD_API_KEY, "PAPERCLIP_BOARD_API_KEY");
+  if (envValue !== undefined) return { value: envValue, source: "env" };
+
+  const profileEnvValue = exactKey(
+    readKeyFromProfileEnv(profile),
+    profile.apiKeyEnvVarName ?? "profile API key variable",
+  );
+  if (profileEnvValue !== undefined) return { value: profileEnvValue, source: "profile_env" };
 
   return { value: undefined, source: "none" };
 }
@@ -252,28 +308,17 @@ function renderValue(value: unknown): string {
 }
 
 export function inferApiBaseFromConfig(configPath?: string): string {
-  const envHost = process.env.PAPERCLIP_SERVER_HOST?.trim() || "localhost";
-  let port = Number(process.env.PAPERCLIP_SERVER_PORT || "");
-
-  if (!Number.isFinite(port) || port <= 0) {
-    try {
-      const config = readConfig(configPath);
-      port = Number(config?.server?.port ?? 3100);
-    } catch {
-      port = 3100;
-    }
-  }
-
-  if (!Number.isFinite(port) || port <= 0) {
-    port = 3100;
-  }
-
-  return `http://${envHost}:${port}`;
+  const config = readConfig(configPath);
+  const port = resolveServerPort({
+    environmentValue: process.env.PORT,
+    persistedValue: config?.server.port,
+  });
+  return `http://${LOOPBACK_BIND_HOST}:${port}`;
 }
 
 function readKeyFromProfileEnv(profile: ClientContextProfile): string | undefined {
   if (!profile.apiKeyEnvVarName) return undefined;
-  return process.env[profile.apiKeyEnvVarName]?.trim() || undefined;
+  return process.env[profile.apiKeyEnvVarName];
 }
 
 export function handleCommandError(error: unknown): never {

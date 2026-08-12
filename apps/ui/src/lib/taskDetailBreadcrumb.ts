@@ -1,15 +1,10 @@
 import type { Task } from "@paperclipai/shared";
 
-type TaskDetailSource = "tasks" | "inbox";
-
-type TaskDetailBreadcrumb = {
-  label: string;
-  href: string;
-};
+export type TaskDetailSource = "tasks" | "inbox" | "routine_runs";
 
 export type TaskDetailHeaderSeed = {
   id: string;
-  identifier: string | null;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: string;
   blockerAttention?: Task["blockerAttention"];
@@ -21,7 +16,7 @@ export type TaskDetailHeaderSeed = {
 };
 
 type TaskDetailHeaderSeedSource = Pick<Task, "id" | "title"> & {
-  identifier?: string | null;
+  identifier: string;
   boardPresentationStatus: string;
   blockerAttention?: Task["blockerAttention"];
   priority: string;
@@ -31,25 +26,14 @@ type TaskDetailHeaderSeedSource = Pick<Task, "id" | "title"> & {
   originId?: string | null;
 };
 
-type TaskDetailLocationState = {
-  taskDetailBreadcrumb?: TaskDetailBreadcrumb;
+export type TaskDetailLocationState = {
   taskDetailSource?: TaskDetailSource;
   taskDetailInboxQuickArchiveArmed?: boolean;
   taskDetailHeaderSeed?: TaskDetailHeaderSeed;
 };
 
-const TASK_DETAIL_SOURCE_QUERY_PARAM = "from";
-const TASK_DETAIL_BREADCRUMB_HREF_QUERY_PARAM = "fromHref";
-const TASK_DETAIL_STORAGE_KEY_PREFIX = "paperclip:task-detail-breadcrumb:";
-
-function isTaskDetailBreadcrumb(value: unknown): value is TaskDetailBreadcrumb {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<TaskDetailBreadcrumb>;
-  return typeof candidate.label === "string" && typeof candidate.href === "string";
-}
-
 function isTaskDetailSource(value: unknown): value is TaskDetailSource {
-  return value === "tasks" || value === "inbox";
+  return value === "tasks" || value === "inbox" || value === "routine_runs";
 }
 
 function isTaskDetailHeaderSeed(value: unknown): value is TaskDetailHeaderSeed {
@@ -64,7 +48,7 @@ function isTaskDetailHeaderSeed(value: unknown): value is TaskDetailHeaderSeed {
     || (typeof candidate.blockerAttention === "object" && candidate.blockerAttention !== null);
   return (
     typeof candidate.id === "string"
-    && (candidate.identifier === null || typeof candidate.identifier === "string")
+    && typeof candidate.identifier === "string"
     && (candidate.title === null || typeof candidate.title === "string")
     && typeof candidate.boardPresentationStatus === "string"
     && hasBlockerAttention
@@ -79,7 +63,7 @@ function isTaskDetailHeaderSeed(value: unknown): value is TaskDetailHeaderSeed {
 function createTaskDetailHeaderSeed(task: TaskDetailHeaderSeedSource): TaskDetailHeaderSeed {
   return {
     id: task.id,
-    identifier: task.identifier ?? null,
+    identifier: task.identifier,
     title: task.title,
     boardPresentationStatus: task.boardPresentationStatus,
     blockerAttention: task.blockerAttention,
@@ -109,51 +93,10 @@ export function readTaskDetailHeaderSeed(state: unknown): TaskDetailHeaderSeed |
   return isTaskDetailHeaderSeed(candidate) ? candidate : null;
 }
 
-function readTaskDetailSource(state: unknown): TaskDetailSource | null {
-  if (typeof state !== "object" || state === null) return null;
-  const source = (state as TaskDetailLocationState).taskDetailSource;
-  return isTaskDetailSource(source) ? source : null;
-}
-
-function readTaskDetailSourceFromSearch(search?: string): TaskDetailSource | null {
-  if (!search) return null;
-  const params = new URLSearchParams(search);
-  const source = params.get(TASK_DETAIL_SOURCE_QUERY_PARAM);
-  return isTaskDetailSource(source) ? source : null;
-}
-
-function readTaskDetailBreadcrumbHrefFromSearch(search?: string): string | null {
-  if (!search) return null;
-  const params = new URLSearchParams(search);
-  const href = params.get(TASK_DETAIL_BREADCRUMB_HREF_QUERY_PARAM);
-  return href && href.startsWith("/") ? href : null;
-}
-
-function inferTaskDetailSource(
-  state: Partial<TaskDetailLocationState> | null,
-  breadcrumb: TaskDetailBreadcrumb | null,
-): TaskDetailSource | null {
-  if (isTaskDetailSource(state?.taskDetailSource)) return state.taskDetailSource;
-  if (!breadcrumb) return null;
-  if (breadcrumb.label === "Inbox" || breadcrumb.href.includes("/inbox")) return "inbox";
-  if (breadcrumb.label === "Tasks" || breadcrumb.href.includes("/tasks")) return "tasks";
-  return null;
-}
-
-function breadcrumbForSource(source: TaskDetailSource): TaskDetailBreadcrumb {
-  if (source === "inbox") return { label: "Inbox", href: "/inbox" };
-  return { label: "Tasks", href: "/tasks" };
-}
-
 export function createTaskDetailLocationState(
-  label: string,
-  href: string,
-  source?: TaskDetailSource,
+  source: TaskDetailSource,
 ): TaskDetailLocationState {
-  return {
-    taskDetailBreadcrumb: { label, href },
-    taskDetailSource: source,
-  };
+  return { taskDetailSource: source };
 }
 
 export function armTaskDetailInboxQuickArchive(state: unknown): TaskDetailLocationState {
@@ -167,45 +110,14 @@ export function armTaskDetailInboxQuickArchive(state: unknown): TaskDetailLocati
   };
 }
 
-function readStoredTaskDetailLocationState(taskPathId: string): TaskDetailLocationState | null {
-  if (typeof window === "undefined" || !window.sessionStorage) return null;
-
-  const raw = window.sessionStorage.getItem(`${TASK_DETAIL_STORAGE_KEY_PREFIX}${taskPathId}`);
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<TaskDetailLocationState>;
-    const breadcrumb = isTaskDetailBreadcrumb(parsed.taskDetailBreadcrumb)
-      ? parsed.taskDetailBreadcrumb
-      : null;
-    const source = inferTaskDetailSource(parsed, breadcrumb);
-    if (!breadcrumb || !source) return null;
-    const headerSeed = isTaskDetailHeaderSeed(parsed.taskDetailHeaderSeed)
-      ? parsed.taskDetailHeaderSeed
-      : undefined;
-    return {
-      taskDetailBreadcrumb: breadcrumb,
-      taskDetailSource: source,
-      taskDetailInboxQuickArchiveArmed: parsed.taskDetailInboxQuickArchiveArmed === true,
-      taskDetailHeaderSeed: headerSeed,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function normalizeTaskDetailLocationState(
   state: unknown,
-  search?: string,
 ): TaskDetailLocationState | null {
   if (typeof state === "object" && state !== null) {
-    const candidate = (state as TaskDetailLocationState).taskDetailBreadcrumb;
-    if (isTaskDetailBreadcrumb(candidate)) {
-      const source = inferTaskDetailSource(state as Partial<TaskDetailLocationState>, candidate);
-      if (!source) return null;
+    const source = (state as TaskDetailLocationState).taskDetailSource;
+    if (isTaskDetailSource(source)) {
       const headerSeed = readTaskDetailHeaderSeed(state) ?? undefined;
       return {
-        taskDetailBreadcrumb: candidate,
         taskDetailSource: source,
         taskDetailInboxQuickArchiveArmed:
           (state as TaskDetailLocationState).taskDetailInboxQuickArchiveArmed === true,
@@ -214,53 +126,11 @@ function normalizeTaskDetailLocationState(
     }
   }
 
-  const source = readTaskDetailSourceFromSearch(search);
-  const href = readTaskDetailBreadcrumbHrefFromSearch(search);
-  if (!source) return null;
-
-  return {
-    taskDetailBreadcrumb: href ? { ...breadcrumbForSource(source), href } : breadcrumbForSource(source),
-    taskDetailSource: source,
-    taskDetailInboxQuickArchiveArmed: false,
-  };
-}
-
-export function rememberTaskDetailLocationState(taskPathId: string, state: unknown, search?: string): void {
-  if (typeof window === "undefined" || !window.sessionStorage) return;
-
-  const normalized = normalizeTaskDetailLocationState(state, search);
-  if (!normalized) return;
-
-  window.sessionStorage.setItem(
-    `${TASK_DETAIL_STORAGE_KEY_PREFIX}${taskPathId}`,
-    JSON.stringify(normalized),
-  );
-}
-
-export function createTaskDetailPath(taskPathId: string): string {
-  return `/tasks/${taskPathId}`;
+  return null;
 }
 
 export function readTaskDetailLocationState(
-  taskPathId: string | null | undefined,
   state: unknown,
-  search?: string,
 ): TaskDetailLocationState | null {
-  const normalized = normalizeTaskDetailLocationState(state, search);
-  if (normalized) return normalized;
-  if (!taskPathId) return null;
-  return readStoredTaskDetailLocationState(taskPathId);
-}
-
-export function readTaskDetailBreadcrumb(
-  taskPathId: string | null | undefined,
-  state: unknown,
-  search?: string,
-): TaskDetailBreadcrumb | null {
-  return readTaskDetailLocationState(taskPathId, state, search)?.taskDetailBreadcrumb ?? null;
-}
-
-export function shouldArmTaskDetailInboxQuickArchive(state: unknown): boolean {
-  if (typeof state !== "object" || state === null) return false;
-  return (state as TaskDetailLocationState).taskDetailInboxQuickArchiveArmed === true;
+  return normalizeTaskDetailLocationState(state);
 }

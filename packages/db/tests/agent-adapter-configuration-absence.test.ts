@@ -23,28 +23,38 @@ const generatedMigrationSql = readdirSync(migrationsDirectory)
   .join("\n");
 
 describe("agent adapter configuration absence", () => {
-  it("models an unconfigured agent as nullable columns without defaults", () => {
-    for (const name of ["adapter_type", "adapter_config"]) {
-      expect(column(name).notNull).toBe(false);
-      expect(column(name).default).toBeUndefined();
-    }
+  it("models an unconfigured agent only through a nullable revision reference", () => {
     expect(column("current_adapter_config_revision_id").notNull).toBe(false);
     expect(column("current_adapter_config_revision_id").default).toBeUndefined();
+    expect(
+      getTableConfig(agents).columns.map((candidate) => candidate.name),
+    ).not.toEqual(
+      expect.arrayContaining([
+        "adapter_type",
+        "adapter_config",
+        "runtime_config",
+      ]),
+    );
   });
 
-  it("renders that nullable contract into the generated migration", () => {
+  it("renders that canonical ACPX cutover into the generated migrations", () => {
     const agentsTable = generatedMigrationSql.match(
       /CREATE TABLE "agents" \([\s\S]*?\n\);/,
     )?.[0];
 
     expect(agentsTable).toBeDefined();
-    expect(agentsTable).toContain('"adapter_type" text,');
-    expect(agentsTable).toContain('"adapter_config" jsonb,');
     expect(agentsTable).toContain('"current_adapter_config_revision_id" uuid,');
-    expect(agentsTable).not.toMatch(/"adapter_type"[^\n]*NOT NULL/);
-    expect(agentsTable).not.toMatch(/"adapter_config"[^\n]*NOT NULL/);
     expect(agentsTable).not.toMatch(
       /"current_adapter_config_revision_id"[^\n]*NOT NULL/,
+    );
+    expect(generatedMigrationSql).toContain(
+      'ALTER TABLE "agents" DROP COLUMN "adapter_type";',
+    );
+    expect(generatedMigrationSql).toContain(
+      'ALTER TABLE "agents" DROP COLUMN "adapter_config";',
+    );
+    expect(generatedMigrationSql).toContain(
+      'ALTER TABLE "agents" DROP COLUMN "runtime_config";',
     );
   });
 });

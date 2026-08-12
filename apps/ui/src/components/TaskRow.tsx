@@ -1,10 +1,8 @@
 import type { ReactNode } from "react";
 import type { Task } from "@paperclipai/shared";
-import { Link } from "@/lib/router";
+import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 import { Archive, Flag } from "lucide-react";
 import {
-  createTaskDetailPath,
-  rememberTaskDetailLocationState,
   withTaskDetailHeaderSeed,
 } from "../lib/taskDetailBreadcrumb";
 import { cn } from "../lib/utils";
@@ -75,8 +73,7 @@ export function TaskRow({
   chevronInGuide = false,
   hideDivider = false,
 }: TaskRowProps) {
-  const taskPathId = task.identifier ?? task.id;
-  const identifier = task.identifier ?? task.id.slice(0, 8);
+  const identifier = task.identifier;
   // A row participates in the unread system whenever `unreadState` is supplied
   // (inbox rows). It then reserves a fixed leading dot slot on all rows — read
   // and unread alike — so the mark-read dot sits in the far-left gutter without
@@ -143,8 +140,9 @@ export function TaskRow({
        * actions), so wrapping their slots in an anchor would create invalid
        * nested interactive controls.
        */}
-      <Link
-        to={createTaskDetailPath(taskPathId)}
+      <TaskLinkQuicklook
+        taskId={task.id}
+        taskNumber={task.taskNumber}
         state={detailState}
         disableTaskQuicklook
         taskPrefetch={task}
@@ -152,7 +150,6 @@ export function TaskRow({
         id={checklistRowId}
         aria-label={`Open task ${identifier}: ${task.title}`}
         aria-current={checklistCurrentStep ? "step" : undefined}
-        onClickCapture={() => rememberTaskDetailLocationState(taskPathId, detailState)}
         onMouseEnter={onMouseEnter}
         className="absolute inset-0 z-10 rounded-lg"
       />

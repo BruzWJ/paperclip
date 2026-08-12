@@ -22,11 +22,11 @@ import {
   type ChangeEvent,
   type DragEvent as ReactDragEvent,
   type ErrorInfo,
-  type KeyboardEvent as ReactKeyboardEvent,
   type Ref,
   type ReactNode,
 } from "react";
-import { Link, useLocation } from "@/lib/router";
+import { Link, useLocation } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import type {
   Agent,
   TaskAttachment,
@@ -115,22 +115,12 @@ import {
 import { buildAgentMentionHref } from "@paperclipai/shared";
 import { cn, formatDateTime, formatShortDate } from "../lib/utils";
 import { liveBlueBadge } from "../lib/status-colors";
-import {
-  nextWorkMode,
-  titleForPendingWorkMode,
-  workModeMetaFor,
-  workModeMetaList,
-} from "../lib/work-mode-meta";
+import { workModeMetaFor } from "../lib/work-mode-meta";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   AlertTriangle,
   ArrowRight,
@@ -162,19 +152,15 @@ interface TaskChatMessageContext {
   stopRunLabel?: string;
   stoppingRunLabel?: string;
   stopRunVariant?: "stop" | "pause";
-  runFinalizationActions?: readonly TaskChatRunFinalizationAction[];
   onInterruptQueued?: (runId: string) => Promise<void>;
   onCancelQueued?: (commentId: string) => void;
   onImageClick?: (src: string) => void;
   onUploadImage?: (file: File) => Promise<string>;
-  taskStatus?: string;
   onReply?: (target: TaskChatReplyTarget) => void;
   onLoadMoreCommentGroup?: (rootCommentId: string) => Promise<void> | void;
 }
 
-const TaskChatCtx = createContext<TaskChatMessageContext>({
-  taskStatus: undefined,
-});
+const TaskChatCtx = createContext<TaskChatMessageContext>({});
 
 function truncateReplyPreview(text: string): string {
   const compact = text.replace(/\s+/g, " ").trim();
@@ -186,7 +172,8 @@ function replyTargetForMessage(
   authorLabel: string,
 ): TaskChatReplyTarget | null {
   const custom = message.metadata.custom as Record<string, unknown>;
-  const commentId = typeof custom.commentId === "string" ? custom.commentId : null;
+  const commentId =
+    typeof custom.commentId === "string" ? custom.commentId : null;
   if (!commentId || custom.canReply !== true) return null;
   return {
     commentId,
@@ -206,7 +193,8 @@ function TaskChatImmediateParentLabel({
   if (
     typeof reference.authorLabel !== "string" ||
     typeof reference.excerpt !== "string"
-  ) return null;
+  )
+    return null;
   return (
     <div className="mb-1 ml-2 max-w-(--pct-85) border-l-2 border-border pl-2 text-xs text-muted-foreground">
       <span className="font-medium text-foreground/80">
@@ -220,15 +208,6 @@ function TaskChatImmediateParentLabel({
 
 const AGENT_COMMENT_BUBBLE_WIDTH_CLASS =
   "max-w-(--sz-calc-7) sm:max-w-(--pct-85)";
-
-export type TaskChatRunFinalizationAction = {
-  id: "cancel" | "done";
-  label: string;
-  pendingLabel: string;
-  onSelect: (runId: string) => Promise<void> | void;
-  isPending?: boolean;
-  disabled?: boolean;
-};
 
 export interface TaskChatReplyTarget {
   commentId: string;
@@ -350,9 +329,7 @@ interface TaskChatComposerProps {
   userLabelMap?: ReadonlyMap<string, string> | null;
   composerDisabledReason?: string | null;
   composerHint?: string | null;
-  taskStatus?: string;
   taskWorkMode?: TaskWorkMode;
-  onWorkModeChange?: (workMode: TaskWorkMode) => Promise<void> | void;
   replyTarget?: TaskChatReplyTarget | null;
   onClearReply?: () => void;
   onReplySubmitted?: () => void;
@@ -390,7 +367,6 @@ interface TaskChatThreadProps {
   stopRunLabel?: string;
   stoppingRunLabel?: string;
   stopRunVariant?: "stop" | "pause";
-  runFinalizationActions?: readonly TaskChatRunFinalizationAction[];
   imageUploadHandler?: (file: File) => Promise<string>;
   onAttachImage?: (file: File) => Promise<TaskAttachment | void>;
   draftKey?: string;
@@ -401,7 +377,6 @@ interface TaskChatThreadProps {
   mentions?: MentionOption[];
   composerDisabledReason?: string | null;
   composerHint?: string | null;
-  onWorkModeChange?: (workMode: TaskWorkMode) => Promise<void> | void;
   showComposer?: boolean;
   showJumpToLatest?: boolean;
   autoScrollToHashOnInitialLoad?: boolean;
@@ -598,9 +573,7 @@ function TaskChatFallbackThread({
                 <div className="space-y-2">
                   {lines.length > 0 ? (
                     lines.map((line, index) => (
-                      <MarkdownBody
-                        key={`${message.id}:fallback:${index}`}
-                      >
+                      <MarkdownBody key={`${message.id}:fallback:${index}`}>
                         {line}
                       </MarkdownBody>
                     ))
@@ -893,7 +866,6 @@ function TaskChatChainOfThought({
                   args={tool.args}
                   argsText={tool.argsText}
                   result={tool.result}
-                  isError={false}
                 />
               ))}
             </>
@@ -1074,13 +1046,11 @@ function TaskChatToolPart({
   args,
   argsText,
   result,
-  isError,
 }: {
   toolName: string;
   args?: unknown;
   argsText?: string;
   result?: unknown;
-  isError?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rawArgsText = argsText ?? "";
@@ -1302,8 +1272,13 @@ function TaskChatUserMessage({
   message: ThreadMessage;
   isInterruptingQueuedRun: boolean;
 }) {
-  const { onInterruptQueued, onCancelQueued, currentUserId, userProfileMap, onReply } =
-    useContext(TaskChatCtx);
+  const {
+    onInterruptQueued,
+    onCancelQueued,
+    currentUserId,
+    userProfileMap,
+    onReply,
+  } = useContext(TaskChatCtx);
   const custom = message.metadata.custom as Record<string, unknown>;
   const anchorId =
     typeof custom.anchorId === "string" ? custom.anchorId : undefined;
@@ -1321,8 +1296,7 @@ function TaskChatUserMessage({
   const followUpRequested = custom.followUpRequested === true;
   const queueReason =
     typeof custom.queueReason === "string" ? custom.queueReason : null;
-  const queueBadgeLabel =
-    queueReason === "hold" ? "\u23f8 Held" : "Queued";
+  const queueBadgeLabel = queueReason === "hold" ? "\u23f8 Held" : "Queued";
   const pending = custom.clientStatus === "pending";
   const queueTargetRunId =
     typeof custom.queueTargetRunId === "string"
@@ -1554,13 +1528,13 @@ function TaskChatAssistantMessage({
   isRunActive: boolean;
   isStoppingRun: boolean;
 }) {
+  const companyId = useCompanyRouteId();
   const {
     agentMap,
     onStopRun,
     stopRunLabel = "Stop run",
     stoppingRunLabel = "Stopping...",
     stopRunVariant = "stop",
-    runFinalizationActions = [],
     onReply,
   } = useContext(TaskChatCtx);
   const custom = message.metadata.custom as Record<string, unknown>;
@@ -1577,6 +1551,7 @@ function TaskChatAssistantMessage({
   const runId = typeof custom.runId === "string" ? custom.runId : null;
   const runAgentId =
     typeof custom.runAgentId === "string" ? custom.runAgentId : null;
+  const runAgentRef = runAgentId;
   const runStatus =
     typeof custom.runStatus === "string" ? custom.runStatus : null;
   const agentId = authorAgentId ?? runAgentId;
@@ -1596,8 +1571,6 @@ function TaskChatAssistantMessage({
     typeof custom.waitingText === "string" ? custom.waitingText : "";
   const isRunning =
     message.role === "assistant" && message.status?.type === "running";
-  const runHref =
-    runId && runAgentId ? `/agents/${runAgentId}/runs/${runId}` : null;
   const canStopRun =
     Boolean(runId) &&
     (isRunActive || runStatus === "queued" || runStatus === "running");
@@ -1638,7 +1611,6 @@ function TaskChatAssistantMessage({
       setFolded(nextFolded);
     }
   }
-
 
   const followUpRequested = custom.followUpRequested === true;
 
@@ -1768,9 +1740,14 @@ function TaskChatAssistantMessage({
               {isStoppingRun ? stoppingRunLabel : stopRunLabel}
             </DropdownMenuItem>
           ) : null}
-          {runHref ? (
+          {runId && runAgentRef ? (
             <DropdownMenuItem asChild>
-              <Link to={runHref} target="_blank" rel="noreferrer noopener">
+              <Link
+                to="/$companyId/agents/$agentId/runs/$runId"
+                params={{ companyId, agentId: runAgentRef, runId }}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
                 <Search className="mr-2 h-3.5 w-3.5" />
                 View run
               </Link>
@@ -2003,6 +1980,8 @@ function SystemNoticeCommentRow({
     : null;
   const runAgentId =
     typeof custom.runAgentId === "string" ? custom.runAgentId : null;
+  const runAgent = runAgentId ? (agentMap?.get(runAgentId) ?? null) : null;
+  const runAgentRef = runAgent?.id ?? null;
   const runId = typeof custom.runId === "string" ? custom.runId : null;
   const authorType =
     typeof custom.authorType === "string" ? custom.authorType : null;
@@ -2014,25 +1993,20 @@ function SystemNoticeCommentRow({
     .join("\n\n");
   const [copied, setCopied] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const replyTarget = replyTargetForMessage(
-    message,
-    authorName ?? "Paperclip",
-  );
+  const replyTarget = replyTargetForMessage(message, authorName ?? "Paperclip");
 
   const source = (() => {
-    const runAgentName = runAgentId
-      ? (agentMap?.get(runAgentId)?.name ?? null)
-      : null;
+    const runAgentName = runAgent?.name ?? null;
     if (authorType === "system") {
       const label = runAgentName ?? "Paperclip";
-      if (runAgentId && runId)
-        return { label, href: `/agents/${runAgentId}/runs/${runId}` };
+      if (runAgentRef && runId) return { label, agentId: runAgentRef, runId };
       return { label };
     }
-    if (runAgentId && runId) {
+    if (runAgentRef && runId) {
       return {
         label: authorName ?? runAgentName ?? "Paperclip",
-        href: `/agents/${runAgentId}/runs/${runId}`,
+        agentId: runAgentRef,
+        runId,
       };
     }
     if (authorName) return { label: authorName };
@@ -2055,7 +2029,7 @@ function SystemNoticeCommentRow({
       ? new Date(message.createdAt).toISOString()
       : undefined,
     source,
-    runAgentId,
+    runAgentId: runAgentRef,
   });
 
   const handleCopy = () => {
@@ -2199,6 +2173,7 @@ function TaskChatMetadataRow({
 }
 
 function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
+  const companyId = useCompanyRouteId();
   const { agentMap, currentUserId, userLabelMap } = useContext(TaskChatCtx);
   const custom = message.metadata.custom as Record<string, unknown>;
   const anchorId =
@@ -2206,6 +2181,8 @@ function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
   const runId = typeof custom.runId === "string" ? custom.runId : null;
   const runAgentId =
     typeof custom.runAgentId === "string" ? custom.runAgentId : null;
+  const runAgent = runAgentId ? (agentMap?.get(runAgentId) ?? null) : null;
+  const runAgentRef = runAgent?.id ?? null;
   const runAgentName =
     typeof custom.runAgentName === "string" ? custom.runAgentName : null;
   const runStatus =
@@ -2308,17 +2285,14 @@ function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
             </div>
           </div>
         ) : null}
-
       </TaskChatMetadataRow>
     );
   }
 
   const displayedRunAgentName =
     runAgentName ??
-    (runAgentId
-      ? (agentMap?.get(runAgentId)?.name ?? runAgentId.slice(0, 8))
-      : null);
-  const runAgentIcon = runAgentId ? agentMap?.get(runAgentId)?.icon : undefined;
+    (runAgent ? runAgent.name : runAgentId ? runAgentId.slice(0, 8) : null);
+  const runAgentIcon = runAgent?.icon;
   if (
     custom.kind === "run" &&
     runId &&
@@ -2335,19 +2309,33 @@ function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
     return (
       <TaskChatMetadataRow anchorId={anchorId} icon={rowIcon}>
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-          <Link
-            to={`/agents/${runAgentId}`}
-            className="font-medium text-foreground transition-colors hover:underline"
-          >
-            {displayedRunAgentName}
-          </Link>
+          {runAgentRef ? (
+            <Link
+              to="/$companyId/agents/$agentId"
+              params={{ companyId, agentId: runAgentRef }}
+              className="font-medium text-foreground transition-colors hover:underline"
+            >
+              {displayedRunAgentName}
+            </Link>
+          ) : (
+            <span className="font-medium text-foreground">
+              {displayedRunAgentName}
+            </span>
+          )}
           <span className="text-muted-foreground">run</span>
-          <Link
-            to={`/agents/${runAgentId}/runs/${runId}`}
-            className="inline-flex items-center rounded-md border border-border bg-accent/40 px-1.5 py-0.5 font-mono text-(length:--text-nano) text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-          >
-            {runId.slice(0, 8)}
-          </Link>
+          {runAgentRef ? (
+            <Link
+              to="/$companyId/agents/$agentId/runs/$runId"
+              params={{ companyId, agentId: runAgentRef, runId }}
+              className="inline-flex items-center rounded-md border border-border bg-accent/40 px-1.5 py-0.5 font-mono text-(length:--text-nano) text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            >
+              {runId.slice(0, 8)}
+            </Link>
+          ) : (
+            <span className="inline-flex items-center rounded-md border border-border bg-accent/40 px-1.5 py-0.5 font-mono text-(length:--text-nano) text-muted-foreground">
+              {runId.slice(0, 8)}
+            </span>
+          )}
           <RunStatusBadge
             status={runStatus}
             operatorInterrupted={custom.runOperatorInterrupted === true}
@@ -2377,11 +2365,6 @@ function taskChatMessageKind(message: ThreadMessage): string {
   return typeof custom.kind === "string" ? custom.kind : message.role;
 }
 
-function taskChatMessageCommentId(message: ThreadMessage): string | null {
-  const custom = taskChatMessageCustom(message);
-  return typeof custom.commentId === "string" ? custom.commentId : null;
-}
-
 function taskChatMessageRunId(message: ThreadMessage): string | null {
   const custom = taskChatMessageCustom(message);
   return typeof custom.runId === "string" ? custom.runId : null;
@@ -2395,7 +2378,6 @@ function taskChatMessageQueueTargetRunId(
     ? custom.queueTargetRunId
     : null;
 }
-
 
 function taskChatMessageRunIsActive(
   message: ThreadMessage,
@@ -2971,7 +2953,11 @@ function TaskChatCommentGroupContinuation({
           {loading ? (
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
           ) : null}
-          {loading ? "Loading replies…" : error ? "Retry replies" : "Load more replies"}
+          {loading
+            ? "Loading replies…"
+            : error
+              ? "Retry replies"
+              : "Load more replies"}
         </Button>
       ) : null}
     </div>
@@ -2987,8 +2973,7 @@ const TaskChatMessageRow = memo(function TaskChatMessageRow({
   const kind = taskChatMessageKind(message);
   const custom = message.metadata.custom as Record<string, unknown>;
   const isGroupedEntry =
-    typeof custom.boardGroupRootId === "string" &&
-    custom.boardIsRoot !== true;
+    typeof custom.boardGroupRootId === "string" && custom.boardIsRoot !== true;
   const isRunActive = taskChatMessageRunIsActive(message, activeRunIds);
   const isStoppingRun = taskChatMessageRunIsStopping(message, stoppingRunId);
   const isInterruptingQueuedRun = taskChatMessageQueuedRunIsInterrupting(
@@ -3013,9 +2998,7 @@ const TaskChatMessageRow = memo(function TaskChatMessageRow({
 
   return (
     <div
-      className={cn(
-        isGroupedEntry && "ml-4 border-l border-border/60 pl-3",
-      )}
+      className={cn(isGroupedEntry && "ml-4 border-l border-border/60 pl-3")}
       data-testid="task-chat-message-row"
       data-message-role={message.role}
       data-message-kind={kind}
@@ -3075,9 +3058,7 @@ const TaskChatComposer = forwardRef<
     userLabelMap = null,
     composerDisabledReason = null,
     composerHint = null,
-    taskStatus,
     taskWorkMode,
-    onWorkModeChange,
     replyTarget = null,
     onClearReply,
     onReplySubmitted,
@@ -3100,11 +3081,7 @@ const TaskChatComposer = forwardRef<
     null,
   );
   const resolvedTaskWorkMode: TaskWorkMode = taskWorkMode ?? "standard";
-  const [pendingWorkMode, setPendingWorkMode] = useState<TaskWorkMode>(
-    resolvedTaskWorkMode,
-  );
-  const [workModeMenuOpen, setWorkModeMenuOpen] = useState(false);
-  const canToggleWorkMode = typeof onWorkModeChange === "function";
+  const taskWorkModeMeta = workModeMetaFor(resolvedTaskWorkMode);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const attachInputId = useId();
   const ownerTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -3161,10 +3138,6 @@ const TaskChatComposer = forwardRef<
     setOwnerTarget(effectiveSuggestedOwnerValue);
   }, [effectiveSuggestedOwnerValue]);
 
-  useEffect(() => {
-    setPendingWorkMode(resolvedTaskWorkMode);
-  }, [resolvedTaskWorkMode]);
-
   useImperativeHandle(
     forwardedRef,
     () => ({
@@ -3212,14 +3185,10 @@ const TaskChatComposer = forwardRef<
       composerContainerRef.current,
     );
 
-    const workModeChanged = pendingWorkMode !== resolvedTaskWorkMode;
     setIsSubmitting(true);
     onReplyPendingChange?.(true);
     setBody("");
     try {
-      if (workModeChanged && onWorkModeChange) {
-        await onWorkModeChange(pendingWorkMode);
-      }
       const appendPromise = api.thread().append({
         role: "user",
         content: [{ type: "text", text: submittedBody }],
@@ -3229,9 +3198,7 @@ const TaskChatComposer = forwardRef<
           custom: {
             ...(ownerChange ? { ownerChange } : {}),
             ...(mentionAgentId ? { mentionAgentId } : {}),
-            ...(replyTarget
-              ? { replyToCommentId: replyTarget.commentId }
-              : {}),
+            ...(replyTarget ? { replyToCommentId: replyTarget.commentId } : {}),
           },
         },
       });
@@ -3389,9 +3356,9 @@ const TaskChatComposer = forwardRef<
   const agentMentionOptions = useMemo<OwnerAgentMention[]>(
     () =>
       mentions
-        .filter((m) => (m.kind ?? "agent") === "agent" && (m.agentId ?? m.id))
+        .filter((m) => m.kind === "agent")
         .map((m) => ({
-          agentId: m.agentId ?? m.id.replace(/^agent:/, ""),
+          agentId: m.agentId,
           name: m.name,
         })),
     [mentions],
@@ -3443,9 +3410,9 @@ const TaskChatComposer = forwardRef<
   function insertCoachMention() {
     if (!plainNameCandidate) return;
     const option = mentions.find(
-      (m) =>
-        (m.agentId ?? m.id.replace(/^agent:/, "")) ===
-        plainNameCandidate.agentId,
+      (mention): mention is Extract<MentionOption, { kind: "agent" }> =>
+        mention.kind === "agent" &&
+        mention.agentId === plainNameCandidate.agentId,
     );
     const agentId = plainNameCandidate.agentId;
     const name = option?.name ?? plainNameCandidate.matchedText;
@@ -3471,34 +3438,17 @@ const TaskChatComposer = forwardRef<
     );
   }
 
-  const workModeOptions = workModeMetaList();
-  const pendingWorkModeMeta = workModeMetaFor(pendingWorkMode);
-  const PendingWorkModeIcon = pendingWorkModeMeta.icon;
-
-  function handleComposerKeyDown(evt: ReactKeyboardEvent<HTMLDivElement>) {
-    // Match the period via both `code` and `key`: iOS Safari with a hardware
-    // keyboard often leaves `code` empty for cmd-period, so relying on it alone
-    // lets the event fall through and triggers Safari's default cancel/dismiss
-    // (which closes the view). Catching `key === "."` keeps the shortcut working
-    // on iOS while preserving desktop behavior.
-    const isPeriod = evt.code === "Period" || evt.key === ".";
-    if (!(evt.metaKey || evt.ctrlKey) || !isPeriod) return;
-    evt.preventDefault();
-    setPendingWorkMode((current) => nextWorkMode(current));
-  }
-
   return (
     <div
       ref={composerContainerRef}
       data-testid="task-chat-composer"
-      data-pending-work-mode={pendingWorkMode}
+      data-pending-work-mode={resolvedTaskWorkMode}
       className={cn(
         "relative rounded-md border border-border/70 bg-background/95 p-(--sz-15px) shadow-(--shadow-extract-4) backdrop-blur transition-(--tp-border-color-background-color-box-shadow) duration-150 supports-[backdrop-filter]:bg-background/85 dark:shadow-(--shadow-extract-5)",
-        pendingWorkModeMeta.classes.container,
+        taskWorkModeMeta.classes.container,
         isDragOver &&
           "border-primary/45 bg-background shadow-(--shadow-extract-7)",
       )}
-      onKeyDownCapture={handleComposerKeyDown}
       onDragEnterCapture={handleFileDragEnter}
       onDragOverCapture={handleFileDragOver}
       onDragLeaveCapture={handleFileDragLeave}
@@ -3537,7 +3487,10 @@ const TaskChatComposer = forwardRef<
             <span className="font-medium text-foreground">
               {replyTarget.authorLabel}
             </span>
-            <span className="text-muted-foreground"> · {replyTarget.preview}</span>
+            <span className="text-muted-foreground">
+              {" "}
+              · {replyTarget.preview}
+            </span>
           </div>
           <Button
             type="button"
@@ -3671,68 +3624,6 @@ const TaskChatComposer = forwardRef<
               </Button>
             </>
           ) : null}
-          {canToggleWorkMode ? (
-            <Popover open={workModeMenuOpen} onOpenChange={setWorkModeMenuOpen}>
-              <PopoverTrigger asChild>
-                {/* Single persistent mode chip (PAP-95b mockup rev 5): yellow in
-                    planning, neutral in standard, caret opens the switch menu. */}
-                <button
-                  type="button"
-                  data-testid="task-chat-composer-work-mode-toggle"
-                  data-pending-work-mode={pendingWorkMode}
-                  aria-haspopup="menu"
-                  aria-expanded={workModeMenuOpen}
-                  aria-pressed={pendingWorkMode !== "standard"}
-                  aria-keyshortcuts="Meta+Period Control+Period"
-                  title={titleForPendingWorkMode(pendingWorkMode)}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-(length:--text-micro) font-semibold transition-colors",
-                    pendingWorkModeMeta.classes.chip,
-                  )}
-                >
-                  <PendingWorkModeIcon className="h-3.5 w-3.5" aria-hidden />
-                  <span>{pendingWorkModeMeta.label}</span>
-                  <ChevronDown className="h-3 w-3 opacity-60" aria-hidden />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                className="w-44 p-1"
-                align="start"
-                data-testid="task-chat-composer-work-mode-menu"
-              >
-                {workModeOptions.map((option) => {
-                  const Icon = option.icon;
-                  const active = option.value === pendingWorkMode;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      data-testid={`task-chat-composer-work-mode-menu-${option.value}`}
-                      data-pending-work-mode={pendingWorkMode}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/50",
-                        active && "bg-accent",
-                        option.classes.menuItem,
-                      )}
-                      onClick={() => {
-                        setPendingWorkMode(option.value);
-                        setWorkModeMenuOpen(false);
-                      }}
-                    >
-                      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      <span>{option.label}</span>
-                      {active ? (
-                        <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      ) : null}
-                    </button>
-                  );
-                })}
-                <div className="mt-1 border-t px-2 py-1.5 text-(length:--text-nano) text-muted-foreground">
-                  Cmd/Ctrl+. cycles modes
-                </div>
-              </PopoverContent>
-            </Popover>
-          ) : null}
         </div>
 
         {enableOwnerChange && ownerOptions.length > 0 ? (
@@ -3822,7 +3713,6 @@ export function TaskChatThread({
   stopRunLabel,
   stoppingRunLabel,
   stopRunVariant,
-  runFinalizationActions,
   imageUploadHandler,
   onAttachImage,
   draftKey,
@@ -3847,13 +3737,13 @@ export function TaskChatThread({
   composerRef,
   composerAccessory,
   taskWorkMode,
-  onWorkModeChange,
   onRefreshLatestComments,
   ownerUserId = null,
   onResumeFromBacklog,
   resumeFromBacklogPending = false,
 }: TaskChatThreadProps) {
   const location = useLocation();
+  const locationHash = location.hash ? `#${location.hash}` : "";
   const lastScrolledHashRef = useRef<string | null>(null);
   const didInitialHashScrollDecisionRef = useRef(false);
   const virtualizedThreadRef =
@@ -3870,17 +3760,24 @@ export function TaskChatThread({
   const latestSettleTimeoutsRef = useRef<number[]>([]);
   const latestSettleCleanupRef = useRef<(() => void) | null>(null);
   const [bottomSpacerHeight, setBottomSpacerHeight] = useState(0);
-  const [replyTarget, setReplyTarget] = useState<TaskChatReplyTarget | null>(null);
+  const [replyTarget, setReplyTarget] = useState<TaskChatReplyTarget | null>(
+    null,
+  );
   const [replyPending, setReplyPending] = useState(false);
   useEffect(() => {
     setReplyTarget(null);
     setReplyPending(false);
   }, [taskId]);
-  const selectReplyTarget = useCallback((target: TaskChatReplyTarget) => {
-    if (replyPending) return;
-    setReplyTarget(target);
-    composerRef && typeof composerRef === "object" && composerRef.current?.focus();
-  }, [composerRef, replyPending]);
+  const selectReplyTarget = useCallback(
+    (target: TaskChatReplyTarget) => {
+      if (replyPending) return;
+      setReplyTarget(target);
+      composerRef &&
+        typeof composerRef === "object" &&
+        composerRef.current?.focus();
+    },
+    [composerRef, replyPending],
+  );
   const activeRunIds = useMemo(() => new Set<string>(), []);
   const clearLatestSettleTimeouts = useCallback(() => {
     for (const timeout of latestSettleTimeoutsRef.current) {
@@ -4078,7 +3975,7 @@ export function TaskChatThread({
 
   useEffect(() => {
     const hash =
-      location.hash ||
+      locationHash ||
       (typeof window !== "undefined" ? window.location.hash : "");
     const isThreadHash =
       hash.startsWith("#comment-") ||
@@ -4127,7 +4024,7 @@ export function TaskChatThread({
     };
   }, [
     autoScrollToHashOnInitialLoad,
-    location.hash,
+    locationHash,
     messageAnchorIndex,
     messages,
     useVirtualizedThread,
@@ -4336,12 +4233,10 @@ export function TaskChatThread({
       stopRunLabel,
       stoppingRunLabel,
       stopRunVariant,
-      runFinalizationActions,
       onInterruptQueued: stableOnInterruptQueued,
       onCancelQueued: stableOnCancelQueued,
       onImageClick: stableOnImageClick,
       onUploadImage: stableOnUploadImage,
-      taskStatus,
       onReply: selectReplyTarget,
       onLoadMoreCommentGroup,
     }),
@@ -4354,12 +4249,10 @@ export function TaskChatThread({
       stopRunLabel,
       stoppingRunLabel,
       stopRunVariant,
-      runFinalizationActions,
       stableOnInterruptQueued,
       stableOnCancelQueued,
       stableOnImageClick,
       stableOnUploadImage,
-      taskStatus,
       selectReplyTarget,
       onLoadMoreCommentGroup,
     ],
@@ -4507,9 +4400,7 @@ export function TaskChatThread({
                 userLabelMap={userLabelMap}
                 composerDisabledReason={composerDisabledReason}
                 composerHint={composerHint}
-                taskStatus={taskStatus}
                 taskWorkMode={taskWorkMode}
-                onWorkModeChange={onWorkModeChange}
                 replyTarget={replyTarget}
                 onClearReply={() => {
                   if (!replyPending) setReplyTarget(null);

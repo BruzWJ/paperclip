@@ -25,9 +25,9 @@ Auth user and retains that user's company membership scope and endpoint-specific
 control semantics.
 
 [Board MCP](/guides/board-operator/mcp) is the intentional full-control local
-coding-agent surface for that key. It remains tenant-scoped to the board
-user's active company memberships, but does not inherit provider-run agent
-grants or context dials.
+coding-client surface for a board API key. It remains tenant-scoped to the
+user's active company memberships. It is separate from ACPX provider execution
+and never inherits or substitutes for a provider run's scoped capabilities.
 
 ## Company Scoping
 

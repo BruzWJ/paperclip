@@ -4,21 +4,21 @@ Status: Proposed
 Date: 2026-04-07
 Audience: Product and engineering
 Related:
-- `apps/ui/src/pages/TaskDetail.tsx`
+- `apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx`
 - `apps/ui/src/components/TaskProperties.tsx`
 - `apps/ui/src/api/tasks.ts`
 - `apps/ui/src/lib/queryKeys.ts`
 - `apps/server/src/routes/tasks.ts`
 - `apps/server/src/services/tasks.ts`
-- [PAP-1192](/PAP/tasks/PAP-1192)
-- [PAP-1191](/PAP/tasks/PAP-1191)
-- [PAP-1188](/PAP/tasks/PAP-1188)
-- [PAP-1119](/PAP/tasks/PAP-1119)
-- [PAP-945](/PAP/tasks/PAP-945)
-- [PAP-1165](/PAP/tasks/PAP-1165)
-- [PAP-890](/PAP/tasks/PAP-890)
-- [PAP-254](/PAP/tasks/PAP-254)
-- [PAP-138](/PAP/tasks/PAP-138)
+- PAP-1192
+- PAP-1191
+- PAP-1188
+- PAP-1119
+- PAP-945
+- PAP-1165
+- PAP-890
+- PAP-254
+- PAP-138
 
 ## 1. Purpose
 
@@ -28,7 +28,7 @@ This note inventories the Paperclip tasks that point to the same UX class of pro
 - actions feel slow because the UI waits for the round trip before reflecting obvious local intent
 - optimistic updates exist in some places, but not in a consistent system
 
-The immediate trigger is [PAP-1192](/PAP/tasks/PAP-1192): the task detail page now feels very slow.
+The immediate trigger is PAP-1192: the task detail page now feels very slow.
 
 ## 2. Short Answer
 
@@ -52,32 +52,32 @@ That strongly suggests the current pain is aggregate client fan-out plus over-br
 
 ## 3.1 Task-detail and task-action siblings
 
-- [PAP-1192](/PAP/tasks/PAP-1192): task page feels like it loads forever
-- [PAP-1188](/PAP/tasks/PAP-1188): assignee changes in the task properties pane were slow and needed optimistic UI
-- [PAP-945](/PAP/tasks/PAP-945): optimistic comment rendering
-- [PAP-1003](/PAP/tasks/PAP-1003): optimistic comments had duplicate draft/pending behavior
-- [PAP-947](/PAP/tasks/PAP-947): follow-up breakage from optimistic comments
-- [PAP-254](/PAP/tasks/PAP-254): long task threads become sluggish when adding comments
-- [PAP-189](/PAP/tasks/PAP-189): comment semantics while a task has a live run
+- PAP-1192: task page feels like it loads forever
+- PAP-1188: assignee changes in the task properties pane were slow and needed optimistic UI
+- PAP-945: optimistic comment rendering
+- PAP-1003: optimistic comments had duplicate draft/pending behavior
+- PAP-947: follow-up breakage from optimistic comments
+- PAP-254: long task threads become sluggish when adding comments
+- PAP-189: comment semantics while a task has a live run
 
 Pattern: the task page already has a history of needing both optimistic behavior and bounded thread/loading behavior. `PAP-1192` is the same family, not a new category.
 
 ## 3.2 Inbox and list-view siblings
 
-- [PAP-1119](/PAP/tasks/PAP-1119): optimistic archive had fade-out then snap-back
-- [PAP-1165](/PAP/tasks/PAP-1165): task search slow
-- [PAP-890](/PAP/tasks/PAP-890): task search slow, make it very fast
-- [PAP-138](/PAP/tasks/PAP-138): inbox loading feels stuck
-- [PAP-470](/PAP/tasks/PAP-470): create-task save state felt slow and awkward
+- PAP-1119: optimistic archive had fade-out then snap-back
+- PAP-1165: task search slow
+- PAP-890: task search slow, make it very fast
+- PAP-138: inbox loading feels stuck
+- PAP-470: create-task save state felt slow and awkward
 
 Pattern: Paperclip already has several places where the right fix was "show intent immediately, then reconcile," not "wait for refetch."
 
 ## 3.3 Broader app-loading siblings
 
-- [PAP-472](/PAP/tasks/PAP-472): dashboard charts load very slowly
-- [PAP-797](/PAP/tasks/PAP-797): reduce loading states through static generation/caching where possible
-- [PAP-799](/PAP/tasks/PAP-799): embed company data at build time to eliminate loading states
-- [PAP-703](/PAP/tasks/PAP-703): faster chat and better visual feedback
+- PAP-472: dashboard charts load very slowly
+- PAP-797: reduce loading states through static generation/caching where possible
+- PAP-799: embed company data at build time to eliminate loading states
+- PAP-703: faster chat and better visual feedback
 
 Pattern: the product has recurring pressure to reduce blank/loading states across the app, so the task-detail work should fit that broader direction.
 
@@ -85,7 +85,7 @@ Pattern: the product has recurring pressure to reduce blank/loading states acros
 
 ## 4.1 Mount query fan-out is high
 
-`apps/ui/src/pages/TaskDetail.tsx` mounts all of these data sources up front:
+`apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx` mounts all of these data sources up front:
 
 - task detail
 - comments
@@ -220,7 +220,7 @@ Suggested behavior:
 - offer `load earlier` for long threads
 - after posting or on live updates: append incrementally instead of invalidating the whole thread
 
-This should address the same performance family as [PAP-254](/PAP/tasks/PAP-254).
+This should address the same performance family as PAP-254.
 
 ## 5.4 Phase 4: Reduce duplicate polling and invalidation
 

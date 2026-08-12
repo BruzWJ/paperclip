@@ -1,25 +1,13 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   analyzeFrontmatterBlock,
   detectFrontmatterRoundTripDiagnostics,
-  getSkillFrontmatterUnknownKeys,
   joinFrontmatterBlock,
   parseFrontmatterFields,
   parseFrontmatterMarkdown,
-  skillFrontmatterSchema,
   splitFrontmatterBlock,
   stringifyFrontmatter,
 } from "./frontmatter.js";
-
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const skillMarkdownSearchRoots = [
-  "packages/skills-catalog/catalog",
-  "packages/adapters/example/skills",
-  "skills",
-];
 
 describe("parseFrontmatterMarkdown", () => {
   it("parses folded and literal YAML block scalars", () => {
@@ -89,7 +77,7 @@ describe("parseFrontmatterMarkdown", () => {
       "  sources:",
       "    - kind: github-dir",
       "      repo: paperclipai/paperclip",
-      "      path: skills/paperclip",
+      "      path: guides/paperclip",
       "---",
       "",
       "Body",
@@ -101,7 +89,7 @@ describe("parseFrontmatterMarkdown", () => {
           {
             kind: "github-dir",
             repo: "paperclipai/paperclip",
-            path: "skills/paperclip",
+            path: "guides/paperclip",
           },
         ],
       },
@@ -121,21 +109,6 @@ describe("parseFrontmatterMarkdown", () => {
 });
 
 describe("splitFrontmatterBlock", () => {
-  it("splits every bundled skill markdown file without losing bytes", () => {
-    const skillMarkdownFiles = collectSkillMarkdownFiles();
-
-    expect(skillMarkdownFiles.length).toBeGreaterThan(0);
-    for (const filePath of skillMarkdownFiles) {
-      const raw = fs.readFileSync(filePath, "utf8");
-      const split = splitFrontmatterBlock(raw);
-      const joined = split.hasFrontmatter
-        ? `---\n${split.frontmatterText}\n---\n${split.body}`
-        : split.body;
-
-      expect(joined, path.relative(repoRoot, filePath)).toBe(raw);
-    }
-  });
-
   it("leaves files without frontmatter untouched", () => {
     const raw = "Body starts immediately.\n\n---\nThis is not frontmatter.\n";
     const split = splitFrontmatterBlock(raw);
@@ -163,13 +136,13 @@ describe("stringifyFrontmatter", () => {
     {
       label: "nested metadata",
       value: {
-        name: "demo-skill",
-        description: "Demo skill",
+        name: "demo-guide",
+        description: "Demo guide",
         metadata: {
           source: {
             kind: "github-dir",
             repo: "paperclipai/paperclip",
-            path: "skills/paperclip",
+            path: "guides/paperclip",
           },
         },
       },
@@ -177,16 +150,16 @@ describe("stringifyFrontmatter", () => {
     {
       label: "arrays",
       value: {
-        name: "tool-skill",
-        description: "Tool skill",
+        name: "tool-guide",
+        description: "Tool guide",
         "allowed-tools": ["Read", "Write", "Bash"],
-        tags: ["skills", "frontmatter"],
+        tags: ["guides", "frontmatter"],
       },
     },
     {
       label: "block scalars",
       value: {
-        name: "block-skill",
+        name: "block-guide",
         description: "First line\nsecond line\n\nThird paragraph\n",
         metadata: {
           notes: "Keep\nall\nline breaks",
@@ -198,28 +171,6 @@ describe("stringifyFrontmatter", () => {
     const second = parseFrontmatterMarkdown(`---\n${stringifyFrontmatter(first)}\n---\n`).frontmatter;
 
     expect(second).toEqual(first);
-  });
-});
-
-describe("skillFrontmatterSchema", () => {
-  it("validates core skill frontmatter fields while allowing unknown keys", () => {
-    const parsed = skillFrontmatterSchema.parse({
-      name: "demo-skill",
-      description: "A demo skill.",
-      "allowed-tools": ["Read", "Write"],
-      metadata: { nested: { enabled: true } },
-      tags: ["demo"],
-    });
-
-    expect(parsed.tags).toEqual(["demo"]);
-    expect(getSkillFrontmatterUnknownKeys(parsed)).toEqual(["tags"]);
-  });
-
-  it("rejects non-slug skill names", () => {
-    expect(() => skillFrontmatterSchema.parse({
-      name: "Demo Skill",
-      description: "A demo skill.",
-    })).toThrow();
   });
 });
 
@@ -319,25 +270,3 @@ describe("analyzeFrontmatterBlock", () => {
     expect(result.parsed).toEqual({});
   });
 });
-
-function collectSkillMarkdownFiles() {
-  return skillMarkdownSearchRoots.flatMap((relativeRoot) => {
-    const absoluteRoot = path.join(repoRoot, relativeRoot);
-    return fs.existsSync(absoluteRoot) ? collectSkillMarkdownFilesUnder(absoluteRoot) : [];
-  }).sort();
-}
-
-function collectSkillMarkdownFilesUnder(root: string): string[] {
-  const files: string[] = [];
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    const absolutePath = path.join(root, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...collectSkillMarkdownFilesUnder(absolutePath));
-      continue;
-    }
-    if (entry.isFile() && entry.name === "SKILL.md") {
-      files.push(absolutePath);
-    }
-  }
-  return files;
-}

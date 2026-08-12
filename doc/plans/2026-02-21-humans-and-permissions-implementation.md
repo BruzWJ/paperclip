@@ -15,42 +15,49 @@ If this document conflicts with prior exploratory notes, this document wins for 
 ## 2. Locked V1 decisions
 
 1. Two deployment modes remain:
+
 - `local_trusted`
 - `cloud_hosted`
 
 2. `local_trusted`:
+
 - no login UX
 - implicit local instance admin actor
 - loopback-only server binding
 - full admin/settings/invite/approval capabilities available locally
 
 3. `cloud_hosted`:
+
 - Better Auth for humans
 - email/password only
 - no email verification requirement in V1
 
 4. Permissions:
+
 - one shared authorization system for humans and agents
 - normalized grants table (`principal_permission_grants`)
 - no separate “agent permissions engine”
 
 5. Invites:
+
 - copy-link only (no outbound email sending in V1)
-- unified `company_join` link that supports human or agent path
-- acceptance creates `pending_approval` join request
-- no access until admin approval
+- one `company_join` user-membership contract
+- acceptance records the join request and activates the invited user membership
 
 6. Join review metadata:
+
 - source IP required
 - no GeoIP/country lookup in V1
 
 7. Agent API keys:
+
 - indefinite by default
 - hash at rest
 - display once on claim
 - revoke/regenerate supported
 
 8. Local ingress:
+
 - public/untrusted ingress is out of scope for V1
 - no `--dangerous-agent-ingress` in V1
 
@@ -180,12 +187,12 @@ Note:
 4. `invites`
 
 - `id` uuid pk
-- `company_id` uuid fk `companies.id` not null
-- `invite_type` text not null (`company_join | bootstrap_ceo`)
+- `company_id` uuid fk `companies.id` null only for bootstrap administration
+- `invite_type` text not null (`company_join | bootstrap_admin`)
 - `token_hash` text not null
-- `allowed_join_types` text not null (`human | agent | both`) for `company_join`
-- `defaults_payload` jsonb null
+- `defaults_payload` jsonb null (user membership role and grants)
 - `expires_at` timestamptz not null
+- `source` text not null (`board_api | plugin_host | bootstrap_admin_cli`)
 - `invited_by_user_id` text null
 - `revoked_at` timestamptz null
 - `accepted_at` timestamptz null
@@ -198,23 +205,18 @@ Note:
 - `id` uuid pk
 - `invite_id` uuid fk `invites.id` not null
 - `company_id` uuid fk `companies.id` not null
-- `request_type` text not null (`human | agent`)
 - `status` text not null (`pending_approval | approved | rejected`)
 - `request_ip` text not null
 - `requesting_user_id` text null
 - `request_email_snapshot` text null
-- `agent_name` text null
-- `adapter_type` text null
-- `capabilities` text null
-- `agent_defaults_payload` jsonb null
-- `created_agent_id` uuid fk `agents.id` null
 - `approved_by_user_id` text null
 - `approved_at` timestamptz null
 - `rejected_by_user_id` text null
 - `rejected_at` timestamptz null
 - `created_at`, `updated_at`
-- index: `(company_id, status, request_type, created_at desc)`
+- index: `(company_id, status, created_at desc)`
 - unique index: `(invite_id)` to enforce one request per consumed invite
+- partial unique indexes for pending `(company_id, requesting_user_id)` and `(company_id, lower(request_email_snapshot))`
 
 ## 5.3 Existing table changes
 
@@ -249,33 +251,34 @@ All under `/api`.
 ## 6.2 Invites
 
 1. `POST /api/companies/:companyId/invites`
+
 - create `company_join` invite
 - copy-link value returned once
 
 2. `GET /api/invites/:token`
+
 - validate token
 - return invite landing payload
-- includes `allowedJoinTypes`
 
 3. `POST /api/invites/:token/accept`
-- body:
-  - `requestType: human | agent`
-  - human path: no extra payload beyond authenticated user
-  - agent path: `agentName`, `adapterType`, `capabilities`, optional adapter defaults
+
+- exact empty body; identity comes from the authenticated user
 - consumes invite token
-- creates `join_requests(status=pending_approval)`
+- records and approves the user join request
+- activates the invited user membership and grants
 
 4. `POST /api/invites/:inviteId/revoke`
+
 - revokes non-consumed invite
 
 ## 6.3 Join requests
 
-1. `GET /api/companies/:companyId/join-requests?status=pending_approval&requestType=...`
+1. `GET /api/companies/:companyId/join-requests?status=pending_approval`
 
 2. `POST /api/companies/:companyId/join-requests/:requestId/approve`
-- human:
-  - create/activate `company_memberships`
-  - apply default grants
+
+- create/activate the user `company_memberships` row
+- apply the invite's user grants
 - agent:
   - create `agents` row
   - create pending claim context for API key
@@ -285,6 +288,7 @@ All under `/api`.
 3. `POST /api/companies/:companyId/join-requests/:requestId/reject`
 
 4. `POST /api/join-requests/:requestId/claim-api-key`
+
 - approved agent request only
 - returns plaintext key once
 - stores hash in `agent_api_keys`
@@ -292,12 +296,15 @@ All under `/api`.
 ## 6.4 Membership and grants
 
 1. `GET /api/companies/:companyId/members`
+
 - returns both principal types
 
 2. `PATCH /api/companies/:companyId/members/:memberId/permissions`
+
 - upsert/remove grants
 
 3. `PUT /api/admin/users/:userId/company-access`
+
 - instance admin only
 
 4. `GET /api/admin/users/:userId/company-access`
@@ -430,13 +437,14 @@ Required actions:
 Files:
 
 - `apps/server/src/services/live-events.ts`
-- `apps/server/src/realtime/live-events-ws.ts`
+- `apps/server/src/realtime/live-events-socket.ts`
 - inbox data source endpoint(s)
 
 Changes:
 
-- emit join-request events
-- ensure inbox refresh path includes join alerts
+- emit company-scoped join-request notifications through Socket.IO
+- treat those notifications as invalidation hints and refresh inbox data
+  through the canonical REST endpoint
 
 ## 8. CLI implementation
 
@@ -450,10 +458,12 @@ Files:
 Commands:
 
 1. `paperclipai auth bootstrap-ceo`
+
 - create bootstrap invite
 - print one-time URL
 
 2. `paperclipai onboard`
+
 - in cloud mode with `bootstrap_pending`, print bootstrap URL and next steps
 - in local mode, skip bootstrap requirement
 
@@ -466,9 +476,10 @@ Config additions:
 
 Files:
 
-- routing: `apps/ui/src/App.tsx`
+- routing: native file routes under `apps/ui/src/routes/` and
+  `apps/ui/src/router.tsx`
 - API clients: `apps/ui/src/api/*`
-- pages/components (new):
+- route-owned screens/components (new):
   - `AuthLogin` / `AuthSignup` (cloud mode)
   - `BootstrapPending` page
   - `InviteLanding` page
@@ -479,21 +490,26 @@ Files:
 Required UX:
 
 1. Cloud unauthenticated user:
+
 - redirect to login/signup
 
 2. Cloud bootstrap pending:
+
 - block app with setup command guidance
 
 3. Invite landing:
-- choose human vs agent path (respect `allowedJoinTypes`)
+
+- accept the user membership invite
 - submit join request
 - show pending approval confirmation
 
 4. Inbox:
+
 - show join approval cards with approve/reject actions
 - include source IP and human email snapshot when applicable
 
 5. Local mode:
+
 - no login prompts
 - full settings/invite/approval UI available
 
@@ -558,9 +574,8 @@ Required UX:
 
 - cloud mode unauthenticated mutation -> `401`
 - local mode implicit admin mutation -> success
-- invite accept -> pending join -> no access
-- join approve (human) -> membership/grants active
-- join approve (agent) -> key claim once
+- invite accept -> recorded join + active user membership/grants
+- pending user join approval -> membership/grants active
 - cross-company access denied for user and agent principals
 - local mode non-loopback bind -> startup failure
 
@@ -568,7 +583,7 @@ Required UX:
 
 - login gate in cloud mode
 - bootstrap pending screen
-- invite landing choose-path UX
+- invite landing user authentication and acceptance UX
 - inbox join alert approve/reject flows
 
 ## 12.4 Regression tests
@@ -596,7 +611,7 @@ Required UX:
 
 - invite create/revoke
 - invite accept -> pending request
-- approve/reject + key claim
+- approve/reject user membership requests
 - activity log + live events
 
 ## Phase D: UI + CLI
@@ -629,7 +644,7 @@ If any command is skipped, record exactly what was skipped and why.
 
 1. Behavior matches locked V1 decisions in this doc and `doc/plan/humans-and-permissions.md`.
 2. Cloud mode requires auth; local mode has no login UX.
-3. Unified invite + pending approval flow works for both humans and agents.
+3. User invite + join-request flow works end to end.
 4. Shared principal membership + permission system is live for users and agents.
 5. Local mode remains loopback-only and fails otherwise.
 6. Inbox shows actionable join approvals.

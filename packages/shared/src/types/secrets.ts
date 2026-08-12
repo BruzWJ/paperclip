@@ -10,6 +10,7 @@ import type {
   SecretStatus,
   SecretVersionStatus,
 } from "../constants.js";
+import type { CompanyBoardRouteTarget } from "./board-navigation.js";
 
 export type {
   SecretAccessOutcome,
@@ -267,7 +268,8 @@ export interface CompanySecretBindingTarget {
   type: SecretBindingTargetType;
   id: string;
   label: string;
-  href: string | null;
+  /** Native board route semantics, or null when the target has no safe canonical route token. */
+  routeTarget: CompanyBoardRouteTarget | null;
   status: string | null;
 }
 
@@ -289,7 +291,7 @@ export interface SecretAccessEvent {
   credentialSubjectId: string | null;
   actorType: "agent" | "user" | "system" | "plugin";
   actorId: string | null;
-  consumerType: SecretBindingTargetType | "agent_api";
+  consumerType: SecretBindingTargetType;
   consumerId: string;
   configPath: string | null;
   taskId: string | null;

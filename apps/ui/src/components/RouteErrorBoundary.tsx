@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { useLocation, useNavigate } from "@/lib/router";
+import { useLocation, useRouter } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 
 type RouteErrorBoundaryInnerProps = {
@@ -62,11 +62,11 @@ class RouteErrorBoundaryInner extends Component<RouteErrorBoundaryInnerProps, Ro
 
 export function RouteErrorBoundary({ children }: { children: ReactNode }) {
   const location = useLocation();
-  const navigate = useNavigate();
-  const resetKey = `${location.pathname}${location.search}`;
+  const router = useRouter();
+  const resetKey = `${location.pathname}${location.searchStr}`;
 
   return (
-    <RouteErrorBoundaryInner resetKey={resetKey} onReset={() => navigate(-1)}>
+    <RouteErrorBoundaryInner resetKey={resetKey} onReset={() => router.history.back()}>
       {children}
     </RouteErrorBoundaryInner>
   );

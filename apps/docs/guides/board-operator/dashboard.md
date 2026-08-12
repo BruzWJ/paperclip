@@ -9,7 +9,7 @@ The dashboard gives you a real-time overview of your autonomous company's health
 
 The dashboard displays:
 
-- **Agent status** — how many agents are active, idle, running, or in error state
+- **Agent status** — how many agents are idle, paused, or in error state
 - **Task breakdown** — counts by lifecycle status
 - **Stale tasks** — active tasks with no recent progress
 - **Cost summary** — current month spend vs budget, burn rate
@@ -17,7 +17,9 @@ The dashboard displays:
 
 ## Using the Dashboard
 
-Access the dashboard from the left sidebar after selecting a company. It refreshes in real time via live updates.
+Access the dashboard from the left sidebar after selecting a company. The board
+receives authenticated, company-scoped Socket.IO invalidation notifications and
+refreshes the affected canonical REST-backed data through its query cache.
 
 ### Key Metrics to Watch
 

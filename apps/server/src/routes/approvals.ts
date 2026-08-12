@@ -1,6 +1,7 @@
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import {
+  APPROVAL_STATUSES,
   addApprovalCommentSchema,
   createApprovalSchema,
   requestApprovalRevisionSchema,
@@ -28,6 +29,7 @@ import {
   terminateAgentForHireRejectionInTransaction,
 } from "../services/plugin-managed-agents.js";
 import { unprocessable } from "../errors.js";
+import { assertExactQueryKeys, parseExactOptionalEnum } from "./exact-query.js";
 
 function redactApprovalPayload<T extends { payload: Record<string, unknown> }>(approval: T): T {
   return {
@@ -44,7 +46,7 @@ export function approvalRoutes(
     taskExecutionCancellation: AgentLifecycleCancellationService;
   },
 ) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const requireBoard: RequestHandler = (req, _res, next) => {
     assertBoard(req);
     next();
@@ -79,7 +81,8 @@ export function approvalRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertApprovalAccessAllowed(req, res, companyId))) return;
-    const status = req.query.status as string | undefined;
+    assertExactQueryKeys(req.query, ["status"]);
+    const status = parseExactOptionalEnum(req.query.status, "status", APPROVAL_STATUSES);
     const result = await svc.list(companyId, status);
     res.json(result.map((approval) => redactApprovalPayload(approval)));
   });
@@ -96,11 +99,7 @@ export function approvalRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     if (!(await assertApprovalAccessAllowed(req, res, companyId))) return;
-    const rawTaskIds = req.body.taskIds;
-    const taskIds = Array.isArray(rawTaskIds)
-      ? rawTaskIds.filter((value: unknown): value is string => typeof value === "string")
-      : [];
-    const uniqueTaskIds = Array.from(new Set(taskIds));
+    const taskIds = req.body.taskIds ?? [];
     const { taskIds: _taskIds, ...approvalInput } = req.body;
     const approval = await svc.create(companyId, {
       ...approvalInput,
@@ -113,8 +112,8 @@ export function approvalRoutes(
       updatedAt: new Date(),
     });
 
-    if (uniqueTaskIds.length > 0) {
-      await taskApprovalsSvc.linkManyForApproval(approval.id, uniqueTaskIds, {
+    if (taskIds.length > 0) {
+      await taskApprovalsSvc.linkManyForApproval(approval.id, taskIds, {
         userId: req.actor.userId,
       });
     }
@@ -126,7 +125,7 @@ export function approvalRoutes(
       action: "approval.created",
       entityType: "approval",
       entityId: approval.id,
-      details: { type: approval.type, taskIds: uniqueTaskIds },
+      details: { type: approval.type, taskIds },
     });
 
     res.status(201).json(redactApprovalPayload(approval));

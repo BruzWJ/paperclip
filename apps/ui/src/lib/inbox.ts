@@ -19,15 +19,18 @@ import { formatOwnerUserLabel } from "./task-owners";
 export const RECENT_TASKS_LIMIT = 100;
 const ZERO_AMOUNT = parseMoneyAmount("0");
 export const FAILED_RUN_STATUSES = new Set(["failed", "timed_out"]);
-export const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending", "revision_requested"]);
+export const ACTIONABLE_APPROVAL_STATUSES = new Set([
+  "pending",
+  "revision_requested",
+]);
 export const DISMISSED_KEY = "paperclip:inbox:dismissed";
 export const READ_ITEMS_KEY = "paperclip:inbox:read-items";
-export const INBOX_LAST_TAB_KEY = "paperclip:inbox:last-tab";
 export const INBOX_TASK_COLUMNS_KEY = "paperclip:inbox:task-columns";
 export const INBOX_NESTING_KEY = "paperclip:inbox:nesting";
 export const INBOX_GROUP_BY_KEY = "paperclip:inbox:group-by";
 export const INBOX_FILTER_PREFERENCES_KEY_PREFIX = "paperclip:inbox:filters";
-export const INBOX_COLLAPSED_GROUPS_KEY_PREFIX = "paperclip:inbox:collapsed-groups";
+export const INBOX_COLLAPSED_GROUPS_KEY_PREFIX =
+  "paperclip:inbox:collapsed-groups";
 export type InboxTab = "mine" | "recent" | "unread" | "blocked" | "all";
 export type InboxCategoryFilter =
   | "everything"
@@ -49,7 +52,11 @@ export const inboxTaskColumns = [
   "updated",
 ] as const;
 export type InboxTaskColumn = (typeof inboxTaskColumns)[number];
-export const DEFAULT_INBOX_TASK_COLUMNS: InboxTaskColumn[] = ["status", "id", "updated"];
+export const DEFAULT_INBOX_TASK_COLUMNS: InboxTaskColumn[] = [
+  "status",
+  "id",
+  "updated",
+];
 export interface InboxFilterPreferences {
   allCategoryFilter: InboxCategoryFilter;
   allApprovalFilter: InboxApprovalFilter;
@@ -146,11 +153,11 @@ const defaultInboxFilterPreferences: InboxFilterPreferences = {
 };
 
 function normalizeInboxCategoryFilter(value: unknown): InboxCategoryFilter {
-  return value === "tasks_i_touched"
-    || value === "join_requests"
-    || value === "approvals"
-    || value === "failed_runs"
-    || value === "alerts"
+  return value === "tasks_i_touched" ||
+    value === "join_requests" ||
+    value === "approvals" ||
+    value === "failed_runs" ||
+    value === "alerts"
     ? value
     : "everything";
 }
@@ -159,12 +166,16 @@ function normalizeInboxApprovalFilter(value: unknown): InboxApprovalFilter {
   return value === "actionable" || value === "resolved" ? value : "all";
 }
 
-function getInboxFilterPreferencesStorageKey(companyId: string | null | undefined): string | null {
+function getInboxFilterPreferencesStorageKey(
+  companyId: string | null | undefined,
+): string | null {
   if (!companyId) return null;
   return `${INBOX_FILTER_PREFERENCES_KEY_PREFIX}:${companyId}`;
 }
 
-function getInboxCollapsedGroupsStorageKey(companyId: string | null | undefined): string | null {
+function getInboxCollapsedGroupsStorageKey(
+  companyId: string | null | undefined,
+): string | null {
   if (!companyId) return null;
   return `${INBOX_COLLAPSED_GROUPS_KEY_PREFIX}:${companyId}`;
 }
@@ -213,8 +224,12 @@ export function saveInboxFilterPreferences(
     localStorage.setItem(
       storageKey,
       JSON.stringify({
-        allCategoryFilter: normalizeInboxCategoryFilter(preferences.allCategoryFilter),
-        allApprovalFilter: normalizeInboxApprovalFilter(preferences.allApprovalFilter),
+        allCategoryFilter: normalizeInboxCategoryFilter(
+          preferences.allCategoryFilter,
+        ),
+        allApprovalFilter: normalizeInboxApprovalFilter(
+          preferences.allApprovalFilter,
+        ),
         taskFilters: normalizeTaskFilterState(preferences.taskFilters),
       }),
     );
@@ -233,7 +248,11 @@ export function loadCollapsedInboxGroupKeys(
     const raw = localStorage.getItem(storageKey);
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
-    return new Set(Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : []);
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((entry): entry is string => typeof entry === "string")
+        : [],
+    );
   } catch {
     return new Set();
   }
@@ -259,7 +278,12 @@ export function loadDismissedInboxAlerts(): Set<string> {
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((value): value is string => typeof value === "string" && value.startsWith("alert:")));
+    return new Set(
+      parsed.filter(
+        (value): value is string =>
+          typeof value === "string" && value.startsWith("alert:"),
+      ),
+    );
   } catch {
     return new Set();
   }
@@ -273,9 +297,14 @@ export function saveDismissedInboxAlerts(ids: Set<string>) {
   }
 }
 
-export function buildInboxDismissedAtByKey(dismissals: InboxDismissal[]): Map<string, number> {
+export function buildInboxDismissedAtByKey(
+  dismissals: InboxDismissal[],
+): Map<string, number> {
   return new Map(
-    dismissals.map((dismissal) => [dismissal.itemKey, normalizeTimestamp(dismissal.dismissedAt)]),
+    dismissals.map((dismissal) => [
+      dismissal.itemKey,
+      normalizeTimestamp(dismissal.dismissedAt),
+    ]),
   );
 }
 
@@ -306,7 +335,9 @@ export function saveReadInboxItems(ids: Set<string>) {
   }
 }
 
-export function normalizeInboxTaskColumns(columns: Iterable<string | InboxTaskColumn>): InboxTaskColumn[] {
+export function normalizeInboxTaskColumns(
+  columns: Iterable<string | InboxTaskColumn>,
+): InboxTaskColumn[] {
   const selected = new Set(columns);
   return inboxTaskColumns.filter((column) => selected.has(column));
 }
@@ -337,7 +368,9 @@ export function saveInboxTaskColumns(columns: InboxTaskColumn[]) {
 export function loadInboxWorkItemGroupBy(): InboxWorkItemGroupBy {
   try {
     const raw = localStorage.getItem(INBOX_GROUP_BY_KEY);
-    return raw === "type" || raw === "owner" || raw === "project" ? raw : "none";
+    return raw === "type" || raw === "owner" || raw === "project"
+      ? raw
+      : "none";
   } catch {
     return "none";
   }
@@ -349,18 +382,6 @@ export function saveInboxWorkItemGroupBy(groupBy: InboxWorkItemGroupBy) {
   } catch {
     // Ignore localStorage failures.
   }
-}
-
-export function shouldIncludeRoutineExecutionTask(
-  task: Pick<Task, "originKind">,
-  hideRoutineExecutions: boolean,
-): boolean {
-  return !hideRoutineExecutions || task.originKind !== "routine_execution";
-}
-
-export function filterInboxTasks(tasks: Task[], hideRoutineExecutions: boolean): Task[] {
-  if (!hideRoutineExecutions) return tasks;
-  return tasks.filter((task) => shouldIncludeRoutineExecutionTask(task, hideRoutineExecutions));
 }
 
 export function matchesInboxTaskSearch(
@@ -400,7 +421,6 @@ export function getInboxSearchSupplementTasks({
   archivedSearchTasks,
   remoteTasks,
   taskFilters,
-  currentUserId,
   enableRoutineVisibilityFilter = false,
   liveTaskIds,
 }: {
@@ -409,7 +429,6 @@ export function getInboxSearchSupplementTasks({
   archivedSearchTasks: Task[];
   remoteTasks: Task[];
   taskFilters: TaskFilterState;
-  currentUserId?: string | null;
   enableRoutineVisibilityFilter?: boolean;
   liveTaskIds?: ReadonlySet<string>;
 }): Task[] {
@@ -417,18 +436,19 @@ export function getInboxSearchSupplementTasks({
   if (!normalizedQuery) return [];
   const visibleTaskIds = new Set([
     ...filteredWorkItems
-      .filter((item): item is Extract<InboxWorkItem, { kind: "task" }> => item.kind === "task")
+      .filter(
+        (item): item is Extract<InboxWorkItem, { kind: "task" }> =>
+          item.kind === "task",
+      )
       .map((item) => item.task.id),
     ...archivedSearchTasks.map((task) => task.id),
   ]);
   return applyTaskFilters(
     remoteTasks,
     taskFilters,
-    currentUserId,
     enableRoutineVisibilityFilter,
     liveTaskIds,
-  )
-    .filter((task) => !visibleTaskIds.has(task.id));
+  ).filter((task) => !visibleTaskIds.has(task.id));
 }
 
 export function loadInboxNesting(): boolean {
@@ -448,32 +468,11 @@ export function saveInboxNesting(enabled: boolean) {
   }
 }
 
-export function resolveInboxNestingEnabled(preferenceEnabled: boolean, isMobile: boolean): boolean {
+export function resolveInboxNestingEnabled(
+  preferenceEnabled: boolean,
+  isMobile: boolean,
+): boolean {
   return preferenceEnabled && !isMobile;
-}
-
-export function loadLastInboxTab(): InboxTab {
-  try {
-    const raw = localStorage.getItem(INBOX_LAST_TAB_KEY);
-    if (
-      raw === "all"
-      || raw === "unread"
-      || raw === "recent"
-      || raw === "mine"
-      || raw === "blocked"
-    ) return raw;
-    return "mine";
-  } catch {
-    return "mine";
-  }
-}
-
-export function saveLastInboxTab(tab: InboxTab) {
-  try {
-    localStorage.setItem(INBOX_LAST_TAB_KEY, tab);
-  } catch {
-    // Ignore localStorage failures.
-  }
 }
 
 export function isMineInboxTab(tab: InboxTab): boolean {
@@ -520,10 +519,14 @@ export function getLatestFailedRunsByAgent(
     }
   }
 
-  return Array.from(latestByAgent.values()).filter((run) => FAILED_RUN_STATUSES.has(run.status));
+  return Array.from(latestByAgent.values()).filter((run) =>
+    FAILED_RUN_STATUSES.has(run.status),
+  );
 }
 
-export function normalizeTimestamp(value: string | Date | null | undefined): number {
+export function normalizeTimestamp(
+  value: string | Date | null | undefined,
+): number {
   if (!value) return 0;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : 0;
@@ -540,17 +543,16 @@ export function taskLastActivityTimestamp(task: Task): number {
 }
 
 export function sortTasksByMostRecentActivity(a: Task, b: Task): number {
-  const activityDiff = taskLastActivityTimestamp(b) - taskLastActivityTimestamp(a);
+  const activityDiff =
+    taskLastActivityTimestamp(b) - taskLastActivityTimestamp(a);
   if (activityDiff !== 0) return activityDiff;
   return normalizeTimestamp(b.updatedAt) - normalizeTimestamp(a.updatedAt);
 }
 
 export function getRecentTouchedTasks(tasks: Task[]): Task[] {
-  return [...tasks].sort(sortTasksByMostRecentActivity).slice(0, RECENT_TASKS_LIMIT);
-}
-
-export function getUnreadTouchedTasks(tasks: Task[]): Task[] {
-  return tasks.filter((task) => task.isUnreadForMe);
+  return [...tasks]
+    .sort(sortTasksByMostRecentActivity)
+    .slice(0, RECENT_TASKS_LIMIT);
 }
 
 export function getApprovalsForTab(
@@ -564,11 +566,15 @@ export function getApprovalsForTab(
   );
 
   if (tab === "mine") {
-    return sortedApprovals.filter((approval) => isApprovalVisibleInMine(approval, currentUserId));
+    return sortedApprovals.filter((approval) =>
+      isApprovalVisibleInMine(approval, currentUserId),
+    );
   }
   if (tab === "recent") return sortedApprovals;
   if (tab === "unread") {
-    return sortedApprovals.filter((approval) => ACTIONABLE_APPROVAL_STATUSES.has(approval.status));
+    return sortedApprovals.filter((approval) =>
+      ACTIONABLE_APPROVAL_STATUSES.has(approval.status),
+    );
   }
   if (filter === "all") return sortedApprovals;
 
@@ -584,7 +590,10 @@ export function isApprovalVisibleInMine(
 ): boolean {
   if (ACTIONABLE_APPROVAL_STATUSES.has(approval.status)) return true;
   if (!currentUserId) return false;
-  return approval.requestedByUserId === currentUserId || approval.decidedByUserId === currentUserId;
+  return (
+    approval.requestedByUserId === currentUserId ||
+    approval.decidedByUserId === currentUserId
+  );
 }
 
 export function approvalActivityTimestamp(approval: Approval): number {
@@ -633,7 +642,10 @@ export function getInboxWorkItems({
       return sortTasksByMostRecentActivity(a.task, b.task);
     }
     if (a.kind === "approval" && b.kind === "approval") {
-      return approvalActivityTimestamp(b.approval) - approvalActivityTimestamp(a.approval);
+      return (
+        approvalActivityTimestamp(b.approval) -
+        approvalActivityTimestamp(a.approval)
+      );
     }
 
     return a.kind === "approval" ? -1 : 1;
@@ -660,7 +672,10 @@ function resolveTaskOwnerGroup(
     agentById,
     currentUserId,
     userLabelById,
-  }: Pick<InboxGroupingOptions, "agentById" | "currentUserId" | "userLabelById">,
+  }: Pick<
+    InboxGroupingOptions,
+    "agentById" | "currentUserId" | "userLabelById"
+  >,
 ): { key: string; label: string } {
   if (task.ownerAgentId) {
     const agentName = agentById?.get(task.ownerAgentId)?.trim();
@@ -673,7 +688,9 @@ function resolveTaskOwnerGroup(
   if (task.ownerUserId) {
     return {
       key: `owner:user:${task.ownerUserId}`,
-      label: formatOwnerUserLabel(task.ownerUserId, currentUserId, userLabelById) ?? "User",
+      label:
+        formatOwnerUserLabel(task.ownerUserId, currentUserId, userLabelById) ??
+        "User",
     };
   }
 
@@ -697,15 +714,25 @@ function groupInboxWorkItemsByTaskGroup(
   items: InboxWorkItem[],
   resolveTaskGroup: (task: Task) => { key: string; label: string },
 ): InboxWorkItemGroup[] {
-  const groups = new Map<string, { label: string; items: InboxWorkItem[]; latestTimestamp: number }>();
+  const groups = new Map<
+    string,
+    { label: string; items: InboxWorkItem[]; latestTimestamp: number }
+  >();
   for (const item of items) {
-    const resolvedGroup = item.kind === "task"
-      ? resolveTaskGroup(item.task)
-      : { key: `kind:${item.kind}`, label: inboxWorkItemKindLabels[item.kind] };
+    const resolvedGroup =
+      item.kind === "task"
+        ? resolveTaskGroup(item.task)
+        : {
+            key: `kind:${item.kind}`,
+            label: inboxWorkItemKindLabels[item.kind],
+          };
     const existing = groups.get(resolvedGroup.key);
     if (existing) {
       existing.items.push(item);
-      existing.latestTimestamp = Math.max(existing.latestTimestamp, item.timestamp);
+      existing.latestTimestamp = Math.max(
+        existing.latestTimestamp,
+        item.timestamp,
+      );
     } else {
       groups.set(resolvedGroup.key, {
         label: resolvedGroup.label,
@@ -744,11 +771,15 @@ export function groupInboxWorkItems(
   }
 
   if (groupBy === "owner") {
-    return groupInboxWorkItemsByTaskGroup(items, (task) => resolveTaskOwnerGroup(task, options));
+    return groupInboxWorkItemsByTaskGroup(items, (task) =>
+      resolveTaskOwnerGroup(task, options),
+    );
   }
 
   if (groupBy === "project") {
-    return groupInboxWorkItemsByTaskGroup(items, (task) => resolveTaskProjectGroup(task, options));
+    return groupInboxWorkItemsByTaskGroup(items, (task) =>
+      resolveTaskProjectGroup(task, options),
+    );
   }
 
   const groups = new Map<InboxWorkItem["kind"], InboxWorkItem[]>();
@@ -763,9 +794,9 @@ export function groupInboxWorkItems(
     const groupItems = groups.get(kind) ?? [];
     if (groupItems.length === 0) continue;
     orderedGroups.push({
-        key: kind,
-        label: inboxWorkItemKindLabels[kind],
-        items: groupItems,
+      key: kind,
+      label: inboxWorkItemKindLabels[kind],
+      items: groupItems,
     });
   }
   return orderedGroups;
@@ -778,14 +809,17 @@ function stripInboxSearchGroupPrefix(groupKey: string) {
 }
 
 function firstTaskFromInboxWorkItems(items: InboxWorkItem[]): Task | null {
-  return items.find((item): item is InboxWorkItem & { kind: "task" } => item.kind === "task")?.task ?? null;
+  return (
+    items.find(
+      (item): item is InboxWorkItem & { kind: "task" } => item.kind === "task",
+    )?.task ?? null
+  );
 }
 
 export function buildInboxTaskGroupCreateDefaults(
   groupKey: string,
   groupBy: InboxWorkItemGroupBy,
   items: InboxWorkItem[],
-  options: InboxGroupingOptions = {},
 ): InboxTaskGroupCreateDefaults | null {
   const fallbackTask = firstTaskFromInboxWorkItems(items);
   if (!fallbackTask) return null;
@@ -824,7 +858,8 @@ export function buildInboxNesting(items: InboxWorkItem[]): {
   const taskItems: (InboxWorkItem & { kind: "task" })[] = [];
   const nonTaskItems: InboxWorkItem[] = [];
   for (const item of items) {
-    if (item.kind === "task") taskItems.push(item as InboxWorkItem & { kind: "task" });
+    if (item.kind === "task")
+      taskItems.push(item as InboxWorkItem & { kind: "task" });
     else nonTaskItems.push(item);
   }
 
@@ -842,7 +877,10 @@ export function buildInboxNesting(items: InboxWorkItem[]): {
     }
   }
 
-  const subtreeActivityTimestamp = (task: Task, seen: ReadonlySet<string> = new Set()): number => {
+  const subtreeActivityTimestamp = (
+    task: Task,
+    seen: ReadonlySet<string> = new Set(),
+  ): number => {
     const ownTimestamp = taskLastActivityTimestamp(task);
     if (seen.has(task.id)) return ownTimestamp;
     const nextSeen = new Set(seen);
@@ -858,7 +896,8 @@ export function buildInboxNesting(items: InboxWorkItem[]): {
   // Sort each child list by most recent descendant activity, not just direct task activity.
   for (const children of childrenByTaskId.values()) {
     children.sort((a, b) => {
-      const activityDiff = subtreeActivityTimestamp(b) - subtreeActivityTimestamp(a);
+      const activityDiff =
+        subtreeActivityTimestamp(b) - subtreeActivityTimestamp(a);
       if (activityDiff !== 0) return activityDiff;
       return sortTasksByMostRecentActivity(a, b);
     });
@@ -870,7 +909,9 @@ export function buildInboxNesting(items: InboxWorkItem[]): {
     .map((item) => {
       const children = childrenByTaskId.get(item.task.id);
       if (!children?.length) return item;
-      const maxChildTs = Math.max(...children.map((child) => subtreeActivityTimestamp(child)));
+      const maxChildTs = Math.max(
+        ...children.map((child) => subtreeActivityTimestamp(child)),
+      );
       return { ...item, timestamp: Math.max(item.timestamp, maxChildTs) };
     });
 
@@ -891,16 +932,24 @@ export function buildGroupedInboxSections(
   items: InboxWorkItem[],
   groupBy: InboxWorkItemGroupBy,
   grouping: InboxGroupingOptions,
-  options?: { keyPrefix?: string; searchSection?: InboxSearchSection; nestingEnabled?: boolean },
+  options?: {
+    keyPrefix?: string;
+    searchSection?: InboxSearchSection;
+    nestingEnabled?: boolean;
+  },
 ): InboxGroupedSection[] {
   const keyPrefix = options?.keyPrefix ?? "";
   const searchSection = options?.searchSection ?? "none";
   const nestingEnabled = options?.nestingEnabled ?? false;
 
   return groupInboxWorkItems(items, groupBy, grouping).map((group) => {
-    const nestedGroup = nestingEnabled && group.items.some((item) => item.kind === "task")
-      ? buildInboxNesting(group.items)
-      : { displayItems: group.items, childrenByTaskId: new Map<string, Task[]>() };
+    const nestedGroup =
+      nestingEnabled && group.items.some((item) => item.kind === "task")
+        ? buildInboxNesting(group.items)
+        : {
+            displayItems: group.items,
+            childrenByTaskId: new Map<string, Task[]>(),
+          };
 
     return {
       key: `${keyPrefix}${group.key}`,
@@ -1015,15 +1064,27 @@ export function computeInboxBadgeData({
     (approval) =>
       isApprovalVisibleInMine(approval, currentUserId) &&
       ACTIONABLE_APPROVAL_STATUSES.has(approval.status) &&
-      !isInboxEntityDismissed(dismissedAtByKey, `approval:${approval.id}`, approval.updatedAt),
+      !isInboxEntityDismissed(
+        dismissedAtByKey,
+        `approval:${approval.id}`,
+        approval.updatedAt,
+      ),
   ).length;
   const failedRuns = getLatestFailedRunsByAgent(runs).filter(
-    (run) => !isInboxEntityDismissed(dismissedAtByKey, `run:${run.id}`, run.createdAt),
+    (run) =>
+      !isInboxEntityDismissed(dismissedAtByKey, `run:${run.id}`, run.createdAt),
   ).length;
   const visibleJoinRequests = joinRequests.filter(
-    (jr) => !isInboxEntityDismissed(dismissedAtByKey, `join:${jr.id}`, jr.updatedAt ?? jr.createdAt),
+    (jr) =>
+      !isInboxEntityDismissed(
+        dismissedAtByKey,
+        `join:${jr.id}`,
+        jr.updatedAt ?? jr.createdAt,
+      ),
   ).length;
-  const visibleMineTasks = mineTasks.filter((task) => task.isUnreadForMe).length;
+  const visibleMineTasks = mineTasks.filter(
+    (task) => task.isUnreadForMe,
+  ).length;
   const agentErrorCount = dashboard?.agents.error ?? 0;
   const monthBudgetAmount = dashboard?.costs.monthBudgetAmount ?? ZERO_AMOUNT;
   const monthUtilizationPercent = dashboard?.costs.monthUtilizationPercent ?? 0;
@@ -1039,7 +1100,8 @@ export function computeInboxBadgeData({
 
   return {
     // The inbox badge reflects personal/actionable work, not company-wide health alerts.
-    inbox: actionableApprovals + visibleJoinRequests + failedRuns + visibleMineTasks,
+    inbox:
+      actionableApprovals + visibleJoinRequests + failedRuns + visibleMineTasks,
     approvals: actionableApprovals,
     failedRuns,
     joinRequests: visibleJoinRequests,

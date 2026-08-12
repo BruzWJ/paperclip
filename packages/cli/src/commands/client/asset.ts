@@ -97,7 +97,7 @@ async function uploadAsset(
   const bytes = await readFile(opts.file);
   const form = new FormData();
   form.set("file", new Blob([bytes], { type: inferContentTypeFromPath(opts.file) }), opts.file.split(/[\\/]/).pop() ?? "asset");
-  if (opts.namespace?.trim()) form.set("namespace", opts.namespace.trim());
+  if (opts.namespace !== undefined) form.set("namespace", opts.namespace);
   if (opts.alt?.trim()) form.set("alt", opts.alt.trim());
   if (opts.title?.trim()) form.set("title", opts.title.trim());
 

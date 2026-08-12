@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 
 import { act } from "react";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskChatThread } from "./TaskChatThread";
 import type { TaskChatComment } from "../lib/task-chat-messages";
@@ -34,11 +33,31 @@ vi.mock("./StatusBadge", () => ({ StatusBadge: ({ status }: { status: string }) 
 vi.mock("./TaskLinkQuicklook", () => ({
   TaskLinkQuicklook: ({
     children,
-    to,
+    taskId: _taskId,
+    taskNumber,
   }: {
     children: ReactNode;
-    to: string;
-  }) => <a href={to}>{children}</a>,
+    taskId: string;
+    taskNumber: number | null;
+  }) => <a href={`/11111111-1111-4111-8111-111111111111/tasks/${taskNumber}`}>{children}</a>,
+}));
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
+}));
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    to,
+    params,
+    ...props
+  }: ComponentProps<"a"> & { to: string; params?: Record<string, string> }) => {
+    const href = to
+      .replace("$companyId", params?.companyId ?? "")
+      .replace("$agentId", params?.agentId ?? "")
+      .replace("$runId", params?.runId ?? "");
+    return <a href={href} {...props}>{children}</a>;
+  },
+  useLocation: () => ({ hash: "" }),
 }));
 vi.mock("../hooks/usePaperclipTaskRuntime", () => ({
   usePaperclipTaskRuntime: () => ({}),
@@ -71,16 +90,14 @@ function renderThread(
 ) {
   act(() => {
     root.render(
-      <MemoryRouter>
-        <TaskChatThread
-          comments={comments}
-          timelineEvents={[]}
-          onAdd={async () => {}}
-          showComposer={false}
-          agentMap={options.agentMap}
-          taskStatus={options.taskStatus}
-        />
-      </MemoryRouter>,
+      <TaskChatThread
+        comments={comments}
+        timelineEvents={[]}
+        onAdd={async () => {}}
+        showComposer={false}
+        agentMap={options.agentMap}
+        taskStatus={options.taskStatus}
+      />,
     );
   });
 }
@@ -112,7 +129,14 @@ describe("TaskChatThread system notice routing", () => {
           {
             title: "Required action",
             rows: [
-              { type: "task_link", label: "Source task", taskId: "i1", identifier: "PAP-3440", title: "Recovery" },
+              {
+                type: "task_link",
+                label: "Source task",
+                taskId: "123e4567-e89b-42d3-a456-426614174000",
+                taskNumber: 3440,
+                identifier: "PAP-3440",
+                title: "Recovery",
+              },
               { type: "key_value", label: "Status before", value: "in_progress" },
             ],
           },
@@ -215,9 +239,9 @@ describe("TaskChatThread system notice routing", () => {
 
   it("labels system notice source as the originating run agent name when runAgentId is available", () => {
     const codexAgent = {
-      id: "agent-codex",
+      id: "22222222-2222-4222-8222-222222222222",
       name: "CodexCoder",
-    } as unknown as Agent;
+      } as unknown as Agent;
     const agentMap = new Map<string, Agent>([[codexAgent.id, codexAgent]]);
     const comment: TaskChatComment = {
       id: "comment-system-runagent",
@@ -227,7 +251,7 @@ describe("TaskChatThread system notice routing", () => {
       authorAgentId: null,
       authorUserId: null,
       runId: "run-task-chat-01",
-      runAgentId: "agent-codex",
+      runAgentId: "22222222-2222-4222-8222-222222222222",
       body: "Paperclip needs a disposition before this task can continue.",
       presentation: {
         kind: "system_notice",
@@ -243,8 +267,10 @@ describe("TaskChatThread system notice routing", () => {
 
     const status = container.querySelector('[role="status"]');
     expect(status).not.toBeNull();
-    const sourceLink = status?.querySelector('a[href^="/agents/"]') as HTMLAnchorElement | null;
-    expect(sourceLink?.getAttribute("href")).toBe("/agents/agent-codex/runs/run-task-chat-01");
+    const sourceLink = status?.querySelector('a[href^="/11111111-1111-4111-8111-111111111111/agents/"]') as HTMLAnchorElement | null;
+    expect(sourceLink?.getAttribute("href")).toBe(
+      "/11111111-1111-4111-8111-111111111111/agents/22222222-2222-4222-8222-222222222222/runs/run-task-chat-01",
+    );
     expect(sourceLink?.textContent).toBe("CodexCoder");
     expect(sourceLink?.textContent).not.toBe("You");
   });
@@ -327,7 +353,7 @@ describe("TaskChatThread system notice routing", () => {
     expect(status?.textContent).not.toContain("You");
   });
 
-  it("falls back to Paperclip in the system notice header when run agent is unknown to agentMap", () => {
+  it("renders unlinked Paperclip text when the run agent is unavailable", () => {
     const comment: TaskChatComment = {
       id: "comment-system-unknown-agent",
       companyId: "company-1",
@@ -351,9 +377,9 @@ describe("TaskChatThread system notice routing", () => {
     renderThread([comment]);
 
     const status = container.querySelector('[role="status"]');
-    const sourceLink = status?.querySelector('a[href^="/agents/"]') as HTMLAnchorElement | null;
-    expect(sourceLink?.getAttribute("href")).toBe("/agents/agent-unknown/runs/run-xyz");
-    expect(sourceLink?.textContent).toBe("Paperclip");
+    const sourceLink = status?.querySelector('a[href*="/agents/"]') as HTMLAnchorElement | null;
+    expect(sourceLink).toBeNull();
+    expect(status?.textContent).toContain("Paperclip");
   });
 
   it("keeps agent-authored comments as assistant bubbles even when presentation requests system_notice", () => {

@@ -2,13 +2,34 @@
 
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactGroupCard } from "./ArtifactGroupCard";
 import type { CompanyArtifact, CompanyArtifactGroup } from "@/api/artifacts";
 
-vi.mock("@/context/CompanyContext", () => ({
-  useCompany: () => ({ selectedCompany: null, selectedCompanyId: "company-1" }),
+const TASK_ID = "44444444-4444-4444-8444-444444444444";
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    to,
+    params,
+    search,
+    ...props
+  }: React.ComponentProps<"a"> & {
+    to: string;
+    params?: Record<string, string>;
+    search?: Record<string, string | undefined>;
+  }) => {
+    const pathname = Object.entries(params ?? {}).reduce((path, [key, value]) => path.replace(`$${key}`, value), to);
+    const query = new URLSearchParams(
+      Object.entries(search ?? {}).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    ).toString();
+    return (
+      <a href={`${pathname}${query ? `?${query}` : ""}`} {...props}>
+        {children}
+      </a>
+    );
+  },
 }));
 
 function sampleArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifact {
@@ -22,39 +43,43 @@ function sampleArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifa
     contentPath: "/files/hero.png",
     openPath: "/files/hero.png",
     downloadPath: "/files/hero.png?download=1",
-    task: { id: "task-1", identifier: "PAP-42", title: "Ship launch" },
+    task: { id: TASK_ID, taskNumber: 42, identifier: "PAP-42", title: "Ship launch" },
     project: null,
     createdByAgent: null,
     updatedAt: "2026-06-01T00:00:00.000Z",
-    href: "/PAP/tasks/PAP-42#attachment-1",
+    taskFragment: "attachment-1",
     ...overrides,
   } as CompanyArtifact;
 }
 
 function sampleGroup(overrides: Partial<CompanyArtifactGroup> = {}): CompanyArtifactGroup {
   return {
-    id: "task:task-1",
+    id: `task:${TASK_ID}`,
     groupBy: "task",
-    task: { id: "task-1", identifier: "PAP-42", title: "Ship launch" },
+    task: { id: TASK_ID, taskNumber: 42, identifier: "PAP-42", title: "Ship launch" },
     title: "Ship launch",
     count: 3,
     mediaKinds: ["image"],
     previewArtifacts: [sampleArtifact()],
     updatedAt: "2026-06-01T00:00:00.000Z",
-    href: "/PAP/artifacts?groupBy=task&groupTaskId=task-1",
     ...overrides,
   };
 }
 
-function render(group: CompanyArtifactGroup, to = "?groupBy=task&groupTaskId=task-1") {
+function render(group: CompanyArtifactGroup) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   flushSync(() => {
     root.render(
-      <MemoryRouter>
-        <ArtifactGroupCard group={group} to={to} />
-      </MemoryRouter>,
+      <ArtifactGroupCard
+        group={group}
+        linkOptions={{
+          to: "/$companyId/artifacts",
+          params: { companyId: "11111111-1111-4111-8111-111111111111" },
+          search: { groupBy: "task", groupTaskId: TASK_ID },
+        }}
+      />,
     );
   });
   return { container, root };
@@ -100,7 +125,7 @@ describe("ArtifactGroupCard", () => {
     mounted = render(sampleGroup());
     const anchor = mounted.container.querySelector("a") as HTMLAnchorElement;
     expect(anchor).not.toBeNull();
-    expect(anchor.getAttribute("href")).toContain("groupTaskId=task-1");
+    expect(anchor.getAttribute("href")).toContain(`groupTaskId=${TASK_ID}`);
     expect(mounted.container.textContent).toContain("PAP-42");
     expect(mounted.container.textContent).toContain("Ship launch");
   });

@@ -43,6 +43,7 @@ import {
   type TaskExecutionRunRef,
 } from "@paperclipai/db";
 import {
+  isCanonicalUuid,
   TASK_EXECUTION_RUN_STATUSES,
   type TaskExecutionRunKind,
   type TaskExecutionRunStatus,
@@ -85,8 +86,7 @@ export interface TaskExecutionRunIdentity {
  * service owns this projection so no consumer can read the canonical run table
  * through a parallel query path.
  */
-export interface TaskExecutionRuntimeReadinessBinding
-  extends TaskExecutionRunIdentity {
+export interface TaskExecutionRuntimeReadinessBinding extends TaskExecutionRunIdentity {
   readonly runKind: TaskExecutionRunKind;
   readonly runStatus: TaskExecutionRunStatus;
   readonly agentId: string;
@@ -154,11 +154,10 @@ export interface SteerableTaskExecutionRun extends TaskExecutionRunIdentity {
   readonly finishedAt: null;
 }
 
-export interface ReboundSteerableTaskExecutionRun
-  extends Omit<
-    SteerableTaskExecutionRun,
-    "currentAttemptId" | "currentLeaseId" | "cancellationIntentId"
-  > {
+export interface ReboundSteerableTaskExecutionRun extends Omit<
+  SteerableTaskExecutionRun,
+  "currentAttemptId" | "currentLeaseId" | "cancellationIntentId"
+> {
   readonly currentAttemptId: null;
   readonly currentLeaseId: null;
   readonly cancellationIntentId: null;
@@ -198,9 +197,7 @@ export interface TaskExecutionRunEnvelope extends TaskExecutionRunIdentity {
   readonly terminalFinalizationId: string | null;
   readonly startedAt: Date | null;
   readonly finishedAt: Date | null;
-  readonly terminalClassification:
-    | TaskExecutionRunTerminalClassification
-    | null;
+  readonly terminalClassification: TaskExecutionRunTerminalClassification | null;
   readonly terminalReasonCode: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -257,37 +254,32 @@ export type TransitionTaskExecutionRunStatusInput =
       readonly at: Date;
     });
 
-export interface AttachTaskExecutionRunAttemptInput
-  extends TaskExecutionRunIdentity {
+export interface AttachTaskExecutionRunAttemptInput extends TaskExecutionRunIdentity {
   readonly attemptId: string;
   readonly leaseId: string;
   readonly at: Date;
 }
 
-export interface DetachTaskExecutionRunAttemptInput
-  extends TaskExecutionRunIdentity {
+export interface DetachTaskExecutionRunAttemptInput extends TaskExecutionRunIdentity {
   readonly expectedAttemptId: string;
   readonly expectedLeaseId: string;
   readonly at: Date;
 }
 
-export interface AttachTaskExecutionRunCancellationInput
-  extends TaskExecutionRunIdentity {
+export interface AttachTaskExecutionRunCancellationInput extends TaskExecutionRunIdentity {
   readonly expectedAttemptId: string;
   readonly expectedLeaseId: string;
   readonly cancellationIntentId: string;
   readonly at: Date;
 }
 
-export interface DetachTaskExecutionRunCancellationInput
-  extends TaskExecutionRunIdentity {
+export interface DetachTaskExecutionRunCancellationInput extends TaskExecutionRunIdentity {
   readonly expectedCancellationIntentId: string;
   readonly at: Date;
 }
 
 /** Finalization attachment and the terminal lifecycle transition are atomic. */
-export interface AttachTaskExecutionRunFinalizationInput
-  extends TaskExecutionRunIdentity {
+export interface AttachTaskExecutionRunFinalizationInput extends TaskExecutionRunIdentity {
   readonly expectedStatus: "queued" | "scheduled_retry" | "running";
   readonly finalizationId: string;
   readonly status: TaskExecutionRunTerminalClassification;
@@ -360,10 +352,8 @@ export interface TaskExecutionRunOutputCommentLink {
 
 export interface TaskExecutionJoinedFinalization {
   readonly record: TaskExecutionFinalization;
-  readonly promptDependencies:
-    BoundedTaskExecutionRunRecords<TaskExecutionFinalizationPromptDependency>;
-  readonly updateDependencies:
-    BoundedTaskExecutionRunRecords<TaskExecutionFinalizationUpdateDependency>;
+  readonly promptDependencies: BoundedTaskExecutionRunRecords<TaskExecutionFinalizationPromptDependency>;
+  readonly updateDependencies: BoundedTaskExecutionRunRecords<TaskExecutionFinalizationUpdateDependency>;
   readonly liveness: TaskExecutionRunLivenessFactRow | null;
 }
 
@@ -372,31 +362,24 @@ export interface JoinedTaskExecutionRunDetail {
   readonly control: TaskExecutionRunControl | null;
   readonly refs: BoundedTaskExecutionRunRecords<TaskExecutionRunRef>;
   readonly segments: BoundedTaskExecutionRunRecords<TaskExecutionPromptSegment>;
-  readonly sessionEvents:
-    BoundedTaskExecutionRunRecords<RedactedTaskExecutionSessionEvent>;
-  readonly sessionMessages:
-    BoundedTaskExecutionRunRecords<RedactedTaskExecutionSessionMessage>;
+  readonly sessionEvents: BoundedTaskExecutionRunRecords<RedactedTaskExecutionSessionEvent>;
+  readonly sessionMessages: BoundedTaskExecutionRunRecords<RedactedTaskExecutionSessionMessage>;
   readonly attempts: BoundedTaskExecutionRunRecords<TaskExecutionAttempt>;
-  readonly retrySchedules:
-    BoundedTaskExecutionRunRecords<TaskExecutionAttemptRetrySchedule>;
+  readonly retrySchedules: BoundedTaskExecutionRunRecords<TaskExecutionAttemptRetrySchedule>;
   readonly leases: BoundedTaskExecutionRunRecords<TaskExecutionLease>;
-  readonly cancellations:
-    BoundedTaskExecutionRunRecords<TaskExecutionCancellationIntent>;
+  readonly cancellations: BoundedTaskExecutionRunRecords<TaskExecutionCancellationIntent>;
   readonly accounting: BoundedTaskExecutionRunRecords<
     typeof acpPromptAccounting.$inferSelect
   >;
   readonly costs: BoundedTaskExecutionRunRecords<
     typeof costEvents.$inferSelect
   >;
-  readonly activity:
-    BoundedTaskExecutionRunRecords<RedactedTaskExecutionActivity>;
-  readonly outputComments:
-    BoundedTaskExecutionRunRecords<TaskExecutionRunOutputCommentLink>;
+  readonly activity: BoundedTaskExecutionRunRecords<RedactedTaskExecutionActivity>;
+  readonly outputComments: BoundedTaskExecutionRunRecords<TaskExecutionRunOutputCommentLink>;
   readonly finalization: TaskExecutionJoinedFinalization | null;
 }
 
-export interface ReadJoinedTaskExecutionRunDetailInput
-  extends TaskExecutionRunIdentity {
+export interface ReadJoinedTaskExecutionRunDetailInput extends TaskExecutionRunIdentity {
   readonly limit: number;
   readonly sessionProjection?: TaskSessionReadProjection;
   readonly sessionEventCursor?: string | null;
@@ -405,9 +388,7 @@ export interface ReadJoinedTaskExecutionRunDetailInput
 
 const MAX_RUN_LIST_PAGE_SIZE = 200;
 const MAX_RUN_DETAIL_OWNER_ROWS = 500;
-const RUN_STATUS_FILTER_VALUES = new Set<string>(
-  TASK_EXECUTION_RUN_STATUSES,
-);
+const RUN_STATUS_FILTER_VALUES = new Set<string>(TASK_EXECUTION_RUN_STATUSES);
 const TERMINAL_RUN_STATUSES = new Set<TaskExecutionRunStatus>([
   "succeeded",
   "interrupted",
@@ -512,10 +493,10 @@ function assertRunEnvelopeInvariant(run: TaskExecutionRunEnvelope): void {
   const terminal = TERMINAL_RUN_STATUSES.has(run.status);
   if (
     terminal !==
-      (run.finishedAt !== null &&
-        run.terminalFinalizationId !== null &&
-        run.terminalClassification === run.status &&
-        run.terminalReasonCode !== null)
+    (run.finishedAt !== null &&
+      run.terminalFinalizationId !== null &&
+      run.terminalClassification === run.status &&
+      run.terminalReasonCode !== null)
   ) {
     throw new TaskExecutionRunInvariantViolation(
       "run terminal envelope is incomplete",
@@ -610,10 +591,7 @@ function steeringLivenessBaseQuery(transaction: TaskSessionDbTransaction) {
     .innerJoin(
       taskExecutionRuns,
       and(
-        eq(
-          taskExecutionRuns.companyId,
-          taskExecutionPromptSegments.companyId,
-        ),
+        eq(taskExecutionRuns.companyId, taskExecutionPromptSegments.companyId),
         eq(taskExecutionRuns.taskId, taskExecutionPromptSegments.taskId),
         eq(taskExecutionRuns.id, taskExecutionPromptSegments.runId),
       ),
@@ -634,75 +612,13 @@ function steeringLivenessBaseQuery(transaction: TaskSessionDbTransaction) {
     .$dynamic();
 }
 
-/**
- * Resolves and locks the exact successful agent-authored steering action used
- * by the closed P15 action-source recorder. The run service owns the join
- * because the action is valid only in the canonical run's company/task/epoch
- * scope; the Session comment and event prove that it was agent-authored.
- */
-export async function lockResumedAgentSteeringLivenessSourceInTransaction(
-  transaction: TaskSessionDbTransaction,
-  input: {
-    readonly runId: string;
-    readonly refId: string;
-    readonly segmentOrdinal: number;
-  },
-): Promise<ResumedAgentSteeringLivenessSource | null> {
-  assertExactRunIdentifier(input.runId, "steering liveness run id");
-  assertExactRunIdentifier(input.refId, "steering liveness ref id");
-  if (
-    !Number.isSafeInteger(input.segmentOrdinal) ||
-    input.segmentOrdinal < 1
-  ) {
-    throw new TaskExecutionRunInvariantViolation(
-      "steering liveness segment ordinal must be positive",
-    );
-  }
-  const rows = await steeringLivenessBaseQuery(transaction)
-    .where(
-      and(
-        eq(taskExecutionPromptSegments.runId, input.runId),
-        eq(taskExecutionPromptSegments.refId, input.refId),
-        eq(
-          taskExecutionPromptSegments.segmentOrdinal,
-          input.segmentOrdinal,
-        ),
-        isNotNull(taskExecutionPromptSegments.resumedAt),
-        eq(taskComments.companyId, taskExecutionRuns.companyId),
-        eq(taskComments.taskId, taskExecutionRuns.taskId),
-        eq(taskComments.authorType, "agent"),
-      ),
-    )
-    .limit(2)
-    .for("update");
-  if (rows.length > 1) {
-    throw new TaskExecutionRunInvariantViolation(
-      "steering liveness source is not unique",
-    );
-  }
-  const row = rows[0];
-  if (!row?.committedAt) return null;
-  return Object.freeze({
-    companyId: row.companyId,
-    taskId: row.taskId,
-    ownershipEpoch: row.ownershipEpoch,
-    runId: row.runId,
-    refId: row.refId,
-    segmentOrdinal: row.segmentOrdinal,
-    committedAt: row.committedAt,
-  });
-}
-
 async function listResumedAgentSteeringLivenessActionsInTransaction(
   transaction: TaskSessionDbTransaction,
   input: ResumedAgentSteeringLivenessSearch,
 ): Promise<readonly ResumedAgentSteeringLivenessSource[]> {
   assertExactRunIdentifier(input.companyId, "steering liveness company id");
   assertExactRunIdentifier(input.taskId, "steering liveness task id");
-  if (
-    !Number.isSafeInteger(input.ownershipEpoch) ||
-    input.ownershipEpoch < 1
-  ) {
+  if (!Number.isSafeInteger(input.ownershipEpoch) || input.ownershipEpoch < 1) {
     throw new TaskExecutionRunInvariantViolation(
       "steering liveness ownership epoch must be positive",
     );
@@ -726,10 +642,7 @@ async function listResumedAgentSteeringLivenessActionsInTransaction(
         isNotNull(taskExecutionPromptSegments.resumedAt),
         "sourceRunId" in input
           ? eq(taskComments.runId, input.sourceRunId)
-          : gt(
-              taskExecutionPromptSegments.resumedAt,
-              input.committedAfter,
-            ),
+          : gt(taskExecutionPromptSegments.resumedAt, input.committedAfter),
         eq(taskComments.authorType, "agent"),
       ),
     )
@@ -781,7 +694,10 @@ export function computeTaskExecutionRunBatchDigest(
   let previousAdmissionOrder = -1;
   members.forEach((member, refOrdinal) => {
     assertExactRunIdentifier(member.refId, "run ref id");
-    assertExactRunIdentifier(member.sourceMessageId, "run ref source message id");
+    assertExactRunIdentifier(
+      member.sourceMessageId,
+      "run ref source message id",
+    );
     if (member.messageKind !== "user" && member.messageKind !== "synthetic") {
       throw new TaskExecutionRunInvariantViolation(
         "run ref batch contains an invalid source message kind",
@@ -875,10 +791,7 @@ export async function readTaskExecutionRuntimeReadinessBinding(
     .leftJoin(
       agentAdapterConfigRevisions,
       and(
-        eq(
-          agentAdapterConfigRevisions.companyId,
-          taskExecutionRuns.companyId,
-        ),
+        eq(agentAdapterConfigRevisions.companyId, taskExecutionRuns.companyId),
         eq(
           agentAdapterConfigRevisions.agentId,
           taskExecutionRuns.targetAgentId,
@@ -896,10 +809,7 @@ export async function readTaskExecutionRuntimeReadinessBinding(
           taskExecutionWorkspaceBindings.companyId,
           taskExecutionRuns.companyId,
         ),
-        eq(
-          taskExecutionWorkspaceBindings.taskId,
-          taskExecutionRuns.taskId,
-        ),
+        eq(taskExecutionWorkspaceBindings.taskId, taskExecutionRuns.taskId),
         eq(
           taskExecutionWorkspaceBindings.sessionId,
           taskExecutionRuns.sessionId,
@@ -929,10 +839,7 @@ export async function readTaskExecutionRuntimeReadinessBinding(
   }
   const row = rows[0];
   if (!row) return null;
-  if (
-    !row.revisionId ||
-    !row.executionWorkspaceBindingId
-  ) {
+  if (!row.revisionId || !row.executionWorkspaceBindingId) {
     throw new TaskExecutionRunInvariantViolation(
       "task-execution run violates the persisted runtime-readiness scope invariant",
     );
@@ -964,7 +871,7 @@ export async function resolveTaskExecutionRunIdentityById(
   database: Db | TaskSessionDbTransaction,
   runId: string,
 ): Promise<TaskExecutionRunIdentity | null> {
-  assertExactRunIdentifier(runId, "run id");
+  if (!isCanonicalUuid(runId)) return null;
   const rows = await database
     .select({
       companyId: taskExecutionRuns.companyId,
@@ -1026,42 +933,6 @@ export function terminalFinalizedTaskExecutionRunExistsSql(
       and ${taskExecutionRuns.id} = ${runId}
       and ${taskExecutionRuns.terminalFinalizationId} is not null
   )`;
-}
-
-/**
- * Locks the sole direct retry successor owned by one exact terminal run. Run
- * creation serializes on that source and rejects a second successor, so seeing
- * more than one row is a canonical run-envelope invariant failure.
- */
-export async function lockTaskExecutionRetrySuccessorInTransaction(
-  transaction: TaskSessionDbTransaction,
-  input: TaskExecutionRunIdentity,
-): Promise<TaskExecutionRunEnvelope | null> {
-  const source = await selectExactRunRow(transaction, input, true);
-  if (!source) {
-    throw new TaskExecutionRunInvariantViolation(
-      "retry source run does not exist in the exact scope",
-    );
-  }
-  const rows = await transaction
-    .select()
-    .from(taskExecutionRuns)
-    .where(
-      and(
-        eq(taskExecutionRuns.companyId, input.companyId),
-        eq(taskExecutionRuns.taskId, input.taskId),
-        eq(taskExecutionRuns.retryOfRunId, input.runId),
-      ),
-    )
-    .orderBy(asc(taskExecutionRuns.createdAt), asc(taskExecutionRuns.id))
-    .limit(2)
-    .for("update");
-  if (rows.length > 1) {
-    throw new TaskExecutionRunInvariantViolation(
-      "retry source run owns more than one successor",
-    );
-  }
-  return rows[0] ? projectRunEnvelope(rows[0]) : null;
 }
 
 /**
@@ -1208,9 +1079,8 @@ export async function readOccupiedTaskExecutionRefIds(
       "ownership epoch must be a positive integer",
     );
   }
-  const refIds = input.refIds === undefined
-    ? undefined
-    : [...new Set(input.refIds)];
+  const refIds =
+    input.refIds === undefined ? undefined : [...new Set(input.refIds)];
   if (refIds !== undefined) {
     for (const refId of refIds) {
       assertExactRunIdentifier(refId, "execution ref id");
@@ -1556,21 +1426,22 @@ export async function revokeTaskExecutionPromptCapabilitiesForSessionInTransacti
   const runIds = runRows.map((row) => row.runId);
   if (runIds.length === 0) return Object.freeze([]);
 
-  const revertedRefIds = input.reason === "session_revert"
-    ? await transaction
-        .select({ refId: taskExecutionRefs.id })
-        .from(taskExecutionRefs)
-        .where(
-          and(
-            eq(taskExecutionRefs.companyId, input.companyId),
-            eq(taskExecutionRefs.taskId, input.taskId),
-            eq(taskExecutionRefs.sessionId, input.sessionId),
-            eq(taskExecutionRefs.disposition, "invalidated"),
-            eq(taskExecutionRefs.invalidationReason, "session_revert"),
-          ),
-        )
-        .then((rows) => rows.map((row) => row.refId))
-    : null;
+  const revertedRefIds =
+    input.reason === "session_revert"
+      ? await transaction
+          .select({ refId: taskExecutionRefs.id })
+          .from(taskExecutionRefs)
+          .where(
+            and(
+              eq(taskExecutionRefs.companyId, input.companyId),
+              eq(taskExecutionRefs.taskId, input.taskId),
+              eq(taskExecutionRefs.sessionId, input.sessionId),
+              eq(taskExecutionRefs.disposition, "invalidated"),
+              eq(taskExecutionRefs.invalidationReason, "session_revert"),
+            ),
+          )
+          .then((rows) => rows.map((row) => row.refId))
+      : null;
   if (revertedRefIds !== null && revertedRefIds.length === 0) {
     return Object.freeze([]);
   }
@@ -1599,9 +1470,9 @@ export async function revokeTaskExecutionPromptCapabilitiesForSessionInTransacti
       capabilityConnectionId:
         taskExecutionPromptCapabilities.capabilityConnectionId,
     });
-  return Object.freeze(
-    [...new Set(revoked.map((row) => row.capabilityConnectionId))],
-  );
+  return Object.freeze([
+    ...new Set(revoked.map((row) => row.capabilityConnectionId)),
+  ]);
 }
 
 /**
@@ -1688,14 +1559,14 @@ function assertRelatedRunScope(
     );
   }
   if (relation === "retry") {
-    const sameBranch = input.kind === "productive"
-      ? related.taskExecutionAuthorityId ===
-          input.taskExecutionAuthorityId &&
-        related.consultExecutionId === null &&
-        related.parentRunId === null
-      : related.taskExecutionAuthorityId === null &&
-        related.consultExecutionId === input.consultExecutionId &&
-        related.parentRunId === input.parentRunId;
+    const sameBranch =
+      input.kind === "productive"
+        ? related.taskExecutionAuthorityId === input.taskExecutionAuthorityId &&
+          related.consultExecutionId === null &&
+          related.parentRunId === null
+        : related.taskExecutionAuthorityId === null &&
+          related.consultExecutionId === input.consultExecutionId &&
+          related.parentRunId === input.parentRunId;
     if (
       related.executionScopeId !== input.executionScopeId ||
       related.adapterConfigRevisionId !== input.adapterConfigRevisionId ||
@@ -1883,27 +1754,27 @@ export async function createTaskExecutionRunInTransaction(
   }
 
   const insertedRefs = await transaction
-      .insert(taskExecutionRunRefs)
-      .values(
-        lockedRefs.map((ref, refOrdinal) => ({
-          companyId: input.companyId,
-          taskId: input.taskId,
-          sessionId: input.sessionId,
-          runId: insertedRun.id,
-          refId: ref.id,
-          refOrdinal,
-          admissionOrder: ref.laneOrdinal,
-          batchDigest: batchDigest!,
-          inputId: ref.inputId,
-          createdAt: input.at,
-        })),
-      )
-      .returning();
-    if (insertedRefs.length !== lockedRefs.length) {
-      throw new TaskExecutionRunInvariantViolation(
-        "run creation did not persist its complete immutable ref batch",
-      );
-    }
+    .insert(taskExecutionRunRefs)
+    .values(
+      lockedRefs.map((ref, refOrdinal) => ({
+        companyId: input.companyId,
+        taskId: input.taskId,
+        sessionId: input.sessionId,
+        runId: insertedRun.id,
+        refId: ref.id,
+        refOrdinal,
+        admissionOrder: ref.laneOrdinal,
+        batchDigest: batchDigest!,
+        inputId: ref.inputId,
+        createdAt: input.at,
+      })),
+    )
+    .returning();
+  if (insertedRefs.length !== lockedRefs.length) {
+    throw new TaskExecutionRunInvariantViolation(
+      "run creation did not persist its complete immutable ref batch",
+    );
+  }
   await transaction.insert(taskExecutionRunControls).values({
     runId: insertedRun.id,
     currentRefId: null,
@@ -2138,7 +2009,10 @@ export async function attachTaskExecutionRunCancellationInTransaction(
   assertRunIdentity(input);
   assertExactRunIdentifier(input.expectedAttemptId, "expected attempt id");
   assertExactRunIdentifier(input.expectedLeaseId, "expected lease id");
-  assertExactRunIdentifier(input.cancellationIntentId, "cancellation intent id");
+  assertExactRunIdentifier(
+    input.cancellationIntentId,
+    "cancellation intent id",
+  );
   assertDate(input.at, "cancellation attachment time");
   const cancellations = await transaction
     .select({
@@ -2517,6 +2391,64 @@ function currentProductivePromptPredicate(now: Date) {
   );
 }
 
+const productiveRunLinkageSelection = {
+  runId: taskExecutionRuns.id,
+  runStatus: taskExecutionRuns.status,
+  companyId: taskExecutionRuns.companyId,
+  agentId: taskExecutionRefs.targetAgentId,
+  refId: taskExecutionRefs.id,
+  taskId: taskExecutionRefs.taskId,
+  projectId: tasks.projectId,
+  routineId: tasks.creatorRoutineId,
+  sessionId: taskExecutionRefs.sessionId,
+  ownershipEpoch: taskExecutionRefs.ownershipEpoch,
+  mode: taskExecutionRefs.mode,
+  sourceKind: taskExecutionRefs.sourceKind,
+  sourceRecordId: taskExecutionRefs.sourceRecordId,
+  adapterConfigRevisionId: taskExecutionRefs.adapterConfigRevisionId,
+  taskExecutionAuthorityId: taskExecutionRefs.taskExecutionAuthorityId,
+  consultExecutionId: taskExecutionRefs.consultExecutionId,
+  taskExecutionPolicy: tasks.executionPolicy,
+} as const;
+
+function currentRunAttemptJoinPredicate() {
+  return and(
+    eq(taskExecutionAttempts.companyId, taskExecutionRuns.companyId),
+    eq(taskExecutionAttempts.taskId, taskExecutionRuns.taskId),
+    eq(taskExecutionAttempts.runId, taskExecutionRuns.id),
+    eq(taskExecutionAttempts.id, taskExecutionRuns.currentAttemptId),
+  );
+}
+
+function currentRunLeaseJoinPredicate() {
+  return and(
+    eq(taskExecutionLeases.companyId, taskExecutionRuns.companyId),
+    eq(taskExecutionLeases.taskId, taskExecutionRuns.taskId),
+    eq(taskExecutionLeases.runId, taskExecutionRuns.id),
+    eq(taskExecutionLeases.attemptId, taskExecutionAttempts.id),
+    eq(taskExecutionLeases.id, taskExecutionRuns.currentLeaseId),
+  );
+}
+
+function currentRunRefJoinPredicate(...scopePredicates: readonly SQLWrapper[]) {
+  return and(
+    eq(taskExecutionRefs.companyId, taskExecutionAttempts.companyId),
+    eq(taskExecutionRefs.taskId, taskExecutionAttempts.taskId),
+    eq(taskExecutionRefs.id, taskExecutionAttempts.refId),
+    ...scopePredicates,
+  );
+}
+
+function currentRunRefMembershipJoinPredicate() {
+  return and(
+    eq(taskExecutionRunRefs.companyId, taskExecutionRuns.companyId),
+    eq(taskExecutionRunRefs.taskId, taskExecutionRuns.taskId),
+    eq(taskExecutionRunRefs.runId, taskExecutionRuns.id),
+    eq(taskExecutionRunRefs.refId, taskExecutionAttempts.refId),
+    eq(taskExecutionRunRefs.refOrdinal, taskExecutionAttempts.refOrdinal),
+  );
+}
+
 /** Resolve one active productive run through its exact prompt and lease. */
 export async function resolveProductiveRunLinkage(
   database: Db,
@@ -2540,64 +2472,17 @@ export async function resolveProductiveRunLinkage(
       : []),
   ];
   return database
-    .select({
-      runId: taskExecutionRuns.id,
-      runStatus: taskExecutionRuns.status,
-      companyId: taskExecutionRuns.companyId,
-      agentId: taskExecutionRefs.targetAgentId,
-      refId: taskExecutionRefs.id,
-      taskId: taskExecutionRefs.taskId,
-      projectId: tasks.projectId,
-      routineId: tasks.creatorRoutineId,
-      sessionId: taskExecutionRefs.sessionId,
-      ownershipEpoch: taskExecutionRefs.ownershipEpoch,
-      mode: taskExecutionRefs.mode,
-      sourceKind: taskExecutionRefs.sourceKind,
-      sourceRecordId: taskExecutionRefs.sourceRecordId,
-      adapterConfigRevisionId: taskExecutionRefs.adapterConfigRevisionId,
-      taskExecutionAuthorityId: taskExecutionRefs.taskExecutionAuthorityId,
-      consultExecutionId: taskExecutionRefs.consultExecutionId,
-      taskExecutionPolicy: tasks.executionPolicy,
-    })
+    .select(productiveRunLinkageSelection)
     .from(taskExecutionRuns)
-    .innerJoin(
-      taskExecutionAttempts,
-      and(
-        eq(taskExecutionAttempts.companyId, taskExecutionRuns.companyId),
-        eq(taskExecutionAttempts.taskId, taskExecutionRuns.taskId),
-        eq(taskExecutionAttempts.runId, taskExecutionRuns.id),
-        eq(taskExecutionAttempts.id, taskExecutionRuns.currentAttemptId),
-      ),
-    )
-    .innerJoin(
-      taskExecutionLeases,
-      and(
-        eq(taskExecutionLeases.companyId, taskExecutionRuns.companyId),
-        eq(taskExecutionLeases.taskId, taskExecutionRuns.taskId),
-        eq(taskExecutionLeases.runId, taskExecutionRuns.id),
-        eq(taskExecutionLeases.attemptId, taskExecutionAttempts.id),
-        eq(taskExecutionLeases.id, taskExecutionRuns.currentLeaseId),
-      ),
-    )
+    .innerJoin(taskExecutionAttempts, currentRunAttemptJoinPredicate())
+    .innerJoin(taskExecutionLeases, currentRunLeaseJoinPredicate())
     .innerJoin(
       taskExecutionRefs,
-      and(
-        eq(taskExecutionRefs.companyId, taskExecutionAttempts.companyId),
-        eq(taskExecutionRefs.taskId, taskExecutionAttempts.taskId),
-        eq(taskExecutionRefs.id, taskExecutionAttempts.refId),
+      currentRunRefJoinPredicate(
         eq(taskExecutionRefs.targetAgentId, taskExecutionRuns.targetAgentId),
       ),
     )
-    .innerJoin(
-      taskExecutionRunRefs,
-      and(
-        eq(taskExecutionRunRefs.companyId, taskExecutionRuns.companyId),
-        eq(taskExecutionRunRefs.taskId, taskExecutionRuns.taskId),
-        eq(taskExecutionRunRefs.runId, taskExecutionRuns.id),
-        eq(taskExecutionRunRefs.refId, taskExecutionAttempts.refId),
-        eq(taskExecutionRunRefs.refOrdinal, taskExecutionAttempts.refOrdinal),
-      ),
-    )
+    .innerJoin(taskExecutionRunRefs, currentRunRefMembershipJoinPredicate())
     .innerJoin(
       tasks,
       and(
@@ -2621,23 +2506,7 @@ export async function resolveCurrentTaskOwnerRunLinkages(
   if (taskIds.length === 0) return new Map();
   const rows = await database
     .select({
-      runId: taskExecutionRuns.id,
-      runStatus: taskExecutionRuns.status,
-      companyId: taskExecutionRuns.companyId,
-      agentId: taskExecutionRefs.targetAgentId,
-      refId: taskExecutionRefs.id,
-      taskId: taskExecutionRefs.taskId,
-      projectId: tasks.projectId,
-      routineId: tasks.creatorRoutineId,
-      sessionId: taskExecutionRefs.sessionId,
-      ownershipEpoch: taskExecutionRefs.ownershipEpoch,
-      mode: taskExecutionRefs.mode,
-      sourceKind: taskExecutionRefs.sourceKind,
-      sourceRecordId: taskExecutionRefs.sourceRecordId,
-      adapterConfigRevisionId: taskExecutionRefs.adapterConfigRevisionId,
-      taskExecutionAuthorityId: taskExecutionRefs.taskExecutionAuthorityId,
-      consultExecutionId: taskExecutionRefs.consultExecutionId,
-      taskExecutionPolicy: tasks.executionPolicy,
+      ...productiveRunLinkageSelection,
       startedAt: taskExecutionRuns.startedAt,
       finishedAt: taskExecutionRuns.finishedAt,
       createdAt: taskExecutionRuns.createdAt,
@@ -2653,53 +2522,30 @@ export async function resolveCurrentTaskOwnerRunLinkages(
         eq(taskExecutionRuns.executionMode, "owner"),
       ),
     )
-    .innerJoin(
-      taskExecutionAttempts,
-      and(
-        eq(taskExecutionAttempts.companyId, taskExecutionRuns.companyId),
-        eq(taskExecutionAttempts.taskId, taskExecutionRuns.taskId),
-        eq(taskExecutionAttempts.runId, taskExecutionRuns.id),
-        eq(taskExecutionAttempts.id, taskExecutionRuns.currentAttemptId),
-      ),
-    )
-    .innerJoin(
-      taskExecutionLeases,
-      and(
-        eq(taskExecutionLeases.companyId, taskExecutionRuns.companyId),
-        eq(taskExecutionLeases.taskId, taskExecutionRuns.taskId),
-        eq(taskExecutionLeases.runId, taskExecutionRuns.id),
-        eq(taskExecutionLeases.attemptId, taskExecutionAttempts.id),
-        eq(taskExecutionLeases.id, taskExecutionRuns.currentLeaseId),
-      ),
-    )
+    .innerJoin(taskExecutionAttempts, currentRunAttemptJoinPredicate())
+    .innerJoin(taskExecutionLeases, currentRunLeaseJoinPredicate())
     .innerJoin(
       taskExecutionRefs,
-      and(
-        eq(taskExecutionRefs.companyId, taskExecutionAttempts.companyId),
-        eq(taskExecutionRefs.taskId, taskExecutionAttempts.taskId),
-        eq(taskExecutionRefs.id, taskExecutionAttempts.refId),
+      currentRunRefJoinPredicate(
         eq(taskExecutionRefs.ownershipEpoch, tasks.ownershipEpoch),
         eq(taskExecutionRefs.targetAgentId, tasks.ownerAgentId),
         eq(taskExecutionRefs.mode, "owner"),
       ),
     )
-    .innerJoin(
-      taskExecutionRunRefs,
-      and(
-        eq(taskExecutionRunRefs.companyId, taskExecutionRuns.companyId),
-        eq(taskExecutionRunRefs.taskId, taskExecutionRuns.taskId),
-        eq(taskExecutionRunRefs.runId, taskExecutionRuns.id),
-        eq(taskExecutionRunRefs.refId, taskExecutionAttempts.refId),
-        eq(taskExecutionRunRefs.refOrdinal, taskExecutionAttempts.refOrdinal),
-      ),
-    )
+    .innerJoin(taskExecutionRunRefs, currentRunRefMembershipJoinPredicate())
     .innerJoin(
       taskExecutionAuthorities,
       and(
-        eq(taskExecutionAuthorities.id, taskExecutionRefs.taskExecutionAuthorityId),
+        eq(
+          taskExecutionAuthorities.id,
+          taskExecutionRefs.taskExecutionAuthorityId,
+        ),
         eq(taskExecutionAuthorities.companyId, taskExecutionRefs.companyId),
         eq(taskExecutionAuthorities.taskId, taskExecutionRefs.taskId),
-        eq(taskExecutionAuthorities.ownershipEpoch, taskExecutionRefs.ownershipEpoch),
+        eq(
+          taskExecutionAuthorities.ownershipEpoch,
+          taskExecutionRefs.ownershipEpoch,
+        ),
         eq(taskExecutionAuthorities.agentId, taskExecutionRefs.targetAgentId),
         eq(taskExecutionAuthorities.state, "current"),
       ),
@@ -2731,10 +2577,13 @@ export async function resolveCurrentTaskOwnerRunLinkage(
     readonly runId?: string | null;
   },
 ): Promise<CurrentTaskOwnerRunLinkage | null> {
-  const linkage = (await resolveCurrentTaskOwnerRunLinkages(database, {
-    companyId: input.companyId,
-    taskIds: [input.taskId],
-  })).get(input.taskId) ?? null;
+  const linkage =
+    (
+      await resolveCurrentTaskOwnerRunLinkages(database, {
+        companyId: input.companyId,
+        taskIds: [input.taskId],
+      })
+    ).get(input.taskId) ?? null;
   if (input.agentId && linkage?.agentId !== input.agentId) return null;
   if (input.runId && linkage?.runId !== input.runId) return null;
   return linkage;
@@ -2913,10 +2762,7 @@ async function readJoinedTaskExecutionRunDetail(
           eq(taskExecutionLeases.runId, input.runId),
         ),
       )
-      .orderBy(
-        asc(taskExecutionLeases.createdAt),
-        asc(taskExecutionLeases.id),
-      )
+      .orderBy(asc(taskExecutionLeases.createdAt), asc(taskExecutionLeases.id))
       .limit(input.limit + 1),
     database
       .select()
@@ -3022,51 +2868,46 @@ async function readJoinedTaskExecutionRunDetail(
     );
   }
   const finalization = finalizationRows[0] ?? null;
-  const [promptDependencies, updateDependencies, liveness] =
-    finalization
-      ? await Promise.all([
-          database
-            .select()
-            .from(taskExecutionFinalizationPromptDependencies)
-            .where(
-              eq(
-                taskExecutionFinalizationPromptDependencies.finalizationId,
-                finalization.id,
-              ),
-            )
-            .orderBy(
-              asc(
-                taskExecutionFinalizationPromptDependencies.dependencyOrdinal,
-              ),
-            )
-            .limit(input.limit + 1),
-          database
-            .select()
-            .from(taskExecutionFinalizationUpdateDependencies)
-            .where(
-              eq(
-                taskExecutionFinalizationUpdateDependencies.finalizationId,
-                finalization.id,
-              ),
-            )
-            .orderBy(
-              asc(
-                taskExecutionFinalizationUpdateDependencies.dependencyOrdinal,
-              ),
-            )
-            .limit(input.limit + 1),
-          database
-            .select()
-            .from(taskExecutionRunLivenessFacts)
-            .where(
-              and(
-                eq(taskExecutionRunLivenessFacts.companyId, input.companyId),
-                eq(taskExecutionRunLivenessFacts.runId, input.runId),
-              ),
-            )
-            .limit(2),
-        ])
-      : [[], [], []] as const;
+  const [promptDependencies, updateDependencies, liveness] = finalization
+    ? await Promise.all([
+        database
+          .select()
+          .from(taskExecutionFinalizationPromptDependencies)
+          .where(
+            eq(
+              taskExecutionFinalizationPromptDependencies.finalizationId,
+              finalization.id,
+            ),
+          )
+          .orderBy(
+            asc(taskExecutionFinalizationPromptDependencies.dependencyOrdinal),
+          )
+          .limit(input.limit + 1),
+        database
+          .select()
+          .from(taskExecutionFinalizationUpdateDependencies)
+          .where(
+            eq(
+              taskExecutionFinalizationUpdateDependencies.finalizationId,
+              finalization.id,
+            ),
+          )
+          .orderBy(
+            asc(taskExecutionFinalizationUpdateDependencies.dependencyOrdinal),
+          )
+          .limit(input.limit + 1),
+        database
+          .select()
+          .from(taskExecutionRunLivenessFacts)
+          .where(
+            and(
+              eq(taskExecutionRunLivenessFacts.companyId, input.companyId),
+              eq(taskExecutionRunLivenessFacts.runId, input.runId),
+            ),
+          )
+          .limit(2),
+      ])
+    : ([[], [], []] as const);
   if (liveness.length > 1) {
     throw new TaskExecutionRunInvariantViolation(
       "run joined detail found duplicate liveness facts",
@@ -3075,7 +2916,7 @@ async function readJoinedTaskExecutionRunDetail(
   const terminal = TERMINAL_RUN_STATUSES.has(run.status);
   if (
     terminal !==
-      (finalization !== null && finalization.id === run.terminalFinalizationId)
+    (finalization !== null && finalization.id === run.terminalFinalizationId)
   ) {
     throw new TaskExecutionRunInvariantViolation(
       "run joined detail does not match its terminal finalization",
@@ -3162,7 +3003,8 @@ async function readJoinedTaskExecutionRunDetail(
       outputCommentRows.map((row) => ({
         commentId: row.commentId,
         messageId: row.messageId,
-        sourceKind: row.sourceKind as TaskExecutionRunOutputCommentLink["sourceKind"],
+        sourceKind:
+          row.sourceKind as TaskExecutionRunOutputCommentLink["sourceKind"],
         projectedEventSeq: Number(row.projectedEventSeq),
       })),
       input.limit,
@@ -3316,10 +3158,7 @@ export async function clearSteeringCancellationAndAttemptInTransaction(
         eq(taskExecutionRuns.status, "running"),
         eq(taskExecutionRuns.currentAttemptId, input.expectedAttemptId),
         eq(taskExecutionRuns.currentLeaseId, input.expectedLeaseId),
-        eq(
-          taskExecutionRuns.cancellationIntentId,
-          input.cancellationIntentId,
-        ),
+        eq(taskExecutionRuns.cancellationIntentId, input.cancellationIntentId),
         isNull(taskExecutionRuns.terminalFinalizationId),
         isNull(taskExecutionRuns.finishedAt),
       ),
@@ -3539,9 +3378,7 @@ export interface TaskExecutionSteeringRepository {
   rebindAfterCancellation(
     request: RequestedTaskExecutionSteering,
   ): Promise<ReboundTaskExecutionSteering>;
-  markResumeReady(
-    rebound: ReboundTaskExecutionSteering,
-  ): Promise<void>;
+  markResumeReady(rebound: ReboundTaskExecutionSteering): Promise<void>;
   findPendingForSource(input: {
     readonly companyId: string;
     readonly taskId: string;
@@ -3769,14 +3606,16 @@ function sameReboundIdentity(
   request: RequestedTaskExecutionSteering,
   rebound: ReboundTaskExecutionSteering,
 ): boolean {
-  return request.companyId === rebound.companyId &&
+  return (
+    request.companyId === rebound.companyId &&
     request.taskId === rebound.taskId &&
     request.ownershipEpoch === rebound.ownershipEpoch &&
     request.runId === rebound.runId &&
     request.targetAgentId === rebound.targetAgentId &&
     request.refId === rebound.refId &&
     request.refOrdinal === rebound.refOrdinal &&
-    request.segmentOrdinal === rebound.segmentOrdinal;
+    request.segmentOrdinal === rebound.segmentOrdinal
+  );
 }
 
 /**
@@ -3819,8 +3658,9 @@ export function createTaskExecutionRunService(options: {
     }
     // A false signal is not itself failure: the old prompt may have settled
     // naturally between the transaction and the post-commit signal.
-    const delivered =
-      options.cancellation.signalAttemptCancellation(request.cancellation);
+    const delivered = options.cancellation.signalAttemptCancellation(
+      request.cancellation,
+    );
     await options.repository.recordCancellationSignal({
       request,
       delivered,
@@ -3874,9 +3714,8 @@ export function createTaskExecutionRunService(options: {
       segmentOrdinal: identity.segmentOrdinal,
       outcome: "failed",
       response: "",
-      reason: error instanceof Error
-        ? error.message
-        : "Steering continuation failed",
+      reason:
+        error instanceof Error ? error.message : "Steering continuation failed",
     });
   }
 
@@ -3965,7 +3804,8 @@ export function createTaskExecutionRunService(options: {
       const byEpoch = "ownershipEpoch" in input;
       if (
         byEpoch &&
-        (!Number.isSafeInteger(input.ownershipEpoch) || input.ownershipEpoch < 1)
+        (!Number.isSafeInteger(input.ownershipEpoch) ||
+          input.ownershipEpoch < 1)
       ) {
         throw new TaskExecutionRunInvariantViolation(
           "ownership epoch must be a positive integer",
@@ -4007,10 +3847,7 @@ export function createTaskExecutionRunService(options: {
       return Object.freeze(runs);
     },
 
-    async lockActiveAgentRunsForTaskEpochInTransaction(
-      transaction,
-      input,
-    ) {
+    async lockActiveAgentRunsForTaskEpochInTransaction(transaction, input) {
       assertExactRunIdentifier(input.companyId, "company id");
       assertExactRunIdentifier(input.taskId, "task id");
       if (
@@ -4078,18 +3915,13 @@ export function createTaskExecutionRunService(options: {
         )
         .orderBy(asc(taskExecutionRuns.createdAt), asc(taskExecutionRuns.id))
         .for("update");
-      return Object.freeze(
-        rows.map(projectRunEnvelope),
-      );
+      return Object.freeze(rows.map(projectRunEnvelope));
     },
 
     listResumedAgentSteeringLivenessActionsInTransaction,
 
     transitionRunStatus(transaction, input) {
-      return transitionTaskExecutionRunStatusInTransaction(
-        transaction,
-        input,
-      );
+      return transitionTaskExecutionRunStatusInTransaction(transaction, input);
     },
 
     attachAttempt(transaction, input) {
@@ -4203,9 +4035,8 @@ export function createTaskExecutionRunService(options: {
 
     async reconcilePendingSteering(limit = 100) {
       const boundedLimit = Math.max(1, Math.min(1_000, Math.trunc(limit)));
-      const sources = await options.repository.listRecoverableSources(
-        boundedLimit,
-      );
+      const sources =
+        await options.repository.listRecoverableSources(boundedLimit);
       let continued = 0;
       let pending = 0;
       for (const source of sources) {

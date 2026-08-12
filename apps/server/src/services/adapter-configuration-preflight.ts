@@ -79,13 +79,11 @@ function readinessScope(
 function incomplete(
   scope: AdapterRuntimeReadinessScope,
   reason: AdapterRuntimeReadinessIncompleteReason,
-  remediationCommand: string | null = null,
 ): AdapterRuntimeReadiness {
   return adapterRuntimeReadinessSchema.parse({
     status: "incomplete",
     scope,
     reason,
-    remediationCommand,
   });
 }
 

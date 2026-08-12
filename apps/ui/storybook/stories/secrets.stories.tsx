@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { AlertCircle, KeyRound } from "lucide-react";
 import type {
   CompanySecret,
@@ -8,20 +9,20 @@ import type {
   UserSecretCoverageSummary,
   UserSecretDefinition,
 } from "@paperclipai/shared";
-import { Secrets } from "@/pages/Secrets";
+import { Secrets } from "@/routes/_authenticated/$companyId/company/settings/secrets";
 import { SecretBindingPicker, type SecretBindingValue } from "@/components/SecretBindingPicker";
 import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { storybookCompanies, storybookSecrets } from "../fixtures/paperclipData";
+import { storybookSecrets } from "../fixtures/paperclipData";
 
-const COMPANY_ID = "company-storybook";
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const USER_ID = "storybook-user";
 
 const storybookUserSecretDefinitions: UserSecretDefinition[] = [
   {
-    id: "def-storybook-github",
+    id: "a4000000-0000-4000-8000-000000000004",
     companyId: COMPANY_ID,
     key: "PERSONAL_GH_TOKEN",
     name: "Personal GitHub token",
@@ -33,15 +34,15 @@ const storybookUserSecretDefinitions: UserSecretDefinition[] = [
     providerMetadata: null,
     usageGuidance: "Create a fine-grained PAT with repo read access.",
     createdByAgentId: null,
-    createdByUserId: "user-board",
+    createdByUserId: "a7000000-0000-4000-8000-000000000002",
     updatedByAgentId: null,
-    updatedByUserId: "user-board",
+    updatedByUserId: "a7000000-0000-4000-8000-000000000002",
     deletedAt: null,
     createdAt: new Date("2026-06-01T00:00:00.000Z"),
     updatedAt: new Date("2026-06-02T00:00:00.000Z"),
   },
   {
-    id: "def-storybook-openai",
+    id: "a4000000-0000-4000-8000-000000000005",
     companyId: COMPANY_ID,
     key: "USER_OPENAI_API_KEY",
     name: "User OpenAI API key",
@@ -53,9 +54,9 @@ const storybookUserSecretDefinitions: UserSecretDefinition[] = [
     providerMetadata: null,
     usageGuidance: "Create a project-scoped OpenAI key.",
     createdByAgentId: null,
-    createdByUserId: "user-board",
+    createdByUserId: "a7000000-0000-4000-8000-000000000002",
     updatedByAgentId: null,
-    updatedByUserId: "user-board",
+    updatedByUserId: "a7000000-0000-4000-8000-000000000002",
     deletedAt: null,
     createdAt: new Date("2026-06-03T00:00:00.000Z"),
     updatedAt: new Date("2026-06-04T00:00:00.000Z"),
@@ -63,27 +64,24 @@ const storybookUserSecretDefinitions: UserSecretDefinition[] = [
 ];
 
 const storybookUserSecretCoverage: Record<string, UserSecretCoverageSummary> = {
-  "def-storybook-github": {
-    definitionId: "def-storybook-github",
+  "a4000000-0000-4000-8000-000000000004": {
+    definitionId: "a4000000-0000-4000-8000-000000000004",
     configuredCount: 5,
     missingCount: 2,
     inactiveCount: 0,
   },
-  "def-storybook-openai": {
-    definitionId: "def-storybook-openai",
+  "a4000000-0000-4000-8000-000000000005": {
+    definitionId: "a4000000-0000-4000-8000-000000000005",
     configuredCount: 7,
     missingCount: 0,
     inactiveCount: 0,
   },
 };
 
-// Seed localStorage before CompanyContext mounts so its `useState` initializer reads the right id.
-if (typeof window !== "undefined") {
-  window.localStorage.setItem("paperclip.selectedCompanyId", COMPANY_ID);
-}
-
 function StorybookSecretsFixtures({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
   // Seed query caches synchronously so children hydrate from cache on first render.
   queryClient.setQueryData(queryKeys.secrets.list(COMPANY_ID), storybookSecrets);
   queryClient.setQueryData(
@@ -91,9 +89,13 @@ function StorybookSecretsFixtures({ children }: { children: ReactNode }) {
     storybookUserSecretDefinitions,
   );
   queryClient.setQueryData(
-    queryKeys.secrets.myUserSecrets(COMPANY_ID),
+    queryKeys.secrets.userSecrets(COMPANY_ID, USER_ID),
     storybookUserSecretDefinitions.map((definition) => ({ definition, secret: null })),
   );
+  queryClient.setQueryData(queryKeys.auth.session, {
+    session: { id: "storybook-session", userId: USER_ID },
+    user: { id: USER_ID, name: "Storybook User", email: "storybook@example.com", image: null },
+  });
   for (const [definitionId, summary] of Object.entries(storybookUserSecretCoverage)) {
     queryClient.setQueryData(
       queryKeys.secrets.userDefinitionCoverage(COMPANY_ID, definitionId),
@@ -101,16 +103,20 @@ function StorybookSecretsFixtures({ children }: { children: ReactNode }) {
     );
   }
 
-  const { selectedCompanyId, setSelectedCompanyId } = useCompany();
+  const onSecretsRoute = location.pathname === "/11111111-1111-4111-8111-111111111111/company/settings/secrets";
   useEffect(() => {
-    if (selectedCompanyId !== COMPANY_ID) {
-      setSelectedCompanyId(COMPANY_ID);
+    if (!onSecretsRoute) {
+      void navigate({
+        to: "/$companyId/company/settings/secrets",
+        params: { companyId: "11111111-1111-4111-8111-111111111111" },
+        replace: true,
+      });
     }
-  }, [selectedCompanyId, setSelectedCompanyId]);
+  }, [navigate, onSecretsRoute]);
 
   // Block render until the company id is the storybook fixture so the BindingPicker's
   // useQuery never sees the production-like null state.
-  if (selectedCompanyId !== COMPANY_ID) {
+  if (!onSecretsRoute) {
     return null;
   }
 
@@ -194,7 +200,7 @@ export const BindingPicker: Story = {
             label="Bound but disabled"
           />
           <BindingPickerSurface
-            initial={{ secretId: "missing-id", version: "latest" }}
+            initial={{ secretId: "a3000000-0000-4000-8000-00000000000c", version: "latest" }}
             label="Bound to missing secret"
           />
         </div>
@@ -237,16 +243,16 @@ export const EnvEditorWithSecrets: Story = {
         <EditorDemo
           label="Healthy bindings"
           initial={{
-            OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: "latest" },
+            OPENAI_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000004", version: "latest" },
             STAGE: { type: "plain", value: "production" },
           }}
         />
         <EditorDemo
           label="Mixed bindings (some need attention)"
           initial={{
-            OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: 2 },
-            GITHUB_APP_PEM: { type: "secret_ref", secretId: "secret-github", version: "latest" },
-            ABANDONED: { type: "secret_ref", secretId: "missing-id", version: "latest" },
+            OPENAI_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000004", version: 2 },
+            GITHUB_APP_PEM: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000003", version: "latest" },
+            ABANDONED: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-00000000000c", version: "latest" },
           }}
         />
       </div>
@@ -265,7 +271,7 @@ export const RunFailureCopy: Story = {
               <Badge variant="outline" className="border-destructive/40 text-destructive">
                 Run failed
               </Badge>
-              <span className="text-xs font-mono text-muted-foreground">PAP-2350 · run-storybook</span>
+              <span className="text-xs font-mono text-muted-foreground">PAP-2350 · 90000000-0000-4000-8000-000000000001</span>
             </div>
             <CardTitle className="text-sm">
               Secret <span className="font-mono">OPENAI_API_KEY</span> is{" "}
@@ -283,9 +289,13 @@ export const RunFailureCopy: Story = {
               <ul className="list-disc pl-4 space-y-0.5">
                 <li>
                   Re-enable the secret on{" "}
-                  <a className="text-primary underline" href="/PAP/company/settings/secrets">
+                  <Link
+                    to="/$companyId/company/settings/secrets"
+                    params={{ companyId: "11111111-1111-4111-8111-111111111111" }}
+                    className="text-primary underline"
+                  >
                     Company settings &gt; Secrets
-                  </a>
+                  </Link>
                 </li>
                 <li>Or, rotate to a new value and pin v3 explicitly for this agent.</li>
                 <li>Or, swap the binding to a different secret with the binding picker.</li>

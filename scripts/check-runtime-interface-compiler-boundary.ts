@@ -33,6 +33,7 @@ const COMPILER_REQUIRED = [
 /** The canonical registry owns public schemas and dynamic runtime projections. */
 const REGISTRY_REQUIRED = [
   "export const PAPERCLIP_MANAGED_TOOL_NAMES",
+  "export const PAPERCLIP_MANAGED_TOOL_METADATA",
   "export const boardMcpInputSchemas",
   "export const BOARD_MANAGED_TOOLS",
   "export interface PaperclipManagedToolRuntimeProjectionInput",
@@ -66,7 +67,7 @@ const REGISTRY_REQUIRED = [
 
 /** Database code derives a snapshot; it does not define a provider ABI. */
 const DATABASE_REQUIRED = [
-  "from \"./paperclip-managed-tool-registry.js\";",
+  'from "./paperclip-managed-tool-registry.js";',
   "function explicitConfigureTargets(",
   "configureGrants: readonly ConfigureGrant[]",
   "actionGrants.agent_configure === true",
@@ -74,9 +75,7 @@ const DATABASE_REQUIRED = [
   ": []",
 ] as const;
 
-const CAPABILITY_REQUIRED = [
-  "compileRuntimeInterface",
-] as const;
+const CAPABILITY_REQUIRED = ["compileRuntimeInterface"] as const;
 
 const RUN_TOOLS_REQUIRED = [
   'method: "initialize" | "tools/list" | "tools/call"',
@@ -122,18 +121,15 @@ const RAW_MANAGED_DESCRIPTOR_HELPERS = [
   "PAPERCLIP_RETRIEVAL_TOOL_NAMES",
 ] as const;
 
-const RAW_MANAGED_TOOL_LITERAL = /["'](?:list_company_tasks|list_sub_tasks|read_task_comments|read_task_agent_run|task_create|task_assign|task_update|mention_agent|mention_board|agent_hire|agent_configure|list_agents|agent_read)["']/;
+const RAW_MANAGED_TOOL_LITERAL =
+  /["'](?:list_company_tasks|list_sub_tasks|read_task_comments|read_task_agent_run|task_create|task_assign|task_update|mention_agent|mention_board|agent_hire|agent_configure|list_agents|agent_read)["']/;
 
 function read(repositoryRoot: string, path: string): string | null {
   const absolutePath = resolve(repositoryRoot, path);
   return existsSync(absolutePath) ? readFileSync(absolutePath, "utf8") : null;
 }
 
-function between(
-  source: string,
-  start: string,
-  end: string,
-): string | null {
+function between(source: string, start: string, end: string): string | null {
   const startOffset = source.indexOf(start);
   if (startOffset < 0) return null;
   const endOffset = source.indexOf(end, startOffset + start.length);
@@ -162,7 +158,11 @@ export function runtimeInterfaceCompilerBoundaryViolations(
 ): string[] {
   const violations = [
     ...requireFileTokens(repositoryRoot, COMPILER, COMPILER_REQUIRED),
-    ...requireFileTokens(repositoryRoot, MANAGED_TOOL_REGISTRY, REGISTRY_REQUIRED),
+    ...requireFileTokens(
+      repositoryRoot,
+      MANAGED_TOOL_REGISTRY,
+      REGISTRY_REQUIRED,
+    ),
     ...requireFileTokens(repositoryRoot, DATABASE_OWNER, DATABASE_REQUIRED),
     ...requireFileTokens(
       repositoryRoot,
@@ -186,13 +186,6 @@ export function runtimeInterfaceCompilerBoundaryViolations(
         violations,
         COMPILER,
         input,
-        "company skills entered RuntimeInterfaceCompileInput",
-        /\b(?:skill|skills|companySkill|companySkills|companySkillPins|selectedCompanySkills|skillPins)\b/i,
-      );
-      rejectPattern(
-        violations,
-        COMPILER,
-        input,
         "raw management permission rows entered RuntimeInterfaceCompileInput",
         /\b(?:principalPermission|permissionGrants|configureGrants|managementPermission)\b/,
       );
@@ -211,7 +204,9 @@ export function runtimeInterfaceCompilerBoundaryViolations(
       "export function runtimeInterfaceDigest",
     );
     if (digest === null) {
-      violations.push(`${COMPILER}: assembled runtime-interface digest is missing`);
+      violations.push(
+        `${COMPILER}: assembled runtime-interface digest is missing`,
+      );
     } else {
       rejectPattern(
         violations,
@@ -219,13 +214,6 @@ export function runtimeInterfaceCompilerBoundaryViolations(
         digest,
         "raw managed authority entered the assembled runtime-interface digest",
         /\b(?:contextDial|actionGrants|isCurrentOwner|taskCreateDirectChildren|taskAssignTargets|creatorUpdateTargets|mentionTargets|configureTargets|principalPermission|permissionGrants|configureGrants|managementPermission)\b/,
-      );
-      rejectPattern(
-        violations,
-        COMPILER,
-        digest,
-        "company skills entered the assembled runtime-interface digest",
-        /\b(?:skill|skills|companySkill|companySkills|companySkillPins|selectedCompanySkills|skillPins)\b/i,
       );
     }
 
@@ -286,21 +274,6 @@ export function runtimeInterfaceCompilerBoundaryViolations(
 
   const database = read(repositoryRoot, DATABASE_OWNER);
   if (database !== null) {
-    rejectPattern(
-      violations,
-      DATABASE_OWNER,
-      database,
-      "company-skill storage entered the runtime-interface snapshot resolver",
-      /\b(?:companySkills|companySkillVersions|companySkillPins|runtimeSkillSelections|selectedCompanySkills)\b/,
-    );
-    rejectPattern(
-      violations,
-      DATABASE_OWNER,
-      database,
-      "runtime-interface snapshot resolver imports a skill owner",
-      /from\s+["'][^"']*(?:skill|skills)[^"']*["']/i,
-    );
-
     const guardOffset = database.indexOf(
       "actionGrants.agent_configure === true",
     );
@@ -323,13 +296,6 @@ export function runtimeInterfaceCompilerBoundaryViolations(
   for (const path of [CAPABILITY_GATEWAY, RUN_TOOLS_ROUTE]) {
     const source = read(repositoryRoot, path);
     if (source === null) continue;
-    rejectPattern(
-      violations,
-      path,
-      source,
-      "company-skill data entered the run capability surface",
-      /\b(?:companySkill|companySkills|companySkillPins|selectedCompanySkills|skillPins)\b/i,
-    );
     rejectPattern(
       violations,
       path,
@@ -357,9 +323,7 @@ if (
   pathToFileURL(resolve(invokedPath)).href === import.meta.url
 ) {
   try {
-    assertRuntimeInterfaceCompilerBoundary(
-      resolve(import.meta.dirname, ".."),
-    );
+    assertRuntimeInterfaceCompilerBoundary(resolve(import.meta.dirname, ".."));
     console.log("Runtime-interface compiler boundary check passed.");
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

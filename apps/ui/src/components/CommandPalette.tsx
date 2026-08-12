@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
-import { useLocation, useNavigate } from "@/lib/router";
+import { useNavigate, type RegisteredRouter, type ValidateNavigateOptions } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useQuery } from "@tanstack/react-query";
-import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
 import { tasksApi } from "../api/tasks";
-import { authApi } from "../api/auth";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
@@ -32,19 +31,13 @@ import {
   Search,
 } from "lucide-react";
 import { Identity } from "./Identity";
-import { agentUrl, projectUrl } from "../lib/utils";
 import {
   SEARCH_OPERATOR_QUICK_FILTERS,
-  buildSearchPathFromQuery,
   parseSearchQuery,
   type SearchQueryParserContext,
 } from "../lib/search-query-parser";
 
 const SEARCH_ALL_VALUE = "__paperclip-search-all__";
-
-export function buildFullSearchPath(query: string, context: SearchQueryParserContext = {}) {
-  return buildSearchPathFromQuery(query, context);
-}
 
 /** Max promoted project matches kept when typing in the palette. */
 const MAX_MATCHED_PROJECTS = 5;
@@ -83,8 +76,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
-  const location = useLocation();
-  const { selectedCompanyId } = useCompany();
+  const companyId = useCompanyRouteId();
   const { openNewTask, openNewAgent } = useDialogActions();
   const { isMobile, setSidebarOpen } = useSidebar();
   const searchQuery = query.trim();
@@ -106,62 +98,72 @@ export function CommandPalette() {
   }, [open]);
 
   const { data: agents = [] } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId!),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && open,
-  });
-
-  const { data: allProjects = [] } = useQuery({
-    queryKey: queryKeys.projects.list(selectedCompanyId!),
-    queryFn: () => projectsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && open,
-  });
-  const projects = useMemo(
-    () => allProjects.filter((p) => !p.archivedAt),
-    [allProjects],
-  );
-
-  const { data: labels = [] } = useQuery({
-    queryKey: queryKeys.tasks.labels(selectedCompanyId!),
-    queryFn: () => tasksApi.listLabels(selectedCompanyId!),
-    enabled: !!selectedCompanyId && open,
-  });
-
-  const { data: session } = useQuery({
-    queryKey: queryKeys.auth.session,
-    queryFn: () => authApi.getSession(),
+    queryKey: queryKeys.agents.list(companyId),
+    queryFn: () => agentsApi.list(companyId),
     enabled: open,
   });
 
-  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
-  const parserContext = useMemo<SearchQueryParserContext>(() => ({
-    currentUserId,
-    agents,
-    projects,
-    labels,
-  }), [agents, currentUserId, labels, projects]);
+  const { data: allProjects = [] } = useQuery({
+    queryKey: queryKeys.projects.list(companyId),
+    queryFn: () => projectsApi.list(companyId),
+    enabled: open,
+  });
+  const projects = useMemo(() => allProjects.filter((p) => !p.archivedAt), [allProjects]);
+
+  const { data: labels = [] } = useQuery({
+    queryKey: queryKeys.tasks.labels(companyId),
+    queryFn: () => tasksApi.listLabels(companyId),
+    enabled: open,
+  });
+
+  const parserContext = useMemo<SearchQueryParserContext>(
+    () => ({
+      agents,
+      projects,
+      labels,
+    }),
+    [agents, labels, projects],
+  );
   const parsedQuery = useMemo(() => parseSearchQuery(query, parserContext), [parserContext, query]);
   const quickSearchQuery = parsedQuery.query.trim();
 
   const { data: tasks = [] } = useQuery({
-    queryKey: queryKeys.tasks.list(selectedCompanyId!),
-    queryFn: () => tasksApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && open && searchQuery.length === 0,
+    queryKey: queryKeys.tasks.list(companyId),
+    queryFn: () => tasksApi.list(companyId),
+    enabled: open && searchQuery.length === 0,
   });
 
   const { data: searchedTasks = [] } = useQuery({
-    queryKey: queryKeys.tasks.search(selectedCompanyId!, quickSearchQuery, undefined, 10),
-    queryFn: () => tasksApi.list(selectedCompanyId!, { q: quickSearchQuery, limit: 10, includeRoutineExecutions: true }),
-    enabled: !!selectedCompanyId && open && quickSearchQuery.length > 0,
+    queryKey: queryKeys.tasks.search(companyId, quickSearchQuery, undefined, 10),
+    queryFn: () => tasksApi.list(companyId, { q: quickSearchQuery, limit: 10 }),
+    enabled: open && quickSearchQuery.length > 0,
   });
 
-  function go(path: string) {
+  function go<TRouter extends RegisteredRouter = RegisteredRouter, TOptions = unknown>(
+    options: ValidateNavigateOptions<TRouter, TOptions>,
+  ): void;
+  function go(options: ValidateNavigateOptions) {
     setOpen(false);
-    navigate(path);
+    void navigate(options);
   }
 
   function goFullSearch() {
-    go(buildFullSearchPath(searchQuery, parserContext));
+    const parsed = parseSearchQuery(searchQuery, parserContext);
+    go({
+      to: "/$companyId/search",
+      params: { companyId },
+      search: {
+        q: parsed.query || undefined,
+        status: parsed.filters.status,
+        priority: parsed.filters.priority,
+        ownerAgentId: parsed.filters.ownerAgentId,
+        ownerUserId: parsed.filters.ownerUserId,
+        projectId: parsed.filters.projectId,
+        labelId: parsed.filters.labelId,
+        updatedWithin: parsed.filters.updatedWithin,
+        updatedAfter: parsed.filters.updatedAfter,
+      },
+    });
   }
 
   const agentName = (id: string | null) => {
@@ -183,11 +185,7 @@ export function CommandPalette() {
     return projects
       .map((project) => ({
         project,
-        score: scoreProjectMatch(
-          project.name.toLowerCase(),
-          (project.description ?? "").toLowerCase(),
-          q,
-        ),
+        score: scoreProjectMatch(project.name.toLowerCase(), (project.description ?? "").toLowerCase(), q),
       }))
       .filter((entry): entry is { project: (typeof projects)[number]; score: number } => entry.score !== null)
       .sort((a, b) => b.score - a.score)
@@ -198,14 +196,16 @@ export function CommandPalette() {
   const showSearchAll = searchQuery.length > 0;
   const showPromotedProjects = showSearchAll && matchedProjects.length > 0;
   const taskLimit = showPromotedProjects ? TASK_LIMIT_WITH_PROJECTS : TASK_LIMIT;
-  const showEmptyHint =
-    showSearchAll && visibleTasks.length === 0 && matchedProjects.length === 0;
+  const showEmptyHint = showSearchAll && visibleTasks.length === 0 && matchedProjects.length === 0;
 
   return (
-    <CommandDialog open={open} onOpenChange={(v) => {
+    <CommandDialog
+      open={open}
+      onOpenChange={(v) => {
         setOpen(v);
         if (v && isMobile) setSidebarOpen(false);
-      }}>
+      }}
+    >
       <CommandInput
         placeholder="Search tasks, agents, projects..."
         value={query}
@@ -227,8 +227,8 @@ export function CommandPalette() {
           {showSearchAll ? (
             <span>
               No quick task matches. Press{" "}
-              <kbd className="rounded border border-border bg-muted px-1 py-0.5 text-(length:--text-nano)">↵</kbd>{" "}
-              to <span className="font-medium">search all</span> or keep typing to refine.
+              <kbd className="rounded border border-border bg-muted px-1 py-0.5 text-(length:--text-nano)">↵</kbd> to{" "}
+              <span className="font-medium">search all</span> or keep typing to refine.
             </span>
           ) : (
             "No results found."
@@ -249,7 +249,9 @@ export function CommandPalette() {
               </span>
               <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <span>open full search</span>
-                <kbd className="rounded border border-border bg-background px-1 py-0.5 text-(length:--text-nano)">↵</kbd>
+                <kbd className="rounded border border-border bg-background px-1 py-0.5 text-(length:--text-nano)">
+                  ↵
+                </kbd>
               </span>
             </CommandItem>
           </CommandGroup>
@@ -262,7 +264,7 @@ export function CommandPalette() {
             <CommandItem
               key={chip}
               value={`quick-filter ${chip}`}
-              onSelect={() => setQuery((current) => current.trim() ? `${current.trim()} ${chip}` : chip)}
+              onSelect={() => setQuery((current) => (current.trim() ? `${current.trim()} ${chip}` : chip))}
               data-testid="command-filter-chip"
             >
               <Search className="mr-2 h-4 w-4" />
@@ -280,7 +282,15 @@ export function CommandPalette() {
                 <CommandItem
                   key={project.id}
                   value={`${searchQuery} ${project.name}`}
-                  onSelect={() => go(projectUrl(project))}
+                  onSelect={() =>
+                    go({
+                      to: "/$companyId/projects/$projectId",
+                      params: {
+                        companyId,
+                        projectId: project.id,
+                      },
+                    })
+                  }
                   data-testid="command-project-match"
                 >
                   <Hexagon className="mr-2 h-4 w-4 shrink-0" />
@@ -317,7 +327,7 @@ export function CommandPalette() {
             <Plus className="mr-2 h-4 w-4" />
             Create new agent
           </CommandItem>
-          <CommandItem onSelect={() => go("/projects")}>
+          <CommandItem onSelect={() => go({ to: "/$companyId/projects", params: { companyId } })}>
             <Plus className="mr-2 h-4 w-4" />
             Create new project
           </CommandItem>
@@ -326,35 +336,35 @@ export function CommandPalette() {
         <CommandSeparator />
 
         <CommandGroup heading="Pages">
-          <CommandItem onSelect={() => go("/dashboard")}>
+          <CommandItem onSelect={() => go({ to: "/$companyId/dashboard", params: { companyId } })}>
             <LayoutDashboard className="mr-2 h-4 w-4" />
             Dashboard
           </CommandItem>
-          <CommandItem onSelect={() => go("/inbox")}>
+          <CommandItem onSelect={() => go({ to: "/$companyId/inbox", params: { companyId } })}>
             <Inbox className="mr-2 h-4 w-4" />
             Inbox
           </CommandItem>
-          <CommandItem onSelect={() => go("/tasks")}>
+          <CommandItem onSelect={() => go({ to: "/$companyId/tasks", params: { companyId } })}>
             <CircleDot className="mr-2 h-4 w-4" />
             Tasks
           </CommandItem>
-          <CommandItem onSelect={() => go("/projects")}>
+          <CommandItem onSelect={() => go({ to: "/$companyId/projects", params: { companyId } })}>
             <Hexagon className="mr-2 h-4 w-4" />
             Projects
           </CommandItem>
-          <CommandItem onSelect={() => go("/goals")}>
+          <CommandItem onSelect={() => go({ to: "/$companyId/goals", params: { companyId } })}>
             <Target className="mr-2 h-4 w-4" />
             Goals
           </CommandItem>
-          <CommandItem onSelect={() => go("/agents")}>
+          <CommandItem onSelect={() => go({ to: "/$companyId/agents", params: { companyId } })}>
             <Bot className="mr-2 h-4 w-4" />
             Agents
           </CommandItem>
-          <CommandItem onSelect={() => go("/costs")}>
+          <CommandItem onSelect={() => go({ to: "/$companyId/costs", params: { companyId } })}>
             <DollarSign className="mr-2 h-4 w-4" />
             Costs
           </CommandItem>
-          <CommandItem onSelect={() => go("/activity")}>
+          <CommandItem onSelect={() => go({ to: "/$companyId/activity", params: { companyId } })}>
             <History className="mr-2 h-4 w-4" />
             Activity
           </CommandItem>
@@ -364,27 +374,34 @@ export function CommandPalette() {
           <>
             <CommandSeparator />
             <CommandGroup heading="Tasks">
-              {visibleTasks.slice(0, taskLimit).map((task) => (
-                <CommandItem
-                  key={task.id}
-                  value={
-                    searchQuery.length > 0
-                      ? `${searchQuery} ${task.identifier ?? ""} ${task.title}`
-                      : undefined
-                  }
-                  onSelect={() => go(`/tasks/${task.identifier ?? task.id}`)}
-                >
-                  <CircleDot className="mr-2 h-4 w-4" />
-                  <span className="text-muted-foreground mr-2 font-mono text-xs">
-                    {task.identifier ?? task.id.slice(0, 8)}
-                  </span>
-                  <span className="flex-1 truncate">{task.title}</span>
-                  {task.ownerAgentId && (() => {
-                    const name = agentName(task.ownerAgentId);
-                    return name ? <Identity name={name} size="sm" className="ml-2 hidden sm:inline-flex" /> : null;
-                  })()}
-                </CommandItem>
-              ))}
+              {visibleTasks.slice(0, taskLimit).map((task) => {
+                const taskIdentifier = task.identifier;
+
+                return (
+                  <CommandItem
+                    key={task.id}
+                    value={searchQuery.length > 0 ? `${searchQuery} ${taskIdentifier} ${task.title}` : undefined}
+                    onSelect={() =>
+                      go({
+                        to: "/$companyId/tasks/$taskNumber",
+                        params: {
+                          companyId,
+                          taskNumber: String(task.taskNumber),
+                        },
+                      })
+                    }
+                  >
+                    <CircleDot className="mr-2 h-4 w-4" />
+                    <span className="text-muted-foreground mr-2 font-mono text-xs">{taskIdentifier}</span>
+                    <span className="flex-1 truncate">{task.title}</span>
+                    {task.ownerAgentId &&
+                      (() => {
+                        const name = agentName(task.ownerAgentId);
+                        return name ? <Identity name={name} size="sm" className="ml-2 hidden sm:inline-flex" /> : null;
+                      })()}
+                  </CommandItem>
+                );
+              })}
             </CommandGroup>
           </>
         )}
@@ -394,12 +411,18 @@ export function CommandPalette() {
             <CommandSeparator />
             <CommandGroup heading="Agents">
               {agents.slice(0, 10).map((agent) => (
-                <CommandItem key={agent.id} onSelect={() => go(agentUrl(agent))}>
+                <CommandItem
+                  key={agent.id}
+                  onSelect={() =>
+                    go({
+                      to: "/$companyId/agents/$agentId",
+                      params: { companyId, agentId: agent.id },
+                    })
+                  }
+                >
                   <Bot className="mr-2 h-4 w-4" />
                   {agent.name}
-                  {agent.title ? (
-                    <span className="text-xs text-muted-foreground ml-2">{agent.title}</span>
-                  ) : null}
+                  {agent.title ? <span className="text-xs text-muted-foreground ml-2">{agent.title}</span> : null}
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -411,7 +434,18 @@ export function CommandPalette() {
             <CommandSeparator />
             <CommandGroup heading="Projects">
               {projects.slice(0, 10).map((project) => (
-                <CommandItem key={project.id} onSelect={() => go(projectUrl(project))}>
+                <CommandItem
+                  key={project.id}
+                  onSelect={() =>
+                    go({
+                      to: "/$companyId/projects/$projectId",
+                      params: {
+                        companyId,
+                        projectId: project.id,
+                      },
+                    })
+                  }
+                >
                   <Hexagon className="mr-2 h-4 w-4" />
                   {project.name}
                 </CommandItem>

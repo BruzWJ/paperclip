@@ -6,7 +6,7 @@ import { createMockDb } from "./helpers/mock-db.js";
 const mocks = vi.hoisted(() => ({
   decide: vi.fn(),
   decidePrincipalGrant: vi.fn(),
-  stampHumanMemberRoleGrants: vi.fn(),
+  stampUserMemberRoleGrants: vi.fn(),
 }));
 
 vi.mock("../services/authorization.js", () => ({
@@ -16,8 +16,8 @@ vi.mock("../services/authorization.js", () => ({
   })),
 }));
 
-vi.mock("../services/human-member-grants.js", () => ({
-  stampHumanMemberRoleGrants: mocks.stampHumanMemberRoleGrants,
+vi.mock("../services/user-member-grants.js", () => ({
+  stampUserMemberRoleGrants: mocks.stampUserMemberRoleGrants,
 }));
 
 function membershipRow(input: {
@@ -46,7 +46,7 @@ describe("access service", () => {
     vi.clearAllMocks();
     mocks.decide.mockResolvedValue({ allowed: false });
     mocks.decidePrincipalGrant.mockResolvedValue({ allowed: false });
-    mocks.stampHumanMemberRoleGrants.mockResolvedValue(undefined);
+    mocks.stampUserMemberRoleGrants.mockResolvedValue(undefined);
   });
 
   it("rejects combined access updates that would demote the last active owner", async () => {
@@ -183,17 +183,35 @@ describe("access service", () => {
         membershipRole: "admin",
       }),
     ]);
-    expect(mocks.stampHumanMemberRoleGrants).toHaveBeenNthCalledWith(1, db, {
+    expect(mocks.stampUserMemberRoleGrants).toHaveBeenNthCalledWith(1, db, {
       companyId: targetCompanyId,
       principalId: sourceOwner.principalUserId,
       membershipRole: "owner",
       grantedByUserId: null,
     });
-    expect(mocks.stampHumanMemberRoleGrants).toHaveBeenNthCalledWith(2, db, {
+    expect(mocks.stampUserMemberRoleGrants).toHaveBeenNthCalledWith(2, db, {
       companyId: targetCompanyId,
       principalId: sourceAdmin.principalUserId,
       membershipRole: "admin",
       grantedByUserId: null,
     });
+  });
+
+  it("rejects user member aliases and non-member agent roles before persistence", async () => {
+    const { db, calls } = createMockDb();
+    const ensureMembership = accessService(db).ensureMembership as (
+      companyId: string,
+      principalType: "user" | "agent",
+      principalId: string,
+      membershipRole: "owner" | "member",
+    ) => Promise<unknown>;
+
+    await expect(
+      ensureMembership(randomUUID(), "user", "user-1", "member"),
+    ).rejects.toThrow("Invalid user company membership role");
+    await expect(
+      ensureMembership(randomUUID(), "agent", randomUUID(), "owner"),
+    ).rejects.toThrow("Invalid agent company membership role");
+    expect(calls).toEqual([]);
   });
 });

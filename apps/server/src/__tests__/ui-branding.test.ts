@@ -22,8 +22,10 @@ const TEMPLATE = `<!doctype html>
 describe("ui branding", () => {
   it("detects worktree mode from PAPERCLIP_IN_WORKTREE", () => {
     expect(isWorktreeUiBrandingEnabled({ PAPERCLIP_IN_WORKTREE: "true" })).toBe(true);
-    expect(isWorktreeUiBrandingEnabled({ PAPERCLIP_IN_WORKTREE: "1" })).toBe(true);
     expect(isWorktreeUiBrandingEnabled({ PAPERCLIP_IN_WORKTREE: "false" })).toBe(false);
+    expect(() => isWorktreeUiBrandingEnabled({ PAPERCLIP_IN_WORKTREE: "1" })).toThrow(
+      'PAPERCLIP_IN_WORKTREE must be exactly "true" or "false"',
+    );
   });
 
   it("resolves name, color, and text color for worktree branding", () => {

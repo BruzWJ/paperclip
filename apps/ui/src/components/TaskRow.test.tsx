@@ -8,15 +8,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskRow } from "./TaskRow";
 import { createTestTask } from "../test-utils/task";
 
-vi.mock("@/lib/router", () => ({
-  Link: ({
+vi.mock("./TaskLinkQuicklook", () => ({
+  TaskLinkQuicklook: ({
     children,
     className,
     disableTaskQuicklook: _disableTaskQuicklook,
     taskPrefetch,
+    taskId: _taskId,
+    taskNumber,
     ...props
-  }: React.ComponentProps<"a"> & { disableTaskQuicklook?: boolean; taskPrefetch?: Task | null }) => (
+  }: React.ComponentProps<"a"> & {
+    disableTaskQuicklook?: boolean;
+    taskPrefetch?: Task | null;
+    taskId: string;
+    taskNumber: number | null;
+  }) => (
     <a
+      href={`/11111111-1111-4111-8111-111111111111/tasks/${taskNumber}`}
       className={className}
       data-disable-task-quicklook={_disableTaskQuicklook ? "true" : undefined}
       data-task-prefetch-id={taskPrefetch?.id}
@@ -177,11 +185,10 @@ describe("TaskRow", () => {
     });
   });
 
-  it("preserves the task detail breadcrumb source and href in the link target", () => {
+  it("preserves the typed task detail source in the link target", () => {
     const root = createRoot(container);
     const task = createTask();
     const state = {
-      taskDetailBreadcrumb: { label: "Inbox", href: "/PAP/inbox/mine" },
       taskDetailSource: "inbox",
     };
 
@@ -191,7 +198,9 @@ describe("TaskRow", () => {
 
     const link = container.querySelector("[data-inbox-task-link]") as HTMLAnchorElement | null;
     expect(link).not.toBeNull();
-    expect(link?.getAttribute("to") ?? link?.getAttribute("href")).toBe("/tasks/PAP-1");
+    expect(link?.getAttribute("to") ?? link?.getAttribute("href")).toBe(
+      "/11111111-1111-4111-8111-111111111111/tasks/1",
+    );
 
     act(() => {
       root.unmount();
@@ -339,6 +348,7 @@ describe("TaskRow", () => {
       blockedBy: [
         {
           id: "blocker-1",
+          taskNumber: 2,
           identifier: "PAP-2",
           title: "Parked child",
           boardPresentationStatus: "backlog",
@@ -368,6 +378,7 @@ describe("TaskRow", () => {
       blockedBy: [
         {
           id: "blocker-1",
+          taskNumber: 2,
           identifier: "PAP-2",
           title: "Active child",
           boardPresentationStatus: "in_progress",

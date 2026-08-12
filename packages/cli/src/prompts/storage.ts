@@ -1,6 +1,14 @@
 import * as p from "@clack/prompts";
+import {
+  parseExactStorageEndpoint,
+  parseExactStorageName,
+  parseExactStoragePrefix,
+} from "@paperclipai/shared";
 import type { StorageConfig } from "../config/schema.js";
-import { resolveDefaultStorageDir, resolvePaperclipInstanceId } from "../config/home.js";
+import {
+  resolveDefaultStorageDir,
+  resolvePaperclipInstanceId,
+} from "../config/home.js";
 
 function defaultStorageBaseDir(): string {
   return resolveDefaultStorageDir(resolvePaperclipInstanceId());
@@ -22,7 +30,9 @@ export function defaultStorageConfig(): StorageConfig {
   };
 }
 
-export async function promptStorage(current?: StorageConfig): Promise<StorageConfig> {
+export async function promptStorage(
+  current?: StorageConfig,
+): Promise<StorageConfig> {
   const base = current ?? defaultStorageConfig();
 
   const provider = await p.select({
@@ -53,7 +63,8 @@ export async function promptStorage(current?: StorageConfig): Promise<StorageCon
       defaultValue: base.localDisk.baseDir || defaultStorageBaseDir(),
       placeholder: defaultStorageBaseDir(),
       validate: (value) => {
-        if (!value || value.trim().length === 0) return "Storage base directory is required";
+        if (!value || value.trim() !== value)
+          return "Storage base directory must be exact and non-empty";
       },
     });
 
@@ -65,7 +76,7 @@ export async function promptStorage(current?: StorageConfig): Promise<StorageCon
     return {
       provider: "local_disk",
       localDisk: {
-        baseDir: baseDir.trim(),
+        baseDir,
       },
       s3: base.s3,
     };
@@ -76,7 +87,11 @@ export async function promptStorage(current?: StorageConfig): Promise<StorageCon
     defaultValue: base.s3.bucket || "paperclip",
     placeholder: "paperclip",
     validate: (value) => {
-      if (!value || value.trim().length === 0) return "Bucket is required";
+      try {
+        parseExactStorageName(value, "Bucket");
+      } catch (error) {
+        return (error as Error).message;
+      }
     },
   });
 
@@ -90,7 +105,11 @@ export async function promptStorage(current?: StorageConfig): Promise<StorageCon
     defaultValue: base.s3.region || "us-east-1",
     placeholder: "us-east-1",
     validate: (value) => {
-      if (!value || value.trim().length === 0) return "Region is required";
+      try {
+        parseExactStorageName(value, "Region");
+      } catch (error) {
+        return (error as Error).message;
+      }
     },
   });
 
@@ -103,6 +122,14 @@ export async function promptStorage(current?: StorageConfig): Promise<StorageCon
     message: "S3 endpoint (optional for compatible backends)",
     defaultValue: base.s3.endpoint ?? "",
     placeholder: "https://s3.amazonaws.com",
+    validate: (value) => {
+      if (value === "") return;
+      try {
+        parseExactStorageEndpoint(value);
+      } catch (error) {
+        return (error as Error).message;
+      }
+    },
   });
 
   if (p.isCancel(endpoint)) {
@@ -113,7 +140,14 @@ export async function promptStorage(current?: StorageConfig): Promise<StorageCon
   const prefix = await p.text({
     message: "Object key prefix (optional)",
     defaultValue: base.s3.prefix ?? "",
-    placeholder: "paperclip/",
+    placeholder: "paperclip",
+    validate: (value) => {
+      try {
+        parseExactStoragePrefix(value);
+      } catch (error) {
+        return (error as Error).message;
+      }
+    },
   });
 
   if (p.isCancel(prefix)) {
@@ -135,12 +169,11 @@ export async function promptStorage(current?: StorageConfig): Promise<StorageCon
     provider: "s3",
     localDisk: base.localDisk,
     s3: {
-      bucket: bucket.trim(),
-      region: region.trim(),
-      endpoint: endpoint.trim() || undefined,
-      prefix: prefix.trim(),
+      bucket,
+      region,
+      endpoint: endpoint || undefined,
+      prefix,
       forcePathStyle,
     },
   };
 }
-

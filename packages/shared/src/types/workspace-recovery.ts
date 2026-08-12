@@ -10,11 +10,9 @@ export type GitWorktreeInProgressOperation =
   | "revert"
   | "bisect";
 
-export interface GitWorktreeBranchIncoherenceEvidence {
+interface GitWorktreeBranchIncoherenceEvidenceBase {
   reason: "git_worktree_branch_incoherence";
   fingerprint: string;
-  sourceTaskId: string | null;
-  sourceIdentifier: string | null;
   executionWorkspaceId: string | null;
   worktreePath: string;
   repoRoot: string;
@@ -26,13 +24,14 @@ export interface GitWorktreeBranchIncoherenceEvidence {
   dirtyPathSample: string[];
   contention: {
     claimedByWorkspaceId: string;
-    claimedByTaskId: string | null;
-    claimedByTaskIdentifier: string | null;
+    claimedByTaskId: string;
+    claimedByTaskIdentifier: string;
     activeRun: {
       id: string;
       status: "queued" | "running";
-      taskId: string | null;
-      taskIdentifier: string | null;
+      taskId: string;
+      taskNumber: number;
+      taskIdentifier: string;
     } | null;
   } | null;
   provenance: {
@@ -56,3 +55,15 @@ export interface GitWorktreeBranchIncoherenceEvidence {
     reason: string;
   };
 }
+
+export type GitWorktreeBranchIncoherenceEvidence =
+  GitWorktreeBranchIncoherenceEvidenceBase & (
+    | {
+        sourceTaskId: string;
+        sourceIdentifier: string;
+      }
+    | {
+        sourceTaskId: null;
+        sourceIdentifier: null;
+      }
+  );

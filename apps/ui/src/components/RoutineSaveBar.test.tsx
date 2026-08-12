@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RoutineSaveBar } from "./RoutineSaveBar";
-import type { RoutineHistoryDirtyFieldDescriptor } from "./RoutineHistoryTab";
+import type { DirtyFieldDescriptor } from "./RoutineHistoryTab";
 
 function act(callback: () => void) {
   flushSync(callback);
@@ -26,7 +26,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const DIRTY: RoutineHistoryDirtyFieldDescriptor[] = [
+const DIRTY: DirtyFieldDescriptor[] = [
   { key: "title", label: "the title" },
   { key: "description", label: "the description" },
 ];

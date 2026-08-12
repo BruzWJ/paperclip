@@ -4,7 +4,7 @@
  * Responsibilities:
  * - Deliver core domain events to subscribing plugin workers (server-side).
  * - Apply `EventFilter` server-side so filtered-out events never reach the handler.
- * - Namespace plugin-emitted events as `plugin.<pluginId>.<eventName>`.
+ * - Namespace plugin-emitted events as `plugin.<pluginKey>.<eventName>`.
  * - Guard the core namespace: plugins may not emit events with the `plugin.` prefix.
  * - Isolate subscriptions per plugin — a plugin cannot enumerate or interfere with
  *   another plugin's subscriptions.
@@ -24,6 +24,7 @@ import {
   pluginEventMatchesFilter,
 } from "@paperclipai/plugin-sdk";
 import type { PluginEvent, EventFilter, PluginEventPattern } from "@paperclipai/plugin-sdk";
+import { isCanonicalUuid } from "@paperclipai/shared";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -135,11 +136,11 @@ export function createPluginEventBus(): PluginEventBus {
   /**
    * Retrieve or create the subscription list for a plugin.
    */
-  function subsFor(pluginId: string): Subscription[] {
-    let subs = registry.get(pluginId);
+  function subsFor(pluginKey: string): Subscription[] {
+    let subs = registry.get(pluginKey);
     if (!subs) {
       subs = [];
-      registry.set(pluginId, subs);
+      registry.set(pluginKey, subs);
     }
     return subs;
   }
@@ -152,10 +153,16 @@ export function createPluginEventBus(): PluginEventBus {
    * Each handler's errors are collected so one plugin cannot interrupt others.
    */
   async function emit(event: PluginEvent): Promise<PluginEventBusEmitResult> {
-    const errors: Array<{ pluginId: string; error: unknown }> = [];
+    if (!isCanonicalUuid(event.eventId)) {
+      throw new Error("Plugin eventId must be an exact canonical UUID");
+    }
+    if (!isCanonicalUuid(event.companyId)) {
+      throw new Error("Plugin event companyId must be an exact canonical UUID");
+    }
+    const errors: Array<{ pluginKey: string; error: unknown }> = [];
     const promises: Promise<void>[] = [];
 
-    for (const [pluginId, subs] of registry) {
+    for (const [pluginKey, subs] of registry) {
       const handlers = new Set<(event: PluginEvent) => Promise<void>>();
       for (const sub of subs) {
         if (!matchesPattern(event.eventType, sub.eventPattern)) continue;
@@ -173,7 +180,7 @@ export function createPluginEventBus(): PluginEventBus {
         // and records it — the promise always resolves, so Promise.all never rejects.
         promises.push(
           Promise.resolve().then(() => handler(event)).catch((error: unknown) => {
-            errors.push({ pluginId, error });
+            errors.push({ pluginKey, error });
           }),
         );
       }
@@ -186,15 +193,21 @@ export function createPluginEventBus(): PluginEventBus {
   /**
    * Remove all subscriptions for a plugin (e.g. on worker shutdown or uninstall).
    */
-  function clearPlugin(pluginId: string): void {
-    registry.delete(pluginId);
+  function clearPlugin(pluginKey: string): void {
+    registry.delete(pluginKey);
   }
 
   /**
    * Return a scoped handle for a specific plugin. The handle exposes only the
    * plugin's own subscription list and enforces the plugin namespace on `emit`.
    */
-  function forPlugin(pluginId: string): ScopedPluginEventBus {
+  function forPlugin(pluginKey: string): ScopedPluginEventBus {
+    if (
+      pluginKey.length === 0
+      || pluginKey !== pluginKey.trim()
+    ) {
+      throw new Error("Plugin identity must be an exact non-empty string");
+    }
     return {
       /**
        * Subscribe to a core domain event or a plugin-namespaced event.
@@ -223,7 +236,7 @@ export function createPluginEventBus(): PluginEventBus {
 
         assertPluginEventSubscription(eventPattern, filter);
 
-        const subscriptions = subsFor(pluginId);
+        const subscriptions = subsFor(pluginKey);
         const key = `${eventPattern}\0${stableFilterKey(filter)}`;
         const existing = subscriptions.find((subscription) =>
           subscription.key === key
@@ -238,7 +251,7 @@ export function createPluginEventBus(): PluginEventBus {
 
       /**
        * Emit a plugin-namespaced event. The event type is automatically
-       * prefixed with `plugin.<pluginId>.` so:
+       * prefixed with `plugin.<pluginKey>.` so:
        * - `emit("sync-done", payload)` becomes `"plugin.acme.linear.sync-done"`.
        *
        * Requires the `events.emit` capability (enforced by the host layer).
@@ -247,29 +260,33 @@ export function createPluginEventBus(): PluginEventBus {
        *   (prevents cross-namespace spoofing).
        */
       async emit(name: string, companyId: string, payload: unknown): Promise<PluginEventBusEmitResult> {
-        if (!name || name.trim() === "") {
-          throw new Error(`Plugin "${pluginId}" must provide a non-empty event name.`);
+        if (name.length === 0 || name !== name.trim()) {
+          throw new Error(
+            `Plugin "${pluginKey}" must provide an exact non-empty event name.`,
+          );
         }
 
-        if (!companyId || companyId.trim() === "") {
-          throw new Error(`Plugin "${pluginId}" must provide a companyId when emitting events.`);
+        if (!isCanonicalUuid(companyId)) {
+          throw new Error(
+            `Plugin "${pluginKey}" must provide an exact canonical company UUID when emitting events.`,
+          );
         }
 
         if (name.startsWith("plugin.")) {
           throw new Error(
-            `Plugin "${pluginId}" must not include the "plugin." prefix when emitting events. ` +
+            `Plugin "${pluginKey}" must not include the "plugin." prefix when emitting events. ` +
             `Emit the bare event name (e.g. "sync-done") and the bus will namespace it automatically.`,
           );
         }
 
-        const eventType = `plugin.${pluginId}.${name}` as const;
+        const eventType = `plugin.${pluginKey}.${name}` as const;
         const event: PluginEvent = {
           eventId: crypto.randomUUID(),
           eventType,
           companyId,
           occurredAt: new Date().toISOString(),
           actorType: "plugin",
-          actorId: pluginId,
+          actorId: pluginKey,
           payload,
         };
 
@@ -278,7 +295,7 @@ export function createPluginEventBus(): PluginEventBus {
 
       /** Remove all subscriptions registered by this plugin. */
       clear(): void {
-        clearPlugin(pluginId);
+        clearPlugin(pluginKey);
       },
     };
   }
@@ -288,9 +305,9 @@ export function createPluginEventBus(): PluginEventBus {
     forPlugin,
     clearPlugin,
     /** Expose subscription count for a plugin (useful for tests and diagnostics). */
-    subscriptionCount(pluginId?: string): number {
-      if (pluginId !== undefined) {
-        return registry.get(pluginId)?.length ?? 0;
+    subscriptionCount(pluginKey?: string): number {
+      if (pluginKey !== undefined) {
+        return registry.get(pluginKey)?.length ?? 0;
       }
       let total = 0;
       for (const subs of registry.values()) total += subs.length;
@@ -310,7 +327,7 @@ export function createPluginEventBus(): PluginEventBus {
  */
 interface PluginEventBusEmitResult {
   /** Errors thrown by individual handlers, keyed by the plugin that failed. */
-  errors: Array<{ pluginId: string; error: unknown }>;
+  errors: Array<{ pluginKey: string; error: unknown }>;
 }
 
 /**
@@ -333,18 +350,18 @@ export interface PluginEventBus {
    * The scoped handle isolates the plugin's subscriptions and enforces the
    * plugin namespace on outbound events.
    */
-  forPlugin(pluginId: string): ScopedPluginEventBus;
+  forPlugin(pluginKey: string): ScopedPluginEventBus;
 
   /**
    * Remove all subscriptions for a plugin (called on worker shutdown/uninstall).
    */
-  clearPlugin(pluginId: string): void;
+  clearPlugin(pluginKey: string): void;
 
   /**
    * Return the total number of active subscriptions, or the count for a
-   * specific plugin if `pluginId` is provided.
+   * specific plugin if `pluginKey` is provided.
    */
-  subscriptionCount(pluginId?: string): number;
+  subscriptionCount(pluginKey?: string): number;
 }
 
 /**
@@ -390,7 +407,7 @@ interface ScopedPluginEventBus {
 
   /**
    * Emit a plugin-namespaced event. The bus automatically prepends
-   * `plugin.<pluginId>.` to the `name`, so passing `"sync-done"` from plugin
+   * `plugin.<pluginKey>.` to the `name`, so passing `"sync-done"` from plugin
    * `"acme.linear"` produces the event type `"plugin.acme.linear.sync-done"`.
    *
    * @param name  Bare event name (e.g. `"sync-done"`). Must be non-empty and

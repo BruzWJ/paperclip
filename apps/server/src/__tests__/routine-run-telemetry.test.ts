@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockDb } from "./helpers/mock-db.js";
+import { testSecretsRuntimeConfig } from "./helpers/secrets-runtime.js";
 
 const mockTelemetryClient = vi.hoisted(() => ({ track: vi.fn() }));
 const mockTrackRoutineRun = vi.hoisted(() => vi.fn());
@@ -10,9 +11,9 @@ vi.mock("../telemetry.js", () => ({
 }));
 
 vi.mock("@paperclipai/shared/telemetry", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/shared/telemetry")>(
-    "@paperclipai/shared/telemetry",
-  );
+  const actual = await vi.importActual<
+    typeof import("@paperclipai/shared/telemetry")
+  >("@paperclipai/shared/telemetry");
   return {
     ...actual,
     trackRoutineRun: mockTrackRoutineRun,
@@ -98,16 +99,12 @@ describe("routine run telemetry", () => {
       updatedAt: now,
     };
     const harness = createMockDb({
-      select: [
-        [routine],
-        [{ snapshot }],
-        [],
-        [existingRun],
-      ],
+      select: [[routine], [{ snapshot }], [], [existingRun]],
       execute: [[]],
     });
     const service = routineService(harness.db, {
       ordinaryTasks: {} as never,
+      secretsRuntime: testSecretsRuntimeConfig(),
     });
 
     const run = await service.runRoutine(routineId, {
@@ -122,7 +119,11 @@ describe("routine run telemetry", () => {
     });
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("execute")).toBe(0);
-    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
-    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(
+      false,
+    );
+    expect(harness.calls.some((call) => call.operation === "update")).toBe(
+      false,
+    );
   });
 });

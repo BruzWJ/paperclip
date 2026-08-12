@@ -49,6 +49,9 @@ function createProgram(): Command {
 }
 
 async function run(args: string[]): Promise<void> {
+  const companyArgs = args[1] === "runtime:create"
+    ? ["--company-id", COMPANY_ID]
+    : [];
   await createProgram().parseAsync(
     [
       ...args,
@@ -56,6 +59,7 @@ async function run(args: string[]): Promise<void> {
       "http://localhost:3100",
       "--api-key",
       "board-token",
+      ...companyArgs,
     ],
     { from: "user" },
   );
@@ -74,16 +78,12 @@ describe("agent control-plane commands", () => {
   });
 
   it("uses the runtime-agent owner for identity, grants, and runtime configuration", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementation(() => Promise.resolve(jsonResponse()));
+    const fetchMock = agentFetch();
     vi.stubGlobal("fetch", fetchMock);
 
     await run([
       "agent",
       "runtime:create",
-      "--company-id",
-      COMPANY_ID,
       "--payload-json",
       JSON.stringify(runtimeConfiguration),
       "--idempotency-key",
@@ -139,16 +139,12 @@ describe("agent control-plane commands", () => {
   });
 
   it("keeps adapter revisions and operational updates on separate owners", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementation(() => Promise.resolve(jsonResponse()));
+    const fetchMock = agentFetch();
     vi.stubGlobal("fetch", fetchMock);
 
     const adapterRevision = {
       adapterType: "codex",
       adapterConfig: { model: "gpt-5.6" },
-      runtimeConfig: {},
-      companySkillPins: [],
     };
     await run([
       "agent",
@@ -203,9 +199,7 @@ describe("agent control-plane commands", () => {
   });
 
   it("keeps lifecycle transitions on their dedicated commands", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementation(() => Promise.resolve(jsonResponse()));
+    const fetchMock = agentFetch();
     vi.stubGlobal("fetch", fetchMock);
 
     await run(["agent", "pause", AGENT_ID]);
@@ -240,10 +234,6 @@ describe("agent control-plane commands", () => {
         "update",
         "delete",
         "approve",
-        "configuration",
-        "config-revisions",
-        "config-revision:get",
-        "config-revision:rollback",
       ]),
     );
   });
@@ -254,4 +244,10 @@ function jsonResponse(
   init: ResponseInit = { status: 200 },
 ): Response {
   return new Response(JSON.stringify(body), init);
+}
+
+function agentFetch() {
+  return vi.fn((_input: string | URL | Request, _init?: RequestInit) =>
+    Promise.resolve(jsonResponse()),
+  );
 }

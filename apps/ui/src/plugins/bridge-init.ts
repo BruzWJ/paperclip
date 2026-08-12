@@ -38,7 +38,6 @@ import { tasksApi } from "@/api/tasks";
 import { projectsApi } from "@/api/projects";
 import { collectLiveTaskIds } from "@/lib/liveTaskIds";
 import { useProjectOrder } from "@/hooks/useProjectOrder";
-import { usePublishSharedQueryData, useSharedPollingQuery } from "@/hooks/useSharedPolling";
 import { queryKeys } from "@/lib/queryKeys";
 import { getRecentProjectIds, trackRecentProject } from "@/lib/recent-projects";
 import type {
@@ -113,7 +112,11 @@ function PluginSdkMarkdownEditor(props: MarkdownEditorProps) {
 function compactTaskFilters(filters: TasksListFilters): TasksListFilters {
   return Object.fromEntries(
     Object.entries(filters).filter(([, value]) =>
-      value !== undefined && value !== null && value !== "" && value !== false,
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      value !== false &&
+      (!Array.isArray(value) || value.length > 0),
     ),
   ) as TasksListFilters;
 }
@@ -151,22 +154,11 @@ function PluginSdkTasksList({
     enabled: !!companyId,
   });
   const activeRunsQueryKey = queryKeys.runs(companyId ?? "__no-company__", { status: ACTIVE_TASK_EXECUTION_RUN_STATUSES });
-  const sharedActiveRuns = useSharedPollingQuery({
-    companyId,
-    resourceKey: "active-runs",
-    queryKey: activeRunsQueryKey,
-    enabled: !!companyId,
-    // Event-sourced via LiveUpdatesProvider (#9627); no interval poll needed.
-    refetchInterval: false,
-    leaderOnly: true,
-  });
-  const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
+  const { data: activeRunPage } = useQuery({
     queryKey: activeRunsQueryKey,
     queryFn: () => runsApi.listForCompany(companyId!, { status: ACTIVE_TASK_EXECUTION_RUN_STATUSES, limit: 200 }),
-    enabled: sharedActiveRuns.enabled,
-    refetchInterval: sharedActiveRuns.refetchInterval,
+    enabled: !!companyId,
   });
-  usePublishSharedQueryData(sharedActiveRuns, activeRunPage, activeRunsUpdatedAt);
   const liveTaskIds = useMemo(() => collectLiveTaskIds(activeRunPage?.items), [activeRunPage]);
 
   const { data: tasks, isLoading, error } = useQuery({
@@ -284,7 +276,7 @@ function PluginSdkProjectPicker({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
   });
-  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const currentUserId = session?.user.id ?? null;
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(resolvedCompanyId ?? "__no-company__"),
     queryFn: () => projectsApi.list(resolvedCompanyId!),

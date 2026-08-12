@@ -14,13 +14,18 @@ export function expandHomePrefix(value: string): string {
 }
 
 export function resolvePaperclipHomeDir(homeOverride?: string): string {
-  const raw = homeOverride?.trim() || process.env.PAPERCLIP_HOME?.trim();
-  if (raw) return path.resolve(expandHomePrefix(raw));
+  const raw = homeOverride ?? process.env.PAPERCLIP_HOME;
+  if (raw !== undefined) {
+    if (raw.length === 0 || raw.trim() !== raw) {
+      throw new Error("PAPERCLIP_HOME must be exact and non-empty");
+    }
+    return path.resolve(expandHomePrefix(raw));
+  }
   return path.resolve(os.homedir(), ".paperclip");
 }
 
 export function resolvePaperclipInstanceId(instanceIdOverride?: string): string {
-  const raw = instanceIdOverride?.trim() || process.env.PAPERCLIP_INSTANCE_ID?.trim() || DEFAULT_PAPERCLIP_INSTANCE_ID;
+  const raw = instanceIdOverride ?? process.env.PAPERCLIP_INSTANCE_ID ?? DEFAULT_PAPERCLIP_INSTANCE_ID;
   if (!PATH_SEGMENT_RE.test(raw)) {
     throw new Error(`Invalid PAPERCLIP_INSTANCE_ID '${raw}'.`);
   }
@@ -39,13 +44,6 @@ export function resolvePaperclipInstanceConfigPath(input: {
   instanceId?: string;
 } = {}): string {
   return path.resolve(resolvePaperclipInstanceRoot(input), PAPERCLIP_CONFIG_BASENAME);
-}
-
-export function resolvePaperclipConfigPathForInstance(input: {
-  homeDir?: string;
-  instanceId?: string;
-} = {}): string {
-  return resolvePaperclipInstanceConfigPath(input);
 }
 
 export function resolvePaperclipEnvPathForConfig(configPath: string): string {

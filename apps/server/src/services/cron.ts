@@ -86,9 +86,7 @@ function parseField(token: string, spec: FieldSpec): number[] {
       const stepStr = trimmed.slice(slashIdx + 1);
       const step = parseInt(stepStr, 10);
       if (isNaN(step) || step <= 0) {
-        throw new Error(
-          `Invalid step "${stepStr}" in cron ${spec.name} field`,
-        );
+        throw new Error(`Invalid step "${stepStr}" in cron ${spec.name} field`);
       }
 
       let rangeStart = spec.min;
@@ -100,9 +98,7 @@ function parseField(token: string, spec: FieldSpec): number[] {
         // N-M/S — range with step
         const [a, b] = base.split("-").map((s) => parseInt(s, 10));
         if (isNaN(a!) || isNaN(b!)) {
-          throw new Error(
-            `Invalid range "${base}" in cron ${spec.name} field`,
-          );
+          throw new Error(`Invalid range "${base}" in cron ${spec.name} field`);
         }
         rangeStart = a!;
         rangeEnd = b!;
@@ -110,9 +106,7 @@ function parseField(token: string, spec: FieldSpec): number[] {
         // N/S — start at N, step S
         const start = parseInt(base, 10);
         if (isNaN(start)) {
-          throw new Error(
-            `Invalid start "${base}" in cron ${spec.name} field`,
-          );
+          throw new Error(`Invalid start "${base}" in cron ${spec.name} field`);
         }
         rangeStart = start;
       }
@@ -160,9 +154,7 @@ function parseField(token: string, spec: FieldSpec): number[] {
     // Single value
     const val = parseInt(trimmed, 10);
     if (isNaN(val)) {
-      throw new Error(
-        `Invalid value "${trimmed}" in cron ${spec.name} field`,
-      );
+      throw new Error(`Invalid value "${trimmed}" in cron ${spec.name} field`);
     }
     validateBounds(val, spec);
     values.add(val);
@@ -277,7 +269,10 @@ export function nextCronTick(cron: ParsedCron, after: Date): Date | null {
     }
 
     // Check day of month AND day of week (both must match)
-    if (!cron.daysOfMonth.includes(dayOfMonth) || !cron.daysOfWeek.includes(dayOfWeek)) {
+    if (
+      !cron.daysOfMonth.includes(dayOfMonth) ||
+      !cron.daysOfWeek.includes(dayOfWeek)
+    ) {
       // Advance one day
       d.setUTCDate(d.getUTCDate() + 1);
       d.setUTCHours(0, 0, 0, 0);
@@ -316,22 +311,6 @@ export function nextCronTick(cron: ParsedCron, after: Date): Date | null {
 
   // No match found within the search window
   return null;
-}
-
-/**
- * Convenience: parse a cron expression and compute the next run time.
- *
- * @param expression — 5-field cron expression string.
- * @param after — Reference date (defaults to `new Date()`).
- * @returns The next matching Date, or `null` if no match within 4 years.
- * @throws {Error} if the cron expression is invalid.
- */
-export function nextCronTickFromExpression(
-  expression: string,
-  after: Date = new Date(),
-): Date | null {
-  const cron = parseCron(expression);
-  return nextCronTick(cron, after);
 }
 
 // ---------------------------------------------------------------------------

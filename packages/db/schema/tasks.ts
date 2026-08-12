@@ -54,7 +54,6 @@ export const tasks = pgTable(
       .notNull(),
     disposition: jsonb("disposition").$type<TaskDisposition | null>(),
     workMode: text("work_mode").notNull().default("standard"),
-    harnessKind: text("harness_kind"),
     priority: text("priority").notNull().default("medium"),
     ownerKind: text("owner_kind").$type<TaskOwnerKind>().notNull(),
     ownerAgentId: uuid("owner_agent_id").references(() => agents.id, {
@@ -93,8 +92,8 @@ export const tasks = pgTable(
     responsibleUserId: text("responsible_user_id").references(() => authUsers.id, {
       onDelete: "set null",
     }),
-    taskNumber: integer("task_number"),
-    identifier: text("identifier"),
+    taskNumber: integer("task_number").notNull(),
+    identifier: text("identifier").notNull(),
     originKind: text("origin_kind").notNull().default("manual"),
     originId: text("origin_id"),
     originRunId: text("origin_run_id"),
@@ -121,7 +120,6 @@ export const tasks = pgTable(
       table.companyId,
       table.lifecycleStatus,
     ),
-    companyHarnessKindIdx: index("tasks_company_harness_kind_idx").on(table.companyId, table.harnessKind),
     ownerStatusIdx: index("tasks_company_owner_status_idx").on(
       table.companyId,
       table.ownerAgentId,
@@ -155,6 +153,10 @@ export const tasks = pgTable(
           and ${table.lifecycleStatus} in ('open', 'blocked')`,
       ),
     companyPriorityIdx: index("tasks_company_priority_idx").on(table.companyId, table.priority),
+    companyTaskNumberUq: uniqueIndex("tasks_company_task_number_uq").on(
+      table.companyId,
+      table.taskNumber,
+    ),
     identifierIdx: uniqueIndex("tasks_identifier_idx").on(table.identifier),
     titleSearchIdx: index("tasks_title_search_idx").using("gin", table.title.op("gin_trgm_ops")),
     identifierSearchIdx: index("tasks_identifier_search_idx").using("gin", table.identifier.op("gin_trgm_ops")),
@@ -211,6 +213,12 @@ export const tasks = pgTable(
       "tasks_canonical_contract_check",
       sql`btrim(${table.request}) <> ''
         and ${table.ownershipEpoch} > 0`,
+    ),
+    canonicalIdentityCheck: check(
+      "tasks_canonical_identity_check",
+      sql`${table.taskNumber} > 0
+        and ${table.identifier} ~ '^[A-Z][A-Z0-9]*-[1-9][0-9]*$'
+        and ${table.identifier} = split_part(${table.identifier}, '-', 1) || '-' || ${table.taskNumber}::text`,
     ),
     ownerShapeCheck: check(
       "tasks_owner_shape_check",

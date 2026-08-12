@@ -1,29 +1,26 @@
-import type { HumanCompanyMembershipRole } from "@paperclipai/shared";
+import {
+  USER_COMPANY_MEMBERSHIP_ROLES,
+  type UserCompanyMembershipRole,
+} from "@paperclipai/shared";
 
-const HUMAN_COMPANY_MEMBERSHIP_ROLES: HumanCompanyMembershipRole[] = [
-  "owner",
-  "admin",
-  "operator",
-  "viewer",
-];
-
-export function normalizeHumanRole(
-  value: unknown,
-  fallback: HumanCompanyMembershipRole = "operator"
-): HumanCompanyMembershipRole {
-  if (value === "member") return "operator";
-  return HUMAN_COMPANY_MEMBERSHIP_ROLES.includes(value as HumanCompanyMembershipRole)
-    ? (value as HumanCompanyMembershipRole)
-    : fallback;
+export function requireUserRole(value: unknown): UserCompanyMembershipRole {
+  if (
+    !USER_COMPANY_MEMBERSHIP_ROLES.includes(value as UserCompanyMembershipRole)
+  ) {
+    throw new Error(`Invalid user company membership role: ${String(value)}`);
+  }
+  return value as UserCompanyMembershipRole;
 }
 
-export function resolveHumanInviteRole(
-  defaultsPayload: Record<string, unknown> | null | undefined
-): HumanCompanyMembershipRole {
-  if (!defaultsPayload || typeof defaultsPayload !== "object") return "operator";
-  const scoped = defaultsPayload.human;
-  if (!scoped || typeof scoped !== "object" || Array.isArray(scoped)) {
-    return "operator";
+export function resolveUserInviteRole(
+  defaultsPayload: Record<string, unknown> | null | undefined,
+): UserCompanyMembershipRole {
+  if (!defaultsPayload || typeof defaultsPayload !== "object") {
+    throw new Error("User invite defaults are missing");
   }
-  return normalizeHumanRole((scoped as Record<string, unknown>).role, "operator");
+  const scoped = defaultsPayload.user;
+  if (!scoped || typeof scoped !== "object" || Array.isArray(scoped)) {
+    throw new Error("User invite defaults are missing a role");
+  }
+  return requireUserRole((scoped as Record<string, unknown>).role);
 }

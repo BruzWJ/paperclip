@@ -27,7 +27,7 @@ services:
     ports:
       - "${PAPERCLIP_PORT:-3100}:3100"
     environment:
-      HOST: "0.0.0.0"
+      PAPERCLIP_BIND: "lan"
       PAPERCLIP_HOME: "/paperclip"
       DATABASE_URL: "postgres://paperclip:paperclip@db:5432/paperclip"
 

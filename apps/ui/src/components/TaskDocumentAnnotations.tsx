@@ -37,9 +37,8 @@ const DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN = 16;
 type AnnotationDocument = Pick<TaskDocument, "key" | "latestRevisionId" | "latestRevisionNumber">;
 
 export interface TaskDocumentAnnotationsProps {
-  taskId: string;
   doc: AnnotationDocument;
-  target?: DocumentAnnotationTarget;
+  target: DocumentAnnotationTarget;
   /** The body that is being rendered/edited (current or historical revision). */
   bodyMarkdown: string;
   /** True when a draft has unsaved changes or is currently saving. */
@@ -68,7 +67,6 @@ export interface TaskDocumentAnnotationsProps {
 }
 
 export function TaskDocumentAnnotations({
-  taskId,
   doc,
   target,
   bodyMarkdown,
@@ -185,12 +183,10 @@ export function TaskDocumentAnnotations({
   }, [doc.key, isMobile, panelOpen]);
 
   const annotationsQuery = useQuery({
-    queryKey: target?.kind === "routine"
+    queryKey: target.kind === "routine"
       ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
-      : queryKeys.tasks.documentAnnotations(taskId, doc.key, "all"),
-    queryFn: () => target
-      ? documentAnnotationsApi.listForTarget(target, { status: "all", includeComments: true })
-      : documentAnnotationsApi.list(taskId, doc.key, { status: "all", includeComments: true }),
+      : queryKeys.tasks.documentAnnotations(target.taskId, target.documentKey, "all"),
+    queryFn: () => documentAnnotationsApi.list(target, { status: "all", includeComments: true }),
     staleTime: 30_000,
   });
   const allThreads = annotationsQuery.data ?? [];
@@ -331,9 +327,7 @@ export function TaskDocumentAnnotations({
           setFocusedCommentId(null);
         }
       }}
-      taskId={taskId}
       target={target}
-      documentKey={doc.key}
       documentRevisionNumber={doc.latestRevisionNumber}
       baseRevisionId={doc.latestRevisionId}
       baseRevisionNumber={doc.latestRevisionNumber}
@@ -412,9 +406,7 @@ export function TaskDocumentAnnotations({
 }
 
 export interface DocumentAnnotationsCountChipProps {
-  taskId: string;
-  docKey: string;
-  target?: DocumentAnnotationTarget;
+  target: DocumentAnnotationTarget;
   panelOpen: boolean;
   onToggle: () => void;
 }
@@ -424,19 +416,15 @@ export interface DocumentAnnotationsCountChipProps {
  * (next to `rev N ▾`) so it stays visible when the document is folded.
  */
 export function DocumentAnnotationsCountChip({
-  taskId,
-  docKey,
   target,
   panelOpen,
   onToggle,
 }: DocumentAnnotationsCountChipProps) {
   const annotationsQuery = useQuery({
-    queryKey: target?.kind === "routine"
+    queryKey: target.kind === "routine"
       ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
-      : queryKeys.tasks.documentAnnotations(taskId, docKey, "all"),
-    queryFn: () => target
-      ? documentAnnotationsApi.listForTarget(target, { status: "all", includeComments: true })
-      : documentAnnotationsApi.list(taskId, docKey, { status: "all", includeComments: true }),
+      : queryKeys.tasks.documentAnnotations(target.taskId, target.documentKey, "all"),
+    queryFn: () => documentAnnotationsApi.list(target, { status: "all", includeComments: true }),
     staleTime: 30_000,
   });
   const threads = annotationsQuery.data ?? [];
@@ -457,10 +445,10 @@ export function DocumentAnnotationsCountChip({
         openCount > 0 && "text-foreground",
       )}
       onClick={onToggle}
-      data-testid={`document-annotation-count-${docKey}`}
+      data-testid={`document-annotation-count-${target.documentKey}`}
       aria-label={openCount === 0
-        ? `Open comments on ${docKey}`
-        : `Open ${openCount} unresolved comments on ${docKey}`}
+        ? `Open comments on ${target.documentKey}`
+        : `Open ${openCount} unresolved comments on ${target.documentKey}`}
       aria-expanded={panelOpen}
     >
       <MessageSquare className="h-3 w-3" aria-hidden="true" />

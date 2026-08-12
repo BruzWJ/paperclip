@@ -1,45 +1,29 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
-  useState,
   type ReactNode,
 } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { BudgetCurrency, Company, MoneyAmount } from "@paperclipai/shared";
-import { companiesApi } from "../api/companies";
+import { useQuery } from "@tanstack/react-query";
+import type { Company } from "@paperclipai/shared";
+import { useOptionalCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { companiesListQueryOptions, type CompanyListResult } from "../api/companies-query";
-import { queryKeys } from "../lib/queryKeys";
-import type { CompanySelectionSource } from "../lib/company-selection";
-type CompanySelectionOptions = { source?: CompanySelectionSource };
 
 interface CompanyContextValue {
   companies: Company[];
-  selectedCompanyId: string | null;
   selectedCompany: Company | null;
-  selectionSource: CompanySelectionSource;
   loading: boolean;
   error: Error | null;
-  setSelectedCompanyId: (companyId: string, options?: CompanySelectionOptions) => void;
-  reloadCompanies: () => Promise<void>;
-  createCompany: (data: {
-    name: string;
-    description?: string | null;
-    budgetCurrency?: BudgetCurrency;
-    budgetMonthlyAmount?: MoneyAmount;
-  }) => Promise<Company>;
 }
 
-const STORAGE_KEY = "paperclip.selectedCompanyId";
+export const ROOT_REDIRECT_COMPANY_STORAGE_KEY = "paperclip.rootRedirectCompanyId";
 
 const CompanyContext = createContext<CompanyContextValue | null>(null);
 
-export function resolveBootstrapCompanySelection(input: {
+export function resolveRootRedirectCompanyId(input: {
   companies: Array<Pick<Company, "id">>;
   sidebarCompanies: Array<Pick<Company, "id">>;
-  selectedCompanyId: string | null;
   storedCompanyId: string | null;
 }) {
   if (input.companies.length === 0) return null;
@@ -47,16 +31,13 @@ export function resolveBootstrapCompanySelection(input: {
   const selectableCompanies = input.sidebarCompanies.length > 0
     ? input.sidebarCompanies
     : input.companies;
-  if (input.selectedCompanyId && selectableCompanies.some((company) => company.id === input.selectedCompanyId)) {
-    return input.selectedCompanyId;
-  }
   if (input.storedCompanyId && selectableCompanies.some((company) => company.id === input.storedCompanyId)) {
     return input.storedCompanyId;
   }
   return selectableCompanies[0]?.id ?? null;
 }
 
-export function shouldClearStoredCompanySelection(input: {
+export function shouldClearRootRedirectCompanyId(input: {
   companies: Array<Pick<Company, "id">>;
   isLoading: boolean;
   unauthorized: boolean;
@@ -64,97 +45,50 @@ export function shouldClearStoredCompanySelection(input: {
   return !input.isLoading && !input.unauthorized && input.companies.length === 0;
 }
 
+export function rememberRootRedirectCompanyId(companyId: string) {
+  localStorage.setItem(ROOT_REDIRECT_COMPANY_STORAGE_KEY, companyId);
+}
+
 export function CompanyProvider({ children }: { children: ReactNode }) {
-  const queryClient = useQueryClient();
-  const [selectionSource, setSelectionSource] = useState<CompanySelectionSource>("bootstrap");
-  const [selectedCompanyId, setSelectedCompanyIdState] = useState<string | null>(null);
+  const companyId = useOptionalCompanyRouteId();
 
   const { data: companiesResult = { companies: [], unauthorized: false }, isLoading, error } =
     useQuery<CompanyListResult>(companiesListQueryOptions);
   const companies = companiesResult.companies;
   const companyListUnauthorized = companiesResult.unauthorized;
-  const sidebarCompanies = useMemo(
-    () => companies.filter((company) => company.status !== "archived"),
-    [companies],
+
+  const selectedCompany = useMemo(
+    () => companies.find((company) => company.id === companyId) ?? null,
+    [companies, companyId],
   );
 
-  // Auto-select first company when list loads
+  // The URL is the active company authority. Persistence only remembers the
+  // target for a later visit to the authenticated root route.
   useEffect(() => {
     if (isLoading) return;
     if (companies.length === 0) {
-      if (shouldClearStoredCompanySelection({ companies, isLoading: false, unauthorized: companyListUnauthorized })) {
-        if (selectedCompanyId !== null) {
-          setSelectedCompanyIdState(null);
-        }
-        localStorage.removeItem(STORAGE_KEY);
+      if (shouldClearRootRedirectCompanyId({ companies, isLoading: false, unauthorized: companyListUnauthorized })) {
+        localStorage.removeItem(ROOT_REDIRECT_COMPANY_STORAGE_KEY);
       }
       return;
     }
-
-    const next = resolveBootstrapCompanySelection({
-      companies,
-      sidebarCompanies,
-      selectedCompanyId,
-      storedCompanyId: localStorage.getItem(STORAGE_KEY),
-    });
-    if (next === null || next === selectedCompanyId) return;
-    setSelectedCompanyIdState(next);
-    setSelectionSource("bootstrap");
-    localStorage.setItem(STORAGE_KEY, next);
-  }, [companies, companyListUnauthorized, isLoading, selectedCompanyId, sidebarCompanies]);
-
-  const setSelectedCompanyId = useCallback((companyId: string, options?: CompanySelectionOptions) => {
-    setSelectedCompanyIdState(companyId);
-    setSelectionSource(options?.source ?? "manual");
-    localStorage.setItem(STORAGE_KEY, companyId);
-  }, []);
-
-  const reloadCompanies = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-  }, [queryClient]);
-
-  const createCompany = useCallback(
-    async (data: {
-      name: string;
-      description?: string | null;
-      budgetCurrency?: BudgetCurrency;
-      budgetMonthlyAmount?: MoneyAmount;
-    }) => {
-      const company = await companiesApi.create(data);
-      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-      setSelectedCompanyId(company.id);
-      return company;
-    },
-    [queryClient, setSelectedCompanyId],
-  );
-
-  const selectedCompany = useMemo(
-    () => companies.find((company) => company.id === selectedCompanyId) ?? null,
-    [companies, selectedCompanyId],
-  );
+    if (selectedCompany) {
+      rememberRootRedirectCompanyId(selectedCompany.id);
+    }
+  }, [companies, companyListUnauthorized, isLoading, selectedCompany]);
 
   const value = useMemo(
     () => ({
       companies,
-      selectedCompanyId,
       selectedCompany,
-      selectionSource,
       loading: isLoading,
       error: error as Error | null,
-      setSelectedCompanyId,
-      reloadCompanies,
-      createCompany,
     }),
     [
       companies,
-      selectedCompanyId,
       selectedCompany,
-      selectionSource,
       isLoading,
       error,
-      setSelectedCompanyId,
-      reloadCompanies,
-      createCompany,
     ],
   );
 

@@ -17,6 +17,7 @@ import {
   resolveCommandContext,
   type BaseClientOptions,
 } from "./common.js";
+import { parseExactInclude } from "./exact-include.js";
 
 interface SecretListOptions extends BaseClientOptions {
   companyId?: string;
@@ -24,7 +25,7 @@ interface SecretListOptions extends BaseClientOptions {
 
 interface SecretDeclarationsOptions extends BaseClientOptions {
   companyId?: string;
-  include?: string;
+  include: string;
   kind?: "all" | "secret" | "plain";
 }
 
@@ -84,38 +85,17 @@ interface SecretProviderHealthResponse {
   providers: SecretProviderHealth[];
 }
 
-const DEFAULT_DECLARATION_INCLUDE: CompanyPortabilityInclude = {
-  company: true,
-  agents: false,
-  projects: true,
-  tasks: false,
-  skills: false,
-};
+const SECRETS_INCLUDE_SELECTORS = ["company", "projects"] as const;
+const DEFAULT_DECLARATION_INCLUDE = "company,projects";
 
-export function parseSecretsInclude(input: string | undefined): CompanyPortabilityInclude {
-  if (!input?.trim()) return { ...DEFAULT_DECLARATION_INCLUDE };
-  const values = input.split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
-  const unsupported = values.filter(
-    (value) => value !== "company" && value !== "projects",
-  );
-  if (unsupported.length > 0) {
-    throw new Error(
-      "Invalid --include value. Use one or more of: company,projects",
-    );
-  }
-  const include = {
-    company: values.includes("company"),
+export function parseSecretsInclude(input: string): CompanyPortabilityInclude {
+  const selected = parseExactInclude(input, SECRETS_INCLUDE_SELECTORS);
+  return {
+    company: selected.has("company"),
     agents: false,
-    projects: values.includes("projects"),
+    projects: selected.has("projects"),
     tasks: false,
-    skills: false,
   };
-  if (!Object.values(include).some(Boolean)) {
-    throw new Error(
-      "Invalid --include value. Use one or more of: company,projects",
-    );
-  }
-  return include;
 }
 
 function readValueFromOptions(opts: { value?: string; valueEnv?: string }): string {
@@ -229,7 +209,7 @@ export function registerSecretCommands(program: Command): void {
       .command("declarations")
       .description("List portable env declarations emitted by company export")
       .requiredOption("-C, --company-id <id>", "Company ID")
-      .option("--include <values>", "Comma-separated include set: company,projects", "company,projects")
+      .option("--include <values>", "Comma-separated include set: company,projects", DEFAULT_DECLARATION_INCLUDE)
       .option("--kind <kind>", "Filter declarations: all | secret | plain", "all")
       .action(async (opts: SecretDeclarationsOptions) => {
         try {

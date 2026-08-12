@@ -217,7 +217,7 @@ is sent to the registry.
 
 For the real `--publish` step, the maintainer machine must already be authenticated to npm.
 If `npm whoami` returns `401`, first run `npm logout --registry=https://registry.npmjs.org/` to clear any stale local auth, then run `npm login` or `npm adduser` locally as an npm org member, and finally rerun the helper.
-That local human auth is fine for the one-time bootstrap publish; we just do not want the same auth model inside CI.
+That local board-user auth is fine for the one-time bootstrap publish; we just do not want the same auth model inside CI.
 The helper now requires `--otp <code>` up front for `--publish`, so it fails before the real publish attempt if the one-time password is missing.
 
 After that first publish succeeds:

@@ -2,6 +2,10 @@ import { test, expect } from "./fixtures";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  openCreateCompanyOnboarding,
+  prepareOnboardingTestPage,
+} from "./onboarding-test-page";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -37,14 +41,6 @@ function shot(name: string) {
   return path.join(SHOT_DIR, name);
 }
 
-async function openWizard(page: import("@playwright/test").Page) {
-  await page.goto("/onboarding");
-  const startBtn = page.getByRole("button", { name: /Start Onboarding|New Company|Add Agent/ });
-  if (await startBtn.count()) {
-    await startBtn.first().click();
-  }
-}
-
 test.describe("NUX Phase 4 visual QA", () => {
   test("captures every integrated surface", async ({ page, request }) => {
     const consoleErrors: string[] = [];
@@ -54,13 +50,8 @@ test.describe("NUX Phase 4 visual QA", () => {
     page.on("pageerror", (err) => consoleErrors.push("PAGEERROR: " + err.message));
 
     // ── Section A: company → mission → ordinary agent → task ─────────────
-    await openWizard(page);
-    // Front door shows when the wizard doesn't open directly on the create
-    // path (e.g. another spec already created a company on this instance).
-    const createCard = page.getByRole("button", { name: /Build a new company/ });
-    if (await createCard.count()) {
-      await createCard.first().click();
-    }
+    await prepareOnboardingTestPage(page);
+    await openCreateCompanyOnboarding(page);
     await expect(
       page.getByRole("heading", { name: "Name your company" }),
     ).toBeVisible({ timeout: 15_000 });
@@ -93,10 +84,10 @@ test.describe("NUX Phase 4 visual QA", () => {
     await page.getByRole("button", { name: /^Next/ }).click();
 
     await page.getByRole("button", { name: /Codex/ }).first().click();
-    const modelField = page.locator("label").filter({ hasText: /^Model$/ }).locator("../..");
-    await expect(modelField).toBeVisible({ timeout: 15_000 });
-    await modelField.getByRole("button").last().click();
-    await page.getByRole("button", { name: "GPT-5.6", exact: true }).click();
+    const modelSelect = page.getByRole("combobox", { name: "Model", exact: true });
+    await expect(modelSelect).toBeVisible({ timeout: 15_000 });
+    await modelSelect.click();
+    await page.getByRole("option", { name: "GPT-5.6", exact: true }).click();
     await page.screenshot({ path: shot("05-connect-codex-agent.png") });
     const createAgentButton = page.getByRole("button", {
       name: "Create agent",
@@ -118,7 +109,7 @@ test.describe("NUX Phase 4 visual QA", () => {
       qaCompany,
       `wizard should have created ${COMPANY_NAME}`,
     ).toBeTruthy();
-    const prefix: string = qaCompany.taskPrefix;
+    const companyId: string = qaCompany.id;
 
     const agentsResponse = await request.get(
       `/api/companies/${qaCompany.id}/agents`,
@@ -179,12 +170,11 @@ test.describe("NUX Phase 4 visual QA", () => {
 
     // ── Section B: front door + growth intake ─────────────────────────────
     await page.evaluate(() => window.localStorage.clear());
-    await openWizard(page);
-    // Reach the full-screen front door (step 0): either it shows directly or
-    // "← Back to start" returns to it from the create step.
-    if (!(await page.getByRole("heading", { name: "Welcome to Paperclip" }).count())) {
-      await page.getByRole("button", { name: /Back to start/ }).click();
-    }
+    await openCreateCompanyOnboarding(page);
+    await expect(
+      page.getByRole("heading", { name: "Name your company" }),
+    ).toBeVisible({ timeout: 10_000 });
+    await page.getByRole("button", { name: "← Back to start", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "Welcome to Paperclip" }),
     ).toBeVisible({ timeout: 10_000 });
@@ -209,8 +199,8 @@ test.describe("NUX Phase 4 visual QA", () => {
     await page.screenshot({ path: shot("07-growth-intake.png") });
 
     // ── Section C: Artifacts ──────────────────────────────────────────────
-    await page.goto(`/${prefix}/artifacts`);
-    await expect(page).toHaveURL(new RegExp(`/${prefix}/artifacts`));
+    await page.goto(`/${companyId}/artifacts`);
+    await expect(page).toHaveURL(new RegExp(`/${companyId}/artifacts`));
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(1_000);
     await page.screenshot({ path: shot("09-artifacts.png") });

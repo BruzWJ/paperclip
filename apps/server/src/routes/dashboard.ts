@@ -4,7 +4,7 @@ import { dashboardService } from "../services/dashboard.js";
 import { assertCompanyAccess } from "./authz.js";
 
 export function dashboardRoutes(db: Db) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = dashboardService(db);
 
   router.get("/companies/:companyId/dashboard", async (req, res) => {

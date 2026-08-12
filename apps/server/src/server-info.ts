@@ -38,15 +38,11 @@ function defaultGitStatusCommand() {
 }
 
 function defaultGitBranchCommand() {
-  return execFileSync(
-    "git",
-    ["symbolic-ref", "--quiet", "--short", "HEAD"],
-    {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 1500,
-    },
-  );
+  return execFileSync("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 1500,
+  });
 }
 
 function parseGitLocalChanges(output: string): ServerGitLocalChanges {
@@ -64,19 +60,23 @@ function parseGitLocalChanges(output: string): ServerGitLocalChanges {
       continue;
     }
     if (indexStatus !== " " && indexStatus !== "?") stagedFileCount += 1;
-    if (worktreeStatus !== " " && worktreeStatus !== "?") unstagedFileCount += 1;
+    if (worktreeStatus !== " " && worktreeStatus !== "?")
+      unstagedFileCount += 1;
   }
 
   return {
     available: true,
-    hasLocalChanges: stagedFileCount + unstagedFileCount + untrackedFileCount > 0,
+    hasLocalChanges:
+      stagedFileCount + unstagedFileCount + untrackedFileCount > 0,
     stagedFileCount,
     unstagedFileCount,
     untrackedFileCount,
   };
 }
 
-function getGitLocalChanges(gitStatusCommand: GitCommand): ServerGitLocalChanges {
+function getGitLocalChanges(
+  gitStatusCommand: GitCommand,
+): ServerGitLocalChanges {
   try {
     return parseGitLocalChanges(gitStatusCommand());
   } catch {
@@ -149,26 +149,6 @@ function readGitInfo(
   }
 }
 
-export function createServerInfoSnapshot(
-  opts: {
-    now?: Date;
-    gitCommand?: GitCommand;
-    gitStatusCommand?: GitCommand;
-    gitBranchCommand?: GitCommand;
-    buildCommitCommand?: BuildCommitCommand;
-  } = {},
-): ServerInfoSnapshot {
-  return {
-    processStartedAt: (opts.now ?? new Date()).toISOString(),
-    git: readGitInfo(
-      opts.gitCommand,
-      opts.gitStatusCommand,
-      opts.gitBranchCommand,
-      opts.buildCommitCommand,
-    ),
-  };
-}
-
 const GIT_INFO_CACHE_TTL_MS = 3000;
 const processStartedAt = new Date().toISOString();
 let gitInfoCache: { value: ServerGitInfo; expiresAt: number } | null = null;
@@ -195,8 +175,4 @@ export function getServerInfoSnapshot(
     };
   }
   return { processStartedAt, git: gitInfoCache.value };
-}
-
-export function resetServerInfoCacheForTests(): void {
-  gitInfoCache = null;
 }

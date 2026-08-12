@@ -13,46 +13,28 @@ import {
   TaskDocumentAnnotations,
 } from "./TaskDocumentAnnotations";
 
+const TASK_ID = "11111111-1111-4111-8111-111111111111";
+const DEEP_LINK_THREAD_ID = "22222222-2222-4222-8222-222222222222";
+
 const mockAnnotationsApi = vi.hoisted(() => {
   const api = {
     list: vi.fn(),
-    listForTarget: vi.fn(),
-    get: vi.fn(),
-    getForTarget: vi.fn(),
     create: vi.fn(),
-    createForTarget: vi.fn(),
     addComment: vi.fn(),
-    addCommentForTarget: vi.fn(),
     updateStatus: vi.fn(),
-    updateStatusForTarget: vi.fn(),
   };
-  api.listForTarget.mockImplementation((target, options) =>
-    target.kind === "task"
-      ? api.list(target.taskId, target.documentKey, options)
-      : api.list(target.routineId, target.documentKey, options));
-  api.getForTarget.mockImplementation((target, threadId) =>
-    target.kind === "task"
-      ? api.get(target.taskId, target.documentKey, threadId)
-      : api.get(target.routineId, target.documentKey, threadId));
-  api.createForTarget.mockImplementation((target, data) =>
-    target.kind === "task"
-      ? api.create(target.taskId, target.documentKey, data)
-      : api.create(target.routineId, target.documentKey, data));
-  api.addCommentForTarget.mockImplementation((target, threadId, data) =>
-    target.kind === "task"
-      ? api.addComment(target.taskId, target.documentKey, threadId, data)
-      : api.addComment(target.routineId, target.documentKey, threadId, data));
-  api.updateStatusForTarget.mockImplementation((target, threadId, status) =>
-    target.kind === "task"
-      ? api.updateStatus(target.taskId, target.documentKey, threadId, status)
-      : api.updateStatus(target.routineId, target.documentKey, threadId, status));
   return api;
 });
 
 const mockPendingAnchor = vi.hoisted(() => ({
   selector: {
     quote: { exact: "should keep the editor", prefix: "We ", suffix: "." },
-    position: { normalizedStart: 10, normalizedEnd: 32, markdownStart: 10, markdownEnd: 32 },
+    position: {
+      normalizedStart: 10,
+      normalizedEnd: 32,
+      markdownStart: 10,
+      markdownEnd: 32,
+    },
   },
   selectedText: "should keep the editor",
 }));
@@ -81,8 +63,16 @@ vi.mock("@/components/ui/sheet", () => ({
       {children}
     </div>
   ),
-  SheetTitle: ({ children, className }: { children: React.ReactNode; className?: string }) => (
-    <div data-slot="sheet-title" className={className}>{children}</div>
+  SheetTitle: ({
+    children,
+    className,
+  }: {
+    children: React.ReactNode;
+    className?: string;
+  }) => (
+    <div data-slot="sheet-title" className={className}>
+      {children}
+    </div>
   ),
 }));
 
@@ -133,14 +123,21 @@ async function flush() {
 }
 
 function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
   setter?.call(textarea, value);
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 function dispatchSubmitShortcut(textarea: HTMLTextAreaElement) {
   textarea.dispatchEvent(
-    new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true }),
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      metaKey: true,
+      bubbles: true,
+    }),
   );
 }
 
@@ -157,7 +154,7 @@ function makeDoc(overrides: Partial<TaskDocument> = {}): TaskDocument {
   return {
     id: "doc-1",
     companyId: "co-1",
-    taskId: "task-1",
+    taskId: TASK_ID,
     key: "plan",
     title: "Plan",
     format: "markdown",
@@ -184,7 +181,7 @@ function makeThread(
   return {
     id,
     companyId: "co-1",
-    taskId: "task-1",
+    taskId: TASK_ID,
     documentId: "doc-1",
     documentKey: "plan",
     status: "open",
@@ -203,7 +200,12 @@ function makeThread(
     markdownEnd: 22,
     anchorSelector: {
       quote: { exact: "should keep the editor", prefix: "We ", suffix: "." },
-      position: { normalizedStart: 0, normalizedEnd: 22, markdownStart: 0, markdownEnd: 22 },
+      position: {
+        normalizedStart: 0,
+        normalizedEnd: 22,
+        markdownStart: 0,
+        markdownEnd: 22,
+      },
     },
     createdByAgentId: null,
     createdByUserId: "user-1",
@@ -217,7 +219,7 @@ function makeThread(
         id: "comment-1",
         companyId: "co-1",
         threadId: id,
-        taskId: "task-1",
+        taskId: TASK_ID,
         documentId: "doc-1",
         body: "Please clarify this assumption.",
         authorType: "user",
@@ -248,16 +250,20 @@ function Harness({
   initialPanelOpen?: boolean;
 }) {
   const [open, setOpen] = useState(initialPanelOpen);
+  const target = {
+    kind: "task" as const,
+    taskId: TASK_ID,
+    documentKey: doc.key,
+  };
   return (
     <>
       <DocumentAnnotationsCountChip
-        taskId="task-1"
-        docKey={doc.key}
+        target={target}
         panelOpen={open}
         onToggle={() => setOpen((current) => !current)}
       />
       <TaskDocumentAnnotations
-        taskId="task-1"
+        target={target}
         doc={doc}
         bodyMarkdown={doc.body}
         draftDirty={draftDirty}
@@ -302,7 +308,9 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    const chip = container.querySelector('[data-testid="document-annotation-count-plan"]');
+    const chip = container.querySelector(
+      '[data-testid="document-annotation-count-plan"]',
+    );
     expect(chip).not.toBeNull();
     expect(chip!.textContent).toContain("1");
     expect(mockAnnotationsApi.list).toHaveBeenCalledTimes(1);
@@ -311,9 +319,13 @@ describe("TaskDocumentAnnotations", () => {
       (chip as HTMLButtonElement).click();
     });
     await flush();
-    const panel = container.querySelector('[data-testid="document-annotation-panel"]');
+    const panel = container.querySelector(
+      '[data-testid="document-annotation-panel"]',
+    );
     expect(panel).not.toBeNull();
-    const anchor = container.querySelector('[data-testid="document-annotation-panel-anchor"]');
+    const anchor = container.querySelector(
+      '[data-testid="document-annotation-panel-anchor"]',
+    );
     expect(anchor).not.toBeNull();
     expect(anchor?.className).toContain("fixed");
     expect(anchor?.className).toContain("z-(--z-60)");
@@ -321,8 +333,14 @@ describe("TaskDocumentAnnotations", () => {
 
   it("keeps the desktop annotation panel inside the task content area when properties are visible", async () => {
     mockAnnotationsApi.list.mockResolvedValue([makeThread()]);
-    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
-    const rectFor = (left: number, top: number, right: number, bottom: number) => ({
+    const originalGetBoundingClientRect =
+      HTMLElement.prototype.getBoundingClientRect;
+    const rectFor = (
+      left: number,
+      top: number,
+      right: number,
+      bottom: number,
+    ) => ({
       x: left,
       y: top,
       left,
@@ -333,18 +351,20 @@ describe("TaskDocumentAnnotations", () => {
       height: bottom - top,
       toJSON: () => ({}),
     });
-    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      if (this instanceof HTMLElement && this.id === "main-content") {
-        return rectFor(0, 0, 900, 800);
-      }
-      if (
-        this instanceof HTMLElement
-        && this.getAttribute("data-testid") === "document-annotation-body-plan"
-      ) {
-        return rectFor(80, 120, 640, 620);
-      }
-      return originalGetBoundingClientRect.call(this);
-    });
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this instanceof HTMLElement && this.id === "main-content") {
+          return rectFor(0, 0, 900, 800);
+        }
+        if (
+          this instanceof HTMLElement &&
+          this.getAttribute("data-testid") === "document-annotation-body-plan"
+        ) {
+          return rectFor(80, 120, 640, 620);
+        }
+        return originalGetBoundingClientRect.call(this);
+      });
 
     const root = createRoot(container);
     const queryClient = makeQueryClient();
@@ -363,14 +383,20 @@ describe("TaskDocumentAnnotations", () => {
       await flush();
       await flush();
 
-      const anchor = container.querySelector('[data-testid="document-annotation-panel-anchor"]') as HTMLElement | null;
-      const panel = container.querySelector('[data-testid="document-annotation-panel"]') as HTMLElement | null;
+      const anchor = container.querySelector(
+        '[data-testid="document-annotation-panel-anchor"]',
+      ) as HTMLElement | null;
+      const panel = container.querySelector(
+        '[data-testid="document-annotation-panel"]',
+      ) as HTMLElement | null;
       expect(anchor).not.toBeNull();
       expect(panel).not.toBeNull();
       expect(anchor!.style.left).toBe("524px");
       expect(anchor!.style.width).toBe("360px");
       expect(panel!.style.width).toBe("360px");
-      expect(parseFloat(anchor!.style.left) + parseFloat(anchor!.style.width)).toBeLessThanOrEqual(884);
+      expect(
+        parseFloat(anchor!.style.left) + parseFloat(anchor!.style.width),
+      ).toBeLessThanOrEqual(884);
     } finally {
       rectSpy.mockRestore();
     }
@@ -378,8 +404,14 @@ describe("TaskDocumentAnnotations", () => {
 
   it("offsets the desktop annotation panel from the document with a left margin when there is room", async () => {
     mockAnnotationsApi.list.mockResolvedValue([makeThread()]);
-    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
-    const rectFor = (left: number, top: number, right: number, bottom: number) => ({
+    const originalGetBoundingClientRect =
+      HTMLElement.prototype.getBoundingClientRect;
+    const rectFor = (
+      left: number,
+      top: number,
+      right: number,
+      bottom: number,
+    ) => ({
       x: left,
       y: top,
       left,
@@ -390,18 +422,20 @@ describe("TaskDocumentAnnotations", () => {
       height: bottom - top,
       toJSON: () => ({}),
     });
-    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      if (this instanceof HTMLElement && this.id === "main-content") {
-        return rectFor(0, 0, 1400, 800);
-      }
-      if (
-        this instanceof HTMLElement
-        && this.getAttribute("data-testid") === "document-annotation-body-plan"
-      ) {
-        return rectFor(80, 120, 640, 620);
-      }
-      return originalGetBoundingClientRect.call(this);
-    });
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this instanceof HTMLElement && this.id === "main-content") {
+          return rectFor(0, 0, 1400, 800);
+        }
+        if (
+          this instanceof HTMLElement &&
+          this.getAttribute("data-testid") === "document-annotation-body-plan"
+        ) {
+          return rectFor(80, 120, 640, 620);
+        }
+        return originalGetBoundingClientRect.call(this);
+      });
 
     const root = createRoot(container);
     const queryClient = makeQueryClient();
@@ -420,7 +454,9 @@ describe("TaskDocumentAnnotations", () => {
       await flush();
       await flush();
 
-      const anchor = container.querySelector('[data-testid="document-annotation-panel-anchor"]') as HTMLElement | null;
+      const anchor = container.querySelector(
+        '[data-testid="document-annotation-panel-anchor"]',
+      ) as HTMLElement | null;
       expect(anchor).not.toBeNull();
       // The document body ends at 640; the panel should clear it with a margin
       // rather than sitting flush against the document's right edge.
@@ -432,7 +468,9 @@ describe("TaskDocumentAnnotations", () => {
   });
 
   it("auto-opens the panel and focuses the thread when deep-linked", async () => {
-    mockAnnotationsApi.list.mockResolvedValue([makeThread({ id: "thread-99" })]);
+    mockAnnotationsApi.list.mockResolvedValue([
+      makeThread({ id: DEEP_LINK_THREAD_ID }),
+    ]);
     const root = createRoot(container);
     const queryClient = makeQueryClient();
     const doc = makeDoc();
@@ -440,16 +478,23 @@ describe("TaskDocumentAnnotations", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <Harness doc={doc} locationHash="#document-plan&thread=thread-99" />
+          <Harness
+            doc={doc}
+            locationHash={`#document-plan&thread=${DEEP_LINK_THREAD_ID}`}
+          />
         </QueryClientProvider>,
       );
     });
     await flush();
     await flush();
 
-    const panel = container.querySelector('[data-testid="document-annotation-panel"]');
+    const panel = container.querySelector(
+      '[data-testid="document-annotation-panel"]',
+    );
     expect(panel).not.toBeNull();
-    const focusedThread = container.querySelector('[data-thread-id="thread-99"][data-focused]');
+    const focusedThread = container.querySelector(
+      `[data-thread-id="${DEEP_LINK_THREAD_ID}"][data-focused]`,
+    );
     expect(focusedThread).not.toBeNull();
   });
 
@@ -498,13 +543,18 @@ describe("TaskDocumentAnnotations", () => {
 
     // Open + resolved both render without any filter interaction.
     expect(container.querySelector('[data-thread-id="open-1"]')).not.toBeNull();
-    expect(container.querySelector('[data-thread-id="resolved-1"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-thread-id="resolved-1"]'),
+    ).not.toBeNull();
     // Orphaned threads can't be anchored in the doc, so they stay hidden.
     expect(container.querySelector('[data-thread-id="orphan-1"]')).toBeNull();
 
     // The Open/Resolved/Stale/Orphaned filter chips are gone.
-    const filterChip = Array.from(container.querySelectorAll("button")).find((button) =>
-      ["Open", "Resolved", "Stale", "Orphaned"].includes((button.textContent ?? "").trim()),
+    const filterChip = Array.from(container.querySelectorAll("button")).find(
+      (button) =>
+        ["Open", "Resolved", "Stale", "Orphaned"].includes(
+          (button.textContent ?? "").trim(),
+        ),
     );
     expect(filterChip).toBeUndefined();
   });
@@ -512,9 +562,21 @@ describe("TaskDocumentAnnotations", () => {
   it("orders threads by document position, not API/recency order", async () => {
     // Returned out of document order: later-in-doc first, earlier-in-doc last.
     mockAnnotationsApi.list.mockResolvedValue([
-      makeThread({ id: "thread-late", normalizedStart: 900, markdownStart: 900 }),
-      makeThread({ id: "thread-early", normalizedStart: 10, markdownStart: 10 }),
-      makeThread({ id: "thread-mid", normalizedStart: 400, markdownStart: 400 }),
+      makeThread({
+        id: "thread-late",
+        normalizedStart: 900,
+        markdownStart: 900,
+      }),
+      makeThread({
+        id: "thread-early",
+        normalizedStart: 10,
+        markdownStart: 10,
+      }),
+      makeThread({
+        id: "thread-mid",
+        normalizedStart: 400,
+        markdownStart: 400,
+      }),
     ]);
     const root = createRoot(container);
     const queryClient = makeQueryClient();
@@ -530,8 +592,9 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    const order = Array.from(container.querySelectorAll("[data-thread-id]"))
-      .map((el) => el.getAttribute("data-thread-id"));
+    const order = Array.from(
+      container.querySelectorAll("[data-thread-id]"),
+    ).map((el) => el.getAttribute("data-thread-id"));
     expect(order).toEqual(["thread-early", "thread-mid", "thread-late"]);
   });
 
@@ -544,7 +607,7 @@ describe("TaskDocumentAnnotations", () => {
             id: "comment-board",
             companyId: "co-1",
             threadId: "open-1",
-            taskId: "task-1",
+            taskId: TASK_ID,
             documentId: "doc-1",
             body: "From the board.",
             authorType: "user",
@@ -558,7 +621,7 @@ describe("TaskDocumentAnnotations", () => {
             id: "comment-agent",
             companyId: "co-1",
             threadId: "open-1",
-            taskId: "task-1",
+            taskId: TASK_ID,
             documentId: "doc-1",
             body: "From the agent.",
             authorType: "agent",
@@ -575,20 +638,31 @@ describe("TaskDocumentAnnotations", () => {
     const queryClient = makeQueryClient();
     const doc = makeDoc();
 
-    const agentMap = new Map([["agent-uxdesigner", { id: "agent-uxdesigner", name: "UXDesigner" }]]);
-    const userProfileMap = new Map([["user-1", { label: "Dotta", image: null }]]);
+    const agentMap = new Map([
+      ["agent-uxdesigner", { id: "agent-uxdesigner", name: "UXDesigner" }],
+    ]);
+    const userProfileMap = new Map([
+      ["user-1", { label: "Dotta", image: null }],
+    ]);
 
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
           <DocumentAnnotationsCountChip
-            taskId="task-1"
-            docKey={doc.key}
+            target={{
+              kind: "task",
+              taskId: TASK_ID,
+              documentKey: doc.key,
+            }}
             panelOpen
             onToggle={() => {}}
           />
           <TaskDocumentAnnotations
-            taskId="task-1"
+            target={{
+              kind: "task",
+              taskId: TASK_ID,
+              documentKey: doc.key,
+            }}
             doc={doc}
             bodyMarkdown={doc.body}
             draftDirty={false}
@@ -609,7 +683,9 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
 
     // Click the open thread to expand it.
-    const threadCard = container.querySelector('[data-thread-id="open-1"]') as HTMLElement | null;
+    const threadCard = container.querySelector(
+      '[data-thread-id="open-1"]',
+    ) as HTMLElement | null;
     expect(threadCard).not.toBeNull();
     await act(async () => threadCard!.click());
     await flush();
@@ -621,7 +697,8 @@ describe("TaskDocumentAnnotations", () => {
     expect(expandedText).toContain("UXDesigner");
     expect(expandedText).toContain("· agent");
     // Each rendered comment shows an author avatar.
-    const avatars = expandedThread?.querySelectorAll('[data-slot="avatar"]') ?? [];
+    const avatars =
+      expandedThread?.querySelectorAll('[data-slot="avatar"]') ?? [];
     expect(avatars.length).toBe(2);
   });
 
@@ -641,10 +718,14 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    const cta = container.querySelector('[data-testid="document-annotation-new-comment-cta"]');
+    const cta = container.querySelector(
+      '[data-testid="document-annotation-new-comment-cta"]',
+    );
     expect(cta).toBeNull();
     expect(container.textContent).toContain("No annotations yet.");
-    expect(container.textContent).toContain("Select text in the document to add a comment.");
+    expect(container.textContent).toContain(
+      "Select text in the document to add a comment.",
+    );
     expect(container.textContent).not.toMatch(/New comment on selection/i);
     expect(container.textContent).not.toMatch(/⌘⇧M/);
   });
@@ -674,9 +755,15 @@ describe("TaskDocumentAnnotations", () => {
     });
     await flush();
 
-    expect(container.querySelector('[data-testid="document-annotation-composer"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="document-annotation-composer"]'),
+    ).toBeNull();
 
-    expect(container.querySelector('[data-testid="document-annotation-new-comment-cta"]')).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="document-annotation-new-comment-cta"]',
+      ),
+    ).toBeNull();
     const directRequestButton = container.querySelector(
       '[data-testid="mock-annotation-selection"]',
     ) as HTMLButtonElement | null;
@@ -718,22 +805,28 @@ describe("TaskDocumentAnnotations", () => {
     const input = document.createElement("input");
     container.appendChild(input);
     await act(async () => {
-      input.dispatchEvent(new KeyboardEvent("keydown", {
-        bubbles: true,
-        cancelable: true,
-        key: "m",
-        metaKey: true,
-        shiftKey: true,
-      }));
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "m",
+          metaKey: true,
+          shiftKey: true,
+        }),
+      );
     });
     await flush();
 
-    expect(container.querySelector('[data-testid="document-annotation-composer"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="document-annotation-composer"]'),
+    ).toBeNull();
   });
 
   it("creates a thread from a captured selection and refreshes the shared annotations query", async () => {
     mockAnnotationsApi.list.mockResolvedValue([]);
-    mockAnnotationsApi.create.mockResolvedValue(makeThread({ id: "created-1" }));
+    mockAnnotationsApi.create.mockResolvedValue(
+      makeThread({ id: "created-1" }),
+    );
     const root = createRoot(container);
     const queryClient = makeQueryClient();
     const doc = makeDoc();
@@ -749,14 +842,18 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     expect(mockAnnotationsApi.list).toHaveBeenCalledTimes(1);
 
-    const selectButton = container.querySelector('[data-testid="mock-annotation-selection"]') as HTMLButtonElement | null;
+    const selectButton = container.querySelector(
+      '[data-testid="mock-annotation-selection"]',
+    ) as HTMLButtonElement | null;
     expect(selectButton).not.toBeNull();
     await act(async () => {
       selectButton!.click();
     });
     await flush();
 
-    const composer = container.querySelector('[data-testid="document-annotation-composer"]') as HTMLTextAreaElement | null;
+    const composer = container.querySelector(
+      '[data-testid="document-annotation-composer"]',
+    ) as HTMLTextAreaElement | null;
     expect(composer).not.toBeNull();
     await act(async () => {
       setTextareaValue(composer!, "New anchored comment");
@@ -773,18 +870,29 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    expect(mockAnnotationsApi.create).toHaveBeenCalledWith("task-1", "plan", {
-      baseRevisionId: "rev-4",
-      baseRevisionNumber: 4,
-      selector: mockPendingAnchor.selector,
-      body: "New anchored comment",
-    });
+    expect(mockAnnotationsApi.create).toHaveBeenCalledWith(
+      {
+        kind: "task",
+        taskId: TASK_ID,
+        documentKey: "plan",
+      },
+      {
+        baseRevisionId: "rev-4",
+        baseRevisionNumber: 4,
+        selector: mockPendingAnchor.selector,
+        body: "New anchored comment",
+      },
+    );
     expect(mockAnnotationsApi.list.mock.calls.length).toBeGreaterThan(1);
   });
 
   it("keeps the composer visible with the draft when creating a thread fails", async () => {
     mockAnnotationsApi.list.mockResolvedValue([]);
-    mockAnnotationsApi.create.mockRejectedValue(new Error("Annotation anchor does not match the current document revision"));
+    mockAnnotationsApi.create.mockRejectedValue(
+      new Error(
+        "Annotation anchor does not match the current document revision",
+      ),
+    );
     const root = createRoot(container);
     const queryClient = makeQueryClient();
     const doc = makeDoc();
@@ -799,14 +907,18 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    const selectButton = container.querySelector('[data-testid="mock-annotation-selection"]') as HTMLButtonElement | null;
+    const selectButton = container.querySelector(
+      '[data-testid="mock-annotation-selection"]',
+    ) as HTMLButtonElement | null;
     expect(selectButton).not.toBeNull();
     await act(async () => {
       selectButton!.click();
     });
     await flush();
 
-    const composer = container.querySelector('[data-testid="document-annotation-composer"]') as HTMLTextAreaElement | null;
+    const composer = container.querySelector(
+      '[data-testid="document-annotation-composer"]',
+    ) as HTMLTextAreaElement | null;
     expect(composer).not.toBeNull();
     await act(async () => {
       setTextareaValue(composer!, "New anchored comment");
@@ -823,16 +935,24 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    const composerAfterFailure = container.querySelector('[data-testid="document-annotation-composer"]') as HTMLTextAreaElement | null;
+    const composerAfterFailure = container.querySelector(
+      '[data-testid="document-annotation-composer"]',
+    ) as HTMLTextAreaElement | null;
     expect(composerAfterFailure).not.toBeNull();
     expect(composerAfterFailure!.value).toBe("New anchored comment");
-    expect(container.querySelector('[data-testid="document-annotation-error"]')?.textContent)
-      .toContain("Annotation anchor does not match the current document revision");
+    expect(
+      container.querySelector('[data-testid="document-annotation-error"]')
+        ?.textContent,
+    ).toContain(
+      "Annotation anchor does not match the current document revision",
+    );
   });
 
   it("submits a new anchored comment with ⌘↵", async () => {
     mockAnnotationsApi.list.mockResolvedValue([]);
-    mockAnnotationsApi.create.mockResolvedValue(makeThread({ id: "created-1" }));
+    mockAnnotationsApi.create.mockResolvedValue(
+      makeThread({ id: "created-1" }),
+    );
     const root = createRoot(container);
     const queryClient = makeQueryClient();
     const doc = makeDoc();
@@ -847,29 +967,44 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    const selectButton = container.querySelector('[data-testid="mock-annotation-selection"]') as HTMLButtonElement | null;
+    const selectButton = container.querySelector(
+      '[data-testid="mock-annotation-selection"]',
+    ) as HTMLButtonElement | null;
     await act(async () => selectButton!.click());
     await flush();
 
-    const composer = container.querySelector('[data-testid="document-annotation-composer"]') as HTMLTextAreaElement | null;
+    const composer = container.querySelector(
+      '[data-testid="document-annotation-composer"]',
+    ) as HTMLTextAreaElement | null;
     expect(composer).not.toBeNull();
-    await act(async () => setTextareaValue(composer!, "Submitted via shortcut"));
+    await act(async () =>
+      setTextareaValue(composer!, "Submitted via shortcut"),
+    );
     await flush();
     await act(async () => dispatchSubmitShortcut(composer!));
     await flush();
     await flush();
 
-    expect(mockAnnotationsApi.create).toHaveBeenCalledWith("task-1", "plan", {
-      baseRevisionId: "rev-4",
-      baseRevisionNumber: 4,
-      selector: mockPendingAnchor.selector,
-      body: "Submitted via shortcut",
-    });
+    expect(mockAnnotationsApi.create).toHaveBeenCalledWith(
+      {
+        kind: "task",
+        taskId: TASK_ID,
+        documentKey: "plan",
+      },
+      {
+        baseRevisionId: "rev-4",
+        baseRevisionNumber: 4,
+        selector: mockPendingAnchor.selector,
+        body: "Submitted via shortcut",
+      },
+    );
   });
 
   it("submits a reply with ⌘↵", async () => {
     mockAnnotationsApi.list.mockResolvedValue([makeThread({ id: "open-1" })]);
-    mockAnnotationsApi.addComment.mockResolvedValue(makeThread({ id: "open-1" }).comments[0]);
+    mockAnnotationsApi.addComment.mockResolvedValue(
+      makeThread({ id: "open-1" }).comments[0],
+    );
     const root = createRoot(container);
     const queryClient = makeQueryClient();
     const doc = makeDoc();
@@ -884,7 +1019,9 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    const openThread = container.querySelector('[data-thread-id="open-1"]') as HTMLElement | null;
+    const openThread = container.querySelector(
+      '[data-thread-id="open-1"]',
+    ) as HTMLElement | null;
     await act(async () => openThread!.click());
     await flush();
 
@@ -898,14 +1035,24 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    expect(mockAnnotationsApi.addComment).toHaveBeenCalledWith("task-1", "plan", "open-1", {
-      body: "Replying via shortcut",
-    });
+    expect(mockAnnotationsApi.addComment).toHaveBeenCalledWith(
+      {
+        kind: "task",
+        taskId: TASK_ID,
+        documentKey: "plan",
+      },
+      "open-1",
+      {
+        body: "Replying via shortcut",
+      },
+    );
   });
 
   it("keeps a reply draft visible when submitting the reply fails", async () => {
     mockAnnotationsApi.list.mockResolvedValue([makeThread({ id: "open-1" })]);
-    mockAnnotationsApi.addComment.mockRejectedValue(new Error("Failed to add reply"));
+    mockAnnotationsApi.addComment.mockRejectedValue(
+      new Error("Failed to add reply"),
+    );
     const root = createRoot(container);
     const queryClient = makeQueryClient();
     const doc = makeDoc();
@@ -920,7 +1067,9 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    const openThread = container.querySelector('[data-thread-id="open-1"]') as HTMLElement | null;
+    const openThread = container.querySelector(
+      '[data-thread-id="open-1"]',
+    ) as HTMLElement | null;
     expect(openThread).not.toBeNull();
     await act(async () => openThread!.click());
     await flush();
@@ -929,7 +1078,9 @@ describe("TaskDocumentAnnotations", () => {
       '[data-testid="document-annotation-reply-open-1"]',
     ) as HTMLTextAreaElement | null;
     expect(reply).not.toBeNull();
-    await act(async () => setTextareaValue(reply!, "Reply should stay visible"));
+    await act(async () =>
+      setTextareaValue(reply!, "Reply should stay visible"),
+    );
     await flush();
 
     const replyButton = Array.from(container.querySelectorAll("button")).find(
@@ -945,8 +1096,10 @@ describe("TaskDocumentAnnotations", () => {
     ) as HTMLTextAreaElement | null;
     expect(replyAfterFailure).not.toBeNull();
     expect(replyAfterFailure!.value).toBe("Reply should stay visible");
-    expect(container.querySelector('[data-testid="document-annotation-error"]')?.textContent)
-      .toContain("Failed to add reply");
+    expect(
+      container.querySelector('[data-testid="document-annotation-error"]')
+        ?.textContent,
+    ).toContain("Failed to add reply");
   });
 
   it("shows resolve and reopen actions and updates thread status", async () => {
@@ -954,7 +1107,9 @@ describe("TaskDocumentAnnotations", () => {
       makeThread({ id: "open-1" }),
       makeThread({ id: "resolved-1", status: "resolved" }),
     ]);
-    mockAnnotationsApi.updateStatus.mockResolvedValue(makeThread({ id: "open-1", status: "resolved" }));
+    mockAnnotationsApi.updateStatus.mockResolvedValue(
+      makeThread({ id: "open-1", status: "resolved" }),
+    );
     const root = createRoot(container);
     const queryClient = makeQueryClient();
     const doc = makeDoc();
@@ -969,7 +1124,9 @@ describe("TaskDocumentAnnotations", () => {
     await flush();
     await flush();
 
-    const openThread = container.querySelector('[data-thread-id="open-1"]') as HTMLElement | null;
+    const openThread = container.querySelector(
+      '[data-thread-id="open-1"]',
+    ) as HTMLElement | null;
     expect(openThread).not.toBeNull();
     await act(async () => openThread!.click());
     await flush();
@@ -980,10 +1137,20 @@ describe("TaskDocumentAnnotations", () => {
     expect(resolveButton).not.toBeUndefined();
     await act(async () => resolveButton!.click());
     await flush();
-    expect(mockAnnotationsApi.updateStatus).toHaveBeenCalledWith("task-1", "plan", "open-1", "resolved");
+    expect(mockAnnotationsApi.updateStatus).toHaveBeenCalledWith(
+      {
+        kind: "task",
+        taskId: TASK_ID,
+        documentKey: "plan",
+      },
+      "open-1",
+      "resolved",
+    );
 
     // Resolved threads stay in the same list (filter tabs were removed).
-    const resolvedThread = container.querySelector('[data-thread-id="resolved-1"]') as HTMLElement | null;
+    const resolvedThread = container.querySelector(
+      '[data-thread-id="resolved-1"]',
+    ) as HTMLElement | null;
     expect(resolvedThread).not.toBeNull();
     await act(async () => resolvedThread!.click());
     await flush();
@@ -994,7 +1161,15 @@ describe("TaskDocumentAnnotations", () => {
     expect(reopenButton).not.toBeUndefined();
     await act(async () => reopenButton!.click());
     await flush();
-    expect(mockAnnotationsApi.updateStatus).toHaveBeenCalledWith("task-1", "plan", "resolved-1", "open");
+    expect(mockAnnotationsApi.updateStatus).toHaveBeenCalledWith(
+      {
+        kind: "task",
+        taskId: TASK_ID,
+        documentKey: "plan",
+      },
+      "resolved-1",
+      "open",
+    );
   });
 
   it("renders the mobile annotation panel through the sheet path", async () => {

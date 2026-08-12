@@ -47,6 +47,21 @@ describe("documentService task documents", () => {
     vi.clearAllMocks();
   });
 
+  it.each(["Plan", " plan", "plan ", "PLAN"])(
+    "rejects the noncanonical document key %j without querying",
+    async (key) => {
+      const harness = createMockDb();
+
+      await expect(
+        documentService(harness.db).getTaskDocumentByKey(randomUUID(), key),
+      ).rejects.toMatchObject({
+        status: 422,
+        message: "Invalid document key",
+      });
+      expect(harness.calls).toEqual([]);
+    },
+  );
+
   it("locks, rejects writes to, unlocks, and then updates a task document", async () => {
     const taskId = randomUUID();
     const companyId = randomUUID();

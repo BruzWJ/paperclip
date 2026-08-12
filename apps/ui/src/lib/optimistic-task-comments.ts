@@ -56,9 +56,7 @@ export interface OptimisticTaskComment extends ClientTaskComment {
   queueTargetRunId?: string | null;
 }
 
-export type TaskTimelineComment =
-  | ClientTaskComment
-  | OptimisticTaskComment;
+export type TaskTimelineComment = ClientTaskComment | OptimisticTaskComment;
 export type LocallyQueuedTaskComment<T extends ClientTaskComment> = T & {
   clientStatus: "queued";
   queueState: "queued";
@@ -77,7 +75,9 @@ function createOptimisticCommentId() {
   return `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function sortTaskComments<T extends { createdAt: Date | string; id: string }>(comments: T[]) {
+export function sortTaskComments<
+  T extends { createdAt: Date | string; id: string },
+>(comments: T[]) {
   return [...comments].sort((a, b) => {
     const createdAtDiff = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
     if (createdAtDiff !== 0) return createdAtDiff;
@@ -113,35 +113,6 @@ export function createOptimisticTaskComment(params: {
   };
 }
 
-export function isQueuedTaskComment(params: {
-  comment: Pick<TaskTimelineComment, "createdAt"> &
-    Partial<Pick<OptimisticTaskComment, "clientStatus">> & {
-      id?: string;
-      authorAgentId?: string | null;
-    };
-  activeRunStartedAt?: Date | string | null;
-  activeRunAgentId?: string | null;
-  activeRunCommentId?: string | null;
-  activeRunWakeCommentId?: string | null;
-  runId?: string | null;
-  interruptedRunId?: string | null;
-}) {
-  if (params.runId) return false;
-  if (params.interruptedRunId) return false;
-  if (
-    params.comment.id &&
-    (params.comment.id === params.activeRunWakeCommentId || params.comment.id === params.activeRunCommentId)
-  ) {
-    return false;
-  }
-  if (params.comment.authorAgentId && params.activeRunAgentId && params.comment.authorAgentId === params.activeRunAgentId) {
-    return false;
-  }
-  if (params.comment.clientStatus === "queued") return true;
-  if (!params.activeRunStartedAt) return false;
-  return toTimestamp(params.comment.createdAt) >= toTimestamp(params.activeRunStartedAt);
-}
-
 export function applyLocalQueuedTaskCommentState<T extends ClientTaskComment>(
   comment: T,
   params: {
@@ -152,7 +123,8 @@ export function applyLocalQueuedTaskCommentState<T extends ClientTaskComment>(
 ): T | LocallyQueuedTaskComment<T> {
   const queuedTargetRunId = params.queuedTargetRunId ?? null;
   if (!queuedTargetRunId || !params.targetRunIsLive) return comment;
-  if (params.runningRunId && params.runningRunId !== queuedTargetRunId) return comment;
+  if (params.runningRunId && params.runningRunId !== queuedTargetRunId)
+    return comment;
 
   return {
     ...comment,
@@ -172,9 +144,7 @@ export function mergeTaskComments(
     );
     return [...persisted, ...sortTaskComments(optimisticComments)];
   }
-  const merged: TaskTimelineComment[] = [
-    ...(comments ?? []),
-  ];
+  const merged: TaskTimelineComment[] = [...(comments ?? [])];
   const existingIds = new Set(merged.map((comment) => comment.id));
   for (const comment of optimisticComments) {
     if (!existingIds.has(comment.id)) {
@@ -269,11 +239,13 @@ export function flattenBoardTaskCommentGroupPages(
   let order = 0;
   for (const group of orderedGroups) {
     const groupComments: ClientTaskComment[] = [];
-    groupComments.push(boardCommentToClient(group.root, scope, {
-      rootId: group.root.id,
-      isRoot: true,
-      order: order++,
-    }));
+    groupComments.push(
+      boardCommentToClient(group.root, scope, {
+        rootId: group.root.id,
+        isRoot: true,
+        order: order++,
+      }),
+    );
     const continuation = continuations?.get(group.root.id);
     const entriesByIdentity = new Map<string, BoardTaskThreadEntry>();
     for (const entry of [...group.entries, ...(continuation?.entries ?? [])]) {
@@ -284,24 +256,27 @@ export function flattenBoardTaskCommentGroupPages(
       group.entriesNextCursor !== null &&
       (continuation?.expanded !== true ||
         entriesByIdentity.size < expectedEntryCount);
-    const entries = (collapsed ? [] : [...entriesByIdentity.values()]).sort((left, right) =>
+    const entries = (collapsed ? [] : [...entriesByIdentity.values()]).sort(
+      (left, right) =>
         left.canonicalSequence - right.canonicalSequence ||
         left.id.localeCompare(right.id),
-      );
+    );
     for (const entry of entries) {
-      groupComments.push(entry.kind === "comment"
-        ? boardCommentToClient(entry, scope, {
-            rootId: group.root.id,
-            isRoot: false,
-            order: order++,
-          })
-        : boardRunSegmentToClient(entry, scope, {
-            rootId: group.root.id,
-            order: order++,
-          }));
+      groupComments.push(
+        entry.kind === "comment"
+          ? boardCommentToClient(entry, scope, {
+              rootId: group.root.id,
+              isRoot: false,
+              order: order++,
+            })
+          : boardRunSegmentToClient(entry, scope, {
+              rootId: group.root.id,
+              order: order++,
+            }),
+      );
     }
-    const nextCursor = continuation?.nextCursor ??
-      (collapsed ? group.entriesNextCursor : null);
+    const nextCursor =
+      continuation?.nextCursor ?? (collapsed ? group.entriesNextCursor : null);
     const continuationTarget = groupComments.at(-1);
     if (
       continuationTarget &&
@@ -316,21 +291,6 @@ export function flattenBoardTaskCommentGroupPages(
     comments.push(...groupComments);
   }
   return comments;
-}
-
-export function takeOptimisticTaskComment(
-  comments: OptimisticTaskComment[],
-  clientId: string,
-): { comments: OptimisticTaskComment[]; comment: OptimisticTaskComment | null } {
-  const index = comments.findIndex((comment) => comment.clientId === clientId);
-  if (index === -1) {
-    return { comments, comment: null };
-  }
-
-  return {
-    comments: comments.filter((comment) => comment.clientId !== clientId),
-    comment: comments[index] ?? null,
-  };
 }
 
 export function shouldAutoloadOlderTaskComments(params: {
@@ -348,21 +308,6 @@ export function shouldAutoloadOlderTaskComments(params: {
   return params.loadedCommentCount < params.autoLoadLimit;
 }
 
-export function upsertTaskComment<T extends ClientTaskComment>(
-  comments: T[] | undefined,
-  nextComment: T,
-): T[] {
-  const current = comments ?? [];
-  const existingIndex = current.findIndex((comment) => comment.id === nextComment.id);
-  if (existingIndex === -1) {
-    return sortTaskComments([...current, nextComment]);
-  }
-
-  const updated = [...current];
-  updated[existingIndex] = nextComment;
-  return sortTaskComments(updated);
-}
-
 export function applyOptimisticTaskFieldUpdate(
   task: Task | undefined,
   data: Record<string, unknown>,
@@ -373,7 +318,8 @@ export function applyOptimisticTaskFieldUpdate(
     ...task,
     updatedAt: new Date(),
   };
-  const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(data, key);
+  const hasOwn = (key: string) =>
+    Object.prototype.hasOwnProperty.call(data, key);
   const assign = <K extends keyof Task>(key: K) => {
     if (hasOwn(key)) {
       nextTask[key] = data[key] as Task[K];
@@ -392,22 +338,35 @@ export function applyOptimisticTaskFieldUpdate(
   assign("hiddenAt");
 
   if (hasOwn("labelIds") && Array.isArray(data.labelIds)) {
-    const nextLabelIds = data.labelIds.filter((value): value is string => typeof value === "string");
+    const nextLabelIds = data.labelIds.filter(
+      (value): value is string => typeof value === "string",
+    );
     nextTask.labelIds = nextLabelIds;
     if (task.labels) {
-      nextTask.labels = task.labels.filter((label) => nextLabelIds.includes(label.id));
+      nextTask.labels = task.labels.filter((label) =>
+        nextLabelIds.includes(label.id),
+      );
     }
   }
 
-  if (hasOwn("blockedByTaskIds") && Array.isArray(data.blockedByTaskIds) && task.blockedBy) {
+  if (
+    hasOwn("blockedByTaskIds") &&
+    Array.isArray(data.blockedByTaskIds) &&
+    task.blockedBy
+  ) {
     const nextBlockedByIds = new Set(
-      data.blockedByTaskIds.filter((value): value is string => typeof value === "string"),
+      data.blockedByTaskIds.filter(
+        (value): value is string => typeof value === "string",
+      ),
     );
-    nextTask.blockedBy = task.blockedBy.filter((relation) => nextBlockedByIds.has(relation.id));
+    nextTask.blockedBy = task.blockedBy.filter((relation) =>
+      nextBlockedByIds.has(relation.id),
+    );
   }
 
   if (hasOwn("projectId")) {
-    nextTask.project = task.project?.id === nextTask.projectId ? task.project : null;
+    nextTask.project =
+      task.project?.id === nextTask.projectId ? task.project : null;
   }
 
   if (hasOwn("parentId")) {
@@ -417,24 +376,20 @@ export function applyOptimisticTaskFieldUpdate(
   return nextTask;
 }
 
-export function matchesTaskRef(
-  task: Pick<Task, "id" | "identifier">,
-  refs: Iterable<string>,
-) {
-  const refSet = refs instanceof Set ? refs : new Set(refs);
-  return refSet.has(task.id) || (!!task.identifier && refSet.has(task.identifier));
+export function matchesTaskId(task: Pick<Task, "id">, taskId: string) {
+  return task.id === taskId;
 }
 
 export function applyOptimisticTaskFieldUpdateToCollection(
   tasks: Task[] | undefined,
-  refs: Iterable<string>,
+  taskId: string,
   data: Record<string, unknown>,
 ) {
   if (!tasks) return tasks;
 
   let changed = false;
   const nextTasks = tasks.map((task) => {
-    if (!matchesTaskRef(task, refs)) return task;
+    if (!matchesTaskId(task, taskId)) return task;
     changed = true;
     return applyOptimisticTaskFieldUpdate(task, data) ?? task;
   });

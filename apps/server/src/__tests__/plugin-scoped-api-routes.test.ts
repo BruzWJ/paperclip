@@ -33,7 +33,9 @@ vi.mock("../services/activity-log.js", () => ({
   logActivity: vi.fn(),
 }));
 
-function manifest(apiRoutes: NonNullable<PaperclipPluginManifestV1["apiRoutes"]>): PaperclipPluginManifestV1 {
+function manifest(
+  apiRoutes: NonNullable<PaperclipPluginManifestV1["apiRoutes"]>,
+): PaperclipPluginManifestV1 {
   return {
     id: "paperclip.scoped-api-test",
     apiVersion: 1,
@@ -61,7 +63,11 @@ async function createApp(input: {
 
   const workerManager = {
     isRunning: vi.fn().mockReturnValue(input.workerRunning ?? true),
-    call: vi.fn().mockResolvedValue(input.workerResult ?? { status: 200, body: { ok: true } }),
+    call: vi
+      .fn()
+      .mockResolvedValue(
+        input.workerResult ?? { status: 200, body: { ok: true } },
+      ),
   };
 
   mockRegistry.getById.mockResolvedValue(input.plugin ?? null);
@@ -123,23 +129,43 @@ describe.sequential("plugin scoped API routes", () => {
     });
 
     const res = await request(app)
-      .get(`/api/plugins/${pluginId}/api/companies/acme/summary?companyId=${companyId}&view=compact`)
+      .get(
+        `/api/plugins/${pluginId}/api/companies/acme/summary?companyId=${companyId}&view=compact`,
+      )
       .set("Authorization", "Bearer should-not-forward");
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ handled: true });
-    expect(workerManager.call).toHaveBeenCalledWith(pluginId, "handleApiRequest", expect.objectContaining({
-      routeKey: "summary.get",
-      method: "GET",
-      params: { companySlug: "acme" },
-      query: { companyId, view: "compact" },
-      companyId,
-      actor: {
-        type: "user",
-        userId: "user-1",
-      },
-    }));
-    expect(workerManager.call.mock.calls[0]?.[2].headers.authorization).toBeUndefined();
+    expect(workerManager.call).toHaveBeenCalledWith(
+      pluginId,
+      "handleApiRequest",
+      expect.objectContaining({
+        routeKey: "summary.get",
+        method: "GET",
+        params: { companySlug: "acme" },
+        query: { companyId, view: "compact" },
+        companyId,
+        actor: {
+          type: "user",
+          userId: "user-1",
+        },
+      }),
+    );
+    expect(
+      workerManager.call.mock.calls[0]?.[2].headers.authorization,
+    ).toBeUndefined();
+
+    const aliasedCompany = await request(app)
+      .get(`/api/plugins/${pluginId}/api/companies/acme/summary`)
+      .query({ companyId: ` ${companyId} ` });
+    expect(aliasedCompany.status).toBe(400);
+    expect(workerManager.call).toHaveBeenCalledTimes(1);
+
+    const nestedQuery = await request(app)
+      .get(`/api/plugins/${pluginId}/api/companies/acme/summary`)
+      .query({ companyId, nested: { value: "not-exact" } });
+    expect(nestedQuery.status).toBe(400);
+    expect(workerManager.call).toHaveBeenCalledTimes(1);
   });
 
   it("only forwards allowlisted response headers from plugin routes", async () => {
@@ -179,8 +205,9 @@ describe.sequential("plugin scoped API routes", () => {
       },
     });
 
-    const res = await request(app)
-      .get(`/api/plugins/${pluginId}/api/companies/acme/summary?companyId=${companyId}`);
+    const res = await request(app).get(
+      `/api/plugins/${pluginId}/api/companies/acme/summary?companyId=${companyId}`,
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["cache-control"]).toBe("no-store");
@@ -216,8 +243,9 @@ describe.sequential("plugin scoped API routes", () => {
       },
     });
 
-    const res = await request(app)
-      .get(`/api/plugins/${pluginId}/api/summary?companyId=${companyId}`);
+    const res = await request(app).get(
+      `/api/plugins/${pluginId}/api/summary?companyId=${companyId}`,
+    );
 
     expect(res.status).toBe(503);
     expect(res.body).toMatchObject({
@@ -255,8 +283,9 @@ describe.sequential("plugin scoped API routes", () => {
       workerRunning: false,
     });
 
-    const res = await request(app)
-      .get(`/api/plugins/${pluginId}/api/summary?companyId=${companyId}`);
+    const res = await request(app).get(
+      `/api/plugins/${pluginId}/api/summary?companyId=${companyId}`,
+    );
 
     expect(res.status).toBe(503);
     expect(res.body).toMatchObject({
@@ -266,20 +295,63 @@ describe.sequential("plugin scoped API routes", () => {
     expect(workerManager.call).not.toHaveBeenCalled();
   });
 
-  it("rejects manifest routes that try to claim core API paths", () => {
-    const result = pluginManifestV1Schema.safeParse(manifest([
+  it("matches only the declared canonical path without slash normalization", async () => {
+    const apiRoutes = manifest([
       {
-        routeKey: "bad.shadow",
-        method: "POST",
-        path: "/api/tasks/:taskId",
-        companyResolution: { from: "task", param: "taskId" },
+        routeKey: "summary.get",
+        method: "GET",
+        path: "/companies/:companySlug/summary",
+        companyResolution: { from: "query", key: "companyId" },
       },
-    ]));
+    ]);
+    const { app, workerManager } = await createApp({
+      actor: testBoardSessionActor({
+        userId: "user-1",
+        userName: "User One",
+        userEmail: "user-1@paperclip.test",
+        sessionId: "session-user-1",
+        companyIds: [companyId],
+        memberships: [{ companyId, status: "active", membershipRole: "admin" }],
+        isInstanceAdmin: true,
+      }),
+      plugin: {
+        id: pluginId,
+        pluginKey: apiRoutes.id,
+        status: "ready",
+        manifestJson: apiRoutes,
+      },
+    });
+
+    const trailingSlash = await request(app).get(
+      `/api/plugins/${pluginId}/api/companies/acme/summary/?companyId=${companyId}`,
+    );
+    const doubledSlash = await request(app).get(
+      `/api/plugins/${pluginId}/api/companies//acme/summary?companyId=${companyId}`,
+    );
+
+    expect(trailingSlash.status).toBe(404);
+    expect(doubledSlash.status).toBe(404);
+    expect(workerManager.call).not.toHaveBeenCalled();
+  });
+
+  it("rejects manifest routes that try to claim core API paths", () => {
+    const result = pluginManifestV1Schema.safeParse(
+      manifest([
+        {
+          routeKey: "bad.shadow",
+          method: "POST",
+          path: "/api/tasks/:taskId",
+          companyResolution: { from: "task", param: "taskId" },
+        },
+      ]),
+    );
 
     expect(result.success).toBe(false);
     if (result.success) throw new Error("Expected manifest validation to fail");
-    expect(validationDetails(result.error).map((detail) => detail.message).join("\n")).toContain(
-      "path must stay inside the plugin api namespace",
-    );
+    expect(
+      validationDetails(result.error)
+        .map((detail) => detail.message)
+        .join("\n"),
+    ).toContain("path must stay inside the plugin api namespace");
   });
 });

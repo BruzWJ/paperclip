@@ -1359,7 +1359,7 @@ export function createPluginWorkerHandle(
  *   manifest,
  *   instanceInfo: { instanceId: "inst-1", hostVersion: "1.0.0" },
  *   apiVersion: 1,
- *   hostHandlers: createHostClientHandlers({ pluginId: "acme.linear", capabilities, services }),
+ *   hostHandlers: createHostClientHandlers({ pluginKey: "acme.linear", capabilities, services }),
  * });
  *
  * // Send RPC call to the worker

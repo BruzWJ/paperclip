@@ -1,8 +1,8 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
+import { testSecretsRuntimeConfig } from "./helpers/secrets-runtime.js";
 
 const mockCompanyService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -86,8 +86,12 @@ function companyOperatorActor() {
 
 async function createApp(actor: Record<string, unknown>) {
   const [{ companyRoutes }, { errorHandler }] = await Promise.all([
-    vi.importActual<typeof import("../routes/companies.js")>("../routes/companies.js"),
-    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+    vi.importActual<typeof import("../routes/companies.js")>(
+      "../routes/companies.js",
+    ),
+    vi.importActual<typeof import("../middleware/index.js")>(
+      "../middleware/index.js",
+    ),
   ]);
   const app = express();
   app.use(express.json());
@@ -95,10 +99,14 @@ async function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", denyGenericAgentRest("REST"));
   app.use(
     "/api/companies",
-    companyRoutes({} as any, undefined, {} as never),
+    companyRoutes(
+      {} as any,
+      undefined,
+      {} as never,
+      testSecretsRuntimeConfig(),
+    ),
   );
   app.use(errorHandler);
   return app;
@@ -111,24 +119,6 @@ describe("PATCH /api/companies/:companyId/branding", () => {
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
     vi.clearAllMocks();
-  });
-
-  it("denies generic agent REST callers before validating branding fields", async () => {
-    const app = await createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId: "company-1",
-      source: "internal",
-      runId: "run-1",
-    });
-
-    const res = await request(app)
-      .patch("/api/companies/company-1/branding")
-      .send({ status: "archived" });
-
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("compiled_run_interface_required");
-    expect(mockCompanyService.update).not.toHaveBeenCalled();
   });
 
   it("allows board callers to update branding fields", async () => {
@@ -175,25 +165,6 @@ describe("PATCH /api/companies/:companyId", () => {
     vi.clearAllMocks();
   });
 
-  it("denies generic agent REST callers before loading the company or validating settings", async () => {
-    const app = await createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId: "company-1",
-      source: "internal",
-      runId: "run-1",
-    });
-
-    const res = await request(app)
-      .patch("/api/companies/company-1")
-      .send({ status: "archived" });
-
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("compiled_run_interface_required");
-    expect(mockCompanyService.getById).not.toHaveBeenCalled();
-    expect(mockCompanyService.update).not.toHaveBeenCalled();
-  });
-
   it("keeps full company settings updates board-only", async () => {
     const company = createCompany();
     mockCompanyService.getById.mockResolvedValue(company);
@@ -208,9 +179,13 @@ describe("PATCH /api/companies/:companyId", () => {
       .send({ status: "paused" });
 
     expect(res.status).toBe(200);
-    expect(mockCompanyService.update).toHaveBeenCalledWith("company-1", { status: "paused" }, expect.objectContaining({
-      actorType: "user",
-      actorId: "user-1",
-    }));
+    expect(mockCompanyService.update).toHaveBeenCalledWith(
+      "company-1",
+      { status: "paused" },
+      expect.objectContaining({
+        actorType: "user",
+        actorId: "user-1",
+      }),
+    );
   });
 });

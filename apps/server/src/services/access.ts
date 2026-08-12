@@ -5,19 +5,29 @@ import {
   instanceUserRoles,
   principalPermissionGrants,
 } from "@paperclipai/db";
-import type { PermissionKey, PrincipalType } from "@paperclipai/shared";
+import type {
+  UserCompanyMembershipRole,
+  PermissionKey,
+  PrincipalType,
+} from "@paperclipai/shared";
+import { isCanonicalUuid } from "@paperclipai/shared";
 import { conflict } from "../errors.js";
 import { authorizationService, type AuthorizationActor, type AuthorizationResource } from "./authorization.js";
-import { stampHumanMemberRoleGrants } from "./human-member-grants.js";
+import { requireUserRole } from "./company-member-roles.js";
+import { stampUserMemberRoleGrants } from "./user-member-grants.js";
 
 type StoredMembershipRow = typeof companyMemberships.$inferSelect;
 type StoredGrantRow = typeof principalPermissionGrants.$inferSelect;
-type MembershipRow = Omit<
+type MembershipRowBase = Omit<
   StoredMembershipRow,
-  "principalUserId" | "principalAgentId"
-> & {
+  "principalUserId" | "principalAgentId" | "principalType" | "membershipRole"
+>;
+type MembershipRow = MembershipRowBase & {
   principalId: string;
-};
+} & (
+  | { principalType: "user"; membershipRole: UserCompanyMembershipRole }
+  | { principalType: "agent"; membershipRole: "member" }
+);
 type PrincipalGrantRow = Omit<
   StoredGrantRow,
   "principalUserId" | "principalAgentId"
@@ -71,10 +81,30 @@ function storedMembershipPrincipalId(row: StoredMembershipRow): string {
 
 function mapMembership(row: StoredMembershipRow): MembershipRow {
   const { principalUserId: _principalUserId, principalAgentId: _principalAgentId, ...stored } = row;
-  return {
-    ...stored,
-    principalId: storedMembershipPrincipalId(row),
-  };
+  const principalId = storedMembershipPrincipalId(row);
+  if (row.principalType === "user") {
+    return {
+      ...stored,
+      principalType: "user",
+      membershipRole: requireUserRole(row.membershipRole),
+      principalId,
+    };
+  }
+  if (row.membershipRole !== "member") {
+    throw new Error(`Invalid agent company membership role: ${String(row.membershipRole)}`);
+  }
+  return { ...stored, principalType: "agent", membershipRole: "member", principalId };
+}
+
+function requirePrincipalMembershipRole(
+  principalType: PrincipalType,
+  membershipRole: UserCompanyMembershipRole | "member",
+): UserCompanyMembershipRole | "member" {
+  if (principalType === "user") return requireUserRole(membershipRole);
+  if (membershipRole !== "member") {
+    throw new Error(`Invalid agent company membership role: ${String(membershipRole)}`);
+  }
+  return membershipRole;
 }
 
 function mapPrincipalGrant(row: StoredGrantRow): PrincipalGrantRow {
@@ -175,6 +205,7 @@ export function accessService(db: Db) {
   }
 
   async function getMemberById(companyId: string, memberId: string) {
+    if (!isCanonicalUuid(companyId) || !isCanonicalUuid(memberId)) return null;
     return db
       .select()
       .from(companyMemberships)
@@ -194,7 +225,10 @@ export function accessService(db: Db) {
         ),
       )
       .orderBy(sql`${companyMemberships.createdAt} asc`);
-    return rows.map(mapMembership);
+    return rows.map(mapMembership).filter(
+      (membership): membership is Extract<MembershipRow, { principalType: "user" }> =>
+        membership.principalType === "user",
+    );
   }
 
   async function setMemberPermissions(
@@ -239,7 +273,7 @@ export function accessService(db: Db) {
     companyId: string,
     memberId: string,
     data: {
-      membershipRole?: string | null;
+      membershipRole?: UserCompanyMembershipRole;
       status?: "pending" | "active" | "suspended";
       grants: GrantInput[];
     },
@@ -262,6 +296,9 @@ export function accessService(db: Db) {
         .where(and(eq(companyMemberships.companyId, companyId), eq(companyMemberships.id, memberId)))
         .then((rows) => rows[0] ?? null);
       if (!existing) return null;
+      if (existing.principalType !== "user") {
+        throw conflict("Only user company members can be updated");
+      }
       const existingPrincipalId = storedMembershipPrincipalId(existing);
 
       const nextMembershipRole =
@@ -364,6 +401,7 @@ export function accessService(db: Db) {
   }
 
   async function archiveMember(companyId: string, memberId: string) {
+    if (!isCanonicalUuid(companyId) || !isCanonicalUuid(memberId)) return null;
     return db.transaction(async (tx) => {
       await tx.execute(sql`
         select ${companyMemberships.id}
@@ -382,7 +420,7 @@ export function accessService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!existing) return null;
       if (existing.principalType !== "user") {
-        throw conflict("Only human company members can be archived");
+        throw conflict("Only user company members can be archived");
       }
       if (existing.status === "archived") {
         return { member: mapMembership(existing) };
@@ -528,7 +566,7 @@ export function accessService(db: Db) {
               .update(companyMemberships)
               .set({
                 status: "active",
-                membershipRole: existingMembership.membershipRole ?? "operator",
+                membershipRole: requireUserRole(existingMembership.membershipRole),
                 updatedAt: new Date(),
               })
               .where(eq(companyMemberships.id, existingMembership.id));
@@ -549,19 +587,44 @@ export function accessService(db: Db) {
     return listUserCompanyAccess(userId);
   }
 
+  function ensureMembership(
+    companyId: string,
+    principalType: "user",
+    principalId: string,
+    membershipRole: UserCompanyMembershipRole,
+    status?: "pending" | "active" | "suspended",
+  ): Promise<MembershipRow | undefined>;
+  function ensureMembership(
+    companyId: string,
+    principalType: "agent",
+    principalId: string,
+    membershipRole: "member",
+    status?: "pending" | "active" | "suspended",
+  ): Promise<MembershipRow | undefined>;
   async function ensureMembership(
     companyId: string,
     principalType: PrincipalType,
     principalId: string,
-    membershipRole: string | null = "member",
+    membershipRole: UserCompanyMembershipRole | "member",
     status: "pending" | "active" | "suspended" = "active",
   ) {
+    const canonicalMembershipRole = requirePrincipalMembershipRole(
+      principalType,
+      membershipRole,
+    );
     const existing = await getMembership(companyId, principalType, principalId);
     if (existing) {
-      if (existing.status !== status || existing.membershipRole !== membershipRole) {
+      if (
+        existing.status !== status ||
+        existing.membershipRole !== canonicalMembershipRole
+      ) {
         const updated = await db
           .update(companyMemberships)
-          .set({ status, membershipRole, updatedAt: new Date() })
+          .set({
+            status,
+            membershipRole: canonicalMembershipRole,
+            updatedAt: new Date(),
+          })
           .where(eq(companyMemberships.id, existing.id))
           .returning()
           .then((rows) => rows[0] ?? null);
@@ -577,7 +640,7 @@ export function accessService(db: Db) {
         principalType,
         ...principalColumns(principalType, principalId),
         status,
-        membershipRole,
+        membershipRole: canonicalMembershipRole,
       })
       .returning()
       .then((rows) => rows[0] ? mapMembership(rows[0]) : undefined);
@@ -626,7 +689,7 @@ export function accessService(db: Db) {
         membership.membershipRole,
         "active",
       );
-      await stampHumanMemberRoleGrants(db, {
+      await stampUserMemberRoleGrants(db, {
         companyId: targetCompanyId,
         principalId: membership.principalId,
         membershipRole: membership.membershipRole,
@@ -639,10 +702,10 @@ export function accessService(db: Db) {
   async function stampRoleGrants(
     companyId: string,
     principalId: string,
-    membershipRole: string | null | undefined,
+    membershipRole: UserCompanyMembershipRole,
     grantedByUserId: string | null,
   ) {
-    return stampHumanMemberRoleGrants(db, {
+    return stampUserMemberRoleGrants(db, {
       companyId,
       principalId,
       membershipRole,
@@ -671,7 +734,7 @@ export function accessService(db: Db) {
 
   async function setPrincipalPermission(
     companyId: string,
-    principalType: PrincipalType,
+    principalType: "agent",
     principalId: string,
     permissionKey: PermissionKey,
     enabled: boolean,
@@ -735,7 +798,7 @@ export function accessService(db: Db) {
     companyId: string,
     memberId: string,
     data: {
-      membershipRole?: string | null;
+      membershipRole?: UserCompanyMembershipRole;
       status?: "pending" | "active" | "suspended";
     },
   ) {
@@ -756,6 +819,9 @@ export function accessService(db: Db) {
         .where(and(eq(companyMemberships.companyId, companyId), eq(companyMemberships.id, memberId)))
         .then((rows) => rows[0] ?? null);
       if (!existing) return null;
+      if (existing.principalType !== "user") {
+        throw conflict("Only user company members can be updated");
+      }
 
       const nextMembershipRole =
         data.membershipRole !== undefined ? data.membershipRole : existing.membershipRole;

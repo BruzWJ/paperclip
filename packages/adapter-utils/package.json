@@ -15,8 +15,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./acpx-runtime": "./src/acpx-runtime/index.ts",
-    "./run-tools-stdio-proxy": "./src/run-tools-stdio-proxy.ts",
-    "./selected-company-skills": "./src/selected-company-skills.ts"
+    "./run-tools-stdio-proxy": "./src/run-tools-stdio-proxy.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -32,10 +31,6 @@
       "./run-tools-stdio-proxy": {
         "types": "./dist/run-tools-stdio-proxy.d.ts",
         "import": "./dist/run-tools-stdio-proxy.js"
-      },
-      "./selected-company-skills": {
-        "types": "./dist/selected-company-skills.d.ts",
-        "import": "./dist/selected-company-skills.js"
       }
     },
     "main": "./dist/index.js",
@@ -54,7 +49,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@paperclipai/shared": "workspace:*",
     "acpx": "0.13.0",
     "zod": "4.4.3"
   },

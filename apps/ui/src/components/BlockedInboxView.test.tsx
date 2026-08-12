@@ -11,12 +11,17 @@ const mockTasksApi = vi.hoisted(() => ({
   list: vi.fn(),
   count: vi.fn(),
 }));
+const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
 
 vi.mock("../api/tasks", () => ({
   tasksApi: mockTasksApi,
 }));
 
-vi.mock("@/lib/router", () => ({
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => COMPANY_ID,
+}));
+
+vi.mock("@tanstack/react-router", () => ({
   Link: ({
     children,
     className,
@@ -100,14 +105,13 @@ function renderWithClient(node: React.ReactNode, container: HTMLDivElement) {
 }
 
 const blockedViewProps = {
-  companyId: "company-1",
+  companyId: COMPANY_ID,
   searchQuery: "",
   agentNameById: new Map<string, string>(),
   taskLinkState: null,
   groupBy: "none" as const,
   sortBy: "most_recent" as const,
   taskFilters: defaultTaskFilterState,
-  currentUserId: "user-1",
   liveTaskIds: new Set<string>(),
   subtreeLiveCounts: new Map<string, number>(),
   workspaceFilterContext: {},
@@ -220,14 +224,12 @@ describe("BlockedInboxView", () => {
 
     const titles = Array.from(
       container.querySelectorAll<HTMLAnchorElement>("a[data-inbox-task-link]"),
-    ).map(
-      (link) => link.parentElement?.textContent ?? "",
-    );
+    ).map((link) => link.parentElement?.textContent ?? "");
     expect(titles[0]).toContain("Critical stalled row");
     expect(titles[1]).toContain("Stalled chain row");
 
     expect(mockTasksApi.list).toHaveBeenCalledWith(
-      "company-1",
+      COMPANY_ID,
       expect.objectContaining({
         attention: "blocked",
         includeBlockedInboxAttention: true,
@@ -257,9 +259,13 @@ describe("BlockedInboxView", () => {
       <BlockedInboxView {...blockedViewProps} />,
       container,
     );
-    await waitFor(() => container.querySelector("a[data-inbox-task-link]") !== null);
+    await waitFor(
+      () => container.querySelector("a[data-inbox-task-link]") !== null,
+    );
 
-    const rowText = container.querySelector("a[data-inbox-task-link]")?.parentElement?.textContent ?? "";
+    const rowText =
+      container.querySelector("a[data-inbox-task-link]")?.parentElement
+        ?.textContent ?? "";
     expect(rowText.indexOf("Pending board decision")).toBeGreaterThanOrEqual(0);
     expect(rowText.indexOf("Needs decision")).toBeGreaterThan(
       rowText.indexOf("Pending board decision"),
@@ -315,10 +321,16 @@ describe("BlockedInboxView", () => {
       <BlockedInboxView {...blockedViewProps} searchQuery="charlie" />,
       container,
     );
-    await waitFor(() => container.querySelectorAll("a[data-inbox-task-link]").length > 0);
+    await waitFor(
+      () => container.querySelectorAll("a[data-inbox-task-link]").length > 0,
+    );
 
-    const links = container.querySelectorAll<HTMLAnchorElement>("a[data-inbox-task-link]");
-    const titles = Array.from(links).map((link) => link.parentElement?.textContent ?? "");
+    const links = container.querySelectorAll<HTMLAnchorElement>(
+      "a[data-inbox-task-link]",
+    );
+    const titles = Array.from(links).map(
+      (link) => link.parentElement?.textContent ?? "",
+    );
     expect(titles.some((t) => t.includes("Resume parked work"))).toBe(true);
     expect(titles.some((t) => t.includes("Other unrelated thing"))).toBe(false);
 
@@ -347,7 +359,9 @@ describe("BlockedInboxView", () => {
       />,
       container,
     );
-    await waitFor(() => container.querySelector("a[data-inbox-task-link]") !== null);
+    await waitFor(
+      () => container.querySelector("a[data-inbox-task-link]") !== null,
+    );
 
     expect(
       container.querySelector(

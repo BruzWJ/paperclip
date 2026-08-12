@@ -5,13 +5,7 @@ import type {
   DocumentAnnotationThreadStatus,
   DocumentAnnotationThreadWithComments,
 } from "@paperclipai/shared";
-import {
-  Check,
-  Copy,
-  MoreHorizontal,
-  RotateCcw,
-  X,
-} from "lucide-react";
+import { Check, Copy, MoreHorizontal, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -23,7 +17,10 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, relativeTime } from "@/lib/utils";
-import { documentAnnotationsApi, type DocumentAnnotationTarget } from "@/api/document-annotations";
+import {
+  documentAnnotationsApi,
+  type DocumentAnnotationTarget,
+} from "@/api/document-annotations";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { AgentIcon } from "./AgentIconPicker";
@@ -32,13 +29,12 @@ import { MarkdownBody } from "./MarkdownBody";
 import type { PendingAnchor } from "./DocumentAnnotationLayer";
 import type { Agent } from "@paperclipai/shared";
 import type { CompanyUserProfile } from "@/lib/company-members";
+import { buildDocumentAnnotationHash } from "@/lib/document-annotation-hash";
 
 export interface AnnotationPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  target?: DocumentAnnotationTarget;
-  taskId?: string;
-  documentKey: string;
+  target: DocumentAnnotationTarget;
   documentRevisionNumber: number;
   baseRevisionId: string | null;
   baseRevisionNumber: number;
@@ -59,7 +55,10 @@ export interface AnnotationPanelProps {
   desktopWidth?: number;
   className?: string;
   /** Resolve `<authorAgentId>` to a display name. */
-  agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
+  agentMap?: ReadonlyMap<
+    string,
+    Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>
+  >;
   /** Resolve `<authorUserId>` to a display name. */
   userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
 }
@@ -74,9 +73,13 @@ export function DocumentAnnotationPanel(props: AnnotationPanelProps) {
           className="paperclip-doc-annotation-sheet z-(--z-60) flex max-h-(--sz-88vh) flex-col rounded-none border-t border-border bg-popover p-0 text-popover-foreground shadow-2xl"
         >
           <SheetTitle className="sr-only">
-            Comments on {props.documentKey} revision {props.documentRevisionNumber}
+            Comments on {props.target.documentKey} revision{" "}
+            {props.documentRevisionNumber}
           </SheetTitle>
-          <div className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-muted-foreground/30" aria-hidden="true" />
+          <div
+            className="mx-auto mt-2 h-1.5 w-12 shrink-0 rounded-full bg-muted-foreground/30"
+            aria-hidden="true"
+          />
           <AnnotationPanelBody {...props} />
         </SheetContent>
       </Sheet>
@@ -88,13 +91,17 @@ export function DocumentAnnotationPanel(props: AnnotationPanelProps) {
   return (
     <aside
       role="complementary"
-      aria-label={`Annotations for ${props.documentKey.toUpperCase()}, revision ${props.documentRevisionNumber}`}
+      aria-label={`Annotations for ${props.target.documentKey.toUpperCase()}, revision ${props.documentRevisionNumber}`}
       data-testid="document-annotation-panel"
       className={cn(
         "isolate flex h-full max-h-(--sz-80vh) w-(--sz-360px) shrink-0 flex-col overflow-hidden rounded-none border border-border bg-popover text-popover-foreground shadow-xl",
         props.className,
       )}
-      style={props.desktopWidth ? { width: props.desktopWidth, maxWidth: props.desktopWidth } : undefined}
+      style={
+        props.desktopWidth
+          ? { width: props.desktopWidth, maxWidth: props.desktopWidth }
+          : undefined
+      }
     >
       <AnnotationPanelBody {...props} />
     </aside>
@@ -108,11 +115,7 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
   const [mutationError, setMutationError] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const bodyTestId = props.isMobile ? "document-annotation-panel" : undefined;
-  const annotationTarget = useMemo<DocumentAnnotationTarget>(() => {
-    if (props.target) return props.target;
-    if (!props.taskId) throw new Error("Document annotation panel requires an annotation target.");
-    return { kind: "task", taskId: props.taskId, documentKey: props.documentKey };
-  }, [props.documentKey, props.taskId, props.target]);
+  const annotationTarget = props.target;
 
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -136,18 +139,31 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
     () =>
       props.threads
         .filter((thread) => thread.anchorState !== "orphaned")
-        .sort((a, b) =>
-          (a.normalizedStart - b.normalizedStart)
-          || (a.markdownStart - b.markdownStart)
-          || (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())),
+        .sort(
+          (a, b) =>
+            a.normalizedStart - b.normalizedStart ||
+            a.markdownStart - b.markdownStart ||
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        ),
     [props.threads],
   );
-  const hasOrphanedThreads = props.threads.some((thread) => thread.anchorState === "orphaned");
+  const hasOrphanedThreads = props.threads.some(
+    (thread) => thread.anchorState === "orphaned",
+  );
 
   const annotationsQueryKey = useMemo(
-    () => annotationTarget.kind === "routine"
-      ? queryKeys.routines.documentAnnotations(annotationTarget.routineId, annotationTarget.documentKey, "all")
-      : queryKeys.tasks.documentAnnotations(annotationTarget.taskId, annotationTarget.documentKey, "all"),
+    () =>
+      annotationTarget.kind === "routine"
+        ? queryKeys.routines.documentAnnotations(
+            annotationTarget.routineId,
+            annotationTarget.documentKey,
+            "all",
+          )
+        : queryKeys.tasks.documentAnnotations(
+            annotationTarget.taskId,
+            annotationTarget.documentKey,
+            "all",
+          ),
     [annotationTarget],
   );
 
@@ -156,15 +172,19 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
       predicate: (query) => {
         if (!Array.isArray(query.queryKey)) return false;
         if (annotationTarget.kind === "routine") {
-          return query.queryKey[0] === "routines"
-            && query.queryKey[1] === "document-annotations"
-            && query.queryKey[2] === annotationTarget.routineId
-            && query.queryKey[3] === annotationTarget.documentKey;
+          return (
+            query.queryKey[0] === "routines" &&
+            query.queryKey[1] === "document-annotations" &&
+            query.queryKey[2] === annotationTarget.routineId &&
+            query.queryKey[3] === annotationTarget.documentKey
+          );
         }
-        return query.queryKey[0] === "tasks"
-          && query.queryKey[1] === "document-annotations"
-          && query.queryKey[2] === annotationTarget.taskId
-          && query.queryKey[3] === annotationTarget.documentKey;
+        return (
+          query.queryKey[0] === "tasks" &&
+          query.queryKey[1] === "document-annotations" &&
+          query.queryKey[2] === annotationTarget.taskId &&
+          query.queryKey[3] === annotationTarget.documentKey
+        );
       },
     });
   }, [annotationTarget, queryClient]);
@@ -172,8 +192,9 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
   const createThread = useMutation({
     mutationFn: async (body: string) => {
       if (!props.pendingAnchor) throw new Error("No selection to anchor to.");
-      if (!props.baseRevisionId) throw new Error("Document has no revision yet.");
-      return documentAnnotationsApi.createForTarget(annotationTarget, {
+      if (!props.baseRevisionId)
+        throw new Error("Document has no revision yet.");
+      return documentAnnotationsApi.create(annotationTarget, {
         baseRevisionId: props.baseRevisionId,
         baseRevisionNumber: props.baseRevisionNumber,
         selector: props.pendingAnchor.selector,
@@ -186,7 +207,10 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
       if (!anchor || !props.baseRevisionId) return undefined;
       setMutationError(null);
       await queryClient.cancelQueries({ queryKey: annotationsQueryKey });
-      const previous = queryClient.getQueryData<DocumentAnnotationThreadWithComments[]>(annotationsQueryKey);
+      const previous =
+        queryClient.getQueryData<DocumentAnnotationThreadWithComments[]>(
+          annotationsQueryKey,
+        );
       const optimisticThread = buildOptimisticThread({
         body,
         selectedText: anchor.selectedText,
@@ -209,17 +233,20 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
       if (context?.previous) {
         queryClient.setQueryData(annotationsQueryKey, context.previous);
       }
-      setMutationError(error instanceof Error && error.message
-        ? error.message
-        : "Failed to create comment.");
+      setMutationError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to create comment.",
+      );
     },
     onSuccess: (thread, _body, context) => {
       // Swap the optimistic placeholder for the real thread before refetch settles.
       queryClient.setQueryData<DocumentAnnotationThreadWithComments[]>(
         annotationsQueryKey,
-        (current) => (current ?? []).map((entry) =>
-          entry.id === context?.optimisticId ? thread : entry,
-        ),
+        (current) =>
+          (current ?? []).map((entry) =>
+            entry.id === context?.optimisticId ? thread : entry,
+          ),
       );
       props.onClearPendingAnchor();
       setComposerValue("");
@@ -231,12 +258,15 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
 
   const addReply = useMutation({
     mutationFn: ({ threadId, body }: { threadId: string; body: string }) =>
-      documentAnnotationsApi.addCommentForTarget(annotationTarget, threadId, { body }),
+      documentAnnotationsApi.addComment(annotationTarget, threadId, { body }),
     // Optimistically append the reply so it stays on screen through the round-trip.
     onMutate: async ({ threadId, body }) => {
       setMutationError(null);
       await queryClient.cancelQueries({ queryKey: annotationsQueryKey });
-      const previous = queryClient.getQueryData<DocumentAnnotationThreadWithComments[]>(annotationsQueryKey);
+      const previous =
+        queryClient.getQueryData<DocumentAnnotationThreadWithComments[]>(
+          annotationsQueryKey,
+        );
       const optimisticComment = buildOptimisticComment({
         body,
         threadId,
@@ -245,11 +275,16 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
       });
       queryClient.setQueryData<DocumentAnnotationThreadWithComments[]>(
         annotationsQueryKey,
-        (current) => (current ?? []).map((thread) =>
-          thread.id === threadId
-            ? { ...thread, comments: [...thread.comments, optimisticComment], updatedAt: optimisticComment.createdAt }
-            : thread,
-        ),
+        (current) =>
+          (current ?? []).map((thread) =>
+            thread.id === threadId
+              ? {
+                  ...thread,
+                  comments: [...thread.comments, optimisticComment],
+                  updatedAt: optimisticComment.createdAt,
+                }
+              : thread,
+          ),
       );
       return { previous };
     },
@@ -257,9 +292,11 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
       if (context?.previous) {
         queryClient.setQueryData(annotationsQueryKey, context.previous);
       }
-      setMutationError(error instanceof Error && error.message
-        ? error.message
-        : "Failed to add reply.");
+      setMutationError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to add reply.",
+      );
     },
     onSuccess: (_comment, variables) => {
       setReplyDrafts((current) => ({ ...current, [variables.threadId]: "" }));
@@ -269,17 +306,27 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
   });
 
   const updateStatus = useMutation({
-    mutationFn: ({ threadId, status }: { threadId: string; status: DocumentAnnotationThreadStatus }) =>
-      documentAnnotationsApi.updateStatusForTarget(annotationTarget, threadId, status),
+    mutationFn: ({
+      threadId,
+      status,
+    }: {
+      threadId: string;
+      status: DocumentAnnotationThreadStatus;
+    }) =>
+      documentAnnotationsApi.updateStatus(annotationTarget, threadId, status),
     onMutate: async ({ threadId, status }) => {
       setMutationError(null);
       await queryClient.cancelQueries({ queryKey: annotationsQueryKey });
-      const previous = queryClient.getQueryData<DocumentAnnotationThreadWithComments[]>(annotationsQueryKey);
+      const previous =
+        queryClient.getQueryData<DocumentAnnotationThreadWithComments[]>(
+          annotationsQueryKey,
+        );
       queryClient.setQueryData<DocumentAnnotationThreadWithComments[]>(
         annotationsQueryKey,
-        (current) => (current ?? []).map((thread) =>
-          thread.id === threadId ? { ...thread, status } : thread,
-        ),
+        (current) =>
+          (current ?? []).map((thread) =>
+            thread.id === threadId ? { ...thread, status } : thread,
+          ),
       );
       return { previous };
     },
@@ -287,9 +334,11 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
       if (context?.previous) {
         queryClient.setQueryData(annotationsQueryKey, context.previous);
       }
-      setMutationError(error instanceof Error && error.message
-        ? error.message
-        : "Failed to update comment status.");
+      setMutationError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to update comment status.",
+      );
     },
     onSuccess: () => setMutationError(null),
     onSettled: () => invalidateAll(),
@@ -371,10 +420,19 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
           {mutationError}
         </p>
       ) : null}
-      {mutationStatusMessage ? <p role="status" className="sr-only">{mutationStatusMessage}</p> : null}
-      <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto bg-popover px-3 py-2">
+      {mutationStatusMessage ? (
+        <p role="status" className="sr-only">
+          {mutationStatusMessage}
+        </p>
+      ) : null}
+      <div
+        ref={listScrollRef}
+        className="min-h-0 flex-1 overflow-y-auto bg-popover px-3 py-2"
+      >
         {visibleThreads.length === 0 ? (
-          <DocumentAnnotationsEmptyState hasOrphanedThreads={hasOrphanedThreads} />
+          <DocumentAnnotationsEmptyState
+            hasOrphanedThreads={hasOrphanedThreads}
+          />
         ) : (
           <ul className="space-y-2">
             {visibleThreads.map((thread) => (
@@ -383,12 +441,17 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
                 thread={thread}
                 expanded={thread.id === props.focusedThreadId}
                 focusedCommentId={
-                  thread.id === props.focusedThreadId ? props.focusedCommentId : null
+                  thread.id === props.focusedThreadId
+                    ? props.focusedCommentId
+                    : null
                 }
                 onFocus={() => props.onFocusThread(thread.id)}
                 replyDraft={replyDrafts[thread.id] ?? ""}
                 onReplyChange={(value) =>
-                  setReplyDrafts((current) => ({ ...current, [thread.id]: value }))
+                  setReplyDrafts((current) => ({
+                    ...current,
+                    [thread.id]: value,
+                  }))
                 }
                 onSubmitReply={() => {
                   const body = (replyDrafts[thread.id] ?? "").trim();
@@ -401,9 +464,17 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
                     status: thread.status === "resolved" ? "open" : "resolved",
                   })
                 }
-                onCopyLink={() => copyAnnotationLink(props.documentKey, thread.id)}
-                pendingReply={addReply.isPending && addReply.variables?.threadId === thread.id}
-                pendingStatus={updateStatus.isPending && updateStatus.variables?.threadId === thread.id}
+                onCopyLink={() =>
+                  copyAnnotationLink(props.target.documentKey, thread.id)
+                }
+                pendingReply={
+                  addReply.isPending &&
+                  addReply.variables?.threadId === thread.id
+                }
+                pendingStatus={
+                  updateStatus.isPending &&
+                  updateStatus.variables?.threadId === thread.id
+                }
                 agentMap={props.agentMap}
                 userProfileMap={props.userProfileMap}
               />
@@ -418,10 +489,16 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
           </blockquote>
           <div className="mb-1.5 flex items-center gap-1.5">
             <Avatar size="sm" className="shrink-0">
-              {currentUser.image ? <AvatarImage src={currentUser.image} alt={currentUser.name} /> : null}
-              <AvatarFallback>{deriveInitials(currentUser.name)}</AvatarFallback>
+              {currentUser.image ? (
+                <AvatarImage src={currentUser.image} alt={currentUser.name} />
+              ) : null}
+              <AvatarFallback>
+                {deriveInitials(currentUser.name)}
+              </AvatarFallback>
             </Avatar>
-            <span className="truncate text-(length:--text-micro) font-medium text-foreground">{currentUser.name}</span>
+            <span className="truncate text-(length:--text-micro) font-medium text-foreground">
+              {currentUser.name}
+            </span>
           </div>
           <Textarea
             ref={composerRef}
@@ -435,10 +512,10 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
                 event.preventDefault();
                 const body = composerValue.trim();
                 if (
-                  body
-                  && !createThread.isPending
-                  && !props.newCommentDisabled
-                  && props.baseRevisionId
+                  body &&
+                  !createThread.isPending &&
+                  !props.newCommentDisabled &&
+                  props.baseRevisionId
                 ) {
                   createThread.mutate(body);
                 }
@@ -464,10 +541,10 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
               type="button"
               size="sm"
               disabled={
-                createThread.isPending
-                || !composerValue.trim()
-                || props.newCommentDisabled
-                || !props.baseRevisionId
+                createThread.isPending ||
+                !composerValue.trim() ||
+                props.newCommentDisabled ||
+                !props.baseRevisionId
               }
               onClick={() => createThread.mutate(composerValue.trim())}
             >
@@ -480,11 +557,17 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
   );
 }
 
-function DocumentAnnotationsEmptyState({ hasOrphanedThreads }: { hasOrphanedThreads: boolean }) {
+function DocumentAnnotationsEmptyState({
+  hasOrphanedThreads,
+}: {
+  hasOrphanedThreads: boolean;
+}) {
   return (
     <div className="flex min-h-full flex-col items-center justify-center px-4 py-8 text-center">
       <p className="text-sm font-medium text-foreground">
-        {hasOrphanedThreads ? "No annotations are anchored in this revision." : "No annotations yet."}
+        {hasOrphanedThreads
+          ? "No annotations are anchored in this revision."
+          : "No annotations yet."}
       </p>
       <p className="mt-1 text-sm text-muted-foreground">
         Select text in the document to add a comment.
@@ -505,7 +588,10 @@ function ThreadCard(props: {
   onCopyLink: () => void;
   pendingReply: boolean;
   pendingStatus: boolean;
-  agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
+  agentMap?: ReadonlyMap<
+    string,
+    Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>
+  >;
   userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
 }) {
   const { thread } = props;
@@ -522,7 +608,8 @@ function ThreadCard(props: {
         aria-labelledby={`thread-quote-${thread.id}`}
         className={cn(
           "scroll-mt-2 rounded-none border border-border bg-background transition-colors",
-          props.expanded && "ring-2 ring-primary/80 ring-offset-1 ring-offset-popover",
+          props.expanded &&
+            "ring-2 ring-primary/80 ring-offset-1 ring-offset-popover",
           thread.status === "resolved" && "bg-muted",
         )}
         tabIndex={0}
@@ -532,7 +619,8 @@ function ThreadCard(props: {
           id={`thread-quote-${thread.id}`}
           className={cn(
             "mx-3 mt-2 line-clamp-2 overflow-hidden rounded-none bg-muted px-2 py-1 text-xs italic leading-5 text-muted-foreground [overflow-wrap:anywhere]",
-            (thread.anchorState === "stale" || thread.status === "resolved") && "bg-muted",
+            (thread.anchorState === "stale" || thread.status === "resolved") &&
+              "bg-muted",
           )}
         >
           {truncate(thread.selectedText, 120)}
@@ -623,9 +711,14 @@ function ThreadCard(props: {
         ) : (
           <p className="px-3 py-2 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">
-              {thread.comments.length} comment{thread.comments.length === 1 ? "" : "s"}
+              {thread.comments.length} comment
+              {thread.comments.length === 1 ? "" : "s"}
             </span>
-            {latestComment ? <span className="ml-1">· {truncate(latestComment.body, 120)}</span> : null}
+            {latestComment ? (
+              <span className="ml-1">
+                · {truncate(latestComment.body, 120)}
+              </span>
+            ) : null}
           </p>
         )}
       </article>
@@ -641,7 +734,10 @@ function CommentRow({
 }: {
   comment: DocumentAnnotationComment;
   focused: boolean;
-  agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
+  agentMap?: ReadonlyMap<
+    string,
+    Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>
+  >;
   userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
 }) {
   const author = resolveAuthor(comment, { agentMap, userProfileMap });
@@ -663,17 +759,23 @@ function CommentRow({
               </AvatarFallback>
             ) : (
               <>
-                {author.imageUrl ? <AvatarImage src={author.imageUrl} alt={author.name} /> : null}
+                {author.imageUrl ? (
+                  <AvatarImage src={author.imageUrl} alt={author.name} />
+                ) : null}
                 <AvatarFallback>{deriveInitials(author.name)}</AvatarFallback>
               </>
             )}
           </Avatar>
-          <span className="truncate font-medium text-foreground">{author.name}</span>
+          <span className="truncate font-medium text-foreground">
+            {author.name}
+          </span>
           {author.role === "agent" ? (
             <span className="text-muted-foreground">· agent</span>
           ) : null}
         </span>
-        <span className="shrink-0 text-muted-foreground">{relativeTime(comment.createdAt)}</span>
+        <span className="shrink-0 text-muted-foreground">
+          {relativeTime(comment.createdAt)}
+        </span>
       </div>
       <MarkdownBody className="text-sm leading-6">{comment.body}</MarkdownBody>
     </div>
@@ -681,17 +783,27 @@ function CommentRow({
 }
 
 /** ⌘/Ctrl + Enter submits the composer or reply. */
-function isSubmitShortcut(event: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
+function isSubmitShortcut(
+  event: React.KeyboardEvent<HTMLTextAreaElement>,
+): boolean {
   return event.key === "Enter" && (event.metaKey || event.ctrlKey);
 }
 
 function resolveAuthor(
   comment: DocumentAnnotationComment,
   maps: {
-    agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
+    agentMap?: ReadonlyMap<
+      string,
+      Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>
+    >;
     userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
   },
-): { name: string; role: "board" | "agent"; agentIcon?: Agent["icon"]; imageUrl?: string | null } {
+): {
+  name: string;
+  role: "board" | "agent";
+  agentIcon?: Agent["icon"];
+  imageUrl?: string | null;
+} {
   if (comment.authorAgentId) {
     const agent = maps.agentMap?.get(comment.authorAgentId);
     return {
@@ -708,7 +820,10 @@ function resolveAuthor(
       imageUrl: profile?.image ?? null,
     };
   }
-  return { name: comment.authorType === "agent" ? "Agent" : "Board", role: comment.authorType === "agent" ? "agent" : "board" };
+  return {
+    name: comment.authorType === "agent" ? "Agent" : "Board",
+    role: comment.authorType === "agent" ? "agent" : "board",
+  };
 }
 
 interface OptimisticAuthor {
@@ -718,9 +833,10 @@ interface OptimisticAuthor {
 }
 
 function optimisticId(prefix: string): string {
-  const random = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  const random =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
   return `${prefix}-${random}`;
 }
 
@@ -800,9 +916,15 @@ function truncate(value: string, limit: number) {
 async function copyAnnotationLink(documentKey: string, threadId: string) {
   if (typeof window === "undefined" || !navigator.clipboard) return;
   const { pathname } = window.location;
-  const hash = `#document-${encodeURIComponent(documentKey)}&thread=${encodeURIComponent(threadId)}`;
+  const hash = buildDocumentAnnotationHash({
+    documentKey,
+    threadId,
+    commentId: null,
+  });
   try {
-    await navigator.clipboard.writeText(`${window.location.origin}${pathname}${hash}`);
+    await navigator.clipboard.writeText(
+      `${window.location.origin}${pathname}${hash}`,
+    );
   } catch {
     /* swallow */
   }

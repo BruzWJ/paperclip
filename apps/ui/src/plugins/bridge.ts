@@ -25,8 +25,20 @@
  * @see PLUGIN_SPEC.md §19.7 — Error Propagation Through The Bridge
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { useLocation as useRouterLocation, useNavigate as useRouterNavigate, type NavigateOptions } from "react-router-dom";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import {
+  useLocation as useRouterLocation,
+  useNavigate as useRouterNavigate,
+} from "@tanstack/react-router";
 import type {
   PluginBridgeError,
   PluginLauncherRenderContextSnapshot,
@@ -44,12 +56,14 @@ import type {
   PluginToastFn,
   PluginToastInput,
 } from "@paperclipai/plugin-sdk/ui";
-import { PLUGIN_BRIDGE_ERROR_CODES } from "@paperclipai/shared";
+import {
+  PLUGIN_BRIDGE_ERROR_CODES,
+  resolvePluginNavigationHref,
+} from "@paperclipai/shared";
 import { pluginsApi } from "@/api/plugins";
 import { ApiError } from "@/api/client";
 import { useToastActions } from "@/context/ToastContext";
 import { useSidebar } from "@/context/SidebarContext";
-import { isGlobalPath, normalizeCompanyPrefix } from "@/lib/company-routes";
 
 export type { PluginBridgeError } from "@paperclipai/shared";
 export type {
@@ -63,7 +77,6 @@ export type {
   PluginModalBoundsRequest,
   PluginRenderCloseEvent,
   PluginRenderCloseHandler,
-  PluginRenderCloseLifecycle,
   PluginRenderEnvironmentContext,
   PluginToastFn,
   PluginToastInput,
@@ -71,9 +84,7 @@ export type {
 
 export type PluginMountContext = {
   companyId?: string | null;
-  companyPrefix?: string | null;
   projectId?: string | null;
-  projectRef?: string | null;
   entityId?: string | null;
   entityType?: PluginUiSlotEntityType | null;
 };
@@ -119,8 +130,10 @@ function usePluginBridgeContext(): PluginBridgeContextValue {
 function isPluginBridgeErrorCode(
   value: unknown,
 ): value is PluginBridgeError["code"] {
-  return typeof value === "string"
-    && PLUGIN_BRIDGE_ERROR_CODES.some((code) => code === value);
+  return (
+    typeof value === "string" &&
+    PLUGIN_BRIDGE_ERROR_CODES.some((code) => code === value)
+  );
 }
 
 /**
@@ -134,8 +147,8 @@ function extractBridgeError(err: unknown): PluginBridgeError {
   if (err instanceof ApiError && err.body && typeof err.body === "object") {
     const body = err.body as Record<string, unknown>;
     if (
-      isPluginBridgeErrorCode(body.code)
-      && typeof body.message === "string"
+      isPluginBridgeErrorCode(body.code) &&
+      typeof body.message === "string"
     ) {
       return {
         code: body.code,
@@ -165,15 +178,21 @@ function serializePluginBridgeJson(
   }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
-      throw new TypeError("Plugin bridge parameters must contain only finite numbers");
+      throw new TypeError(
+        "Plugin bridge parameters must contain only finite numbers",
+      );
     }
     return JSON.stringify(value);
   }
   if (typeof value !== "object") {
-    throw new TypeError(`Plugin bridge parameters cannot contain ${typeof value} values`);
+    throw new TypeError(
+      `Plugin bridge parameters cannot contain ${typeof value} values`,
+    );
   }
   if (ancestors.has(value)) {
-    throw new TypeError("Plugin bridge parameters cannot contain circular references");
+    throw new TypeError(
+      "Plugin bridge parameters cannot contain circular references",
+    );
   }
 
   ancestors.add(value);
@@ -184,16 +203,23 @@ function serializePluginBridgeJson(
 
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
-      throw new TypeError("Plugin bridge parameters must contain only plain objects and arrays");
+      throw new TypeError(
+        "Plugin bridge parameters must contain only plain objects and arrays",
+      );
     }
     if (Object.getOwnPropertySymbols(value).length > 0) {
-      throw new TypeError("Plugin bridge parameters cannot contain symbol keys");
+      throw new TypeError(
+        "Plugin bridge parameters cannot contain symbol keys",
+      );
     }
 
     const record = value as Record<string, unknown>;
     return `{${Object.keys(record)
       .sort()
-      .map((key) => `${JSON.stringify(key)}:${serializePluginBridgeJson(record[key], ancestors)}`)
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${serializePluginBridgeJson(record[key], ancestors)}`,
+      )
       .join(",")}}`;
   } finally {
     ancestors.delete(value);
@@ -226,59 +252,6 @@ function serializeRenderEnvironmentSnapshot(
   return snapshot ? JSON.stringify(snapshot) : "";
 }
 
-function splitPath(path: string): { pathname: string; search: string; hash: string } {
-  const match = path.match(/^([^?#]*)(\?[^#]*)?(#.*)?$/);
-  return {
-    pathname: match?.[1] ?? path,
-    search: match?.[2] ?? "",
-    hash: match?.[3] ?? "",
-  };
-}
-
-function sameOriginPathFromHref(href: string): string | null {
-  if (!/^[a-z][a-z\d+.-]*:/i.test(href) && !href.startsWith("//")) {
-    return href;
-  }
-  if (typeof window === "undefined") return null;
-  try {
-    const url = new URL(href, window.location.origin);
-    if (url.origin !== window.location.origin) return null;
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch {
-    return null;
-  }
-}
-
-function hasCompanyPrefix(pathname: string, companyPrefix: string): boolean {
-  const [firstSegment] = pathname.split("/").filter(Boolean);
-  return firstSegment?.toUpperCase() === normalizeCompanyPrefix(companyPrefix);
-}
-
-/**
- * Resolve a plugin-provided Paperclip path to the active company scope.
- *
- * This intentionally handles plugin page roots such as `/wiki`, which cannot
- * be listed in the host router's static board-route table ahead of time.
- */
-export function resolveHostNavigationHref(
-  to: string,
-  companyPrefix: string | null | undefined,
-): string {
-  const sameOriginPath = sameOriginPathFromHref(to);
-  if (sameOriginPath === null) return to;
-
-  const { pathname, search, hash } = splitPath(sameOriginPath);
-  if (!pathname.startsWith("/") || isGlobalPath(pathname) || !companyPrefix) {
-    return sameOriginPath;
-  }
-
-  if (hasCompanyPrefix(pathname, companyPrefix)) {
-    return sameOriginPath;
-  }
-
-  return `/${normalizeCompanyPrefix(companyPrefix)}${pathname}${search}${hash}`;
-}
-
 function isPlainLeftClick(event: ReactMouseEvent<HTMLAnchorElement>): boolean {
   return (
     !event.defaultPrevented &&
@@ -298,7 +271,7 @@ export function shouldHandleHostNavigationClick(
   if (!isPlainLeftClick(event)) return false;
   if (target && target !== "_self") return false;
   if (event.currentTarget.hasAttribute("download")) return false;
-  return sameOriginPathFromHref(href) !== null;
+  return href.startsWith("/") && !href.startsWith("//");
 }
 
 /**
@@ -316,8 +289,12 @@ export function usePluginData<T = unknown>(
 ): PluginDataResult<T> {
   const { pluginId, hostContext } = usePluginBridgeContext();
   const companyId = hostContext.companyId;
-  const renderEnvironmentSnapshot = serializeRenderEnvironment(hostContext.renderEnvironment);
-  const renderEnvironmentKey = serializeRenderEnvironmentSnapshot(renderEnvironmentSnapshot);
+  const renderEnvironmentSnapshot = serializeRenderEnvironment(
+    hostContext.renderEnvironment,
+  );
+  const renderEnvironmentKey = serializeRenderEnvironmentSnapshot(
+    renderEnvironmentSnapshot,
+  );
 
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -357,7 +334,10 @@ export function usePluginData<T = unknown>(
           if (cancelled) return;
 
           const bridgeError = extractBridgeError(err);
-          if (retryableCodes.includes(bridgeError.code) && retryCount < maxRetryCount) {
+          if (
+            retryableCodes.includes(bridgeError.code) &&
+            retryCount < maxRetryCount
+          ) {
             retryCount += 1;
             retryTimer = setTimeout(() => {
               retryTimer = null;
@@ -379,7 +359,14 @@ export function usePluginData<T = unknown>(
       if (retryTimer) clearTimeout(retryTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pluginId, key, paramsKey, refreshCounter, companyId, renderEnvironmentKey]);
+  }, [
+    pluginId,
+    key,
+    paramsKey,
+    refreshCounter,
+    companyId,
+    renderEnvironmentKey,
+  ]);
 
   const refresh = useCallback(() => {
     setRefreshCounter((c) => c + 1);
@@ -395,7 +382,9 @@ export function usePluginData<T = unknown>(
 /**
  * Action function type matching the SDK's `PluginActionFn`.
  */
-export type PluginActionFn = (params?: Record<string, unknown>) => Promise<unknown>;
+export type PluginActionFn = (
+  params?: Record<string, unknown>,
+) => Promise<unknown>;
 
 /**
  * Concrete implementation of `usePluginAction(key)`.
@@ -414,7 +403,9 @@ export function usePluginAction(key: string): PluginActionFn {
     async (params?: Record<string, unknown>): Promise<unknown> => {
       const { pluginId, hostContext } = contextRef.current;
       const companyId = hostContext.companyId;
-      const renderEnvironment = serializeRenderEnvironment(hostContext.renderEnvironment);
+      const renderEnvironment = serializeRenderEnvironment(
+        hostContext.renderEnvironment,
+      );
 
       try {
         const response = await pluginsApi.bridgePerformAction(
@@ -456,44 +447,53 @@ export function useHostNavigation(): HostNavigation {
   const { hostContext } = usePluginBridgeContext();
   const routerNavigate = useRouterNavigate();
   const { isMobile, setSidebarOpen } = useSidebar();
-  const companyPrefix = hostContext.companyPrefix;
+  const companyId = hostContext.companyId;
 
   const resolveHref = useCallback(
-    (to: string) => resolveHostNavigationHref(to, companyPrefix),
-    [companyPrefix],
+    (to: string) => resolvePluginNavigationHref(to, companyId),
+    [companyId],
   );
 
-  const navigate = useCallback(
-    (to: string, options?: HostNavigationOptions) => {
-      const href = resolveHref(to);
-      const sameOriginPath = sameOriginPathFromHref(href);
-      if (sameOriginPath === null) {
-        window.location.assign(href);
-        return;
-      }
-      routerNavigate(sameOriginPath, options as NavigateOptions | undefined);
+  const navigateResolvedHref = useCallback(
+    (href: string, options?: HostNavigationOptions) => {
+      void routerNavigate({
+        href,
+        replace: options?.replace,
+        state: options?.state,
+      });
       // Mirror host sidebar behavior: tapping a link inside the mobile drawer
       // dismisses the drawer so the user can see the destination page.
       if (isMobile) setSidebarOpen(false);
     },
-    [isMobile, resolveHref, routerNavigate, setSidebarOpen],
+    [isMobile, routerNavigate, setSidebarOpen],
+  );
+
+  const navigate = useCallback(
+    (to: string, options?: HostNavigationOptions) => {
+      navigateResolvedHref(resolveHref(to), options);
+    },
+    [navigateResolvedHref, resolveHref],
   );
 
   const linkProps = useCallback(
-    (to: string, options?: HostNavigationLinkOptions): HostNavigationLinkProps => {
+    (
+      to: string,
+      options?: HostNavigationLinkOptions,
+    ): HostNavigationLinkProps => {
       const href = resolveHref(to);
       return {
         href,
         target: options?.target,
         rel: options?.rel,
         onClick: (event) => {
-          if (!shouldHandleHostNavigationClick(event, href, options?.target)) return;
+          if (!shouldHandleHostNavigationClick(event, href, options?.target))
+            return;
           event.preventDefault();
-          navigate(href, options);
+          navigateResolvedHref(href, options);
         },
       };
     },
-    [navigate, resolveHref],
+    [navigateResolvedHref, resolveHref],
   );
 
   return useMemo(
@@ -515,11 +515,11 @@ export function useHostLocation(): HostLocation {
   return useMemo(
     () => ({
       pathname: location.pathname,
-      search: location.search,
-      hash: location.hash,
+      search: location.searchStr,
+      hash: location.hash ? `#${location.hash}` : "",
       state: location.state,
     }),
-    [location.hash, location.pathname, location.search, location.state],
+    [location.hash, location.pathname, location.searchStr, location.state],
   );
 }
 
@@ -530,7 +530,16 @@ export function useHostLocation(): HostLocation {
 export function usePluginToast(): PluginToastFn {
   const { pushToast } = useToastActions();
   return useCallback(
-    (input: PluginToastInput) => pushToast(input),
+    (input: PluginToastInput) =>
+      pushToast({
+        ...input,
+        action: input.action
+          ? {
+              label: input.action.label,
+              target: { kind: "plugin", href: input.action.href },
+            }
+          : undefined,
+      }),
     [pushToast],
   );
 }

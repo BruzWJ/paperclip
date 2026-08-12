@@ -1,19 +1,19 @@
 import * as React from "react";
 import { useMemo } from "react";
-import * as RouterDom from "react-router-dom";
 import type { Task } from "@paperclipai/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { timeAgo } from "@/lib/timeAgo";
-import { createTaskDetailPath, withTaskDetailHeaderSeed } from "@/lib/taskDetailBreadcrumb";
+import { withTaskDetailHeaderSeed } from "@/lib/taskDetailBreadcrumb";
 import {
   getTaskDetailQueryOptions,
   TASK_DETAIL_STALE_TIME_MS,
   prefetchTaskDetail,
 } from "@/lib/taskDetailCache";
-import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatusIcon } from "@/components/StatusIcon";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
 /* ------------------------------------------------------------------ */
 /*  Single-flight quicklook store                                      */
@@ -64,8 +64,8 @@ function useIsQuicklookOpen(id: symbol) {
  *  as the pointer crosses cards on its way somewhere else. */
 const QUICKLOOK_OPEN_DELAY_MS = 120;
 
-export type TaskQuicklookTask = Pick<Task, "id" | "title" | "updatedAt"> & {
-  identifier?: string | null;
+type TaskQuicklookTask = Pick<Task, "id" | "title" | "taskNumber" | "updatedAt"> & {
+  identifier: string;
   boardPresentationStatus: string;
   priority: string;
   request?: string | null;
@@ -89,33 +89,33 @@ function summarizeTaskRequest(request: string | null | undefined) {
   return summary.length > 180 ? `${summary.slice(0, 177).trimEnd()}...` : summary;
 }
 
-export function TaskQuicklookCard({
+function TaskQuicklookCard({
   task,
-  linkTo,
   linkState,
   compact = false,
 }: {
   task: TaskQuicklookTask;
-  linkTo: RouterDom.To;
-  linkState?: unknown;
+  linkState?: React.ComponentProps<typeof Link>["state"];
   compact?: boolean;
 }) {
   const requestSummary = useMemo(() => summarizeTaskRequest(task.request), [task.request]);
+  const companyId = useCompanyRouteId();
 
   return (
     <div className={cn("space-y-2", compact && "space-y-1.5")}>
       <div className="flex items-start gap-2">
         <StatusIcon status={task.boardPresentationStatus} blockerAttention={task.blockerAttention} className="mt-0.5 shrink-0" />
-        <RouterDom.Link
-          to={linkTo}
+        <Link
+          to="/$companyId/tasks/$taskNumber"
+          params={{ companyId, taskNumber: String(task.taskNumber) }}
           state={linkState ?? withTaskDetailHeaderSeed(null, task)}
           className="text-sm font-medium leading-snug hover:underline line-clamp-2"
         >
           {task.title}
-        </RouterDom.Link>
+        </Link>
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="font-mono">{task.identifier ?? task.id.slice(0, 8)}</span>
+        <span className="font-mono">{task.identifier}</span>
         <span>&middot;</span>
         <span>{task.boardPresentationStatus.replace(/_/g, " ")}</span>
         <span>&middot;</span>
@@ -132,8 +132,12 @@ export function TaskQuicklookCard({
 
 export const TaskLinkQuicklook = React.forwardRef<
   HTMLAnchorElement,
-  React.ComponentProps<typeof RouterDom.Link> & {
-    taskPathId: string;
+  Omit<React.ComponentPropsWithoutRef<"a">, "href"> & {
+    taskId: string;
+    taskNumber: number | null;
+    "data-mention-kind"?: string;
+    hash?: string;
+    state?: React.ComponentProps<typeof Link>["state"];
     disableTaskQuicklook?: boolean;
     taskPrefetch?: Task | null;
     taskQuicklookSide?: React.ComponentProps<typeof PopoverContent>["side"];
@@ -141,8 +145,10 @@ export const TaskLinkQuicklook = React.forwardRef<
   }
 >(function TaskLinkQuicklookImpl(
   {
-    taskPathId,
-    to,
+    taskId,
+    taskNumber,
+    "data-mention-kind": dataMentionKind,
+    hash,
     children,
     className,
     state,
@@ -161,6 +167,7 @@ export const TaskLinkQuicklook = React.forwardRef<
   ref,
 ) {
   const queryClient = useQueryClient();
+  const companyId = useCompanyRouteId();
   const instanceId = React.useMemo(() => Symbol("task-quicklook"), []);
   const open = useIsQuicklookOpen(instanceId);
   const openTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -201,21 +208,39 @@ export const TaskLinkQuicklook = React.forwardRef<
   }, [cancelScheduledOpen, instanceId]);
 
   const prefetchedState = taskPrefetch ? withTaskDetailHeaderSeed(state, taskPrefetch) : state;
-  const { data, isLoading } = useQuery({
-    ...getTaskDetailQueryOptions(queryClient, taskPathId, { placeholderTask: taskPrefetch ?? undefined }),
-    enabled: open,
+  const taskQuery = useQuery({
+    ...getTaskDetailQueryOptions(queryClient, taskId),
+    enabled: open || taskNumber === null,
     staleTime: TASK_DETAIL_STALE_TIME_MS,
   });
+  const data = taskQuery.data;
+  const isLoading = taskQuery.isLoading;
+  const resolvedTaskNumber = taskPrefetch?.taskNumber ?? data?.taskNumber ?? taskNumber;
 
-  const detailPath = createTaskDetailPath(taskPathId);
   const handlePrefetch = React.useCallback(() => {
-    void prefetchTaskDetail(queryClient, taskPathId, { task: taskPrefetch });
-  }, [taskPathId, taskPrefetch, queryClient]);
+    void prefetchTaskDetail(queryClient, taskId, { task: taskPrefetch });
+  }, [queryClient, taskId, taskPrefetch]);
+  if (resolvedTaskNumber === null) {
+    return (
+      <span
+        className={className}
+        title={props.title}
+        aria-label={props["aria-label"]}
+        data-mention-kind={dataMentionKind}
+      >
+        {children}
+      </span>
+    );
+  }
+
   const link = (
-    <RouterDom.Link
+    <Link
       ref={ref}
-      to={to}
+      to="/$companyId/tasks/$taskNumber"
+      params={{ companyId, taskNumber: String(resolvedTaskNumber) }}
+      hash={hash}
       state={prefetchedState}
+      data-mention-kind={dataMentionKind}
       className={className}
       onMouseEnter={(event) => {
         handlePrefetch();
@@ -246,7 +271,7 @@ export const TaskLinkQuicklook = React.forwardRef<
       {...props}
     >
       {children}
-    </RouterDom.Link>
+    </Link>
   );
 
   if (disableTaskQuicklook) {
@@ -274,7 +299,7 @@ export const TaskLinkQuicklook = React.forwardRef<
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         {data ? (
-          <TaskQuicklookCard task={data} linkTo={detailPath} linkState={prefetchedState} compact />
+          <TaskQuicklookCard task={data} linkState={prefetchedState} compact />
         ) : (
           <div className="space-y-2" aria-busy={isLoading}>
             <div className="h-4 w-24 rounded bg-accent/50" />

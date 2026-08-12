@@ -6,7 +6,6 @@ import {
   lowTrustBoundarySchema,
   lowTrustReviewPresetPolicySchema,
   trustAuthorizationPolicySchema,
-  trustPresetSchema,
 } from "@paperclipai/shared";
 
 type JsonRecord = Record<string, unknown>;
@@ -59,9 +58,6 @@ export type TrustPresetResolution =
 type ParsedPolicySource = {
   source: TrustPresetPolicySource;
   companyId: string | null;
-  rawPolicy: JsonRecord | null;
-  authorizationPolicy: JsonRecord | null;
-  trustPreset: TrustPreset | null;
   boundary: LowTrustBoundary | null;
   impliesLowTrust: boolean;
 };
@@ -85,24 +81,6 @@ function isTrustPresetResolution(value: unknown): value is TrustPresetResolution
   if (!value || typeof value !== "object") return false;
   const kind = (value as { kind?: unknown }).kind;
   return kind === "standard" || kind === "low_trust_review" || kind === "denied";
-}
-
-function parsePreset(
-  value: unknown,
-  source: TrustPresetPolicySource,
-  sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>>,
-): TrustPresetResolution | TrustPreset | null {
-  if (value === undefined || value === null) return null;
-  const parsed = trustPresetSchema.safeParse(value);
-  if (!parsed.success) {
-    return deny(
-      "unsupported_trust_preset",
-      source,
-      `Unsupported trust preset in ${source} policy.`,
-      sourcePresets,
-    );
-  }
-  return parsed.data;
 }
 
 function parseReviewPresetId(
@@ -166,8 +144,14 @@ function parseSource(
   authorizationPolicyInput: unknown,
   sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>>,
 ): ParsedPolicySource | TrustPresetResolution {
-  const topPreset = parsePreset(rawPolicy?.trustPreset, source, sourcePresets);
-  if (isTrustPresetResolution(topPreset)) return topPreset;
+  if (rawPolicy && Object.prototype.hasOwnProperty.call(rawPolicy, "trustPreset")) {
+    return deny(
+      "unsupported_trust_preset",
+      source,
+      `trustPreset is not a supported field in ${source} policy; use reviewPreset.`,
+      sourcePresets,
+    );
+  }
 
   const topReviewPreset = parseReviewPresetId(rawPolicy?.reviewPreset, source, sourcePresets);
   if (isTrustPresetResolution(topReviewPreset)) return topReviewPreset;
@@ -175,26 +159,25 @@ function parseSource(
   const authorizationPolicy = parseAuthorizationPolicy(authorizationPolicyInput, source, sourcePresets);
   if (isTrustPresetResolution(authorizationPolicy)) return authorizationPolicy;
 
-  const authPreset = parsePreset(authorizationPolicy?.trustPreset, source, sourcePresets);
-  if (isTrustPresetResolution(authPreset)) return authPreset;
-
-  const authReviewPreset = parseReviewPresetId(authorizationPolicy?.reviewPreset, source, sourcePresets);
-  if (isTrustPresetResolution(authReviewPreset)) return authReviewPreset;
-
   const boundary = parseBoundary(authorizationPolicy?.trustBoundary, source, sourcePresets);
   if (isTrustPresetResolution(boundary)) return boundary;
 
-  const trustPreset = topPreset ?? topReviewPreset ?? authPreset ?? authReviewPreset;
-  if (trustPreset) sourcePresets[source] = trustPreset;
+  if (boundary && !topReviewPreset) {
+    return deny(
+      "invalid_authorization_policy",
+      source,
+      `Low-trust boundary in ${source} policy requires the top-level reviewPreset.`,
+      sourcePresets,
+    );
+  }
+
+  if (topReviewPreset) sourcePresets[source] = topReviewPreset;
 
   return {
     source,
     companyId: companyId ?? null,
-    rawPolicy,
-    authorizationPolicy,
-    trustPreset,
     boundary,
-    impliesLowTrust: trustPreset === LOW_TRUST_REVIEW_PRESET || Boolean(boundary),
+    impliesLowTrust: topReviewPreset === LOW_TRUST_REVIEW_PRESET,
   };
 }
 

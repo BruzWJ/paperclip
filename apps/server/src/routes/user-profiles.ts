@@ -18,22 +18,22 @@ import type {
   UserProfileWindowStats,
 } from "@paperclipai/shared";
 import {
+  authUserIdSchema,
   canonicalizeMoneyAmount,
   parseBudgetCurrency,
   parseMoneyAmount,
   type MoneyAmount,
 } from "@paperclipai/shared";
-import { notFound } from "../errors.js";
+import { badRequest, notFound } from "../errors.js";
 import { visibleTaskCondition } from "../services/task-visibility.js";
+import { requireUserRole } from "../services/company-member-roles.js";
 import { assertCompanyAccess } from "./authz.js";
 
 type CompanyUserRow = {
-  id: string;
-  principalId: string;
+  userId: string;
   status: string;
   membershipRole: string | null;
   createdAt: Date;
-  userId: string | null;
   name: string | null;
   email: string | null;
   image: string | null;
@@ -45,61 +45,33 @@ const PROFILE_WINDOWS = [
   { key: "all", label: "All time", days: null },
 ] as const;
 
-function slugifyUserPart(value: string | null | undefined) {
-  const normalized = value
-    ?.trim()
-    .toLowerCase()
-    .replace(/['"]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized || null;
-}
-
-function userSlugCandidates(row: CompanyUserRow) {
-  const candidates = new Set<string>();
-  const add = (value: string | null | undefined) => {
-    const slug = slugifyUserPart(value);
-    if (slug) candidates.add(slug);
-  };
-  add(row.name);
-  add(row.email?.split("@")[0]);
-  add(row.email);
-  add(row.principalId);
-  return [...candidates];
-}
-
-async function resolveCompanyUser(db: Db, companyId: string, rawSlug: string): Promise<CompanyUserRow | null> {
-  const slug = slugifyUserPart(rawSlug);
-  if (!slug) return null;
-
-  const rows = await db
+async function getCompanyUserById(
+  db: Db,
+  companyId: string,
+  userId: string,
+): Promise<CompanyUserRow | null> {
+  return db
     .select({
-      id: companyMemberships.id,
-      principalId: companyMemberships.principalUserId,
+      userId: authUsers.id,
       status: companyMemberships.status,
       membershipRole: companyMemberships.membershipRole,
       createdAt: companyMemberships.createdAt,
-      userId: authUsers.id,
       name: authUsers.name,
       email: authUsers.email,
       image: authUsers.image,
     })
     .from(companyMemberships)
-    .leftJoin(authUsers, eq(authUsers.id, companyMemberships.principalUserId))
+    .innerJoin(authUsers, eq(authUsers.id, companyMemberships.principalUserId))
     .where(
       and(
         eq(companyMemberships.companyId, companyId),
         eq(companyMemberships.principalType, "user"),
+        eq(companyMemberships.principalUserId, userId),
+        eq(authUsers.id, userId),
       ),
     )
-    .orderBy(desc(companyMemberships.updatedAt))
-    .limit(200);
-
-  return rows.find(
-    (row): row is CompanyUserRow =>
-      typeof row.principalId === "string"
-      && userSlugCandidates(row as CompanyUserRow).includes(slug),
-  ) ?? null;
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
 }
 
 function userTaskInvolvementSql(companyId: string, userId: string) {
@@ -312,17 +284,21 @@ async function loadDailyStats(db: Db, companyId: string, userId: string): Promis
 }
 
 export function userProfileRoutes(db: Db) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
 
-  router.get("/companies/:companyId/users/:userSlug/profile", async (req, res) => {
+  router.get("/companies/:companyId/users/:userId/profile", async (req, res) => {
     const companyId = req.params.companyId as string;
-    const userSlug = req.params.userSlug as string;
     assertCompanyAccess(req, companyId);
+    const parsedUserId = authUserIdSchema.safeParse(req.params.userId);
+    if (!parsedUserId.success) {
+      throw badRequest(
+        "User ID must be an exact non-empty value without surrounding whitespace",
+      );
+    }
+    const userId = parsedUserId.data;
 
-    const row = await resolveCompanyUser(db, companyId, userSlug);
+    const row = await getCompanyUserById(db, companyId, userId);
     if (!row) throw notFound("User not found");
-    const canonicalSlug = userSlugCandidates(row)[0] ?? row.principalId;
-    const userId = row.userId ?? row.principalId;
     const companyAccounting = await db
       .select({ budgetCurrency: companies.budgetCurrency })
       .from(companies)
@@ -340,6 +316,7 @@ export function userProfileRoutes(db: Db) {
       db
         .select({
           id: tasks.id,
+          taskNumber: tasks.taskNumber,
           identifier: tasks.identifier,
           title: tasks.title,
           boardPresentationStatus: tasks.boardPresentationStatus,
@@ -399,11 +376,10 @@ export function userProfileRoutes(db: Db) {
 
     const user: UserProfileIdentity = {
       id: userId,
-      slug: canonicalSlug,
       name: row.name,
       email: row.email,
       image: row.image,
-      membershipRole: row.membershipRole,
+      membershipRole: requireUserRole(row.membershipRole),
       membershipStatus: row.status,
       joinedAt: row.createdAt,
     };

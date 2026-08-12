@@ -21,7 +21,8 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Company } from "@paperclipai/shared";
-import { Link, useLocation, useNavigate } from "@/lib/router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { authApi } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -132,12 +133,12 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
   const [internalOpen, setInternalOpen] = useState(false);
   const [isEditingOrder, setIsEditingOrder] = useState(false);
   const queryClient = useQueryClient();
-  const { companies, selectedCompany, setSelectedCompanyId } = useCompany();
+  const { companies, selectedCompany } = useCompany();
   const { openOnboarding } = useDialogActions();
   const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
   const rail = collapsed && !peeking;
-  const location = useLocation();
   const navigate = useNavigate();
+  const companyId = useCompanyRouteId();
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
   const sensors = useSensors(
@@ -157,7 +158,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
     queryFn: () => authApi.getSession(),
     retry: false,
   });
-  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const currentUserId = session?.user.id ?? null;
   const { orderedCompanies, persistOrder } = useCompanyOrder({
     companies: sidebarCompanies,
     userId: currentUserId,
@@ -185,18 +186,15 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
   }
 
   function selectCompany(company: Company) {
-    const pathPrefix = location.pathname.split("/")[1]?.toUpperCase();
-    const isCompanyRoute = sidebarCompanies.some((sidebarCompany) => (
-      sidebarCompany.taskPrefix.toUpperCase() === pathPrefix
-    ));
-    const shouldLeaveCurrentRoute = company.id !== selectedCompany?.id
-      && (location.pathname.startsWith("/instance/") || isCompanyRoute);
+    const shouldLeaveCurrentRoute = company.id !== companyId;
 
-    setSelectedCompanyId(company.id);
     setOpen(false);
     if (isMobile) setSidebarOpen(false);
     if (shouldLeaveCurrentRoute) {
-      navigate(`/${company.taskPrefix}/dashboard`);
+      void navigate({
+        to: "/$companyId/dashboard",
+        params: { companyId: company.id },
+      });
     }
   }
 
@@ -210,10 +208,11 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over || active.id === over.id) return;
+      if (typeof active.id !== "string" || typeof over.id !== "string") return;
 
       const ids = orderedCompanies.map((company) => company.id);
-      const oldIndex = ids.indexOf(active.id as string);
-      const newIndex = ids.indexOf(over.id as string);
+      const oldIndex = ids.indexOf(active.id);
+      const newIndex = ids.indexOf(over.id);
       if (oldIndex === -1 || newIndex === -1) return;
 
       persistOrder(arrayMove(ids, oldIndex, newIndex));
@@ -275,7 +274,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
                   key={company.id}
                   company={company}
                   isEditing={isEditingOrder}
-                  isSelected={company.id === selectedCompany?.id}
+                  isSelected={company.id === companyId}
                   onSelect={selectCompany}
                 />
               ))}
@@ -297,7 +296,8 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild disabled={isEditingOrder}>
           <Link
-            to="/company/settings/invites"
+            to="/$companyId/company/settings/invites"
+            params={{ companyId }}
             onClick={(event) => {
               if (isEditingOrder) {
                 event.preventDefault();
@@ -314,7 +314,8 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
         </DropdownMenuItem>
         <DropdownMenuItem asChild disabled={isEditingOrder}>
           <Link
-            to="/company/settings"
+            to="/$companyId/company/settings"
+            params={{ companyId }}
             onClick={(event) => {
               if (isEditingOrder) {
                 event.preventDefault();

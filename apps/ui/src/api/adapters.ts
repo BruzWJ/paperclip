@@ -3,14 +3,13 @@
  */
 
 import { api } from "./client";
-import type { AdapterConfigSchema } from "@paperclipai/adapter-utils";
+import type { AcpAdapterConfigOption } from "@paperclipai/adapter-utils";
 import type {
   AgentAdapterConfigurationTestInput,
   AgentAdapterConfigurationTestResult,
 } from "@paperclipai/shared";
 
 export interface AdapterCapabilities {
-  supportsModelProfiles: boolean;
   contractVersion: "acpx-runtime/v1";
   /** Exact public runtime controls observed by the server's local check. */
   runtimeControls: readonly string[];
@@ -19,13 +18,11 @@ export interface AdapterCapabilities {
 export interface ReadyAdapterInfo {
   type: string;
   label: string;
-  source: "acpx";
   modelsCount: number;
   loaded: true;
   capabilities: AdapterCapabilities;
-  registryName: string;
   /** Exact generic session settings discovered in the same ACPX snapshot. */
-  configSchema: AdapterConfigSchema;
+  configOptions: readonly AcpAdapterConfigOption[];
 }
 
 /**
@@ -36,14 +33,12 @@ export interface ReadyAdapterInfo {
 export interface UnavailableAdapterInfo {
   type: string;
   label: string;
-  source: "acpx";
   modelsCount: 0;
   loaded: false;
   diagnostic: {
     code: "acpx_probe_failed" | "acpx_catalog_invalid";
     message: string;
   };
-  registryName: string;
 }
 
 export type AdapterInfo = ReadyAdapterInfo | UnavailableAdapterInfo;

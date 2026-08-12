@@ -61,16 +61,13 @@ export function dashboardService(db: Db) {
         .then((rows) => Number(rows[0]?.count ?? 0));
 
       const agentCounts: Record<string, number> = {
-        active: 0,
-        running: 0,
+        idle: 0,
         paused: 0,
         error: 0,
       };
       for (const row of agentRows) {
         const count = Number(row.count);
-        // "idle" agents are operational — count them as active
-        const bucket = row.status === "idle" ? "active" : row.status;
-        agentCounts[bucket] = (agentCounts[bucket] ?? 0) + count;
+        agentCounts[row.status] = (agentCounts[row.status] ?? 0) + count;
       }
 
       const taskCounts: Record<string, number> = {
@@ -157,8 +154,7 @@ export function dashboardService(db: Db) {
       return {
         companyId,
         agents: {
-          active: agentCounts.active,
-          running: agentCounts.running,
+          idle: agentCounts.idle,
           paused: agentCounts.paused,
           error: agentCounts.error,
         },

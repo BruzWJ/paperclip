@@ -4,6 +4,7 @@ import {
   canonicalizeMoneyAmount,
   pluginManifestV1Schema,
   type Agent,
+  type Company,
   type Task,
 } from "@paperclipai/shared";
 import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
@@ -12,7 +13,15 @@ import plugin from "../src/worker.js";
 
 function task(input: Partial<Task> & Pick<Task, "id" | "companyId" | "title">): Task {
   const now = new Date();
-  const { id, companyId, title, ...rest } = input;
+  const {
+    id,
+    companyId,
+    title,
+    taskNumber: requestedTaskNumber,
+    identifier: requestedIdentifier,
+    ...rest
+  } = input;
+  const taskNumber = requestedTaskNumber ?? 1;
   return {
     id,
     companyId,
@@ -43,8 +52,8 @@ function task(input: Partial<Task> & Pick<Task, "id" | "companyId" | "title">): 
     creatorSystemSourceKind: null,
     creatorSystemSourceId: null,
     responsibleUserId: null,
-    taskNumber: null,
-    identifier: null,
+    taskNumber,
+    identifier: requestedIdentifier ?? `PSM-${taskNumber}`,
     requestDepth: 0,
     billingCode: null,
     startedAt: null,
@@ -57,21 +66,42 @@ function task(input: Partial<Task> & Pick<Task, "id" | "companyId" | "title">): 
   } as Task;
 }
 
+function company(id: string): Company {
+  const now = new Date();
+  return {
+    id,
+    name: "Plugin smoke company",
+    description: null,
+    status: "active",
+    pauseReason: null,
+    pausedAt: null,
+    taskPrefix: "PSM",
+    taskCounter: 1,
+    budgetCurrency: "USD",
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
+    attachmentMaxBytes: 10 * 1024 * 1024,
+    defaultResponsibleUserId: null,
+    requireBoardApprovalForNewAgents: false,
+    brandColor: null,
+    logoAssetId: null,
+    logoUrl: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 function agent(id: string, companyId: string): Agent {
   const now = new Date();
   return {
     id,
     companyId,
     name: "Smoke owner",
-    urlKey: "smoke-owner",
     title: null,
     icon: null,
     status: "idle",
     reportsTo: null,
     capabilities: "Owns ordinary plugin smoke tasks.",
-    adapterType: "codex",
-    adapterConfig: { model: "gpt-5.6" },
-    runtimeConfig: {},
     currentAdapterConfigRevisionId: null,
     budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
     knownSpendAmount: canonicalizeMoneyAmount("0"),
@@ -115,6 +145,7 @@ describe("task runtime smoke plugin", () => {
     const agentId = randomUUID();
     const harness = createTestHarness({ manifest });
     harness.seed({
+      companies: [company(companyId)],
       agents: [agent(agentId, companyId)],
       tasks: [
         task({
@@ -162,6 +193,7 @@ describe("task runtime smoke plugin", () => {
     const agentId = randomUUID();
     const harness = createTestHarness({ manifest });
     harness.seed({
+      companies: [company(companyId)],
       agents: [agent(agentId, companyId)],
       tasks: [
         task({

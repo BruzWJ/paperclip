@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BreadcrumbProvider, buildDocumentTitle, useBreadcrumbs } from "./BreadcrumbContext";
+import { BreadcrumbProvider, buildDocumentTitle, useBreadcrumbs, type Breadcrumb } from "./BreadcrumbContext";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -27,7 +27,8 @@ describe("BreadcrumbContext", () => {
 
   it("does not rerender consumers when breadcrumbs are set to the same values", () => {
     const renderCounts: number[] = [];
-    let updateBreadcrumbs: ((crumbs: Array<{ label: string; href?: string }>) => void) | null = null;
+    let updateBreadcrumbs: ((crumbs: Breadcrumb[]) => void) | null = null;
+    const renderTasksLink = (content: ReactNode) => <a href="/tasks">{content}</a>;
 
     function TestConsumer() {
       const { breadcrumbs, setBreadcrumbs } = useBreadcrumbs();
@@ -47,13 +48,13 @@ describe("BreadcrumbContext", () => {
     expect(renderCounts).toHaveLength(1);
 
     act(() => {
-      updateBreadcrumbs?.([{ label: "Tasks", href: "/tasks" }, { label: "PAP-1488" }]);
+      updateBreadcrumbs?.([{ label: "Tasks", renderLink: renderTasksLink }, { label: "PAP-1488" }]);
     });
 
     expect(renderCounts).toHaveLength(2);
 
     act(() => {
-      updateBreadcrumbs?.([{ label: "Tasks", href: "/tasks" }, { label: "PAP-1488" }]);
+      updateBreadcrumbs?.([{ label: "Tasks", renderLink: renderTasksLink }, { label: "PAP-1488" }]);
     });
 
     expect(renderCounts).toHaveLength(2);
@@ -65,7 +66,7 @@ describe("BreadcrumbContext", () => {
     );
     expect(
       buildDocumentTitle(
-        [{ label: "Tasks", href: "/tasks" }, { label: "PAP-3515" }],
+        [{ label: "Tasks" }, { label: "PAP-3515" }],
         "Anachronist Wiki",
       ),
     ).toBe("PAP-3515 • Tasks • Anachronist Wiki • Paperclip");

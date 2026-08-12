@@ -14,17 +14,17 @@ function agent(overrides: Partial<AgentEligibilityAgent> = {}): AgentEligibility
     id: "agent-1",
     companyId,
     name: "Coder",
-    status: "active",
+    status: "idle",
     reportsTo: "manager-1",
     ...overrides,
   };
 }
 
 describe("agent work eligibility", () => {
-  it("allows healthy active agents to accept work and be invoked", () => {
+  it("allows healthy idle agents to accept work and be invoked", () => {
     const agents = [
       agent(),
-      agent({ id: "manager-1", name: "Manager", status: "active", reportsTo: null }),
+      agent({ id: "manager-1", name: "Manager", status: "idle", reportsTo: null }),
     ];
 
     expect(isAgentAssignableToWork({ agent: agents[0]!, agents })).toBe(true);
@@ -39,7 +39,7 @@ describe("agent work eligibility", () => {
   });
 
   it("blocks terminated and pending approval agents from assignment and invocation", () => {
-    const manager = agent({ id: "manager-1", name: "Manager", status: "active", reportsTo: null });
+    const manager = agent({ id: "manager-1", name: "Manager", status: "idle", reportsTo: null });
 
     for (const status of ["terminated", "pending_approval"]) {
       const target = agent({ status });
@@ -54,7 +54,7 @@ describe("agent work eligibility", () => {
 
   it("allows paused agents to keep assignments but blocks invocation", () => {
     const target = agent({ status: "paused" });
-    const manager = agent({ id: "manager-1", name: "Manager", status: "active", reportsTo: null });
+    const manager = agent({ id: "manager-1", name: "Manager", status: "idle", reportsTo: null });
 
     expect(getAgentWorkEligibility({ agent: target, agents: [target, manager] })).toMatchObject({
       assignable: true,
@@ -66,7 +66,7 @@ describe("agent work eligibility", () => {
 
   it("reports unknown lifecycle statuses explicitly", () => {
     const target = agent({ status: "sabbatical" });
-    const manager = agent({ id: "manager-1", name: "Manager", status: "active", reportsTo: null });
+    const manager = agent({ id: "manager-1", name: "Manager", status: "idle", reportsTo: null });
 
     expect(getAgentWorkEligibility({ agent: target, agents: [target, manager] })).toMatchObject({
       assignable: false,
@@ -77,8 +77,8 @@ describe("agent work eligibility", () => {
     });
   });
 
-  it("blocks active descendants of terminated ancestors and reports repair details", () => {
-    const target = agent({ id: "qa-2", name: "QA 2", status: "active", reportsTo: "manager-2" });
+  it("blocks idle descendants of terminated ancestors and reports repair details", () => {
+    const target = agent({ id: "qa-2", name: "QA 2", status: "idle", reportsTo: "manager-2" });
     const terminatedManager = agent({
       id: "manager-2",
       name: "Manager 2",
@@ -116,7 +116,7 @@ describe("agent work eligibility", () => {
   });
 
   it("blocks agents whose manager is missing from the company org", () => {
-    const target = agent({ id: "qa-3", name: "QA 3", status: "active", reportsTo: "missing-manager" });
+    const target = agent({ id: "qa-3", name: "QA 3", status: "idle", reportsTo: "missing-manager" });
 
     const health = getAgentOrgChainHealth({ agent: target, agents: [target] });
     expect(health.status).toBe("invalid_org_chain");
@@ -135,8 +135,8 @@ describe("agent work eligibility", () => {
   });
 
   it("blocks agents with reporting cycles", () => {
-    const target = agent({ id: "qa-4", name: "QA 4", status: "active", reportsTo: "manager-4" });
-    const manager = agent({ id: "manager-4", name: "Manager 4", status: "active", reportsTo: "qa-4" });
+    const target = agent({ id: "qa-4", name: "QA 4", status: "idle", reportsTo: "manager-4" });
+    const manager = agent({ id: "manager-4", name: "Manager 4", status: "idle", reportsTo: "qa-4" });
     const agents = [target, manager];
 
     const health = getAgentOrgChainHealth({ agent: target, agents });

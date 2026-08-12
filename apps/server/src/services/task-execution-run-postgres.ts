@@ -14,16 +14,7 @@ import {
   taskSessionMessages,
   type Db,
 } from "@paperclipai/db";
-import {
-  and,
-  desc,
-  eq,
-  gt,
-  inArray,
-  ne,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, desc, eq, gt, inArray, ne, or, sql } from "drizzle-orm";
 import {
   TaskExecutionSteeringRejected,
   TaskExecutionRunInvariantViolation,
@@ -70,11 +61,13 @@ function noPromptAttachments(prompt: unknown): prompt is {
     return false;
   }
   const value = prompt as Record<string, unknown>;
-  return typeof value.text === "string" &&
+  return (
+    typeof value.text === "string" &&
     (value.files === undefined ||
       (Array.isArray(value.files) && value.files.length === 0)) &&
     (value.agents === undefined ||
-      (Array.isArray(value.agents) && value.agents.length === 0));
+      (Array.isArray(value.agents) && value.agents.length === 0))
+  );
 }
 
 function sourceMessageText(
@@ -143,11 +136,11 @@ function terminalSteeringResult(input: {
     return null;
   }
   const outcome =
-    (segment.outcome === "succeeded" || segment.outcome === "refused")
-    ? "succeeded" as const
-    : segment.outcome === "cancelled"
-      ? "cancelled" as const
-      : "failed" as const;
+    segment.outcome === "succeeded" || segment.outcome === "refused"
+      ? ("succeeded" as const)
+      : segment.outcome === "cancelled"
+        ? ("cancelled" as const)
+        : ("failed" as const);
   return Object.freeze({
     companyId: run.companyId,
     taskId: run.taskId,
@@ -157,7 +150,8 @@ function terminalSteeringResult(input: {
     segmentOrdinal: segment.segmentOrdinal,
     outcome,
     response,
-    reason: terminalReason ??
+    reason:
+      terminalReason ??
       (segment.protocolSettlementState === "not_sent"
         ? "Steering continuation was released before ACP transmission"
         : segment.protocolSettlementState === "incomplete"
@@ -173,7 +167,8 @@ function activePromptMemberMatches(input: {
   readonly lease: typeof taskExecutionLeases.$inferSelect;
 }): boolean {
   const { run, control, attempt, lease } = input;
-  return run.currentAttemptId === attempt.id &&
+  return (
+    run.currentAttemptId === attempt.id &&
     run.currentLeaseId === lease.id &&
     attempt.companyId === run.companyId &&
     attempt.taskId === run.taskId &&
@@ -190,7 +185,8 @@ function activePromptMemberMatches(input: {
     lease.taskId === run.taskId &&
     lease.runId === run.runId &&
     lease.attemptId === attempt.id &&
-    lease.state === "active";
+    lease.state === "active"
+  );
 }
 
 function actorMatchesComment(
@@ -252,14 +248,16 @@ function sameRequestIdentity(
     cancellationIntentId?: string | null;
   },
 ): boolean {
-  return request.companyId === input.companyId &&
+  return (
+    request.companyId === input.companyId &&
     request.taskId === input.taskId &&
     request.runId === input.runId &&
     request.refId === input.refId &&
     request.refOrdinal === input.refOrdinal &&
     request.segmentOrdinal === input.segmentOrdinal &&
     (input.cancellationIntentId === undefined ||
-      request.cancellationIntentId === input.cancellationIntentId);
+      request.cancellationIntentId === input.cancellationIntentId)
+  );
 }
 
 function boundedPositiveInteger(
@@ -290,7 +288,8 @@ export function createPostgresTaskExecutionSteeringRepository(
     25,
     "steering settlement poll interval",
   );
-  const wait = options.wait ??
+  const wait =
+    options.wait ??
     ((milliseconds: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
 
@@ -301,90 +300,78 @@ export function createPostgresTaskExecutionSteeringRepository(
     | { readonly kind: "settled" }
     | { readonly kind: "ambiguous"; readonly reason: string }
   > {
-    const [intentRows, attemptRows, leaseRows, promptRows] =
-      await Promise.all([
-        db
-          .select()
-          .from(taskExecutionCancellationIntents)
-          .where(
-            and(
-              eq(
-                taskExecutionCancellationIntents.id,
-                request.cancellationIntentId,
-              ),
-              eq(taskExecutionCancellationIntents.runId, request.runId),
-              eq(
-                taskExecutionCancellationIntents.attemptId,
-                request.cancellation.attemptId!,
-              ),
-            ),
-          )
-          .limit(2),
-        db
-          .select()
-          .from(taskExecutionAttempts)
-          .where(
+    const [intentRows, attemptRows, leaseRows, promptRows] = await Promise.all([
+      db
+        .select()
+        .from(taskExecutionCancellationIntents)
+        .where(
+          and(
             eq(
-              taskExecutionAttempts.id,
+              taskExecutionCancellationIntents.id,
+              request.cancellationIntentId,
+            ),
+            eq(taskExecutionCancellationIntents.runId, request.runId),
+            eq(
+              taskExecutionCancellationIntents.attemptId,
               request.cancellation.attemptId!,
             ),
-          )
-          .limit(2),
-        db
-          .select()
-          .from(taskExecutionLeases)
-          .where(
-            and(
-              eq(
-                taskExecutionLeases.attemptId,
-                request.cancellation.attemptId!,
-              ),
-              eq(
-                taskExecutionLeases.leaseGeneration,
-                request.cancellation.leaseGeneration,
-              ),
+          ),
+        )
+        .limit(2),
+      db
+        .select()
+        .from(taskExecutionAttempts)
+        .where(eq(taskExecutionAttempts.id, request.cancellation.attemptId!))
+        .limit(2),
+      db
+        .select()
+        .from(taskExecutionLeases)
+        .where(
+          and(
+            eq(taskExecutionLeases.attemptId, request.cancellation.attemptId!),
+            eq(
+              taskExecutionLeases.leaseGeneration,
+              request.cancellation.leaseGeneration,
             ),
-          )
-          .limit(2),
-        request.interruptedSegmentOrdinal === 0
-          ? db
-              .select({
-                protocolSettlementState:
-                  taskExecutionRunRefs.protocolSettlementState,
-                outcome: taskExecutionRunRefs.outcome,
-              })
-              .from(taskExecutionRunRefs)
-              .where(
-                and(
-                  eq(taskExecutionRunRefs.runId, request.runId),
-                  eq(taskExecutionRunRefs.refId, request.refId),
-                  eq(taskExecutionRunRefs.refOrdinal, request.refOrdinal),
+          ),
+        )
+        .limit(2),
+      request.interruptedSegmentOrdinal === 0
+        ? db
+            .select({
+              protocolSettlementState:
+                taskExecutionRunRefs.protocolSettlementState,
+              outcome: taskExecutionRunRefs.outcome,
+            })
+            .from(taskExecutionRunRefs)
+            .where(
+              and(
+                eq(taskExecutionRunRefs.runId, request.runId),
+                eq(taskExecutionRunRefs.refId, request.refId),
+                eq(taskExecutionRunRefs.refOrdinal, request.refOrdinal),
+              ),
+            )
+            .limit(2)
+        : db
+            .select({
+              protocolSettlementState:
+                taskExecutionPromptSegments.protocolSettlementState,
+              outcome: taskExecutionPromptSegments.outcome,
+            })
+            .from(taskExecutionPromptSegments)
+            .where(
+              and(
+                eq(taskExecutionPromptSegments.runId, request.runId),
+                eq(taskExecutionPromptSegments.refId, request.refId),
+                eq(taskExecutionPromptSegments.refOrdinal, request.refOrdinal),
+                eq(
+                  taskExecutionPromptSegments.segmentOrdinal,
+                  request.interruptedSegmentOrdinal,
                 ),
-              )
-              .limit(2)
-          : db
-              .select({
-                protocolSettlementState:
-                  taskExecutionPromptSegments.protocolSettlementState,
-                outcome: taskExecutionPromptSegments.outcome,
-              })
-              .from(taskExecutionPromptSegments)
-              .where(
-                and(
-                  eq(taskExecutionPromptSegments.runId, request.runId),
-                  eq(taskExecutionPromptSegments.refId, request.refId),
-                  eq(
-                    taskExecutionPromptSegments.refOrdinal,
-                    request.refOrdinal,
-                  ),
-                  eq(
-                    taskExecutionPromptSegments.segmentOrdinal,
-                    request.interruptedSegmentOrdinal,
-                  ),
-                ),
-              )
-              .limit(2),
-      ]);
+              ),
+            )
+            .limit(2),
+    ]);
     if (
       intentRows.length !== 1 ||
       attemptRows.length !== 1 ||
@@ -478,33 +465,31 @@ export function createPostgresTaskExecutionSteeringRepository(
       if (member.protocolSettlementState !== null) {
         reject("Selected run member is already settled");
       }
-      const currentSegment = control.currentSegmentOrdinal === 0
-        ? null
-        : exactlyOne(
-            await transaction
-              .select()
-              .from(taskExecutionPromptSegments)
-              .where(
-                and(
-                  eq(taskExecutionPromptSegments.runId, run.runId),
-                  eq(
-                    taskExecutionPromptSegments.refId,
-                    control.currentRefId,
+      const currentSegment =
+        control.currentSegmentOrdinal === 0
+          ? null
+          : exactlyOne(
+              await transaction
+                .select()
+                .from(taskExecutionPromptSegments)
+                .where(
+                  and(
+                    eq(taskExecutionPromptSegments.runId, run.runId),
+                    eq(taskExecutionPromptSegments.refId, control.currentRefId),
+                    eq(
+                      taskExecutionPromptSegments.refOrdinal,
+                      control.currentOrdinal,
+                    ),
+                    eq(
+                      taskExecutionPromptSegments.segmentOrdinal,
+                      control.currentSegmentOrdinal,
+                    ),
                   ),
-                  eq(
-                    taskExecutionPromptSegments.refOrdinal,
-                    control.currentOrdinal,
-                  ),
-                  eq(
-                    taskExecutionPromptSegments.segmentOrdinal,
-                    control.currentSegmentOrdinal,
-                  ),
-                ),
-              )
-              .limit(2)
-              .for("update"),
-            "Selected run control does not resolve one current steering segment",
-          );
+                )
+                .limit(2)
+                .for("update"),
+              "Selected run control does not resolve one current steering segment",
+            );
       if (
         currentSegment !== null &&
         currentSegment.protocolSettlementState !== null
@@ -563,8 +548,7 @@ export function createPostgresTaskExecutionSteeringRepository(
         "Selected run has no unambiguous active request capability",
       );
       const expectedCapabilityConnectionId =
-        currentSegment?.capabilityConnectionId ??
-        member.capabilityConnectionId;
+        currentSegment?.capabilityConnectionId ?? member.capabilityConnectionId;
       const expectedCapabilityGeneration =
         currentSegment?.capabilityGeneration ?? member.capabilityGeneration;
       if (
@@ -581,7 +565,10 @@ export function createPostgresTaskExecutionSteeringRepository(
           .from(taskExecutionSessions)
           .where(
             and(
-              eq(taskExecutionSessions.id, capability.targetSessionCorrelationId),
+              eq(
+                taskExecutionSessions.id,
+                capability.targetSessionCorrelationId,
+              ),
               eq(taskExecutionSessions.companyId, run.companyId),
               eq(taskExecutionSessions.taskId, run.taskId),
               eq(taskExecutionSessions.ownershipEpoch, run.ownershipEpoch),
@@ -620,26 +607,29 @@ export function createPostgresTaskExecutionSteeringRepository(
         correlation.currentSegmentOrdinal === control.currentSegmentOrdinal &&
         correlation.authorizedContextExposureDigest === null;
       if (!carryTargetIsExact && !activeRunTargetIsExact) {
-        reject("Selected prompt protected target session crossed its exact scope");
+        reject(
+          "Selected prompt protected target session crossed its exact scope",
+        );
       }
-      const sourceInput = input.sourceInputId === null
-        ? null
-        : exactlyOne(
-            await transaction
-              .select()
-              .from(taskSessionInputs)
-              .where(
-                and(
-                  eq(taskSessionInputs.companyId, run.companyId),
-                  eq(taskSessionInputs.taskId, run.taskId),
-                  eq(taskSessionInputs.sessionId, run.sessionId),
-                  eq(taskSessionInputs.id, input.sourceInputId),
-                ),
-              )
-              .limit(2)
-              .for("update"),
-            "Steering source input is not in the selected task Session",
-          );
+      const sourceInput =
+        input.sourceInputId === null
+          ? null
+          : exactlyOne(
+              await transaction
+                .select()
+                .from(taskSessionInputs)
+                .where(
+                  and(
+                    eq(taskSessionInputs.companyId, run.companyId),
+                    eq(taskSessionInputs.taskId, run.taskId),
+                    eq(taskSessionInputs.sessionId, run.sessionId),
+                    eq(taskSessionInputs.id, input.sourceInputId),
+                  ),
+                )
+                .limit(2)
+                .for("update"),
+              "Steering source input is not in the selected task Session",
+            );
       const sourceComment = exactlyOne(
         await transaction
           .select()
@@ -660,16 +650,13 @@ export function createPostgresTaskExecutionSteeringRepository(
         await transaction
           .select()
           .from(taskCommentProjectionSources)
-          .where(
-            eq(taskCommentProjectionSources.commentId, sourceComment.id),
-          )
+          .where(eq(taskCommentProjectionSources.commentId, sourceComment.id))
           .limit(2)
           .for("update"),
         "Steering comment has no canonical projection source",
       );
-      const expectedProjectionKind = input.actor.kind === "user"
-        ? "human_comment"
-        : "harness_delivery";
+      const expectedProjectionKind =
+        input.actor.kind === "user" ? "human_comment" : "harness_delivery";
       if (
         (input.actor.kind === "user" &&
           (!sourceInput ||
@@ -747,10 +734,7 @@ export function createPostgresTaskExecutionSteeringRepository(
           and(
             eq(taskExecutionPromptSegments.runId, run.runId),
             eq(taskExecutionPromptSegments.refId, control.currentRefId),
-            eq(
-              taskExecutionPromptSegments.refOrdinal,
-              control.currentOrdinal,
-            ),
+            eq(taskExecutionPromptSegments.refOrdinal, control.currentOrdinal),
           ),
         )
         .orderBy(desc(taskExecutionPromptSegments.segmentOrdinal))
@@ -771,10 +755,8 @@ export function createPostgresTaskExecutionSteeringRepository(
         leaseId: lease.id,
         reasonKind: "steering",
         actorKind: input.actor.kind,
-        actorUserId:
-          input.actor.kind === "user" ? input.actor.userId : null,
-        actorAgentId:
-          input.actor.kind === "agent" ? input.actor.agentId : null,
+        actorUserId: input.actor.kind === "user" ? input.actor.userId : null,
+        actorAgentId: input.actor.kind === "agent" ? input.actor.agentId : null,
         state: "requested",
         requestedAt: now,
         acknowledgedAt: null,
@@ -908,10 +890,7 @@ export function createPostgresTaskExecutionSteeringRepository(
               and(
                 eq(taskExecutionPromptSegments.runId, request.runId),
                 eq(taskExecutionPromptSegments.refId, request.refId),
-                eq(
-                  taskExecutionPromptSegments.refOrdinal,
-                  request.refOrdinal,
-                ),
+                eq(taskExecutionPromptSegments.refOrdinal, request.refOrdinal),
                 eq(
                   taskExecutionPromptSegments.segmentOrdinal,
                   request.segmentOrdinal,
@@ -945,7 +924,10 @@ export function createPostgresTaskExecutionSteeringRepository(
         ) {
           return;
         }
-        if (intent.state !== "requested" || segment.steeringState !== "requested") {
+        if (
+          intent.state !== "requested" ||
+          segment.steeringState !== "requested"
+        ) {
           reject("Steering cancellation signal was already consumed");
         }
         await transaction
@@ -961,10 +943,7 @@ export function createPostgresTaskExecutionSteeringRepository(
           .where(
             and(
               eq(taskExecutionPromptSegments.runId, segment.runId),
-              eq(
-                taskExecutionPromptSegments.refOrdinal,
-                segment.refOrdinal,
-              ),
+              eq(taskExecutionPromptSegments.refOrdinal, segment.refOrdinal),
               eq(taskExecutionPromptSegments.refId, segment.refId),
               eq(
                 taskExecutionPromptSegments.segmentOrdinal,
@@ -1068,8 +1047,8 @@ export function createPostgresTaskExecutionSteeringRepository(
           .for("update")
           .then((rows) => rows[0] ?? null);
         if (!intent || intent.state === "completed") return;
-        const failureCode = reason.trim().slice(0, 200) ||
-          "steering_cancellation_ambiguous";
+        const failureCode =
+          reason.trim().slice(0, 200) || "steering_cancellation_ambiguous";
         await transaction
           .update(taskExecutionCancellationIntents)
           .set({
@@ -1077,9 +1056,7 @@ export function createPostgresTaskExecutionSteeringRepository(
             failedAt: now,
             failureCode,
           })
-          .where(
-            eq(taskExecutionCancellationIntents.id, intent.id),
-          );
+          .where(eq(taskExecutionCancellationIntents.id, intent.id));
       });
     },
 
@@ -1110,10 +1087,7 @@ export function createPostgresTaskExecutionSteeringRepository(
               and(
                 eq(taskExecutionPromptSegments.runId, request.runId),
                 eq(taskExecutionPromptSegments.refId, request.refId),
-                eq(
-                  taskExecutionPromptSegments.refOrdinal,
-                  request.refOrdinal,
-                ),
+                eq(taskExecutionPromptSegments.refOrdinal, request.refOrdinal),
                 eq(
                   taskExecutionPromptSegments.segmentOrdinal,
                   request.segmentOrdinal,
@@ -1166,10 +1140,7 @@ export function createPostgresTaskExecutionSteeringRepository(
             and(
               eq(taskExecutionPromptSegments.runId, request.runId),
               eq(taskExecutionPromptSegments.refId, request.refId),
-              eq(
-                taskExecutionPromptSegments.refOrdinal,
-                request.refOrdinal,
-              ),
+              eq(taskExecutionPromptSegments.refOrdinal, request.refOrdinal),
               eq(
                 taskExecutionPromptSegments.segmentOrdinal,
                 request.segmentOrdinal,
@@ -1222,10 +1193,7 @@ export function createPostgresTaskExecutionSteeringRepository(
               and(
                 eq(taskExecutionPromptSegments.runId, rebound.runId),
                 eq(taskExecutionPromptSegments.refId, rebound.refId),
-                eq(
-                  taskExecutionPromptSegments.refOrdinal,
-                  rebound.refOrdinal,
-                ),
+                eq(taskExecutionPromptSegments.refOrdinal, rebound.refOrdinal),
                 eq(
                   taskExecutionPromptSegments.segmentOrdinal,
                   rebound.segmentOrdinal,
@@ -1261,10 +1229,7 @@ export function createPostgresTaskExecutionSteeringRepository(
             and(
               eq(taskExecutionPromptSegments.runId, rebound.runId),
               eq(taskExecutionPromptSegments.refId, rebound.refId),
-              eq(
-                taskExecutionPromptSegments.refOrdinal,
-                rebound.refOrdinal,
-              ),
+              eq(taskExecutionPromptSegments.refOrdinal, rebound.refOrdinal),
               eq(
                 taskExecutionPromptSegments.segmentOrdinal,
                 rebound.segmentOrdinal,
@@ -1289,10 +1254,7 @@ export function createPostgresTaskExecutionSteeringRepository(
             and(
               eq(taskCommentProjectionSources.companyId, input.companyId),
               eq(taskCommentProjectionSources.taskId, input.taskId),
-              eq(
-                taskCommentProjectionSources.commentId,
-                input.sourceCommentId,
-              ),
+              eq(taskCommentProjectionSources.commentId, input.sourceCommentId),
             ),
           )
           .limit(2)
@@ -1331,68 +1293,61 @@ export function createPostgresTaskExecutionSteeringRepository(
           }
           throw error;
         }
-        const [
-          segmentRows,
-          controlRows,
-          sourceMessageRows,
-          sourceCommentRows,
-        ] = await Promise.all([
-          transaction
-            .select()
-            .from(taskExecutionPromptSegments)
-            .where(
-              and(
-                eq(taskExecutionPromptSegments.runId, run.runId),
-                eq(taskExecutionPromptSegments.refId, source.refId),
-                eq(
-                  taskExecutionPromptSegments.refOrdinal,
-                  source.refOrdinal,
+        const [segmentRows, controlRows, sourceMessageRows, sourceCommentRows] =
+          await Promise.all([
+            transaction
+              .select()
+              .from(taskExecutionPromptSegments)
+              .where(
+                and(
+                  eq(taskExecutionPromptSegments.runId, run.runId),
+                  eq(taskExecutionPromptSegments.refId, source.refId),
+                  eq(taskExecutionPromptSegments.refOrdinal, source.refOrdinal),
+                  eq(
+                    taskExecutionPromptSegments.segmentOrdinal,
+                    source.segmentOrdinal,
+                  ),
+                  eq(
+                    taskExecutionPromptSegments.sourceCommentId,
+                    input.sourceCommentId,
+                  ),
                 ),
-                eq(
-                  taskExecutionPromptSegments.segmentOrdinal,
-                  source.segmentOrdinal,
+              )
+              .limit(2)
+              .for("update"),
+            transaction
+              .select()
+              .from(taskExecutionRunControls)
+              .where(eq(taskExecutionRunControls.runId, run.runId))
+              .limit(2)
+              .for("update"),
+            transaction
+              .select()
+              .from(taskSessionMessages)
+              .where(
+                and(
+                  eq(taskSessionMessages.companyId, input.companyId),
+                  eq(taskSessionMessages.taskId, input.taskId),
+                  eq(taskSessionMessages.sessionId, source.sessionId),
+                  eq(taskSessionMessages.id, source.messageId),
                 ),
-                eq(
-                  taskExecutionPromptSegments.sourceCommentId,
-                  input.sourceCommentId,
+              )
+              .limit(2)
+              .for("update"),
+            transaction
+              .select()
+              .from(taskComments)
+              .where(
+                and(
+                  eq(taskComments.companyId, input.companyId),
+                  eq(taskComments.taskId, input.taskId),
+                  eq(taskComments.sessionId, source.sessionId),
+                  eq(taskComments.id, input.sourceCommentId),
                 ),
-              ),
-            )
-            .limit(2)
-            .for("update"),
-          transaction
-            .select()
-            .from(taskExecutionRunControls)
-            .where(eq(taskExecutionRunControls.runId, run.runId))
-            .limit(2)
-            .for("update"),
-          transaction
-            .select()
-            .from(taskSessionMessages)
-            .where(
-              and(
-                eq(taskSessionMessages.companyId, input.companyId),
-                eq(taskSessionMessages.taskId, input.taskId),
-                eq(taskSessionMessages.sessionId, source.sessionId),
-                eq(taskSessionMessages.id, source.messageId),
-              ),
-            )
-            .limit(2)
-            .for("update"),
-          transaction
-            .select()
-            .from(taskComments)
-            .where(
-              and(
-                eq(taskComments.companyId, input.companyId),
-                eq(taskComments.taskId, input.taskId),
-                eq(taskComments.sessionId, source.sessionId),
-                eq(taskComments.id, input.sourceCommentId),
-              ),
-            )
-            .limit(2)
-            .for("update"),
-        ]);
+              )
+              .limit(2)
+              .for("update"),
+          ]);
         if (
           segmentRows.length !== 1 ||
           controlRows.length !== 1 ||
@@ -1408,21 +1363,22 @@ export function createPostgresTaskExecutionSteeringRepository(
         const sourceMessage = sourceMessageRows[0]!;
         const sourceComment = sourceCommentRows[0]!;
         const decodedSource = sourceMessageText(sourceMessage);
-        const sourceInputRows = segment.sourceInputId === null
-          ? []
-          : await transaction
-              .select()
-              .from(taskSessionInputs)
-              .where(
-                and(
-                  eq(taskSessionInputs.companyId, input.companyId),
-                  eq(taskSessionInputs.taskId, input.taskId),
-                  eq(taskSessionInputs.sessionId, source.sessionId),
-                  eq(taskSessionInputs.id, segment.sourceInputId),
-                ),
-              )
-              .limit(2)
-              .for("update");
+        const sourceInputRows =
+          segment.sourceInputId === null
+            ? []
+            : await transaction
+                .select()
+                .from(taskSessionInputs)
+                .where(
+                  and(
+                    eq(taskSessionInputs.companyId, input.companyId),
+                    eq(taskSessionInputs.taskId, input.taskId),
+                    eq(taskSessionInputs.sessionId, source.sessionId),
+                    eq(taskSessionInputs.id, segment.sourceInputId),
+                  ),
+                )
+                .limit(2)
+                .for("update");
         const sourceInput = sourceInputRows[0] ?? null;
         if (
           run.sessionId !== source.sessionId ||
@@ -1469,32 +1425,34 @@ export function createPostgresTaskExecutionSteeringRepository(
           segmentOrdinal: segment.segmentOrdinal,
         });
         if (segment.protocolSettlementState !== null) {
-          const terminalMessageRows = segment.terminalSessionMessageId === null
-            ? []
-            : await transaction
-                .select()
-                .from(taskSessionMessages)
-                .where(
-                  and(
-                    eq(taskSessionMessages.companyId, input.companyId),
-                    eq(taskSessionMessages.taskId, input.taskId),
-                    eq(taskSessionMessages.sessionId, source.sessionId),
-                    eq(
-                      taskSessionMessages.id,
-                      segment.terminalSessionMessageId,
+          const terminalMessageRows =
+            segment.terminalSessionMessageId === null
+              ? []
+              : await transaction
+                  .select()
+                  .from(taskSessionMessages)
+                  .where(
+                    and(
+                      eq(taskSessionMessages.companyId, input.companyId),
+                      eq(taskSessionMessages.taskId, input.taskId),
+                      eq(taskSessionMessages.sessionId, source.sessionId),
+                      eq(
+                        taskSessionMessages.id,
+                        segment.terminalSessionMessageId,
+                      ),
                     ),
-                  ),
-                )
-                .limit(2)
-                .for("update");
-          const result = segment.steeringState === "protocol_settled" &&
-              terminalMessageRows.length <= 1
-            ? terminalSteeringResult({
-                run,
-                segment,
-                assistant: terminalMessageRows[0] ?? null,
-              })
-            : null;
+                  )
+                  .limit(2)
+                  .for("update");
+          const result =
+            segment.steeringState === "protocol_settled" &&
+            terminalMessageRows.length <= 1
+              ? terminalSteeringResult({
+                  run,
+                  segment,
+                  assistant: terminalMessageRows[0] ?? null,
+                })
+              : null;
           return result
             ? { kind: "terminal", result }
             : ambiguous(
@@ -1511,10 +1469,7 @@ export function createPostgresTaskExecutionSteeringRepository(
             "Steering run terminalized before its positive segment settled",
           );
         }
-        if (
-          run.terminalFinalizationId !== null ||
-          run.finishedAt !== null
-        ) {
+        if (run.terminalFinalizationId !== null || run.finishedAt !== null) {
           return ambiguous(
             "Persisted steering source no longer targets an active agent run",
           );
@@ -1699,10 +1654,7 @@ export function createPostgresTaskExecutionSteeringRepository(
               taskExecutionAttempts.id,
               taskExecutionCancellationIntents.attemptId,
             ),
-            eq(
-              taskExecutionAttempts.runId,
-              taskExecutionPromptSegments.runId,
-            ),
+            eq(taskExecutionAttempts.runId, taskExecutionPromptSegments.runId),
           ),
         )
         .innerJoin(
@@ -1712,10 +1664,7 @@ export function createPostgresTaskExecutionSteeringRepository(
               taskExecutionLeases.id,
               taskExecutionCancellationIntents.leaseId,
             ),
-            eq(
-              taskExecutionLeases.attemptId,
-              taskExecutionAttempts.id,
-            ),
+            eq(taskExecutionLeases.attemptId, taskExecutionAttempts.id),
           ),
         )
         .where(
@@ -1760,7 +1709,3 @@ export function createPostgresTaskExecutionSteeringRepository(
     },
   };
 }
-
-export type PostgresTaskExecutionSteeringRepository = ReturnType<
-  typeof createPostgresTaskExecutionSteeringRepository
->;

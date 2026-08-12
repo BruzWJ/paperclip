@@ -2,18 +2,16 @@ import { createHash, randomBytes } from "node:crypto";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import {
-  createDb,
-  resolveDatabaseTarget,
-  type Db,
-} from "@paperclipai/db";
+import { createDb, resolveDatabaseTarget, type Db } from "@paperclipai/db";
 import { instanceUserRoles, invites } from "@paperclipai/db/schema";
 import {
-  inferBindModeFromHost,
-  normalizePublicOrigin,
+  isAllInterfacesHost,
+  parseExactPublicOrigin,
+  resolveRuntimeBind,
   type PaperclipConfig,
 } from "@paperclipai/shared";
 import { loadPaperclipEnvFile } from "../config/env.js";
+import { detectTailnetBindHost } from "../config/server-bind.js";
 import { readConfig, resolveConfigPath } from "../config/store.js";
 
 function hashToken(token: string) {
@@ -36,13 +34,13 @@ export function resolveBootstrapAdminInviteBaseUrl(input: {
 
   if (config.server.exposure === "public") {
     const explicit = explicitBaseUrl
-      ? normalizePublicOrigin(explicitBaseUrl)
+      ? parseExactPublicOrigin(explicitBaseUrl)
       : undefined;
     const fromEnv = environmentPublicUrl
-      ? normalizePublicOrigin(environmentPublicUrl)
+      ? parseExactPublicOrigin(environmentPublicUrl)
       : undefined;
     const persisted = persistedPublicUrl
-      ? normalizePublicOrigin(persistedPublicUrl)
+      ? parseExactPublicOrigin(persistedPublicUrl)
       : undefined;
     const configuredOrigins = [explicit, fromEnv, persisted].filter(
       (value): value is string => Boolean(value),
@@ -54,27 +52,34 @@ export function resolveBootstrapAdminInviteBaseUrl(input: {
     }
     const canonicalPublicUrl = configuredOrigins[0];
     if (!canonicalPublicUrl) {
-      throw new Error("Public exposure requires PAPERCLIP_PUBLIC_URL or persisted auth.publicBaseUrl");
+      throw new Error(
+        "Public exposure requires PAPERCLIP_PUBLIC_URL or persisted auth.publicBaseUrl",
+      );
     }
     return canonicalPublicUrl;
   }
 
   if (explicitBaseUrl || environmentPublicUrl || persistedPublicUrl) {
-    throw new Error("Private exposure derives its auth origin from requests; remove the public URL");
+    throw new Error(
+      "Private exposure derives its auth origin from requests; remove the public URL",
+    );
   }
-  const bind = config.server.bind ?? inferBindModeFromHost(config.server.host);
-  const host =
-    bind === "custom"
-      ? config.server.customBindHost ?? config.server.host ?? "localhost"
-      : config.server.host ?? "localhost";
+  const resolvedBind = resolveRuntimeBind({
+    exposure: config.server.exposure,
+    bind: config.server.bind,
+    customBindHost: config.server.customBindHost,
+    tailnetBindHost:
+      config.server.bind === "tailnet" ? detectTailnetBindHost() : undefined,
+  });
   const port = config.server.port ?? 3100;
-  const publicHost = host === "0.0.0.0" || bind === "lan" ? "localhost" : host;
+  const publicHost = isAllInterfacesHost(resolvedBind.host)
+    ? "localhost"
+    : resolvedBind.host;
   return `http://${publicHost}:${port}`;
 }
 
 export type BootstrapAdminCapabilityResult =
-  | { status: "created"; expiresAt: Date }
-  | { status: "closed" };
+  { status: "created"; expiresAt: Date } | { status: "closed" };
 
 export async function createBootstrapAdminCapability(
   db: Db,
@@ -88,7 +93,9 @@ export async function createBootstrapAdminCapability(
     // This lock matches first-admin redemption's lock order. It makes the
     // eligibility check atomic with capability replacement and prevents a
     // concurrent claim from racing creation.
-    await tx.execute(sql`lock table ${instanceUserRoles} in share row exclusive mode`);
+    await tx.execute(
+      sql`lock table ${instanceUserRoles} in share row exclusive mode`,
+    );
     await tx.execute(sql`lock table ${invites} in share row exclusive mode`);
 
     const existingAdmin = await tx
@@ -118,7 +125,6 @@ export async function createBootstrapAdminCapability(
       .values({
         inviteType: "bootstrap_admin",
         tokenHash: input.tokenHash,
-        allowedJoinTypes: "human",
         expiresAt: input.expiresAt,
         source: "bootstrap_admin_cli",
         invitedByUserId: null,
@@ -143,15 +149,19 @@ export async function bootstrapAdminInvite(opts: {
   loadPaperclipEnvFile(configPath);
   const config = readConfig(configPath);
   if (!config) {
-    p.log.error(`No config found at ${configPath}. Run ${pc.cyan("paperclip onboard")} first.`);
+    p.log.error(
+      `No config found at ${configPath}. Run ${pc.cyan("paperclip onboard")} first.`,
+    );
     return;
   }
 
-  let closableDb: (Db & {
-    $client?: {
-      end?: (options?: { timeout?: number }) => Promise<void>;
-    };
-  }) | undefined;
+  let closableDb:
+    | (Db & {
+        $client?: {
+          end?: (options?: { timeout?: number }) => Promise<void>;
+        };
+      })
+    | undefined;
   try {
     // Resolve every origin input before opening the database or its creation
     // transaction. A bad public URL must never revoke or create a capability.
@@ -163,7 +173,9 @@ export async function bootstrapAdminInvite(opts: {
 
     const requestedExpiresHours = opts.expiresHours ?? 72;
     if (!Number.isFinite(requestedExpiresHours)) {
-      throw new Error("Bootstrap capability expiration must be a finite number of hours");
+      throw new Error(
+        "Bootstrap capability expiration must be a finite number of hours",
+      );
     }
     const expiresHours = Math.max(1, Math.min(24 * 30, requestedExpiresHours));
 
@@ -180,7 +192,9 @@ export async function bootstrapAdminInvite(opts: {
     });
 
     if (capability.status === "closed") {
-      p.log.info("Instance already has an admin user. Bootstrap capability creation is closed.");
+      p.log.info(
+        "Instance already has an admin user. Bootstrap capability creation is closed.",
+      );
       return;
     }
 

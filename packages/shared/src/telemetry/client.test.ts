@@ -52,7 +52,7 @@ describe("TelemetryClient runtime event gate", () => {
 
     client.track(
       // @ts-expect-error -- proposed-telemetry(PAP-2411): fixture proposal not in generated schema
-      "skill_studio.skill_created",
+      "workspace.template_created",
       { sharing_scope: "team" },
     );
 
@@ -158,6 +158,17 @@ describe("resolveTelemetryConfig caps + backoff surface", () => {
       maxAttempts: 2,
       jitterRatio: 0.1,
     });
+  });
+
+  it("rejects a non-exact telemetry endpoint environment value", () => {
+    vi.stubEnv("PAPERCLIP_TELEMETRY_ENDPOINT", " https://telemetry.example/ingest");
+    try {
+      expect(() => resolveTelemetryConfig()).toThrow(
+        "PAPERCLIP_TELEMETRY_ENDPOINT must be non-empty and contain no surrounding whitespace",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
@@ -442,48 +453,25 @@ describe("TelemetryClient batched retry + backoff", () => {
     client.stop();
   });
 
-  // Case 1 (PR #9946): a transient upstream 5xx on the primary endpoint must
-  // fall through to the healthy secondary endpoint instead of returning early.
-  it("falls through to the secondary endpoint on a transient 5xx", async () => {
+  it("retries a transient 5xx against the same canonical endpoint", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({ ok: false, status: 503 }) // primary endpoint: transient
-      .mockResolvedValueOnce({ ok: true }); // secondary endpoint: healthy
-    vi.stubGlobal("fetch", fetchMock);
-    // Empty endpoint => the two built-in DEFAULT_ENDPOINTS are used.
-    const { client } = makeClient(undefined, { endpoint: "" });
-
-    client.track("install.started", {});
-    await client.flush();
-
-    // Both endpoints tried within a single attempt; delivered on the secondary,
-    // so no retry is queued.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(120_000);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    client.stop();
-  });
-
-  // Case 1 (PR #9946): when every endpoint returns a transient 5xx the status
-  // is still surfaced as retryable (not swallowed).
-  it("surfaces the transient status for retry when all endpoints 5xx", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: false, status: 502 }) // primary
-      .mockResolvedValueOnce({ ok: false, status: 502 }) // secondary
-      .mockResolvedValue({ ok: true }); // retry succeeds
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValueOnce({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
     const { client } = makeClient(undefined, {
-      endpoint: "",
+      endpoint: undefined,
       backoff: { baseDelayMs: 1_000, maxDelayMs: 30_000, maxAttempts: 5, jitterRatio: 0.25 },
     });
 
     client.track("install.started", {});
     await client.flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2); // both endpoints 502 -> queued for retry
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://telemetry.paperclip.ing/ingest");
 
-    await vi.advanceTimersByTimeAsync(1_000); // attempt 2 -> ok on primary
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("https://telemetry.paperclip.ing/ingest");
     client.stop();
   });
 

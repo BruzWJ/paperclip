@@ -1,56 +1,9 @@
 import type { Project } from "@paperclipai/shared";
 
-export const PROJECT_ORDER_UPDATED_EVENT = "paperclip:project-order-updated";
-export const PROJECT_SORT_MODE_UPDATED_EVENT = "paperclip:project-sort-mode-updated";
-const PROJECT_SORT_MODE_STORAGE_PREFIX = "paperclip.projectSortMode";
-const ANONYMOUS_USER_ID = "anonymous";
-
-export type ProjectSidebarSortMode = "top" | "alphabetical" | "recent";
-
-export type ProjectSortModeUpdatedDetail = {
-  storageKey: string;
-  sortMode: ProjectSidebarSortMode;
-};
-
-function normalizeSortMode(value: unknown): ProjectSidebarSortMode {
-  return value === "alphabetical" || value === "recent" || value === "top" ? value : "top";
-}
-
-function resolveUserId(userId: string | null | undefined): string {
-  if (!userId) return ANONYMOUS_USER_ID;
-  const trimmed = userId.trim();
-  return trimmed.length > 0 ? trimmed : ANONYMOUS_USER_ID;
-}
-
-export function getProjectSortModeStorageKey(companyId: string, userId: string | null | undefined): string {
-  return `${PROJECT_SORT_MODE_STORAGE_PREFIX}:${companyId}:${resolveUserId(userId)}`;
-}
-
-export function readProjectSortMode(storageKey: string): ProjectSidebarSortMode {
-  try {
-    return normalizeSortMode(localStorage.getItem(storageKey));
-  } catch {
-    return "top";
-  }
-}
-
-export function writeProjectSortMode(storageKey: string, sortMode: ProjectSidebarSortMode) {
-  const normalized = normalizeSortMode(sortMode);
-  try {
-    localStorage.setItem(storageKey, normalized);
-  } catch {
-    // Ignore storage write failures in restricted browser contexts.
-  }
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(
-      new CustomEvent<ProjectSortModeUpdatedDetail>(PROJECT_SORT_MODE_UPDATED_EVENT, {
-        detail: { storageKey, sortMode: normalized },
-      }),
-    );
-  }
-}
-
-export function sortProjectsByStoredOrder(projects: Project[], orderedIds: string[]): Project[] {
+export function sortProjectsByStoredOrder(
+  projects: Project[],
+  orderedIds: string[],
+): Project[] {
   if (projects.length === 0) return [];
   if (orderedIds.length === 0) return projects;
 

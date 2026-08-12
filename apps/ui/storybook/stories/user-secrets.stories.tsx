@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
@@ -7,24 +7,18 @@ import type {
   UserSecretCoverageSummary,
   UserSecretDefinition,
 } from "@paperclipai/shared";
-import { MemoryRouter } from "react-router-dom";
-import { MyUserSecretsTab } from "@/pages/secrets/MyUserSecretsTab";
-import { UserSecretDefinitionsTab } from "@/pages/secrets/UserSecretDefinitionsTab";
-import { MissingUserSecretsBanner } from "@/pages/secrets/MissingUserSecretsBanner";
+import { MyUserSecretsTab } from "@/components/secrets/MyUserSecretsTab";
+import { MissingUserSecretsBanner } from "@/components/secrets/MissingUserSecretsBanner";
 import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
 import type { MyUserSecretEntry } from "@/api/secrets";
-import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
 
-const COMPANY_ID = "company-storybook";
-
-if (typeof window !== "undefined") {
-  window.localStorage.setItem("paperclip.selectedCompanyId", COMPANY_ID);
-}
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const USER_ID = "storybook-user";
 
 function makeDefinition(overrides: Partial<UserSecretDefinition>): UserSecretDefinition {
   return {
-    id: "def-x",
+    id: "a4000000-0000-4000-8000-000000000006",
     companyId: COMPANY_ID,
     key: "USER_SECRET",
     name: "User secret",
@@ -51,7 +45,7 @@ function makeValue(definitionId: string): CompanySecret {
     id: `sec-${definitionId}`,
     companyId: COMPANY_ID,
     scope: "user",
-    ownerUserId: "user-me",
+    ownerUserId: "a7000000-0000-4000-8000-000000000003",
     userSecretDefinitionId: definitionId,
     key: "USER_SECRET",
     name: "User secret",
@@ -67,27 +61,27 @@ function makeValue(definitionId: string): CompanySecret {
     lastRotatedAt: null,
     deletedAt: null,
     createdByAgentId: null,
-    createdByUserId: "user-me",
+    createdByUserId: "a7000000-0000-4000-8000-000000000003",
     createdAt: new Date("2026-06-02T00:00:00Z"),
     updatedAt: new Date("2026-06-02T00:00:00Z"),
   };
 }
 
 const ghToken = makeDefinition({
-  id: "def-gh",
+  id: "a4000000-0000-4000-8000-000000000001",
   key: "PERSONAL_GH_TOKEN",
   name: "Personal GitHub token",
   description: "Used when the responsible user's own repos must be reached.",
   usageGuidance: "Create a fine-grained PAT with repo:read scope.",
 });
 const openai = makeDefinition({
-  id: "def-openai",
+  id: "a4000000-0000-4000-8000-000000000002",
   key: "OPENAI_API_KEY",
   name: "OpenAI API key",
   description: "Each member bills to their own OpenAI account.",
 });
 const slack = makeDefinition({
-  id: "def-slack",
+  id: "a4000000-0000-4000-8000-000000000003",
   key: "SLACK_USER_TOKEN",
   name: "Slack user token",
   status: "disabled",
@@ -96,21 +90,25 @@ const slack = makeDefinition({
 const definitions: UserSecretDefinition[] = [ghToken, openai, slack];
 
 const coverage: Record<string, UserSecretCoverageSummary> = {
-  "def-gh": { definitionId: "def-gh", configuredCount: 5, missingCount: 2, inactiveCount: 0 },
-  "def-openai": { definitionId: "def-openai", configuredCount: 7, missingCount: 0, inactiveCount: 0 },
-  "def-slack": { definitionId: "def-slack", configuredCount: 1, missingCount: 5, inactiveCount: 1 },
+  "a4000000-0000-4000-8000-000000000001": { definitionId: "a4000000-0000-4000-8000-000000000001", configuredCount: 5, missingCount: 2, inactiveCount: 0 },
+  "a4000000-0000-4000-8000-000000000002": { definitionId: "a4000000-0000-4000-8000-000000000002", configuredCount: 7, missingCount: 0, inactiveCount: 0 },
+  "a4000000-0000-4000-8000-000000000003": { definitionId: "a4000000-0000-4000-8000-000000000003", configuredCount: 1, missingCount: 5, inactiveCount: 1 },
 };
 
 const myEntries: MyUserSecretEntry[] = [
   { definition: ghToken, secret: null },
-  { definition: openai, secret: makeValue("def-openai") },
+  { definition: openai, secret: makeValue("a4000000-0000-4000-8000-000000000002") },
   { definition: slack, secret: null },
 ];
 
 function SeedFixtures({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   queryClient.setQueryData(queryKeys.secrets.userDefinitions(COMPANY_ID), definitions);
-  queryClient.setQueryData(queryKeys.secrets.myUserSecrets(COMPANY_ID), myEntries);
+  queryClient.setQueryData(queryKeys.secrets.userSecrets(COMPANY_ID, USER_ID), myEntries);
+  queryClient.setQueryData(queryKeys.auth.session, {
+    session: { id: "storybook-session", userId: USER_ID },
+    user: { id: USER_ID, name: "Storybook User", email: "storybook@example.com", image: null },
+  });
   for (const [definitionId, summary] of Object.entries(coverage)) {
     queryClient.setQueryData(
       queryKeys.secrets.userDefinitionCoverage(COMPANY_ID, definitionId),
@@ -118,15 +116,7 @@ function SeedFixtures({ children }: { children: ReactNode }) {
     );
   }
 
-  const { selectedCompanyId, setSelectedCompanyId } = useCompany();
-  useEffect(() => {
-    if (selectedCompanyId !== COMPANY_ID) setSelectedCompanyId(COMPANY_ID);
-  }, [selectedCompanyId, setSelectedCompanyId]);
-  if (selectedCompanyId !== COMPANY_ID) return null;
-
-  // The preview decorator already provides a MemoryRouter; nesting a second
-  // react-router Router here raced it and intermittently threw
-  // "You cannot render a <Router> inside another <Router>".
+  // The preview decorator already provides the memory router.
   return <>{children}</>;
 }
 
@@ -146,18 +136,6 @@ const meta: Meta = {
 export default meta;
 type Story = StoryObj;
 
-export const AdminDefinitions: Story = {
-  render: () => (
-    <SeedFixtures>
-      <Section title="User secret definitions (admin)">
-        <div className="h-[520px]">
-          <UserSecretDefinitionsTab companyId={COMPANY_ID} />
-        </div>
-      </Section>
-    </SeedFixtures>
-  ),
-};
-
 export const MySecrets: Story = {
   render: () => (
     <SeedFixtures>
@@ -175,10 +153,7 @@ export const MissingWarning: Story = {
     <SeedFixtures>
       <Section title="Missing user-secret warning (task creation / run)">
         <div className="max-w-xl">
-          <MissingUserSecretsBanner
-            companyId={COMPANY_ID}
-            secretsPath="/company/secrets"
-          />
+          <MissingUserSecretsBanner companyId={COMPANY_ID} userId={USER_ID} />
         </div>
       </Section>
     </SeedFixtures>

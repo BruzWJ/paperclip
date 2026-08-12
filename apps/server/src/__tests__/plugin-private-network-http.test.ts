@@ -8,6 +8,8 @@ import {
   noopPluginEventDelivery,
 } from "./helpers/plugin-host-services.js";
 
+const PLUGIN_ID = "11111111-1111-4111-8111-111111111111";
+
 function eventBusStub() {
   return {
     forPlugin() {
@@ -48,7 +50,7 @@ async function close(server: Server): Promise<void> {
 function host(pluginManifest: PaperclipPluginManifestV1) {
   return buildHostServices(
     {} as never,
-    "plugin-installation-id",
+    PLUGIN_ID,
     eventBusStub(),
     noopPluginEventDelivery,
     createPluginHostServicesTestOptions({

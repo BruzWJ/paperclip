@@ -15,7 +15,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundledCliNpmDependencies } from "./cli-bundled-npm-dependencies.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -31,7 +30,6 @@ const workspacePaths = [
   "packages/cli",
   "packages/db",
   "packages/shared",
-  "packages/adapter-utils",
 ];
 
 // Workspace packages that are NOT bundled and must stay as npm dependencies.
@@ -51,7 +49,6 @@ for (const pkgPath of workspacePaths) {
 
   for (const [name, version] of Object.entries(deps)) {
     if (name.startsWith("@paperclipai/") && !externalWorkspacePackages.has(name)) continue;
-    if (bundledCliNpmDependencies.has(name)) continue;
     // For external workspace packages, read their version directly
     if (externalWorkspacePackages.has(name)) {
       const pkgDirMap = { "@paperclipai/server": "apps/server" };

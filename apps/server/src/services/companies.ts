@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { and, count, eq, notInArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { isCanonicalUuid } from "@paperclipai/shared";
 import {
   companies,
   companyLogos,
   assets,
   agents,
   tasks,
-  projects,
 } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
@@ -170,6 +170,7 @@ export function companyService(db: Db) {
     },
 
     getById: async (id: string) => {
+      if (!isCanonicalUuid(id)) return null;
       const row = await getCompanyQuery(db)
         .where(eq(companies.id, id))
         .then((rows) => rows[0] ?? null);

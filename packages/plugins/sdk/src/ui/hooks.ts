@@ -126,6 +126,9 @@ export function useHostContext(): PluginHostContext {
  * Use `linkProps()` for links so browser-native behavior still works:
  * modifier-click, middle-click, copy-link, and open-in-new-tab all use the
  * returned real `href`.
+ * Targets use one absolute company-relative grammar such as `/wiki` or
+ * `/wiki?page=recent#top`; bare, dot-relative, empty-segment, trailing-slash,
+ * external, and pre-scoped company UUID paths are rejected.
  *
  * @example
  * ```tsx

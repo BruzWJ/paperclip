@@ -1,17 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { createUiDevWatchOptions, shouldIgnoreUiDevWatchPath } from "./vite-watch";
+import {
+  createUiDevWatchOptions,
+  shouldIgnoreUiDevWatchPath,
+} from "./vite-watch";
 
 describe("shouldIgnoreUiDevWatchPath", () => {
   it("ignores test-only files and folders", () => {
-    expect(shouldIgnoreUiDevWatchPath("/repo/ui/src/components/TasksList.test.tsx")).toBe(true);
-    expect(shouldIgnoreUiDevWatchPath("/repo/ui/src/lib/task-tree.spec.ts")).toBe(true);
-    expect(shouldIgnoreUiDevWatchPath("/repo/ui/src/__tests__/helpers.ts")).toBe(true);
+    expect(
+      shouldIgnoreUiDevWatchPath("/repo/ui/src/components/TasksList.test.tsx"),
+    ).toBe(true);
+    expect(
+      shouldIgnoreUiDevWatchPath("/repo/ui/src/lib/task-tree.spec.ts"),
+    ).toBe(true);
+    expect(
+      shouldIgnoreUiDevWatchPath("/repo/ui/src/__tests__/helpers.ts"),
+    ).toBe(true);
     expect(shouldIgnoreUiDevWatchPath("/repo/ui/tests/helpers.ts")).toBe(true);
   });
 
   it("keeps runtime source files watchable", () => {
-    expect(shouldIgnoreUiDevWatchPath("/repo/ui/src/components/TasksList.tsx")).toBe(false);
-    expect(shouldIgnoreUiDevWatchPath("/repo/ui/src/pages/TaskDetail.tsx")).toBe(false);
+    expect(
+      shouldIgnoreUiDevWatchPath("/repo/ui/src/components/TasksList.tsx"),
+    ).toBe(false);
+    expect(
+      shouldIgnoreUiDevWatchPath(
+        "/repo/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -24,6 +39,8 @@ describe("createUiDevWatchOptions", () => {
   });
 
   it("always includes the ignored-path predicate", () => {
-    expect(createUiDevWatchOptions("/Users/dotta/paperclip")).toHaveProperty("ignored");
+    expect(createUiDevWatchOptions("/Users/dotta/paperclip")).toHaveProperty(
+      "ignored",
+    );
   });
 });

@@ -1,25 +1,8 @@
-import { createHash } from "node:crypto";
-import {
-  sameAdapterModel,
-  validateAdapterModel,
-  type AdapterModel,
-  type AdapterModelProfileDefinition,
-  type ServerAdapterModule,
-} from "@paperclipai/adapter-utils";
-import {
-  adapterImplementationIdentityKey,
-  type AdapterImplementationIdentity,
-} from "@paperclipai/shared";
+import type { ServerAdapterModule } from "@paperclipai/adapter-utils";
 import {
   discoverLocalAcpxAdapterCatalog,
   type AcpxCatalogDiagnosticCode,
 } from "./acpx-catalog.js";
-
-export interface RegisteredServerAdapterImplementation {
-  readonly identity: Readonly<AdapterImplementationIdentity>;
-  readonly identityKey: string;
-  readonly adapter: ServerAdapterModule;
-}
 
 /**
  * An ACPX-supplied local candidate that was intentionally not admitted as an
@@ -35,7 +18,7 @@ export interface AcpxAdapterProbeDiagnostic {
 
 const ACPX_CATALOG_REFRESH_INTERVAL_MS = 30_000;
 
-const currentByType = new Map<string, RegisteredServerAdapterImplementation>();
+const currentByType = new Map<string, ServerAdapterModule>();
 const currentProbeDiagnosticsByType = new Map<
   string,
   AcpxAdapterProbeDiagnostic
@@ -43,50 +26,10 @@ const currentProbeDiagnosticsByType = new Map<
 let refreshInFlight: Promise<void> | null = null;
 let lastSuccessfulRefreshAt = 0;
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-  if (typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
-      .join(",")}}`;
-  }
-  throw new Error("ACPX identity input must be JSON-serializable");
-}
-
-function acpxRuntimeIdentity(
-  adapter: ServerAdapterModule,
-): AdapterImplementationIdentity {
-  const artifactDigest = createHash("sha256")
-    .update(
-      canonicalJson({
-        version: "paperclip/acpx-runtime/v3",
-        adapter: adapter.definition,
-      }),
-      "utf8",
-    )
-    .digest("hex");
-  return Object.freeze({
-    adapterType: adapter.type,
-    definitionVersion: "acpx-runtime/v1",
-    protocolVersion: 1,
-    packageName: "acpx",
-    packageVersion: "runtime",
-    buildIdentity: `acpx-runtime:${adapter.type}:${artifactDigest.slice(0, 16)}`,
-    artifactDigest,
-  });
-}
-
 /**
- * Re-probes locally installed agents supplied by ACPX's registry. A short successful-snapshot cache
- * prevents every board repaint from opening temporary ACPX-resolved sessions
- * while still making newly configured/authenticated CLIs appear automatically.
+ * Re-probes locally installed agents supplied by ACPX's registry. A short
+ * successful-snapshot cache avoids opening a temporary session for every
+ * board repaint while newly available local agents still appear promptly.
  */
 export function refreshAcpxAdapters(input: { force?: boolean } = {}): Promise<void> {
   const now = Date.now();
@@ -101,40 +44,24 @@ export function refreshAcpxAdapters(input: { force?: boolean } = {}): Promise<vo
 
   refreshInFlight = (async () => {
     try {
-      const cwd = process.cwd();
-      const snapshot = await discoverLocalAcpxAdapterCatalog(cwd);
-      const next = new Map<string, RegisteredServerAdapterImplementation>();
+      const snapshot = await discoverLocalAcpxAdapterCatalog(process.cwd());
+      const next = new Map<string, ServerAdapterModule>();
       const nextDiagnostics = new Map<string, AcpxAdapterProbeDiagnostic>();
       for (const adapter of snapshot.adapters) {
-        const identity = acpxRuntimeIdentity(adapter);
-        next.set(adapter.type, Object.freeze({
-          identity,
-          identityKey: adapterImplementationIdentityKey(identity),
-          adapter,
-        }));
+        next.set(adapter.type, adapter);
       }
       for (const [type, diagnostic] of Object.entries(snapshot.unavailable)) {
-        // A successful probe always wins should an upstream supplier ever emit
-        // contradictory data for one exact registry name.
         if (next.has(type) || nextDiagnostics.has(type)) continue;
-        nextDiagnostics.set(
-          type,
-          Object.freeze({ type, ...diagnostic }),
-        );
+        nextDiagnostics.set(type, Object.freeze({ type, ...diagnostic }));
       }
       currentByType.clear();
-      for (const [type, implementation] of next) {
-        currentByType.set(type, implementation);
-      }
+      for (const [type, adapter] of next) currentByType.set(type, adapter);
       currentProbeDiagnosticsByType.clear();
       for (const [type, diagnostic] of nextDiagnostics) {
         currentProbeDiagnosticsByType.set(type, diagnostic);
       }
       lastSuccessfulRefreshAt = Date.now();
     } catch (error) {
-      // A registry/config reload is part of the ACPX authority boundary. Do
-      // not keep a stale successful snapshot selectable if ACPX can no longer
-      // supply the current catalog.
       currentByType.clear();
       currentProbeDiagnosticsByType.clear();
       lastSuccessfulRefreshAt = 0;
@@ -146,69 +73,19 @@ export function refreshAcpxAdapters(input: { force?: boolean } = {}): Promise<vo
   return refreshInFlight;
 }
 
-export function findServerAdapterImplementation(
-  type: string,
-): RegisteredServerAdapterImplementation | null {
-  return currentByType.get(type) ?? null;
-}
-
-/**
- * Lists failed ACPX candidates from the most recent successful discovery
- * snapshot. They are intentionally separate from executable adapter entries.
- */
+/** Failed ACPX candidates from the most recent successful discovery snapshot. */
 export function listAcpxAdapterProbeDiagnostics(): readonly AcpxAdapterProbeDiagnostic[] {
   return [...currentProbeDiagnosticsByType.values()].sort((left, right) =>
     left.type.localeCompare(right.type),
   );
 }
 
-export async function listAdapterModels(type: string): Promise<AdapterModel[]> {
-  const implementation = findServerAdapterImplementation(type);
-  if (!implementation) return [];
-  return implementation.adapter.definition.models.map((model) =>
-    validateAdapterModel(model),
+export function listServerAdapters(): ServerAdapterModule[] {
+  return [...currentByType.values()].sort((left, right) =>
+    left.type.localeCompare(right.type),
   );
 }
 
-/** Resolve one exact model selection from the current ACPX catalog. */
-export async function resolveAvailableAdapterModel(
-  modelId: string,
-): Promise<AdapterModel> {
-  if (!modelId || modelId !== modelId.trim()) {
-    throw new Error("Company model id must be an exact non-empty catalog key");
-  }
-  const candidates = (
-    await Promise.all(
-      listServerAdapters().map(async (adapter) =>
-        (await listAdapterModels(adapter.type)).filter(
-          (model) => model.id === modelId,
-        ),
-      ),
-    )
-  ).flat();
-  if (candidates.length === 0) {
-    throw new Error("Company model id is not available in the current local agent catalog");
-  }
-  const model = candidates[0]!;
-  if (candidates.some((candidate) => !sameAdapterModel(candidate, model))) {
-    throw new Error("Company model id is ambiguous across local agents");
-  }
-  return model;
-}
-
-export async function listAdapterModelProfiles(
-  type: string,
-): Promise<AdapterModelProfileDefinition[]> {
-  const adapter = findServerAdapter(type);
-  return adapter ? [...adapter.definition.modelProfiles] : [];
-}
-
-export function listServerAdapters(): ServerAdapterModule[] {
-  return [...currentByType.values()]
-    .map((implementation) => implementation.adapter)
-    .sort((left, right) => left.type.localeCompare(right.type));
-}
-
 export function findServerAdapter(type: string): ServerAdapterModule | null {
-  return findServerAdapterImplementation(type)?.adapter ?? null;
+  return currentByType.get(type) ?? null;
 }

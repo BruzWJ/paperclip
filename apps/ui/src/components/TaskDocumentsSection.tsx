@@ -15,14 +15,18 @@ import type {
   Task,
   TaskDocument,
 } from "@paperclipai/shared";
-import { isSystemTaskDocumentKey } from "@paperclipai/shared";
-import { useLocation } from "@/lib/router";
+import {
+  isSystemTaskDocumentKey,
+  taskDocumentKeySchema,
+} from "@paperclipai/shared";
+import { useLocation } from "@tanstack/react-router";
 import { ApiError } from "../api/client";
 import { tasksApi } from "../api/tasks";
 import { useAutosaveIndicator } from "../hooks/useAutosaveIndicator";
 import { deriveDocumentRevisionState } from "../lib/document-revisions";
 import type { CompanyUserProfile } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
+import { parseDocumentAnnotationHash } from "../lib/document-annotation-hash";
 import { cn, relativeTime } from "../lib/utils";
 import { FoldCurtain } from "./FoldCurtain";
 import {
@@ -47,7 +51,6 @@ import {
   Diff,
   Download,
   FilePenLine,
-  FileText,
   Lock,
   MoreHorizontal,
   Plus,
@@ -61,7 +64,6 @@ import {
   type DocumentFrameHeaderRevisionActor,
 } from "./DocumentFrameHeader";
 import { SourceTrustBadge } from "./SourceTrustBadge";
-import { Badge } from "@/components/ui/badge";
 
 type DraftState = {
   key: string;
@@ -105,15 +107,11 @@ type DocumentSubjectConfig = {
   syncDetailCache?: (queryClient: QueryClient, document: TaskDocument) => void;
   hideSystemDocuments?: boolean;
   annotations?: {
-    taskId: string;
-    target?:
-      | DocumentAnnotationTarget
-      | ((documentKey: string) => DocumentAnnotationTarget);
+    target: (documentKey: string) => DocumentAnnotationTarget;
   } | null;
 };
 
 const DOCUMENT_AUTOSAVE_DEBOUNCE_MS = 900;
-const DOCUMENT_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 const getFoldedDocumentsStorageKey = (taskId: string) =>
   `paperclip:task-document-folds:${taskId}`;
 
@@ -144,10 +142,7 @@ function saveFoldedDocumentKeys(taskId: string, keys: string[]) {
 function renderFoldableBody(body: string, className?: string) {
   return (
     <FoldCurtain>
-      <MarkdownBody
-        className={className}
-        softBreaks={false}
-      >
+      <MarkdownBody className={className} softBreaks={false}>
         {body}
       </MarkdownBody>
     </FoldCurtain>
@@ -155,11 +150,11 @@ function renderFoldableBody(body: string, className?: string) {
 }
 
 function isPlanKey(key: string) {
-  return key.trim().toLowerCase() === "plan";
+  return key === "plan";
 }
 
 function titlesMatchKey(title: string | null | undefined, key: string) {
-  return (title ?? "").trim().toLowerCase() === key.trim().toLowerCase();
+  return title === key;
 }
 
 function isDocumentConflictError(error: unknown) {
@@ -263,8 +258,7 @@ function makeTaskDocumentSubject(task: Task): DocumentSubjectConfig {
     listDocumentRevisions: (key) =>
       tasksApi.listDocumentRevisions(task.id, key),
     getDocument: (key) => tasksApi.getDocument(task.id, key),
-    upsertDocument: (key, data) =>
-      tasksApi.upsertDocument(task.id, key, data),
+    upsertDocument: (key, data) => tasksApi.upsertDocument(task.id, key, data),
     deleteDocument: (key) => tasksApi.deleteDocument(task.id, key),
     restoreDocumentRevision: (key, revisionId) =>
       tasksApi.restoreDocumentRevision(task.id, key, revisionId),
@@ -300,7 +294,13 @@ function makeTaskDocumentSubject(task: Task): DocumentSubjectConfig {
       );
     },
     hideSystemDocuments: true,
-    annotations: { taskId: task.id },
+    annotations: {
+      target: (documentKey) => ({
+        kind: "task",
+        taskId: task.id,
+        documentKey,
+      }),
+    },
   };
 }
 
@@ -342,6 +342,7 @@ export function TaskDocumentsSection({
 }) {
   const queryClient = useQueryClient();
   const location = useLocation();
+  const locationHash = location.hash ? `#${location.hash}` : "";
   const documentSubject = useMemo(() => {
     if (subject) return subject;
     if (!task)
@@ -351,16 +352,6 @@ export function TaskDocumentsSection({
   const newDocumentKeyInputId = useId();
   const newDocumentKeyErrorId = useId();
   const newDocumentTitleInputId = useId();
-  const annotationTargetForKey = useCallback(
-    (documentKey: string) => {
-      const configured = documentSubject.annotations?.target;
-      if (!configured) return undefined;
-      if (typeof configured === "function") return configured(documentKey);
-      if (configured.kind === "task") return { ...configured, documentKey };
-      return configured;
-    },
-    [documentSubject],
-  );
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
@@ -560,12 +551,11 @@ export function TaskDocumentsSection({
       });
   }, [documentSubject.hideSystemDocuments, documents]);
 
-
   const isEmpty = sortedDocuments.length === 0;
   const newDocumentKeyError =
     draft?.isNew &&
-    draft.key.trim().length > 0 &&
-    !DOCUMENT_KEY_PATTERN.test(draft.key.trim())
+    draft.key.length > 0 &&
+    !taskDocumentKeySchema.safeParse(draft.key).success
       ? "Use lowercase letters, numbers, -, or _, and start with a letter or number."
       : null;
 
@@ -648,11 +638,11 @@ export function TaskDocumentsSection({
       },
     ) => {
       if (!currentDraft || upsertDocument.isPending) return false;
-      const normalizedKey = currentDraft.key.trim().toLowerCase();
+      const key = currentDraft.key;
       const normalizedBody = currentDraft.body.trim();
       const normalizedTitle = currentDraft.title.trim();
       const activeConflict =
-        documentConflict?.key === normalizedKey ? documentConflict : null;
+        documentConflict?.key === key ? documentConflict : null;
 
       if (activeConflict && !options?.overrideConflict) {
         if (options?.trackAutosave) {
@@ -661,7 +651,7 @@ export function TaskDocumentsSection({
         return false;
       }
 
-      if (!normalizedKey || !normalizedBody) {
+      if (!key || !normalizedBody) {
         if (currentDraft.isNew) {
           setError("Document key and body are required");
         } else if (!normalizedBody) {
@@ -673,7 +663,7 @@ export function TaskDocumentsSection({
         return false;
       }
 
-      if (!DOCUMENT_KEY_PATTERN.test(normalizedKey)) {
+      if (!taskDocumentKeySchema.safeParse(key).success) {
         setError(
           "Document key must start with a letter or number and use only lowercase letters, numbers, -, or _.",
         );
@@ -683,7 +673,7 @@ export function TaskDocumentsSection({
         return false;
       }
 
-      const existing = sortedDocuments.find((doc) => doc.key === normalizedKey);
+      const existing = sortedDocuments.find((doc) => doc.key === key);
       if (
         !currentDraft.isNew &&
         existing &&
@@ -691,7 +681,7 @@ export function TaskDocumentsSection({
         (existing.title ?? "") === currentDraft.title
       ) {
         if (options?.clearAfterSave) {
-          setDraft((value) => (value?.key === normalizedKey ? null : value));
+          setDraft((value) => (value?.key === key ? null : value));
         }
         if (options?.trackAutosave) {
           resetAutosaveState();
@@ -702,8 +692,8 @@ export function TaskDocumentsSection({
       const save = async () => {
         const saved = await upsertDocument.mutateAsync({
           ...currentDraft,
-          key: normalizedKey,
-          title: isPlanKey(normalizedKey) ? "" : normalizedTitle,
+          key,
+          title: isPlanKey(key) ? "" : normalizedTitle,
           body: currentDraft.body,
           baseRevisionId: options?.overrideConflict
             ? (activeConflict?.serverDocument.latestRevisionId ??
@@ -712,10 +702,10 @@ export function TaskDocumentsSection({
         });
         setError(null);
         setDocumentConflict((current) =>
-          current?.key === normalizedKey ? null : current,
+          current?.key === key ? null : current,
         );
         setDraft((value) => {
-          if (!value || value.key !== normalizedKey) return value;
+          if (!value || value.key !== key) return value;
           if (options?.clearAfterSave) return null;
           return {
             key: saved.key,
@@ -731,7 +721,7 @@ export function TaskDocumentsSection({
 
       try {
         if (options?.trackAutosave) {
-          setAutosaveDocumentKey(normalizedKey);
+          setAutosaveDocumentKey(key);
           await runSave(save);
         } else {
           await save();
@@ -746,14 +736,13 @@ export function TaskDocumentsSection({
         }
         if (isDocumentConflictError(err)) {
           try {
-            const latestDocument =
-              await documentSubject.getDocument(normalizedKey);
+            const latestDocument = await documentSubject.getDocument(key);
             setDocumentConflict({
-              key: normalizedKey,
+              key,
               serverDocument: latestDocument,
               localDraft: {
-                key: normalizedKey,
-                title: isPlanKey(normalizedKey) ? "" : normalizedTitle,
+                key,
+                title: isPlanKey(key) ? "" : normalizedTitle,
                 body: currentDraft.body,
                 baseRevisionId: currentDraft.baseRevisionId,
                 isNew: false,
@@ -761,7 +750,7 @@ export function TaskDocumentsSection({
               showRemote: true,
             });
             setFoldedDocumentKeys((current) =>
-              current.filter((key) => key !== normalizedKey),
+              current.filter((entry) => entry !== key),
             );
             setError(null);
             resetAutosaveState();
@@ -974,7 +963,7 @@ export function TaskDocumentsSection({
 
   useEffect(() => {
     hasScrolledToHashRef.current = false;
-  }, [documentSubject.id, location.hash]);
+  }, [documentSubject.id, locationHash]);
 
   useEffect(() => {
     const validKeys = new Set(sortedDocuments.map((doc) => doc.key));
@@ -1010,9 +999,9 @@ export function TaskDocumentsSection({
   }, [documentConflict, sortedDocuments]);
 
   useEffect(() => {
-    const hash = location.hash;
-    if (!hash.startsWith("#document-")) return;
-    const documentKey = decodeURIComponent(hash.slice("#document-".length));
+    const target = parseDocumentAnnotationHash(locationHash);
+    if (!target) return;
+    const documentKey = target.documentKey;
     const targetExists = sortedDocuments.some((doc) => doc.key === documentKey);
     if (!targetExists || hasScrolledToHashRef.current) return;
     setFoldedDocumentKeys((current) =>
@@ -1031,7 +1020,7 @@ export function TaskDocumentsSection({
       3000,
     );
     return () => clearTimeout(timer);
-  }, [location.hash, sortedDocuments]);
+  }, [locationHash, sortedDocuments]);
 
   useEffect(() => {
     return () => {
@@ -1081,7 +1070,6 @@ export function TaskDocumentsSection({
   ]);
 
   const documentBodyShellClassName = "mt-3";
-  const documentBodyPaddingClassName = "";
   const documentBodyContentClassName =
     "paperclip-edit-in-place-content min-h-(--sz-220px) text-sm leading-7";
   const toggleFoldedDocument = (key: string) => {
@@ -1173,17 +1161,21 @@ export function TaskDocumentsSection({
             value={draft.key}
             onChange={(event) =>
               setDraft((current) =>
-                current
-                  ? { ...current, key: event.target.value.toLowerCase() }
-                  : current,
+                current ? { ...current, key: event.target.value } : current,
               )
             }
             placeholder="Document key"
             aria-invalid={newDocumentKeyError ? true : undefined}
-            aria-describedby={newDocumentKeyError ? newDocumentKeyErrorId : undefined}
+            aria-describedby={
+              newDocumentKeyError ? newDocumentKeyErrorId : undefined
+            }
           />
           {newDocumentKeyError && (
-            <p id={newDocumentKeyErrorId} className="text-xs text-destructive" role="alert">
+            <p
+              id={newDocumentKeyErrorId}
+              className="text-xs text-destructive"
+              role="alert"
+            >
               {newDocumentKeyError}
             </p>
           )}
@@ -1197,7 +1189,9 @@ export function TaskDocumentsSection({
                 value={draft.title}
                 onChange={(event) =>
                   setDraft((current) =>
-                    current ? { ...current, title: event.target.value } : current,
+                    current
+                      ? { ...current, title: event.target.value }
+                      : current,
                   )
                 }
                 placeholder="Optional title"
@@ -1286,7 +1280,8 @@ export function TaskDocumentsSection({
           const lockActionPending =
             setDocumentLock.isPending &&
             setDocumentLock.variables?.key === doc.key;
-          const annotationTarget = annotationTargetForKey(doc.key);
+          const annotationTarget =
+            documentSubject.annotations?.target(doc.key) ?? null;
 
           return (
             <div
@@ -1333,12 +1328,9 @@ export function TaskDocumentsSection({
                 }}
                 updatedAt={displayedUpdatedAt}
                 annotationSlot={
-                  documentSubject.annotations &&
-                  !isSystemTaskDocumentKey(doc.key) ? (
+                  annotationTarget && !isSystemTaskDocumentKey(doc.key) ? (
                     <DocumentAnnotationsCountChip
-                      taskId={documentSubject.annotations.taskId}
                       target={annotationTarget}
-                      docKey={doc.key}
                       panelOpen={annotationPanelOpenKeys.includes(doc.key)}
                       onToggle={() => toggleAnnotationPanel(doc.key)}
                     />
@@ -1681,9 +1673,8 @@ export function TaskDocumentsSection({
                         )
                       );
 
-                      return documentSubject.annotations ? (
+                      return annotationTarget ? (
                         <TaskDocumentAnnotations
-                          taskId={documentSubject.annotations.taskId}
                           target={annotationTarget}
                           doc={doc}
                           bodyMarkdown={displayedBody}
@@ -1695,7 +1686,7 @@ export function TaskDocumentsSection({
                           }
                           draftConflicted={Boolean(activeConflict)}
                           historicalPreview={isHistoricalPreview}
-                          locationHash={location.hash}
+                          locationHash={locationHash}
                           panelOpen={annotationPanelOpenKeys.includes(doc.key)}
                           onPanelOpenChange={(next) =>
                             setAnnotationPanelOpen(doc.key, next)

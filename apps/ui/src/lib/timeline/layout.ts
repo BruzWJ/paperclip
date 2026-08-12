@@ -281,7 +281,7 @@ export function computeLayout(result: WorkTimelineResult, opts: LayoutOptions): 
     const key = s.taskId;
     if (!taskLabel.has(key)) {
       taskOrder.push(key);
-      taskLabel.set(key, s.taskIdentifier ?? s.taskTitle ?? "task");
+      taskLabel.set(key, s.taskIdentifier);
     }
   }
   const tasks = taskOrder.map((key) => ({ key, label: taskLabel.get(key)!, color: taskColor(key) }));

@@ -2,8 +2,8 @@ import type { UserProfileResponse } from "@paperclipai/shared";
 import { api } from "./client";
 
 export const userProfilesApi = {
-  get: (companyId: string, userSlug: string) =>
+  get: (companyId: string, userId: string) =>
     api.get<UserProfileResponse>(
-      `/companies/${companyId}/users/${encodeURIComponent(userSlug)}/profile`,
+      `/companies/${companyId}/users/${encodeURIComponent(userId)}/profile`,
     ),
 };

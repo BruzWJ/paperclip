@@ -4,7 +4,6 @@ import {
   parseTaskReferenceHref,
   parseProjectMentionHref,
   parseRoutineMentionHref,
-  parseSkillMentionHref,
   parseUserMentionHref,
 } from "@paperclipai/shared";
 import { getAgentIcon } from "./agent-icons";
@@ -18,7 +17,7 @@ export type ParsedMentionChip =
     }
   | {
       kind: "task";
-      identifier: string;
+      taskId: string;
     }
   | {
       kind: "project";
@@ -28,11 +27,6 @@ export type ParsedMentionChip =
   | {
       kind: "user";
       userId: string;
-    }
-  | {
-      kind: "skill";
-      skillId: string;
-      slug: string | null;
     }
   | {
       kind: "routine";
@@ -50,7 +44,7 @@ export function parseMentionChipHref(href: string): ParsedMentionChip | null {
   if (task) {
     return {
       kind: "task",
-      identifier: task.identifier,
+      taskId: task.taskId,
     };
   }
 
@@ -77,15 +71,6 @@ export function parseMentionChipHref(href: string): ParsedMentionChip | null {
     return {
       kind: "user",
       userId: user.userId,
-    };
-  }
-
-  const skill = parseSkillMentionHref(href);
-  if (skill) {
-    return {
-      kind: "skill",
-      skillId: skill.skillId,
-      slug: skill.slug,
     };
   }
 
@@ -150,7 +135,6 @@ export function clearMentionChipDecoration(element: HTMLElement) {
     "paperclip-mention-chip--project",
     "paperclip-mention-chip--routine",
     "paperclip-mention-chip--user",
-    "paperclip-mention-chip--skill",
     "paperclip-project-mention-chip",
   );
   element.removeAttribute("contenteditable");

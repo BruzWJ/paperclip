@@ -26,7 +26,6 @@ const SILENCED_SUCCESS_STATIC_PATHS = new Set([
   "/index.html",
   "/favicon.ico",
   "/site.webmanifest",
-  "/sw.js",
 ]);
 
 const SENSITIVE_REQUEST_BODY_API_PATHS = [

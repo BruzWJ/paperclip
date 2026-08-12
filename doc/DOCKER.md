@@ -31,7 +31,7 @@ docker build -t paperclip-local \
 docker build -t paperclip-local . && \
 docker run --name paperclip \
   -p 3100:3100 \
-  -e HOST=0.0.0.0 \
+  -e PAPERCLIP_BIND=lan \
   -e DATABASE_URL=postgres://paperclip:paperclip@host.docker.internal:5432/paperclip \
   -e PAPERCLIP_HOME=/paperclip \
   -e BETTER_AUTH_SECRET=$(openssl rand -hex 32) \
@@ -149,7 +149,7 @@ ACPX supplies their launch and configuration metadata.
 ```sh
 docker run --name paperclip \
   -p 3100:3100 \
-  -e HOST=0.0.0.0 \
+  -e PAPERCLIP_BIND=lan \
   -e PAPERCLIP_HOME=/paperclip \
   -v "$(pwd)/data/docker-paperclip:/paperclip" \
   paperclip-local

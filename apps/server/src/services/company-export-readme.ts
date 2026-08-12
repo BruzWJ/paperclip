@@ -1,6 +1,4 @@
-/**
- * Generates README.md with Mermaid org chart for company exports.
- */
+/** Generates README.md for company exports. */
 import type { CompanyPortabilityManifest } from "@paperclipai/shared";
 
 export type CompanyReadmeAgent = Pick<
@@ -11,66 +9,9 @@ export type CompanyReadmeAgent = Pick<
 export interface CompanyReadmeManifest {
   agents: CompanyReadmeAgent[];
   projects: Array<
-    Pick<
-      CompanyPortabilityManifest["projects"][number],
-      "name" | "description"
-    >
+    Pick<CompanyPortabilityManifest["projects"][number], "name" | "description">
   >;
-  skills: CompanyPortabilityManifest["skills"];
   tasks: Array<unknown>;
-}
-
-/**
- * Generate a Mermaid flowchart (TD = top-down) representing the org chart.
- * Returns null if there are no agents.
- */
-export function generateOrgChartMermaid(agents: CompanyReadmeAgent[]): string | null {
-  if (agents.length === 0) return null;
-
-  const lines: string[] = [];
-  lines.push("```mermaid");
-  lines.push("graph TD");
-
-  // Node definitions with optional display titles.
-  for (const agent of agents) {
-    const id = mermaidId(agent.slug);
-    const title = agent.title ? `<br/><small>${mermaidEscape(agent.title)}</small>` : "";
-    lines.push(`    ${id}["${mermaidEscape(agent.name)}${title}"]`);
-  }
-
-  // Edges from parent to child
-  const slugSet = new Set(agents.map((a) => a.slug));
-  for (const agent of agents) {
-    if (agent.reportsToSlug && slugSet.has(agent.reportsToSlug)) {
-      lines.push(`    ${mermaidId(agent.reportsToSlug)} --> ${mermaidId(agent.slug)}`);
-    }
-  }
-
-  lines.push("```");
-  return lines.join("\n");
-}
-
-/** Sanitize slug for use as a Mermaid node ID (alphanumeric + underscore). */
-function mermaidId(slug: string): string {
-  return slug.replace(/[^a-zA-Z0-9_]/g, "_");
-}
-
-/** Escape text for Mermaid node labels. */
-function mermaidEscape(s: string): string {
-  return s.replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-/** Build a display label for a skill's source, linking to GitHub when available. */
-function skillSourceLabel(skill: CompanyPortabilityManifest["skills"][number]): string {
-  if (skill.sourceLocator) {
-    // For GitHub or URL sources, render as a markdown link
-    if (skill.sourceType === "github" || skill.sourceType === "skills_sh" || skill.sourceType === "url") {
-      return `[${skill.sourceType}](${skill.sourceLocator})`;
-    }
-    return skill.sourceLocator;
-  }
-  if (skill.sourceType === "local") return "local";
-  return skill.sourceType ?? "\u2014";
 }
 
 /**
@@ -101,13 +42,16 @@ export function generateReadme(
   // What's Inside table
   lines.push("## What's Inside");
   lines.push("");
-  lines.push("> This is an [Agent Company](https://agentcompanies.io) package from [Paperclip](https://paperclip.ing)");
+  lines.push(
+    "> This is an [Agent Company](https://agentcompanies.io) package from [Paperclip](https://paperclip.ing)",
+  );
   lines.push("");
 
   const counts: Array<[string, number]> = [];
-  if (manifest.agents.length > 0) counts.push(["Agents", manifest.agents.length]);
-  if (manifest.projects.length > 0) counts.push(["Projects", manifest.projects.length]);
-  if (manifest.skills.length > 0) counts.push(["Skills", manifest.skills.length]);
+  if (manifest.agents.length > 0)
+    counts.push(["Agents", manifest.agents.length]);
+  if (manifest.projects.length > 0)
+    counts.push(["Projects", manifest.projects.length]);
   if (manifest.tasks.length > 0) counts.push(["Tasks", manifest.tasks.length]);
 
   if (counts.length > 0) {
@@ -127,7 +71,9 @@ export function generateReadme(
     lines.push("|-------|------|------------|");
     for (const agent of manifest.agents) {
       const reportsTo = agent.reportsToSlug ?? "\u2014";
-      lines.push(`| ${agent.name} | ${agent.title ?? "\u2014"} | ${reportsTo} |`);
+      lines.push(
+        `| ${agent.name} | ${agent.title ?? "\u2014"} | ${reportsTo} |`,
+      );
     }
     lines.push("");
   }
@@ -139,20 +85,6 @@ export function generateReadme(
     for (const project of manifest.projects) {
       const desc = project.description ? ` \u2014 ${project.description}` : "";
       lines.push(`- **${project.name}**${desc}`);
-    }
-    lines.push("");
-  }
-
-  // Skills list
-  if (manifest.skills.length > 0) {
-    lines.push("### Skills");
-    lines.push("");
-    lines.push("| Skill | Description | Source |");
-    lines.push("|-------|-------------|--------|");
-    for (const skill of manifest.skills) {
-      const desc = skill.description ?? "\u2014";
-      const source = skillSourceLabel(skill);
-      lines.push(`| ${skill.name} | ${desc} | ${source} |`);
     }
     lines.push("");
   }
@@ -169,7 +101,9 @@ export function generateReadme(
 
   // Footer
   lines.push("---");
-  lines.push(`Exported from [Paperclip](https://paperclip.ing) on ${new Date().toISOString().split("T")[0]}`);
+  lines.push(
+    `Exported from [Paperclip](https://paperclip.ing) on ${new Date().toISOString().split("T")[0]}`,
+  );
   lines.push("");
 
   return lines.join("\n");

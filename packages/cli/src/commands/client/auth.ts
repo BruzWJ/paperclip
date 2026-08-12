@@ -10,6 +10,7 @@ import {
   apiPath,
   handleCommandError,
   printOutput,
+  requireCurrentUserId,
   resolveCommandContext,
   type BaseClientOptions,
 } from "./common.js";
@@ -23,7 +24,6 @@ interface AuthLogoutOptions extends BaseClientOptions {}
 interface AuthWhoamiOptions extends BaseClientOptions {}
 interface AuthChallengeOptions extends BaseClientOptions {
   payloadJson?: string;
-  token?: string;
   tokenEnv?: string;
 }
 
@@ -119,6 +119,7 @@ export function registerClientAuthCommands(auth: Command): void {
       .action(async (opts: AuthWhoamiOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
+          const userId = requireCurrentUserId(ctx);
           const me = await ctx.api.get<{
             user: { id: string; name: string; email: string } | null;
             userId: string;
@@ -126,7 +127,7 @@ export function registerClientAuthCommands(auth: Command): void {
             companyIds: string[];
             source: string;
             keyId: string | null;
-          }>("/api/cli-auth/me");
+          }>(apiPath`/api/cli-auth/users/${userId}`);
           printOutput(me, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -154,8 +155,7 @@ export function registerClientAuthCommands(auth: Command): void {
       .command("get")
       .description("Get a CLI auth challenge")
       .argument("<id>", "Challenge ID")
-      .option("--token <token>", "Challenge secret")
-      .option("--token-env <name>", "Read the challenge secret from an environment variable")
+      .requiredOption("--token-env <name>", "Read the challenge secret from an environment variable")
       .action(async (id: string, opts: AuthChallengeOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -172,8 +172,7 @@ export function registerClientAuthCommands(auth: Command): void {
         .command(action)
         .description(`${action} a CLI auth challenge`)
         .argument("<id>", "Challenge ID")
-        .option("--token <token>", "Challenge secret")
-        .option("--token-env <name>", "Read the challenge secret from an environment variable")
+        .requiredOption("--token-env <name>", "Read the challenge secret from an environment variable")
         .action(async (id: string, opts: AuthChallengeOptions) => {
           try {
             const ctx = resolveCommandContext(opts);
@@ -191,13 +190,13 @@ function parseJson(value: string): unknown {
 }
 
 function resolveChallengeToken(opts: AuthChallengeOptions): string {
-  const token = opts.token?.trim();
-  if (token) return token;
-  const envName = opts.tokenEnv?.trim();
-  if (envName) {
-    const envValue = process.env[envName]?.trim();
-    if (envValue) return envValue;
+  const envName = opts.tokenEnv;
+  if (!envName || envName.trim() !== envName) {
+    throw new Error("--token-env must be an exact non-blank environment variable name.");
+  }
+  const envValue = process.env[envName];
+  if (envValue === undefined || envValue.length === 0) {
     throw new Error(`Environment variable ${envName} is empty or not set.`);
   }
-  throw new Error("Challenge secret is required. Pass --token or --token-env.");
+  return envValue;
 }

@@ -2,7 +2,6 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   createFolderSchema,
-  ensureMySkillFolderSchema,
   folderKindSchema,
   moveFolderItemSchema,
   moveFolderSchema,
@@ -12,9 +11,10 @@ import { validate } from "../middleware/validate.js";
 import { badRequest } from "../errors.js";
 import { folderService, logActivity } from "../services/index.js";
 import { assertCompanyAccess } from "./authz.js";
+import { assertExactQueryKeys } from "./exact-query.js";
 
 export function folderRoutes(db: Db) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = folderService(db);
 
   function parseKind(value: unknown) {
@@ -26,6 +26,7 @@ export function folderRoutes(db: Db) {
   router.get("/companies/:companyId/folders", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    assertExactQueryKeys(req.query, ["kind"]);
     res.json(await svc.list(companyId, parseKind(req.query.kind)));
   });
 
@@ -44,26 +45,6 @@ export function folderRoutes(db: Db) {
     });
     res.status(201).json(created);
   });
-
-  router.post(
-    "/companies/:companyId/folders/ensure-my",
-    validate(ensureMySkillFolderSchema),
-    async (req, res) => {
-      const companyId = req.params.companyId as string;
-      assertCompanyAccess(req, companyId);
-      const folder = await svc.ensureMyFolder(companyId, req.actor.userId, req.actor.userName ?? null, req.body.slug);
-      await logActivity(db, {
-        companyId,
-        actorType: "user",
-        actorId: req.actor.userId,
-        action: "folder.personal_ensured",
-        entityType: "folder",
-        entityId: folder.id,
-        details: { path: folder.path, systemKey: folder.systemKey },
-      });
-      res.json(folder);
-    },
-  );
 
   router.patch("/companies/:companyId/folders/:folderId", validate(updateFolderSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -95,7 +76,7 @@ export function folderRoutes(db: Db) {
       actorType: "user",
       actorId: req.actor.userId,
       action: "folder.item_moved",
-      entityType: req.body.kind === "routine" ? "routine" : "company_skill",
+      entityType: "routine",
       entityId: moved.itemId,
       details: { kind: moved.kind, folderId: moved.folderId },
     });

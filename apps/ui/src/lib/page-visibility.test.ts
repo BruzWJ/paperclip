@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getPageVisibility,
   getVisibilityHeaderValue,
-  subscribePageVisibility,
 } from "./page-visibility";
 
 function setVisibility(state: "visible" | "hidden") {
@@ -47,38 +46,5 @@ describe("getVisibilityHeaderValue", () => {
     expect(getVisibilityHeaderValue({ visible: false, focused: false })).toBe("hidden");
     expect(getVisibilityHeaderValue({ visible: true, focused: false })).toBe("visible");
     expect(getVisibilityHeaderValue({ visible: true, focused: true })).toBe("focused");
-  });
-});
-
-describe("subscribePageVisibility", () => {
-  it("notifies subscribers on visibility transitions and cleans up", () => {
-    setVisibility("visible");
-    setFocused(true);
-    const listener = vi.fn();
-    const unsubscribe = subscribePageVisibility(listener);
-
-    setVisibility("hidden");
-    document.dispatchEvent(new Event("visibilitychange"));
-    expect(listener).toHaveBeenCalledTimes(1);
-
-    setVisibility("visible");
-    document.dispatchEvent(new Event("visibilitychange"));
-    expect(listener).toHaveBeenCalledTimes(2);
-
-    unsubscribe();
-    setVisibility("hidden");
-    document.dispatchEvent(new Event("visibilitychange"));
-    expect(listener).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not notify when the state is unchanged", () => {
-    setVisibility("visible");
-    setFocused(true);
-    const listener = vi.fn();
-    const unsubscribe = subscribePageVisibility(listener);
-    // Same state → no notification.
-    document.dispatchEvent(new Event("visibilitychange"));
-    expect(listener).not.toHaveBeenCalled();
-    unsubscribe();
   });
 });

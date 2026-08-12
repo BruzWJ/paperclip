@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "@/lib/router";
+import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
@@ -14,8 +14,6 @@ export const KANBAN_BOARD_HIGH_VOLUME_THRESHOLD = 100;
 export const KANBAN_COLUMN_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 export type KanbanColumnPageSize = (typeof KANBAN_COLUMN_PAGE_SIZE_OPTIONS)[number];
 export const KANBAN_COLUMN_DEFAULT_PAGE_SIZE: KanbanColumnPageSize = 10;
-export const KANBAN_COLUMN_INITIAL_VISIBLE_LIMIT = KANBAN_COLUMN_DEFAULT_PAGE_SIZE;
-export const KANBAN_COLUMN_REVEAL_INCREMENT = KANBAN_COLUMN_DEFAULT_PAGE_SIZE;
 export const KANBAN_COLD_STATUSES = ["backlog", "done", "cancelled"] as const;
 
 export const boardStatuses = [
@@ -155,7 +153,6 @@ function KanbanColumn({
   revealIncrement: number;
   onShowMore: () => void;
 }) {
-  const isEmpty = tasks.length === 0;
   const visibleTasks = collapsed ? [] : tasks.slice(0, visibleCount);
   const hiddenCount = Math.max(tasks.length - visibleTasks.length, 0);
   const nextRevealCount = Math.min(revealIncrement, hiddenCount);
@@ -249,58 +246,65 @@ function KanbanCard({
     if (!id || !agents) return null;
     return agents.find((a) => a.id === id)?.name ?? null;
   };
+  const content = (
+    <>
+      <div className={`flex items-start gap-1.5 ${compact ? "mb-1" : "mb-1.5"}`}>
+        <span className="text-xs text-muted-foreground font-mono shrink-0">
+          {task.identifier}
+        </span>
+        {isLive && (
+          <span className="inline-flex shrink-0 items-center gap-1 text-(length:--text-nano) font-medium text-blue-600 dark:text-blue-400">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+            </span>
+            {compact ? "Live" : null}
+          </span>
+        )}
+        {!isLive && subtreeLiveCount > 0 && (
+          <Badge variant="outline"
+            className="border-border px-1.5 text-(length:--text-nano) text-muted-foreground"
+            title={`${subtreeLiveCount} sub-task${subtreeLiveCount === 1 ? "" : "s"} running below`}
+          >
+            <span className="h-2 w-2 shrink-0 rounded-full border border-muted-foreground/60" aria-hidden="true" />
+            {subtreeLiveCount} live below
+          </Badge>
+        )}
+      </div>
+      <p className={`${compact ? "mb-1.5 text-xs" : "mb-2 text-sm"} leading-snug line-clamp-2`}>{taskDisplayTitle(task)}</p>
+      <div className="flex items-center gap-2 min-w-0">
+        <PriorityIcon priority={task.priority} />
+        {task.ownerAgentId && (() => {
+          const name = agentName(task.ownerAgentId);
+          return name ? (
+            <Identity name={name} size="xs" />
+          ) : (
+            <span className="text-xs text-muted-foreground font-mono">
+              {task.ownerAgentId.slice(0, 8)}
+            </span>
+          );
+        })()}
+      </div>
+    </>
+  );
 
   return (
     <Card
       className={cn(
-        "block transition-shadow hover:shadow-sm",
+        "block transition-shadow",
+        "hover:shadow-sm",
         compact ? "p-2" : "p-2.5",
         className,
       )}
     >
-      <Link
-        to={`/tasks/${task.identifier ?? task.id}`}
+      <TaskLinkQuicklook
+        taskId={task.id}
+        taskNumber={task.taskNumber}
         disableTaskQuicklook
         className="block no-underline text-inherit"
       >
-        <div className={`flex items-start gap-1.5 ${compact ? "mb-1" : "mb-1.5"}`}>
-          <span className="text-xs text-muted-foreground font-mono shrink-0">
-            {task.identifier ?? task.id.slice(0, 8)}
-          </span>
-          {isLive && (
-            <span className="inline-flex shrink-0 items-center gap-1 text-(length:--text-nano) font-medium text-blue-600 dark:text-blue-400">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-              </span>
-              {compact ? "Live" : null}
-            </span>
-          )}
-          {!isLive && subtreeLiveCount > 0 && (
-            <Badge variant="outline"
-              className="border-border px-1.5 text-(length:--text-nano) text-muted-foreground"
-              title={`${subtreeLiveCount} sub-task${subtreeLiveCount === 1 ? "" : "s"} running below`}
-            >
-              <span className="h-2 w-2 shrink-0 rounded-full border border-muted-foreground/60" aria-hidden="true" />
-              {subtreeLiveCount} live below
-            </Badge>
-          )}
-        </div>
-        <p className={`${compact ? "mb-1.5 text-xs" : "mb-2 text-sm"} leading-snug line-clamp-2`}>{taskDisplayTitle(task)}</p>
-        <div className="flex items-center gap-2 min-w-0">
-          <PriorityIcon priority={task.priority} />
-          {task.ownerAgentId && (() => {
-            const name = agentName(task.ownerAgentId);
-            return name ? (
-              <Identity name={name} size="xs" />
-            ) : (
-              <span className="text-xs text-muted-foreground font-mono">
-                {task.ownerAgentId.slice(0, 8)}
-              </span>
-            );
-          })()}
-        </div>
-      </Link>
+        {content}
+      </TaskLinkQuicklook>
     </Card>
   );
 }
@@ -313,8 +317,8 @@ export function KanbanBoard({
   liveTaskIds,
   compactCards = false,
   collapsedStatuses = [],
-  initialVisibleCount = KANBAN_COLUMN_INITIAL_VISIBLE_LIMIT,
-  revealIncrement = KANBAN_COLUMN_REVEAL_INCREMENT,
+  initialVisibleCount = KANBAN_COLUMN_DEFAULT_PAGE_SIZE,
+  revealIncrement = KANBAN_COLUMN_DEFAULT_PAGE_SIZE,
 }: KanbanBoardProps) {
   const paginationKey = `${initialVisibleCount}:${revealIncrement}`;
   const [visibleState, setVisibleState] = useState<{

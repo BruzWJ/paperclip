@@ -47,39 +47,12 @@ export const typeIcon: Record<string, typeof UserPlus> = {
   request_board_approval: ShieldCheck,
 };
 
-export const defaultTypeIcon = ShieldCheck;
-
 function PayloadField({ label, value }: { label: string; value: unknown }) {
   if (!value) return null;
   return (
     <div className="flex items-center gap-2">
       <span className="text-muted-foreground w-20 sm:w-24 shrink-0 text-xs">{label}</span>
       <span>{String(value)}</span>
-    </div>
-  );
-}
-
-function SkillList({ values }: { values: unknown }) {
-  if (!Array.isArray(values)) return null;
-  const items = values
-    .filter((value): value is string => typeof value === "string")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  if (items.length === 0) return null;
-
-  return (
-    <div className="flex items-start gap-2">
-      <span className="text-muted-foreground w-20 sm:w-24 shrink-0 text-xs pt-0.5">Skills</span>
-      <div className="flex flex-wrap gap-1.5">
-        {items.map((item) => (
-          <span
-            key={item}
-            className="rounded bg-muted px-1.5 py-0.5 font-mono text-(length:--text-micro) text-muted-foreground"
-          >
-            {item}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
@@ -107,7 +80,6 @@ export function HireAgentPayload({ payload }: { payload: Record<string, unknown>
           </span>
         </div>
       )}
-      <SkillList values={payload.selectedCompanySkills} />
     </div>
   );
 }

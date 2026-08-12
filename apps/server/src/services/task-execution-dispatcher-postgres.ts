@@ -105,11 +105,9 @@ type RunRow = TaskExecutionRunEnvelope;
 type AttemptRow = typeof taskExecutionAttempts.$inferSelect;
 type CancellationIntentRow =
   typeof taskExecutionCancellationIntents.$inferSelect;
-type PromptCapabilityRow =
-  typeof taskExecutionPromptCapabilities.$inferSelect;
+type PromptCapabilityRow = typeof taskExecutionPromptCapabilities.$inferSelect;
 type BasePromptOwnerRow = typeof taskExecutionRunRefs.$inferSelect;
-type SteeringPromptOwnerRow =
-  typeof taskExecutionPromptSegments.$inferSelect;
+type SteeringPromptOwnerRow = typeof taskExecutionPromptSegments.$inferSelect;
 type PromptOwnerRow = BasePromptOwnerRow | SteeringPromptOwnerRow;
 type LaneRefIdentity = Pick<
   RefRow,
@@ -144,11 +142,7 @@ const MAX_CREATOR_UPDATE_BATCH = 32;
 function targetLaneIdentity(
   ref: Pick<
     RefRow,
-    | "companyId"
-    | "taskId"
-    | "sessionId"
-    | "ownershipEpoch"
-    | "targetAgentId"
+    "companyId" | "taskId" | "sessionId" | "ownershipEpoch" | "targetAgentId"
   >,
 ): TaskExecutionTargetLaneIdentity {
   return Object.freeze({
@@ -184,8 +178,7 @@ export interface PostgresTaskExecutionDispatcherRepositoryOptions {
   readonly compiler: Pick<PostgresPromptCapabilityCompiler, "resolve">;
   readonly finalizer: Pick<
     PostgresTaskExecutionFinalizationWriter,
-    | "finalize"
-    | "finalizeInTransaction"
+    "finalize" | "finalizeInTransaction"
   >;
   readonly leaseTtlMs?: number;
   readonly now?: () => Date;
@@ -281,10 +274,7 @@ export function classifyExpiredPromptClosure(input: {
     }
     return { kind: "open" };
   }
-  if (
-    capability.revocationReason === null ||
-    capability.revokedAt === null
-  ) {
+  if (capability.revocationReason === null || capability.revokedAt === null) {
     reject("revoked expired prompt lost its durable closure decision");
   }
 
@@ -426,7 +416,8 @@ export function projectPersistedTaskExecutionRef(
 }
 
 function sameBatchScope(first: RefRow, candidate: RefRow): boolean {
-  return candidate.sourceKind === "task_update" &&
+  return (
+    candidate.sourceKind === "task_update" &&
     candidate.companyId === first.companyId &&
     candidate.taskId === first.taskId &&
     candidate.sessionId === first.sessionId &&
@@ -440,7 +431,8 @@ function sameBatchScope(first: RefRow, candidate: RefRow): boolean {
     candidate.adapterConfigRevisionId === first.adapterConfigRevisionId &&
     candidate.contextEpoch === first.contextEpoch &&
     candidate.disposition === "active" &&
-    isTaskExecutionRefDeliveryEligible(candidate, "dispatch");
+    isTaskExecutionRefDeliveryEligible(candidate, "dispatch")
+  );
 }
 
 function leaseProjection(
@@ -524,12 +516,7 @@ async function lockLaneParents(
     await transaction
       .select({ id: tasks.id })
       .from(tasks)
-      .where(
-        and(
-          eq(tasks.companyId, ref.companyId),
-          eq(tasks.id, ref.taskId),
-        ),
-      )
+      .where(and(eq(tasks.companyId, ref.companyId), eq(tasks.id, ref.taskId)))
       .limit(2)
       .for("update"),
     "execution lane lost its task parent",
@@ -590,23 +577,15 @@ async function lockLaneLeaseClaim(
     return null;
   }
   if (lane.activeOrdinal === null) {
-    if (
-      lane.activeLeaseGeneration !== null ||
-      lane.activeLeaseId !== null
-    ) {
+    if (lane.activeLeaseGeneration !== null || lane.activeLeaseId !== null) {
       reject("idle execution lane retains an active lease fence");
     }
     return { kind: "idle" };
   }
-  if (
-    lane.activeLeaseGeneration === null ||
-    lane.activeLeaseId === null
-  ) {
+  if (lane.activeLeaseGeneration === null || lane.activeLeaseId === null) {
     reject("active execution lane lost its lease fence");
   }
-  if (
-    !options.existingRun
-  ) {
+  if (!options.existingRun) {
     return null;
   }
   if (lane.activeOrdinal !== ref.laneOrdinal) {
@@ -646,16 +625,10 @@ async function clearExactLaneClaim(
         and(
           eq(taskExecutionLanes.companyId, input.ref.companyId),
           eq(taskExecutionLanes.taskId, input.ref.taskId),
-          eq(
-            taskExecutionLanes.ownershipEpoch,
-            input.ref.ownershipEpoch,
-          ),
+          eq(taskExecutionLanes.ownershipEpoch, input.ref.ownershipEpoch),
           eq(taskExecutionLanes.targetAgentId, input.ref.targetAgentId),
           eq(taskExecutionLanes.activeOrdinal, input.laneOrdinal),
-          eq(
-            taskExecutionLanes.activeLeaseGeneration,
-            input.leaseGeneration,
-          ),
+          eq(taskExecutionLanes.activeLeaseGeneration, input.leaseGeneration),
           eq(taskExecutionLanes.activeLeaseId, input.leaseId),
         ),
       )
@@ -740,10 +713,7 @@ async function lockRunLaneClaimIfPresent(
       and(
         eq(taskExecutionRefs.companyId, taskExecutionLanes.companyId),
         eq(taskExecutionRefs.taskId, taskExecutionLanes.taskId),
-        eq(
-          taskExecutionRefs.ownershipEpoch,
-          taskExecutionLanes.ownershipEpoch,
-        ),
+        eq(taskExecutionRefs.ownershipEpoch, taskExecutionLanes.ownershipEpoch),
         eq(taskExecutionRefs.targetAgentId, taskExecutionLanes.targetAgentId),
         sql`${taskExecutionRefs.laneOrdinal} = ${taskExecutionLanes.activeOrdinal}`,
       ),
@@ -832,21 +802,21 @@ export async function selectSessionOperation(
   },
 ): Promise<TaskExecutionSessionOperation> {
   const run = input.run;
-  const {
-    carryContext,
-    exposureDigest,
-    carrySourceExposureDigest,
-  } = await compileCarryContext(
-    compiler,
-    run,
-  );
+  const { carryContext, exposureDigest, carrySourceExposureDigest } =
+    await compileCarryContext(compiler, run);
   const common = and(
     eq(taskExecutionSessions.companyId, run.companyId),
     eq(taskExecutionSessions.taskId, run.taskId),
     eq(taskExecutionSessions.ownershipEpoch, run.ownershipEpoch),
     eq(taskExecutionSessions.targetAgentId, run.targetAgentId),
-    eq(taskExecutionSessions.adapterConfigIdentity, run.adapterConfigRevisionId),
-    eq(taskExecutionSessions.workspaceIdentity, run.executionWorkspaceBindingId),
+    eq(
+      taskExecutionSessions.adapterConfigIdentity,
+      run.adapterConfigRevisionId,
+    ),
+    eq(
+      taskExecutionSessions.workspaceIdentity,
+      run.executionWorkspaceBindingId,
+    ),
   );
   if (input.promptKind === "steering") {
     const segment = exactlyOne(
@@ -888,7 +858,8 @@ export async function selectSessionOperation(
       .for("update");
     if (sources.length > 1) reject("steering resume source is ambiguous");
     const source = sources[0] ?? null;
-    const exactCarrySource = source !== null &&
+    const exactCarrySource =
+      source !== null &&
       source.purpose === "carry" &&
       source.state === "eligible" &&
       source.laneKind === run.executionMode &&
@@ -897,7 +868,8 @@ export async function selectSessionOperation(
       source.currentRefOrdinal === null &&
       source.currentSegmentOrdinal === null &&
       source.authorizedContextExposureDigest === carrySourceExposureDigest;
-    const exactActiveRunSource = source !== null &&
+    const exactActiveRunSource =
+      source !== null &&
       source.purpose === "active_run_steering" &&
       source.state === "current" &&
       source.laneKind === null &&
@@ -926,22 +898,22 @@ export async function selectSessionOperation(
   }
   const eligible = carryContext
     ? await transaction
-      .select({ id: taskExecutionSessions.id })
-      .from(taskExecutionSessions)
-      .where(
-        and(
-          common,
-          eq(taskExecutionSessions.purpose, "carry"),
-          eq(taskExecutionSessions.state, "eligible"),
-          eq(taskExecutionSessions.laneKind, run.executionMode),
-          eq(
-            taskExecutionSessions.authorizedContextExposureDigest,
-            exposureDigest,
+        .select({ id: taskExecutionSessions.id })
+        .from(taskExecutionSessions)
+        .where(
+          and(
+            common,
+            eq(taskExecutionSessions.purpose, "carry"),
+            eq(taskExecutionSessions.state, "eligible"),
+            eq(taskExecutionSessions.laneKind, run.executionMode),
+            eq(
+              taskExecutionSessions.authorizedContextExposureDigest,
+              exposureDigest,
+            ),
           ),
-        ),
-      )
-      .limit(2)
-      .for("update")
+        )
+        .limit(2)
+        .for("update")
     : [];
   if (eligible.length > 1) reject("carry target session is ambiguous");
   if (eligible.length === 1) {
@@ -960,7 +932,10 @@ async function assertRefDispatchable(
   const [companyRows, taskRows, sessionRows, viewRows, lifecycleRows] =
     await Promise.all([
       transaction
-        .select({ status: companies.status, integrity: companies.sessionIntegrityState })
+        .select({
+          status: companies.status,
+          integrity: companies.sessionIntegrityState,
+        })
         .from(companies)
         .where(eq(companies.id, ref.companyId))
         .limit(2)
@@ -973,7 +948,9 @@ async function assertRefDispatchable(
           ownershipEpoch: tasks.ownershipEpoch,
         })
         .from(tasks)
-        .where(and(eq(tasks.companyId, ref.companyId), eq(tasks.id, ref.taskId)))
+        .where(
+          and(eq(tasks.companyId, ref.companyId), eq(tasks.id, ref.taskId)),
+        )
         .limit(2)
         .for("update"),
       transaction
@@ -989,7 +966,10 @@ async function assertRefDispatchable(
         .limit(2)
         .for("update"),
       transaction
-        .select({ state: taskExecutionHistoryViews.state, refId: taskExecutionHistoryViews.refId })
+        .select({
+          state: taskExecutionHistoryViews.state,
+          refId: taskExecutionHistoryViews.refId,
+        })
         .from(taskExecutionHistoryViews)
         .where(eq(taskExecutionHistoryViews.id, ref.historyViewId))
         .limit(2)
@@ -1014,11 +994,12 @@ async function assertRefDispatchable(
   const task = exactlyOne(taskRows, "execution ref lost its task");
   const session = exactlyOne(sessionRows, "execution ref lost its Session");
   const view = exactlyOne(viewRows, "execution ref lost its history view");
-  const ownerValid = ref.mode === "owner"
-    ? task.ownerKind === "agent" &&
-      task.ownerAgentId === ref.targetAgentId &&
-      ref.taskExecutionAuthorityId !== null
-    : ref.consultExecutionId !== null;
+  const ownerValid =
+    ref.mode === "owner"
+      ? task.ownerKind === "agent" &&
+        task.ownerAgentId === ref.targetAgentId &&
+        ref.taskExecutionAuthorityId !== null
+      : ref.consultExecutionId !== null;
   if (
     company.status !== "active" ||
     company.integrity !== "ready" ||
@@ -1101,7 +1082,7 @@ async function createRunningLease(
     readonly workerId: string;
     readonly at: Date;
     readonly laneClaim: LockedLaneLeaseClaim;
-  readonly pendingAttempt?: AttemptRow;
+    readonly pendingAttempt?: AttemptRow;
   },
 ): Promise<LeasedTaskExecutionRef> {
   const first = exactlyOne(input.refs.slice(0, 1), "run has no current ref");
@@ -1146,14 +1127,15 @@ async function createRunningLease(
   ) {
     reject("retry crossed its exact current lane ordinal");
   }
-  const operation = input.pendingAttempt?.sessionOperation ??
-    await selectSessionOperation(transaction, options.compiler, {
+  const operation =
+    input.pendingAttempt?.sessionOperation ??
+    (await selectSessionOperation(transaction, options.compiler, {
       run: input.run,
       promptKind,
       ref: first,
       refOrdinal: control.currentOrdinal,
       segmentOrdinal: control.currentSegmentOrdinal,
-    });
+    }));
   const generationRows = await transaction
     .select({ generation: taskExecutionAttempts.attemptGeneration })
     .from(taskExecutionAttempts)
@@ -1217,9 +1199,7 @@ async function createRunningLease(
     reject("attempt crossed its frozen prompt identity");
   }
   const leaseGeneration =
-    input.laneClaim.kind === "retry"
-      ? input.laneClaim.leaseGeneration + 1
-      : 1;
+    input.laneClaim.kind === "retry" ? input.laneClaim.leaseGeneration + 1 : 1;
   const leaseId = options.idFactory();
   exactlyOne(
     await transaction
@@ -1267,10 +1247,7 @@ async function createRunningLease(
           eq(taskExecutionLanes.targetAgentId, first.targetAgentId),
           input.laneClaim.kind === "idle"
             ? isNull(taskExecutionLanes.activeOrdinal)
-            : eq(
-                taskExecutionLanes.activeOrdinal,
-                input.laneClaim.ordinal,
-              ),
+            : eq(taskExecutionLanes.activeOrdinal, input.laneClaim.ordinal),
           input.laneClaim.kind === "idle"
             ? isNull(taskExecutionLanes.activeLeaseGeneration)
             : eq(
@@ -1279,10 +1256,7 @@ async function createRunningLease(
               ),
           input.laneClaim.kind === "idle"
             ? isNull(taskExecutionLanes.activeLeaseId)
-            : eq(
-                taskExecutionLanes.activeLeaseId,
-                input.laneClaim.leaseId,
-              ),
+            : eq(taskExecutionLanes.activeLeaseId, input.laneClaim.leaseId),
         ),
       )
       .returning({ companyId: taskExecutionLanes.companyId }),
@@ -1304,7 +1278,10 @@ async function currentRunRefs(
   return transaction
     .select({ ref: taskExecutionRefs })
     .from(taskExecutionRunRefs)
-    .innerJoin(taskExecutionRefs, eq(taskExecutionRefs.id, taskExecutionRunRefs.refId))
+    .innerJoin(
+      taskExecutionRefs,
+      eq(taskExecutionRefs.id, taskExecutionRunRefs.refId),
+    )
     .where(eq(taskExecutionRunRefs.runId, runId))
     .orderBy(asc(taskExecutionRunRefs.refOrdinal))
     .then((rows) => rows.map((row) => row.ref));
@@ -1347,24 +1324,25 @@ async function createRunForRef(
       taskId: ref.taskId,
       sessionId: ref.sessionId,
     });
-    const candidates = ref.sourceKind === "task_update"
-      ? await transaction
-          .select()
-          .from(taskExecutionRefs)
-          .where(
-            and(
-              eq(taskExecutionRefs.companyId, ref.companyId),
-              eq(taskExecutionRefs.taskId, ref.taskId),
-              eq(taskExecutionRefs.ownershipEpoch, ref.ownershipEpoch),
-              eq(taskExecutionRefs.targetAgentId, ref.targetAgentId),
-              eq(taskExecutionRefs.disposition, "active"),
-              gte(taskExecutionRefs.laneOrdinal, ref.laneOrdinal),
-            ),
-          )
-          .orderBy(asc(taskExecutionRefs.laneOrdinal))
-          .limit(MAX_CREATOR_UPDATE_BATCH + 1)
-          .for("update")
-      : [ref];
+    const candidates =
+      ref.sourceKind === "task_update"
+        ? await transaction
+            .select()
+            .from(taskExecutionRefs)
+            .where(
+              and(
+                eq(taskExecutionRefs.companyId, ref.companyId),
+                eq(taskExecutionRefs.taskId, ref.taskId),
+                eq(taskExecutionRefs.ownershipEpoch, ref.ownershipEpoch),
+                eq(taskExecutionRefs.targetAgentId, ref.targetAgentId),
+                eq(taskExecutionRefs.disposition, "active"),
+                gte(taskExecutionRefs.laneOrdinal, ref.laneOrdinal),
+              ),
+            )
+            .orderBy(asc(taskExecutionRefs.laneOrdinal))
+            .limit(MAX_CREATOR_UPDATE_BATCH + 1)
+            .for("update")
+        : [ref];
     const firstIndex = candidates.findIndex(
       (candidate) => candidate.id === ref.id,
     );
@@ -1377,13 +1355,15 @@ async function createRunForRef(
           occupied.has(candidate.id) ||
           !isTaskExecutionRefDeliveryEligible(candidate, "dispatch") ||
           !sameBatchScope(ref, candidate)
-        ) break;
+        )
+          break;
         ordered.push(candidate);
       }
     }
     refs = ordered.length > 0 ? ordered : [ref];
   }
-  for (const candidate of refs) await assertRefDispatchable(transaction, candidate);
+  for (const candidate of refs)
+    await assertRefDispatchable(transaction, candidate);
   const workspace = exactlyOne(
     await transaction
       .select({ id: taskExecutionWorkspaceBindings.id })
@@ -1413,29 +1393,30 @@ async function createRunForRef(
     retryOfRunId: exactRetry?.retryOfRunId ?? null,
     at,
   };
-  const created = ref.mode === "owner"
-    ? await options.runService.createRun(transaction, {
-        kind: "productive",
-        ...baseRunInput,
-        taskExecutionAuthorityId: ref.taskExecutionAuthorityId!,
-      })
-    : await (async () => {
-        const { sourceRunId } = exactlyOne(
-          await transaction
-            .select({ sourceRunId: taskConsultExecutions.sourceRunId })
-            .from(taskConsultExecutions)
-            .where(eq(taskConsultExecutions.id, ref.consultExecutionId!))
-            .limit(2)
-            .for("share"),
-          "consult ref lost its parent run",
-        );
-        return options.runService.createRun(transaction, {
-          kind: "consult",
+  const created =
+    ref.mode === "owner"
+      ? await options.runService.createRun(transaction, {
+          kind: "productive",
           ...baseRunInput,
-          consultExecutionId: ref.consultExecutionId!,
-          parentRunId: sourceRunId,
-        });
-      })();
+          taskExecutionAuthorityId: ref.taskExecutionAuthorityId!,
+        })
+      : await (async () => {
+          const { sourceRunId } = exactlyOne(
+            await transaction
+              .select({ sourceRunId: taskConsultExecutions.sourceRunId })
+              .from(taskConsultExecutions)
+              .where(eq(taskConsultExecutions.id, ref.consultExecutionId!))
+              .limit(2)
+              .for("share"),
+            "consult ref lost its parent run",
+          );
+          return options.runService.createRun(transaction, {
+            kind: "consult",
+            ...baseRunInput,
+            consultExecutionId: ref.consultExecutionId!,
+            parentRunId: sourceRunId,
+          });
+        })();
   exactlyOne(
     await transaction
       .update(taskExecutionRunControls)
@@ -1483,29 +1464,32 @@ async function createRunForRef(
     );
   }
   const admission = createTaskSessionAdmissionService(options.database);
-  await admission.appendNonDispatchSyntheticComment({
-    companyId: ref.companyId,
-    taskId: ref.taskId,
-    sessionId: ref.sessionId,
-    sourceKind: "task_execution_run_progress",
-    immutableSourceKey: `run-progress:${created.run.runId}`,
-    sourceRecordId: created.run.runId,
-    exactText: "",
-    projectionKind: "run_progress",
-    ownershipEpoch: ref.ownershipEpoch,
-    agentId: ref.targetAgentId,
-    adapterConfigRevisionId: ref.adapterConfigRevisionId,
-    runId: created.run.runId,
-    comment: {
-      author: { kind: "agent", agentId: ref.targetAgentId },
-      producingRun: {
-        runId: created.run.runId,
-        adapterConfigRevisionId: ref.adapterConfigRevisionId,
+  await admission.appendNonDispatchSyntheticComment(
+    {
+      companyId: ref.companyId,
+      taskId: ref.taskId,
+      sessionId: ref.sessionId,
+      sourceKind: "task_execution_run_progress",
+      immutableSourceKey: `run-progress:${created.run.runId}`,
+      sourceRecordId: created.run.runId,
+      exactText: "",
+      projectionKind: "run_progress",
+      ownershipEpoch: ref.ownershipEpoch,
+      agentId: ref.targetAgentId,
+      adapterConfigRevisionId: ref.adapterConfigRevisionId,
+      runId: created.run.runId,
+      comment: {
+        author: { kind: "agent", agentId: ref.targetAgentId },
+        producingRun: {
+          runId: created.run.runId,
+          adapterConfigRevisionId: ref.adapterConfigRevisionId,
+        },
+        replyToCommentId: null,
+        steeringSegment: null,
       },
-      replyToCommentId: null,
-      steeringSegment: null,
     },
-  }, transaction);
+    transaction,
+  );
   const run = await options.runService.lockRun(transaction, {
     companyId: created.run.companyId,
     taskId: created.run.taskId,
@@ -1688,7 +1672,7 @@ async function loadRecoveredProtocolSettlement(
   return {
     reason: finish,
     finalText: message.content
-      .flatMap((part) => part.type === "text" ? [part.text] : [])
+      .flatMap((part) => (part.type === "text" ? [part.text] : []))
       .join(""),
   };
 }
@@ -1929,25 +1913,25 @@ export function createPostgresTaskExecutionDispatcherRepository(
     if (run.currentAttemptId === null || run.currentLeaseId === null) {
       return { kind: "current", run };
     }
-    const cancellation = run.cancellationIntentId === null
-      ? null
-      : exactlyOne(
-          await transaction
-            .select()
-            .from(taskExecutionCancellationIntents)
-            .where(
-              eq(
-                taskExecutionCancellationIntents.id,
-                run.cancellationIntentId,
-              ),
-            )
-            .limit(2)
-            .for("update"),
-          "expired run lost its attached cancellation intent",
-        );
-    const steeringCancellation = cancellation?.reasonKind === "steering"
-      ? cancellation
-      : null;
+    const cancellation =
+      run.cancellationIntentId === null
+        ? null
+        : exactlyOne(
+            await transaction
+              .select()
+              .from(taskExecutionCancellationIntents)
+              .where(
+                eq(
+                  taskExecutionCancellationIntents.id,
+                  run.cancellationIntentId,
+                ),
+              )
+              .limit(2)
+              .for("update"),
+            "expired run lost its attached cancellation intent",
+          );
+    const steeringCancellation =
+      cancellation?.reasonKind === "steering" ? cancellation : null;
     const nonSteeringCancellation =
       cancellation !== null && cancellation.reasonKind !== "steering"
         ? cancellation
@@ -1990,33 +1974,31 @@ export function createPostgresTaskExecutionDispatcherRepository(
         .for("update"),
       "expired run lost its current immutable member",
     );
-    const segment = control.currentSegmentOrdinal === 0
-      ? null
-      : exactlyOne(
-          await transaction
-            .select()
-            .from(taskExecutionPromptSegments)
-            .where(
-              and(
-                eq(taskExecutionPromptSegments.runId, run.runId),
-                eq(
-                  taskExecutionPromptSegments.refId,
-                  control.currentRefId,
+    const segment =
+      control.currentSegmentOrdinal === 0
+        ? null
+        : exactlyOne(
+            await transaction
+              .select()
+              .from(taskExecutionPromptSegments)
+              .where(
+                and(
+                  eq(taskExecutionPromptSegments.runId, run.runId),
+                  eq(taskExecutionPromptSegments.refId, control.currentRefId),
+                  eq(
+                    taskExecutionPromptSegments.refOrdinal,
+                    control.currentOrdinal,
+                  ),
+                  eq(
+                    taskExecutionPromptSegments.segmentOrdinal,
+                    control.currentSegmentOrdinal,
+                  ),
                 ),
-                eq(
-                  taskExecutionPromptSegments.refOrdinal,
-                  control.currentOrdinal,
-                ),
-                eq(
-                  taskExecutionPromptSegments.segmentOrdinal,
-                  control.currentSegmentOrdinal,
-                ),
-              ),
-            )
-            .limit(2)
-            .for("update"),
-          "expired run lost its current steering segment",
-        );
+              )
+              .limit(2)
+              .for("update"),
+            "expired run lost its current steering segment",
+          );
     const attempt = exactlyOne(
       await transaction
         .select()
@@ -2027,10 +2009,12 @@ export function createPostgresTaskExecutionDispatcherRepository(
       "expired run lost its exact attempt",
     );
     const promptOwner = segment ?? member.row;
-    const promptOwnerIsUnbound = promptOwner.attemptId === null &&
+    const promptOwnerIsUnbound =
+      promptOwner.attemptId === null &&
       promptOwner.capabilityConnectionId === null &&
       promptOwner.capabilityGeneration === null;
-    const promptOwnerHasBoundShape = promptOwner.attemptId === attempt.id &&
+    const promptOwnerHasBoundShape =
+      promptOwner.attemptId === attempt.id &&
       promptOwner.capabilityConnectionId !== null &&
       promptOwner.capabilityGeneration !== null;
     const lease = exactlyOne(
@@ -2045,34 +2029,35 @@ export function createPostgresTaskExecutionDispatcherRepository(
     if (lease.state !== "active" || lease.expiresAt > at) {
       return { kind: "current", run };
     }
-    const pendingSteeringSegment = steeringCancellation === null
-      ? null
-      : exactlyOne(
-          await transaction
-            .select()
-            .from(taskExecutionPromptSegments)
-            .where(
-              and(
-                eq(taskExecutionPromptSegments.runId, run.runId),
-                eq(taskExecutionPromptSegments.refId, control.currentRefId),
-                eq(
-                  taskExecutionPromptSegments.refOrdinal,
-                  control.currentOrdinal,
+    const pendingSteeringSegment =
+      steeringCancellation === null
+        ? null
+        : exactlyOne(
+            await transaction
+              .select()
+              .from(taskExecutionPromptSegments)
+              .where(
+                and(
+                  eq(taskExecutionPromptSegments.runId, run.runId),
+                  eq(taskExecutionPromptSegments.refId, control.currentRefId),
+                  eq(
+                    taskExecutionPromptSegments.refOrdinal,
+                    control.currentOrdinal,
+                  ),
+                  eq(
+                    taskExecutionPromptSegments.segmentOrdinal,
+                    control.currentSegmentOrdinal + 1,
+                  ),
+                  eq(
+                    taskExecutionPromptSegments.cancellationIntentId,
+                    steeringCancellation.id,
+                  ),
                 ),
-                eq(
-                  taskExecutionPromptSegments.segmentOrdinal,
-                  control.currentSegmentOrdinal + 1,
-                ),
-                eq(
-                  taskExecutionPromptSegments.cancellationIntentId,
-                  steeringCancellation.id,
-                ),
-              ),
-            )
-            .limit(2)
-            .for("update"),
-          "expired steering cancellation lost its positive segment",
-        );
+              )
+              .limit(2)
+              .for("update"),
+            "expired steering cancellation lost its positive segment",
+          );
     if (
       attempt.companyId !== run.companyId ||
       attempt.taskId !== run.taskId ||
@@ -2096,8 +2081,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
           (cancellation.state !== "requested" &&
             cancellation.state !== "acknowledged"))) ||
       (steeringCancellation !== null &&
-        (
-          pendingSteeringSegment === null ||
+        (pendingSteeringSegment === null ||
           pendingSteeringSegment.protocolSettlementState !== null ||
           (pendingSteeringSegment.steeringState !== "requested" &&
             pendingSteeringSegment.steeringState !== "sent"))) ||
@@ -2187,8 +2171,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
         capability.targetAgentId !== run.targetAgentId ||
         capability.laneKind !== run.executionMode ||
         capability.executionMode !== run.executionMode ||
-        capability.taskExecutionAuthorityId !==
-          run.taskExecutionAuthorityId ||
+        capability.taskExecutionAuthorityId !== run.taskExecutionAuthorityId ||
         capability.consultExecutionId !== run.consultExecutionId ||
         capability.adapterConfigIdentity !== run.adapterConfigRevisionId ||
         capability.workspaceIdentity !== run.executionWorkspaceBindingId)
@@ -2210,11 +2193,12 @@ export function createPostgresTaskExecutionDispatcherRepository(
     if (steeringCancellation !== null && closureDecision.kind === "retry") {
       reject("steering cancellation cannot own a retry prompt closure");
     }
-    const steeringCancellationRecovery = steeringCancellation === null
-      ? null
-      : closureDecision.kind === "open" && promptTransmitted
-        ? "fail_run"
-        : "continue_source";
+    const steeringCancellationRecovery =
+      steeringCancellation === null
+        ? null
+        : closureDecision.kind === "open" && promptTransmitted
+          ? "fail_run"
+          : "continue_source";
     let consultChainRemainsLive = false;
     if (run.executionMode === "consult") {
       try {
@@ -2238,10 +2222,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
     const capabilityAlreadyRevokedForSteering =
       capability?.state === "revoked" &&
       capability.revocationReason === "active_run_steering";
-    if (
-      steeringCancellation !== null &&
-      !capabilityAlreadyRevokedForSteering
-    ) {
+    if (steeringCancellation !== null && !capabilityAlreadyRevokedForSteering) {
       reject("expired steering cancellation lost its revoked capability");
     }
     if (
@@ -2299,15 +2280,16 @@ export function createPostgresTaskExecutionDispatcherRepository(
             },
       );
     }
-    const attemptTerminalState = nonSteeringCancellation !== null
-      ? "cancelled" as const
-      : closureDecision.kind === "terminal"
-        ? closureDecision.outcome === "succeeded"
-          ? "settled" as const
-          : closureDecision.outcome === "cancelled"
-            ? "cancelled" as const
-            : "failed" as const
-        : "failed" as const;
+    const attemptTerminalState =
+      nonSteeringCancellation !== null
+        ? ("cancelled" as const)
+        : closureDecision.kind === "terminal"
+          ? closureDecision.outcome === "succeeded"
+            ? ("settled" as const)
+            : closureDecision.outcome === "cancelled"
+              ? ("cancelled" as const)
+              : ("failed" as const)
+          : ("failed" as const);
     exactlyOne(
       await transaction
         .update(taskExecutionAttempts)
@@ -2423,10 +2405,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
               ),
               eq(taskExecutionPromptSegments.runId, run.runId),
               eq(taskExecutionPromptSegments.refId, member.ref.id),
-              eq(
-                taskExecutionPromptSegments.refOrdinal,
-                member.row.refOrdinal,
-              ),
+              eq(taskExecutionPromptSegments.refOrdinal, member.row.refOrdinal),
               eq(
                 taskExecutionPromptSegments.segmentOrdinal,
                 pendingSteeringSegment.segmentOrdinal,
@@ -2453,7 +2432,8 @@ export function createPostgresTaskExecutionDispatcherRepository(
         "expired transmitted steering orphan could not release its request",
       );
     }
-    const cancellationToComplete = nonSteeringCancellation ??
+    const cancellationToComplete =
+      nonSteeringCancellation ??
       (steeringCancellationRecovery === "fail_run" ? cancellation : null);
     if (cancellationToComplete !== null) {
       await completeCancellation(cancellationToComplete);
@@ -2474,8 +2454,8 @@ export function createPostgresTaskExecutionDispatcherRepository(
       lease.id,
       lease.leaseGeneration,
     );
-    const abandonedConsult = run.executionMode === "consult" &&
-      !consultChainRemainsLive;
+    const abandonedConsult =
+      run.executionMode === "consult" && !consultChainRemainsLive;
     const revokeAbandonedConsult = async () => {
       if (!abandonedConsult || member.ref.consultExecutionId === null) return;
       exactlyOne(
@@ -2497,10 +2477,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
       );
     };
 
-    if (
-      nonSteeringCancellation === null &&
-      closureDecision.kind === "retry"
-    ) {
+    if (nonSteeringCancellation === null && closureDecision.kind === "retry") {
       if (abandonedConsult) {
         await settleNonProtocolPromptInTransaction(
           transaction,
@@ -2607,10 +2584,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
       };
     }
 
-    if (
-      closureDecision.kind !== "terminal" &&
-      correlationIds.length > 0
-    ) {
+    if (closureDecision.kind !== "terminal" && correlationIds.length > 0) {
       const correlations = await transaction
         .select({
           id: taskExecutionSessions.id,
@@ -2624,32 +2598,27 @@ export function createPostgresTaskExecutionDispatcherRepository(
         correlations.length !== correlationIds.length ||
         correlations.some(
           (correlation) =>
-            correlation.state !== "eligible" &&
-            correlation.state !== "current",
+            correlation.state !== "eligible" && correlation.state !== "current",
         )
       ) {
         reject("expired attempt lost its exact activated correlation fence");
       }
-      const turn = await resolveRuntimeToolTurn(
-        transaction as unknown as Db,
-        {
-          companyId: run.companyId,
-          taskId: run.taskId,
-          ownershipEpoch: run.ownershipEpoch,
-          targetAgentId: run.targetAgentId,
-          executionMode: run.executionMode,
-          taskExecutionAuthorityId: run.taskExecutionAuthorityId,
-          consultExecutionId: run.consultExecutionId,
-          refId: member.ref.id,
-        },
-      );
-      const preserveCorrelation =
-        preserveCorrelationAfterNonProtocolClosure({
-          turn,
-          carryContext: correlations.every(
-            (correlation) => correlation.purpose === "carry",
-          ),
-        });
+      const turn = await resolveRuntimeToolTurn(transaction as unknown as Db, {
+        companyId: run.companyId,
+        taskId: run.taskId,
+        ownershipEpoch: run.ownershipEpoch,
+        targetAgentId: run.targetAgentId,
+        executionMode: run.executionMode,
+        taskExecutionAuthorityId: run.taskExecutionAuthorityId,
+        consultExecutionId: run.consultExecutionId,
+        refId: member.ref.id,
+      });
+      const preserveCorrelation = preserveCorrelationAfterNonProtocolClosure({
+        turn,
+        carryContext: correlations.every(
+          (correlation) => correlation.purpose === "carry",
+        ),
+      });
       if (!preserveCorrelation) {
         const superseded = await transaction
           .update(taskExecutionSessions)
@@ -2674,8 +2643,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
     }
     if (nonSteeringCancellation !== null) {
       await revokeAbandonedConsult();
-      const cancellationReason =
-        `${nonSteeringCancellation.reasonKind}_cancellation`;
+      const cancellationReason = `${nonSteeringCancellation.reasonKind}_cancellation`;
       const completed = await completeTerminalPromptInTransaction(
         transaction,
         options,
@@ -2719,10 +2687,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
             and(
               eq(taskExecutionPromptSegments.runId, run.runId),
               eq(taskExecutionPromptSegments.refId, member.ref.id),
-              eq(
-                taskExecutionPromptSegments.refOrdinal,
-                member.row.refOrdinal,
-              ),
+              eq(taskExecutionPromptSegments.refOrdinal, member.row.refOrdinal),
               eq(
                 taskExecutionPromptSegments.segmentOrdinal,
                 segment.segmentOrdinal,
@@ -2731,9 +2696,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
               promptOwnerIsUnbound
                 ? and(
                     isNull(taskExecutionPromptSegments.attemptId),
-                    isNull(
-                      taskExecutionPromptSegments.capabilityConnectionId,
-                    ),
+                    isNull(taskExecutionPromptSegments.capabilityConnectionId),
                     isNull(taskExecutionPromptSegments.capabilityGeneration),
                   )
                 : and(
@@ -2884,10 +2847,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
             .where(
               and(
                 eq(taskExecutionRunRefs.runId, run.runId),
-                eq(
-                  taskExecutionRunRefs.refOrdinal,
-                  candidate.row.refOrdinal,
-                ),
+                eq(taskExecutionRunRefs.refOrdinal, candidate.row.refOrdinal),
                 eq(
                   taskExecutionRunRefs.promptTransmissionPhase,
                   "not_transmitted",
@@ -2942,10 +2902,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
           and(
             eq(taskExecutionRunControls.runId, run.runId),
             eq(taskExecutionRunControls.currentRefId, member.ref.id),
-            eq(
-              taskExecutionRunControls.currentOrdinal,
-              member.row.refOrdinal,
-            ),
+            eq(taskExecutionRunControls.currentOrdinal, member.row.refOrdinal),
             eq(
               taskExecutionRunControls.currentSegmentOrdinal,
               control.currentSegmentOrdinal,
@@ -2972,21 +2929,22 @@ export function createPostgresTaskExecutionDispatcherRepository(
       leaseId: lease.id,
       at,
     });
-    const retryRun = exactReleasedRetryRefs.length === 0
-      ? null
-      : (
-          await createRunForRef(
-            transaction,
-            options,
-            exactReleasedRetryRefs[0]!,
-            at,
-            {
-              retryOfRunId: run.runId,
-              orderedRefs: exactReleasedRetryRefs,
-              sessionOperation: attempt.sessionOperation,
-            },
-          )
-        ).run;
+    const retryRun =
+      exactReleasedRetryRefs.length === 0
+        ? null
+        : (
+            await createRunForRef(
+              transaction,
+              options,
+              exactReleasedRetryRefs[0]!,
+              at,
+              {
+                retryOfRunId: run.runId,
+                orderedRefs: exactReleasedRetryRefs,
+                sessionOperation: attempt.sessionOperation,
+              },
+            )
+          ).run;
     return {
       kind: "released_run",
       retryRun,
@@ -3001,10 +2959,12 @@ export function createPostgresTaskExecutionDispatcherRepository(
     };
   }
 
-  type ExistingRunLeaseResult = LeaseForLaneResult | {
-    readonly kind: "scheduled";
-    readonly retryAt: Date;
-  };
+  type ExistingRunLeaseResult =
+    | LeaseForLaneResult
+    | {
+        readonly kind: "scheduled";
+        readonly retryAt: Date;
+      };
 
   async function leaseExistingRunInTransaction(
     transaction: TaskSessionDbTransaction,
@@ -3020,7 +2980,8 @@ export function createPostgresTaskExecutionDispatcherRepository(
       input.run.currentAttemptId !== null ||
       input.run.currentLeaseId !== null ||
       input.run.cancellationIntentId !== null
-    ) return { kind: "queued" };
+    )
+      return { kind: "queued" };
     let pendingAttempt: AttemptRow | undefined;
     let run = input.run;
     if (run.status === "scheduled_retry") {
@@ -3170,142 +3131,149 @@ export function createPostgresTaskExecutionDispatcherRepository(
     let recoveredTerminalEvent: AgentRunTerminalPluginEventInput | null = null;
     const result: LeaseForLaneResult = await options.database.transaction(
       async (transaction) => {
-      await transaction
-        .select({ id: companies.id })
-        .from(companies)
-        .where(eq(companies.id, input.lane.companyId))
-        .limit(1)
-        .for("update");
-      await lockTaskTreeExecutionGate(
-        transaction,
-        input.lane.companyId,
-        input.lane.taskId,
-      );
-      const paused = await transaction
-        .select({
-          active: activeTaskTreePauseHoldExistsSql(
-            input.lane.companyId,
-            input.lane.taskId,
-          ),
-        })
-        .from(tasks)
-        .where(
-          and(
-            eq(tasks.companyId, input.lane.companyId),
-            eq(tasks.id, input.lane.taskId),
-          ),
-        )
-        .limit(1)
-        .then((rows) => rows[0]?.active === true);
-      if (paused) return { kind: "queued" };
-      let existing = await findExistingRunForLane(
-        transaction,
-        input.lane,
-      );
-      if (existing) {
-        const expiredRun = existing;
-        const recovered = await recoverExpiredRunInTransaction(
+        await transaction
+          .select({ id: companies.id })
+          .from(companies)
+          .where(eq(companies.id, input.lane.companyId))
+          .limit(1)
+          .for("update");
+        await lockTaskTreeExecutionGate(
           transaction,
-          expiredRun,
-          input.at,
+          input.lane.companyId,
+          input.lane.taskId,
         );
-        recoveredTerminalEvent = terminalEventForExpiredRun(
-          expiredRun,
-          recovered,
-          input.at,
-        );
-        if (recovered.kind === "released_run") {
-          existing = recovered.retryRun;
-        } else {
-          existing = recovered.run;
-        }
-      }
-      if (existing) {
-        const leased = await leaseExistingRunInTransaction(transaction, {
-          run: existing,
-          workerId: input.workerId,
-          at: input.at,
-          mode: existing.executionMode,
-        });
-        return leased.kind === "scheduled" ? { kind: "queued" } : leased;
-      }
-
-      const occupiedRefIds = await readOccupiedTaskExecutionRefIds(
-        transaction,
-        {
-          companyId: input.lane.companyId,
-          taskId: input.lane.taskId,
-          sessionId: input.lane.sessionId,
-          ownershipEpoch: input.lane.ownershipEpoch,
-          targetAgentId: input.lane.targetAgentId,
-        },
-      );
-      const refRows = await transaction
-        .select()
-        .from(taskExecutionRefs)
-        .where(
-          and(
-            eq(taskExecutionRefs.companyId, input.lane.companyId),
-            eq(taskExecutionRefs.taskId, input.lane.taskId),
-            eq(taskExecutionRefs.sessionId, input.lane.sessionId),
-            eq(
-              taskExecutionRefs.ownershipEpoch,
-              input.lane.ownershipEpoch,
+        const paused = await transaction
+          .select({
+            active: activeTaskTreePauseHoldExistsSql(
+              input.lane.companyId,
+              input.lane.taskId,
             ),
-            eq(taskExecutionRefs.targetAgentId, input.lane.targetAgentId),
-            eq(taskExecutionRefs.disposition, "active"),
-            taskExecutionRefDeliveryEligibilitySql("dispatch"),
-            occupiedRefIds.length === 0
-              ? undefined
-              : notInArray(taskExecutionRefs.id, [...occupiedRefIds]),
-          ),
-        )
-        .orderBy(asc(taskExecutionRefs.laneOrdinal))
-        .limit(1);
-      const ref = refRows[0];
-      if (!ref) return { kind: "queued" };
-      if (!(await consultSourceRunIsFinalized(transaction, ref))) {
-        return { kind: "queued" };
-      }
-      const laneClaim = await lockLaneLeaseClaim(transaction, ref, {
-        existingRun: false,
-      });
-      if (!laneClaim) return { kind: "queued" };
-      const created = await createRunForRef(transaction, options, ref, input.at);
-      await options.runService.transitionRunStatus(transaction, {
-        companyId: created.run.companyId,
-        taskId: created.run.taskId,
-        runId: created.run.runId,
-        expectedStatus: "queued",
-        status: "running",
-        startedAt: input.at,
-        at: input.at,
-      });
-      const running = { ...created.run, status: "running" as const, startedAt: input.at };
-      const lease = await createRunningLease(transaction, {
-        runService: options.runService,
-        compiler: options.compiler,
-        idFactory,
-        leaseTtlMs,
-      }, {
-        run: running,
-        refs: [created.refs[0]!],
-        workerId: input.workerId,
-        at: input.at,
-        laneClaim,
-      });
-      const leasedRun = await options.runService.lockRun(transaction, {
-        companyId: running.companyId,
-        taskId: running.taskId,
-        runId: running.runId,
-      });
-      if (
-        leasedRun.currentAttemptId !== lease.attemptId ||
-        leasedRun.currentLeaseId !== lease.leaseId
-      ) {
-        reject("new lease lost its exact canonical run projection");
-      }
-      return { kind: "leased", lease, run: leasedRun };
+          })
+          .from(tasks)
+          .where(
+            and(
+              eq(tasks.companyId, input.lane.companyId),
+              eq(tasks.id, input.lane.taskId),
+            ),
+          )
+          .limit(1)
+          .then((rows) => rows[0]?.active === true);
+        if (paused) return { kind: "queued" };
+        let existing = await findExistingRunForLane(transaction, input.lane);
+        if (existing) {
+          const expiredRun = existing;
+          const recovered = await recoverExpiredRunInTransaction(
+            transaction,
+            expiredRun,
+            input.at,
+          );
+          recoveredTerminalEvent = terminalEventForExpiredRun(
+            expiredRun,
+            recovered,
+            input.at,
+          );
+          if (recovered.kind === "released_run") {
+            existing = recovered.retryRun;
+          } else {
+            existing = recovered.run;
+          }
+        }
+        if (existing) {
+          const leased = await leaseExistingRunInTransaction(transaction, {
+            run: existing,
+            workerId: input.workerId,
+            at: input.at,
+            mode: existing.executionMode,
+          });
+          return leased.kind === "scheduled" ? { kind: "queued" } : leased;
+        }
+
+        const occupiedRefIds = await readOccupiedTaskExecutionRefIds(
+          transaction,
+          {
+            companyId: input.lane.companyId,
+            taskId: input.lane.taskId,
+            sessionId: input.lane.sessionId,
+            ownershipEpoch: input.lane.ownershipEpoch,
+            targetAgentId: input.lane.targetAgentId,
+          },
+        );
+        const refRows = await transaction
+          .select()
+          .from(taskExecutionRefs)
+          .where(
+            and(
+              eq(taskExecutionRefs.companyId, input.lane.companyId),
+              eq(taskExecutionRefs.taskId, input.lane.taskId),
+              eq(taskExecutionRefs.sessionId, input.lane.sessionId),
+              eq(taskExecutionRefs.ownershipEpoch, input.lane.ownershipEpoch),
+              eq(taskExecutionRefs.targetAgentId, input.lane.targetAgentId),
+              eq(taskExecutionRefs.disposition, "active"),
+              taskExecutionRefDeliveryEligibilitySql("dispatch"),
+              occupiedRefIds.length === 0
+                ? undefined
+                : notInArray(taskExecutionRefs.id, [...occupiedRefIds]),
+            ),
+          )
+          .orderBy(asc(taskExecutionRefs.laneOrdinal))
+          .limit(1);
+        const ref = refRows[0];
+        if (!ref) return { kind: "queued" };
+        if (!(await consultSourceRunIsFinalized(transaction, ref))) {
+          return { kind: "queued" };
+        }
+        const laneClaim = await lockLaneLeaseClaim(transaction, ref, {
+          existingRun: false,
+        });
+        if (!laneClaim) return { kind: "queued" };
+        const created = await createRunForRef(
+          transaction,
+          options,
+          ref,
+          input.at,
+        );
+        await options.runService.transitionRunStatus(transaction, {
+          companyId: created.run.companyId,
+          taskId: created.run.taskId,
+          runId: created.run.runId,
+          expectedStatus: "queued",
+          status: "running",
+          startedAt: input.at,
+          at: input.at,
+        });
+        const running = {
+          ...created.run,
+          status: "running" as const,
+          startedAt: input.at,
+        };
+        const lease = await createRunningLease(
+          transaction,
+          {
+            runService: options.runService,
+            compiler: options.compiler,
+            idFactory,
+            leaseTtlMs,
+          },
+          {
+            run: running,
+            refs: [created.refs[0]!],
+            workerId: input.workerId,
+            at: input.at,
+            laneClaim,
+          },
+        );
+        const leasedRun = await options.runService.lockRun(transaction, {
+          companyId: running.companyId,
+          taskId: running.taskId,
+          runId: running.runId,
+        });
+        if (
+          leasedRun.currentAttemptId !== lease.attemptId ||
+          leasedRun.currentLeaseId !== lease.leaseId
+        ) {
+          reject("new lease lost its exact canonical run projection");
+        }
+        return { kind: "leased", lease, run: leasedRun };
       },
     );
     if (recoveredTerminalEvent) {
@@ -3328,10 +3296,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
     },
   ): Promise<boolean> {
     const at = validDate(input.finishedAt, "cancelled run terminal time");
-    const laneClaim = await lockRunLaneClaimIfPresent(
-      transaction,
-      input.runId,
-    );
+    const laneClaim = await lockRunLaneClaimIfPresent(transaction, input.runId);
     const run = await options.runService.lockRun(transaction, input);
     if (
       ["succeeded", "interrupted", "failed", "cancelled", "timed_out"].includes(
@@ -3345,16 +3310,16 @@ export function createPostgresTaskExecutionDispatcherRepository(
       run.currentLeaseId !== null ||
       run.cancellationIntentId !== null
     ) {
-      reject("cancelled run still owns an attempt, lease, or cancellation pointer");
+      reject(
+        "cancelled run still owns an attempt, lease, or cancellation pointer",
+      );
     }
     const members = await transaction
       .select({
         refId: taskExecutionRunRefs.refId,
         refOrdinal: taskExecutionRunRefs.refOrdinal,
-        promptTransmissionPhase:
-          taskExecutionRunRefs.promptTransmissionPhase,
-        protocolSettlementState:
-          taskExecutionRunRefs.protocolSettlementState,
+        promptTransmissionPhase: taskExecutionRunRefs.promptTransmissionPhase,
+        protocolSettlementState: taskExecutionRunRefs.protocolSettlementState,
       })
       .from(taskExecutionRunRefs)
       .where(eq(taskExecutionRunRefs.runId, input.runId))
@@ -3407,7 +3372,10 @@ export function createPostgresTaskExecutionDispatcherRepository(
             and(
               eq(taskExecutionRunRefs.runId, input.runId),
               eq(taskExecutionRunRefs.refOrdinal, member.refOrdinal),
-              eq(taskExecutionRunRefs.promptTransmissionPhase, "not_transmitted"),
+              eq(
+                taskExecutionRunRefs.promptTransmissionPhase,
+                "not_transmitted",
+              ),
               isNull(taskExecutionRunRefs.protocolSettlementState),
             ),
           )
@@ -3430,10 +3398,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
           .where(
             and(
               eq(taskExecutionPromptSegments.runId, input.runId),
-              eq(
-                taskExecutionPromptSegments.refOrdinal,
-                segment.refOrdinal,
-              ),
+              eq(taskExecutionPromptSegments.refOrdinal, segment.refOrdinal),
               eq(
                 taskExecutionPromptSegments.segmentOrdinal,
                 segment.segmentOrdinal,
@@ -3506,8 +3471,10 @@ export function createPostgresTaskExecutionDispatcherRepository(
   ): Promise<FencedTaskExecutionAuthority> {
     exactIdentifier(input.companyId, "authority fence company id");
     const at = validDate(input.at, "authority fence time");
-    const reason = (input.reason.trim() || "execution_authority_revoked")
-      .slice(0, 200);
+    const reason = (input.reason.trim() || "execution_authority_revoked").slice(
+      0,
+      200,
+    );
     const selector = input.selector;
     let budgetTaskIds: readonly string[] = Object.freeze([]);
     if (selector.kind === "agents" || selector.kind === "suspended_agents") {
@@ -3551,17 +3518,20 @@ export function createPostgresTaskExecutionDispatcherRepository(
           )
           .limit(2)
           .for("update");
-        if (project.length !== 1) reject("project budget scope is not canonical");
+        if (project.length !== 1)
+          reject("project budget scope is not canonical");
         budgetTaskIds = Object.freeze(
-          (await transaction
-            .select({ id: tasks.id })
-            .from(tasks)
-            .where(
-              and(
-                eq(tasks.companyId, input.companyId),
-                eq(tasks.projectId, selector.scopeId),
-              ),
-            )).map((task) => task.id),
+          (
+            await transaction
+              .select({ id: tasks.id })
+              .from(tasks)
+              .where(
+                and(
+                  eq(tasks.companyId, input.companyId),
+                  eq(tasks.projectId, selector.scopeId),
+                ),
+              )
+          ).map((task) => task.id),
         );
       }
     } else {
@@ -3586,30 +3556,29 @@ export function createPostgresTaskExecutionDispatcherRepository(
       }
     }
 
-    const refPredicate = selector.kind === "agents" ||
-        selector.kind === "suspended_agents"
-      ? inArray(taskExecutionRefs.targetAgentId, [...selector.agentIds])
-      : selector.kind === "budget_scope"
-        ? selector.scopeType === "company"
-          ? sql<boolean>`true`
-          : selector.scopeType === "agent"
-            ? eq(taskExecutionRefs.targetAgentId, selector.scopeId)
-            : budgetTaskIds.length === 0
-              ? sql<boolean>`false`
-              : inArray(taskExecutionRefs.taskId, [...budgetTaskIds])
-      : selector.kind === "ownership_epoch"
-        ? and(
-            eq(taskExecutionRefs.taskId, selector.taskId),
-            eq(taskExecutionRefs.ownershipEpoch, selector.ownershipEpoch),
-          )
-        : and(
-            eq(taskExecutionRefs.taskId, selector.taskId),
-            inArray(taskExecutionRefs.id, [...selector.refIds]),
-          );
-    const occupiedRefIds = await readOccupiedTaskExecutionRefIds(
-      transaction,
-      { companyId: input.companyId },
-    );
+    const refPredicate =
+      selector.kind === "agents" || selector.kind === "suspended_agents"
+        ? inArray(taskExecutionRefs.targetAgentId, [...selector.agentIds])
+        : selector.kind === "budget_scope"
+          ? selector.scopeType === "company"
+            ? sql<boolean>`true`
+            : selector.scopeType === "agent"
+              ? eq(taskExecutionRefs.targetAgentId, selector.scopeId)
+              : budgetTaskIds.length === 0
+                ? sql<boolean>`false`
+                : inArray(taskExecutionRefs.taskId, [...budgetTaskIds])
+          : selector.kind === "ownership_epoch"
+            ? and(
+                eq(taskExecutionRefs.taskId, selector.taskId),
+                eq(taskExecutionRefs.ownershipEpoch, selector.ownershipEpoch),
+              )
+            : and(
+                eq(taskExecutionRefs.taskId, selector.taskId),
+                inArray(taskExecutionRefs.id, [...selector.refIds]),
+              );
+    const occupiedRefIds = await readOccupiedTaskExecutionRefIds(transaction, {
+      companyId: input.companyId,
+    });
     const refs = await transaction
       .select({
         id: taskExecutionRefs.id,
@@ -3682,26 +3651,31 @@ export function createPostgresTaskExecutionDispatcherRepository(
         );
     }
 
-    const correlationPredicate = selector.kind === "agents" ||
-        selector.kind === "suspended_agents"
-      ? inArray(taskExecutionSessions.targetAgentId, [...selector.agentIds])
-      : selector.kind === "budget_scope"
-        ? selector.scopeType === "company"
-          ? sql<boolean>`true`
-          : selector.scopeType === "agent"
-            ? eq(taskExecutionSessions.targetAgentId, selector.scopeId)
-            : budgetTaskIds.length === 0
-              ? sql<boolean>`false`
-              : inArray(taskExecutionSessions.taskId, [...budgetTaskIds])
-      : selector.kind === "ownership_epoch"
-        ? and(
-            eq(taskExecutionSessions.taskId, selector.taskId),
-            eq(taskExecutionSessions.ownershipEpoch, selector.ownershipEpoch),
-          )
-        : and(
-            eq(taskExecutionSessions.taskId, selector.taskId),
-            inArray(taskExecutionSessions.currentRefId, [...selector.refIds]),
-          );
+    const correlationPredicate =
+      selector.kind === "agents" || selector.kind === "suspended_agents"
+        ? inArray(taskExecutionSessions.targetAgentId, [...selector.agentIds])
+        : selector.kind === "budget_scope"
+          ? selector.scopeType === "company"
+            ? sql<boolean>`true`
+            : selector.scopeType === "agent"
+              ? eq(taskExecutionSessions.targetAgentId, selector.scopeId)
+              : budgetTaskIds.length === 0
+                ? sql<boolean>`false`
+                : inArray(taskExecutionSessions.taskId, [...budgetTaskIds])
+          : selector.kind === "ownership_epoch"
+            ? and(
+                eq(taskExecutionSessions.taskId, selector.taskId),
+                eq(
+                  taskExecutionSessions.ownershipEpoch,
+                  selector.ownershipEpoch,
+                ),
+              )
+            : and(
+                eq(taskExecutionSessions.taskId, selector.taskId),
+                inArray(taskExecutionSessions.currentRefId, [
+                  ...selector.refIds,
+                ]),
+              );
     const correlations = await transaction
       .update(taskExecutionSessions)
       .set({
@@ -3759,7 +3733,8 @@ export function createPostgresTaskExecutionDispatcherRepository(
         .limit(limit);
       const refIds: string[] = [];
       for (const candidate of candidates) {
-        let recoveredTerminalEvent: AgentRunTerminalPluginEventInput | null = null;
+        let recoveredTerminalEvent: AgentRunTerminalPluginEventInput | null =
+          null;
         const recovered = await options.database.transaction(
           async (transaction) => {
             const run = await findExistingRunForLane(
@@ -3770,7 +3745,8 @@ export function createPostgresTaskExecutionDispatcherRepository(
               !run ||
               run.runId !== candidate.runId ||
               run.currentLeaseId !== candidate.leaseId
-            ) return null;
+            )
+              return null;
             const result = await recoverExpiredRunInTransaction(
               transaction,
               run,
@@ -3800,10 +3776,14 @@ export function createPostgresTaskExecutionDispatcherRepository(
                   eq(taskExecutionRefs.disposition, "active"),
                 ),
               )
-              .orderBy(asc(taskExecutionRefs.laneOrdinal), asc(taskExecutionRefs.id))
+              .orderBy(
+                asc(taskExecutionRefs.laneOrdinal),
+                asc(taskExecutionRefs.id),
+              )
               .limit(1)
               .then((rows) => rows[0] ?? null);
-            return next && await consultSourceRunIsFinalized(transaction, next)
+            return next &&
+              (await consultSourceRunIsFinalized(transaction, next))
               ? next.id
               : null;
           },
@@ -3829,8 +3809,14 @@ export function createPostgresTaskExecutionDispatcherRepository(
       const rows = await options.database
         .select({ id: taskExecutionRefs.id })
         .from(taskExecutionRefs)
-        .innerJoin(taskExecutionHistoryViews, eq(taskExecutionHistoryViews.id, taskExecutionRefs.historyViewId))
-        .innerJoin(taskSessions, eq(taskSessions.id, taskExecutionRefs.sessionId))
+        .innerJoin(
+          taskExecutionHistoryViews,
+          eq(taskExecutionHistoryViews.id, taskExecutionRefs.historyViewId),
+        )
+        .innerJoin(
+          taskSessions,
+          eq(taskSessions.id, taskExecutionRefs.sessionId),
+        )
         .innerJoin(tasks, eq(tasks.id, taskExecutionRefs.taskId))
         .innerJoin(companies, eq(companies.id, taskExecutionRefs.companyId))
         .where(
@@ -3912,28 +3898,31 @@ export function createPostgresTaskExecutionDispatcherRepository(
         options.database,
         { refId },
       );
-      const settled = active === null
-        ? await options.database
-            .select({ outcome: taskExecutionRunRefs.outcome })
-            .from(taskExecutionRunRefs)
-            .where(
-              and(
-                eq(taskExecutionRunRefs.refId, refId),
-                isNotNull(taskExecutionRunRefs.protocolSettlementState),
-              ),
-            )
-            .orderBy(desc(taskExecutionRunRefs.settledAt))
-            .limit(1)
-        : [];
+      const settled =
+        active === null
+          ? await options.database
+              .select({ outcome: taskExecutionRunRefs.outcome })
+              .from(taskExecutionRunRefs)
+              .where(
+                and(
+                  eq(taskExecutionRunRefs.refId, refId),
+                  isNotNull(taskExecutionRunRefs.protocolSettlementState),
+                ),
+              )
+              .orderBy(desc(taskExecutionRunRefs.settledAt))
+              .limit(1)
+          : [];
       const leaseState = active
         ? active.run.status === "scheduled_retry"
-          ? "retryable" as const
+          ? ("retryable" as const)
           : active.run.currentLeaseId
-            ? "leased" as const
-            : "available" as const
+            ? ("leased" as const)
+            : ("available" as const)
         : settled[0]
-          ? settled[0].outcome === "succeeded" ? "completed" as const : "failed" as const
-          : "available" as const;
+          ? settled[0].outcome === "succeeded"
+            ? ("completed" as const)
+            : ("failed" as const)
+          : ("available" as const);
       return {
         lane: targetLaneIdentity(ref[0]),
         mode: ref[0].mode,
@@ -3968,8 +3957,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
         options.database
           .select({
             activeOrdinal: taskExecutionLanes.activeOrdinal,
-            activeLeaseGeneration:
-              taskExecutionLanes.activeLeaseGeneration,
+            activeLeaseGeneration: taskExecutionLanes.activeLeaseGeneration,
             activeLeaseId: taskExecutionLanes.activeLeaseId,
             laneOrdinal: taskExecutionRefs.laneOrdinal,
           })
@@ -3977,10 +3965,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
           .innerJoin(
             taskExecutionLanes,
             and(
-              eq(
-                taskExecutionLanes.companyId,
-                taskExecutionRefs.companyId,
-              ),
+              eq(taskExecutionLanes.companyId, taskExecutionRefs.companyId),
               eq(taskExecutionLanes.taskId, taskExecutionRefs.taskId),
               eq(
                 taskExecutionLanes.ownershipEpoch,
@@ -4012,7 +3997,8 @@ export function createPostgresTaskExecutionDispatcherRepository(
         lane.activeOrdinal !== lane.laneOrdinal ||
         lane.activeLeaseGeneration !== lease.leaseGeneration ||
         lane.activeLeaseId !== lease.leaseId
-      ) reject("attempt lease is no longer current");
+      )
+        reject("attempt lease is no longer current");
     },
 
     async markRetryable(input: {
@@ -4029,7 +4015,14 @@ export function createPostgresTaskExecutionDispatcherRepository(
           reject("a cancellation-bound attempt cannot enter retry");
         }
         await assertLeaseLaneClaim(transaction, input.lease, at);
-        await releaseAttempt(transaction, options, input.lease, "failed", at, true);
+        await releaseAttempt(
+          transaction,
+          options,
+          input.lease,
+          "failed",
+          at,
+          true,
+        );
         await scheduleTaskExecutionAttemptRetryInTransaction(transaction, {
           id: idFactory(),
           companyId: input.lease.ref.companyId,
@@ -4050,69 +4043,80 @@ export function createPostgresTaskExecutionDispatcherRepository(
       finishedAt: Date;
     }) {
       const at = validDate(input.finishedAt, "attempt terminal time");
-      const settlement = await options.database.transaction(async (transaction) => {
-        await lockLaneParents(transaction, input.lease.ref);
-        await lockLane(transaction, input.lease.ref);
-        const run = await options.runService.lockRun(transaction, input.lease);
-        await assertLeaseLaneClaim(transaction, input.lease, at);
-        const cancellation = run.cancellationIntentId
-          ? exactlyOne(
-              await transaction
-                .select()
-                .from(taskExecutionCancellationIntents)
-                .where(eq(taskExecutionCancellationIntents.id, run.cancellationIntentId))
-                .limit(2)
-                .for("update"),
-              "run lost its attached cancellation intent",
-            )
-          : null;
-        const attemptState = input.outcome === "succeeded"
-          ? "settled" as const
-          : input.outcome === "cancelled"
-            ? "cancelled" as const
-            : "failed" as const;
-        await releaseAttempt(
-          transaction,
-          options,
-          input.lease,
-          attemptState,
-          at,
-          cancellation === null,
-        );
-        let completed: Awaited<
-          ReturnType<typeof completeTerminalPromptInTransaction>
-        >;
-        if (cancellation) {
-          completed = {
-            finalization: null,
-            laneReleased: false,
-            autoCaptureRefId: null,
-          };
-        } else {
-          const attempt = exactlyOne(
-            await transaction
-              .select()
-              .from(taskExecutionAttempts)
-              .where(eq(taskExecutionAttempts.id, input.lease.attemptId))
-              .limit(2)
-              .for("update"),
-            "terminal attempt disappeared",
+      const settlement = await options.database.transaction(
+        async (transaction) => {
+          await lockLaneParents(transaction, input.lease.ref);
+          await lockLane(transaction, input.lease.ref);
+          const run = await options.runService.lockRun(
+            transaction,
+            input.lease,
           );
-          completed = await completeTerminalPromptInTransaction(
+          await assertLeaseLaneClaim(transaction, input.lease, at);
+          const cancellation = run.cancellationIntentId
+            ? exactlyOne(
+                await transaction
+                  .select()
+                  .from(taskExecutionCancellationIntents)
+                  .where(
+                    eq(
+                      taskExecutionCancellationIntents.id,
+                      run.cancellationIntentId,
+                    ),
+                  )
+                  .limit(2)
+                  .for("update"),
+                "run lost its attached cancellation intent",
+              )
+            : null;
+          const attemptState =
+            input.outcome === "succeeded"
+              ? ("settled" as const)
+              : input.outcome === "cancelled"
+                ? ("cancelled" as const)
+                : ("failed" as const);
+          await releaseAttempt(
             transaction,
             options,
-            {
-              lease: input.lease,
-              attempt,
-              outcome: input.outcome,
-              reason: input.reason,
-              at,
-              idFactory,
-            },
+            input.lease,
+            attemptState,
+            at,
+            cancellation === null,
           );
-        }
-        return completed;
-      });
+          let completed: Awaited<
+            ReturnType<typeof completeTerminalPromptInTransaction>
+          >;
+          if (cancellation) {
+            completed = {
+              finalization: null,
+              laneReleased: false,
+              autoCaptureRefId: null,
+            };
+          } else {
+            const attempt = exactlyOne(
+              await transaction
+                .select()
+                .from(taskExecutionAttempts)
+                .where(eq(taskExecutionAttempts.id, input.lease.attemptId))
+                .limit(2)
+                .for("update"),
+              "terminal attempt disappeared",
+            );
+            completed = await completeTerminalPromptInTransaction(
+              transaction,
+              options,
+              {
+                lease: input.lease,
+                attempt,
+                outcome: input.outcome,
+                reason: input.reason,
+                at,
+                idFactory,
+              },
+            );
+          }
+          return completed;
+        },
+      );
       if (settlement.finalization) {
         await publishAgentRunTerminalEvent(options.pluginDomainEvents, {
           companyId: settlement.finalization.companyId,
@@ -4140,7 +4144,8 @@ export function createPostgresTaskExecutionDispatcherRepository(
       finishedAt: Date;
     }) {
       const terminalized = await options.database.transaction((transaction) =>
-        terminalizeDetachedCancelledRunInTransaction(transaction, input));
+        terminalizeDetachedCancelledRunInTransaction(transaction, input),
+      );
       if (!terminalized) return;
       const run = await options.runService.readRun(input);
       if (!run) {
@@ -4159,7 +4164,6 @@ export function createPostgresTaskExecutionDispatcherRepository(
 
     terminalizeDetachedCancelledRunInTransaction,
     fenceRevokedExecutionAuthorityInTransaction,
-
   } satisfies TaskExecutionDispatcherRepository & {
     terminalizeCancelledRun(input: {
       companyId: string;
@@ -4190,7 +4194,3 @@ export function createPostgresTaskExecutionDispatcherRepository(
   };
   return repository;
 }
-
-export type PostgresTaskExecutionDispatcherRepository = ReturnType<
-  typeof createPostgresTaskExecutionDispatcherRepository
->;

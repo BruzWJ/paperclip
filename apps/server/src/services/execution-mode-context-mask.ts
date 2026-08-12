@@ -1,5 +1,6 @@
 import {
   AGENT_CONTEXT_GRANT_KEYS,
+  lowTrustReviewPresetPolicySchema,
   type AgentContextGrantKey,
 } from "@paperclipai/shared";
 import type { ContextAttenuationMask } from "./context-dial-resolver.js";
@@ -11,34 +12,13 @@ export const DENY_ALL_EXECUTION_CONTEXT_MASK = Object.freeze(
 );
 
 export interface ExecutionModeContextInput {
-  workMode?: string | null;
-  harnessKind?: string | null;
-  originKind?: string | null;
   taskExecutionPolicy?: unknown;
 }
 
-function impliesLowTrust(value: unknown, depth = 0): boolean {
-  if (depth > 3) return false;
+function impliesLowTrust(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  if (record.trustPreset === "low_trust_review") return true;
-  if (
-    record.reviewPreset &&
-    typeof record.reviewPreset === "object" &&
-    !Array.isArray(record.reviewPreset) &&
-    (record.reviewPreset as Record<string, unknown>).id ===
-      "low_trust_review"
-  ) {
-    return true;
-  }
-  if (
-    record.trustBoundary &&
-    typeof record.trustBoundary === "object" &&
-    !Array.isArray(record.trustBoundary)
-  ) {
-    return true;
-  }
-  return impliesLowTrust(record.authorizationPolicy, depth + 1);
+  return lowTrustReviewPresetPolicySchema.safeParse(record.reviewPreset).success;
 }
 
 /**
@@ -50,11 +30,7 @@ function impliesLowTrust(value: unknown, depth = 0): boolean {
 export function resolveExecutionModeContextMask(
   input: ExecutionModeContextInput,
 ): ContextAttenuationMask | null {
-  if (
-    input.workMode === "skill_test" ||
-    input.harnessKind === "skill_test" ||
-    impliesLowTrust(input.taskExecutionPolicy)
-  ) {
+  if (impliesLowTrust(input.taskExecutionPolicy)) {
     return DENY_ALL_EXECUTION_CONTEXT_MASK;
   }
   return null;

@@ -22,8 +22,8 @@ const RUN_TOOLS_INSTRUCTIONS =
   "Paperclip-managed tools exposed by this server are already available in your tool catalog; invoke them directly without a separate discovery step. Use them for Paperclip company, task, project, and agent state or mutations, and never substitute repository, catalog, or configuration-file edits for Paperclip actions.";
 
 function bearer(req: Request): string {
-  const authorization = req.header("authorization")?.trim() ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(authorization);
+  const authorization = req.header("authorization") ?? "";
+  const match = /^Bearer ([^\s]+)$/i.exec(authorization);
   if (!match?.[1]) {
     throw new PromptCapabilityAuthenticationError(
       "paperclip.run-tools/v1 requires its prompt-capability bearer",
@@ -72,10 +72,7 @@ function callParams(value: unknown): {
     if (
       progressToken !== undefined &&
       typeof progressToken !== "string" &&
-      (
-        typeof progressToken !== "number" ||
-        !Number.isFinite(progressToken)
-      )
+      (typeof progressToken !== "number" || !Number.isFinite(progressToken))
     ) {
       throw new Error("Invalid tools/call progress token");
     }
@@ -89,7 +86,7 @@ function callParams(value: unknown): {
 }
 
 function ingressOrdinal(req: Request): number {
-  const raw = req.header(RUN_TOOLS_INGRESS_ORDINAL_HEADER)?.trim();
+  const raw = req.header(RUN_TOOLS_INGRESS_ORDINAL_HEADER);
   if (!raw || !/^(?:0|[1-9][0-9]*)$/.test(raw)) {
     throw new Error(
       "tools/call requires its private nonnegative ingress ordinal",
@@ -113,11 +110,8 @@ async function registerTerminalInvalidToolsCall(input: {
 }): Promise<void> {
   const params = isRecord(input.body.params) ? input.body.params : null;
   const callIdentity =
-    Object.prototype.hasOwnProperty.call(input.body, "id")
-    && (
-      typeof input.body.id === "string"
-      || typeof input.body.id === "number"
-    )
+    Object.prototype.hasOwnProperty.call(input.body, "id") &&
+    (typeof input.body.id === "string" || typeof input.body.id === "number")
       ? { source: "jsonrpc" as const, id: input.body.id }
       : null;
   await input.gateway.registerTerminalInvalidToolCall({
@@ -153,7 +147,7 @@ function jsonRpcError(
 }
 
 function text(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value) ?? "null";
+  return typeof value === "string" ? value : (JSON.stringify(value) ?? "null");
 }
 
 function structuredContent(value: unknown): Record<string, unknown> | null {
@@ -188,7 +182,7 @@ function mcpToolResult(result: PromptCapabilityToolExecutionResult) {
  * session-creation, generic API, profile, or alternate capability fallback.
  */
 export function runToolsRoutes(gateway: PromptCapabilityGateway) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
 
   router.post("/run-tools", async (req, res) => {
     let body: JsonRpcRequest;
@@ -198,17 +192,11 @@ export function runToolsRoutes(gateway: PromptCapabilityGateway) {
           ? req.body
           : null;
       const rawCallBearer = rawToolsCall ? bearer(req) : null;
-      const rawCallIngressOrdinal = rawToolsCall
-        ? ingressOrdinal(req)
-        : null;
+      const rawCallIngressOrdinal = rawToolsCall ? ingressOrdinal(req) : null;
       try {
         body = requestBody(req.body);
       } catch (error) {
-        if (
-          rawToolsCall
-          && rawCallBearer
-          && rawCallIngressOrdinal !== null
-        ) {
+        if (rawToolsCall && rawCallBearer && rawCallIngressOrdinal !== null) {
           await registerTerminalInvalidToolsCall({
             gateway,
             bearer: rawCallBearer,
@@ -258,16 +246,14 @@ export function runToolsRoutes(gateway: PromptCapabilityGateway) {
 
       const ordinal = rawCallIngressOrdinal!;
       const callIdentity =
-        Object.prototype.hasOwnProperty.call(body, "id")
-        && (typeof body.id === "string" || typeof body.id === "number")
+        Object.prototype.hasOwnProperty.call(body, "id") &&
+        (typeof body.id === "string" || typeof body.id === "number")
           ? { source: "jsonrpc" as const, id: body.id }
           : null;
       let params: ReturnType<typeof callParams>;
       try {
         if (!callIdentity) {
-          throw new Error(
-            "tools/call requires a string or number JSON-RPC id",
-          );
+          throw new Error("tools/call requires a string or number JSON-RPC id");
         }
         params = callParams(body.params);
       } catch (error) {
@@ -317,13 +303,15 @@ export function runToolsRoutes(gateway: PromptCapabilityGateway) {
           .json(jsonRpcError(id, -32601, error.message, { code: error.code }));
         return;
       }
-      res.status(400).json(
-        jsonRpcError(
-          id,
-          -32600,
-          error instanceof Error ? error.message : "Invalid request",
-        ),
-      );
+      res
+        .status(400)
+        .json(
+          jsonRpcError(
+            id,
+            -32600,
+            error instanceof Error ? error.message : "Invalid request",
+          ),
+        );
     }
   });
 

@@ -7,34 +7,43 @@ import {
   pluginLogs,
   principalPermissionGrants,
 } from "@paperclipai/db";
-import { eq, and, desc, sql, isNull, isNotNull, gt, lte, or } from "drizzle-orm";
+import {
+  eq,
+  and,
+  desc,
+  sql,
+  isNull,
+  isNotNull,
+  gt,
+  lte,
+  or,
+} from "drizzle-orm";
 import type {
   HostServices,
   HostToWorkerMethods,
+  PluginAuthorizationAuditDecision,
   WorkerToHostMethods,
 } from "@paperclipai/plugin-sdk";
-import { normalizePluginScopeId } from "@paperclipai/plugin-sdk";
+import { requireExactPluginScopeId } from "@paperclipai/plugin-sdk";
 import {
-  isUuidLike,
-  type InviteJoinType,
+  isCanonicalUuid,
+  taskExecutionPolicySchema,
+  trustAuthorizationPolicySchema,
   type PermissionKey,
   type PrincipalType,
 } from "@paperclipai/shared";
 import { companyService } from "./companies.js";
-import {
-  agentService,
-  type AgentSuspensionService,
-} from "./agents.js";
+import { agentService, type AgentSuspensionService } from "./agents.js";
 import { projectService, toPublicProject } from "./projects.js";
 import { taskService } from "./tasks.js";
 import { goalService } from "./goals.js";
 import { createCompanyInvite } from "./company-invite-creation.js";
+import { resolveUserInviteRole } from "./company-member-roles.js";
 import { pluginRegistryService } from "./plugin-registry.js";
 import { pluginStateStore } from "./plugin-state-store.js";
 import { pluginDatabaseService } from "./plugin-database.js";
 import { pluginManagedAgentService } from "./plugin-managed-agents.js";
 import { pluginManagedRoutineService } from "./plugin-managed-routines.js";
-import { pluginManagedSkillService } from "./plugin-managed-skills.js";
 import {
   assertConfiguredLocalFolder,
   assertWritableConfiguredLocalFolder,
@@ -52,14 +61,20 @@ import {
 import { logActivity } from "./activity-log.js";
 import type { PluginEventBus } from "./plugin-event-bus.js";
 import { lookup as dnsLookup } from "node:dns/promises";
-import type { IncomingMessage, RequestOptions as HttpRequestOptions } from "node:http";
+import type {
+  IncomingMessage,
+  RequestOptions as HttpRequestOptions,
+} from "node:http";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { logger } from "../middleware/logger.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { accessService } from "./access.js";
-import { authorizationService, type AuthorizationActor } from "./authorization.js";
+import {
+  authorizationService,
+  type AuthorizationActor,
+} from "./authorization.js";
 import { sanitizeRecord } from "../redaction.js";
 import {
   assertPluginInstallationRequestScope,
@@ -96,7 +111,9 @@ function isPrivateIP(ip: string): boolean {
   const lower = ip.toLowerCase();
 
   // Unwrap IPv4-mapped IPv6 addresses (::ffff:x.x.x.x) and re-check as IPv4
-  const v4MappedMatch = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  const v4MappedMatch = lower.match(
+    /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/,
+  );
   if (v4MappedMatch && v4MappedMatch[1]) return isPrivateIP(v4MappedMatch[1]);
 
   // IPv4 patterns
@@ -106,14 +123,14 @@ function isPrivateIP(ip: string): boolean {
     if (second >= 16 && second <= 31) return true;
   }
   if (ip.startsWith("192.168.")) return true;
-  if (ip.startsWith("127.")) return true;                   // loopback
-  if (ip.startsWith("169.254.")) return true;               // link-local
+  if (ip.startsWith("127.")) return true; // loopback
+  if (ip.startsWith("169.254.")) return true; // link-local
   if (ip === "0.0.0.0") return true;
 
   // IPv6 patterns
-  if (lower === "::1") return true;                          // loopback
+  if (lower === "::1") return true; // loopback
   if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA
-  if (lower.startsWith("fe80")) return true;                 // link-local
+  if (lower.startsWith("fe80")) return true; // link-local
   if (lower === "::") return true;
 
   return false;
@@ -171,7 +188,12 @@ async function validateAndResolveFetchUrl(
   const dnsPromise = dnsLookup(originalHostname, { all: true });
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(
-      () => reject(new Error(`DNS lookup timed out after ${DNS_LOOKUP_TIMEOUT_MS}ms for ${originalHostname}`)),
+      () =>
+        reject(
+          new Error(
+            `DNS lookup timed out after ${DNS_LOOKUP_TIMEOUT_MS}ms for ${originalHostname}`,
+          ),
+        ),
       DNS_LOOKUP_TIMEOUT_MS,
     );
   });
@@ -179,7 +201,9 @@ async function validateAndResolveFetchUrl(
   try {
     const results = await Promise.race([dnsPromise, timeoutPromise]);
     if (results.length === 0) {
-      throw new Error(`DNS resolution returned no results for ${originalHostname}`);
+      throw new Error(
+        `DNS resolution returned no results for ${originalHostname}`,
+      );
     }
 
     // Filter to only non-private IPs instead of rejecting the entire request
@@ -199,43 +223,57 @@ async function validateAndResolveFetchUrl(
       parsedUrl: parsed,
       resolvedAddress: resolved.address,
       hostHeader,
-      tlsServername: parsed.protocol === "https:" && isIP(originalHostname) === 0
-        ? originalHostname
-        : undefined,
+      tlsServername:
+        parsed.protocol === "https:" && isIP(originalHostname) === 0
+          ? originalHostname
+          : undefined,
       useTls: parsed.protocol === "https:",
     };
   } catch (err) {
     // Re-throw our own errors; wrap DNS failures
-    if (err instanceof Error && (
-      err.message.startsWith("All resolved IPs") ||
-      err.message.startsWith("DNS resolution returned") ||
-      err.message.startsWith("DNS lookup timed out")
-    )) throw err;
-    throw new Error(`DNS resolution failed for ${originalHostname}: ${(err as Error).message}`);
+    if (
+      err instanceof Error &&
+      (err.message.startsWith("All resolved IPs") ||
+        err.message.startsWith("DNS resolution returned") ||
+        err.message.startsWith("DNS lookup timed out"))
+    )
+      throw err;
+    throw new Error(
+      `DNS resolution failed for ${originalHostname}: ${(err as Error).message}`,
+    );
   }
 }
 
 function buildPinnedRequestOptions(
   target: ValidatedFetchTarget,
   init?: RequestInit,
-): { options: HttpRequestOptions & { servername?: string }; body: string | undefined } {
+): {
+  options: HttpRequestOptions & { servername?: string };
+  body: string | undefined;
+} {
   const headers = new Headers(init?.headers);
   const method = init?.method ?? "GET";
-  const body = init?.body === undefined || init?.body === null
-    ? undefined
-    : typeof init.body === "string"
-      ? init.body
-      : String(init.body);
+  const body =
+    init?.body === undefined || init?.body === null
+      ? undefined
+      : typeof init.body === "string"
+        ? init.body
+        : String(init.body);
 
   headers.set("Host", target.hostHeader);
-  if (body !== undefined && !headers.has("content-length") && !headers.has("transfer-encoding")) {
+  if (
+    body !== undefined &&
+    !headers.has("content-length") &&
+    !headers.has("transfer-encoding")
+  ) {
     headers.set("content-length", String(Buffer.byteLength(body)));
   }
 
   const pathname = `${target.parsedUrl.pathname}${target.parsedUrl.search}`;
-  const auth = target.parsedUrl.username || target.parsedUrl.password
-    ? `${decodeURIComponent(target.parsedUrl.username)}:${decodeURIComponent(target.parsedUrl.password)}`
-    : undefined;
+  const auth =
+    target.parsedUrl.username || target.parsedUrl.password
+      ? `${decodeURIComponent(target.parsedUrl.username)}:${decodeURIComponent(target.parsedUrl.password)}`
+      : undefined;
 
   return {
     options: {
@@ -260,7 +298,12 @@ async function executePinnedHttpRequest(
   target: ValidatedFetchTarget,
   init: RequestInit | undefined,
   signal: AbortSignal,
-): Promise<{ status: number; statusText: string; headers: Record<string, string>; body: string }> {
+): Promise<{
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+}> {
   const { options, body } = buildPinnedRequestOptions(target, init);
 
   const response = await new Promise<IncomingMessage>((resolve, reject) => {
@@ -277,8 +320,8 @@ async function executePinnedHttpRequest(
 
   const declaredLength = Number(response.headers["content-length"]);
   if (
-    Number.isFinite(declaredLength)
-    && declaredLength > PLUGIN_FETCH_MAX_RESPONSE_BYTES
+    Number.isFinite(declaredLength) &&
+    declaredLength > PLUGIN_FETCH_MAX_RESPONSE_BYTES
   ) {
     response.destroy();
     throw new Error(
@@ -294,9 +337,11 @@ async function executePinnedHttpRequest(
       totalBytes += buf.length;
       if (totalBytes > PLUGIN_FETCH_MAX_RESPONSE_BYTES) {
         chunks.length = 0;
-        response.destroy(new Error(
-          `Response body exceeded ${PLUGIN_FETCH_MAX_RESPONSE_BYTES} bytes`,
-        ));
+        response.destroy(
+          new Error(
+            `Response body exceeded ${PLUGIN_FETCH_MAX_RESPONSE_BYTES} bytes`,
+          ),
+        );
         return;
       }
       chunks.push(buf);
@@ -331,6 +376,75 @@ const MAX_LOG_META_JSON_LENGTH = 50_000;
 /** Max length for a metric name. */
 const MAX_METRIC_NAME_LENGTH = 500;
 
+/** Canonical bounds for plugin list and audit offset windows. */
+const PLUGIN_LIST_LIMIT_MAX = 100;
+const PLUGIN_LIST_OFFSET_MAX = Number.MAX_SAFE_INTEGER - PLUGIN_LIST_LIMIT_MAX;
+
+type ExactPluginListWindow<TLimit extends number | null = number | null> = {
+  limit: TLimit;
+  offset: number;
+};
+
+function requireExactWindowInteger(
+  value: unknown,
+  field: "limit" | "offset",
+  minimum: number,
+  maximum: number,
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < minimum ||
+    value > maximum
+  ) {
+    throw new Error(
+      `${field} must be an exact integer between ${minimum} and ${maximum}`,
+    );
+  }
+  return value;
+}
+
+function readExactPluginListWindow<TDefaultLimit extends number | null>(
+  params: unknown,
+  defaultLimit: TDefaultLimit,
+): ExactPluginListWindow<number | TDefaultLimit> {
+  if (
+    params !== undefined &&
+    (typeof params !== "object" || params === null || Array.isArray(params))
+  ) {
+    throw new Error("Plugin list parameters must be an exact object");
+  }
+  const input = (params ?? {}) as Record<string, unknown>;
+  return {
+    limit:
+      input.limit === undefined
+        ? defaultLimit
+        : requireExactWindowInteger(
+            input.limit,
+            "limit",
+            1,
+            PLUGIN_LIST_LIMIT_MAX,
+          ),
+    offset:
+      input.offset === undefined
+        ? 0
+        : requireExactWindowInteger(
+            input.offset,
+            "offset",
+            0,
+            PLUGIN_LIST_OFFSET_MAX,
+          ),
+  };
+}
+
+function requireExactAuthorizationAuditDecision(
+  value: unknown,
+): PluginAuthorizationAuditDecision | null {
+  if (value === undefined) return null;
+  if (value === "allow" || value === "deny") return value;
+  throw new Error('decision must be exactly "allow" or "deny"');
+}
+
 /** Pino reserved field names that plugins must not overwrite. */
 const PINO_RESERVED_KEYS = new Set([
   "level",
@@ -348,7 +462,9 @@ function truncStr(s: string, max: number): string {
 }
 
 /** Sanitise a plugin-supplied meta object: enforce size limit and strip reserved keys. */
-function sanitiseMeta(meta: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+function sanitiseMeta(
+  meta: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
   if (meta == null) return null;
   // Strip pino reserved keys
   const cleaned: Record<string, unknown> = {};
@@ -365,7 +481,10 @@ function sanitiseMeta(meta: Record<string, unknown> | null | undefined): Record<
     return { _sanitised: true, _error: "meta was not JSON-serialisable" };
   }
   if (json.length > MAX_LOG_META_JSON_LENGTH) {
-    return { _sanitised: true, _error: `meta exceeded ${MAX_LOG_META_JSON_LENGTH} chars` };
+    return {
+      _sanitised: true,
+      _error: `meta exceeded ${MAX_LOG_META_JSON_LENGTH} chars`,
+    };
   }
   return cleaned;
 }
@@ -398,63 +517,64 @@ type PluginTaskMutationContext = PluginTaskInstallationContext & {
  */
 export interface PluginTaskControlPlane {
   list(
-    params: WorkerToHostMethods["tasks.list"][0] & PluginTaskInstallationContext,
+    params: WorkerToHostMethods["tasks.list"][0] &
+      PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["tasks.list"][1]>;
   get(
     params: WorkerToHostMethods["tasks.get"][0] & PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["tasks.get"][1]>;
   create(
-    params: WorkerToHostMethods["tasks.create"][0]
-      & PluginTaskMutationContext
-      & { callbackRegistrationActive: true },
+    params: WorkerToHostMethods["tasks.create"][0] &
+      PluginTaskMutationContext & { callbackRegistrationActive: true },
   ): Promise<WorkerToHostMethods["tasks.create"][1]>;
   update(
     params: WorkerToHostMethods["tasks.update"][0] & PluginTaskMutationContext,
   ): Promise<WorkerToHostMethods["tasks.update"][1]>;
   withdraw(
-    params: WorkerToHostMethods["tasks.withdraw"][0] & PluginTaskMutationContext,
+    params: WorkerToHostMethods["tasks.withdraw"][0] &
+      PluginTaskMutationContext,
   ): Promise<WorkerToHostMethods["tasks.withdraw"][1]>;
 }
 
 export interface PluginRunTaskContextReader {
   resolveContext(
-    params: WorkerToHostMethods["run.context.resolve"][0]
-      & PluginTaskInstallationContext,
+    params: WorkerToHostMethods["run.context.resolve"][0] &
+      PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["run.context.resolve"][1]>;
   taskReach(
-    params: WorkerToHostMethods["run.context.taskReach"][0]
-      & PluginTaskInstallationContext,
+    params: WorkerToHostMethods["run.context.taskReach"][0] &
+      PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["run.context.taskReach"][1]>;
   listCompanyTasks(
-    params: WorkerToHostMethods["run.tasks.listCompanyTasks"][0]
-      & PluginTaskInstallationContext,
+    params: WorkerToHostMethods["run.tasks.listCompanyTasks"][0] &
+      PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["run.tasks.listCompanyTasks"][1]>;
   listSubTasks(
-    params: WorkerToHostMethods["run.tasks.listSubTasks"][0]
-      & PluginTaskInstallationContext,
+    params: WorkerToHostMethods["run.tasks.listSubTasks"][0] &
+      PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["run.tasks.listSubTasks"][1]>;
   readTaskComments(
-    params: WorkerToHostMethods["run.tasks.readTaskComments"][0]
-      & PluginTaskInstallationContext,
+    params: WorkerToHostMethods["run.tasks.readTaskComments"][0] &
+      PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["run.tasks.readTaskComments"][1]>;
   readTaskAgentRun(
-    params: WorkerToHostMethods["run.tasks.readTaskAgentRun"][0]
-      & PluginTaskInstallationContext,
+    params: WorkerToHostMethods["run.tasks.readTaskAgentRun"][0] &
+      PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["run.tasks.readTaskAgentRun"][1]>;
 }
 
 export interface PluginRuntimeRecordsReader {
   readSession(
-    params: WorkerToHostMethods["runtime.records.readSession"][0]
-      & PluginTaskInstallationContext,
+    params: WorkerToHostMethods["runtime.records.readSession"][0] &
+      PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["runtime.records.readSession"][1]>;
   readRun(
-    params: WorkerToHostMethods["runtime.records.readRun"][0]
-      & PluginTaskInstallationContext,
+    params: WorkerToHostMethods["runtime.records.readRun"][0] &
+      PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["runtime.records.readRun"][1]>;
   readTaskComments(
-    params: WorkerToHostMethods["runtime.records.readTaskComments"][0]
-      & PluginTaskInstallationContext,
+    params: WorkerToHostMethods["runtime.records.readTaskComments"][0] &
+      PluginTaskInstallationContext,
   ): Promise<WorkerToHostMethods["runtime.records.readTaskComments"][1]>;
 }
 
@@ -464,6 +584,7 @@ export interface PluginHostServicesOptions {
   pluginRunTaskContextReader: PluginRunTaskContextReader;
   pluginRuntimeRecordsReader: PluginRuntimeRecordsReader;
   ordinaryTasks: OrdinaryTaskRuntime;
+  secretsRuntime: import("../secrets/types.js").SecretsRuntimeConfig;
   taskExecutionCancellation: AgentSuspensionService;
 }
 
@@ -474,7 +595,13 @@ export function buildHostServices(
   deliverEvent: (params: HostToWorkerMethods["onEvent"][0]) => Promise<void>,
   options: PluginHostServicesOptions,
 ): HostServices & { dispose(): Promise<void> } {
+  if (!isCanonicalUuid(pluginId)) {
+    throw new Error("pluginId must be an exact canonical UUID");
+  }
   const pluginKey = options.manifest.id;
+  if (pluginKey.length === 0 || pluginKey !== pluginKey.trim()) {
+    throw new Error("pluginKey must be an exact non-empty string");
+  }
   const registry = pluginRegistryService(db);
   const stateStore = pluginStateStore(db);
   const pluginDb = pluginDatabaseService(db);
@@ -488,10 +615,7 @@ export function buildHostServices(
     pluginId,
     manifest: options.manifest,
     ordinaryTasks: options.ordinaryTasks,
-  });
-  const managedSkills = pluginManagedSkillService(db, {
-    pluginId,
-    manifest: options.manifest,
+    secretsRuntime: options.secretsRuntime,
   });
   const registeredCreatorCallbacks = new Set<string>();
   const projects = projectService(db);
@@ -518,39 +642,38 @@ export function buildHostServices(
     updatedAt: entity.updatedAt.toISOString(),
   });
 
-  const ensureCompanyId = (companyId?: string) => {
-    if (!companyId) throw new Error("companyId is required for this operation");
+  const ensureCompanyId = (companyId?: string | null) => {
+    if (!isCanonicalUuid(companyId)) {
+      throw new Error("companyId must be an exact canonical UUID");
+    }
     return companyId;
   };
 
-  const parseWindowValue = (value: unknown): number | null => {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return Math.max(0, Math.floor(value));
-    }
-    if (typeof value === "string" && value.trim().length > 0) {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) {
-        return Math.max(0, Math.floor(parsed));
-      }
-    }
-    return null;
+  const applyWindow = <T>(rows: T[], window: ExactPluginListWindow): T[] => {
+    if (window.limit === null) return rows.slice(window.offset);
+    return rows.slice(window.offset, window.offset + window.limit);
   };
 
-  const applyWindow = <T>(rows: T[], params?: { limit?: unknown; offset?: unknown }): T[] => {
-    const offset = parseWindowValue(params?.offset) ?? 0;
-    const limit = parseWindowValue(params?.limit);
-    if (limit == null) return rows.slice(offset);
-    return rows.slice(offset, offset + limit);
-  };
-
-  const authorizationAuditDecisionCondition = (decisionFilter: string) => {
+  const authorizationAuditDecisionCondition = (
+    decisionFilter: PluginAuthorizationAuditDecision,
+  ) => {
     const conditions = [
-      sql`lower(${activityLog.details}->>'decision') = ${decisionFilter}`,
-      decisionFilter === "allow" ? sql`left(coalesce(${activityLog.details}->>'reason', ''), 6) = 'allow_'` : undefined,
-      decisionFilter === "deny" ? sql`left(coalesce(${activityLog.details}->>'reason', ''), 5) = 'deny_'` : undefined,
-      decisionFilter === "allow" ? sql`${activityLog.details}->>'allowed' = 'true'` : undefined,
-      decisionFilter === "deny" ? sql`${activityLog.details}->>'allowed' = 'false'` : undefined,
-    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+      sql`${activityLog.details}->>'decision' = ${decisionFilter}`,
+      decisionFilter === "allow"
+        ? sql`left(coalesce(${activityLog.details}->>'reason', ''), 6) = 'allow_'`
+        : undefined,
+      decisionFilter === "deny"
+        ? sql`left(coalesce(${activityLog.details}->>'reason', ''), 5) = 'deny_'`
+        : undefined,
+      decisionFilter === "allow"
+        ? sql`${activityLog.details}->>'allowed' = 'true'`
+        : undefined,
+      decisionFilter === "deny"
+        ? sql`${activityLog.details}->>'allowed' = 'false'`
+        : undefined,
+    ].filter((condition): condition is NonNullable<typeof condition> =>
+      Boolean(condition),
+    );
     return sql`(${sql.join(conditions, sql` OR `)})`;
   };
 
@@ -567,7 +690,7 @@ export function buildHostServices(
   ) => {
     if (event.companyId) {
       try {
-        await ensurePluginAvailableForCompany(event.companyId);
+        await ensurePluginAvailableForCompany(ensureCompanyId(event.companyId));
       } catch (error) {
         if (error instanceof PluginTaskAuthorizationRejected) return;
         throw error;
@@ -577,19 +700,31 @@ export function buildHostServices(
   };
 
   const getLocalFolderDeclaration = (folderKey: string) =>
-    requireLocalFolderDeclaration(options.manifest.localFolders ?? [], folderKey);
+    requireLocalFolderDeclaration(
+      options.manifest.localFolders ?? [],
+      folderKey,
+    );
 
-  const getStoredLocalFolderConfig = async (companyId: string, folderKey: string) => {
+  const getStoredLocalFolderConfig = async (
+    companyId: string,
+    folderKey: string,
+  ) => {
     ensureCompanyId(companyId);
     await ensurePluginAvailableForCompany(companyId);
     const settings = await registry.getCompanySettings(pluginId, companyId);
     return getStoredLocalFolders(settings?.settingsJson)[folderKey] ?? null;
   };
 
-  const inspectStoredLocalFolder = async (companyId: string, folderKey: string) => {
+  const inspectStoredLocalFolder = async (
+    companyId: string,
+    folderKey: string,
+  ) => {
     const declaration = getLocalFolderDeclaration(folderKey);
     const stored = await getStoredLocalFolderConfig(companyId, folderKey);
-    return inspectPluginLocalFolder({ declaration, path: stored?.path ?? null });
+    return inspectPluginLocalFolder({
+      declaration,
+      path: stored?.path ?? null,
+    });
   };
 
   const inCompany = <T extends { companyId: string | null | undefined }>(
@@ -610,9 +745,17 @@ export function buildHostServices(
 
   const pluginActivityDetails = (
     details: Record<string, unknown> | null | undefined,
-    actor?: { actorAgentId?: string | null; actorUserId?: string | null; actorRunId?: string | null },
+    actor?: {
+      actorAgentId?: string | null;
+      actorUserId?: string | null;
+      actorRunId?: string | null;
+    },
   ) => {
-    const initiatingActorType = actor?.actorAgentId ? "agent" : actor?.actorUserId ? "user" : null;
+    const initiatingActorType = actor?.actorAgentId
+      ? "agent"
+      : actor?.actorUserId
+        ? "user"
+        : null;
     const initiatingActorId = actor?.actorAgentId ?? actor?.actorUserId ?? null;
     return {
       ...(details ?? {}),
@@ -632,7 +775,11 @@ export function buildHostServices(
     entityType: string;
     entityId: string;
     details?: Record<string, unknown> | null;
-    actor?: { actorAgentId?: string | null; actorUserId?: string | null; actorRunId?: string | null };
+    actor?: {
+      actorAgentId?: string | null;
+      actorUserId?: string | null;
+      actorRunId?: string | null;
+    };
   }) => {
     await logActivity(db, {
       companyId: input.companyId,
@@ -655,13 +802,18 @@ export function buildHostServices(
   };
 
   const redactInvite = (invite: typeof invites.$inferSelect) => {
+    if (invite.source === "bootstrap_admin_cli") {
+      throw new Error("Bootstrap invites are outside company plugin scope");
+    }
     const { tokenHash: _tokenHash, defaultsPayload, ...safeInvite } = invite;
     return {
       ...safeInvite,
-      allowedJoinTypes: safeInvite.allowedJoinTypes as InviteJoinType,
-      defaultsPayload: defaultsPayload && typeof defaultsPayload === "object"
-        ? sanitizeRecord(defaultsPayload)
-        : defaultsPayload ?? null,
+      companyId: ensureCompanyId(invite.companyId),
+      inviteType: "company_join" as const,
+      source: invite.source,
+      userRole: resolveUserInviteRole(
+        defaultsPayload as Record<string, unknown> | null,
+      ),
       state: inviteState(invite),
     };
   };
@@ -670,11 +822,19 @@ export function buildHostServices(
     const now = new Date();
     switch (state) {
       case "active":
-        return and(isNull(invites.revokedAt), isNull(invites.acceptedAt), gt(invites.expiresAt, now));
+        return and(
+          isNull(invites.revokedAt),
+          isNull(invites.acceptedAt),
+          gt(invites.expiresAt, now),
+        );
       case "accepted":
         return isNotNull(invites.acceptedAt);
       case "expired":
-        return and(isNull(invites.revokedAt), isNull(invites.acceptedAt), lte(invites.expiresAt, now));
+        return and(
+          isNull(invites.revokedAt),
+          isNull(invites.acceptedAt),
+          lte(invites.expiresAt, now),
+        );
       case "revoked":
         return isNotNull(invites.revokedAt);
       default:
@@ -683,17 +843,23 @@ export function buildHostServices(
   };
 
   type StoredGrant = typeof principalPermissionGrants.$inferSelect;
-  type PublicGrant = Omit<StoredGrant, "principalUserId" | "principalAgentId"> & {
+  type PublicGrant = Omit<
+    StoredGrant,
+    "principalUserId" | "principalAgentId"
+  > & {
     principalId: string;
   };
   const redactGrant = (grant: StoredGrant | PublicGrant) => {
-    const principalId = "principalId" in grant
-      ? grant.principalId
-      : grant.principalType === "user"
-        ? grant.principalUserId
-        : grant.principalAgentId;
+    const principalId =
+      "principalId" in grant
+        ? grant.principalId
+        : grant.principalType === "user"
+          ? grant.principalUserId
+          : grant.principalAgentId;
     if (!principalId) {
-      throw new Error(`Invalid ${grant.principalType} permission grant ${grant.id}`);
+      throw new Error(
+        `Invalid ${grant.principalType} permission grant ${grant.id}`,
+      );
     }
     const {
       principalUserId: _principalUserId,
@@ -705,9 +871,10 @@ export function buildHostServices(
       principalId,
       principalType: grant.principalType as PrincipalType,
       permissionKey: grant.permissionKey as PermissionKey,
-      scope: grant.scope && typeof grant.scope === "object"
-        ? sanitizeRecord(grant.scope)
-        : grant.scope ?? null,
+      scope:
+        grant.scope && typeof grant.scope === "object"
+          ? sanitizeRecord(grant.scope)
+          : (grant.scope ?? null),
     };
   };
 
@@ -729,8 +896,7 @@ export function buildHostServices(
 
   const resolvePluginTargetManagementSubject = async (
     subject:
-      | { type: "user"; userId: string }
-      | { type: "agent"; agentId: string },
+      { type: "user"; userId: string } | { type: "agent"; agentId: string },
   ): Promise<AuthorizationActor> => {
     if (subject.type === "agent") {
       const persistedAgent = await agents.getById(subject.agentId);
@@ -758,7 +924,9 @@ export function buildHostServices(
     };
   };
 
-  const policyPathForResource = (resourceType: "company" | "agent" | "task") => {
+  const policyPathForResource = (
+    resourceType: "company" | "agent" | "task",
+  ) => {
     switch (resourceType) {
       case "agent":
         return { table: "agent" as const };
@@ -769,7 +937,11 @@ export function buildHostServices(
     }
   };
 
-  const readAuthorizationPolicy = async (companyId: string, resourceType: "company" | "agent" | "task", resourceId: string) => {
+  const readAuthorizationPolicy = async (
+    companyId: string,
+    resourceType: "company" | "agent" | "task",
+    resourceId: string,
+  ) => {
     const pathInfo = policyPathForResource(resourceType);
     if (pathInfo.table === "agent") {
       const agent = await agents.getById(resourceId);
@@ -785,20 +957,31 @@ export function buildHostServices(
     if (pathInfo.table === "task") {
       const task = await tasks.getById(resourceId);
       if (!inCompany(task, companyId)) return null;
-      const policy = task.executionPolicy && typeof task.executionPolicy === "object"
-        ? (task.executionPolicy as Record<string, unknown>).authorizationPolicy
-        : null;
+      const policy =
+        task.executionPolicy && typeof task.executionPolicy === "object"
+          ? (task.executionPolicy as Record<string, unknown>)
+              .authorizationPolicy
+          : null;
       return {
         resourceType,
         resourceId,
         companyId,
-        policy: policy && typeof policy === "object" ? sanitizeRecord(policy as Record<string, unknown>) : null,
+        policy:
+          policy && typeof policy === "object"
+            ? sanitizeRecord(policy as Record<string, unknown>)
+            : null,
         updatedAt: task.updatedAt,
       };
     }
     const company = await companies.getById(resourceId);
     if (!company || company.id !== companyId) return null;
-    return { resourceType, resourceId, companyId, policy: null, updatedAt: company.updatedAt };
+    return {
+      resourceType,
+      resourceId,
+      companyId,
+      policy: null,
+      updatedAt: company.updatedAt,
+    };
   };
 
   return {
@@ -812,14 +995,20 @@ export function buildHostServices(
     localFolders: {
       async configure(params) {
         if (
-          typeof params !== "object"
-          || params === null
-          || Array.isArray(params)
-          || Object.keys(params).some((key) => key !== "companyId" && key !== "folderKey" && key !== "path")
-          || typeof params.path !== "string"
-          || params.path.trim().length === 0
+          typeof params !== "object" ||
+          params === null ||
+          Array.isArray(params) ||
+          Object.keys(params).some(
+            (key) =>
+              key !== "companyId" && key !== "folderKey" && key !== "path",
+          ) ||
+          typeof params.path !== "string" ||
+          params.path.length === 0 ||
+          params.path.trim() !== params.path
         ) {
-          throw badRequest("Local folder configuration accepts only companyId, folderKey, and a non-empty path");
+          throw badRequest(
+            "Local folder configuration accepts only companyId, folderKey, and a non-empty path",
+          );
         }
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
@@ -830,7 +1019,11 @@ export function buildHostServices(
           path: params.path,
         });
 
-        const nextSettings = setStoredLocalFolder(existing?.settingsJson, params.folderKey, params.path);
+        const nextSettings = setStoredLocalFolder(
+          existing?.settingsJson,
+          params.folderKey,
+          params.path,
+        );
         await registry.upsertCompanySettings(pluginId, companyId, {
           settingsJson: nextSettings,
         });
@@ -842,7 +1035,10 @@ export function buildHostServices(
       },
 
       async list(params) {
-        const status = await inspectStoredLocalFolder(params.companyId, params.folderKey);
+        const status = await inspectStoredLocalFolder(
+          params.companyId,
+          params.folderKey,
+        );
         assertConfiguredLocalFolder(status);
         const listing = await listPluginLocalFolderEntries(status.realPath!, {
           relativePath: params.relativePath,
@@ -853,7 +1049,10 @@ export function buildHostServices(
       },
 
       async readText(params) {
-        const status = await inspectStoredLocalFolder(params.companyId, params.folderKey);
+        const status = await inspectStoredLocalFolder(
+          params.companyId,
+          params.folderKey,
+        );
         assertConfiguredLocalFolder(status);
         return readPluginLocalFolderText(status.realPath!, params.relativePath);
       },
@@ -861,7 +1060,10 @@ export function buildHostServices(
       async writeTextAtomic(params) {
         const companyId = ensureCompanyId(params.companyId);
         const declaration = getLocalFolderDeclaration(params.folderKey);
-        const stored = await getStoredLocalFolderConfig(companyId, params.folderKey);
+        const stored = await getStoredLocalFolderConfig(
+          companyId,
+          params.folderKey,
+        );
         if (stored) {
           await preparePluginLocalFolder({
             declaration,
@@ -873,41 +1075,63 @@ export function buildHostServices(
           path: stored?.path ?? null,
         });
         assertWritableConfiguredLocalFolder(status);
-        await writePluginLocalFolderTextAtomic(status.realPath!, params.relativePath, params.contents);
+        await writePluginLocalFolderTextAtomic(
+          status.realPath!,
+          params.relativePath,
+          params.contents,
+        );
         return inspectPluginLocalFolder({ declaration, path: stored!.path });
       },
 
       async deleteFile(params) {
         const companyId = ensureCompanyId(params.companyId);
         const declaration = getLocalFolderDeclaration(params.folderKey);
-        const stored = await getStoredLocalFolderConfig(companyId, params.folderKey);
+        const stored = await getStoredLocalFolderConfig(
+          companyId,
+          params.folderKey,
+        );
         const status = await inspectPluginLocalFolder({
           declaration,
           path: stored?.path ?? null,
         });
         assertWritableConfiguredLocalFolder(status);
-        await deletePluginLocalFolderFile(status.realPath!, params.relativePath);
+        await deletePluginLocalFolderFile(
+          status.realPath!,
+          params.relativePath,
+        );
         return inspectPluginLocalFolder({ declaration, path: stored!.path });
       },
     },
 
     state: {
       async get(params) {
-        const scopeId = normalizePluginScopeId(params.scopeKind, params.scopeId);
-        if (params.scopeKind === "company") await ensurePluginAvailableForCompany(scopeId!);
+        const scopeId = requireExactPluginScopeId(
+          params.scopeKind,
+          params.scopeId,
+        );
+        if (params.scopeKind === "company")
+          await ensurePluginAvailableForCompany(scopeId!);
         return stateStore.get(pluginId, params.scopeKind, params.stateKey, {
           scopeId: scopeId ?? undefined,
           namespace: params.namespace,
         });
       },
       async set(params) {
-        const scopeId = normalizePluginScopeId(params.scopeKind, params.scopeId);
-        if (params.scopeKind === "company") await ensurePluginAvailableForCompany(scopeId!);
+        const scopeId = requireExactPluginScopeId(
+          params.scopeKind,
+          params.scopeId,
+        );
+        if (params.scopeKind === "company")
+          await ensurePluginAvailableForCompany(scopeId!);
         await stateStore.set(pluginId, params);
       },
       async delete(params) {
-        const scopeId = normalizePluginScopeId(params.scopeKind, params.scopeId);
-        if (params.scopeKind === "company") await ensurePluginAvailableForCompany(scopeId!);
+        const scopeId = requireExactPluginScopeId(
+          params.scopeKind,
+          params.scopeId,
+        );
+        if (params.scopeKind === "company")
+          await ensurePluginAvailableForCompany(scopeId!);
         await stateStore.delete(pluginId, params.scopeKind, params.stateKey, {
           scopeId: scopeId ?? undefined,
           namespace: params.namespace,
@@ -926,7 +1150,10 @@ export function buildHostServices(
 
     entities: {
       async upsert(params) {
-        const scopeId = normalizePluginScopeId(params.scopeKind, params.scopeId);
+        const scopeId = requireExactPluginScopeId(
+          params.scopeKind,
+          params.scopeId,
+        );
         const companyId = params.scopeKind === "company" ? scopeId : null;
         if (companyId) await ensurePluginAvailableForCompany(companyId);
         const entity = await registry.upsertEntity(pluginId, {
@@ -940,8 +1167,12 @@ export function buildHostServices(
           throw new Error("Plugin entity scopeId requires scopeKind");
         }
         if (params.scopeKind !== undefined) {
-          const scopeId = normalizePluginScopeId(params.scopeKind, params.scopeId);
-          if (params.scopeKind === "company") await ensurePluginAvailableForCompany(scopeId!);
+          const scopeId = requireExactPluginScopeId(
+            params.scopeKind,
+            params.scopeId,
+          );
+          if (params.scopeKind === "company")
+            await ensurePluginAvailableForCompany(scopeId!);
         }
         const entities = await registry.listEntities(pluginId, params);
         return entities.map(toPluginEntityRecord);
@@ -950,18 +1181,17 @@ export function buildHostServices(
 
     events: {
       async emit(params) {
-        if (params.companyId) {
-          await ensurePluginAvailableForCompany(params.companyId);
-        }
+        const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
         const { errors } = await scopedBus.emit(
           params.name,
-          params.companyId,
+          companyId,
           params.payload,
         );
-        for (const { pluginId: subscriberPluginId, error } of errors) {
+        for (const { pluginKey: subscriberPluginKey, error } of errors) {
           logger.warn(
             {
-              pluginId: subscriberPluginId,
+              pluginKey: subscriberPluginKey,
               sourcePluginId: pluginId,
               eventName: params.name,
               err: error,
@@ -988,16 +1218,24 @@ export function buildHostServices(
         // SSRF protection: validate protocol whitelist + block private IPs.
         // Resolve once, then connect directly to that IP to prevent DNS rebinding.
         const target = await validateAndResolveFetchUrl(params.url, {
-          allowPrivateNetwork:
-            options.manifest.capabilities.includes("http.private-network"),
+          allowPrivateNetwork: options.manifest.capabilities.includes(
+            "http.private-network",
+          ),
         });
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), PLUGIN_FETCH_TIMEOUT_MS);
+        const timeout = setTimeout(
+          () => controller.abort(),
+          PLUGIN_FETCH_TIMEOUT_MS,
+        );
 
         try {
           const init = params.init as RequestInit | undefined;
-          return await executePinnedHttpRequest(target, init, controller.signal);
+          return await executePinnedHttpRequest(
+            target,
+            init,
+            controller.signal,
+          );
         } finally {
           clearTimeout(timeout);
         }
@@ -1058,56 +1296,93 @@ export function buildHostServices(
 
     metrics: {
       async write(params) {
-        const safeName = truncStr(String(params.name ?? ""), MAX_METRIC_NAME_LENGTH);
-        logger.debug({ pluginId, name: safeName, value: params.value, tags: params.tags }, "Plugin metric write");
+        if (
+          params.name.length === 0 ||
+          params.name !== params.name.trim() ||
+          params.name.length > MAX_METRIC_NAME_LENGTH
+        ) {
+          throw new Error(
+            `Plugin metric names must be exact non-empty strings no longer than ${MAX_METRIC_NAME_LENGTH} characters`,
+          );
+        }
+        const companyId =
+          params.companyId == null ? null : ensureCompanyId(params.companyId);
+        logger.debug(
+          {
+            pluginId,
+            name: params.name,
+            value: params.value,
+            tags: params.tags,
+          },
+          "Plugin metric write",
+        );
 
         // The RPC acknowledgement follows the durable write. Using level
         // "metric" keeps metrics queryable through the same operator surface.
         await db.insert(pluginLogs).values({
           pluginId,
-          companyId: params.companyId ?? null,
+          companyId,
           level: "metric",
-          message: safeName,
-          meta: sanitiseMeta({ value: params.value, tags: params.tags ?? null }),
+          message: params.name,
+          meta: sanitiseMeta({
+            value: params.value,
+            tags: params.tags ?? null,
+          }),
         });
       },
     },
 
     telemetry: {
       async track(params) {
-        const eventName = String(params.eventName ?? "").trim();
-        if (!TELEMETRY_EVENT_NAME_REGEX.test(eventName)) {
+        if (
+          params.eventName !== params.eventName.trim() ||
+          !TELEMETRY_EVENT_NAME_REGEX.test(params.eventName)
+        ) {
           throw new Error(
             'Plugin telemetry event names must be lowercase slugs using letters, numbers, "_" or "-".',
           );
         }
         const telemetryClient = getTelemetryClient();
         if (!telemetryClient) return;
-        telemetryClient.trackDynamic(`plugin.${pluginKey}.${eventName}`, params.dimensions);
+        telemetryClient.trackDynamic(
+          `plugin.${pluginKey}.${params.eventName}`,
+          params.dimensions,
+        );
       },
     },
 
     logger: {
       async log(params) {
         const { level, meta } = params;
-        const safeMessage = truncStr(String(params.message ?? ""), MAX_LOG_MESSAGE_LENGTH);
+        const companyId =
+          params.companyId == null ? null : ensureCompanyId(params.companyId);
+        const safeMessage = truncStr(
+          String(params.message ?? ""),
+          MAX_LOG_MESSAGE_LENGTH,
+        );
         const safeMeta = sanitiseMeta(meta);
-        const pluginLogger = logger.child({ service: "plugin-worker", pluginId });
+        const pluginLogger = logger.child({
+          service: "plugin-worker",
+          pluginId,
+        });
         const logFields = {
           ...safeMeta,
           pluginLogLevel: level,
           pluginTimestamp: new Date().toISOString(),
         };
 
-        if (level === "error") pluginLogger.error(logFields, `[plugin] ${safeMessage}`);
-        else if (level === "warn") pluginLogger.warn(logFields, `[plugin] ${safeMessage}`);
-        else if (level === "debug") pluginLogger.debug(logFields, `[plugin] ${safeMessage}`);
+        if (level === "error")
+          pluginLogger.error(logFields, `[plugin] ${safeMessage}`);
+        else if (level === "warn")
+          pluginLogger.warn(logFields, `[plugin] ${safeMessage}`);
+        else if (level === "debug")
+          pluginLogger.debug(logFields, `[plugin] ${safeMessage}`);
         else pluginLogger.info(logFields, `[plugin] ${safeMessage}`);
 
         // A worker log request is acknowledged only after its row is durable.
         await db.insert(pluginLogs).values({
           pluginId,
-          companyId: params.companyId ?? null,
+          companyId,
           level,
           message: safeMessage,
           meta: safeMeta,
@@ -1117,21 +1392,26 @@ export function buildHostServices(
 
     companies: {
       async list(params) {
-        return applyWindow(await companies.list(), params);
+        const window = readExactPluginListWindow(params, null);
+        return applyWindow(await companies.list(), window);
       },
       async get(params) {
-        await ensurePluginAvailableForCompany(params.companyId);
-        return companies.getById(params.companyId);
+        const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
+        return companies.getById(companyId);
       },
     },
 
     projects: {
       async list(params) {
+        const window = readExactPluginListWindow(params, null);
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         return applyWindow(
-          (await projects.list(companyId)).map((project) => toPublicProject(project)),
-          params,
+          (await projects.list(companyId)).map((project) =>
+            toPublicProject(project),
+          ),
+          window,
         );
       },
       async get(params) {
@@ -1213,24 +1493,6 @@ export function buildHostServices(
       },
     },
 
-    skills: {
-      async managedGet(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        return managedSkills.get(params.skillKey, companyId);
-      },
-      async managedReconcile(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        return managedSkills.reconcile(params.skillKey, companyId);
-      },
-      async managedReset(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        return managedSkills.reset(params.skillKey, companyId);
-      },
-    },
-
     tasks: {
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
@@ -1253,12 +1515,20 @@ export function buildHostServices(
         });
       },
       async registerCreatorCallback(params) {
-        const callbackKey = params.callbackKey.trim();
-        const callbackVersion = params.callbackVersion.trim();
-        if (!callbackKey || !callbackVersion) {
-          throw new Error("Creator callback key and version are required");
+        const { callbackKey, callbackVersion } = params;
+        if (
+          callbackKey.length === 0 ||
+          callbackKey !== callbackKey.trim() ||
+          callbackVersion.length === 0 ||
+          callbackVersion !== callbackVersion.trim()
+        ) {
+          throw new Error(
+            "Creator callback key and version must be exact non-empty strings",
+          );
         }
-        registeredCreatorCallbacks.add(`${callbackKey}\u0000${callbackVersion}`);
+        registeredCreatorCallbacks.add(
+          `${callbackKey}\u0000${callbackVersion}`,
+        );
         return {
           callbackKey,
           callbackVersion,
@@ -1357,12 +1627,15 @@ export function buildHostServices(
 
     agents: {
       async list(params) {
+        const window = readExactPluginListWindow(params, null);
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const rows = await agents.list(companyId);
         return applyWindow(
-          rows.filter((agent) => !params.status || agent.status === params.status),
-          params,
+          rows.filter(
+            (agent) => !params.status || agent.status === params.status,
+          ),
+          window,
         );
       },
       async get(params) {
@@ -1411,15 +1684,17 @@ export function buildHostServices(
 
     goals: {
       async list(params) {
+        const window = readExactPluginListWindow(params, null);
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const rows = await goals.list(companyId);
         return applyWindow(
-          rows.filter((goal) =>
-            (!params.level || goal.level === params.level) &&
-            (!params.status || goal.status === params.status),
+          rows.filter(
+            (goal) =>
+              (!params.level || goal.level === params.level) &&
+              (!params.status || goal.status === params.status),
           ),
-          params,
+          window,
         );
       },
       async get(params) {
@@ -1455,18 +1730,23 @@ export function buildHostServices(
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const rows = await access.listMembers(companyId);
-        const visibleRows = params.includeArchived ? rows : rows.filter((row) => row.status !== "archived");
+        const visibleRows = params.includeArchived
+          ? rows
+          : rows.filter((row) => row.status !== "archived");
         const grants = await db
           .select()
           .from(principalPermissionGrants)
           .where(eq(principalPermissionGrants.companyId, companyId));
         const grantsByPrincipal = new Map<string, typeof grants>();
         for (const grant of grants) {
-          const principalId = grant.principalType === "user"
-            ? grant.principalUserId
-            : grant.principalAgentId;
+          const principalId =
+            grant.principalType === "user"
+              ? grant.principalUserId
+              : grant.principalAgentId;
           if (!principalId) {
-            throw new Error(`Invalid ${grant.principalType} permission grant ${grant.id}`);
+            throw new Error(
+              `Invalid ${grant.principalType} permission grant ${grant.id}`,
+            );
           }
           const key = `${grant.principalType}:${principalId}`;
           const existing = grantsByPrincipal.get(key) ?? [];
@@ -1476,8 +1756,13 @@ export function buildHostServices(
         return visibleRows.map((member) => ({
           ...member,
           principalType: member.principalType as PrincipalType,
-          status: member.status as "pending" | "active" | "suspended" | "archived",
-          grants: (grantsByPrincipal.get(`${member.principalType}:${member.principalId}`) ?? []).map(redactGrant),
+          status: member.status as
+            "pending" | "active" | "suspended" | "archived",
+          grants: (
+            grantsByPrincipal.get(
+              `${member.principalType}:${member.principalId}`,
+            ) ?? []
+          ).map(redactGrant),
         }));
       },
       async getMember(params) {
@@ -1488,7 +1773,11 @@ export function buildHostServices(
       async updateMember(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        const updated = await access.updateMember(companyId, params.memberId, params.patch);
+        const updated = await access.updateMember(
+          companyId,
+          params.memberId,
+          params.patch,
+        );
         if (!updated) throw new Error("Member not found");
         await logPluginActivity({
           companyId,
@@ -1504,13 +1793,16 @@ export function buildHostServices(
       async listInvites(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        const limit = Math.min(Math.max(Number(params.limit ?? 20), 1), 100);
-        const offset = Math.max(Number(params.offset ?? 0), 0);
+        const { limit, offset } = readExactPluginListWindow(params, 20);
         const stateClause = inviteStateWhereClause(params.state);
         const rows = await db
           .select()
           .from(invites)
-          .where(stateClause ? and(eq(invites.companyId, companyId), stateClause) : eq(invites.companyId, companyId))
+          .where(
+            stateClause
+              ? and(eq(invites.companyId, companyId), stateClause)
+              : eq(invites.companyId, companyId),
+          )
           .orderBy(desc(invites.createdAt))
           .limit(limit + 1)
           .offset(offset);
@@ -1523,24 +1815,18 @@ export function buildHostServices(
       async createInvite(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        const { token, invite: created, normalizedAgentMessage } =
-          await createCompanyInvite(db, {
-            companyId,
-            provenance: { source: "plugin_host" },
-            allowedJoinTypes: params.allowedJoinTypes,
-            humanRole: params.humanRole,
-            defaultsPayload: params.defaultsPayload,
-            agentMessage: params.agentMessage,
-          });
+        const { token, invite: created } = await createCompanyInvite(db, {
+          companyId,
+          provenance: { source: "plugin_host" },
+          userRole: params.userRole,
+        });
         await logPluginActivity({
           companyId,
           action: "invite.created_by_plugin",
           entityType: "invite",
           entityId: created.id,
           details: {
-            allowedJoinTypes: created.allowedJoinTypes,
             expiresAt: created.expiresAt.toISOString(),
-            hasAgentMessage: Boolean(normalizedAgentMessage),
           },
         });
         return { ...redactInvite(created), token };
@@ -1551,7 +1837,12 @@ export function buildHostServices(
         const invite = await db
           .select()
           .from(invites)
-          .where(and(eq(invites.id, params.inviteId), eq(invites.companyId, companyId)))
+          .where(
+            and(
+              eq(invites.id, params.inviteId),
+              eq(invites.companyId, companyId),
+            ),
+          )
           .then((rows) => rows[0] ?? null);
         if (!invite) throw new Error("Invite not found");
         if (invite.acceptedAt) throw new Error("Invite already consumed");
@@ -1559,12 +1850,14 @@ export function buildHostServices(
         const revoked = await db
           .update(invites)
           .set({ revokedAt: new Date(), updatedAt: new Date() })
-          .where(and(
-            eq(invites.id, invite.id),
-            eq(invites.companyId, companyId),
-            isNull(invites.revokedAt),
-            isNull(invites.acceptedAt),
-          ))
+          .where(
+            and(
+              eq(invites.id, invite.id),
+              eq(invites.companyId, companyId),
+              isNull(invites.revokedAt),
+              isNull(invites.acceptedAt),
+            ),
+          )
           .returning()
           .then((rows) => rows[0] ?? null);
         if (!revoked) throw new Error("Invite was not revoked");
@@ -1582,28 +1875,48 @@ export function buildHostServices(
       async listGrants(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        const principalType = params.principalType === "user" || params.principalType === "agent"
-          ? params.principalType
-          : null;
+        const principalType =
+          params.principalType === "user" || params.principalType === "agent"
+            ? params.principalType
+            : null;
         if (params.principalType && !principalType) {
           throw new Error("principalType must be 'agent' or 'user'");
         }
         const conditions = [
           eq(principalPermissionGrants.companyId, companyId),
-          principalType ? eq(principalPermissionGrants.principalType, principalType) : undefined,
+          principalType
+            ? eq(principalPermissionGrants.principalType, principalType)
+            : undefined,
           params.principalId
             ? principalType === "user"
-              ? eq(principalPermissionGrants.principalUserId, params.principalId)
+              ? eq(
+                  principalPermissionGrants.principalUserId,
+                  params.principalId,
+                )
               : principalType === "agent"
-                ? eq(principalPermissionGrants.principalAgentId, params.principalId)
-                : isUuidLike(params.principalId)
+                ? eq(
+                    principalPermissionGrants.principalAgentId,
+                    params.principalId,
+                  )
+                : isCanonicalUuid(params.principalId)
                   ? or(
-                      eq(principalPermissionGrants.principalUserId, params.principalId),
-                      eq(principalPermissionGrants.principalAgentId, params.principalId),
+                      eq(
+                        principalPermissionGrants.principalUserId,
+                        params.principalId,
+                      ),
+                      eq(
+                        principalPermissionGrants.principalAgentId,
+                        params.principalId,
+                      ),
                     )
-                  : eq(principalPermissionGrants.principalUserId, params.principalId)
+                  : eq(
+                      principalPermissionGrants.principalUserId,
+                      params.principalId,
+                    )
             : undefined,
-        ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+        ].filter((condition): condition is NonNullable<typeof condition> =>
+          Boolean(condition),
+        );
         const rows = await db
           .select()
           .from(principalPermissionGrants)
@@ -1619,14 +1932,26 @@ export function buildHostServices(
       async setGrants(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        if (params.principalType !== "agent" && params.principalType !== "user") {
+        if (
+          params.principalType !== "agent" &&
+          params.principalType !== "user"
+        ) {
           throw new Error("principalType must be 'agent' or 'user'");
         }
         if (params.principalType === "agent") {
-          requireInCompany("Agent", await agents.getById(params.principalId), companyId);
+          requireInCompany(
+            "Agent",
+            await agents.getById(params.principalId),
+            companyId,
+          );
         } else {
-          const membership = await access.getMembership(companyId, params.principalType as PrincipalType, params.principalId);
-          if (!membership) throw new Error("Principal is not a member of this company");
+          const membership = await access.getMembership(
+            companyId,
+            params.principalType as PrincipalType,
+            params.principalId,
+          );
+          if (!membership)
+            throw new Error("Principal is not a member of this company");
         }
         await access.setPrincipalGrants(
           companyId,
@@ -1646,7 +1971,11 @@ export function buildHostServices(
           details: { grantCount: params.grants.length },
         });
         return access
-          .listPrincipalGrants(companyId, params.principalType as PrincipalType, params.principalId)
+          .listPrincipalGrants(
+            companyId,
+            params.principalType as PrincipalType,
+            params.principalId,
+          )
           .then((rows) => rows.map(redactGrant));
       },
       async policySummary(params) {
@@ -1663,7 +1992,9 @@ export function buildHostServices(
           companyId,
           permissionsMode: "simple" as const,
           memberCount: members.length,
-          activeMemberCount: members.filter((member) => member.status === "active").length,
+          activeMemberCount: members.filter(
+            (member) => member.status === "active",
+          ).length,
           grantCount: grants.length,
           advancedPolicyAvailable: false as const,
         };
@@ -1671,7 +2002,11 @@ export function buildHostServices(
       async getPolicy(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return readAuthorizationPolicy(companyId, params.resourceType, params.resourceId);
+        return readAuthorizationPolicy(
+          companyId,
+          params.resourceType,
+          params.resourceId,
+        );
       },
       async updatePolicy(params) {
         const companyId = ensureCompanyId(params.companyId);
@@ -1681,13 +2016,32 @@ export function buildHostServices(
             "Plugin authorization policy updates only support task resources.",
           );
         }
-        const policy = params.policy ? sanitizeRecord(params.policy) : null;
-        const task = requireInCompany("Task", await tasks.getById(params.resourceId), companyId);
-        const executionPolicy = task.executionPolicy && typeof task.executionPolicy === "object"
-          ? { ...(task.executionPolicy as Record<string, unknown>) }
-          : {};
+        const policyInput = params.policy ? sanitizeRecord(params.policy) : null;
+        const parsedPolicy = policyInput
+          ? trustAuthorizationPolicySchema.safeParse(policyInput)
+          : null;
+        if (parsedPolicy && !parsedPolicy.success) {
+          throw badRequest(
+            "Plugin authorization policy must use the canonical task policy shape.",
+          );
+        }
+        const policy = parsedPolicy?.data ?? null;
+        const task = requireInCompany(
+          "Task",
+          await tasks.getById(params.resourceId),
+          companyId,
+        );
+        const executionPolicy =
+          task.executionPolicy && typeof task.executionPolicy === "object"
+            ? { ...(task.executionPolicy as Record<string, unknown>) }
+            : {};
         if (policy) executionPolicy.authorizationPolicy = policy;
         else delete executionPolicy.authorizationPolicy;
+        if (!taskExecutionPolicySchema.safeParse(executionPolicy).success) {
+          throw badRequest(
+            "Plugin authorization policy must preserve the canonical task execution policy.",
+          );
+        }
         await db
           .update(tasksTable)
           .set({ executionPolicy, updatedAt: new Date() })
@@ -1699,7 +2053,11 @@ export function buildHostServices(
           entityId: params.resourceId,
           details: { hasPolicy: Boolean(policy) },
         });
-        const updated = await readAuthorizationPolicy(companyId, params.resourceType, params.resourceId);
+        const updated = await readAuthorizationPolicy(
+          companyId,
+          params.resourceType,
+          params.resourceId,
+        );
         if (!updated) throw new Error("Policy resource not found");
         return updated;
       },
@@ -1719,20 +2077,29 @@ export function buildHostServices(
       async searchAudit(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        const limit = Math.min(Math.max(Number(params.limit ?? 50), 1), 100);
-        const offset = Math.max(Number(params.offset ?? 0), 0);
-        const decisionFilter = typeof params.decision === "string" && params.decision.trim()
-          ? params.decision.trim().toLowerCase()
-          : null;
+        const { limit, offset } = readExactPluginListWindow(params, 50);
+        const decisionFilter = requireExactAuthorizationAuditDecision(
+          params.decision,
+        );
         const conditions = [
           eq(activityLog.companyId, companyId),
           params.action ? eq(activityLog.action, params.action) : undefined,
-          params.actorType ? eq(activityLog.actorType, params.actorType) : undefined,
+          params.actorType
+            ? eq(activityLog.actorType, params.actorType)
+            : undefined,
           params.actorId ? eq(activityLog.actorId, params.actorId) : undefined,
-          params.entityType ? eq(activityLog.entityType, params.entityType) : undefined,
-          params.entityId ? eq(activityLog.entityId, params.entityId) : undefined,
-          decisionFilter ? authorizationAuditDecisionCondition(decisionFilter) : undefined,
-        ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+          params.entityType
+            ? eq(activityLog.entityType, params.entityType)
+            : undefined,
+          params.entityId
+            ? eq(activityLog.entityId, params.entityId)
+            : undefined,
+          decisionFilter
+            ? authorizationAuditDecisionCondition(decisionFilter)
+            : undefined,
+        ].filter((condition): condition is NonNullable<typeof condition> =>
+          Boolean(condition),
+        );
         const rows = await db
           .select()
           .from(activityLog)
@@ -1742,9 +2109,10 @@ export function buildHostServices(
           .offset(offset);
         return rows.map((row) => ({
           ...row,
-          details: row.details && typeof row.details === "object"
-            ? sanitizeRecord(row.details)
-            : row.details ?? null,
+          details:
+            row.details && typeof row.details === "object"
+              ? sanitizeRecord(row.details)
+              : (row.details ?? null),
         }));
       },
     },

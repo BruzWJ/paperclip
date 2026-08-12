@@ -5,9 +5,9 @@ import {
 } from "../services/prompt-capability-gateway.js";
 
 export function bearerCredentialFromRequest(req: Request): string | null {
-  const authorization = req.header("authorization")?.trim() ?? "";
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || null;
+  const authorization = req.header("authorization") ?? "";
+  const match = authorization.match(/^Bearer ([^\s]+)$/i);
+  return match?.[1] ?? null;
 }
 
 export function rejectRunInterfaceBearerFromGenericApi(): RequestHandler {

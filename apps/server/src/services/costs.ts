@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,

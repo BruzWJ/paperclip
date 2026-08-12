@@ -8,7 +8,7 @@ import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz
 import { getTelemetryClient } from "../telemetry.js";
 
 export function goalRoutes(db: Db) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = goalService(db);
 
   router.get("/companies/:companyId/goals", async (req, res) => {

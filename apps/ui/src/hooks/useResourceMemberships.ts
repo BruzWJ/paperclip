@@ -8,6 +8,7 @@ import type {
 import { resourceMembershipsApi } from "../api/resourceMemberships";
 import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
+import { useCurrentUserId } from "./useCurrentUserId";
 
 type MutationVariables = {
   resourceType: ResourceMembershipResourceType;
@@ -130,23 +131,29 @@ export function starredResourceIds(
 }
 
 export function useResourceMemberships(companyId: string | null | undefined) {
+  const userId = useCurrentUserId();
   return useQuery({
-    queryKey: queryKeys.resourceMemberships.mine(companyId ?? "__none__"),
-    queryFn: () => resourceMembershipsApi.listMine(companyId!),
-    enabled: !!companyId,
+    queryKey: companyId && userId
+      ? queryKeys.resourceMemberships.forUser(companyId, userId)
+      : ["resource-memberships", companyId ?? null, userId] as const,
+    queryFn: () => resourceMembershipsApi.listForUser(companyId!, userId!),
+    enabled: Boolean(companyId && userId),
   });
 }
 
 export function useResourceMembershipMutation(companyId: string | null | undefined) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
-  const queryKey = queryKeys.resourceMemberships.mine(companyId ?? "__none__");
+  const userId = useCurrentUserId();
+  const queryKey = companyId && userId
+    ? queryKeys.resourceMemberships.forUser(companyId, userId)
+    : ["resource-memberships", companyId ?? null, userId] as const;
   const [pendingRequests, setPendingRequests] = useState<MutationVariables[]>([]);
 
   const mutate = useCallback((variables: MutationVariables) => {
-    if (!companyId) {
+    if (!companyId || !userId) {
       pushToast({
-        title: "Select a company first.",
+        title: companyId ? "Sign in first." : "Select a company first.",
         tone: "error",
       });
       return;
@@ -167,8 +174,18 @@ export function useResourceMembershipMutation(companyId: string | null | undefin
       try {
         const body = { state: variables.state, starred: variables.starred };
         const result = variables.resourceType === "project"
-          ? await resourceMembershipsApi.updateProject(companyId, variables.resourceId, body)
-          : await resourceMembershipsApi.updateAgent(companyId, variables.resourceId, body);
+          ? await resourceMembershipsApi.updateProject(
+            companyId,
+            userId,
+            variables.resourceId,
+            body,
+          )
+          : await resourceMembershipsApi.updateAgent(
+            companyId,
+            userId,
+            variables.resourceId,
+            body,
+          );
         queryClient.setQueryData<ResourceMemberships>(
           queryKey,
           // Loose null-check: a missing or null starredAt both mean "not starred".
@@ -196,7 +213,7 @@ export function useResourceMembershipMutation(companyId: string | null | undefin
         );
       }
     })();
-  }, [companyId, pushToast, queryClient, queryKey]);
+  }, [companyId, pushToast, queryClient, queryKey, userId]);
 
   return useMemo(() => ({
     mutate,

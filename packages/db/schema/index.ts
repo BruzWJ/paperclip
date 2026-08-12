@@ -19,12 +19,10 @@ export { cliAuthChallenges } from "./cli_auth_challenges.js";
 export { companyMemberships } from "./company_memberships.js";
 export { companyUserSidebarPreferences } from "./company_user_sidebar_preferences.js";
 export { principalPermissionGrants } from "./principal_permission_grants.js";
-export { companySkillPolicies } from "./company_skill_policies.js";
 export { invites, INVITE_SOURCES, type InviteSource } from "./invites.js";
 export { joinRequests } from "./join_requests.js";
 export { budgetPolicies } from "./budget_policies.js";
 export { budgetIncidents } from "./budget_incidents.js";
-export { agentConfigRevisions } from "./agent_config_revisions.js";
 export { agentRuntimeState } from "./agent_runtime_state.js";
 export { projects } from "./projects.js";
 export { projectMemberships } from "./project_memberships.js";
@@ -179,15 +177,6 @@ export {
   pluginRunContexts,
   runInterfaceToolCalls,
 } from "./run_interface_foundation.js";
-export {
-  companySkills,
-  companySkillVersions,
-  companySkillStars,
-  companySkillComments,
-  companySkillTestInputs,
-  companySkillTestRunTemplates,
-  companySkillTestRuns,
-} from "./company_skills.js";
 export { plugins } from "./plugins.js";
 export { pluginConfig } from "./plugin_config.js";
 export { pluginCompanySettings } from "./plugin_company_settings.js";

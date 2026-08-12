@@ -19,6 +19,7 @@ describe("Better Auth cookie scoping", () => {
   it("derives an instance-scoped cookie prefix", () => {
     expect(deriveAuthCookiePrefix("default")).toBe("paperclip-default");
     expect(deriveAuthCookiePrefix("PAP-1601-worktree")).toBe("paperclip-PAP-1601-worktree");
+    expect(() => deriveAuthCookiePrefix("PAP 1601")).toThrow(/Invalid PAPERCLIP_INSTANCE_ID/);
   });
 
   it("uses PAPERCLIP_INSTANCE_ID for the Better Auth cookie prefix", () => {

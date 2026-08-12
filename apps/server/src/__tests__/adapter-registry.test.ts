@@ -4,56 +4,33 @@ import type { AdapterModel, ServerAdapterModule } from "@paperclipai/adapter-uti
 const acpxFixture = vi.hoisted(() => {
   const agentName = "fixture-agent";
   const model: AdapterModel = Object.freeze({
-    id: "fixture-model",
-    label: "Fixture model",
     value: "fixture-model",
-    limits: null,
+    label: "Fixture model",
   });
   const adapter: ServerAdapterModule = Object.freeze({
     type: agentName,
     definition: Object.freeze({
       version: "acpx-runtime/v1",
       launchProfile: Object.freeze({ registryName: agentName }),
-      environment: Object.freeze({
-        cwd: "execution-workspace",
-        additionalDirectories: "authorized-workspace-only",
-        environmentKeys: Object.freeze([]),
-      }),
       runtime: Object.freeze({
         controls: Object.freeze(["session/status", "session/set_config_option"]),
       }),
       ui: Object.freeze({
         label: agentName,
-        description: "ACPX test discovery fixture.",
-      }),
-      configSchema: Object.freeze({
-        fields: Object.freeze([
-          Object.freeze({
-            key: "model",
-            label: "Model",
-            type: "select" as const,
-            options: Object.freeze([
-              Object.freeze({ label: model.label, value: model.value }),
-            ]),
-            required: true,
-          }),
-        ]),
       }),
       configOptions: Object.freeze([
         Object.freeze({
           id: "model",
-          configKey: "model",
           label: "Model",
-          required: true as const,
+          type: "select" as const,
           values: Object.freeze([
             Object.freeze({ label: model.label, value: model.value }),
           ]),
+          currentValue: model.value,
         }),
       ]),
       modelConfigOptionId: "model",
       models: Object.freeze([model]),
-      modelProfiles: Object.freeze([]),
-      configurationDoc: "Provided by ACPX.",
     }),
   });
   return Object.freeze({
@@ -79,12 +56,9 @@ vi.mock("../adapters/acpx-catalog.js", () => ({
 }));
 
 const {
-  findServerAdapterImplementation,
   findServerAdapter,
-  listAdapterModels,
   listServerAdapters,
   refreshAcpxAdapters,
-  resolveAvailableAdapterModel,
 } = await import("../adapters/registry.js");
 
 describe("ACPX-supplied server adapter registry", () => {
@@ -99,25 +73,6 @@ describe("ACPX-supplied server adapter registry", () => {
     expect(findServerAdapter(acpxFixture.agentName)?.definition.launchProfile).toEqual({
       registryName: acpxFixture.agentName,
     });
-    expect(
-      findServerAdapterImplementation(acpxFixture.agentName)?.identity,
-    ).toMatchObject({
-      adapterType: acpxFixture.agentName,
-      packageName: "acpx",
-      packageVersion: "runtime",
-      buildIdentity: expect.stringMatching(
-        new RegExp(`^acpx-runtime:${acpxFixture.agentName}:`),
-      ),
-      artifactDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
-    });
-  });
-
-  it("uses the discovered model catalog without assigning Paperclip token limits", async () => {
-    const models = await listAdapterModels(acpxFixture.agentName);
-    expect(models).toEqual(acpxFixture.adapter.definition.models);
-    await expect(resolveAvailableAdapterModel("fixture-model")).resolves.toEqual(
-      acpxFixture.adapter.definition.models[0],
-    );
   });
 
   it("replaces a stale snapshot when ACPX no longer reports an agent", async () => {
@@ -134,6 +89,5 @@ describe("ACPX-supplied server adapter registry", () => {
       "ACPX registry reload failed",
     );
     expect(findServerAdapter(acpxFixture.agentName)).toBeNull();
-    expect(findServerAdapterImplementation(acpxFixture.agentName)).toBeNull();
   });
 });

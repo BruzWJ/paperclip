@@ -54,7 +54,8 @@ function sourceWhere(
 
 function toTaskSummary(row: {
   relatedTaskId: string;
-  relatedTaskIdentifier: string | null;
+  relatedTaskNumber: number;
+  relatedTaskIdentifier: string;
   relatedTaskTitle: string | null;
   relatedTaskBoardPresentationStatus:
     TaskRelationTaskSummary["boardPresentationStatus"];
@@ -64,6 +65,7 @@ function toTaskSummary(row: {
 }): TaskRelationTaskSummary {
   return {
     id: row.relatedTaskId,
+    taskNumber: row.relatedTaskNumber,
     identifier: row.relatedTaskIdentifier,
     title: row.relatedTaskTitle,
     boardPresentationStatus: row.relatedTaskBoardPresentationStatus,
@@ -83,8 +85,8 @@ function sortSources(a: TaskReferenceSource, b: TaskReferenceSource) {
 
 function sortRelatedWork(a: TaskRelatedWorkItem, b: TaskRelatedWorkItem) {
   if (b.mentionCount !== a.mentionCount) return b.mentionCount - a.mentionCount;
-  const leftLabel = a.task.title ?? a.task.identifier ?? a.task.id;
-  const rightLabel = b.task.title ?? b.task.identifier ?? b.task.id;
+  const leftLabel = a.task.title ?? a.task.identifier;
+  const rightLabel = b.task.title ?? b.task.identifier;
   return leftLabel.localeCompare(rightLabel);
 }
 
@@ -129,42 +131,30 @@ async function replaceSourceMentionsInTx(
   },
 ) {
   const matches = extractTaskReferenceMatches(input.text ?? "");
-  const identifiers = matches.map((match) => match.identifier);
-  type ResolvedTargetRow = {
-    id: string;
-    identifier: string | null;
-  };
-  const resolvedTargets: ResolvedTargetRow[] = identifiers.length > 0
+  const taskIds = matches.map((match) => match.taskId);
+  const resolvedTargets = taskIds.length > 0
     ? await transaction
         .select({
           id: tasks.id,
-          identifier: tasks.identifier,
         })
         .from(tasks)
         .where(
           and(
             eq(tasks.companyId, input.companyId),
-            inArray(tasks.identifier, identifiers),
+            inArray(tasks.id, taskIds),
           ),
         )
     : [];
-  const targetByIdentifier = new Map<string, string>(
-    resolvedTargets
-      .filter(
-        (row): row is ResolvedTargetRow & { identifier: string } =>
-          typeof row.identifier === "string",
-      )
-      .map((row) => [row.identifier, row.id]),
-  );
+  const resolvedTargetIds = new Set(resolvedTargets.map((row) => row.id));
 
   await transaction.delete(taskReferenceMentions).where(sourceWhere(input));
   if (matches.length === 0) return;
 
   const seenTargetIds = new Set<string>();
   const values = matches.flatMap((match) => {
-    const targetTaskId = targetByIdentifier.get(match.identifier);
+    const targetTaskId = match.taskId;
     if (
-      !targetTaskId ||
+      !resolvedTargetIds.has(targetTaskId) ||
       targetTaskId === input.sourceTaskId ||
       seenTargetIds.has(targetTaskId)
     ) {
@@ -365,6 +355,7 @@ export function taskReferenceService(db: Db) {
         dbOrTx
           .select({
             relatedTaskId: tasks.id,
+            relatedTaskNumber: tasks.taskNumber,
             relatedTaskIdentifier: tasks.identifier,
             relatedTaskTitle: tasks.title,
             relatedTaskBoardPresentationStatus: tasks.boardPresentationStatus,
@@ -385,6 +376,7 @@ export function taskReferenceService(db: Db) {
         dbOrTx
           .select({
             relatedTaskId: tasks.id,
+            relatedTaskNumber: tasks.taskNumber,
             relatedTaskIdentifier: tasks.identifier,
             relatedTaskTitle: tasks.title,
             relatedTaskBoardPresentationStatus: tasks.boardPresentationStatus,
@@ -406,7 +398,8 @@ export function taskReferenceService(db: Db) {
 
       const mapRows = (rows: Array<{
         relatedTaskId: string;
-        relatedTaskIdentifier: string | null;
+        relatedTaskNumber: number;
+        relatedTaskIdentifier: string;
         relatedTaskTitle: string | null;
         relatedTaskBoardPresentationStatus:
           TaskRelationTaskSummary["boardPresentationStatus"];

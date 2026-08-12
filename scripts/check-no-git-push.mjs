@@ -5,9 +5,8 @@
  * Static check that rejects `git push` (and equivalent remote-mutating git
  * invocations) inside adapter/runtime source code.
  *
- * Adapter and runtime code may never push to a git remote: the local
- * execution-workspace cwd is the only persistence boundary between runs
- * (see packages/adapters/AUTHORING.md and PAPA-432). Release tooling and
+ * Runtime code may never push to a git remote: the local execution-workspace
+ * cwd is the only persistence boundary between runs. Release tooling and
  * developer scripts that legitimately push are out of scope because they
  * live outside the directories scanned here.
  *
@@ -23,7 +22,6 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_SCAN_ROOTS = [
-  "packages/adapters",
   "packages/adapter-utils",
   "apps/server/src",
   "packages/cli/src",
@@ -50,8 +48,6 @@ export const GIT_PUSH_PATTERNS = [
   /\bgit[\s_-]+push\b/i,
   /["'`]git["'`]\s*,\s*\[?\s*["'`]push["'`]/i,
 ];
-// Kept for backwards-compatibility with existing tests/importers.
-export const GIT_PUSH_PATTERN = GIT_PUSH_PATTERNS[0];
 export const ALLOW_MARKER = "paperclip:allow-git-push";
 
 function lineMatchesGitPush(line) {
@@ -174,7 +170,7 @@ export function runCheck({ repoRoot, scanRoots = DEFAULT_SCAN_ROOTS, log = conso
       error(`  ${offense.relative}:${offense.lineNumber}: ${offense.line}`);
     }
     error(
-      "\nAdapter and runtime code must not push to a git remote. The local execution-workspace cwd is the only persistence boundary between runs (see packages/adapters/AUTHORING.md and PAPA-432).",
+      "\nRuntime code must not push to a git remote. The local execution-workspace cwd is the only persistence boundary between runs.",
     );
     error(
       `If the operator has explicitly configured a path that must push, add a \`${ALLOW_MARKER}: <reason>\` comment on the matching line or the line immediately above to opt in.`,

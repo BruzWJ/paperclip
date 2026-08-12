@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { isCanonicalUuid } from "@paperclipai/shared";
+import { parseExactApiBase } from "./api-base.js";
 import { resolveDefaultContextPath } from "../config/home.js";
 
 const DEFAULT_CONTEXT_BASENAME = "context.json";
@@ -25,7 +27,11 @@ function findContextFileFromAncestors(startDir: string): string | null {
   let currentDir = absoluteStartDir;
 
   while (true) {
-    const candidate = path.resolve(currentDir, ".paperclip", DEFAULT_CONTEXT_BASENAME);
+    const candidate = path.resolve(
+      currentDir,
+      ".paperclip",
+      DEFAULT_CONTEXT_BASENAME,
+    );
     if (fs.existsSync(candidate)) {
       return candidate;
     }
@@ -40,8 +46,11 @@ function findContextFileFromAncestors(startDir: string): string | null {
 
 export function resolveContextPath(overridePath?: string): string {
   if (overridePath) return path.resolve(overridePath);
-  if (process.env.PAPERCLIP_CONTEXT) return path.resolve(process.env.PAPERCLIP_CONTEXT);
-  return findContextFileFromAncestors(process.cwd()) ?? resolveDefaultContextPath();
+  if (process.env.PAPERCLIP_CONTEXT)
+    return path.resolve(process.env.PAPERCLIP_CONTEXT);
+  return (
+    findContextFileFromAncestors(process.cwd()) ?? resolveDefaultContextPath()
+  );
 }
 
 export function defaultClientContext(): ClientContext {
@@ -58,57 +67,174 @@ function parseJson(filePath: string): unknown {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf-8"));
   } catch (err) {
-    throw new Error(`Failed to parse JSON at ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(
+      `Failed to parse JSON at ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
-function toStringOrUndefined(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+function requirePlainRecord(
+  value: unknown,
+  label: string,
+): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${label} must be an object.`);
+  }
+  return value as Record<string, unknown>;
 }
 
-function normalizeProfile(value: unknown): ClientContextProfile {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
-  const profile = value as Record<string, unknown>;
+function assertExactKeys(
+  record: Record<string, unknown>,
+  allowed: readonly string[],
+  label: string,
+): void {
+  const unknown = Object.keys(record).filter((key) => !allowed.includes(key));
+  if (unknown.length > 0) {
+    throw new Error(
+      `${label} contains unsupported fields: ${unknown.sort().join(", ")}.`,
+    );
+  }
+}
+
+export function requireExactProfileName(value: string): string {
+  if (value.length === 0 || value.trim() !== value) {
+    throw new Error("Context profile name must be exact and non-empty.");
+  }
+  return value;
+}
+
+function exactStringOrUndefined(
+  value: unknown,
+  label: string,
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.trim() !== value
+  ) {
+    throw new Error(`${label} must be exact and non-empty.`);
+  }
+  return value;
+}
+
+function exactCompanyIdOrUndefined(
+  value: unknown,
+  profileName: string,
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !isCanonicalUuid(value)) {
+    throw new Error(
+      `Context profile '${profileName}' companyId must be an exact canonical company UUID.`,
+    );
+  }
+  return value;
+}
+
+function normalizeProfile(
+  value: unknown,
+  profileName: string,
+): ClientContextProfile {
+  const profile = requirePlainRecord(value, `Context profile '${profileName}'`);
+  assertExactKeys(
+    profile,
+    [
+      "apiBase",
+      "companyId",
+      "apiKeyEnvVarName",
+      "tokenName",
+      "tokenId",
+      "tokenCreatedAt",
+    ],
+    `Context profile '${profileName}'`,
+  );
+  const apiBase = exactStringOrUndefined(
+    profile.apiBase,
+    `Context profile '${profileName}' apiBase`,
+  );
+  const apiKeyEnvVarName = exactStringOrUndefined(
+    profile.apiKeyEnvVarName,
+    `Context profile '${profileName}' apiKeyEnvVarName`,
+  );
+  if (apiKeyEnvVarName && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(apiKeyEnvVarName)) {
+    throw new Error(
+      `Context profile '${profileName}' apiKeyEnvVarName must be an exact environment variable name.`,
+    );
+  }
+  const tokenId = exactStringOrUndefined(
+    profile.tokenId,
+    `Context profile '${profileName}' tokenId`,
+  );
+  if (tokenId && !isCanonicalUuid(tokenId)) {
+    throw new Error(
+      `Context profile '${profileName}' tokenId must be an exact canonical UUID.`,
+    );
+  }
+  const tokenCreatedAt = exactStringOrUndefined(
+    profile.tokenCreatedAt,
+    `Context profile '${profileName}' tokenCreatedAt`,
+  );
+  if (tokenCreatedAt) {
+    const parsed = new Date(tokenCreatedAt);
+    if (
+      !Number.isFinite(parsed.getTime()) ||
+      parsed.toISOString() !== tokenCreatedAt
+    ) {
+      throw new Error(
+        `Context profile '${profileName}' tokenCreatedAt must be a canonical UTC ISO timestamp.`,
+      );
+    }
+  }
 
   return {
-    apiBase: toStringOrUndefined(profile.apiBase),
-    companyId: toStringOrUndefined(profile.companyId),
-    apiKeyEnvVarName: toStringOrUndefined(profile.apiKeyEnvVarName),
-    tokenName: toStringOrUndefined(profile.tokenName),
-    tokenId: toStringOrUndefined(profile.tokenId),
-    tokenCreatedAt: toStringOrUndefined(profile.tokenCreatedAt),
+    apiBase: apiBase === undefined ? undefined : parseExactApiBase(apiBase),
+    companyId: exactCompanyIdOrUndefined(profile.companyId, profileName),
+    apiKeyEnvVarName,
+    tokenName: exactStringOrUndefined(
+      profile.tokenName,
+      `Context profile '${profileName}' tokenName`,
+    ),
+    tokenId,
+    tokenCreatedAt,
   };
 }
 
 function normalizeContext(raw: unknown): ClientContext {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    return defaultClientContext();
+  const record = requirePlainRecord(raw, "CLI context");
+  assertExactKeys(
+    record,
+    ["version", "currentProfile", "profiles"],
+    "CLI context",
+  );
+  if (record.version !== 2) {
+    throw new Error("CLI context version must be exactly 2.");
   }
-
-  const record = raw as Record<string, unknown>;
-  const version = 2;
-  const currentProfile = toStringOrUndefined(record.currentProfile) ?? DEFAULT_PROFILE;
-
-  const rawProfiles = record.profiles;
+  const currentProfile = requireExactProfileName(
+    exactStringOrUndefined(
+      record.currentProfile,
+      "CLI context currentProfile",
+    ) ?? "",
+  );
+  const rawProfiles = requirePlainRecord(
+    record.profiles,
+    "CLI context profiles",
+  );
   const profiles: Record<string, ClientContextProfile> = {};
-
-  if (typeof rawProfiles === "object" && rawProfiles !== null && !Array.isArray(rawProfiles)) {
-    for (const [name, profile] of Object.entries(rawProfiles as Record<string, unknown>)) {
-      if (!name.trim()) continue;
-      profiles[name] = normalizeProfile(profile);
-    }
+  for (const [name, profile] of Object.entries(rawProfiles)) {
+    requireExactProfileName(name);
+    profiles[name] = normalizeProfile(profile, name);
   }
-
-  if (!profiles[currentProfile]) {
-    profiles[currentProfile] = {};
-  }
-
   if (Object.keys(profiles).length === 0) {
-    profiles[DEFAULT_PROFILE] = {};
+    throw new Error("CLI context profiles must contain at least one profile.");
+  }
+  if (!profiles[currentProfile]) {
+    throw new Error(
+      `CLI context currentProfile '${currentProfile}' does not exist.`,
+    );
   }
 
   return {
-    version,
+    version: 2,
     currentProfile,
     profiles,
   };
@@ -124,13 +250,18 @@ export function readContext(contextPath?: string): ClientContext {
   return normalizeContext(raw);
 }
 
-export function writeContext(context: ClientContext, contextPath?: string): void {
+export function writeContext(
+  context: ClientContext,
+  contextPath?: string,
+): void {
   const filePath = resolveContextPath(contextPath);
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
 
   const normalized = normalizeContext(context);
-  fs.writeFileSync(filePath, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 });
+  fs.writeFileSync(filePath, `${JSON.stringify(normalized, null, 2)}\n`, {
+    mode: 0o600,
+  });
 }
 
 export function upsertProfile(
@@ -138,46 +269,42 @@ export function upsertProfile(
   patch: Partial<ClientContextProfile>,
   contextPath?: string,
 ): ClientContext {
+  requireExactProfileName(profileName);
   const context = readContext(contextPath);
   const existing = context.profiles[profileName] ?? {};
   const merged: ClientContextProfile = { ...existing };
 
-  if (patch.apiBase !== undefined) merged.apiBase = patch.apiBase;
-  if (patch.companyId !== undefined) merged.companyId = patch.companyId;
-  if (patch.apiKeyEnvVarName !== undefined) merged.apiKeyEnvVarName = patch.apiKeyEnvVarName;
+  if (patch.apiBase !== undefined)
+    merged.apiBase = parseExactApiBase(patch.apiBase);
+  if (patch.companyId !== undefined) {
+    if (!isCanonicalUuid(patch.companyId)) {
+      throw new Error(
+        "Context companyId must be an exact canonical company UUID.",
+      );
+    }
+    merged.companyId = patch.companyId;
+  }
+  if (patch.apiKeyEnvVarName !== undefined)
+    merged.apiKeyEnvVarName = patch.apiKeyEnvVarName;
   if (patch.tokenName !== undefined) merged.tokenName = patch.tokenName;
   if (patch.tokenId !== undefined) merged.tokenId = patch.tokenId;
-  if (patch.tokenCreatedAt !== undefined) merged.tokenCreatedAt = patch.tokenCreatedAt;
+  if (patch.tokenCreatedAt !== undefined)
+    merged.tokenCreatedAt = patch.tokenCreatedAt;
 
-  if (patch.apiBase !== undefined && patch.apiBase.trim().length === 0) {
-    delete merged.apiBase;
-  }
-  if (patch.companyId !== undefined && patch.companyId.trim().length === 0) {
-    delete merged.companyId;
-  }
-  if (patch.apiKeyEnvVarName !== undefined && patch.apiKeyEnvVarName.trim().length === 0) {
-    delete merged.apiKeyEnvVarName;
-  }
-  if (patch.tokenName !== undefined && patch.tokenName.trim().length === 0) {
-    delete merged.tokenName;
-  }
-  if (patch.tokenId !== undefined && patch.tokenId.trim().length === 0) {
-    delete merged.tokenId;
-  }
-  if (patch.tokenCreatedAt !== undefined && patch.tokenCreatedAt.trim().length === 0) {
-    delete merged.tokenCreatedAt;
-  }
-
-  context.profiles[profileName] = merged;
+  context.profiles[profileName] = normalizeProfile(merged, profileName);
   context.currentProfile = context.currentProfile || profileName;
   writeContext(context, contextPath);
   return context;
 }
 
-export function setCurrentProfile(profileName: string, contextPath?: string): ClientContext {
+export function setCurrentProfile(
+  profileName: string,
+  contextPath?: string,
+): ClientContext {
+  requireExactProfileName(profileName);
   const context = readContext(contextPath);
   if (!context.profiles[profileName]) {
-    context.profiles[profileName] = {};
+    throw new Error(`Context profile '${profileName}' does not exist.`);
   }
   context.currentProfile = profileName;
   writeContext(context, contextPath);
@@ -188,7 +315,11 @@ export function resolveProfile(
   context: ClientContext,
   profileName?: string,
 ): { name: string; profile: ClientContextProfile } {
-  const name = profileName?.trim() || context.currentProfile || DEFAULT_PROFILE;
-  const profile = context.profiles[name] ?? {};
+  const name =
+    profileName === undefined
+      ? context.currentProfile
+      : requireExactProfileName(profileName);
+  const profile = context.profiles[name];
+  if (!profile) throw new Error(`Context profile '${name}' does not exist.`);
   return { name, profile };
 }

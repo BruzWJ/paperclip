@@ -199,7 +199,7 @@ export function blockedRowMatchesSearch(row: BlockedInboxTaskRow, query: string)
   if (!q) return true;
   const haystack = [
     row.task.title,
-    row.task.identifier ?? "",
+    row.task.identifier,
     row.attention.owner.label ?? "",
     row.attention.action.label,
     row.attention.action.detail ?? "",

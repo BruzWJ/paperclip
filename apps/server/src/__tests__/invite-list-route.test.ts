@@ -34,7 +34,6 @@ describe("GET /companies/:companyId/invites", () => {
       inviteType: "company_join",
       source: "board_api",
       invitedByUserId: "board-user",
-      allowedJoinTypes: "human",
       revokedAt: null,
       acceptedAt: null,
       acceptedByUserId: null,
@@ -43,7 +42,7 @@ describe("GET /companies/:companyId/invites", () => {
       ...baseInvite,
       id: inviteOneId,
       tokenHash: "invite-token-1",
-      defaultsPayload: { human: { role: "viewer" } },
+      defaultsPayload: { user: { role: "viewer" } },
       expiresAt: new Date("2030-04-20T00:00:00.000Z"),
       createdAt: new Date("2026-04-10T00:00:00.000Z"),
       updatedAt: new Date("2026-04-10T00:00:00.000Z"),
@@ -52,7 +51,7 @@ describe("GET /companies/:companyId/invites", () => {
       ...baseInvite,
       id: inviteTwoId,
       tokenHash: "invite-token-2",
-      defaultsPayload: { human: { role: "operator" } },
+      defaultsPayload: { user: { role: "operator" } },
       expiresAt: new Date("2030-04-21T00:00:00.000Z"),
       createdAt: new Date("2026-04-11T00:00:00.000Z"),
       updatedAt: new Date("2026-04-11T00:00:00.000Z"),
@@ -61,7 +60,7 @@ describe("GET /companies/:companyId/invites", () => {
       ...baseInvite,
       id: inviteThreeId,
       tokenHash: "invite-token-3",
-      defaultsPayload: { human: { role: "admin" } },
+      defaultsPayload: { user: { role: "admin" } },
       expiresAt: new Date("2030-04-22T00:00:00.000Z"),
       createdAt: new Date("2026-04-12T00:00:00.000Z"),
       updatedAt: new Date("2026-04-12T00:00:00.000Z"),
@@ -105,31 +104,41 @@ describe("GET /companies/:companyId/invites", () => {
       });
       next();
     });
-    app.use("/api", accessRoutes(harness.db, { deploymentExposure: "private" }));
+    app.use(
+      "/api",
+      accessRoutes(harness.db, { deploymentExposure: "private" }),
+    );
     app.use(errorHandler);
 
-    const firstPage = await request(app).get(`/api/companies/${companyId}/invites?limit=2`);
+    const firstPage = await request(app).get(
+      `/api/companies/${companyId}/invites?limit=2`,
+    );
     expect(firstPage.status, JSON.stringify(firstPage.body)).toBe(200);
-    expect(firstPage.body.invites.map((invite: { id: string }) => invite.id)).toEqual([
-      inviteThreeId,
-      inviteTwoId,
-    ]);
+    expect(
+      firstPage.body.invites.map((invite: { id: string }) => invite.id),
+    ).toEqual([inviteThreeId, inviteTwoId]);
     expect(firstPage.body.invites[0]).toMatchObject({
       relatedJoinRequestId: joinRequestId,
       companyName: "Paperclip",
-      humanRole: "admin",
+      userRole: "admin",
     });
     expect(firstPage.body.nextOffset).toBe(2);
 
-    const secondPage = await request(app)
-      .get(`/api/companies/${companyId}/invites?limit=2&offset=2`);
+    const secondPage = await request(app).get(
+      `/api/companies/${companyId}/invites?limit=2&offset=2`,
+    );
     expect(secondPage.status, JSON.stringify(secondPage.body)).toBe(200);
     expect(secondPage.body.invites).toHaveLength(1);
     expect(secondPage.body.invites[0].id).toBe(inviteOneId);
     expect(secondPage.body.nextOffset).toBeNull();
 
     expect(canUserMock).toHaveBeenCalledTimes(2);
-    expect(canUserMock).toHaveBeenNthCalledWith(1, companyId, "board-user", "users:invite");
+    expect(canUserMock).toHaveBeenNthCalledWith(
+      1,
+      companyId,
+      "board-user",
+      "users:invite",
+    );
     expect(harness.remaining("select")).toBe(0);
   });
 });

@@ -34,7 +34,7 @@ PAPERCLIP_PORT=3200 PAPERCLIP_DATA_DIR=../data/pc \
 docker build -t paperclip-local .
 docker run --name paperclip \
   -p 3100:3100 \
-  -e HOST=0.0.0.0 \
+  -e PAPERCLIP_BIND=lan \
   -e DATABASE_URL=postgres://paperclip:paperclip@host.docker.internal:5432/paperclip \
   -e PAPERCLIP_HOME=/paperclip \
   -v "$(pwd)/data/docker-paperclip:/paperclip" \
@@ -64,7 +64,7 @@ Prepare provider-native configuration inside the declared execution target:
 ```sh
 docker run --name paperclip \
   -p 3100:3100 \
-  -e HOST=0.0.0.0 \
+  -e PAPERCLIP_BIND=lan \
   -e DATABASE_URL=postgres://paperclip:paperclip@host.docker.internal:5432/paperclip \
   -e PAPERCLIP_HOME=/paperclip \
   -v "$(pwd)/data/docker-paperclip:/paperclip" \

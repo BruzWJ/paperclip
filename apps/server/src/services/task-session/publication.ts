@@ -164,7 +164,6 @@ const SOURCE_USER_EXECUTION_KEYS = new Set([
 ]);
 const NUMERIC_SESSION_ACCOUNTING_KEYS = new Set([
   "maxOutputTokens",
-  "outputTokenMax",
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

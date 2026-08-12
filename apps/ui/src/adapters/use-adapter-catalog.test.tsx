@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAdapterCatalogSyncState } from "./use-adapter-catalog";
 import { listUIAdapters, syncServerAdapters } from "./registry";
 import { queryKeys } from "@/lib/queryKeys";
-import { useAdapterConfigSchema } from "./schema-config-fields";
+import { useAdapterConfigOptions } from "./acpx-config-options";
 
 const mockAdaptersApi = vi.hoisted(() => ({
   list: vi.fn(),
@@ -27,19 +27,19 @@ function Probe({ enabled }: { enabled: boolean }) {
   );
 }
 
-function SchemaProbe({ adapterType }: { adapterType: string }) {
-  const { schema, isLoading } = useAdapterConfigSchema(adapterType);
+function OptionsProbe({ adapterType }: { adapterType: string }) {
+  const { configOptions, isLoading } = useAdapterConfigOptions(adapterType);
   return (
-    <div data-testid="adapter-schema">
-      {isLoading ? "loading" : `${adapterType}:${schema?.fields.length ?? "missing"}`}
+    <div data-testid="adapter-options">
+      {isLoading ? "loading" : `${adapterType}:${configOptions?.length ?? "missing"}`}
     </div>
   );
 }
 
-function CatalogSchemaProbe({ adapterType }: { adapterType: string }) {
+function CatalogOptionsProbe({ adapterType }: { adapterType: string }) {
   const { adapters } = useAdapterCatalogSyncState();
   return adapters.some((adapter) => adapter.type === adapterType)
-    ? <SchemaProbe adapterType={adapterType} />
+    ? <OptionsProbe adapterType={adapterType} />
     : null;
 }
 
@@ -85,22 +85,17 @@ describe("useAdapterCatalogSyncState", () => {
       {
         type: "codex",
         label: "Codex",
-        source: "acpx",
         modelsCount: 2,
         loaded: true,
-        registryName: "codex",
-        configSchema: {
-          fields: [{
-            key: "model",
+        configOptions: [{
+            id: "model",
             label: "Model",
             type: "select",
-            options: [{ label: "Fast", value: "fast" }],
-          }],
-        },
+            values: [{ label: "Fast", value: "fast" }],
+        }],
         capabilities: {
           contractVersion: "acpx-runtime/v1",
           runtimeControls: ["session/status", "session/set_config_option"],
-          supportsModelProfiles: false,
         },
       },
     ]);
@@ -121,16 +116,17 @@ describe("useAdapterCatalogSyncState", () => {
     expect(listUIAdapters()).toEqual([
       expect.objectContaining({ type: "codex" }),
     ]);
-    expect(
-      queryClient.getQueryData(queryKeys.adapters.configSchema("codex")),
-    ).toEqual({
-      fields: [{
-        key: "model",
-        label: "Model",
-        type: "select",
-        options: [{ label: "Fast", value: "fast" }],
-      }],
-    });
+    expect(queryClient.getQueryData(queryKeys.adapters.all)).toEqual([
+      expect.objectContaining({
+        type: "codex",
+        configOptions: [{
+            id: "model",
+            label: "Model",
+            type: "select",
+            values: [{ label: "Fast", value: "fast" }],
+        }],
+      }),
+    ]);
   });
 
   it("does not synchronize a failed local readiness check into selectable UI adapters", async () => {
@@ -138,28 +134,23 @@ describe("useAdapterCatalogSyncState", () => {
       {
         type: "visible-agent",
         label: "Visible agent",
-        source: "acpx",
         modelsCount: 0,
         loaded: true,
-        registryName: "visible-agent",
-        configSchema: { fields: [] },
+        configOptions: [],
         capabilities: {
           contractVersion: "acpx-runtime/v1",
           runtimeControls: ["session/status", "session/set_config_option"],
-          supportsModelProfiles: false,
         },
       },
       {
         type: "failed-agent",
         label: "failed-agent",
-        source: "acpx",
         modelsCount: 0,
         loaded: false,
         diagnostic: {
           code: "acpx_probe_failed",
           message: "fixture local CLI is not authenticated",
         },
-        registryName: "failed-agent",
       },
     ]);
 
@@ -177,43 +168,40 @@ describe("useAdapterCatalogSyncState", () => {
       ).toBe("1:visible-agent");
       expect(listUIAdapters().map((adapter) => adapter.type)).toEqual(["visible-agent"]);
     });
-    expect(
-      queryClient.getQueryData(
-        queryKeys.adapters.configSchema("failed-agent"),
-      ),
-    ).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.adapters.all)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "failed-agent", loaded: false }),
+      ]),
+    );
   });
 
-  it("primes every schema so switching adapters makes no schema request", async () => {
+  it("primes every option contract so switching adapters makes no extra request", async () => {
     mockAdaptersApi.list.mockResolvedValue([
       {
         type: "alpha",
         label: "Alpha",
-        source: "acpx",
         modelsCount: 1,
         loaded: true,
-        registryName: "alpha",
-        configSchema: {
-          fields: [{ key: "model", label: "Model", type: "select" }],
-        },
+        configOptions: [{
+          id: "model",
+          label: "Model",
+          type: "select",
+          values: [{ label: "Fast", value: "fast" }],
+        }],
         capabilities: {
           contractVersion: "acpx-runtime/v1",
           runtimeControls: [],
-          supportsModelProfiles: false,
         },
       },
       {
         type: "beta",
         label: "Beta",
-        source: "acpx",
         modelsCount: 1,
         loaded: true,
-        registryName: "beta",
-        configSchema: { fields: [] },
+        configOptions: [],
         capabilities: {
           contractVersion: "acpx-runtime/v1",
           runtimeControls: [],
-          supportsModelProfiles: false,
         },
       },
     ]);
@@ -223,14 +211,14 @@ describe("useAdapterCatalogSyncState", () => {
     flushSync(() => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <CatalogSchemaProbe adapterType="alpha" />
+          <CatalogOptionsProbe adapterType="alpha" />
         </QueryClientProvider>,
       );
     });
 
     await vi.waitFor(() => {
       expect(
-        container.querySelector('[data-testid="adapter-schema"]')?.textContent,
+        container.querySelector('[data-testid="adapter-options"]')?.textContent,
       ).toBe("alpha:1");
     });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -238,14 +226,14 @@ describe("useAdapterCatalogSyncState", () => {
     flushSync(() => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <CatalogSchemaProbe adapterType="beta" />
+          <CatalogOptionsProbe adapterType="beta" />
         </QueryClientProvider>,
       );
     });
 
     await vi.waitFor(() => {
       expect(
-        container.querySelector('[data-testid="adapter-schema"]')?.textContent,
+        container.querySelector('[data-testid="adapter-options"]')?.textContent,
       ).toBe("beta:0");
     });
     expect(fetchMock).not.toHaveBeenCalled();

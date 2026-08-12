@@ -1,13 +1,14 @@
-export const TASK_REFERENCE_IDENTIFIER_RE = /^[A-Z][A-Z0-9]*-\d+$/;
+import { isCanonicalUuid } from "./canonical-uuid.js";
 
 export interface TaskReferenceMatch {
   index: number;
   length: number;
-  identifier: string;
+  taskId: string;
   matchedText: string;
 }
 
-const TASK_REFERENCE_TOKEN_RE = /https?:\/\/[^\s<>()]+|\/[^\s<>()]+|[A-Z][A-Z0-9]*-\d+/gi;
+const TASK_REFERENCE_TOKEN_RE = /task:\/\/[^\s<>()]+/g;
+const TASK_REFERENCE_HREF_RE = /^task:\/\/([^/?#\s]+)$/;
 
 function preserveNewlinesAsWhitespace(value: string) {
   return value.replace(/[^\n]/g, " ");
@@ -89,42 +90,21 @@ function trimTrailingPunctuation(token: string): string {
   return trimmed;
 }
 
-export function normalizeTaskIdentifier(value: string): string | null {
-  const trimmed = value.trim().toUpperCase();
-  return TASK_REFERENCE_IDENTIFIER_RE.test(trimmed) ? trimmed : null;
+export function buildTaskReferenceHref(taskId: string): string {
+  if (!isCanonicalUuid(taskId)) {
+    throw new Error("Cannot build a task reference href without a canonical task UUID");
+  }
+  return `task://${taskId}`;
 }
 
-export function buildTaskReferenceHref(identifier: string): string {
-  const normalized = normalizeTaskIdentifier(identifier);
-  return `/tasks/${normalized ?? identifier.trim()}`;
-}
+export function parseTaskReferenceHref(href: string): { taskId: string } | null {
+  if (!href) return null;
 
-export function parseTaskReferenceHref(href: string): { identifier: string } | null {
-  const raw = href.trim();
-  if (!raw) return null;
-
-  let url: URL;
-  try {
-    url = raw.startsWith("/")
-      ? new URL(raw, "https://paperclip.invalid")
-      : new URL(raw);
-  } catch {
-    return null;
+  const taskReference = href.match(TASK_REFERENCE_HREF_RE);
+  if (taskReference?.[1]) {
+    const taskId = taskReference[1];
+    return isCanonicalUuid(taskId) ? { taskId } : null;
   }
-
-  const segments = url.pathname
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
-  for (let index = 0; index < segments.length - 1; index += 1) {
-    if (segments[index]?.toLowerCase() !== "tasks") continue;
-    const identifier = normalizeTaskIdentifier(segments[index + 1] ?? "");
-    if (identifier) {
-      return { identifier };
-    }
-  }
-
   return null;
 }
 
@@ -140,18 +120,14 @@ export function findTaskReferenceMatches(text: string): TaskReferenceMatch[] {
     const cleanedToken = trimTrailingPunctuation(rawToken);
     if (!cleanedToken) continue;
 
-    const identifier =
-      normalizeTaskIdentifier(cleanedToken)
-      ?? parseTaskReferenceHref(cleanedToken)?.identifier
-      ?? null;
-
-    if (!identifier) continue;
+    const taskId = parseTaskReferenceHref(cleanedToken)?.taskId ?? null;
+    if (!taskId) continue;
 
     const cleanedIndex = match.index;
     matches.push({
       index: cleanedIndex,
       length: cleanedToken.length,
-      identifier,
+      taskId,
       matchedText: cleanedToken,
     });
   }
@@ -159,15 +135,15 @@ export function findTaskReferenceMatches(text: string): TaskReferenceMatch[] {
   return matches;
 }
 
-export function extractTaskReferenceIdentifiers(markdown: string): string[] {
+export function extractTaskReferenceIds(markdown: string): string[] {
   const scrubbed = stripMarkdownCode(markdown);
   const seen = new Set<string>();
   const ordered: string[] = [];
 
   for (const match of findTaskReferenceMatches(scrubbed)) {
-    if (seen.has(match.identifier)) continue;
-    seen.add(match.identifier);
-    ordered.push(match.identifier);
+    if (seen.has(match.taskId)) continue;
+    seen.add(match.taskId);
+    ordered.push(match.taskId);
   }
 
   return ordered;
@@ -179,8 +155,8 @@ export function extractTaskReferenceMatches(markdown: string): TaskReferenceMatc
   const ordered: TaskReferenceMatch[] = [];
 
   for (const match of findTaskReferenceMatches(scrubbed)) {
-    if (seen.has(match.identifier)) continue;
-    seen.add(match.identifier);
+    if (seen.has(match.taskId)) continue;
+    seen.add(match.taskId);
     ordered.push(match);
   }
 

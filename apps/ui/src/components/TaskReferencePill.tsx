@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { TaskRelationTaskSummary } from "@paperclipai/shared";
-import { Link } from "@/lib/router";
+import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 import { cn } from "../lib/utils";
 import { StatusIcon } from "./StatusIcon";
 import { taskDisplayTitle, taskReferenceLabel } from "../lib/task-display";
@@ -11,7 +11,7 @@ export function TaskReferencePill({
   className,
   children,
 }: {
-  task: Pick<TaskRelationTaskSummary, "id" | "identifier" | "title"> &
+  task: Pick<TaskRelationTaskSummary, "id" | "taskNumber" | "identifier" | "title"> &
     Partial<Pick<TaskRelationTaskSummary, "boardPresentationStatus">>;
   strikethrough?: boolean;
   className?: string;
@@ -22,7 +22,7 @@ export function TaskReferencePill({
   const classNames = cn(
     "paperclip-mention-chip paperclip-mention-chip--task",
     "inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs no-underline",
-    task.identifier && "hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
+    "hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
     strikethrough && "opacity-60 line-through decoration-muted-foreground",
     className,
   );
@@ -31,32 +31,20 @@ export function TaskReferencePill({
       {task.boardPresentationStatus ? (
         <StatusIcon status={task.boardPresentationStatus} className="h-3 w-3 shrink-0" />
       ) : null}
-      {children !== undefined ? children : <span>{task.identifier ?? displayTitle}</span>}
+      {children !== undefined ? children : <span>{taskLabel}</span>}
     </>
   );
 
-  if (!task.identifier) {
-    return (
-      <span
-        data-mention-kind="task"
-        className={classNames}
-        title={displayTitle}
-        aria-label={`Task: ${displayTitle}`}
-      >
-        {content}
-      </span>
-    );
-  }
-
   return (
-    <Link
-      to={`/tasks/${taskLabel}`}
+    <TaskLinkQuicklook
+      taskId={task.id}
+      taskNumber={task.taskNumber}
       data-mention-kind="task"
       className={classNames}
       title={displayTitle}
       aria-label={`Task ${taskLabel}: ${displayTitle}`}
     >
       {content}
-    </Link>
+    </TaskLinkQuicklook>
   );
 }

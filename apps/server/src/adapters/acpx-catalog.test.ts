@@ -37,12 +37,10 @@ const discovery: AcpxAgentDiscovery = Object.freeze({
       currentValue: "fixture-model",
       options: Object.freeze([
         Object.freeze({
-          kind: "value" as const,
           name: "Fixture model",
           value: "fixture-model",
         }),
         Object.freeze({
-          kind: "value" as const,
           name: "Alternate model",
           value: "alternate-model",
         }),
@@ -54,8 +52,8 @@ const discovery: AcpxAgentDiscovery = Object.freeze({
       type: "select",
       currentValue: "high",
       options: Object.freeze([
-        Object.freeze({ kind: "value" as const, name: "Low", value: "low" }),
-        Object.freeze({ kind: "value" as const, name: "High", value: "high" }),
+        Object.freeze({ name: "Low", value: "low" }),
+        Object.freeze({ name: "High", value: "high" }),
       ]),
     }),
   ]),
@@ -97,12 +95,12 @@ describe("ACPX adapter catalog conversion", () => {
         launchProfile: { registryName: "fixture-agent" },
         modelConfigOptionId: "model",
         models: [
-          { id: "fixture-model", value: "fixture-model", limits: null },
-          { id: "alternate-model", value: "alternate-model", limits: null },
+          { value: "fixture-model" },
+          { value: "alternate-model" },
         ],
       },
     });
-    expect(adapter.definition.configSchema.fields.map((field) => field.key)).toEqual([
+    expect(adapter.definition.configOptions.map((option) => option.id)).toEqual([
       "model",
       "reasoning_effort",
     ]);
@@ -138,10 +136,8 @@ describe("ACPX adapter catalog conversion", () => {
         { configId: "reasoning_effort", value: "high" },
       ],
       model: {
-        id: "fixture-model",
-        label: "Fixture model",
         value: "fixture-model",
-        limits: null,
+        label: "Fixture model",
       },
     });
   });
@@ -177,24 +173,22 @@ describe("ACPX adapter catalog conversion", () => {
     );
 
     expect(adapter.definition.modelConfigOptionId).toBeNull();
-    expect(adapter.definition.configSchema.fields).toEqual([]);
+    expect(adapter.definition.configOptions).toEqual([]);
     expect(adapter.definition.models).toEqual([
       {
-        id: "fixed-model",
-        label: "fixed-model",
         value: "fixed-model",
-        limits: null,
+        label: "fixed-model",
       },
     ]);
     expect(
       resolveAcpAdapterRevisionConfiguration({ adapter, config: {} }),
     ).toMatchObject({
       sessionConfigSelections: [],
-      model: { id: "fixed-model", value: "fixed-model" },
+      model: { value: "fixed-model" },
     });
   });
 
-  it("preserves an ACPX string setting with no declared choices as generic freeform configuration", () => {
+  it("preserves an ACPX text setting as one native text option", () => {
     const adapter = validateServerAdapterModule(
       acpxDiscoveryToServerAdapter({
         ...discovery,
@@ -203,27 +197,20 @@ describe("ACPX adapter catalog conversion", () => {
           {
             id: "runtime_hint",
             name: "Runtime hint",
-            type: "future_string_type",
+            type: "text",
             currentValue: "balanced",
             description: "Supplied by a newer ACPX adapter.",
-            options: [],
           },
         ],
       }),
     );
 
-    expect(adapter.definition.configSchema.fields.at(-1)).toMatchObject({
-      key: "runtime_hint",
-      type: "text",
-      default: "balanced",
-    });
     expect(adapter.definition.configOptions.at(-1)).toEqual({
       id: "runtime_hint",
-      configKey: "runtime_hint",
       label: "Runtime hint",
-      required: true,
-      values: [],
-      freeform: true,
+      type: "text",
+      currentValue: "balanced",
+      description: "Supplied by a newer ACPX adapter.",
     });
     expect(
       resolveAcpAdapterRevisionConfiguration({

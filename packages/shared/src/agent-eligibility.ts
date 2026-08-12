@@ -57,8 +57,8 @@ export interface AgentWorkEligibility {
 
 const NON_ASSIGNABLE_AGENT_STATUSES = new Set<string>(["terminated", "pending_approval"]);
 const NON_INVOKABLE_AGENT_STATUSES = new Set<string>(["terminated", "pending_approval", "paused"]);
-const ASSIGNABLE_AGENT_STATUSES = new Set<string>(["active", "paused", "idle", "running", "error"]);
-const INVOKABLE_AGENT_STATUSES = new Set<string>(["active", "idle", "running", "error"]);
+const ASSIGNABLE_AGENT_STATUSES = new Set<string>(["paused", "idle", "error"]);
+const INVOKABLE_AGENT_STATUSES = new Set<string>(["idle", "error"]);
 
 export function isAgentStatusAssignableToWork(status: AgentStatus | string): boolean {
   return ASSIGNABLE_AGENT_STATUSES.has(status) && !NON_ASSIGNABLE_AGENT_STATUSES.has(status);
@@ -99,18 +99,18 @@ function buildRepairGuidance(
   if (firstInvalidAncestor.status === "missing") {
     return [
       `${agent.name} reports to missing manager ${firstInvalidAncestor.id}.`,
-      `Reassign ${agent.name} or the nearest affected ancestor under an active manager/root, or explicitly pause or terminate the invalid subtree before assigning work or starting runs.`,
+      `Reassign ${agent.name} or the nearest affected ancestor under an eligible manager/root, or explicitly pause or terminate the invalid subtree before assigning work or starting runs.`,
     ].join(" ");
   }
   if (firstInvalidAncestor.status === "cycle") {
     return [
       `${agent.name} has a cycle in its reporting chain at ${firstInvalidAncestor.name}.`,
-      `Break the cycle by assigning one affected agent to an active manager/root, or explicitly pause or terminate the invalid subtree before assigning work or starting runs.`,
+      `Break the cycle by assigning one affected agent to an eligible manager/root, or explicitly pause or terminate the invalid subtree before assigning work or starting runs.`,
     ].join(" ");
   }
   return [
     `${agent.name} reports through terminated ancestor ${firstInvalidAncestor.name}.`,
-    `Reassign ${agent.name} or the nearest affected ancestor under an active manager/root, or explicitly pause or terminate the invalid subtree before assigning work or starting runs.`,
+    `Reassign ${agent.name} or the nearest affected ancestor under an eligible manager/root, or explicitly pause or terminate the invalid subtree before assigning work or starting runs.`,
   ].join(" ");
 }
 

@@ -4,14 +4,23 @@ import { TaskReferencePill } from "./TaskReferencePill";
 
 type ActivityTaskReference = {
   id: string;
-  identifier?: string | null;
+  taskNumber: number;
+  identifier: string;
   title?: string | null;
 };
 
 function readTaskReferences(details: Record<string, unknown> | null | undefined, key: string): ActivityTaskReference[] {
   const value = details?.[key];
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is ActivityTaskReference => !!item && typeof item === "object");
+  return value.filter((item): item is ActivityTaskReference => (
+    !!item
+    && typeof item === "object"
+    && typeof (item as { id?: unknown }).id === "string"
+    && typeof (item as { identifier?: unknown }).identifier === "string"
+    && typeof (item as { taskNumber?: unknown }).taskNumber === "number"
+    && Number.isInteger((item as { taskNumber: number }).taskNumber)
+    && (item as { taskNumber: number }).taskNumber > 0
+  ));
 }
 
 function Section({
@@ -41,8 +50,9 @@ function Section({
           strikethrough={strikethrough}
           task={{
             id: task.id,
-            identifier: task.identifier ?? null,
-            title: task.title ?? task.identifier ?? task.id,
+            taskNumber: task.taskNumber,
+            identifier: task.identifier,
+            title: task.title ?? task.identifier,
           }}
         />
       ))}

@@ -40,7 +40,7 @@ import { decodeStoredTaskSessionMessage } from "./task-session/store.js";
 
 interface TaskProjectionRow {
   id: string;
-  identifier: string | null;
+  identifier: string;
   title: string | null;
   request: string | null;
   status: string | null;

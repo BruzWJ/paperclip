@@ -18,11 +18,11 @@ import {
 
 const resolvers: OwnerChipResolvers = {
   agentMap: new Map([
-    ["agent-coder", { name: "ClaudeCoder", icon: null }],
-    ["agent-qa", { name: "QA", icon: null }],
+    ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6", { name: "ClaudeCoder", icon: null }],
+    ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", { name: "QA", icon: null }],
   ]),
-  resolveUserLabel: (id) => (id === "user-board" ? "Riley Board" : null),
-  currentUserId: "user-board",
+  resolveUserLabel: (id) => (id === "a7000000-0000-4000-8000-000000000002" ? "Riley Board" : null),
+  currentUserId: "a7000000-0000-4000-8000-000000000002",
 };
 
 const meta: Meta = {
@@ -35,8 +35,8 @@ export const CanonicalStates: Story = {
   render: () => {
     const copy = describeOwnerChangeInterrupt({ runningAgentName: "ClaudeCoder" });
     const preview = computeComposerOwnerPreview({
-      ownerTarget: "agent:agent-qa",
-      currentOwnerValue: "agent:agent-coder",
+      ownerTarget: "agent:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+      currentOwnerValue: "agent:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6",
       hasActiveRun: true,
       bodyHasAgentMention: false,
     });
@@ -44,11 +44,11 @@ export const CanonicalStates: Story = {
       <div className="flex max-w-xl flex-col gap-4 p-4">
         <div className="flex items-center gap-2">
           <OwnerChip
-            owner={{ ownerKind: "agent", ownerAgentId: "agent-coder", ownerUserId: null }}
+            owner={{ ownerKind: "agent", ownerAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6", ownerUserId: null }}
             resolvers={resolvers}
           />
           <OwnerChip
-            owner={{ ownerKind: "user", ownerAgentId: null, ownerUserId: "user-board" }}
+            owner={{ ownerKind: "user", ownerAgentId: null, ownerUserId: "a7000000-0000-4000-8000-000000000002" }}
             resolvers={resolvers}
           />
           <OwnerChip
@@ -58,7 +58,7 @@ export const CanonicalStates: Story = {
         </div>
         <RunStatusBadge status="cancelled" operatorInterrupted />
         <OwnerDispatchRow
-          to={{ ownerKind: "agent", ownerAgentId: "agent-qa", ownerUserId: null }}
+          to={{ ownerKind: "agent", ownerAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", ownerUserId: null }}
           resolvers={resolvers}
           interruptedRunAttached
         />
@@ -66,13 +66,13 @@ export const CanonicalStates: Story = {
         <OwnerRunningBanner copy={copy} />
         <InterruptOwnerChangeConfirm
           copy={copy}
-          to={{ ownerKind: "agent", ownerAgentId: "agent-qa", ownerUserId: null }}
+          to={{ ownerKind: "agent", ownerAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", ownerUserId: null }}
           resolvers={resolvers}
           onConfirm={() => {}}
           onCancel={() => {}}
         />
         <ComposerMentionCoach
-          candidate={{ agentId: "agent-qa", matchedText: "QA" }}
+          candidate={{ agentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", matchedText: "QA" }}
           agentDisplayName="QA"
           onInsert={() => {}}
           onDismiss={() => {}}

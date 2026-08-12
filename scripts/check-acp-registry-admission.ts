@@ -50,25 +50,30 @@ const PROVIDER_PARSER_PATTERNS = Object.freeze([
   {
     expression:
       /\b(?:parse|extract|normalize)(?:Codex|Claude|Gemini|OpenCode|Grok|Hermes|Cursor|Pi|Kimi|Qwen)\w*/i,
-    message: "provider-specific codecs are forbidden in the canonical ACP directory",
+    message:
+      "provider-specific codecs are forbidden in the canonical ACP directory",
   },
   {
     expression:
       /\b(?:Codex|Claude|Gemini|OpenCode|Grok|Hermes|Cursor|Pi|Kimi|Qwen)\w*(?:Parser|Extractor|Codec|EventMapper)\b/i,
-    message: "provider-specific codecs are forbidden in the canonical ACP directory",
+    message:
+      "provider-specific codecs are forbidden in the canonical ACP directory",
   },
   {
     expression: /\bjsonl\b/i,
-    message: "JSONL provider parsing is forbidden in the canonical ACP directory",
+    message:
+      "JSONL provider parsing is forbidden in the canonical ACP directory",
   },
   {
     expression:
       /from\s+["'](?:openai|ai|@anthropic-ai\/sdk|@google\/generative-ai)["']/,
-    message: "provider/model SDK imports are forbidden in the canonical ACP directory",
+    message:
+      "provider/model SDK imports are forbidden in the canonical ACP directory",
   },
   {
     expression: /from\s+["']@agentclientprotocol\/sdk["']/,
-    message: "production Paperclip ACP code must consume ACPX public runtime types only",
+    message:
+      "production Paperclip ACP code must consume ACPX public runtime types only",
   },
 ]);
 
@@ -290,11 +295,12 @@ function scanDependencyPins(
   const bundled = manifest.bundleDependencies;
   if (
     !Array.isArray(bundled) ||
-    !Object.keys(EXACT_RUNTIME_DEPENDENCIES).every((name) => bundled.includes(name)) ||
+    !Object.keys(EXACT_RUNTIME_DEPENDENCIES).every((name) =>
+      bundled.includes(name),
+    ) ||
     bundled.some(
       (name) =>
-        typeof name === "string" &&
-        name.startsWith("@agentclientprotocol/"),
+        typeof name === "string" && name.startsWith("@agentclientprotocol/"),
     )
   ) {
     addMissing(
@@ -307,7 +313,12 @@ function scanDependencyPins(
 
   const rootSource = sources.get(ROOT_MANIFEST);
   if (!rootSource) {
-    addMissing(violations, ROOT_MANIFEST, "dependency", "root manifest is required");
+    addMissing(
+      violations,
+      ROOT_MANIFEST,
+      "dependency",
+      "root manifest is required",
+    );
   } else {
     try {
       const root = JSON.parse(rootSource) as {
@@ -338,16 +349,18 @@ function scanDependencyPins(
     return;
   }
   const importerStart = lockfile.search(/^  packages\/adapter-utils:\s*$/m);
-  const importerTail = importerStart < 0 ? "" : lockfile.slice(importerStart + 1);
+  const importerTail =
+    importerStart < 0 ? "" : lockfile.slice(importerStart + 1);
   const nextImporterOffset = importerTail.search(/^  \S.*:\s*$/m);
-  const importer = importerStart < 0
-    ? ""
-    : lockfile.slice(
-        importerStart,
-        nextImporterOffset < 0
-          ? lockfile.length
-          : importerStart + 1 + nextImporterOffset,
-      );
+  const importer =
+    importerStart < 0
+      ? ""
+      : lockfile.slice(
+          importerStart,
+          nextImporterOffset < 0
+            ? lockfile.length
+            : importerStart + 1 + nextImporterOffset,
+        );
   if (!importer) {
     addMissing(
       violations,
@@ -357,13 +370,13 @@ function scanDependencyPins(
     );
     return;
   }
-  for (const [packageName, expectedVersion] of Object.entries(
-    {
-      ...EXACT_RUNTIME_DEPENDENCIES,
-      ...EXACT_FIXTURE_DEV_DEPENDENCIES,
-    },
-  )) {
-    const quotedName = packageName.includes("/") ? `'${packageName}'` : packageName;
+  for (const [packageName, expectedVersion] of Object.entries({
+    ...EXACT_RUNTIME_DEPENDENCIES,
+    ...EXACT_FIXTURE_DEV_DEPENDENCIES,
+  })) {
+    const quotedName = packageName.includes("/")
+      ? `'${packageName}'`
+      : packageName;
     const expression = new RegExp(
       `^      ${escapeRegExp(quotedName)}:\\n` +
         `        specifier: ${escapeRegExp(expectedVersion)}\\n` +
@@ -388,11 +401,13 @@ function scanAcpxImports(
   const allowedValueImports = new Map<string, ReadonlySet<string>>([
     [REGISTRY_PATH, new Set(["createAgentRegistry"])],
     [
-      DISCOVERY_PATH,
-      new Set(["createAcpRuntime", "createAgentRegistry", "createRuntimeStore"]),
+      RUNTIME_EXECUTION_PATH,
+      new Set(["createAcpRuntime", "createRuntimeStore"]),
     ],
-    [RUNTIME_EXECUTION_PATH, new Set(["createAcpRuntime", "createRuntimeStore"])],
-    [RUNTIME_READINESS_PATH, new Set(["createAcpRuntime", "createRuntimeStore"])],
+    [
+      RUNTIME_READINESS_PATH,
+      new Set(["createAcpRuntime", "createRuntimeStore"]),
+    ],
   ]);
 
   for (const [filePath, source] of sources) {
@@ -474,7 +489,9 @@ function scanRegistryOwner(
       });
     }
   }
-  const assertionOffset = source.indexOf("export function assertAcpRegistryAgentName");
+  const assertionOffset = source.indexOf(
+    "export function assertAcpRegistryAgentName",
+  );
   const assertionBody = source.slice(Math.max(0, assertionOffset));
   if (
     assertionOffset < 0 ||
@@ -504,10 +521,7 @@ function scanDiscoveryAndCatalog(
     fragments: [
       "listAcpxAgentNames",
       "probeAcpxAgent",
-      "createAcpRuntime",
-      "ensureSession",
-      "getStatus",
-      "close",
+      "probeAcpxRuntimeReadiness",
       "configOptions",
     ],
   });
@@ -524,7 +538,8 @@ function scanDiscoveryAndCatalog(
       "discoverLocalAcpxAdapterCatalog",
       "configOptions",
       "registryName: discovery.agentName",
-      "limits: null",
+      "modelConfigOptionId: selectedModelOption?.source.id ?? null",
+      "models,",
     ],
   });
   if (catalog) {
@@ -549,7 +564,8 @@ function scanDiscoveryAndCatalog(
     fragments: [
       "discoverLocalAcpxAdapterCatalog",
       "refreshAcpxAdapters",
-      "acpxRuntimeIdentity",
+      "const currentByType = new Map<string, ServerAdapterModule>()",
+      "next.set(adapter.type, adapter)",
       "snapshot.adapters",
     ],
   });
@@ -627,12 +643,18 @@ function scanProductionRawInvocationImports(
   violations: MutableViolation[],
 ): void {
   for (const [filePath, source] of sources) {
-    if (!filePath.startsWith("apps/server/src/") || isTestOrFixturePath(filePath)) {
+    if (
+      !filePath.startsWith("apps/server/src/") ||
+      isTestOrFixturePath(filePath)
+    ) {
       continue;
     }
     const sourceFile = parseSource(filePath, source);
     for (const statement of sourceFile.statements) {
-      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      if (
+        !ts.isImportDeclaration(statement) ||
+        !ts.isStringLiteral(statement.moduleSpecifier)
+      ) {
         continue;
       }
       const moduleSpecifier = statement.moduleSpecifier.text;
@@ -641,7 +663,8 @@ function scanProductionRawInvocationImports(
         violations.push({
           path: filePath,
           kind: "raw_invocation",
-          message: "production code must not import a retired raw ACP subprocess module",
+          message:
+            "production code must not import a retired raw ACP subprocess module",
           offset,
         });
         continue;
@@ -731,20 +754,22 @@ async function walk(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
   }
-  await Promise.all(entries.map(async (entry) => {
-    const candidate = path.join(absolutePath, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name !== "node_modules" && entry.name !== "dist") {
-        await walk(candidate, repositoryRoot, files);
+  await Promise.all(
+    entries.map(async (entry) => {
+      const candidate = path.join(absolutePath, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "node_modules" && entry.name !== "dist") {
+          await walk(candidate, repositoryRoot, files);
+        }
+        return;
       }
-      return;
-    }
-    if (!SOURCE_EXTENSIONS.has(path.extname(entry.name))) return;
-    files.push({
-      path: normalizePath(path.relative(repositoryRoot, candidate)),
-      source: await fs.readFile(candidate, "utf8"),
-    });
-  }));
+      if (!SOURCE_EXTENSIONS.has(path.extname(entry.name))) return;
+      files.push({
+        path: normalizePath(path.relative(repositoryRoot, candidate)),
+        source: await fs.readFile(candidate, "utf8"),
+      });
+    }),
+  );
 }
 
 export async function listAcpRegistryAdmissionFiles(
@@ -752,14 +777,25 @@ export async function listAcpRegistryAdmissionFiles(
 ): Promise<AcpRegistryAdmissionFile[]> {
   const files: AcpRegistryAdmissionFile[] = [];
   await Promise.all([
-    walk(path.resolve(repositoryRoot, "packages/adapter-utils/src"), repositoryRoot, files),
-    walk(path.resolve(repositoryRoot, "apps/server/src"), repositoryRoot, files),
+    walk(
+      path.resolve(repositoryRoot, "packages/adapter-utils/src"),
+      repositoryRoot,
+      files,
+    ),
+    walk(
+      path.resolve(repositoryRoot, "apps/server/src"),
+      repositoryRoot,
+      files,
+    ),
   ]);
   for (const filePath of [ADAPTER_UTILS_MANIFEST, ROOT_MANIFEST, LOCKFILE]) {
     try {
       files.push({
         path: filePath,
-        source: await fs.readFile(path.resolve(repositoryRoot, filePath), "utf8"),
+        source: await fs.readFile(
+          path.resolve(repositoryRoot, filePath),
+          "utf8",
+        ),
       });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -832,7 +868,10 @@ async function inspectInstalledRuntime(
       const resolved = anchoredRequire.resolve(
         packageName === "acpx" ? "acpx/runtime" : packageName,
       );
-      const installed = await packageManifestForResolvedEntry(resolved, packageName);
+      const installed = await packageManifestForResolvedEntry(
+        resolved,
+        packageName,
+      );
       if (installed.version !== expectedVersion) {
         add(
           `installed ${packageName} must be ${expectedVersion}, found ${installed.version}`,
@@ -848,24 +887,37 @@ async function inspectInstalledRuntime(
     const names = registryModule.listAcpRegistryAgentNames(registry);
     if (
       !Array.isArray(names) ||
-      names.some((name) => typeof name !== "string" || name.length === 0 || name !== name.trim())
+      names.some(
+        (name) =>
+          typeof name !== "string" || name.length === 0 || name !== name.trim(),
+      )
     ) {
       add("ACPX registry must expose exact non-empty dynamic names");
     }
 
     let rawResolveCalls = 0;
-    const admittedName = registryModule.assertAcpRegistryAgentName("local-agent", {
-      list: () => ["local-agent"],
-      resolve: () => {
-        rawResolveCalls += 1;
-        return ["must-not-run"];
-      },
-    } as RegistryLike);
+    const admittedName = registryModule.assertAcpRegistryAgentName(
+      "local-agent",
+      {
+        list: () => ["local-agent"],
+        resolve: () => {
+          rawResolveCalls += 1;
+          return ["must-not-run"];
+        },
+      } as RegistryLike,
+    );
     if (admittedName !== "local-agent" || rawResolveCalls !== 0) {
-      add("exact ACPX admission must preserve the submitted name without resolving argv");
+      add(
+        "exact ACPX admission must preserve the submitted name without resolving argv",
+      );
     }
 
-    for (const submittedName of ["unknown", " local-agent", "local-agent ", "Local-Agent"]) {
+    for (const submittedName of [
+      "unknown",
+      " local-agent",
+      "local-agent ",
+      "Local-Agent",
+    ]) {
       let resolveCalls = 0;
       let rejected = false;
       try {
@@ -883,7 +935,9 @@ async function inspectInstalledRuntime(
         rejected = true;
       }
       if (!rejected || resolveCalls !== 0) {
-        add(`${JSON.stringify(submittedName)} must reject before ACPX launch resolution`);
+        add(
+          `${JSON.stringify(submittedName)} must reject before ACPX launch resolution`,
+        );
       }
     }
   } catch (error) {

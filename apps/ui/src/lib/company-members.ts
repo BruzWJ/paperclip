@@ -125,8 +125,7 @@ export function buildTaskMentionOptions(
 ): MentionOption[] {
   const options: MentionOption[] = [];
   for (const task of tasks ?? []) {
-    const identifier = task.identifier?.trim();
-    if (!identifier) continue;
+    const identifier = task.identifier;
     const title = task.title?.trim() ?? "";
     options.push({
       id: `task:${task.id}`,

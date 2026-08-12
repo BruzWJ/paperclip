@@ -1,12 +1,17 @@
 import { createHash } from "node:crypto";
 import {
+  companies,
   taskCreateIdempotencyKeys,
   taskCreatorEdgeReceivability,
   taskExecutionAuthorities,
   tasks,
 } from "@paperclipai/db";
-import { isSystemCreatorSourceKind } from "@paperclipai/shared";
-import { and, eq } from "drizzle-orm";
+import {
+  isCanonicalTaskNumber,
+  isSystemCreatorSourceKind,
+  MAX_TASK_NUMBER,
+} from "@paperclipai/shared";
+import { and, eq, lt, sql } from "drizzle-orm";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 import {
   reserveTaskExecutionWorkspaceBinding,
@@ -27,6 +32,84 @@ export class CanonicalTaskAggregateRejected extends Error {
   ) {
     super(message);
     this.name = "CanonicalTaskAggregateRejected";
+  }
+}
+
+function canonicalTaskIdentifier(taskPrefix: string, taskNumber: number): string {
+  return `${taskPrefix}-${taskNumber}`;
+}
+
+/**
+ * Sole allocator for the per-company task number and its persisted display
+ * identifier. The atomic increment remains safe even if a future caller does
+ * not already hold the company row lock.
+ */
+export async function allocateCanonicalTaskIdentityInTx(
+  tx: TaskSessionDbTransaction,
+  companyId: string,
+  now: Date,
+): Promise<{ taskNumber: number; identifier: string }> {
+  const allocated = await tx
+    .update(companies)
+    .set({
+      taskCounter: sql`${companies.taskCounter} + 1`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(companies.id, companyId),
+        lt(companies.taskCounter, MAX_TASK_NUMBER),
+      ),
+    )
+    .returning({
+      taskNumber: companies.taskCounter,
+      taskPrefix: companies.taskPrefix,
+    })
+    .then((rows) => rows[0] ?? null);
+  if (!allocated || !isCanonicalTaskNumber(allocated.taskNumber)) {
+    throw new CanonicalTaskAggregateRejected(
+      "Company task counter cannot allocate another canonical task number",
+      "task_number_unavailable",
+    );
+  }
+  return {
+    taskNumber: allocated.taskNumber,
+    identifier: canonicalTaskIdentifier(
+      allocated.taskPrefix,
+      allocated.taskNumber,
+    ),
+  };
+}
+
+async function assertCanonicalTaskIdentity(
+  tx: TaskSessionDbTransaction,
+  task: TaskInsert & { companyId: string },
+): Promise<void> {
+  if (!isCanonicalTaskNumber(task.taskNumber)) {
+    throw new CanonicalTaskAggregateRejected(
+      "Task number must be a canonical positive integer",
+      "task_number_invalid",
+    );
+  }
+  const company = await tx
+    .select({
+      taskPrefix: companies.taskPrefix,
+      taskCounter: companies.taskCounter,
+    })
+    .from(companies)
+    .where(eq(companies.id, task.companyId))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  if (
+    !company ||
+    company.taskCounter !== task.taskNumber ||
+    task.identifier !==
+      canonicalTaskIdentifier(company.taskPrefix, task.taskNumber)
+  ) {
+    throw new CanonicalTaskAggregateRejected(
+      "Task identifier must match the company prefix and allocated task number",
+      "task_identifier_invalid",
+    );
   }
 }
 
@@ -337,6 +420,7 @@ export async function persistCanonicalTaskAggregateInTx(
     );
   }
   assertCanonicalTaskCreatorProvenance(task);
+  await assertCanonicalTaskIdentity(tx, task);
   if (task.parentId) {
     if (task.parentId === task.id) {
       throw new CanonicalTaskAggregateRejected(

@@ -6,7 +6,6 @@ import { instanceSettingsRoutes } from "../routes/instance-settings.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(),
   getGeneral: vi.fn(),
   updateGeneral: vi.fn(),
   listCompanyIds: vi.fn(),
@@ -15,7 +14,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../services/index.js", () => ({
   instanceSettingsService: () => ({
-    get: mocks.get,
     getGeneral: mocks.getGeneral,
     updateGeneral: mocks.updateGeneral,
     listCompanyIds: mocks.listCompanyIds,

@@ -40,15 +40,8 @@ type BetterAuthSessionResolver = {
 
 type BetterAuthInstance = BetterAuthHandlerTarget & BetterAuthSessionResolver;
 
-const AUTH_COOKIE_PREFIX_FALLBACK = "default";
-const AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE = /[^a-zA-Z0-9_-]+/g;
-
 export function deriveAuthCookiePrefix(instanceId = resolvePaperclipInstanceId()): string {
-  const scopedInstanceId = instanceId
-    .trim()
-    .replace(AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE, "-")
-    .replace(/^-+|-+$/g, "") || AUTH_COOKIE_PREFIX_FALLBACK;
-  return `paperclip-${scopedInstanceId}`;
+  return `paperclip-${resolvePaperclipInstanceId(instanceId)}`;
 }
 
 export function buildBetterAuthAdvancedOptions(input: { disableSecureCookies: boolean }) {

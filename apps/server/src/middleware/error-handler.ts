@@ -13,10 +13,6 @@ export interface ErrorContext {
   reqQuery?: unknown;
 }
 
-function isRedactedSkillPolicyDenial(details: Record<string, unknown> | null) {
-  return details?.code === "skill_policy_denied";
-}
-
 export function attachErrorContext(
   req: Request,
   res: Response,
@@ -46,7 +42,6 @@ export function errorHandler(
     const details = err.details && typeof err.details === "object" && !Array.isArray(err.details)
       ? err.details as Record<string, unknown>
       : null;
-    const redactedSkillPolicyDenial = isRedactedSkillPolicyDenial(details);
     const structuredConnectionError = new Set([
       "user_authorization_required",
       "grant_revoked",
@@ -68,14 +63,13 @@ export function errorHandler(
     res.status(err.status).json({
       error: err.message,
       ...(typeof details?.code === "string" ? { code: details.code } : {}),
-      ...(redactedSkillPolicyDenial && typeof details?.reason === "string" ? { reason: details.reason } : {}),
       ...(typeof details?.remediation === "string" || (structuredConnectionError && details?.remediation && typeof details.remediation === "object")
         ? { remediation: details.remediation }
         : {}),
       ...(structuredConnectionError && details?.connection ? { connection: details.connection } : {}),
       ...(structuredConnectionError && details?.subject ? { subject: details.subject } : {}),
       ...(structuredConnectionError && typeof details?.grantId === "string" ? { grantId: details.grantId } : {}),
-      ...(!redactedSkillPolicyDenial && err.details ? { details: err.details } : {}),
+      ...(err.details ? { details: err.details } : {}),
     });
     return;
   }

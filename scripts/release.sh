@@ -49,9 +49,6 @@ restore_publish_artifacts() {
   rm -f "$CLI_DIR/README.md"
   rm -rf "$REPO_ROOT/apps/server/ui-dist"
 
-  for pkg_dir in apps/server; do
-    rm -rf "$REPO_ROOT/$pkg_dir/skills"
-  done
 }
 
 cleanup_release_state() {
@@ -206,10 +203,6 @@ fi
 
 set_cleanup_trap
 
-# The release flow already prepares apps/ui/dist before packaging. Reuse that output
-# so server prepack does not rebuild the UI a second time during preview/publish.
-export PAPERCLIP_RELEASE_REUSE_UI_DIST=1
-
 if [ "$skip_verify" = false ]; then
   release_info ""
   release_info "==> Step 1/7: Verification gate..."
@@ -227,11 +220,6 @@ release_info "==> Step 2/7: Building workspace artifacts..."
 cd "$REPO_ROOT"
 pnpm build
 node "$REPO_ROOT/scripts/build-standalone-public-packages.mjs"
-bash "$REPO_ROOT/scripts/prepare-server-ui-dist.sh"
-for pkg_dir in apps/server; do
-  rm -rf "$REPO_ROOT/$pkg_dir/skills"
-  cp -r "$REPO_ROOT/skills" "$REPO_ROOT/$pkg_dir/skills"
-done
 release_info "  ✓ Workspace build complete"
 
 release_info ""

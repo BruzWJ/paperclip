@@ -1,5 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { authSessionSchema, currentUserProfileSchema } from "./access.js";
+import {
+  authSessionSchema,
+  authUserIdSchema,
+  currentUserProfileSchema,
+  listCompanyInvitesQuerySchema,
+} from "./access.js";
+
+describe("listCompanyInvitesQuerySchema", () => {
+  it("accepts only exact integer query strings and known keys", () => {
+    expect(listCompanyInvitesQuerySchema.parse({ limit: "20", offset: "0" }))
+      .toMatchObject({ limit: 20, offset: 0 });
+    expect(listCompanyInvitesQuerySchema.safeParse({ limit: "020" }).success).toBe(false);
+    expect(listCompanyInvitesQuerySchema.safeParse({ offset: " 0" }).success).toBe(false);
+    expect(listCompanyInvitesQuerySchema.safeParse({ mystery: "value" }).success).toBe(false);
+  });
+});
+
+describe("authUserIdSchema", () => {
+  it("accepts an exact non-UUID stored user ID", () => {
+    expect(authUserIdSchema.safeParse("auth-user_01HZX").success).toBe(true);
+  });
+
+  it.each(["", " ", " user-1", "user-1 ", "\tuser-1"])(
+    "rejects noncanonical user ID %j",
+    (value) => {
+      expect(authUserIdSchema.safeParse(value).success).toBe(false);
+    },
+  );
+});
 
 describe("currentUserProfileSchema", () => {
   it("coerces empty-string name to null", () => {

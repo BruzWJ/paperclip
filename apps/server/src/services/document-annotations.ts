@@ -11,6 +11,7 @@ import {
 } from "@paperclipai/db";
 import {
   anchorSnapshotToSelector,
+  isCanonicalUuid,
   remapDocumentAnchor,
   selectorToAnchorSnapshot,
   verifyDocumentAnchorSelector,
@@ -32,8 +33,7 @@ type ActorInput = {
   runId?: string | null;
 };
 
-type TaskDocumentRow = {
-  taskId: string;
+type AnnotationDocumentRow = {
   companyId: string;
   documentId: string;
   documentKey: string;
@@ -42,14 +42,20 @@ type TaskDocumentRow = {
   latestRevisionNumber: number;
 };
 
-type RoutineDocumentRow = {
-  routineId: string;
-  companyId: string;
+type AnnotationTarget =
+  { kind: "task"; taskId: string } | { kind: "routine"; routineId: string };
+
+type ListThreadsOptions = {
+  status?: "open" | "resolved" | "all";
+  includeComments?: boolean;
+};
+
+type RemapDocumentInput = {
+  key: string;
   documentId: string;
-  documentKey: string;
-  latestBody: string;
-  latestRevisionId: string | null;
-  latestRevisionNumber: number;
+  nextRevisionId: string | null;
+  nextRevisionNumber: number;
+  nextBody: string;
 };
 
 const threadSelect = {
@@ -100,7 +106,18 @@ const commentSelect = {
   updatedAt: documentAnnotationComments.updatedAt,
 };
 
-function snapshotFromThread(thread: Pick<DocumentAnnotationThread, "selectedText" | "prefixText" | "suffixText" | "normalizedStart" | "normalizedEnd" | "markdownStart" | "markdownEnd">): DocumentAnnotationAnchorSnapshot {
+function snapshotFromThread(
+  thread: Pick<
+    DocumentAnnotationThread,
+    | "selectedText"
+    | "prefixText"
+    | "suffixText"
+    | "normalizedStart"
+    | "normalizedEnd"
+    | "markdownStart"
+    | "markdownEnd"
+  >,
+): DocumentAnnotationAnchorSnapshot {
   return {
     selectedText: thread.selectedText,
     prefixText: thread.prefixText,
@@ -127,11 +144,13 @@ async function remapOpenThreadsForScope(
   const threads: DocumentAnnotationThread[] = await tx
     .select(threadSelect)
     .from(documentAnnotationThreads)
-    .where(and(
-      scopeCondition,
-      eq(documentAnnotationThreads.documentId, input.documentId),
-      eq(documentAnnotationThreads.status, "open"),
-    ));
+    .where(
+      and(
+        scopeCondition,
+        eq(documentAnnotationThreads.documentId, input.documentId),
+        eq(documentAnnotationThreads.status, "open"),
+      ),
+    );
   const changed = [];
   const now = new Date();
 
@@ -143,7 +162,9 @@ async function remapOpenThreadsForScope(
       nextMarkdown: input.nextBody,
     });
     const nextAnchor = remap.anchor;
-    const nextSelector = nextAnchor ? anchorSnapshotToSelector(nextAnchor) : thread.anchorSelector;
+    const nextSelector = nextAnchor
+      ? anchorSnapshotToSelector(nextAnchor)
+      : thread.anchorSelector;
     const [updated] = await tx
       .update(documentAnnotationThreads)
       .set({
@@ -153,14 +174,14 @@ async function remapOpenThreadsForScope(
         anchorConfidence: remap.confidence,
         ...(nextAnchor
           ? {
-            selectedText: nextAnchor.selectedText,
-            prefixText: nextAnchor.prefixText,
-            suffixText: nextAnchor.suffixText,
-            normalizedStart: nextAnchor.normalizedStart,
-            normalizedEnd: nextAnchor.normalizedEnd,
-            markdownStart: nextAnchor.markdownStart,
-            markdownEnd: nextAnchor.markdownEnd,
-          }
+              selectedText: nextAnchor.selectedText,
+              prefixText: nextAnchor.prefixText,
+              suffixText: nextAnchor.suffixText,
+              normalizedStart: nextAnchor.normalizedStart,
+              normalizedEnd: nextAnchor.normalizedEnd,
+              markdownStart: nextAnchor.markdownStart,
+              markdownEnd: nextAnchor.markdownEnd,
+            }
           : {}),
         anchorSelector: nextSelector,
         updatedAt: now,
@@ -194,93 +215,120 @@ async function remapOpenThreadsForScope(
 export function documentAnnotationService(db: Db) {
   const taskReferences = taskReferenceService(db);
 
-  async function getTaskDocument(taskId: string, key: string, dbOrTx: any = db): Promise<TaskDocumentRow | null> {
-    return dbOrTx
-      .select({
-        taskId: taskDocuments.taskId,
-        companyId: documents.companyId,
-        documentId: documents.id,
-        documentKey: taskDocuments.key,
-        latestBody: documents.latestBody,
-        latestRevisionId: documents.latestRevisionId,
-        latestRevisionNumber: documents.latestRevisionNumber,
-      })
-      .from(taskDocuments)
-      .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
-      .where(and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)))
-      .then((rows: TaskDocumentRow[]) => rows[0] ?? null);
+  function documentLink(target: AnnotationTarget) {
+    return target.kind === "task"
+      ? {
+          table: taskDocuments,
+          ownerColumn: taskDocuments.taskId,
+          ownerId: target.taskId,
+          keyColumn: taskDocuments.key,
+          documentIdColumn: taskDocuments.documentId,
+          companyCondition: null,
+        }
+      : {
+          table: routineDocuments,
+          ownerColumn: routineDocuments.routineId,
+          ownerId: target.routineId,
+          keyColumn: routineDocuments.key,
+          documentIdColumn: routineDocuments.documentId,
+          companyCondition: eq(routineDocuments.companyId, documents.companyId),
+        };
   }
 
-  async function getRoutineDocument(
-    routineId: string,
+  async function getDocument(
+    target: AnnotationTarget,
     key: string,
     dbOrTx: any = db,
-  ): Promise<RoutineDocumentRow | null> {
+  ): Promise<AnnotationDocumentRow | null> {
+    const link = documentLink(target);
+    const conditions = [
+      eq(link.ownerColumn, link.ownerId),
+      eq(link.keyColumn, key),
+    ];
+    if (link.companyCondition) conditions.push(link.companyCondition);
     return dbOrTx
       .select({
-        routineId: routineDocuments.routineId,
         companyId: documents.companyId,
         documentId: documents.id,
-        documentKey: routineDocuments.key,
+        documentKey: link.keyColumn,
         latestBody: documents.latestBody,
         latestRevisionId: documents.latestRevisionId,
         latestRevisionNumber: documents.latestRevisionNumber,
       })
-      .from(routineDocuments)
-      .innerJoin(documents, eq(routineDocuments.documentId, documents.id))
-      .where(and(
-        eq(routineDocuments.routineId, routineId),
-        eq(routineDocuments.key, key),
-        eq(routineDocuments.companyId, documents.companyId),
-      ))
-      .then((rows: RoutineDocumentRow[]) => rows[0] ?? null);
+      .from(link.table)
+      .innerJoin(documents, eq(link.documentIdColumn, documents.id))
+      .where(and(...conditions))
+      .then((rows: AnnotationDocumentRow[]) => rows[0] ?? null);
   }
 
-  async function getThreadForTask(
-    taskId: string,
+  async function findThread(
+    target: AnnotationTarget,
     documentKey: string,
     threadId: string,
     dbOrTx: any = db,
-  ): Promise<DocumentAnnotationThread | null> {
-    return dbOrTx
+  ): Promise<{
+    documentFound: boolean;
+    thread: DocumentAnnotationThread | null;
+  }> {
+    if (!isCanonicalUuid(threadId)) {
+      if (target.kind === "routine") {
+        const document = await getDocument(target, documentKey, dbOrTx);
+        if (!document) return { documentFound: false, thread: null };
+      }
+      return { documentFound: true, thread: null };
+    }
+
+    let targetConditions: SQL[];
+    if (target.kind === "task") {
+      targetConditions = [
+        eq(documentAnnotationThreads.taskId, target.taskId),
+        eq(documentAnnotationThreads.documentKey, documentKey),
+      ];
+    } else {
+      const document = await getDocument(target, documentKey, dbOrTx);
+      if (!document) return { documentFound: false, thread: null };
+      targetConditions = [
+        eq(documentAnnotationThreads.companyId, document.companyId),
+        eq(documentAnnotationThreads.routineId, target.routineId),
+        eq(documentAnnotationThreads.documentId, document.documentId),
+        eq(documentAnnotationThreads.documentKey, documentKey),
+      ];
+    }
+    const thread = await dbOrTx
       .select(threadSelect)
       .from(documentAnnotationThreads)
-      .where(and(
-        eq(documentAnnotationThreads.id, threadId),
-        eq(documentAnnotationThreads.taskId, taskId),
-        eq(documentAnnotationThreads.documentKey, documentKey),
-      ))
+      .where(
+        and(eq(documentAnnotationThreads.id, threadId), ...targetConditions),
+      )
       .then((rows: DocumentAnnotationThread[]) => rows[0] ?? null);
+    return { documentFound: true, thread };
   }
 
-  async function getThreadForRoutine(
-    routineId: string,
+  async function requireThread(
+    target: AnnotationTarget,
     documentKey: string,
     threadId: string,
-    companyId: string,
-    documentId: string,
     dbOrTx: any = db,
-  ): Promise<DocumentAnnotationThread | null> {
-    return dbOrTx
-      .select(threadSelect)
-      .from(documentAnnotationThreads)
-      .where(and(
-        eq(documentAnnotationThreads.id, threadId),
-        eq(documentAnnotationThreads.companyId, companyId),
-        eq(documentAnnotationThreads.routineId, routineId),
-        eq(documentAnnotationThreads.documentId, documentId),
-        eq(documentAnnotationThreads.documentKey, documentKey),
-      ))
-      .then((rows: DocumentAnnotationThread[]) => rows[0] ?? null);
+  ): Promise<DocumentAnnotationThread> {
+    const result = await findThread(target, documentKey, threadId, dbOrTx);
+    if (!result.documentFound) throw notFound("Document not found");
+    if (!result.thread) throw notFound("Annotation thread not found");
+    return result.thread;
   }
 
-  async function commentsForThreads(threadIds: string[], dbOrTx: any = db): Promise<DocumentAnnotationComment[]> {
+  async function commentsForThreads(
+    threadIds: string[],
+    dbOrTx: any = db,
+  ): Promise<DocumentAnnotationComment[]> {
     if (threadIds.length === 0) return [];
     return dbOrTx
       .select(commentSelect)
       .from(documentAnnotationComments)
       .where(inArray(documentAnnotationComments.threadId, threadIds))
-      .orderBy(asc(documentAnnotationComments.createdAt), asc(documentAnnotationComments.id));
+      .orderBy(
+        asc(documentAnnotationComments.createdAt),
+        asc(documentAnnotationComments.id),
+      );
   }
 
   async function assertLinkedTaskComment(
@@ -289,6 +337,9 @@ export function documentAnnotationService(db: Db) {
     dbOrTx: any = db,
   ) {
     if (!commentId) return null;
+    if (!isCanonicalUuid(commentId)) {
+      throw unprocessable("Linked task comment must belong to this task");
+    }
     const comment = await dbOrTx
       .select({
         id: taskComments.id,
@@ -297,92 +348,328 @@ export function documentAnnotationService(db: Db) {
       })
       .from(taskComments)
       .where(eq(taskComments.id, commentId))
-      .then((rows: Array<{ id: string; companyId: string; taskId: string }>) => rows[0] ?? null);
+      .then(
+        (rows: Array<{ id: string; companyId: string; taskId: string }>) =>
+          rows[0] ?? null,
+      );
     if (!comment || comment.taskId !== taskId) {
       throw unprocessable("Linked task comment must belong to this task");
     }
     return comment;
   }
 
+  async function listThreads(
+    target: AnnotationTarget,
+    key: string,
+    options: ListThreadsOptions,
+  ) {
+    const document = await getDocument(target, key);
+    if (!document) throw notFound("Document not found");
+
+    const conditions =
+      target.kind === "task"
+        ? [
+            eq(documentAnnotationThreads.taskId, target.taskId),
+            eq(documentAnnotationThreads.documentId, document.documentId),
+          ]
+        : [
+            eq(documentAnnotationThreads.companyId, document.companyId),
+            eq(documentAnnotationThreads.routineId, target.routineId),
+            eq(documentAnnotationThreads.documentId, document.documentId),
+          ];
+    if (options.status && options.status !== "all") {
+      conditions.push(eq(documentAnnotationThreads.status, options.status));
+    }
+
+    const threads: DocumentAnnotationThread[] = await db
+      .select(threadSelect)
+      .from(documentAnnotationThreads)
+      .where(and(...conditions))
+      .orderBy(
+        desc(documentAnnotationThreads.updatedAt),
+        desc(documentAnnotationThreads.id),
+      );
+    if (!options.includeComments) return threads;
+
+    const comments = await commentsForThreads(
+      threads.map((thread) => thread.id),
+    );
+    const commentsByThread = new Map<string, DocumentAnnotationComment[]>();
+    for (const comment of comments) {
+      const existing = commentsByThread.get(comment.threadId) ?? [];
+      existing.push(comment);
+      commentsByThread.set(comment.threadId, existing);
+    }
+    return threads.map((thread) => ({
+      ...thread,
+      comments: commentsByThread.get(thread.id) ?? [],
+    }));
+  }
+
+  async function lockDocument(
+    tx: DocumentAnnotationTx,
+    target: AnnotationTarget,
+    key: string,
+  ) {
+    const link = documentLink(target);
+    await tx.execute(sql`
+      select ${documents.id}
+      from ${link.table}
+      inner join ${documents} on ${link.documentIdColumn} = ${documents.id}
+      where ${and(eq(link.ownerColumn, link.ownerId), eq(link.keyColumn, key))}
+      for update of ${documents}
+    `);
+  }
+
+  async function insertComment(
+    tx: DocumentAnnotationTx,
+    target: AnnotationTarget,
+    thread: DocumentAnnotationThread,
+    body: string,
+    actor: ActorInput,
+    taskCommentId: string | null,
+    now: Date,
+  ) {
+    const targetValues =
+      target.kind === "task"
+        ? { taskId: thread.taskId }
+        : { taskId: null, routineId: thread.routineId };
+    const [comment] = await tx
+      .insert(documentAnnotationComments)
+      .values({
+        companyId: thread.companyId,
+        threadId: thread.id,
+        ...targetValues,
+        documentId: thread.documentId,
+        body,
+        authorType: actor.actorType,
+        authorAgentId: actor.agentId ?? null,
+        authorUserId: actor.userId ?? null,
+        createdByRunId: actor.runId ?? null,
+        taskCommentId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning(commentSelect);
+    if (target.kind === "task") {
+      await taskReferences.syncAnnotationComment(comment.id, tx);
+    }
+    return comment;
+  }
+
+  async function createThreadForTarget(
+    target: AnnotationTarget,
+    key: string,
+    input: CreateDocumentAnnotationThread,
+    actor: ActorInput,
+  ) {
+    return db.transaction(async (tx) => {
+      await lockDocument(tx, target, key);
+      const document = await getDocument(target, key, tx);
+      if (!document) throw notFound("Document not found");
+      if (
+        input.baseRevisionId !== document.latestRevisionId ||
+        input.baseRevisionNumber !== document.latestRevisionNumber
+      ) {
+        throw conflict(
+          "Annotation anchor requires the current document revision",
+          {
+            currentRevisionId: document.latestRevisionId,
+            currentRevisionNumber: document.latestRevisionNumber,
+          },
+        );
+      }
+
+      const verification = verifyDocumentAnchorSelector({
+        markdown: document.latestBody,
+        selector: input.selector,
+      });
+      if (!verification.ok || !verification.anchor) {
+        throw unprocessable(
+          "Annotation anchor does not match the current document revision",
+          {
+            reason: verification.reason,
+          },
+        );
+      }
+
+      const now = new Date();
+      const linkedTaskComment =
+        target.kind === "task"
+          ? await assertLinkedTaskComment(
+              target.taskId,
+              input.taskCommentId,
+              tx,
+            )
+          : null;
+      const targetValues =
+        target.kind === "task"
+          ? { taskId: target.taskId }
+          : { taskId: null, routineId: target.routineId };
+      const [thread] = await tx
+        .insert(documentAnnotationThreads)
+        .values({
+          companyId: document.companyId,
+          ...targetValues,
+          documentId: document.documentId,
+          documentKey: document.documentKey,
+          status: "open",
+          anchorState: "active",
+          anchorConfidence: "exact",
+          originalRevisionId: document.latestRevisionId,
+          originalRevisionNumber: document.latestRevisionNumber,
+          currentRevisionId: document.latestRevisionId,
+          currentRevisionNumber: document.latestRevisionNumber,
+          selectedText: verification.anchor.selectedText,
+          prefixText: verification.anchor.prefixText,
+          suffixText: verification.anchor.suffixText,
+          normalizedStart: verification.anchor.normalizedStart,
+          normalizedEnd: verification.anchor.normalizedEnd,
+          markdownStart: verification.anchor.markdownStart,
+          markdownEnd: verification.anchor.markdownEnd,
+          anchorSelector: input.selector,
+          createdByAgentId: actor.agentId ?? null,
+          createdByUserId: actor.userId ?? null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning(threadSelect);
+      const comment = await insertComment(
+        tx,
+        target,
+        thread,
+        input.body,
+        actor,
+        linkedTaskComment?.id ?? null,
+        now,
+      );
+      return { ...thread, comments: [comment] };
+    });
+  }
+
+  async function addCommentForTarget(
+    target: AnnotationTarget,
+    key: string,
+    threadId: string,
+    input: CreateDocumentAnnotationComment,
+    actor: ActorInput,
+  ) {
+    return db.transaction(async (tx) => {
+      const thread = await requireThread(target, key, threadId, tx);
+      const now = new Date();
+      const linkedTaskComment =
+        target.kind === "task"
+          ? await assertLinkedTaskComment(
+              target.taskId,
+              input.taskCommentId,
+              tx,
+            )
+          : null;
+      const comment = await insertComment(
+        tx,
+        target,
+        thread,
+        input.body,
+        actor,
+        linkedTaskComment?.id ?? null,
+        now,
+      );
+      await tx
+        .update(documentAnnotationThreads)
+        .set({ updatedAt: now })
+        .where(eq(documentAnnotationThreads.id, thread.id));
+      return comment;
+    });
+  }
+
+  async function updateThreadForTarget(
+    target: AnnotationTarget,
+    key: string,
+    threadId: string,
+    input: UpdateDocumentAnnotationThread,
+    actor: ActorInput,
+  ) {
+    return db.transaction(async (tx) => {
+      const thread = await requireThread(target, key, threadId, tx);
+      if (!input.status || input.status === thread.status) return thread;
+
+      const now = new Date();
+      const [updated] = await tx
+        .update(documentAnnotationThreads)
+        .set(
+          input.status === "resolved"
+            ? {
+                status: "resolved",
+                resolvedByAgentId: actor.agentId ?? null,
+                resolvedByUserId: actor.userId ?? null,
+                resolvedAt: now,
+                updatedAt: now,
+              }
+            : {
+                status: "open",
+                resolvedByAgentId: null,
+                resolvedByUserId: null,
+                resolvedAt: null,
+                updatedAt: now,
+              },
+        )
+        .where(eq(documentAnnotationThreads.id, thread.id))
+        .returning(threadSelect);
+      return updated;
+    });
+  }
+
+  async function remapOpenThreads(
+    target: AnnotationTarget,
+    input: RemapDocumentInput,
+  ) {
+    const scopeCondition =
+      target.kind === "task"
+        ? eq(documentAnnotationThreads.taskId, target.taskId)
+        : eq(documentAnnotationThreads.routineId, target.routineId);
+    return db.transaction(async (tx) =>
+      remapOpenThreadsForScope(tx, scopeCondition, input),
+    );
+  }
+
   return {
     listThreadsForTaskDocument: async (
       taskId: string,
       key: string,
-      options: { status?: "open" | "resolved" | "all"; includeComments?: boolean } = {},
-    ) => {
-      const doc = await getTaskDocument(taskId, key);
-      if (!doc) throw notFound("Document not found");
-      const conditions = [
-        eq(documentAnnotationThreads.taskId, taskId),
-        eq(documentAnnotationThreads.documentId, doc.documentId),
-      ];
-      if (options.status && options.status !== "all") {
-        conditions.push(eq(documentAnnotationThreads.status, options.status));
-      }
-      const threads: DocumentAnnotationThread[] = await db
-        .select(threadSelect)
-        .from(documentAnnotationThreads)
-        .where(and(...conditions))
-        .orderBy(desc(documentAnnotationThreads.updatedAt), desc(documentAnnotationThreads.id));
-      if (!options.includeComments) return threads;
-      const comments = await commentsForThreads(threads.map((thread) => thread.id));
-      const commentsByThread = new Map<string, DocumentAnnotationComment[]>();
-      for (const comment of comments) {
-        const existing = commentsByThread.get(comment.threadId) ?? [];
-        existing.push(comment);
-        commentsByThread.set(comment.threadId, existing);
-      }
-      return threads.map((thread) => ({
-        ...thread,
-        comments: commentsByThread.get(thread.id) ?? [],
-      }));
-    },
+      options: ListThreadsOptions = {},
+    ) => listThreads({ kind: "task", taskId }, key, options),
 
     listThreadsForRoutineDocument: async (
       routineId: string,
       key: string,
-      options: { status?: "open" | "resolved" | "all"; includeComments?: boolean } = {},
-    ) => {
-      const doc = await getRoutineDocument(routineId, key);
-      if (!doc) throw notFound("Document not found");
-      const conditions = [
-        eq(documentAnnotationThreads.companyId, doc.companyId),
-        eq(documentAnnotationThreads.routineId, routineId),
-        eq(documentAnnotationThreads.documentId, doc.documentId),
-      ];
-      if (options.status && options.status !== "all") {
-        conditions.push(eq(documentAnnotationThreads.status, options.status));
-      }
-      const threads: DocumentAnnotationThread[] = await db
-        .select(threadSelect)
-        .from(documentAnnotationThreads)
-        .where(and(...conditions))
-        .orderBy(desc(documentAnnotationThreads.updatedAt), desc(documentAnnotationThreads.id));
-      if (!options.includeComments) return threads;
-      const comments = await commentsForThreads(threads.map((thread) => thread.id));
-      const commentsByThread = new Map<string, DocumentAnnotationComment[]>();
-      for (const comment of comments) {
-        const existing = commentsByThread.get(comment.threadId) ?? [];
-        existing.push(comment);
-        commentsByThread.set(comment.threadId, existing);
-      }
-      return threads.map((thread) => ({
-        ...thread,
-        comments: commentsByThread.get(thread.id) ?? [],
-      }));
-    },
+      options: ListThreadsOptions = {},
+    ) => listThreads({ kind: "routine", routineId }, key, options),
 
-    getThreadForTaskDocument: async (taskId: string, key: string, threadId: string) => {
-      const thread = await getThreadForTask(taskId, key, threadId);
+    getThreadForTaskDocument: async (
+      taskId: string,
+      key: string,
+      threadId: string,
+    ) => {
+      const { thread } = await findThread(
+        { kind: "task", taskId },
+        key,
+        threadId,
+      );
       if (!thread) return null;
       const comments = await commentsForThreads([thread.id]);
       return { ...thread, comments };
     },
 
-    getThreadForRoutineDocument: async (routineId: string, key: string, threadId: string) => {
-      const doc = await getRoutineDocument(routineId, key);
-      if (!doc) return null;
-      const thread = await getThreadForRoutine(routineId, key, threadId, doc.companyId, doc.documentId);
+    getThreadForRoutineDocument: async (
+      routineId: string,
+      key: string,
+      threadId: string,
+    ) => {
+      const { thread } = await findThread(
+        { kind: "routine", routineId },
+        key,
+        threadId,
+      );
       if (!thread) return null;
       const comments = await commentsForThreads([thread.id]);
       return { ...thread, comments };
@@ -393,176 +680,15 @@ export function documentAnnotationService(db: Db) {
       key: string,
       input: CreateDocumentAnnotationThread,
       actor: ActorInput,
-    ) => db.transaction(async (tx) => {
-      await tx.execute(sql`
-        select ${documents.id}
-        from ${taskDocuments}
-        inner join ${documents} on ${taskDocuments.documentId} = ${documents.id}
-        where ${and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key))}
-        for update of ${documents}
-      `);
-      const doc = await getTaskDocument(taskId, key, tx);
-      if (!doc) throw notFound("Document not found");
-      if (
-        input.baseRevisionId !== doc.latestRevisionId
-        || input.baseRevisionNumber !== doc.latestRevisionNumber
-      ) {
-        throw conflict("Annotation anchor requires the current document revision", {
-          currentRevisionId: doc.latestRevisionId,
-          currentRevisionNumber: doc.latestRevisionNumber,
-        });
-      }
-
-      const verification = verifyDocumentAnchorSelector({
-        markdown: doc.latestBody,
-        selector: input.selector,
-      });
-      if (!verification.ok || !verification.anchor) {
-        throw unprocessable("Annotation anchor does not match the current document revision", {
-          reason: verification.reason,
-        });
-      }
-
-      const now = new Date();
-      const linkedTaskComment = await assertLinkedTaskComment(taskId, input.taskCommentId, tx);
-      const [thread] = await tx
-        .insert(documentAnnotationThreads)
-        .values({
-          companyId: doc.companyId,
-          taskId,
-          documentId: doc.documentId,
-          documentKey: doc.documentKey,
-          status: "open",
-          anchorState: "active",
-          anchorConfidence: "exact",
-          originalRevisionId: doc.latestRevisionId,
-          originalRevisionNumber: doc.latestRevisionNumber,
-          currentRevisionId: doc.latestRevisionId,
-          currentRevisionNumber: doc.latestRevisionNumber,
-          selectedText: verification.anchor.selectedText,
-          prefixText: verification.anchor.prefixText,
-          suffixText: verification.anchor.suffixText,
-          normalizedStart: verification.anchor.normalizedStart,
-          normalizedEnd: verification.anchor.normalizedEnd,
-          markdownStart: verification.anchor.markdownStart,
-          markdownEnd: verification.anchor.markdownEnd,
-          anchorSelector: input.selector,
-          createdByAgentId: actor.agentId ?? null,
-          createdByUserId: actor.userId ?? null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning(threadSelect);
-
-      const [comment] = await tx
-        .insert(documentAnnotationComments)
-        .values({
-          companyId: doc.companyId,
-          threadId: thread.id,
-          taskId,
-          documentId: doc.documentId,
-          body: input.body,
-          authorType: actor.actorType,
-          authorAgentId: actor.agentId ?? null,
-          authorUserId: actor.userId ?? null,
-          createdByRunId: actor.runId ?? null,
-          taskCommentId: linkedTaskComment?.id ?? null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning(commentSelect);
-      await taskReferences.syncAnnotationComment(comment.id, tx);
-
-      return { ...thread, comments: [comment] };
-    }),
+    ) => createThreadForTarget({ kind: "task", taskId }, key, input, actor),
 
     createRoutineThread: async (
       routineId: string,
       key: string,
       input: CreateDocumentAnnotationThread,
       actor: ActorInput,
-    ) => db.transaction(async (tx) => {
-      await tx.execute(sql`
-        select ${documents.id}
-        from ${routineDocuments}
-        inner join ${documents} on ${routineDocuments.documentId} = ${documents.id}
-        where ${and(eq(routineDocuments.routineId, routineId), eq(routineDocuments.key, key))}
-        for update of ${documents}
-      `);
-      const doc = await getRoutineDocument(routineId, key, tx);
-      if (!doc) throw notFound("Document not found");
-      if (
-        input.baseRevisionId !== doc.latestRevisionId
-        || input.baseRevisionNumber !== doc.latestRevisionNumber
-      ) {
-        throw conflict("Annotation anchor requires the current document revision", {
-          currentRevisionId: doc.latestRevisionId,
-          currentRevisionNumber: doc.latestRevisionNumber,
-        });
-      }
-
-      const verification = verifyDocumentAnchorSelector({
-        markdown: doc.latestBody,
-        selector: input.selector,
-      });
-      if (!verification.ok || !verification.anchor) {
-        throw unprocessable("Annotation anchor does not match the current document revision", {
-          reason: verification.reason,
-        });
-      }
-
-      const now = new Date();
-      const [thread] = await tx
-        .insert(documentAnnotationThreads)
-        .values({
-          companyId: doc.companyId,
-          taskId: null,
-          routineId,
-          documentId: doc.documentId,
-          documentKey: doc.documentKey,
-          status: "open",
-          anchorState: "active",
-          anchorConfidence: "exact",
-          originalRevisionId: doc.latestRevisionId,
-          originalRevisionNumber: doc.latestRevisionNumber,
-          currentRevisionId: doc.latestRevisionId,
-          currentRevisionNumber: doc.latestRevisionNumber,
-          selectedText: verification.anchor.selectedText,
-          prefixText: verification.anchor.prefixText,
-          suffixText: verification.anchor.suffixText,
-          normalizedStart: verification.anchor.normalizedStart,
-          normalizedEnd: verification.anchor.normalizedEnd,
-          markdownStart: verification.anchor.markdownStart,
-          markdownEnd: verification.anchor.markdownEnd,
-          anchorSelector: input.selector,
-          createdByAgentId: actor.agentId ?? null,
-          createdByUserId: actor.userId ?? null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning(threadSelect);
-
-      const [comment] = await tx
-        .insert(documentAnnotationComments)
-        .values({
-          companyId: doc.companyId,
-          threadId: thread.id,
-          taskId: null,
-          routineId,
-          documentId: doc.documentId,
-          body: input.body,
-          authorType: actor.actorType,
-          authorAgentId: actor.agentId ?? null,
-          authorUserId: actor.userId ?? null,
-          createdByRunId: actor.runId ?? null,
-          taskCommentId: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning(commentSelect);
-
-      return { ...thread, comments: [comment] };
-    }),
+    ) =>
+      createThreadForTarget({ kind: "routine", routineId }, key, input, actor),
 
     addComment: async (
       taskId: string,
@@ -570,35 +696,14 @@ export function documentAnnotationService(db: Db) {
       threadId: string,
       input: CreateDocumentAnnotationComment,
       actor: ActorInput,
-    ) => db.transaction(async (tx) => {
-      const thread = await getThreadForTask(taskId, key, threadId, tx);
-      if (!thread) throw notFound("Annotation thread not found");
-      const now = new Date();
-      const linkedTaskComment = await assertLinkedTaskComment(taskId, input.taskCommentId, tx);
-      const [comment] = await tx
-        .insert(documentAnnotationComments)
-        .values({
-          companyId: thread.companyId,
-          threadId: thread.id,
-          taskId: thread.taskId,
-          documentId: thread.documentId,
-          body: input.body,
-          authorType: actor.actorType,
-          authorAgentId: actor.agentId ?? null,
-          authorUserId: actor.userId ?? null,
-          createdByRunId: actor.runId ?? null,
-          taskCommentId: linkedTaskComment?.id ?? null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning(commentSelect);
-      await taskReferences.syncAnnotationComment(comment.id, tx);
-      await tx
-        .update(documentAnnotationThreads)
-        .set({ updatedAt: now })
-        .where(eq(documentAnnotationThreads.id, thread.id));
-      return comment;
-    }),
+    ) =>
+      addCommentForTarget(
+        { kind: "task", taskId },
+        key,
+        threadId,
+        input,
+        actor,
+      ),
 
     addRoutineComment: async (
       routineId: string,
@@ -606,36 +711,14 @@ export function documentAnnotationService(db: Db) {
       threadId: string,
       input: CreateDocumentAnnotationComment,
       actor: ActorInput,
-    ) => db.transaction(async (tx) => {
-      const doc = await getRoutineDocument(routineId, key, tx);
-      if (!doc) throw notFound("Document not found");
-      const thread = await getThreadForRoutine(routineId, key, threadId, doc.companyId, doc.documentId, tx);
-      if (!thread) throw notFound("Annotation thread not found");
-      const now = new Date();
-      const [comment] = await tx
-        .insert(documentAnnotationComments)
-        .values({
-          companyId: thread.companyId,
-          threadId: thread.id,
-          taskId: null,
-          routineId: thread.routineId,
-          documentId: thread.documentId,
-          body: input.body,
-          authorType: actor.actorType,
-          authorAgentId: actor.agentId ?? null,
-          authorUserId: actor.userId ?? null,
-          createdByRunId: actor.runId ?? null,
-          taskCommentId: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning(commentSelect);
-      await tx
-        .update(documentAnnotationThreads)
-        .set({ updatedAt: now })
-        .where(eq(documentAnnotationThreads.id, thread.id));
-      return comment;
-    }),
+    ) =>
+      addCommentForTarget(
+        { kind: "routine", routineId },
+        key,
+        threadId,
+        input,
+        actor,
+      ),
 
     updateThread: async (
       taskId: string,
@@ -643,33 +726,14 @@ export function documentAnnotationService(db: Db) {
       threadId: string,
       input: UpdateDocumentAnnotationThread,
       actor: ActorInput,
-    ) => db.transaction(async (tx) => {
-      const thread = await getThreadForTask(taskId, key, threadId, tx);
-      if (!thread) throw notFound("Annotation thread not found");
-      if (!input.status || input.status === thread.status) return thread;
-
-      const now = new Date();
-      const [updated] = await tx
-        .update(documentAnnotationThreads)
-        .set(input.status === "resolved"
-          ? {
-            status: "resolved",
-            resolvedByAgentId: actor.agentId ?? null,
-            resolvedByUserId: actor.userId ?? null,
-            resolvedAt: now,
-            updatedAt: now,
-          }
-          : {
-            status: "open",
-            resolvedByAgentId: null,
-            resolvedByUserId: null,
-            resolvedAt: null,
-            updatedAt: now,
-          })
-        .where(eq(documentAnnotationThreads.id, thread.id))
-        .returning(threadSelect);
-      return updated;
-    }),
+    ) =>
+      updateThreadForTarget(
+        { kind: "task", taskId },
+        key,
+        threadId,
+        input,
+        actor,
+      ),
 
     updateRoutineThread: async (
       routineId: string,
@@ -677,55 +741,23 @@ export function documentAnnotationService(db: Db) {
       threadId: string,
       input: UpdateDocumentAnnotationThread,
       actor: ActorInput,
-    ) => db.transaction(async (tx) => {
-      const doc = await getRoutineDocument(routineId, key, tx);
-      if (!doc) throw notFound("Document not found");
-      const thread = await getThreadForRoutine(routineId, key, threadId, doc.companyId, doc.documentId, tx);
-      if (!thread) throw notFound("Annotation thread not found");
-      if (!input.status || input.status === thread.status) return thread;
+    ) =>
+      updateThreadForTarget(
+        { kind: "routine", routineId },
+        key,
+        threadId,
+        input,
+        actor,
+      ),
 
-      const now = new Date();
-      const [updated] = await tx
-        .update(documentAnnotationThreads)
-        .set(input.status === "resolved"
-          ? {
-            status: "resolved",
-            resolvedByAgentId: actor.agentId ?? null,
-            resolvedByUserId: actor.userId ?? null,
-            resolvedAt: now,
-            updatedAt: now,
-          }
-          : {
-            status: "open",
-            resolvedByAgentId: null,
-            resolvedByUserId: null,
-            resolvedAt: null,
-            updatedAt: now,
-          })
-        .where(eq(documentAnnotationThreads.id, thread.id))
-        .returning(threadSelect);
-      return updated;
-    }),
+    remapOpenThreadsForDocument: async (
+      input: RemapDocumentInput & { taskId: string },
+    ) => remapOpenThreads({ kind: "task", taskId: input.taskId }, input),
 
-    remapOpenThreadsForDocument: async (input: {
-      taskId: string;
-      key: string;
-      documentId: string;
-      nextRevisionId: string | null;
-      nextRevisionNumber: number;
-      nextBody: string;
-    }) => db.transaction(async (tx) =>
-      remapOpenThreadsForScope(tx, eq(documentAnnotationThreads.taskId, input.taskId), input)),
-
-    remapOpenThreadsForRoutineDocument: async (input: {
-      routineId: string;
-      key: string;
-      documentId: string;
-      nextRevisionId: string | null;
-      nextRevisionNumber: number;
-      nextBody: string;
-    }) => db.transaction(async (tx) =>
-      remapOpenThreadsForScope(tx, eq(documentAnnotationThreads.routineId, input.routineId), input)),
+    remapOpenThreadsForRoutineDocument: async (
+      input: RemapDocumentInput & { routineId: string },
+    ) =>
+      remapOpenThreads({ kind: "routine", routineId: input.routineId }, input),
 
     selectorToAnchorSnapshot,
   };

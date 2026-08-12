@@ -2,13 +2,13 @@ import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
+import { testSecretsRuntimeConfig } from "./helpers/secrets-runtime.js";
 
 const mockProjectService = vi.hoisted(() => ({
   list: vi.fn(),
   getById: vi.fn(),
   create: vi.fn(),
   createWorkspace: vi.fn(),
-  resolveByReference: vi.fn(),
 }));
 
 const mockGoalService = vi.hoisted(() => ({
@@ -58,9 +58,9 @@ function registerModuleMocks() {
 }
 
 async function createApp(routeType: "project" | "goal") {
-  const { errorHandler } = await vi.importActual<typeof import("../middleware/index.js")>(
-    "../middleware/index.js",
-  );
+  const { errorHandler } = await vi.importActual<
+    typeof import("../middleware/index.js")
+  >("../middleware/index.js");
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -70,24 +70,27 @@ async function createApp(routeType: "project" | "goal") {
       userEmail: "board@example.com",
       companyIds: ["company-1"],
       sessionId: "session-board-user",
-      memberships: [{
-        companyId: "company-1",
-        membershipRole: "owner",
-        status: "active",
-      }],
+      memberships: [
+        {
+          companyId: "company-1",
+          membershipRole: "owner",
+          status: "active",
+        },
+      ],
       isInstanceAdmin: false,
     });
     next();
   });
   if (routeType === "project") {
-    const { projectRoutes } = await vi.importActual<typeof import("../routes/projects.js")>(
-      "../routes/projects.js",
-    );
-    app.use("/api", projectRoutes({} as any));
+    const { projectRoutes } = await vi.importActual<
+      typeof import("../routes/projects.js")
+    >("../routes/projects.js");
+    app.use("/api", projectRoutes({} as any, testSecretsRuntimeConfig()));
   } else {
-    const { goalRoutes } = await vi.importActual<typeof import("../routes/goals.js")>(
-      "../routes/goals.js",
-    );
+    const { goalRoutes } =
+      await vi.importActual<typeof import("../routes/goals.js")>(
+        "../routes/goals.js",
+      );
     app.use("/api", goalRoutes({} as any));
   }
   app.use(errorHandler);
@@ -112,8 +115,9 @@ describe("project and goal telemetry routes", () => {
       explanation: "Allowed by test mock.",
     });
     mockGetTelemetryClient.mockReturnValue({ track: mockTelemetryTrack });
-    mockProjectService.resolveByReference.mockResolvedValue({ ambiguous: false, project: null });
-    mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(async (_companyId, env) => env);
+    mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(
+      async (_companyId, env) => env,
+    );
     mockProjectService.create.mockResolvedValue({
       id: "project-1",
       companyId: "company-1",
@@ -132,19 +136,15 @@ describe("project and goal telemetry routes", () => {
     mockLogActivity.mockResolvedValue(undefined);
   });
 
-  it(
-    "emits telemetry when a project is created",
-    async () => {
-      const app = await createApp("project");
-      const res = await request(app)
-        .post("/api/companies/company-1/projects")
-        .send({ name: "Telemetry project" });
+  it("emits telemetry when a project is created", async () => {
+    const app = await createApp("project");
+    const res = await request(app)
+      .post("/api/companies/company-1/projects")
+      .send({ name: "Telemetry project" });
 
-      expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
-      expect(mockTelemetryTrack).toHaveBeenCalledWith("project.created", {});
-    },
-    15_000,
-  );
+    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(mockTelemetryTrack).toHaveBeenCalledWith("project.created", {});
+  }, 15_000);
 
   it("emits telemetry when a goal is created", async () => {
     const app = await createApp("goal");
@@ -153,6 +153,8 @@ describe("project and goal telemetry routes", () => {
       .send({ title: "Telemetry goal", level: "team" });
 
     expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
-    expect(mockTelemetryTrack).toHaveBeenCalledWith("goal.created", { goal_level: "team" });
+    expect(mockTelemetryTrack).toHaveBeenCalledWith("goal.created", {
+      goal_level: "team",
+    });
   });
 });

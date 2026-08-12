@@ -9,7 +9,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import type { FolderKind, FolderListItem, FolderListResult } from "@paperclipai/shared";
+import type { FolderListItem, FolderListResult } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -48,10 +48,10 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import {
-  reservedRootLabel,
+  folderRootLabel,
   treeFromResult,
   type FolderTreeNode,
-} from "./skill-folder-tree";
+} from "./folder-tree";
 
 export type FolderSelection = "all" | "unfiled" | string;
 
@@ -465,19 +465,7 @@ export function MobileFolderSheet({
             onSelect={select}
             all
           />
-          {result?.kind === "skill" ? (
-            <>
-              {model.my ? renderBranch(model.my, "My Skills") : null}
-              <div className="px-2 pb-0.5 pt-2 text-(length:--text-micro) font-medium uppercase tracking-wide text-muted-foreground">
-                Company
-              </div>
-              {model.company.map((node) => renderBranch(node))}
-              {model.projects ? renderBranch(model.projects, "Projects") : null}
-              {model.bundled ? renderBranch(model.bundled, "Bundled") : null}
-            </>
-          ) : (
-            model.roots.map((node) => renderBranch(node, reservedRootLabel(node.folder)))
-          )}
+          {model.roots.map((node) => renderBranch(node, folderRootLabel(node.folder)))}
           <MobileFolderRow
             id="unfiled"
             label="Unfiled"
@@ -612,14 +600,12 @@ function MoveToMenuItems({
 
 export function FolderFormDialog({
   open,
-  kind,
   folder,
   onOpenChange,
   onSubmit,
   pending = false,
 }: {
   open: boolean;
-  kind: FolderKind;
   folder: FolderListItem | null;
   onOpenChange: (open: boolean) => void;
   onSubmit: (payload: { name: string; color: string | null }) => void;
@@ -641,7 +627,7 @@ export function FolderFormDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit folder" : "Create folder"}</DialogTitle>
           <DialogDescription>
-            {kind === "routine" ? "Organize routines in this company." : "Organize installed company skills."}
+            Organize routines in this company.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

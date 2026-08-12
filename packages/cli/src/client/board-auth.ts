@@ -2,7 +2,12 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
-import { normalizePublicOrigin } from "@paperclipai/shared";
+import {
+  isCanonicalUuid,
+  parseExactPublicOrigin,
+  parseOptionalExactNonEmptyEnvironmentValue,
+} from "@paperclipai/shared";
+import { parseExactApiBase } from "./api-base.js";
 import { buildCliCommandLabel } from "./command-label.js";
 import { resolveDefaultCliAuthPath } from "../config/home.js";
 
@@ -53,22 +58,30 @@ function defaultBoardAuthStore(): BoardAuthStore {
   };
 }
 
-function toStringOrNull(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function normalizeApiBase(apiBase: string): string {
-  return apiBase.trim().replace(/\/+$/, "");
+function toExactNonBlankStringOrNull(value: unknown): string | null {
+  return typeof value === "string" && /\S/.test(value) ? value : null;
 }
 
 function isTruthyEnv(value: string | undefined): boolean {
-  const v = value?.trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
+  if (value === undefined || value === "false") return false;
+  if (value === "true") return true;
+  throw new Error('PAPERCLIP_NO_BROWSER must be exactly "true" or "false"');
 }
 
 export function resolveBoardAuthStorePath(overridePath?: string): string {
-  if (overridePath?.trim()) return path.resolve(overridePath.trim());
-  if (process.env.PAPERCLIP_AUTH_STORE?.trim()) return path.resolve(process.env.PAPERCLIP_AUTH_STORE.trim());
+  if (overridePath !== undefined) {
+    if (overridePath.length === 0 || overridePath.trim() !== overridePath) {
+      throw new Error(
+        "Board auth store path must be non-empty and contain no surrounding whitespace",
+      );
+    }
+    return path.resolve(overridePath);
+  }
+  const configuredPath = parseOptionalExactNonEmptyEnvironmentValue(
+    process.env.PAPERCLIP_AUTH_STORE,
+    "PAPERCLIP_AUTH_STORE",
+  );
+  if (configuredPath !== undefined) return path.resolve(configuredPath);
   return resolveDefaultCliAuthPath();
 }
 
@@ -76,42 +89,57 @@ export function readBoardAuthStore(storePath?: string): BoardAuthStore {
   const filePath = resolveBoardAuthStorePath(storePath);
   if (!fs.existsSync(filePath)) return defaultBoardAuthStore();
 
-  const raw = JSON.parse(fs.readFileSync(filePath, "utf8")) as Partial<BoardAuthStore> | null;
-  const credentials = raw?.credentials && typeof raw.credentials === "object" ? raw.credentials : {};
-  const normalized: Record<string, BoardAuthCredential> = {};
+  const raw = JSON.parse(
+    fs.readFileSync(filePath, "utf8"),
+  ) as Partial<BoardAuthStore> | null;
+  const credentials =
+    raw?.credentials && typeof raw.credentials === "object"
+      ? raw.credentials
+      : {};
+  const validated: Record<string, BoardAuthCredential> = {};
 
   for (const [key, value] of Object.entries(credentials)) {
     if (typeof value !== "object" || value === null) continue;
     const record = value as unknown as Record<string, unknown>;
-    const apiBase = toStringOrNull(record.apiBase);
-    const token = toStringOrNull(record.token);
-    const createdAt = toStringOrNull(record.createdAt);
-    const updatedAt = toStringOrNull(record.updatedAt);
+    const apiBase = typeof record.apiBase === "string" ? record.apiBase : null;
+    const token = toExactNonBlankStringOrNull(record.token);
+    const createdAt = toExactNonBlankStringOrNull(record.createdAt);
+    const updatedAt = toExactNonBlankStringOrNull(record.updatedAt);
     if (!apiBase || !token || !createdAt || !updatedAt) continue;
-    normalized[normalizeApiBase(key)] = {
+    const canonicalApiBase = parseExactApiBase(key);
+    if (apiBase !== canonicalApiBase) continue;
+    validated[canonicalApiBase] = {
       apiBase,
       token,
       createdAt,
       updatedAt,
-      userId: toStringOrNull(record.userId),
+      userId: toExactNonBlankStringOrNull(record.userId),
     };
   }
 
   return {
     version: 1,
-    credentials: normalized,
+    credentials: validated,
   };
 }
 
-export function writeBoardAuthStore(store: BoardAuthStore, storePath?: string): void {
+export function writeBoardAuthStore(
+  store: BoardAuthStore,
+  storePath?: string,
+): void {
   const filePath = resolveBoardAuthStorePath(storePath);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
+  fs.writeFileSync(filePath, `${JSON.stringify(store, null, 2)}\n`, {
+    mode: 0o600,
+  });
 }
 
-export function getStoredBoardCredential(apiBase: string, storePath?: string): BoardAuthCredential | null {
+export function getStoredBoardCredential(
+  apiBase: string,
+  storePath?: string,
+): BoardAuthCredential | null {
   const store = readBoardAuthStore(storePath);
-  return store.credentials[normalizeApiBase(apiBase)] ?? null;
+  return store.credentials[parseExactApiBase(apiBase)] ?? null;
 }
 
 export function setStoredBoardCredential(input: {
@@ -120,27 +148,39 @@ export function setStoredBoardCredential(input: {
   userId?: string | null;
   storePath?: string;
 }): BoardAuthCredential {
-  const normalizedApiBase = normalizeApiBase(input.apiBase);
+  const apiBase = parseExactApiBase(input.apiBase);
   const store = readBoardAuthStore(input.storePath);
   const now = new Date().toISOString();
-  const existing = store.credentials[normalizedApiBase];
+  const existing = store.credentials[apiBase];
+  const token = toExactNonBlankStringOrNull(input.token);
+  if (!token) throw new Error("Board API token is required.");
+  const userId =
+    input.userId === null || input.userId === undefined
+      ? input.userId
+      : toExactNonBlankStringOrNull(input.userId);
+  if (input.userId !== null && input.userId !== undefined && !userId) {
+    throw new Error("Board user ID must be exact and non-blank.");
+  }
   const credential: BoardAuthCredential = {
-    apiBase: normalizedApiBase,
-    token: input.token.trim(),
+    apiBase,
+    token,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
-    userId: input.userId ?? existing?.userId ?? null,
+    userId: userId ?? existing?.userId ?? null,
   };
-  store.credentials[normalizedApiBase] = credential;
+  store.credentials[apiBase] = credential;
   writeBoardAuthStore(store, input.storePath);
   return credential;
 }
 
-export function removeStoredBoardCredential(apiBase: string, storePath?: string): boolean {
-  const normalizedApiBase = normalizeApiBase(apiBase);
+export function removeStoredBoardCredential(
+  apiBase: string,
+  storePath?: string,
+): boolean {
+  const canonicalApiBase = parseExactApiBase(apiBase);
   const store = readBoardAuthStore(storePath);
-  if (!store.credentials[normalizedApiBase]) return false;
-  delete store.credentials[normalizedApiBase];
+  if (!store.credentials[canonicalApiBase]) return false;
+  delete store.credentials[canonicalApiBase];
   writeBoardAuthStore(store, storePath);
   return true;
 }
@@ -166,7 +206,9 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     const message =
-      body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
+      body &&
+      typeof body === "object" &&
+      typeof (body as { error?: unknown }).error === "string"
         ? (body as { error: string }).error
         : `Request failed: ${response.status}`;
     throw new Error(message);
@@ -210,27 +252,35 @@ export async function loginBoardCli(params: {
   openBrowser?: boolean;
   publicBaseUrl?: string;
 }): Promise<{ token: string; approvalUrl: string; userId?: string | null }> {
-  const apiBase = normalizeApiBase(params.apiBase);
+  const apiBase = parseExactApiBase(params.apiBase);
   const createUrl = `${apiBase}/api/cli-auth/challenges`;
-  const command = params.command?.trim() || buildCliCommandLabel();
+  const command = params.command ?? buildCliCommandLabel();
+  const requestedCompanyId = params.requestedCompanyId ?? null;
+  if (requestedCompanyId !== null && !isCanonicalUuid(requestedCompanyId)) {
+    throw new Error(
+      "CLI board authentication requires an exact canonical company UUID.",
+    );
+  }
 
   const challenge = await requestJson<CreateChallengeResponse>(createUrl, {
     method: "POST",
     headers: { origin: apiBase },
     body: JSON.stringify({
       command,
-      clientName: params.clientName?.trim() || "paperclipai cli",
+      clientName: params.clientName ?? "paperclipai cli",
       requestedAccess: params.requestedAccess,
-      requestedCompanyId: params.requestedCompanyId?.trim() || null,
+      requestedCompanyId,
     }),
   });
 
-  const explicitPublicBase = params.publicBaseUrl?.trim()
-    ? normalizePublicOrigin(params.publicBaseUrl)
-    : undefined;
-  const environmentPublicBase = process.env.PAPERCLIP_PUBLIC_URL?.trim()
-    ? normalizePublicOrigin(process.env.PAPERCLIP_PUBLIC_URL)
-    : undefined;
+  const explicitPublicBase =
+    params.publicBaseUrl === undefined
+      ? undefined
+      : parseExactPublicOrigin(params.publicBaseUrl);
+  const environmentPublicBase =
+    process.env.PAPERCLIP_PUBLIC_URL === undefined
+      ? undefined
+      : parseExactPublicOrigin(process.env.PAPERCLIP_PUBLIC_URL);
   if (
     explicitPublicBase &&
     environmentPublicBase &&
@@ -240,15 +290,19 @@ export async function loginBoardCli(params: {
   }
   const publicBase = explicitPublicBase ?? environmentPublicBase;
   const approvalUrl = publicBase
-    ? `${normalizeApiBase(publicBase)}${challenge.approvalPath}`
-    : challenge.approvalUrl ?? `${apiBase}${challenge.approvalPath}`;
+    ? `${parseExactApiBase(publicBase)}${challenge.approvalPath}`
+    : (challenge.approvalUrl ?? `${apiBase}${challenge.approvalPath}`);
 
   if (params.print !== false) {
     console.error(pc.bold("Board authentication required"));
-    console.error(`Open this URL in your browser to approve CLI access:\n${approvalUrl}`);
+    console.error(
+      `Open this URL in your browser to approve CLI access:\n${approvalUrl}`,
+    );
   }
 
-  const wantBrowser = params.openBrowser !== false && !isTruthyEnv(process.env.PAPERCLIP_NO_BROWSER);
+  const wantBrowser =
+    params.openBrowser !== false &&
+    !isTruthyEnv(process.env.PAPERCLIP_NO_BROWSER);
   const opened = wantBrowser ? await openUrl(approvalUrl) : false;
   if (params.print !== false) {
     const browserMessage = !wantBrowser
@@ -268,24 +322,22 @@ export async function loginBoardCli(params: {
     );
 
     if (status.status === "approved") {
-      const me = await requestJson<{ userId: string; user?: { id: string } | null }>(
-        `${apiBase}/api/cli-auth/me`,
-        {
-          headers: {
-            authorization: `Bearer ${challenge.boardApiToken}`,
-          },
-        },
-      );
+      const userId = toExactNonBlankStringOrNull(status.approvedByUser?.id);
+      if (!userId) {
+        throw new Error(
+          "Approved CLI auth challenge did not include its user ID.",
+        );
+      }
       setStoredBoardCredential({
         apiBase,
         token: challenge.boardApiToken,
-        userId: me.userId ?? me.user?.id ?? null,
+        userId,
         storePath: params.storePath,
       });
       return {
         token: challenge.boardApiToken,
         approvalUrl,
-        userId: me.userId ?? me.user?.id ?? null,
+        userId,
       };
     }
 
@@ -306,12 +358,15 @@ export async function revokeStoredBoardCredential(params: {
   apiBase: string;
   token: string;
 }): Promise<void> {
-  const apiBase = normalizeApiBase(params.apiBase);
-  await requestJson<{ revoked: boolean }>(`${apiBase}/api/cli-auth/revoke-current`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${params.token}`,
+  const apiBase = parseExactApiBase(params.apiBase);
+  await requestJson<{ revoked: boolean }>(
+    `${apiBase}/api/cli-auth/revoke-current`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${params.token}`,
+      },
+      body: JSON.stringify({}),
     },
-    body: JSON.stringify({}),
-  });
+  );
 }

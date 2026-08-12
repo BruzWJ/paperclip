@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient } from "@tanstack/react-query";
 import { Repeat, Sparkles } from "lucide-react";
@@ -35,8 +35,8 @@ import {
 import { queryKeys } from "@/lib/queryKeys";
 import { storybookAgents, storybookProjects } from "../fixtures/paperclipData";
 
-const COMPANY_ID = "company-storybook";
-const ROUTINE_ID = "routine-storybook";
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const ROUTINE_ID = "ffffffff-ffff-4fff-8fff-fffffffffff1";
 
 const now = new Date("2026-06-09T12:00:00Z");
 
@@ -47,7 +47,7 @@ const variables: RoutineVariable[] = [
 
 const triggers: RoutineTrigger[] = [
   {
-    id: "trigger-schedule",
+    id: "a8000000-0000-4000-8000-000000000001",
     companyId: COMPANY_ID,
     routineId: ROUTINE_ID,
     kind: "schedule",
@@ -88,8 +88,8 @@ const routine: RoutineDetailType = {
   concurrencyPolicy: "coalesce_if_active",
   catchUpPolicy: "skip_missed",
   variables,
-  env: { DATABASE_URL: { type: "secret_ref", secretId: "secret-prod-db", version: "latest" } } as never,
-  latestRevisionId: "rev-17",
+  env: { DATABASE_URL: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000005", version: "latest" } } as never,
+  latestRevisionId: "a2100000-0000-4000-8000-000000000006",
   latestRevisionNumber: 17,
   createdByAgentId: null,
   createdByUserId: null,
@@ -109,26 +109,26 @@ const routine: RoutineDetailType = {
 };
 
 const routineDescriptionDocument: RoutineDescriptionDocument = {
-  id: "routine-description-doc",
+  id: "ffffffff-ffff-4fff-8fff-fffffffffff2",
   companyId: COMPANY_ID,
   routineId: ROUTINE_ID,
   key: "description",
   title: "Description",
   format: "markdown",
   body: routine.description ?? "",
-  latestRevisionId: "routine-description-rev-17",
+  latestRevisionId: "ffffffff-ffff-4fff-8fff-fffffffffff3",
   latestRevisionNumber: 17,
   createdByAgentId: null,
-  createdByUserId: "user-board",
+  createdByUserId: "a7000000-0000-4000-8000-000000000002",
   updatedByAgentId: null,
-  updatedByUserId: "user-board",
+  updatedByUserId: "a7000000-0000-4000-8000-000000000002",
   createdAt: now,
   updatedAt: now,
 };
 
 const routineAnnotationThreads: DocumentAnnotationThreadWithComments[] = [
   {
-    id: "routine-thread-1",
+    id: "ffffffff-ffff-4fff-8fff-fffffffffff4",
     companyId: COMPANY_ID,
     taskId: null,
     routineId: ROUTINE_ID,
@@ -157,7 +157,7 @@ const routineAnnotationThreads: DocumentAnnotationThreadWithComments[] = [
       position: { normalizedStart: 84, normalizedEnd: 108, markdownStart: 84, markdownEnd: 108 },
     },
     createdByAgentId: null,
-    createdByUserId: "user-board",
+    createdByUserId: "a7000000-0000-4000-8000-000000000002",
     resolvedByAgentId: null,
     resolvedByUserId: null,
     resolvedAt: null,
@@ -165,16 +165,16 @@ const routineAnnotationThreads: DocumentAnnotationThreadWithComments[] = [
     updatedAt: now,
     comments: [
       {
-        id: "routine-comment-1",
+        id: "ffffffff-ffff-4fff-8fff-fffffffffff5",
         companyId: COMPANY_ID,
-        threadId: "routine-thread-1",
+        threadId: "ffffffff-ffff-4fff-8fff-fffffffffff4",
         taskId: null,
         routineId: ROUTINE_ID,
         documentId: routineDescriptionDocument.id,
         body: "The digest constraint is visible here; the panel stays aligned with the routine overview editor.",
         authorType: "user",
         authorAgentId: null,
-        authorUserId: "user-board",
+        authorUserId: "a7000000-0000-4000-8000-000000000002",
         createdByRunId: null,
         taskCommentId: null,
         createdAt: now,
@@ -185,9 +185,9 @@ const routineAnnotationThreads: DocumentAnnotationThreadWithComments[] = [
 ];
 
 const routineRuns = [
-  { id: "run-1", source: "manual", status: "succeeded", triggeredAt: new Date("2026-06-09T11:48:00Z"), failureReason: null, triggerPayload: { customer_name: "Acme", deadline: "Fri" }, trigger: { label: "manual", kind: "manual" }, linkedTask: { id: "task-1", identifier: "PAP-99221", title: "Weekly digest for Acme" } },
-  { id: "run-2", source: "schedule", status: "failed", triggeredAt: new Date("2026-06-08T14:00:00Z"), failureReason: "Cron timed out after 600s", triggerPayload: { customer_name: "Acme" }, trigger: { label: "schedule", kind: "schedule" }, linkedTask: { id: "task-2", identifier: "PAP-99220", title: "Weekly digest for Acme" } },
-  { id: "run-3", source: "schedule", status: "succeeded", triggeredAt: new Date("2026-06-07T14:00:00Z"), failureReason: null, triggerPayload: { customer_name: "Globex" }, trigger: { label: "schedule", kind: "schedule" }, linkedTask: { id: "task-3", identifier: "PAP-99219", title: "Weekly digest for Globex" } },
+  { id: "90000000-0000-4000-8000-00000000000f", source: "manual", status: "succeeded", triggeredAt: new Date("2026-06-09T11:48:00Z"), failureReason: null, triggerPayload: { customer_name: "Acme", deadline: "Fri" }, trigger: { label: "manual", kind: "manual" }, linkedTask: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd009", identifier: "PAP-99221", title: "Weekly digest for Acme" } },
+  { id: "90000000-0000-4000-8000-000000000010", source: "schedule", status: "failed", triggeredAt: new Date("2026-06-08T14:00:00Z"), failureReason: "Cron timed out after 600s", triggerPayload: { customer_name: "Acme" }, trigger: { label: "schedule", kind: "schedule" }, linkedTask: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00a", identifier: "PAP-99220", title: "Weekly digest for Acme" } },
+  { id: "90000000-0000-4000-8000-000000000011", source: "schedule", status: "succeeded", triggeredAt: new Date("2026-06-07T14:00:00Z"), failureReason: null, triggerPayload: { customer_name: "Globex" }, trigger: { label: "schedule", kind: "schedule" }, linkedTask: { id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00b", identifier: "PAP-99219", title: "Weekly digest for Globex" } },
 ] as never;
 
 function stubSecret(id: string, name: string, latestVersion: number, referenceCount: number) {
@@ -216,16 +216,16 @@ function stubSecret(id: string, name: string, latestVersion: number, referenceCo
 }
 
 const availableSecrets = [
-  stubSecret("secret-prod-db", "prod-db", 3, 5),
-  stubSecret("secret-gh-token", "gh-token", 2, 4),
-  stubSecret("secret-openai", "openai-key", 1, 2),
-  stubSecret("secret-stripe", "stripe-key", 1, 1),
+  stubSecret("a3000000-0000-4000-8000-000000000005", "prod-db", 3, 5),
+  stubSecret("a3000000-0000-4000-8000-000000000002", "gh-token", 2, 4),
+  stubSecret("a3000000-0000-4000-8000-000000000004", "openai-key", 1, 2),
+  stubSecret("a3000000-0000-4000-8000-000000000006", "stripe-key", 1, 1),
 ] as never;
 
 const activity = [
-  { id: "act-1", action: "trigger.fired", details: { trigger: "schedule", run: "PAP-99221" }, createdAt: new Date("2026-06-09T14:02:00Z") },
-  { id: "act-2", action: "routine.updated", details: { fields: ["instructions", "variables"] }, createdAt: new Date("2026-06-09T13:55:00Z") },
-  { id: "act-3", action: "run.completed", details: { task: "PAP-99220", status: "failed" }, createdAt: new Date("2026-06-08T23:01:00Z") },
+  { id: "b5000000-0000-4000-8000-000000000001", action: "trigger.fired", details: { trigger: "schedule", run: "PAP-99221" }, createdAt: new Date("2026-06-09T14:02:00Z") },
+  { id: "b5000000-0000-4000-8000-000000000002", action: "routine.updated", details: { fields: ["instructions", "variables"] }, createdAt: new Date("2026-06-09T13:55:00Z") },
+  { id: "b5000000-0000-4000-8000-000000000003", action: "run.completed", details: { task: "PAP-99220", status: "failed" }, createdAt: new Date("2026-06-08T23:01:00Z") },
 ] as never;
 
 function stubMutation(overrides?: Record<string, unknown>) {
@@ -408,10 +408,10 @@ function RoutineCShell({
         <div className="flex min-h-0 flex-1">
           <RoutineSubSidebar
             activeSection={section}
-            hrefFor={(s) => `#${s}`}
+            companyId="11111111-1111-4111-8111-111111111111"
+            routineId={ROUTINE_ID}
             isSectionDirty={ctx.isSectionDirty}
             hasLiveRun={false}
-            onNavigate={setSection}
           />
           <main className="min-w-0 flex-1 px-4 pb-6 pt-10 md:px-8">
             <section className={isEditable ? "mx-auto w-full max-w-3xl" : "w-full"}>

@@ -27,7 +27,7 @@ describe("document annotation selection diagnostics", () => {
   });
 
   it("records selection cadence, capture cost, commits, and idle markdown mutations", () => {
-    window.localStorage.setItem(SELECTION_DEBUG_STORAGE_KEY, "1");
+    window.localStorage.setItem(SELECTION_DEBUG_STORAGE_KEY, "true");
     vi.spyOn(console, "debug").mockImplementation(() => {});
     const state = initializeSelectionDebug();
 

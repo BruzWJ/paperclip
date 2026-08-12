@@ -1,10 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import {
-  deriveAgentUrlKey,
-  deriveProjectUrlKey,
-  serializeMoneyAmount,
-} from "@paperclipai/shared";
+import { serializeMoneyAmount } from "@paperclipai/shared";
 import type { BudgetCurrency, MoneyAmount } from "@paperclipai/shared";
 
 export function cn(...inputs: ClassValue[]) {
@@ -22,16 +18,6 @@ export function cn(...inputs: ClassValue[]) {
  */
 export const SIDEBAR_RAIL_HIDDEN_LABEL =
   "block w-0 min-w-0 overflow-hidden whitespace-nowrap text-transparent select-none";
-
-export function asObject(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
-}
-
-export function asBoolean(value: unknown, fallback: boolean) {
-  return typeof value === "boolean" ? value : fallback;
-}
 
 /** Preserve the exact decimal string while making its denomination explicit. */
 export function formatMoneyAmount(
@@ -110,38 +96,16 @@ export function formatDurationMs(ms: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  if (minutes < 60)
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   if (hours < 24) {
-    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+    return remainingMinutes > 0
+      ? `${hours}h ${remainingMinutes}m`
+      : `${hours}h`;
   }
   const days = Math.floor(hours / 24);
   const remainingHours = hours % 24;
   return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
-}
-
-/** Build a task URL using the human-readable identifier when available. */
-export function taskUrl(task: { id: string; identifier?: string | null }): string {
-  return `/tasks/${task.identifier ?? task.id}`;
-}
-
-/** Build an agent route URL using the short URL key when available. */
-export function agentRouteRef(agent: { id: string; urlKey?: string | null; name?: string | null }): string {
-  return agent.urlKey ?? deriveAgentUrlKey(agent.name, agent.id);
-}
-
-/** Build an agent URL using the short URL key when available. */
-export function agentUrl(agent: { id: string; urlKey?: string | null; name?: string | null }): string {
-  return `/agents/${agentRouteRef(agent)}`;
-}
-
-/** Build a project route reference, falling back to UUID when the derived key is ambiguous. */
-export function projectRouteRef(project: { id: string; urlKey?: string | null; name?: string | null }): string {
-  return project.urlKey ?? deriveProjectUrlKey(project.name, project.id);
-}
-
-/** Build a project URL using the short URL key when available. */
-export function projectUrl(project: { id: string; urlKey?: string | null; name?: string | null }): string {
-  return `/projects/${projectRouteRef(project)}`;
 }

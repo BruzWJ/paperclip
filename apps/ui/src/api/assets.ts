@@ -11,9 +11,7 @@ export const assetsApi = {
     const safeFile = new File([buffer], file.name, { type: file.type });
 
     const form = new FormData();
-    if (namespace && namespace.trim().length > 0) {
-      form.append("namespace", namespace.trim());
-    }
+    if (namespace !== undefined) form.append("namespace", namespace);
     form.append("file", safeFile);
     return api.postForm<AssetImage>(`/companies/${companyId}/assets/images`, form);
   },

@@ -29,6 +29,14 @@ describe("package surface", () => {
   it("does not expose worker-host implementation helpers from the worker SDK", async () => {
     const sdk = await import("../src/index.js");
     expect(sdk.pluginManifestV1Schema).toBeDefined();
+    expect(
+      sdk.pluginManagedRoutineOriginIdSchema.parse("operation:sync"),
+    ).toBe("operation:sync");
+    for (const originId of ["", " operation:sync", "operation:\u0000sync"]) {
+      expect(
+        sdk.pluginManagedRoutineOriginIdSchema.safeParse(originId).success,
+      ).toBe(false);
+    }
     for (const name of [
       "CapabilityDeniedError",
       "InvocationScopeDeniedError",

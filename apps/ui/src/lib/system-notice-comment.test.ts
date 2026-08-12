@@ -12,7 +12,14 @@ describe("mapCommentMetadataToSystemNoticeSections", () => {
           {
             title: "Required action",
             rows: [
-              { type: "task_link", label: "Source task", taskId: "i1", identifier: "PAP-3440", title: "Recovery" },
+              {
+                type: "task_link",
+                label: "Source task",
+                taskId: "123e4567-e89b-42d3-a456-426614174000",
+                taskNumber: 3440,
+                identifier: "PAP-3440",
+                title: "Recovery",
+              },
               { type: "agent_link", label: "Responsible", agentId: "agent-1", name: "CodexCoder" },
               { type: "key_value", label: "Status before", value: "in_progress" },
               { type: "code", label: "Cause code", code: "workspace_validation_failed" },
@@ -22,7 +29,9 @@ describe("mapCommentMetadataToSystemNoticeSections", () => {
           },
         ],
       },
-      { runAgentId: "agent-1" },
+      {
+        runAgentId: "agent-1",
+      },
     );
 
     expect(sections).toHaveLength(1);
@@ -33,11 +42,12 @@ describe("mapCommentMetadataToSystemNoticeSections", () => {
       {
         kind: "task",
         label: "Source task",
+        taskNumber: 3440,
         identifier: "PAP-3440",
-        href: "/tasks/PAP-3440",
+        link: true,
         title: "Recovery",
       },
-      { kind: "agent", label: "Responsible", name: "CodexCoder", href: "/agents/agent-1" },
+      { kind: "agent", label: "Responsible", name: "CodexCoder", agentId: "agent-1" },
       { kind: "text", label: "Status before", value: "in_progress" },
       { kind: "code", label: "Cause code", value: "workspace_validation_failed" },
       { kind: "text", label: "Notes", value: "Pick a disposition." },
@@ -45,13 +55,13 @@ describe("mapCommentMetadataToSystemNoticeSections", () => {
         kind: "run",
         label: "Source run",
         runId: "9cdba892-c7ca-4d93-8604-4843873b127c",
-        href: "/agents/agent-1/runs/9cdba892-c7ca-4d93-8604-4843873b127c",
+        agentId: "agent-1",
         status: "succeeded",
       },
     ]);
   });
 
-  it("omits run href when no runAgentId is available", () => {
+  it("omits the run agent route key when none is available", () => {
     const sections = mapCommentMetadataToSystemNoticeSections(
       {
         version: 1,
@@ -70,7 +80,7 @@ describe("mapCommentMetadataToSystemNoticeSections", () => {
       kind: "run",
       label: "Run",
       runId: "abc12345",
-      href: undefined,
+      agentId: undefined,
       status: undefined,
     });
   });

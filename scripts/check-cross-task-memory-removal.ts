@@ -36,7 +36,6 @@ const SCAN_ROOTS = [
   "releases",
   "report",
   "scripts",
-  "skills",
   "tests",
   "tools",
 ] as const;
@@ -81,7 +80,6 @@ const REMOVAL_FIXTURE_MARKER = "PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE:";
 
 export const DIRECT_RETIRED_TOKENS = Object.freeze([
   "para-memory-files",
-  "/api/skills/para-memory-files",
   "phase5_memory",
   "phase5-memory-control-surfaces",
   "MEMORY.md",
@@ -590,7 +588,7 @@ function scanRemovedAssetPath(
     path: file.path,
     line: 1,
     term: "removed-memory-asset",
-    reason: "retired memory skill/eval/design asset remains in the tree",
+    reason: "retired memory/eval/design asset remains in the tree",
   });
 }
 

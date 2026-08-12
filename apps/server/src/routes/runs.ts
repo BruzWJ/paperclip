@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   TASK_EXECUTION_RUN_STATUSES,
-  normalizeTaskIdentifier,
+  isCanonicalUuid,
   type TaskExecutionRunEnvelopeRecord,
   type TaskExecutionRunListPageRecord,
   type TaskExecutionRunStatus,
@@ -28,6 +28,11 @@ import {
   assertCompanyAccess,
   getAccessibleResource,
 } from "./authz.js";
+import {
+  assertExactQueryKeys,
+  parseExactOptionalNonBlankQuery,
+  parseExactPositiveIntegerQuery,
+} from "./exact-query.js";
 
 const MAX_RUN_DETAIL_LIMIT = 500;
 const MAX_RUN_LIST_LIMIT = 200;
@@ -51,19 +56,20 @@ function decodeRunListCursor(value: unknown): TaskExecutionRunListCursor | null 
     return null;
   }
   try {
-    const parsed = JSON.parse(
-      Buffer.from(value, "base64url").toString("utf8"),
-    ) as Record<string, unknown>;
+    const decoded = Buffer.from(value, "base64url");
+    if (decoded.toString("base64url") !== value) return null;
+    const parsed = JSON.parse(decoded.toString("utf8")) as Record<string, unknown>;
     if (
       Object.keys(parsed).length !== 3 ||
       parsed.version !== 1 ||
       typeof parsed.createdAt !== "string" ||
       typeof parsed.runId !== "string" ||
-      parsed.runId.length === 0
+      !isCanonicalUuid(parsed.runId)
     ) {
       return null;
     }
-    if (!Number.isFinite(new Date(parsed.createdAt).getTime())) return null;
+    const createdAt = new Date(parsed.createdAt);
+    if (!Number.isFinite(createdAt.getTime()) || createdAt.toISOString() !== parsed.createdAt) return null;
     return { createdAt: parsed.createdAt, runId: parsed.runId };
   } catch {
     return null;
@@ -71,20 +77,18 @@ function decodeRunListCursor(value: unknown): TaskExecutionRunListCursor | null 
 }
 
 function runListLimit(value: unknown): number {
-  if (typeof value !== "string" || value.trim().length === 0) return 100;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed >= 1
-    ? Math.min(parsed, MAX_RUN_LIST_LIMIT)
-    : 100;
+  return parseExactPositiveIntegerQuery(value, "limit", {
+    defaultValue: 100,
+    max: MAX_RUN_LIST_LIMIT,
+  });
 }
 
 function runStatuses(value: unknown): readonly TaskExecutionRunStatus[] | null {
   if (value === undefined) return null;
   const source = Array.isArray(value) ? value : [value];
-  const statuses = source.flatMap((entry) =>
-    typeof entry === "string" ? entry.split(",") : [],
-  );
+  const statuses = source.filter((entry): entry is string => typeof entry === "string");
   if (
+    statuses.length !== source.length ||
     statuses.length === 0 ||
     new Set(statuses).size !== statuses.length ||
     statuses.some((status) => !RUN_STATUSES.has(status))
@@ -127,11 +131,10 @@ function serializeRunEnvelope(
 }
 
 function runDetailLimit(value: unknown): number {
-  if (typeof value !== "string" || value.trim().length === 0) return 200;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed >= 1
-    ? Math.min(parsed, MAX_RUN_DETAIL_LIMIT)
-    : 200;
+  return parseExactPositiveIntegerQuery(value, "limit", {
+    defaultValue: 200,
+    max: MAX_RUN_DETAIL_LIMIT,
+  });
 }
 
 export function runRoutes(
@@ -139,16 +142,9 @@ export function runRoutes(
   runService: Pick<TaskExecutionRunService, "readJoinedRunDetail">,
   adapterConfigurationPreflight: AdapterConfigurationPreflightService,
 ) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const tasks = taskService(db);
   const access = accessService(db);
-
-  async function resolveTaskByRef(rawId: string) {
-    const identifier = normalizeTaskIdentifier(rawId);
-    return identifier
-      ? tasks.getByIdentifier(identifier)
-      : tasks.getById(rawId);
-  }
 
   async function taskReadAllowed(
     req: Parameters<typeof assertCompanyAccess>[0],
@@ -179,10 +175,12 @@ export function runRoutes(
   router.get("/companies/:companyId/runs", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const agentId =
-      typeof req.query.agentId === "string" && req.query.agentId.length > 0
-        ? req.query.agentId
-        : null;
+    assertExactQueryKeys(req.query, ["agentId", "cursor", "limit", "status"]);
+    const agentId = req.query.agentId === undefined ? null : req.query.agentId;
+    if (agentId !== null && (typeof agentId !== "string" || !isCanonicalUuid(agentId))) {
+      res.status(400).json({ error: "agentId must be an exact canonical UUID" });
+      return;
+    }
     const cursor = decodeRunListCursor(req.query.cursor);
     if (req.query.cursor !== undefined && !cursor) {
       res.status(400).json({ error: "Invalid run list cursor" });
@@ -215,10 +213,11 @@ export function runRoutes(
   });
 
   router.get("/tasks/:id/runs", async (req, res) => {
+    assertExactQueryKeys(req.query, ["cursor", "limit", "status"]);
     const task = await getAccessibleResource(
       req,
       res,
-      resolveTaskByRef(req.params.id as string),
+      tasks.getById(req.params.id as string),
       "Task not found",
     );
     if (!task) return;
@@ -269,6 +268,7 @@ export function runRoutes(
   }
 
   router.get("/runs/:runId", async (req, res) => {
+    assertExactQueryKeys(req.query, ["eventCursor", "limit", "messageCursor"]);
     const runId = req.params.runId as string;
     const identity = await accessibleIdentity(req, res, runId);
     if (!identity) return;
@@ -276,14 +276,8 @@ export function runRoutes(
       ...identity,
       limit: runDetailLimit(req.query.limit),
       sessionProjection: "audit",
-      sessionEventCursor:
-        typeof req.query.eventCursor === "string"
-          ? req.query.eventCursor
-          : null,
-      sessionMessageCursor:
-        typeof req.query.messageCursor === "string"
-          ? req.query.messageCursor
-          : null,
+      sessionEventCursor: parseExactOptionalNonBlankQuery(req.query.eventCursor, "eventCursor") ?? null,
+      sessionMessageCursor: parseExactOptionalNonBlankQuery(req.query.messageCursor, "messageCursor") ?? null,
     });
     if (!detail) {
       res.status(404).json({ error: "Task execution run not found" });

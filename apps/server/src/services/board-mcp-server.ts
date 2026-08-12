@@ -5,14 +5,14 @@ import {
   ListResourceTemplatesRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
+  BOARD_MANAGED_TOOLS,
+  parseBoardManagedTool,
+} from "./paperclip-managed-tool-registry.js";
+import {
   paperclipManagedToolPublicError,
   type BoardUserToolAuthority,
   type PaperclipManagedToolRouter,
 } from "./paperclip-managed-tool-router.js";
-import {
-  BOARD_MANAGED_TOOLS,
-  parseBoardManagedTool,
-} from "./paperclip-managed-tool-registry.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -42,11 +42,7 @@ function errorResult(error: unknown) {
   };
 }
 
-/**
- * Streamable-HTTP SDK adapter only. It owns MCP envelopes and instructions;
- * it has no Board tool handlers or domain-service dependencies. Every call
- * crosses the same app-owned `PaperclipManagedToolRouter` as ACPX.
- */
+/** Streamable-HTTP adapter for the authenticated board-user tool ingress. */
 export function createBoardMcpServer(input: {
   authority: BoardUserToolAuthority;
   managedTools: PaperclipManagedToolRouter;
@@ -59,7 +55,7 @@ export function createBoardMcpServer(input: {
     { name: "paperclip-board-mcp", version: "1" },
     {
       instructions: [
-        "Paperclip Board MCP exposes Paperclip-managed tools for trusted local coding agents acting as the authenticated board user.",
+        "Paperclip Board MCP exposes Paperclip-managed tools to a human-approved local coding client acting as the authenticated board user. It is not a provider-agent runtime.",
         "Local MCP config stores only this board API key. Do not store companyId, taskId, agentId, runId, or other entity targets in the local MCP config.",
         "Use tools/list as the source of truth for each tool input schema. Every listed Paperclip action and context reader is available without agent action grants, context dials, or mention-reach grants. Mutating tools execute directly for the authenticated board key. mention_board is intentionally unavailable because this MCP is already the board.",
         "mention_agent uses the canonical Board comment mention path, so agentId must be the task's current owner.",
@@ -93,7 +89,6 @@ export function createBoardMcpServer(input: {
     );
   }
 
-  // Match the TradingGoose tools-only contract explicitly.
   server.server.registerCapabilities({ prompts: {}, resources: {} });
   server.server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: [] }));
   server.server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [] }));

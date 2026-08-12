@@ -16,7 +16,7 @@ function blocker(
 ): TaskRelationTaskSummary {
   return {
     priority: "medium",
-    ownerAgentId: "agent-1",
+    ownerAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4",
     ownerUserId: null,
     ...overrides,
   } as TaskRelationTaskSummary;
@@ -60,7 +60,7 @@ export const RuleCSingleBlocker: Story = {
         agentName="CodexCoder"
         blockers={[
           blocker({
-            id: "b1",
+            id: "dddddddd-dddd-4ddd-8ddd-ddddddddd023",
             identifier: "PAP-500",
             title: "Server work still in flight",
             boardPresentationStatus: "in_progress",
@@ -80,17 +80,17 @@ export const RuleCChainNamesLeaf: Story = {
         agentName="CodexCoder"
         blockers={[
           blocker({
-            id: "b1",
+            id: "dddddddd-dddd-4ddd-8ddd-ddddddddd023",
             identifier: "PAP-600",
             title: "Waiting in review",
             boardPresentationStatus: "in_review",
             terminalBlockers: [
               blocker({
-                id: "t1",
+                id: "dddddddd-dddd-4ddd-8ddd-ddddddddd025",
                 identifier: "PAP-777",
                 title: "Actual work",
                 boardPresentationStatus: "in_progress",
-                ownerAgentId: "agent-2",
+                ownerAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5",
               }),
             ],
           }),
@@ -109,13 +109,13 @@ export const RuleCMultipleBlockers: Story = {
         agentName="CodexCoder"
         blockers={[
           blocker({
-            id: "b1",
+            id: "dddddddd-dddd-4ddd-8ddd-ddddddddd023",
             identifier: "PAP-501",
             title: "First dependency",
             boardPresentationStatus: "in_progress",
           }),
           blocker({
-            id: "b2",
+            id: "dddddddd-dddd-4ddd-8ddd-ddddddddd024",
             identifier: "PAP-502",
             title: "Second dependency",
             boardPresentationStatus: "todo",
@@ -144,7 +144,7 @@ export const InProgressWithBlocker: Story = {
         agentName="CodexCoder"
         blockers={[
           blocker({
-            id: "b1",
+            id: "dddddddd-dddd-4ddd-8ddd-ddddddddd023",
             identifier: "PAP-800",
             title: "Dependency",
             boardPresentationStatus: "in_progress",

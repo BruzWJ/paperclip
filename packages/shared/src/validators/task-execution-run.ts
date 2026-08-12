@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import { RUN_LIVENESS_STATES } from "../constants.js";
 import {
   ACP_COST_CURSOR_STATES,
@@ -16,7 +17,7 @@ import {
   TASK_EXECUTION_STEERING_STATES,
 } from "../types/task-execution-run.js";
 
-const uuidSchema = z.string().uuid();
+const uuidSchema = canonicalUuidSchema;
 
 export const taskExecutionRunKindSchema = z.enum(
   TASK_EXECUTION_RUN_KINDS,

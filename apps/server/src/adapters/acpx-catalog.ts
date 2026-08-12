@@ -8,8 +8,6 @@ import {
 import type {
   AcpAdapterConfigOption,
   AdapterModel,
-  ConfigFieldOption,
-  ConfigFieldSchema,
   ServerAdapterModule,
 } from "@paperclipai/adapter-utils";
 import { validateServerAdapterModule } from "@paperclipai/adapter-utils";
@@ -18,71 +16,29 @@ const DISCOVERY_CONCURRENCY = 4;
 
 type SelectableOption = {
   readonly kind: "select";
-  readonly source: AcpxDiscoveredConfigOption;
+  readonly source: Extract<AcpxDiscoveredConfigOption, { type: "select" }>;
   readonly values: readonly AcpxDiscoveredConfigOptionValue[];
 } | {
   readonly kind: "toggle";
-  readonly source: AcpxDiscoveredConfigOption;
-  readonly values: readonly [];
-  readonly booleanCurrentValue: boolean;
+  readonly source: Extract<AcpxDiscoveredConfigOption, { type: "boolean" }>;
 } | {
   readonly kind: "text";
-  readonly source: AcpxDiscoveredConfigOption;
-  readonly values: readonly [];
-  readonly stringCurrentValue?: string;
+  readonly source: Extract<AcpxDiscoveredConfigOption, { type: "text" }>;
 };
-
-function exactValues(option: AcpxDiscoveredConfigOption): readonly AcpxDiscoveredConfigOptionValue[] {
-  const seen = new Set<string>();
-  const values: AcpxDiscoveredConfigOptionValue[] = [];
-  for (const entry of option.options) {
-    const candidates = entry.kind === "group" ? entry.options : [entry];
-    for (const candidate of candidates) {
-      if (seen.has(candidate.value)) continue;
-      seen.add(candidate.value);
-      values.push(candidate);
-    }
-  }
-  return Object.freeze(values);
-}
 
 function selectableOptions(
   discovery: AcpxAgentDiscovery,
 ): readonly SelectableOption[] {
   return Object.freeze(
-    discovery.configOptions
-      .flatMap((source): readonly SelectableOption[] => {
-        if (
-          source.type === "boolean" &&
-          typeof source.currentValue === "boolean"
-        ) {
-          return [{
-            kind: "toggle",
-            source,
-            values: [],
-            booleanCurrentValue: source.currentValue,
-          }];
-        }
-        // ACPX's public option ABI may grow new string-valued types. A closed
-        // value list is still a select regardless of its upstream type name;
-        // otherwise preserve it as generic text instead of dropping a setting
-        // or assigning provider-specific semantics in Paperclip.
-        const values = exactValues(source);
-        if (values.length > 0) {
-          return [{ kind: "select", source, values }];
-        }
-        if (source.type !== "boolean") {
-          return [{
-            kind: "text",
-            source,
-            values: [],
-            ...(typeof source.currentValue === "string"
-              ? { stringCurrentValue: source.currentValue }
-              : {}),
-          }];
-        }
-        return [];
-      }),
+    discovery.configOptions.map((source): SelectableOption => {
+      if (source.type === "select") {
+        return { kind: "select", source, values: source.options };
+      }
+      if (source.type === "boolean") {
+        return { kind: "toggle", source };
+      }
+      return { kind: "text", source };
+    }),
   );
 }
 
@@ -95,92 +51,44 @@ function modelOption(options: readonly SelectableOption[]): SelectableOption | n
   return null;
 }
 
-function fieldOptions(
-  option: SelectableOption,
-): readonly ConfigFieldOption[] {
-  if (option.kind !== "select") return Object.freeze([]);
-  return Object.freeze(
-    option.values.map((value) =>
-      Object.freeze({
-        label: value.name,
-        value: value.value,
-      }),
-    ),
-  );
-}
-
-function configSchemaField(option: SelectableOption): ConfigFieldSchema {
-  if (option.kind === "toggle") {
-    return Object.freeze({
-      key: option.source.id,
-      label: option.source.name,
-      type: "toggle",
-      default: option.booleanCurrentValue,
-      ...(option.source.description ? { hint: option.source.description } : {}),
-      required: true,
-    });
-  }
-  if (option.kind === "text") {
-    return Object.freeze({
-      key: option.source.id,
-      label: option.source.name,
-      type: "text",
-      ...(option.stringCurrentValue === undefined
-        ? {}
-        : { default: option.stringCurrentValue }),
-      ...(option.source.description ? { hint: option.source.description } : {}),
-      required: true,
-    });
-  }
-  const defaultValue =
-    typeof option.source.currentValue === "string" &&
-    option.values.some((value) => value.value === option.source.currentValue)
-      ? option.source.currentValue
-      : undefined;
-  return Object.freeze({
-    key: option.source.id,
-    label: option.source.name,
-    type: "select",
-    options: fieldOptions(option),
-    ...(defaultValue === undefined ? {} : { default: defaultValue }),
-    ...(option.source.description ? { hint: option.source.description } : {}),
-    required: true,
-  });
-}
-
 function configOption(option: SelectableOption): AcpAdapterConfigOption {
   if (option.kind === "toggle") {
     return Object.freeze({
       id: option.source.id,
-      configKey: option.source.id,
       label: option.source.name,
-      required: true,
-      values: Object.freeze([
-        Object.freeze({ value: false, label: "Disabled" }),
-        Object.freeze({ value: true, label: "Enabled" }),
-      ]),
+      type: "toggle",
+      currentValue: option.source.currentValue,
+      ...(option.source.description
+        ? { description: option.source.description }
+        : {}),
     });
   }
   if (option.kind === "text") {
     return Object.freeze({
       id: option.source.id,
-      configKey: option.source.id,
       label: option.source.name,
-      required: true,
-      values: Object.freeze([]),
-      freeform: true,
+      type: "text",
+      ...(option.source.currentValue === undefined
+        ? {}
+        : { currentValue: option.source.currentValue }),
+      ...(option.source.description
+        ? { description: option.source.description }
+        : {}),
     });
   }
   return Object.freeze({
     id: option.source.id,
-    configKey: option.source.id,
     label: option.source.name,
-    required: true,
+    type: "select",
     values: Object.freeze(
       option.values.map((value) =>
         Object.freeze({ label: value.name, value: value.value }),
       ),
     ),
+    currentValue: option.source.currentValue,
+    ...(option.source.description
+      ? { description: option.source.description }
+      : {}),
   });
 }
 
@@ -195,21 +103,16 @@ function modelsFor(
     }
     return Object.freeze([
       Object.freeze({
-        id: fixedModel,
-        label: fixedModel,
         value: fixedModel,
-        limits: null,
+        label: fixedModel,
       }),
     ]);
   }
   return Object.freeze(
     model.values.map((value) =>
       Object.freeze({
-        id: value.value,
-        label: value.name,
         value: value.value,
-        // ACPX supplies no portable context-window contract. Never infer one.
-        limits: null,
+        label: value.name,
       }),
     ),
   );
@@ -231,11 +134,6 @@ export function acpxDiscoveryToServerAdapter(
     definition: Object.freeze({
       version: "acpx-runtime/v1",
       launchProfile: Object.freeze({ registryName: discovery.agentName }),
-      environment: Object.freeze({
-        cwd: "execution-workspace",
-        additionalDirectories: "authorized-workspace-only",
-        environmentKeys: Object.freeze([]),
-      }),
       runtime: Object.freeze({
         // This is the exact public control list ACPX returned for the
         // temporary agent session. It intentionally makes no Paperclip claim
@@ -244,17 +142,10 @@ export function acpxDiscoveryToServerAdapter(
       }),
       ui: Object.freeze({
         label: discovery.agentName,
-        description: "Available from the local ACPX runtime.",
-      }),
-      configSchema: Object.freeze({
-        fields: Object.freeze(options.map(configSchemaField)),
       }),
       configOptions: Object.freeze(options.map(configOption)),
       modelConfigOptionId: selectedModelOption?.source.id ?? null,
       models,
-      modelProfiles: Object.freeze([]),
-      configurationDoc:
-        "This agent and its configuration are discovered dynamically at runtime.",
     }),
   });
 }

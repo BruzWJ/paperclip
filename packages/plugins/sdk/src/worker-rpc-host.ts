@@ -38,7 +38,10 @@
 import fs from "node:fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
-import { createInterface, type Interface as ReadlineInterface } from "node:readline";
+import {
+  createInterface,
+  type Interface as ReadlineInterface,
+} from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
@@ -198,10 +201,7 @@ function isWorkerEntrypoint(entry: string, moduleUrl: string): boolean {
  * runWorker(plugin, import.meta.url);
  * ```
  */
-export function runWorker(
-  plugin: PaperclipPlugin,
-  moduleUrl: string,
-): void {
+export function runWorker(plugin: PaperclipPlugin, moduleUrl: string): void {
   const entry = process.argv[1];
   if (typeof entry !== "string") return;
   if (isWorkerEntrypoint(entry, moduleUrl)) {
@@ -213,7 +213,9 @@ export function runWorker(
  * Internal low-level worker host used by SDK conformance tests. Production
  * plugin entrypoints use `runWorker()`.
  */
-export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost {
+export function startWorkerRpcHost(
+  options: WorkerRpcHostOptions,
+): WorkerRpcHost {
   const { plugin } = options;
   const stdinStream = options.stdin ?? process.stdin;
   const stdoutStream = options.stdout ?? process.stdout;
@@ -228,7 +230,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   let initialized = false;
   let manifest: PaperclipPluginManifestV1 | null = null;
   let databaseNamespace: string | null = null;
-  const invocationContextStorage = new AsyncLocalStorage<PluginInvocationContext>();
+  const invocationContextStorage =
+    new AsyncLocalStorage<PluginInvocationContext>();
 
   // Host requests are concurrent by design. Shutdown closes intake first,
   // then waits this exact accepted set without imposing a second deadline;
@@ -237,11 +240,20 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
   // Plugin handler registrations (populated during setup())
   const eventHandlers: EventRegistration[] = [];
-  const jobHandlers = new Map<string, (job: PluginJobContext) => Promise<void>>();
-  const dataHandlers = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
+  const jobHandlers = new Map<
+    string,
+    (job: PluginJobContext) => Promise<void>
+  >();
+  const dataHandlers = new Map<
+    string,
+    (params: Record<string, unknown>) => Promise<unknown>
+  >();
   const actionHandlers = new Map<
     string,
-    (params: Record<string, unknown>, context: PluginPerformActionContext) => Promise<unknown>
+    (
+      params: Record<string, unknown>,
+      context: PluginPerformActionContext,
+    ) => Promise<unknown>
   >();
   const toolHandlers = new Map<
     string,
@@ -253,10 +265,13 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   >();
 
   // Pending outbound (worker→host) requests
-  const pendingRequests = new Map<string | number, {
-    resolve: (response: JsonRpcResponse) => void;
-    timer: ReturnType<typeof setTimeout> | null;
-  }>();
+  const pendingRequests = new Map<
+    string | number,
+    {
+      resolve: (response: JsonRpcResponse) => void;
+      timer: ReturnType<typeof setTimeout> | null;
+    }
+  >();
   let nextOutboundId = 1;
   const MAX_OUTBOUND_ID = Number.MAX_SAFE_INTEGER - 1;
 
@@ -272,7 +287,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
   function workerErrorCode(error: unknown): number {
     const code = (error as { code?: unknown } | null)?.code;
-    return typeof code === "number" ? code : PLUGIN_RPC_ERROR_CODES.WORKER_ERROR;
+    return typeof code === "number"
+      ? code
+      : PLUGIN_RPC_ERROR_CODES.WORKER_ERROR;
   }
 
   /**
@@ -288,7 +305,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   ): Promise<WorkerToHostMethods[M][1]> {
     return new Promise<WorkerToHostMethods[M][1]>((resolve, reject) => {
       if (!running) {
-        reject(new Error(`Cannot call "${method}" — worker RPC host is not running`));
+        reject(
+          new Error(`Cannot call "${method}" — worker RPC host is not running`),
+        );
         return;
       }
 
@@ -303,7 +322,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       const activeInvocation = invocationContextStorage.getStore();
       const request = {
         ...createRequest(method, params, id),
-        ...(activeInvocation ? { paperclipInvocationId: activeInvocation.id } : {}),
+        ...(activeInvocation
+          ? { paperclipInvocationId: activeInvocation.id }
+          : {}),
       };
       const serializedRequest = serializeMessage(request);
 
@@ -322,7 +343,10 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           } else if (isJsonRpcErrorResponse(response)) {
             settle(reject, new JsonRpcCallError(response.error));
           } else {
-            settle(reject, new Error(`Unexpected response format for "${method}"`));
+            settle(
+              reject,
+              new Error(`Unexpected response format for "${method}"`),
+            );
           }
         },
         timer: null as ReturnType<typeof setTimeout> | null,
@@ -364,7 +388,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   function buildContext(): PluginContext {
     return {
       get manifest() {
-        if (!manifest) throw new Error("Plugin context accessed before initialization");
+        if (!manifest)
+          throw new Error("Plugin context accessed before initialization");
         return manifest;
       },
 
@@ -397,11 +422,24 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           });
         },
 
-        async readText(companyId: string, folderKey: string, relativePath: string) {
-          return callHost("localFolders.readText", { companyId, folderKey, relativePath });
+        async readText(
+          companyId: string,
+          folderKey: string,
+          relativePath: string,
+        ) {
+          return callHost("localFolders.readText", {
+            companyId,
+            folderKey,
+            relativePath,
+          });
         },
 
-        async writeTextAtomic(companyId: string, folderKey: string, relativePath: string, contents: string) {
+        async writeTextAtomic(
+          companyId: string,
+          folderKey: string,
+          relativePath: string,
+          contents: string,
+        ) {
           return callHost("localFolders.writeTextAtomic", {
             companyId,
             folderKey,
@@ -410,8 +448,16 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           });
         },
 
-        async deleteFile(companyId: string, folderKey: string, relativePath: string) {
-          return callHost("localFolders.deleteFile", { companyId, folderKey, relativePath });
+        async deleteFile(
+          companyId: string,
+          folderKey: string,
+          relativePath: string,
+        ) {
+          return callHost("localFolders.deleteFile", {
+            companyId,
+            folderKey,
+            relativePath,
+          });
         },
       },
 
@@ -422,7 +468,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           maybeFn?: (event: PluginEvent) => Promise<void>,
         ): () => void {
           if (initialized) {
-            throw new Error("Event handlers may only be registered during plugin setup");
+            throw new Error(
+              "Event handlers may only be registered during plugin setup",
+            );
           }
           let registration: EventRegistration;
           if (typeof filterOrFn === "function") {
@@ -438,21 +486,34 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           };
         },
 
-        async emit(name: string, companyId: string, payload: unknown): Promise<void> {
+        async emit(
+          name: string,
+          companyId: string,
+          payload: unknown,
+        ): Promise<void> {
           await callHost("events.emit", { name, companyId, payload });
         },
       },
 
       jobs: {
-        register(key: string, fn: (job: PluginJobContext) => Promise<void>): void {
+        register(
+          key: string,
+          fn: (job: PluginJobContext) => Promise<void>,
+        ): void {
           if (!manifest) {
-            throw new Error("Plugin manifest is unavailable during job registration");
+            throw new Error(
+              "Plugin manifest is unavailable during job registration",
+            );
           }
           if (!(manifest.jobs ?? []).some((job) => job.jobKey === key)) {
-            throw new Error(`Job handler "${key}" is not declared in manifest.jobs`);
+            throw new Error(
+              `Job handler "${key}" is not declared in manifest.jobs`,
+            );
           }
           if (jobHandlers.has(key)) {
-            throw new Error(`Job handler "${key}" is registered more than once`);
+            throw new Error(
+              `Job handler "${key}" is registered more than once`,
+            );
           }
           jobHandlers.set(key, fn);
         },
@@ -467,7 +528,10 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           }
           return databaseNamespace;
         },
-        async query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
+        async query<T = Record<string, unknown>>(
+          sql: string,
+          params?: unknown[],
+        ): Promise<T[]> {
           return callHost("db.query", { sql, params }) as Promise<T[]>;
         },
         async execute(sql: string, params?: unknown[]) {
@@ -484,7 +548,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
               // Normalize headers to a plain object
               if (init.headers instanceof Headers) {
                 const obj: Record<string, string> = {};
-                init.headers.forEach((v, k) => { obj[k] = v; });
+                init.headers.forEach((v, k) => {
+                  obj[k] = v;
+                });
                 serializedInit.headers = obj;
               } else if (Array.isArray(init.headers)) {
                 const obj: Record<string, string> = {};
@@ -495,15 +561,17 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
               }
             }
             if (init.body !== undefined && init.body !== null) {
-              serializedInit.body = typeof init.body === "string"
-                ? init.body
-                : String(init.body);
+              serializedInit.body =
+                typeof init.body === "string" ? init.body : String(init.body);
             }
           }
 
           const result = await callHost("http.fetch", {
             url,
-            init: Object.keys(serializedInit).length > 0 ? serializedInit : undefined,
+            init:
+              Object.keys(serializedInit).length > 0
+                ? serializedInit
+                : undefined,
           });
 
           // Reconstruct a Response-like object from the serialized result
@@ -583,10 +651,16 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
             return callHost("projects.managed.get", { projectKey, companyId });
           },
           async reconcile(projectKey: string, companyId: string) {
-            return callHost("projects.managed.reconcile", { projectKey, companyId });
+            return callHost("projects.managed.reconcile", {
+              projectKey,
+              companyId,
+            });
           },
           async reset(projectKey: string, companyId: string) {
-            return callHost("projects.managed.reset", { projectKey, companyId });
+            return callHost("projects.managed.reset", {
+              projectKey,
+              companyId,
+            });
           },
         },
       },
@@ -599,44 +673,57 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           async reconcile(
             routineKey: string,
             companyId: string,
-            overrides?: { assigneeAgentId?: string | null; projectId?: string | null },
+            overrides?: {
+              assigneeAgentId?: string | null;
+              projectId?: string | null;
+            },
           ) {
-            return callHost("routines.managed.reconcile", { routineKey, companyId, ...overrides });
+            return callHost("routines.managed.reconcile", {
+              routineKey,
+              companyId,
+              ...overrides,
+            });
           },
           async reset(
             routineKey: string,
             companyId: string,
-            overrides?: { assigneeAgentId?: string | null; projectId?: string | null },
+            overrides?: {
+              assigneeAgentId?: string | null;
+              projectId?: string | null;
+            },
           ) {
-            return callHost("routines.managed.reset", { routineKey, companyId, ...overrides });
+            return callHost("routines.managed.reset", {
+              routineKey,
+              companyId,
+              ...overrides,
+            });
           },
           async update(
             routineKey: string,
             companyId: string,
-            patch: Parameters<PluginContext["routines"]["managed"]["update"]>[2],
+            patch: Parameters<
+              PluginContext["routines"]["managed"]["update"]
+            >[2],
           ) {
-            return callHost("routines.managed.update", { routineKey, companyId, ...patch });
+            return callHost("routines.managed.update", {
+              routineKey,
+              companyId,
+              ...patch,
+            });
           },
           async run(
             routineKey: string,
             companyId: string,
-            overrides?: { assigneeAgentId?: string | null; projectId?: string | null },
+            overrides?: {
+              assigneeAgentId?: string | null;
+              projectId?: string | null;
+            },
           ) {
-            return callHost("routines.managed.run", { routineKey, companyId, ...overrides });
-          },
-        },
-      },
-
-      skills: {
-        managed: {
-          async get(skillKey: string, companyId: string) {
-            return callHost("skills.managed.get", { skillKey, companyId });
-          },
-          async reconcile(skillKey: string, companyId: string) {
-            return callHost("skills.managed.reconcile", { skillKey, companyId });
-          },
-          async reset(skillKey: string, companyId: string) {
-            return callHost("skills.managed.reset", { skillKey, companyId });
+            return callHost("routines.managed.run", {
+              routineKey,
+              companyId,
+              ...overrides,
+            });
           },
         },
       },
@@ -671,14 +758,22 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         },
 
         async registerCreatorCallback(registration, handler) {
-          const key = registration.key.trim();
-          const version = registration.version.trim();
-          if (!key || !version) {
-            throw new Error("Creator callback key and version are required");
+          const { key, version } = registration;
+          if (
+            key.length === 0 ||
+            key !== key.trim() ||
+            version.length === 0 ||
+            version !== version.trim()
+          ) {
+            throw new Error(
+              "Creator callback key and version must be exact non-empty strings",
+            );
           }
           const identity = `${key}\u0000${version}`;
           if (creatorCallbackHandlers.has(identity)) {
-            throw new Error(`Creator callback is already registered: ${key}@${version}`);
+            throw new Error(
+              `Creator callback is already registered: ${key}@${version}`,
+            );
           }
           creatorCallbackHandlers.set(identity, handler);
           try {
@@ -693,40 +788,52 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         },
 
         async create(input) {
-          return callHost("tasks.create", {
-            companyId: input.companyId,
-            request: input.request,
-            ownerAgentId: input.ownerAgentId,
-            callbackKey: input.callbackKey,
-            callbackVersion: input.callbackVersion,
-            title: input.title,
-            projectId: input.projectId,
-            goalId: input.goalId,
-            parentId: input.parentId,
-            priority: input.priority,
-          }, {
-            retryTransportTimeout: true,
-          });
+          return callHost(
+            "tasks.create",
+            {
+              companyId: input.companyId,
+              request: input.request,
+              ownerAgentId: input.ownerAgentId,
+              callbackKey: input.callbackKey,
+              callbackVersion: input.callbackVersion,
+              title: input.title,
+              projectId: input.projectId,
+              goalId: input.goalId,
+              parentId: input.parentId,
+              priority: input.priority,
+            },
+            {
+              retryTransportTimeout: true,
+            },
+          );
         },
 
         async update(taskId: string, input, companyId: string) {
-          return callHost("tasks.update", {
-            taskId,
-            input,
-            companyId,
-          }, {
-            retryTransportTimeout: true,
-          });
+          return callHost(
+            "tasks.update",
+            {
+              taskId,
+              input,
+              companyId,
+            },
+            {
+              retryTransportTimeout: true,
+            },
+          );
         },
 
         async withdraw(taskId: string, message: string, companyId: string) {
-          return callHost("tasks.withdraw", {
-            taskId,
-            companyId,
-            message,
-          }, {
-            retryTransportTimeout: true,
-          });
+          return callHost(
+            "tasks.withdraw",
+            {
+              taskId,
+              companyId,
+              message,
+            },
+            {
+              retryTransportTimeout: true,
+            },
+          );
         },
       },
 
@@ -758,7 +865,10 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           },
 
           async reconcile(agentKey: string, companyId: string) {
-            return callHost("agents.managed.reconcile", { agentKey, companyId });
+            return callHost("agents.managed.reconcile", {
+              agentKey,
+              companyId,
+            });
           },
 
           async reset(agentKey: string, companyId: string) {
@@ -817,7 +927,11 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           },
 
           async update(memberId: string, patch, companyId: string) {
-            return callHost("access.members.update", { memberId, patch, companyId });
+            return callHost("access.members.update", {
+              memberId,
+              patch,
+              companyId,
+            });
           },
         },
 
@@ -834,10 +948,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           async create(input) {
             return callHost("access.invites.create", {
               companyId: input.companyId,
-              allowedJoinTypes: input.allowedJoinTypes,
-              humanRole: input.humanRole,
-              defaultsPayload: input.defaultsPayload,
-              agentMessage: input.agentMessage,
+              userRole: input.userRole,
             });
           },
 
@@ -880,9 +991,14 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       },
 
       data: {
-        register(key: string, handler: (params: Record<string, unknown>) => Promise<unknown>): void {
+        register(
+          key: string,
+          handler: (params: Record<string, unknown>) => Promise<unknown>,
+        ): void {
           if (dataHandlers.has(key)) {
-            throw new Error(`Data handler "${key}" is registered more than once`);
+            throw new Error(
+              `Data handler "${key}" is registered more than once`,
+            );
           }
           dataHandlers.set(key, handler);
         },
@@ -891,10 +1007,15 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       actions: {
         register(
           key: string,
-          handler: (params: Record<string, unknown>, context: PluginPerformActionContext) => Promise<unknown>,
+          handler: (
+            params: Record<string, unknown>,
+            context: PluginPerformActionContext,
+          ) => Promise<unknown>,
         ): void {
           if (actionHandlers.has(key)) {
-            throw new Error(`Action handler "${key}" is registered more than once`);
+            throw new Error(
+              `Action handler "${key}" is registered more than once`,
+            );
           }
           actionHandlers.set(key, handler);
         },
@@ -909,20 +1030,30 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           ) => Promise<ToolResult>,
         ): void {
           if (!manifest) {
-            throw new Error("Plugin manifest is unavailable during tool registration");
+            throw new Error(
+              "Plugin manifest is unavailable during tool registration",
+            );
           }
           if (!(manifest.tools ?? []).some((tool) => tool.name === name)) {
-            throw new Error(`Tool handler "${name}" is not declared in manifest.tools`);
+            throw new Error(
+              `Tool handler "${name}" is not declared in manifest.tools`,
+            );
           }
           if (toolHandlers.has(name)) {
-            throw new Error(`Tool handler "${name}" is registered more than once`);
+            throw new Error(
+              `Tool handler "${name}" is registered more than once`,
+            );
           }
           toolHandlers.set(name, handler);
         },
       },
 
       metrics: {
-        async write(name: string, value: number, tags?: Record<string, string>): Promise<void> {
+        async write(
+          name: string,
+          value: number,
+          tags?: Record<string, string>,
+        ): Promise<void> {
           await callHost("metrics.write", { name, value, tags });
         },
       },
@@ -937,16 +1068,28 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       },
 
       logger: {
-        async info(message: string, meta?: Record<string, unknown>): Promise<void> {
+        async info(
+          message: string,
+          meta?: Record<string, unknown>,
+        ): Promise<void> {
           await callHost("log", { level: "info", message, meta });
         },
-        async warn(message: string, meta?: Record<string, unknown>): Promise<void> {
+        async warn(
+          message: string,
+          meta?: Record<string, unknown>,
+        ): Promise<void> {
           await callHost("log", { level: "warn", message, meta });
         },
-        async error(message: string, meta?: Record<string, unknown>): Promise<void> {
+        async error(
+          message: string,
+          meta?: Record<string, unknown>,
+        ): Promise<void> {
           await callHost("log", { level: "error", message, meta });
         },
-        async debug(message: string, meta?: Record<string, unknown>): Promise<void> {
+        async debug(
+          message: string,
+          meta?: Record<string, unknown>,
+        ): Promise<void> {
           await callHost("log", { level: "debug", message, meta });
         },
       },
@@ -970,7 +1113,10 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     try {
       const invoke = () => dispatchMethod(method, params);
       const result = request.paperclipInvocation
-        ? await invocationContextStorage.run(request.paperclipInvocation, invoke)
+        ? await invocationContextStorage.run(
+            request.paperclipInvocation,
+            invoke,
+          )
         : await invoke();
       sendMessage(createSuccessResponse(id, result ?? null));
     } catch (err) {
@@ -987,7 +1133,10 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   /**
    * Dispatch a host→worker method call to the appropriate handler.
    */
-  async function dispatchMethod(method: string, params: unknown): Promise<unknown> {
+  async function dispatchMethod(
+    method: string,
+    params: unknown,
+  ): Promise<unknown> {
     switch (method) {
       case "initialize":
         return handleInitialize(params as InitializeParams);
@@ -1002,7 +1151,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         return handleValidateConfig(params as ValidateConfigParams);
 
       case "beforePrompt":
-        return handleBeforePrompt(params as HostToWorkerMethods["beforePrompt"][0]);
+        return handleBeforePrompt(
+          params as HostToWorkerMethods["beforePrompt"][0],
+        );
 
       case "onEvent":
         return handleOnEvent(params as OnEventParams);
@@ -1025,7 +1176,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       case "executeTool":
         return handleExecuteTool(params as ExecuteToolParams);
       case "tasks.creatorCallback.deliver": {
-        const input = params as HostToWorkerMethods["tasks.creatorCallback.deliver"][0];
+        const input =
+          params as HostToWorkerMethods["tasks.creatorCallback.deliver"][0];
         const handler = creatorCallbackHandlers.get(
           `${input.callbackKey}\u0000${input.callbackVersion}`,
         );
@@ -1049,10 +1201,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         return acknowledgement;
       }
       default:
-        throw Object.assign(
-          new Error(`Unknown method: ${method}`),
-          { code: JSONRPC_ERROR_CODES.METHOD_NOT_FOUND },
-        );
+        throw Object.assign(new Error(`Unknown method: ${method}`), {
+          code: JSONRPC_ERROR_CODES.METHOD_NOT_FOUND,
+        });
     }
   }
 
@@ -1060,7 +1211,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   // Host→Worker method handlers
   // -----------------------------------------------------------------------
 
-  async function handleInitialize(params: InitializeParams): Promise<InitializeResult> {
+  async function handleInitialize(
+    params: InitializeParams,
+  ): Promise<InitializeResult> {
     if (initialized) {
       throw new Error("Worker already initialized");
     }
@@ -1073,18 +1226,22 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
     // Event registration is part of initialization authority. Every host-side
     // subscription must be acknowledged before this worker can become ready.
-    await Promise.all(eventHandlers.map((registration) =>
-      callHost("events.subscribe", {
-        eventPattern: registration.name,
-        filter: registration.filter ?? null,
-      })
-    ));
+    await Promise.all(
+      eventHandlers.map((registration) =>
+        callHost("events.subscribe", {
+          eventPattern: registration.name,
+          filter: registration.filter ?? null,
+        }),
+      ),
+    );
 
     const missingToolHandlers = (params.manifest.tools ?? [])
       .map((tool) => tool.name)
       .filter((name) => !toolHandlers.has(name));
-    const undeclaredToolHandlers = [...toolHandlers.keys()]
-      .filter((name) => !(params.manifest.tools ?? []).some((tool) => tool.name === name));
+    const undeclaredToolHandlers = [...toolHandlers.keys()].filter(
+      (name) =>
+        !(params.manifest.tools ?? []).some((tool) => tool.name === name),
+    );
     if (missingToolHandlers.length > 0 || undeclaredToolHandlers.length > 0) {
       const details = [
         missingToolHandlers.length > 0
@@ -1094,14 +1251,17 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           ? `undeclared handlers: ${undeclaredToolHandlers.join(", ")}`
           : null,
       ].filter((detail): detail is string => detail !== null);
-      throw new Error(`Plugin tool handlers must exactly match manifest.tools (${details.join("; ")})`);
+      throw new Error(
+        `Plugin tool handlers must exactly match manifest.tools (${details.join("; ")})`,
+      );
     }
 
     const missingJobHandlers = (params.manifest.jobs ?? [])
       .map((job) => job.jobKey)
       .filter((key) => !jobHandlers.has(key));
-    const undeclaredJobHandlers = [...jobHandlers.keys()]
-      .filter((key) => !(params.manifest.jobs ?? []).some((job) => job.jobKey === key));
+    const undeclaredJobHandlers = [...jobHandlers.keys()].filter(
+      (key) => !(params.manifest.jobs ?? []).some((job) => job.jobKey === key),
+    );
     if (missingJobHandlers.length > 0 || undeclaredJobHandlers.length > 0) {
       const details = [
         missingJobHandlers.length > 0
@@ -1111,7 +1271,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           ? `undeclared handlers: ${undeclaredJobHandlers.join(", ")}`
           : null,
       ].filter((detail): detail is string => detail !== null);
-      throw new Error(`Plugin job handlers must exactly match manifest.jobs (${details.join("; ")})`);
+      throw new Error(
+        `Plugin job handlers must exactly match manifest.jobs (${details.join("; ")})`,
+      );
     }
 
     const declaresWebhooks = (params.manifest.webhooks?.length ?? 0) > 0;
@@ -1134,7 +1296,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
     // Report which optional methods this plugin implements
     const supportedMethods: HostToWorkerOptionalMethodName[] = [];
-    if (plugin.definition.onValidateConfig) supportedMethods.push("validateConfig");
+    if (plugin.definition.onValidateConfig)
+      supportedMethods.push("validateConfig");
     if (plugin.definition.onBeforePrompt) supportedMethods.push("beforePrompt");
     if (eventHandlers.length > 0) supportedMethods.push("onEvent");
     if (jobHandlers.size > 0) supportedMethods.push("runJob");
@@ -1253,7 +1416,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     await plugin.definition.onWebhook!(params);
   }
 
-  async function handleApiRequest(params: PluginApiRequestInput): Promise<unknown> {
+  async function handleApiRequest(
+    params: PluginApiRequestInput,
+  ): Promise<unknown> {
     return plugin.definition.onApiRequest!(params);
   }
 
@@ -1264,12 +1429,18 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     }
     return handler({
       ...params.params,
-      ...(params.companyId === undefined ? {} : { companyId: params.companyId }),
-      ...(params.renderEnvironment === undefined ? {} : { renderEnvironment: params.renderEnvironment }),
+      ...(params.companyId === undefined
+        ? {}
+        : { companyId: params.companyId }),
+      ...(params.renderEnvironment === undefined
+        ? {}
+        : { renderEnvironment: params.renderEnvironment }),
     });
   }
 
-  function actionContextFromParams(params: PerformActionParams): PluginPerformActionContext {
+  function actionContextFromParams(
+    params: PerformActionParams,
+  ): PluginPerformActionContext {
     const actor: Readonly<PluginPerformActionActorContext> = Object.freeze(
       decodePluginPerformActionActorContext(
         (params as PerformActionParams | null | undefined)?.actorContext,
@@ -1278,7 +1449,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     return Object.freeze({ actor });
   }
 
-  async function handlePerformAction(params: PerformActionParams): Promise<unknown> {
+  async function handlePerformAction(
+    params: PerformActionParams,
+  ): Promise<unknown> {
     const context = actionContextFromParams(params);
     const handler = actionHandlers.get(params.key);
     if (!handler) {
@@ -1287,13 +1460,17 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     return handler(
       {
         ...params.params,
-        ...(params.renderEnvironment === undefined ? {} : { renderEnvironment: params.renderEnvironment }),
+        ...(params.renderEnvironment === undefined
+          ? {}
+          : { renderEnvironment: params.renderEnvironment }),
       },
       context,
     );
   }
 
-  async function handleExecuteTool(params: ExecuteToolParams): Promise<ToolResult> {
+  async function handleExecuteTool(
+    params: ExecuteToolParams,
+  ): Promise<ToolResult> {
     const handler = toolHandlers.get(params.toolName);
     if (!handler) {
       throw new Error(`No tool handler registered for "${params.toolName}"`);
@@ -1312,41 +1489,44 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         });
       },
       tasks: Object.freeze({
-        listCompanyTasks(input: {
-          status?: "open" | "blocked" | "done" | "cancelled";
-          priority?: "critical" | "high" | "medium" | "low";
-          cursor?: string;
-          limit?: number;
-        } = {}) {
+        listCompanyTasks(
+          input: {
+            status?: "open" | "blocked" | "done" | "cancelled";
+            priority?: "critical" | "high" | "medium" | "low";
+            cursor?: string;
+            limit?: number;
+          } = {},
+        ) {
           return callHost("run.tasks.listCompanyTasks", {
             runContextHandle: params.runContextHandle,
             ...input,
           });
         },
-        listSubTasks(input: {
-          taskId?: string;
-          cursor?: string;
-          limit?: number;
-        } = {}) {
+        listSubTasks(
+          input: {
+            taskId?: string;
+            cursor?: string;
+            limit?: number;
+          } = {},
+        ) {
           return callHost("run.tasks.listSubTasks", {
             runContextHandle: params.runContextHandle,
             ...input,
           });
         },
-        readTaskComments(input: {
-          taskId?: string;
-          cursor?: string;
-          limit?: number;
-        } = {}) {
+        readTaskComments(
+          input: {
+            taskId?: string;
+            cursor?: string;
+            limit?: number;
+          } = {},
+        ) {
           return callHost("run.tasks.readTaskComments", {
             runContextHandle: params.runContextHandle,
             ...input,
           });
         },
-        readTaskAgentRun(
-          runId: string,
-          input: { cursor?: string } = {},
-        ) {
+        readTaskAgentRun(runId: string, input: { cursor?: string } = {}) {
           return callHost("run.tasks.readTaskAgentRun", {
             runContextHandle: params.runContextHandle,
             runId,
@@ -1429,11 +1609,13 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
     if (!acceptingHostRequests) {
       try {
-        sendMessage(createErrorResponse(
-          message.id,
-          PLUGIN_RPC_ERROR_CODES.WORKER_UNAVAILABLE,
-          "Worker RPC host is draining",
-        ));
+        sendMessage(
+          createErrorResponse(
+            message.id,
+            PLUGIN_RPC_ERROR_CODES.WORKER_UNAVAILABLE,
+            "Worker RPC host is draining",
+          ),
+        );
       } catch {
         stop();
       }
@@ -1515,11 +1697,15 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   // where the caller provides custom streams).
   if (!options.stdin && !options.stdout) {
     const exitForFatalError = (label: string, reason: unknown): never => {
-      const detail = reason instanceof Error
-        ? reason.stack ?? reason.message
-        : String(reason);
+      const detail =
+        reason instanceof Error
+          ? (reason.stack ?? reason.message)
+          : String(reason);
       try {
-        fs.writeSync(process.stderr.fd, `[paperclip plugin worker] ${label}: ${detail}\n`);
+        fs.writeSync(
+          process.stderr.fd,
+          `[paperclip plugin worker] ${label}: ${detail}\n`,
+        );
       } finally {
         process.exit(1);
       }

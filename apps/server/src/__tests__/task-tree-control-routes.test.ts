@@ -86,24 +86,6 @@ describe("task tree control routes", () => {
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
-  it("requires board access for hold creation", async () => {
-    const app = await createApp({
-      type: "agent",
-      agentId: "22222222-2222-4222-8222-222222222222",
-      companyId: "company-2",
-      runId: null,
-      source: "internal",
-    });
-
-    const res = await request(app)
-      .post("/api/tasks/11111111-1111-4111-8111-111111111111/tree-holds")
-      .send({ mode: "pause" });
-
-    expect(res.status).toBe(403);
-    expect(mockTaskService.getById).not.toHaveBeenCalled();
-    expect(mockTreeControlService.createHold).not.toHaveBeenCalled();
-  });
-
   it("rejects malformed tree hold IDs before querying the hold service", async () => {
     const app = await createApp(boardActor(["company-2"]));
 

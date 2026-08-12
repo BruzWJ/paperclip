@@ -44,32 +44,32 @@ POST /api/companies/{companyId}/routines
 
 Fields:
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `title` | yes | Routine name |
-| `description` | no | Human-readable description of the routine |
-| `assigneeAgentId` | yes | Agent who receives each run |
-| `projectId` | yes | Project this routine belongs to |
-| `goalId` | no | Goal to link runs to |
-| `parentTaskId` | no | Parent task for created run tasks |
-| `priority` | no | `critical`, `high`, `medium` (default), `low` |
-| `status` | no | `active` (default), `paused`, `archived` |
-| `concurrencyPolicy` | no | Behaviour when a run fires while a previous one is still active |
-| `catchUpPolicy` | no | Behaviour for missed scheduled runs |
+| Field               | Required | Description                                                     |
+| ------------------- | -------- | --------------------------------------------------------------- |
+| `title`             | yes      | Routine name                                                    |
+| `description`       | no       | Human-readable description of the routine                       |
+| `assigneeAgentId`   | yes      | Agent who receives each run                                     |
+| `projectId`         | yes      | Project this routine belongs to                                 |
+| `goalId`            | no       | Goal to link runs to                                            |
+| `parentTaskId`      | no       | Parent task for created run tasks                               |
+| `priority`          | no       | `critical`, `high`, `medium` (default), `low`                   |
+| `status`            | no       | `active` (default), `paused`, `archived`                        |
+| `concurrencyPolicy` | no       | Behaviour when a run fires while a previous one is still active |
+| `catchUpPolicy`     | no       | Behaviour for missed scheduled runs                             |
 
 **Concurrency policies:**
 
-| Value | Behaviour |
-|-------|-----------|
+| Value                          | Behaviour                                                                                                  |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------- |
 | `coalesce_if_active` (default) | Incoming run is immediately finalised as `coalesced` and linked to the active run — no new task is created |
-| `skip_if_active` | Incoming run is immediately finalised as `skipped` and linked to the active run — no new task is created |
-| `always_enqueue` | Always create a new run regardless of active runs |
+| `skip_if_active`               | Incoming run is immediately finalised as `skipped` and linked to the active run — no new task is created   |
+| `always_enqueue`               | Always create a new run regardless of active runs                                                          |
 
 **Catch-up policies:**
 
-| Value | Behaviour |
-|-------|-----------|
-| `skip_missed` (default) | Missed scheduled runs are dropped |
+| Value                     | Behaviour                                      |
+| ------------------------- | ---------------------------------------------- |
+| `skip_missed` (default)   | Missed scheduled runs are dropped              |
 | `enqueue_missed_with_cap` | Missed runs are enqueued up to an internal cap |
 
 ## Update Routine
@@ -82,7 +82,7 @@ PATCH /api/routines/{routineId}
 }
 ```
 
-All fields from create are updatable. `baseRevisionId` is optional for backward compatibility; when provided, stale values return `409 Conflict` with the current revision id. **Agents can only update routines assigned to themselves and cannot reassign a routine to another agent.**
+All fields from create are updatable. `baseRevisionId` is required and stale values return `409 Conflict` with the current revision id. **Agents can only update routines assigned to themselves and cannot reassign a routine to another agent.**
 
 ## List Revisions
 
@@ -186,7 +186,11 @@ Fires a run immediately, bypassing the schedule. Concurrency policy still applie
 POST /api/routine-triggers/public/{publicId}/fire
 ```
 
-Fires a webhook trigger from an external system. Requires a valid `Authorization` or `X-Paperclip-Signature` + `X-Paperclip-Timestamp` header pair matching the trigger's signing mode.
+Fires a webhook trigger from an external system. `bearer` requires one exact
+`Authorization: Bearer <secret>` header. `hmac_sha256` requires an exact
+lowercase 64-hex `X-Paperclip-Signature` plus a millisecond Unix
+`X-Paperclip-Timestamp`. `github_hmac` requires exactly
+`X-Paperclip-Signature: sha256=<lowercase-64-hex>` and signs the raw body.
 
 ## List Runs
 
@@ -196,19 +200,13 @@ GET /api/routines/{routineId}/runs?limit=50
 
 Returns recent run history for the routine. Defaults to 50 most recent runs.
 
-## Agent Access Rules
+## Execution authority
 
-Agents can read all routines in their company but can only create and manage routines assigned to themselves:
-
-| Operation | Agent | Board |
-|-----------|-------|-------|
-| List / Get | ✅ any routine | ✅ |
-| Create | ✅ own only | ✅ |
-| Update / activate | ✅ own only | ✅ |
-| Add / update / delete triggers | ✅ own only | ✅ |
-| Rotate trigger secret | ✅ own only | ✅ |
-| Manual run | ✅ own only | ✅ |
-| Reassign to another agent | ❌ | ✅ |
+Routine REST endpoints are board control-plane APIs. Agent providers never
+receive a generic REST credential. During an admitted task execution, ACPX can
+invoke only the request-scoped tools compiled for that exact lease; Paperclip
+performs the company, ownership, permission, and approval checks behind those
+tools.
 
 ## Routine Lifecycle
 

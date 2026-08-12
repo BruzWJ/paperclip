@@ -101,8 +101,7 @@ Configure eligibility and limits as control-plane policy:
 - all nine context-dial cells, with active owners receiving the six
   current-task and sub-task cells automatically;
 - five configurable action grants and explicit mention reach; `task_create`
-  combines direct-child creation and reassignment;
-- explicitly selected company skills through the `operator_native` channel.
+  combines direct-child creation and reassignment.
 
 The compiled prompt-capability interface is the model-visible context-access
 boundary; the server still reauthorizes every call. An active owner receives
@@ -322,9 +321,9 @@ Setup and resume failures remain ordinary pre-transmission errors. Only fresh
    when the CLI needs a custom name or launch override.
 4. Select the exact discovered adapter and complete its required stable ACPX
    configuration.
-5. Set agent context dials, the five configurable action grants, and selected
-   company skills. Active owners receive current-task and sub-task context
-   automatically; lifecycle reporting needs no separate grant.
+5. Set agent context dials and the five configurable action grants. Active
+   owners receive current-task and sub-task context automatically; lifecycle
+   reporting needs no separate grant.
 6. Create a task with an immutable request and eligible owner.
 7. Confirm the Session projection, progress comment, terminal state, and any
    valid accounting were recorded.

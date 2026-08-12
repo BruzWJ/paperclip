@@ -9,7 +9,6 @@ import type { TaskExecutionRunStatus } from "./task-execution-run.js";
 export interface AgentRuntimeState {
   agentId: string;
   companyId: string;
-  adapterType: string;
   lastRunId: string | null;
   lastRunStatus: TaskExecutionRunStatus | null;
   lastContextUsedTokens: number | null;

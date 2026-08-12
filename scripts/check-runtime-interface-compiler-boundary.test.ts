@@ -20,9 +20,7 @@ function write(root: string, path: string, content: string): void {
 }
 
 function fixtureRoot(): string {
-  const root = mkdtempSync(
-    join(tmpdir(), "paperclip-runtime-interface-gate-"),
-  );
+  const root = mkdtempSync(join(tmpdir(), "paperclip-runtime-interface-gate-"));
   roots.add(root);
   write(
     root,
@@ -56,6 +54,7 @@ function fixtureRoot(): string {
       "type TaskExecutionRefMode = 'owner' | 'consult';",
       "type ContextDial = {}; type PaperclipActionKey = string;",
       "export const PAPERCLIP_MANAGED_TOOL_NAMES = [];",
+      "export const PAPERCLIP_MANAGED_TOOL_METADATA = {};",
       "export const boardMcpInputSchemas = {};",
       "export const BOARD_MANAGED_TOOLS = [];",
       "export interface PaperclipManagedToolRuntimeProjectionInput {",
@@ -108,7 +107,7 @@ function fixtureRoot(): string {
     root,
     "apps/server/src/routes/run-tools.ts",
     [
-      "interface Request { method: \"initialize\" | \"tools/list\" | \"tools/call\" }",
+      'interface Request { method: "initialize" | "tools/list" | "tools/call" }',
       "export async function route(gateway: any, token: string) {",
       "  await gateway.listTools(token);",
       "  return gateway.callTool({ token });",
@@ -125,52 +124,9 @@ afterEach(() => {
 });
 
 test("accepts the closed compiler/database/gateway graph", () => {
-  assert.deepEqual(runtimeInterfaceCompilerBoundaryViolations(fixtureRoot()), []);
-});
-
-for (const mutation of [
-  "companySkillPins: readonly string[];",
-  "selectedCompanySkills: readonly string[];",
-] as const) {
-  test(`rejects compiler input mutation ${mutation}`, () => {
-    const root = fixtureRoot();
-    const path = "apps/server/src/services/runtime-interface-compiler.ts";
-    const original = readFileSync(join(root, path), "utf8");
-    write(
-      root,
-      path,
-      original.replace(
-        "extends PaperclipManagedToolRuntimeProjectionInput {",
-        `extends PaperclipManagedToolRuntimeProjectionInput {\n  ${mutation}`,
-      ),
-    );
-    assert.ok(
-      runtimeInterfaceCompilerBoundaryViolations(root).some((violation) =>
-        violation.includes("skills entered RuntimeInterfaceCompileInput"),
-      ),
-    );
-  });
-}
-
-test("rejects a company-skill database import", () => {
-  const root = fixtureRoot();
-  const path = "apps/server/src/services/runtime-interface-compiler-db.ts";
-  const original = readFileSync(join(root, path), "utf8");
-  write(
-    root,
-    path,
-    `import { companySkills } from \"./company-skills.js\";\n${original}`,
-  );
-  const violations = runtimeInterfaceCompilerBoundaryViolations(root);
-  assert.ok(
-    violations.some((violation) =>
-      violation.includes("company-skill storage entered"),
-    ),
-  );
-  assert.ok(
-    violations.some((violation) =>
-      violation.includes("imports a skill owner"),
-    ),
+  assert.deepEqual(
+    runtimeInterfaceCompilerBoundaryViolations(fixtureRoot()),
+    [],
   );
 });
 
@@ -194,12 +150,16 @@ test("rejects management rows in compile input and digest", () => {
   const violations = runtimeInterfaceCompilerBoundaryViolations(root);
   assert.ok(
     violations.some((violation) =>
-      violation.includes("raw management permission rows entered RuntimeInterfaceCompileInput"),
+      violation.includes(
+        "raw management permission rows entered RuntimeInterfaceCompileInput",
+      ),
     ),
   );
   assert.ok(
     violations.some((violation) =>
-      violation.includes("raw managed authority entered the assembled runtime-interface digest"),
+      violation.includes(
+        "raw managed authority entered the assembled runtime-interface digest",
+      ),
     ),
   );
 });
@@ -225,16 +185,12 @@ test("rejects configure target derivation without the action grant", () => {
 
 test("rejects an agent_configure projection without the action grant", () => {
   const root = fixtureRoot();
-  const path =
-    "apps/server/src/services/paperclip-managed-tool-registry.ts";
+  const path = "apps/server/src/services/paperclip-managed-tool-registry.ts";
   const original = readFileSync(join(root, path), "utf8");
   write(
     root,
     path,
-    original.replace(
-      "input.actionGrants.agent_configure !== true || ",
-      "",
-    ),
+    original.replace("input.actionGrants.agent_configure !== true || ", ""),
   );
   assert.ok(
     runtimeInterfaceCompilerBoundaryViolations(root).some((violation) =>
@@ -247,33 +203,15 @@ test("rejects a compiler that rebuilds a managed descriptor", () => {
   const root = fixtureRoot();
   const path = "apps/server/src/services/runtime-interface-compiler.ts";
   const original = readFileSync(join(root, path), "utf8");
-  write(
-    root,
-    path,
-    `${original}\nfunction configureDescriptor() {}\n`,
-  );
+  write(root, path, `${original}\nfunction configureDescriptor() {}\n`);
   assert.ok(
     runtimeInterfaceCompilerBoundaryViolations(root).some((violation) =>
-      violation.includes("rebuilds managed descriptor ABI via configureDescriptor"),
+      violation.includes(
+        "rebuilds managed descriptor ABI via configureDescriptor",
+      ),
     ),
   );
 });
-
-for (const path of [
-  "apps/server/src/services/prompt-capability-gateway.ts",
-  "apps/server/src/routes/run-tools.ts",
-] as const) {
-  test(`rejects company-skill data in ${path}`, () => {
-    const root = fixtureRoot();
-    const original = readFileSync(join(root, path), "utf8");
-    write(root, path, `${original}\nconst selectedCompanySkills = [];\n`);
-    assert.ok(
-      runtimeInterfaceCompilerBoundaryViolations(root).some((violation) =>
-        violation.includes("company-skill data entered the run capability surface"),
-      ),
-    );
-  });
-}
 
 test("rejects management rows in the run capability surface", () => {
   const root = fixtureRoot();
@@ -282,7 +220,9 @@ test("rejects management rows in the run capability surface", () => {
   write(root, path, `${original}\nconst configureGrants = [];\n`);
   assert.ok(
     runtimeInterfaceCompilerBoundaryViolations(root).some((violation) =>
-      violation.includes("raw management permission rows entered the run capability surface"),
+      violation.includes(
+        "raw management permission rows entered the run capability surface",
+      ),
     ),
   );
 });

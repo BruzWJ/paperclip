@@ -2,15 +2,14 @@ import type { Db } from "@paperclipai/db";
 import { companies, instanceSettings } from "@paperclipai/db";
 import {
   instanceGeneralSettingsSchema,
+  parseOptionalBooleanEnvironmentValue,
+  parseOptionalExactNonEmptyEnvironmentValue,
   type InstanceGeneralSettings,
   type PatchInstanceGeneralSettings,
-  type InstanceSettings,
 } from "@paperclipai/shared";
 import { eq } from "drizzle-orm";
 
 const DEFAULT_SINGLETON_KEY = "default";
-const instanceGeneralSettingsStorageSchema = instanceGeneralSettingsSchema.strip();
-const TRUTHY_RUNTIME_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
 
 export interface InstanceSettingsServiceOptions {
   runtimeEnv?: Record<string, string | undefined>;
@@ -39,16 +38,20 @@ export type WorktreeRunExecutionActivationState =
       reason: WorktreeRunExecutionSuppressedReason;
     };
 
-export function isTruthyRuntimeEnvValue(value: string | undefined) {
+export function isWorktreeRuntimeEnvironment(value: string | undefined) {
   return (
-    typeof value === "string" &&
-    TRUTHY_RUNTIME_ENV_VALUES.has(value.trim().toLowerCase())
+    parseOptionalBooleanEnvironmentValue(value, "PAPERCLIP_IN_WORKTREE") ??
+    false
   );
 }
 
 function getRuntimeInstanceId(env: Record<string, string | undefined>) {
-  const instanceId = env.PAPERCLIP_INSTANCE_ID?.trim();
-  return instanceId ? instanceId : null;
+  return (
+    parseOptionalExactNonEmptyEnvironmentValue(
+      env.PAPERCLIP_INSTANCE_ID,
+      "PAPERCLIP_INSTANCE_ID",
+    ) ?? null
+  );
 }
 
 function stripServerManagedGeneralPatchFields(
@@ -75,37 +78,7 @@ function suppressWorktreeRunExecution(
 }
 
 function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
-  const parsed = instanceGeneralSettingsStorageSchema.safeParse(raw ?? {});
-  if (parsed.success) {
-    return {
-      censorUsernameInLogs: parsed.data.censorUsernameInLogs ?? false,
-      keyboardShortcuts: parsed.data.keyboardShortcuts ?? false,
-      enableWorkspaceBranchReconcileForward:
-        parsed.data.enableWorkspaceBranchReconcileForward ?? true,
-      enableWorkspaceDirtyQuarantineRepair:
-        parsed.data.enableWorkspaceDirtyQuarantineRepair ?? true,
-      enableServerInfoDebugView: parsed.data.enableServerInfoDebugView ?? false,
-      autoRestartDevServerWhenIdle:
-        parsed.data.autoRestartDevServerWhenIdle ?? false,
-      enableWorktreeRunExecution:
-        parsed.data.enableWorktreeRunExecution ?? false,
-      worktreeRunExecutionActivatedAt:
-        parsed.data.worktreeRunExecutionActivatedAt ?? null,
-      worktreeRunExecutionActivationInstanceId:
-        parsed.data.worktreeRunExecutionActivationInstanceId ?? null,
-    };
-  }
-  return {
-    censorUsernameInLogs: false,
-    keyboardShortcuts: false,
-    enableWorkspaceBranchReconcileForward: true,
-    enableWorkspaceDirtyQuarantineRepair: true,
-    enableServerInfoDebugView: false,
-    autoRestartDevServerWhenIdle: false,
-    enableWorktreeRunExecution: false,
-    worktreeRunExecutionActivatedAt: null,
-    worktreeRunExecutionActivationInstanceId: null,
-  };
+  return instanceGeneralSettingsSchema.parse(raw ?? {});
 }
 
 export function applyGeneralSettingsPatch(
@@ -137,7 +110,7 @@ export function applyGeneralSettingsPatch(
   if (previousGeneral.enableWorktreeRunExecution === true) return nextGeneral;
 
   const runtimeEnv = options.runtimeEnv ?? process.env;
-  if (!isTruthyRuntimeEnvValue(runtimeEnv.PAPERCLIP_IN_WORKTREE)) {
+  if (!isWorktreeRuntimeEnvironment(runtimeEnv.PAPERCLIP_IN_WORKTREE)) {
     return nextGeneral;
   }
 
@@ -190,7 +163,7 @@ export async function resolveWorktreeRunExecutionActivationState(options: {
   runtimeEnv?: Record<string, string | undefined>;
 }): Promise<WorktreeRunExecutionActivationState> {
   const runtimeEnv = options.runtimeEnv ?? process.env;
-  if (!isTruthyRuntimeEnvValue(runtimeEnv.PAPERCLIP_IN_WORKTREE)) {
+  if (!isWorktreeRuntimeEnvironment(runtimeEnv.PAPERCLIP_IN_WORKTREE)) {
     return suppressWorktreeRunExecution("not_worktree_runtime");
   }
   try {
@@ -203,13 +176,13 @@ export async function resolveWorktreeRunExecutionActivationState(options: {
   }
 }
 
-function toInstanceSettings(row: typeof instanceSettings.$inferSelect): InstanceSettings {
+function toInstanceSettings(row: typeof instanceSettings.$inferSelect) {
   return {
     id: row.id,
     general: normalizeGeneralSettings(row.general),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-  } as InstanceSettings;
+  };
 }
 
 export function instanceSettingsService(
@@ -254,14 +227,12 @@ export function instanceSettingsService(
   }
 
   return {
-    get: async (): Promise<InstanceSettings> => toInstanceSettings(await getOrCreateRow()),
-
     getGeneral: async (): Promise<InstanceGeneralSettings> => {
       const row = await getOrCreateRow();
       return normalizeGeneralSettings(row.general);
     },
 
-    updateGeneral: async (patch: PatchInstanceGeneralSettings): Promise<InstanceSettings> => {
+    updateGeneral: async (patch: PatchInstanceGeneralSettings) => {
       const current = await getOrCreateRow();
       const nextGeneral = applyGeneralSettingsPatch(
         current.general,

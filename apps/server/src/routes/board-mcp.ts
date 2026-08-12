@@ -29,16 +29,12 @@ function jsonRpcError(
   };
 }
 
-/**
- * Stateless Board MCP transport. Authentication is the normal actor
- * middleware immediately above this route; this layer turns that first-class
- * board-key principal into a `PaperclipToolAuthority` and nothing else.
- */
+/** Stateless, board-key-authenticated Streamable HTTP MCP transport. */
 export function boardMcpRoutes(input: {
   db: Db;
   managedTools: PaperclipManagedToolRouter;
 }) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
 
   router.post("/mcp", async (req, res) => {
     if (req.actor.type !== "board" || req.actor.source !== "board_key") {
@@ -82,7 +78,10 @@ export function boardMcpRoutes(input: {
         membershipRole: membershipRoleByCompanyId.get(company.id) ?? null,
       })),
     });
-    const server = createBoardMcpServer({ authority, managedTools: input.managedTools });
+    const server = createBoardMcpServer({
+      authority,
+      managedTools: input.managedTools,
+    });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -94,12 +93,9 @@ export function boardMcpRoutes(input: {
     } catch {
       if (!res.headersSent) {
         res.status(500).json(
-          jsonRpcError(
-            requestId(req.body),
-            -32603,
-            "Board MCP request failed",
-            { code: "board_mcp_transport_error" },
-          ),
+          jsonRpcError(requestId(req.body), -32603, "Board MCP request failed", {
+            code: "board_mcp_transport_error",
+          }),
         );
       }
     } finally {

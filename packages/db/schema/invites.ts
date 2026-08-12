@@ -1,8 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  INVITE_SOURCES,
-  type InviteSource,
-} from "@paperclipai/shared";
+import { INVITE_SOURCES, type InviteSource } from "@paperclipai/shared";
 import {
   check,
   pgTable,
@@ -26,18 +23,26 @@ export const invites = pgTable(
     companyId: uuid("company_id").references(() => companies.id),
     inviteType: text("invite_type").notNull().default("company_join"),
     tokenHash: text("token_hash").notNull(),
-    allowedJoinTypes: text("allowed_join_types").notNull().default("both"),
-    defaultsPayload: jsonb("defaults_payload").$type<Record<string, unknown> | null>(),
+    defaultsPayload: jsonb("defaults_payload").$type<Record<
+      string,
+      unknown
+    > | null>(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     source: text("source").$type<InviteSource>().notNull(),
     invitedByUserId: text("invited_by_user_id").references(() => authUsers.id),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => ({
-    tokenHashUniqueIdx: uniqueIndex("invites_token_hash_unique_idx").on(table.tokenHash),
+    tokenHashUniqueIdx: uniqueIndex("invites_token_hash_unique_idx").on(
+      table.tokenHash,
+    ),
     companyInviteStateIdx: index("invites_company_invite_state_idx").on(
       table.companyId,
       table.inviteType,
@@ -63,7 +68,6 @@ export const invites = pgTable(
           ${table.source} = 'bootstrap_admin_cli'
           AND ${table.inviteType} = 'bootstrap_admin'
           AND ${table.companyId} IS NULL
-          AND ${table.allowedJoinTypes} = 'human'
         )
         OR
         (

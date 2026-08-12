@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { EntityRow } from "./EntityRow";
 
-vi.mock("@/lib/router", () => ({
+vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to, ...props }: React.ComponentProps<"a"> & { to: string }) => (
     <a href={to} {...props}>
       {children}
@@ -15,7 +15,10 @@ describe("EntityRow", () => {
     const markup = renderToStaticMarkup(
       <EntityRow
         title="Left project"
-        to="/projects/left-project"
+        linkOptions={{
+          to: "/$companyId/projects/$projectId",
+          params: { companyId: "11111111-1111-4111-8111-111111111111", projectId: "left-project" },
+        }}
         className="group text-foreground/55"
       />,
     );

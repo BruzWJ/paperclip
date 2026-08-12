@@ -12,11 +12,10 @@ import {
   Users,
 } from "lucide-react";
 import { sidebarBadgesApi } from "@/api/sidebarBadges";
-import { instanceSettingsApi } from "@/api/instanceSettings";
 import { pluginsApi } from "@/api/plugins";
 import { ApiError } from "@/api/client";
-import { Link, NavLink } from "@/lib/router";
-import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { SIDEBAR_SCROLL_RESET_STATE } from "@/lib/navigation-scroll";
 import { queryKeys } from "@/lib/queryKeys";
 import { useCompany } from "@/context/CompanyContext";
@@ -25,43 +24,42 @@ import { usePluginSlots } from "@/plugins/slots";
 import { SidebarNavItem } from "./SidebarNavItem";
 
 export function CompanySettingsSidebar() {
-  const { selectedCompany, selectedCompanyId } = useCompany();
+  const companyId = useCompanyRouteId();
+  const { selectedCompany } = useCompany();
   const { isMobile, setSidebarOpen } = useSidebar();
   const { slots: companySettingsPluginSlots } = usePluginSlots({
     slotTypes: ["companySettingsPage"],
-    companyId: selectedCompanyId,
-    enabled: !!selectedCompanyId,
+    enabled: true,
   });
   const { data: badges } = useQuery({
-    queryKey: selectedCompanyId
-      ? queryKeys.sidebarBadges(selectedCompanyId)
-      : ["sidebar-badges", "__disabled__"] as const,
+    queryKey: queryKeys.sidebarBadges(companyId),
     queryFn: async () => {
       try {
-        return await sidebarBadgesApi.get(selectedCompanyId!);
+        return await sidebarBadgesApi.get(companyId);
       } catch (error) {
-        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        if (
+          error instanceof ApiError &&
+          (error.status === 401 || error.status === 403)
+        ) {
           return null;
         }
         throw error;
       }
     },
-    enabled: !!selectedCompanyId,
     retry: false,
-    refetchInterval: 15_000,
   });
   const { data: plugins } = useQuery({
     queryKey: queryKeys.plugins.all,
     queryFn: () => pluginsApi.list(),
   });
   const sidebarPlugins = plugins ?? [];
-  const hasSelectedCompany = !!selectedCompanyId;
 
   return (
     <aside className="w-full h-full min-h-0 border-r border-border bg-background flex flex-col">
       <div className="flex flex-col gap-1 px-3 py-3 shrink-0">
         <Link
-          to="/dashboard"
+          to="/$companyId/dashboard"
+          params={{ companyId }}
           onClick={() => {
             if (isMobile) setSidebarOpen(false);
           }}
@@ -82,108 +80,133 @@ export function CompanySettingsSidebar() {
         <div className="px-3 pb-1 text-(length:--text-micro) font-semibold uppercase tracking-wide text-muted-foreground">
           Company settings
         </div>
-        {hasSelectedCompany ? (
-          <div className="flex flex-col gap-0.5">
-            <SidebarNavItem to="/company/settings" label="General" icon={SlidersHorizontal} end />
-            <SidebarNavItem
-              to="/company/settings/members"
-              label="Members"
-              icon={Users}
-              badge={badges?.joinRequests ?? 0}
-              end
-            />
-            {companySettingsPluginSlots.map((slot) => (
-              <SidebarNavItem
-                key={`${slot.pluginKey}:${slot.id}`}
-                to={`/company/settings/${slot.routePath}`}
-                label={slot.displayName}
-                icon={Puzzle}
-                end
-              />
-            ))}
-            <SidebarNavItem to="/company/settings/invites" label="Invites" icon={MailPlus} end />
-            <SidebarNavItem to="/company/settings/secrets" label="Secrets" icon={KeyRound} end />
-          </div>
-        ) : (
-          <CompanyUnavailableEmptyState
-            onNavigate={() => {
-              if (isMobile) setSidebarOpen(false);
-            }}
-          />
-        )}
-        <div className="mt-5 px-3 pb-1 text-(length:--text-micro) font-semibold uppercase tracking-wide text-muted-foreground">
-          Instance settings
-        </div>
         <div className="flex flex-col gap-0.5">
           <SidebarNavItem
-            to={`${INSTANCE_SETTINGS_PATH_PREFIX}/profile`}
-            label="Profile"
-            icon={UserRoundPen}
-            end
-          />
-          <SidebarNavItem
-            to={`${INSTANCE_SETTINGS_PATH_PREFIX}/general`}
+            linkOptions={{
+              to: "/$companyId/company/settings",
+              params: { companyId },
+            }}
             label="General"
             icon={SlidersHorizontal}
             end
           />
           <SidebarNavItem
-            to={`${INSTANCE_SETTINGS_PATH_PREFIX}/access`}
+            linkOptions={{
+              to: "/$companyId/company/settings/members",
+              params: { companyId },
+            }}
+            label="Members"
+            icon={Users}
+            badge={badges?.joinRequests ?? 0}
+            end
+          />
+          {companySettingsPluginSlots.map((slot) => {
+            const settingsRoutePath = slot.routePath;
+            if (!settingsRoutePath) return null;
+            return (
+              <SidebarNavItem
+                key={`${slot.pluginKey}:${slot.id}`}
+                linkOptions={{
+                  to: "/$companyId/company/settings/$settingsRoutePath",
+                  params: {
+                    companyId,
+                    settingsRoutePath,
+                  },
+                }}
+                label={slot.displayName}
+                icon={Puzzle}
+                end
+              />
+            );
+          })}
+          <SidebarNavItem
+            linkOptions={{
+              to: "/$companyId/company/settings/invites",
+              params: { companyId },
+            }}
+            label="Invites"
+            icon={MailPlus}
+            end
+          />
+          <SidebarNavItem
+            linkOptions={{
+              to: "/$companyId/company/settings/secrets",
+              params: { companyId },
+            }}
+            label="Secrets"
+            icon={KeyRound}
+            end
+          />
+        </div>
+        <div className="mt-5 px-3 pb-1 text-(length:--text-micro) font-semibold uppercase tracking-wide text-muted-foreground">
+          Instance settings
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <SidebarNavItem
+            linkOptions={{
+              to: "/$companyId/company/settings/instance/profile",
+              params: { companyId },
+            }}
+            label="Profile"
+            icon={UserRoundPen}
+            end
+          />
+          <SidebarNavItem
+            linkOptions={{
+              to: "/$companyId/company/settings/instance",
+              params: { companyId },
+            }}
+            label="General"
+            icon={SlidersHorizontal}
+            end
+          />
+          <SidebarNavItem
+            linkOptions={{
+              to: "/$companyId/company/settings/instance/access",
+              params: { companyId },
+            }}
             label="Access"
             icon={Shield}
             end
           />
           <SidebarNavItem
-            to={`${INSTANCE_SETTINGS_PATH_PREFIX}/plugins`}
+            linkOptions={{
+              to: "/$companyId/company/settings/instance/plugins",
+              params: { companyId },
+            }}
             label="Plugins"
             icon={Puzzle}
           />
           {sidebarPlugins.length > 0 ? (
             <div className="ml-4 mt-1 flex flex-col gap-0.5 border-l border-border/70 pl-3">
               {sidebarPlugins.map((plugin) => (
-                <NavLink
+                <Link
                   key={plugin.id}
-                  to={`${INSTANCE_SETTINGS_PATH_PREFIX}/plugins/${plugin.id}`}
+                  to="/$companyId/company/settings/instance/plugins/$pluginId"
+                  params={{ companyId, pluginId: plugin.id }}
                   state={SIDEBAR_SCROLL_RESET_STATE}
-                  className={({ isActive }) =>
-                    [
-                      "rounded-md px-2 py-1.5 text-xs transition-colors",
-                      isActive
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                    ].join(" ")
-                  }
+                  className="rounded-md px-2 py-1.5 text-xs transition-colors"
+                  activeProps={{ className: "bg-accent text-foreground" }}
+                  inactiveProps={{
+                    className:
+                      "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                  }}
                 >
                   {plugin.manifestJson.displayName}
-                </NavLink>
+                </Link>
               ))}
             </div>
           ) : null}
           <SidebarNavItem
-            to={`${INSTANCE_SETTINGS_PATH_PREFIX}/adapters`}
+            linkOptions={{
+              to: "/$companyId/company/settings/instance/adapters",
+              params: { companyId },
+            }}
             label="Adapters"
             icon={Cpu}
           />
         </div>
       </nav>
     </aside>
-  );
-}
-
-function CompanyUnavailableEmptyState({ onNavigate }: { onNavigate: () => void }) {
-  return (
-    <div className="mx-2 mt-2 rounded-md border border-dashed border-border px-3 py-2 text-(length:--text-micro)">
-      <p className="font-medium text-foreground">No company selected.</p>
-      <p className="mt-0.5 leading-snug text-muted-foreground">
-        Select a company from the dashboard to manage its settings.
-      </p>
-      <Link
-        to="/dashboard"
-        onClick={onNavigate}
-        className="mt-1 inline-flex text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
-      >
-        Go to dashboard
-      </Link>
-    </div>
   );
 }

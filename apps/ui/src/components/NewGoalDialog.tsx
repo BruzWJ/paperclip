@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { GoalLevel, GoalStatus } from "@paperclipai/shared";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { goalsApi } from "../api/goals";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
@@ -39,7 +40,8 @@ const levelLabels: Record<string, string> = {
 
 export function NewGoalDialog() {
   const { newGoalOpen, newGoalDefaults, closeNewGoal } = useDialog();
-  const { selectedCompanyId, selectedCompany } = useCompany();
+  const companyId = useCompanyRouteId();
+  const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -57,16 +59,16 @@ export function NewGoalDialog() {
   const appliedParentId = parentId || newGoalDefaults.parentId || "";
 
   const { data: goals } = useQuery({
-    queryKey: queryKeys.goals.list(selectedCompanyId!),
-    queryFn: () => goalsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && newGoalOpen,
+    queryKey: queryKeys.goals.list(companyId),
+    queryFn: () => goalsApi.list(companyId),
+    enabled: newGoalOpen,
   });
 
   const createGoal = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
-      goalsApi.create(selectedCompanyId!, data),
+      goalsApi.create(companyId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(companyId) });
       reset();
       closeNewGoal();
     },
@@ -74,8 +76,7 @@ export function NewGoalDialog() {
 
   const uploadDescriptionImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!selectedCompanyId) throw new Error("No company selected");
-      return assetsApi.uploadImage(selectedCompanyId, file, "goals/drafts");
+      return assetsApi.uploadImage(companyId, file, "goals/drafts");
     },
   });
 
@@ -89,7 +90,7 @@ export function NewGoalDialog() {
   }
 
   function handleSubmit() {
-    if (!selectedCompanyId || !title.trim()) return;
+    if (!title.trim()) return;
     createGoal.mutate({
       title: title.trim(),
       description: description.trim() || undefined,

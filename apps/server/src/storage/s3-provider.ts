@@ -6,8 +6,18 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
-import type { StorageProvider, GetObjectResult, HeadObjectResult } from "./types.js";
+import type {
+  StorageProvider,
+  GetObjectResult,
+  HeadObjectResult,
+} from "./types.js";
 import { notFound, unprocessable } from "../errors.js";
+import {
+  parseExactStorageEndpoint,
+  parseExactStorageName,
+  parseExactStoragePrefix,
+} from "@paperclipai/shared";
+import { requireExactStorageObjectKey } from "./object-key.js";
 
 interface S3ProviderConfig {
   bucket: string;
@@ -17,17 +27,18 @@ interface S3ProviderConfig {
   forcePathStyle?: boolean;
 }
 
-function normalizePrefix(prefix: string | undefined): string {
-  if (!prefix) return "";
-  return prefix
-    .trim()
-    .replace(/^\/+/, "")
-    .replace(/\/+$/, "");
+function requireExactPrefix(prefix: string | undefined): string {
+  try {
+    return parseExactStoragePrefix(prefix ?? "");
+  } catch {
+    throw unprocessable("S3 storage prefix must be an exact object-key path");
+  }
 }
 
 function buildKey(prefix: string, objectKey: string): string {
-  if (!prefix) return objectKey;
-  return `${prefix}/${objectKey}`;
+  const exactObjectKey = requireExactStorageObjectKey(objectKey);
+  if (!prefix) return exactObjectKey;
+  return requireExactStorageObjectKey(`${prefix}/${exactObjectKey}`);
 }
 
 async function toReadableStream(body: unknown): Promise<Readable> {
@@ -42,13 +53,15 @@ async function toReadableStream(body: unknown): Promise<Readable> {
   if (typeof candidate.transformToWebStream === "function") {
     const webStream = candidate.transformToWebStream();
     const reader = webStream.getReader();
-    return Readable.from((async function* () {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) yield value;
-      }
-    })());
+    return Readable.from(
+      (async function* () {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) yield value;
+        }
+      })(),
+    );
   }
 
   if (typeof candidate.arrayBuffer === "function") {
@@ -63,16 +76,27 @@ function toDate(value: Date | undefined): Date | undefined {
   return value instanceof Date ? value : undefined;
 }
 
-export function createS3StorageProvider(config: S3ProviderConfig): StorageProvider {
-  const bucket = config.bucket.trim();
-  const region = config.region.trim();
-  if (!bucket) throw unprocessable("S3 storage bucket is required");
-  if (!region) throw unprocessable("S3 storage region is required");
+export function createS3StorageProvider(
+  config: S3ProviderConfig,
+): StorageProvider {
+  let bucket: string;
+  let region: string;
+  let endpoint: string | undefined;
+  try {
+    bucket = parseExactStorageName(config.bucket, "S3 storage bucket");
+    region = parseExactStorageName(config.region, "S3 storage region");
+    endpoint =
+      config.endpoint === undefined
+        ? undefined
+        : parseExactStorageEndpoint(config.endpoint);
+  } catch (error) {
+    throw unprocessable((error as Error).message);
+  }
 
-  const prefix = normalizePrefix(config.prefix);
+  const prefix = requireExactPrefix(config.prefix);
   const client = new S3Client({
     region,
-    endpoint: config.endpoint,
+    endpoint,
     forcePathStyle: Boolean(config.forcePathStyle),
   });
 
@@ -99,7 +123,9 @@ export function createS3StorageProvider(config: S3ProviderConfig): StorageProvid
           new GetObjectCommand({
             Bucket: bucket,
             Key: key,
-            Range: input.range ? `bytes=${input.range.start}-${input.range.end}` : undefined,
+            Range: input.range
+              ? `bytes=${input.range.start}-${input.range.end}`
+              : undefined,
           }),
         );
 
@@ -112,7 +138,8 @@ export function createS3StorageProvider(config: S3ProviderConfig): StorageProvid
         };
       } catch (err) {
         const code = (err as { name?: string }).name;
-        if (code === "NoSuchKey" || code === "NotFound") throw notFound("Object not found");
+        if (code === "NoSuchKey" || code === "NotFound")
+          throw notFound("Object not found");
         throw err;
       }
     },
@@ -136,7 +163,8 @@ export function createS3StorageProvider(config: S3ProviderConfig): StorageProvid
         };
       } catch (err) {
         const code = (err as { name?: string }).name;
-        if (code === "NoSuchKey" || code === "NotFound") return { exists: false };
+        if (code === "NoSuchKey" || code === "NotFound")
+          return { exists: false };
         throw err;
       }
     },

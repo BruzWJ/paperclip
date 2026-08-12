@@ -6,6 +6,7 @@ import {
   type McpInstallScriptOptions,
 } from "../services/board-mcp-install-script.js";
 import { requireRequestAuthority } from "../http/request-authority.js";
+import { canonicalRequestTarget } from "../middleware/canonical-pathname.js";
 
 const SETUP_TARGETS = new Set<string>([...MCP_SETUP_AGENTS, "all"]);
 
@@ -65,21 +66,18 @@ function sendInstaller(command: string[], req: Request, res: Response) {
  * approval endpoints rather than a new MCP credential type.
  */
 export function boardMcpSetupRoutes() {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
+  router.use(canonicalRequestTarget());
   router.get("/mcp", (req, res) => sendInstaller([], req, res));
   router.get("/mcp/:command", (req, res) =>
-    sendInstaller([(req.params.command as string).trim()], req, res),
+    sendInstaller([req.params.command as string], req, res),
   );
   router.get("/mcp/:command/:target", (req, res) =>
     sendInstaller(
-      [
-        (req.params.command as string).trim(),
-        (req.params.target as string).trim(),
-      ],
+      [req.params.command as string, req.params.target as string],
       req,
       res,
     ),
   );
   return router;
 }
-

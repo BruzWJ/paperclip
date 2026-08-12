@@ -4,12 +4,9 @@ import type {
 } from "@paperclipai/shared";
 import type { ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Circle, Flag } from "lucide-react";
-import { Link } from "@/lib/router";
 import { cn } from "../lib/utils";
-import { createTaskDetailPath } from "../lib/taskDetailBreadcrumb";
 import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 import { isAssignedBacklogBlocker } from "../lib/task-blockers";
-import { Badge } from "@/components/ui/badge";
 import { StatusGlyph } from "./StatusGlyph";
 
 const EMPTY_LIVE_IDS: ReadonlySet<string> = new Set<string>();
@@ -49,19 +46,18 @@ function WaitingChipLink({
   blocker: TaskRelationTaskSummary;
   running?: boolean;
 }) {
-  const taskPathId = blocker.identifier ?? blocker.id;
-  return (
-    <TaskLinkQuicklook
-      taskPathId={taskPathId}
-      to={createTaskDetailPath(taskPathId)}
-      className="inline-flex max-w-full items-center gap-1 rounded-md border border-blue-300/70 bg-background/80 px-2 py-1 font-mono text-xs text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100 hover:underline dark:border-blue-500/40 dark:bg-background/40 dark:text-blue-100 dark:hover:bg-blue-500/15"
-    >
+  const className = cn(
+    "inline-flex max-w-full items-center gap-1 rounded-md border border-blue-300/70 bg-background/80 px-2 py-1 font-mono text-xs text-blue-950 transition-colors dark:border-blue-500/40 dark:bg-background/40 dark:text-blue-100",
+    "hover:border-blue-500 hover:bg-blue-100 hover:underline dark:hover:bg-blue-500/15",
+  );
+  const content = (
+    <>
       <StatusGlyph
         status={blocker.boardPresentationStatus}
         size="sm"
         title={`${waitingTaskStatusLabel(blocker.boardPresentationStatus)} status`}
       />
-      <span>{blocker.identifier ?? blocker.id.slice(0, 8)}</span>
+      <span>{blocker.identifier}</span>
       <span className="max-w-(--sz-18rem) truncate font-sans text-(length:--text-micro) text-blue-800 dark:text-blue-200">
         {blocker.title}
       </span>
@@ -70,6 +66,12 @@ function WaitingChipLink({
           running
         </span>
       ) : null}
+    </>
+  );
+
+  return (
+    <TaskLinkQuicklook taskId={blocker.id} taskNumber={blocker.taskNumber} className={className}>
+      {content}
     </TaskLinkQuicklook>
   );
 }
@@ -113,9 +115,13 @@ function WaitingOnLiveWorkNotice({
     .sort((a, b) => {
       const rank = WAITING_STEP_RANK[a.status] - WAITING_STEP_RANK[b.status];
       if (rank !== 0) return rank;
-      const aKey = a.blocker.identifier ?? a.blocker.id;
-      const bKey = b.blocker.identifier ?? b.blocker.id;
-      return aKey.localeCompare(bKey, undefined, { numeric: true });
+      const numberRank = a.blocker.taskNumber - b.blocker.taskNumber;
+      if (numberRank !== 0) return numberRank;
+      return a.blocker.identifier.localeCompare(
+        b.blocker.identifier,
+        undefined,
+        { numeric: true },
+      );
     });
   const total = steps.length;
   const doneCount = steps.filter((step) => step.status === "done").length;
@@ -181,7 +187,7 @@ function WaitingOnLiveWorkNotice({
                         : "bg-blue-200 dark:bg-blue-500/30",
                   )}
                   style={{ width: `${100 / total}%` }}
-                  title={`${blocker.identifier ?? blocker.id.slice(0, 8)}: ${status}`}
+                  title={`${blocker.identifier}: ${status}`}
                   aria-hidden
                 />
               ))}
@@ -314,7 +320,7 @@ export function TaskBlockedNotice({
     }
     if (stalledLeafIdentifier) {
       const preferred = candidates.find(
-        (blocker) => (blocker.identifier ?? blocker.id) === stalledLeafIdentifier,
+        (blocker) => blocker.identifier === stalledLeafIdentifier,
       );
       if (preferred) {
         return [preferred, ...candidates.filter((blocker) => blocker.id !== preferred.id)];
@@ -356,7 +362,7 @@ export function TaskBlockedNotice({
   })();
   const reopenSuppressedLeaf = unresolvedLeafBlockers[0] ?? null;
   const reopenSuppressedLeafId = reopenSuppressedLeaf
-    ? reopenSuppressedLeaf.identifier ?? reopenSuppressedLeaf.id.slice(0, 8)
+    ? reopenSuppressedLeaf.identifier
     : null;
   const reopenSuppressedLeafStatus = reopenSuppressedLeaf
     ? reopenSuppressedLeaf.boardPresentationStatus.replace(/_/g, " ")
@@ -364,18 +370,27 @@ export function TaskBlockedNotice({
   const reopenSuppressedOtherCount = Math.max(unresolvedLeafBlockers.length - 1, 0);
 
   const renderBlockerChip = (blocker: TaskRelationTaskSummary) => {
-    const taskPathId = blocker.identifier ?? blocker.id;
-    return (
-      <TaskLinkQuicklook
-        key={blocker.id}
-        taskPathId={taskPathId}
-        to={createTaskDetailPath(taskPathId)}
-        className="inline-flex max-w-full items-center gap-1 rounded-md border border-amber-300/70 bg-background/80 px-2 py-1 font-mono text-xs text-amber-950 transition-colors hover:border-amber-500 hover:bg-amber-100 hover:underline dark:border-amber-500/40 dark:bg-background/40 dark:text-amber-100 dark:hover:bg-amber-500/15"
-      >
-        <span>{blocker.identifier ?? blocker.id.slice(0, 8)}</span>
+    const className = cn(
+      "inline-flex max-w-full items-center gap-1 rounded-md border border-amber-300/70 bg-background/80 px-2 py-1 font-mono text-xs text-amber-950 transition-colors dark:border-amber-500/40 dark:bg-background/40 dark:text-amber-100",
+      "hover:border-amber-500 hover:bg-amber-100 hover:underline dark:hover:bg-amber-500/15",
+    );
+    const content = (
+      <>
+        <span>{blocker.identifier}</span>
         <span className="max-w-(--sz-18rem) truncate font-sans text-(length:--text-micro) text-amber-800 dark:text-amber-200">
           {blocker.title}
         </span>
+      </>
+    );
+
+    return (
+      <TaskLinkQuicklook
+        key={blocker.id}
+        taskId={blocker.id}
+        taskNumber={blocker.taskNumber}
+        className={className}
+      >
+        {content}
       </TaskLinkQuicklook>
     );
   };

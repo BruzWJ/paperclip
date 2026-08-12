@@ -47,11 +47,16 @@ All client commands support:
 - `--data-dir <path>`
 - `--api-base <url>`
 - `--api-key <token>`
+- `--user-id <id>`
 - `--context <path>`
 - `--profile <name>`
 - `--json`
 
 Company-scoped commands also support `--company-id <id>`.
+An `auth login` credential stores its exact board user ID. When an explicit
+`--api-key` is used for a user-scoped command such as `whoami` or sidebar
+preferences, pass the matching opaque ID with `--user-id`; the server rejects
+any route ID that differs from the authenticated token owner.
 
 API base resolution order:
 
@@ -110,34 +115,37 @@ pnpm paperclipai company create --payload-json '{...}'
 pnpm paperclipai company update <company-id> --payload-json '{...}'
 pnpm paperclipai company branding:update <company-id> --payload-json '{...}'
 pnpm paperclipai company archive <company-id>
-pnpm paperclipai company export <company-id> --out ./company --include company,agents,projects,tasks,skills
+pnpm paperclipai company export <company-id> --out ./company --include company,agents,projects,tasks
 pnpm paperclipai company export:preview <company-id> --payload-json '{...}'
 pnpm paperclipai company export:api <company-id> --payload-json '{...}'
 pnpm paperclipai company import ./company --target new --new-company-name "Imported Company"
 pnpm paperclipai company import:preview <company-id> --payload-json '{...}'
 pnpm paperclipai company import:apply <company-id> --payload-json '{...}'
-pnpm paperclipai company delete <company-id-or-prefix> --yes --confirm <same-id-or-prefix>
+pnpm paperclipai company delete <company-id> --yes --confirm <same-company-id>
 ```
 
 Examples:
 
 ```sh
-pnpm paperclipai company delete PAP --yes --confirm PAP
-pnpm paperclipai company delete 5cbe79ee-acb3-4597-896e-7662742593cd --yes --confirm 5cbe79ee-acb3-4597-896e-7662742593cd
+pnpm paperclipai company delete 22222222-2222-4222-8222-222222222222 --yes --confirm 22222222-2222-4222-8222-222222222222
 ```
 
 Notes:
 
 - `company list` and `company current` use the authenticated board user's memberships and optional profile company.
+- Company IDs from arguments, `--company-id`, `PAPERCLIP_BOARD_COMPANY_ID`,
+  and context profiles must be exact lowercase canonical UUIDs; the CLI does
+  not trim, case-normalize, or fall back past an invalid value.
 - `company create` requires board/instance-admin authentication because it is
   an instance-wide setup command.
+- `company delete` accepts and confirms only the exact canonical company UUID.
 - Deletion is server-gated by `PAPERCLIP_ENABLE_COMPANY_DELETION`.
 
 ## Task Commands
 
 ```sh
 pnpm paperclipai task list --company-id <company-id> [--status open,blocked] [--owner-agent-id <agent-id>] [--match text]
-pnpm paperclipai task get <task-id-or-identifier>
+pnpm paperclipai task get <task-id>
 pnpm paperclipai task create --company-id <company-id> --request "..." --owner-agent-id <agent-id> [--title "..."] [--priority high]
 pnpm paperclipai task title <task-id> --title "..."
 pnpm paperclipai task reassign <task-id> --owner-agent-id <agent-id>
@@ -145,7 +153,7 @@ pnpm paperclipai task reopen <task-id> --reason "..."
 pnpm paperclipai task comment <task-id> --message "..."
 pnpm paperclipai task comments <task-id> [--limit 50]
 pnpm paperclipai task comment:get <task-id> <comment-id>
-pnpm paperclipai task runs <task-id-or-identifier>
+pnpm paperclipai task runs <task-id>
 ```
 
 Task creation requires an immutable request and an explicit agent owner. Title is
@@ -205,10 +213,10 @@ pnpm paperclipai task label:delete <label-id>
 
 ```sh
 pnpm paperclipai project list --company-id <company-id>
-pnpm paperclipai project get <project-id-or-shortname> [--company-id <company-id>]
+pnpm paperclipai project get <project-id>
 pnpm paperclipai project create --company-id <company-id> --name "Launch Site" [--goal-ids <id1,id2>] [--lead-agent-id <id>]
-pnpm paperclipai project update <project-id-or-shortname> [--status in_progress] [--company-id <company-id>]
-pnpm paperclipai project delete <project-id-or-shortname> --yes [--company-id <company-id>]
+pnpm paperclipai project update <project-id> [--status in_progress]
+pnpm paperclipai project delete <project-id> --yes
 ```
 
 ## Goal Commands
@@ -229,7 +237,7 @@ pnpm paperclipai agent get <agent-id>
 pnpm paperclipai agent runtime:create --company-id <company-id> --payload-json '{...}' [--idempotency-key <key>]
 pnpm paperclipai agent runtime:get <agent-id>
 pnpm paperclipai agent runtime:update <agent-id> --payload-json '{"title":"Senior Builder"}' [--idempotency-key <key>]
-pnpm paperclipai agent adapter-revision:create <agent-id> --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"runtimeConfig":{},"companySkillPins":[]}'
+pnpm paperclipai agent adapter-revision:create <agent-id> --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"runtimeConfig":{}}'
 pnpm paperclipai agent adapter-revisions <agent-id>
 pnpm paperclipai agent adapter-revision:current <agent-id>
 pnpm paperclipai agent operational:update <agent-id> --payload-json '{"budgetMonthlyAmount":"250"}'
@@ -238,6 +246,10 @@ pnpm paperclipai agent resume <agent-id>
 pnpm paperclipai agent clear-error <agent-id>
 pnpm paperclipai agent terminate <agent-id>
 ```
+
+Agent, project, and task resource commands accept their canonical UUIDs and
+call the UUID REST endpoints directly. They do not resolve names, URL keys, or
+task identifiers.
 
 `runtime:create` requires every identity field, all nine context cells, all five
 configurable Paperclip action-grant cells and both mention-reach cells. Nullable
@@ -293,9 +305,8 @@ Only the current owner may set terminal `done`/`cancelled` and
 Runtime identity/grants, immutable adapter/provider revisions, and operational
 display/budget configuration are three non-overlapping owners. An agent created
 through `runtime:create` remains unconfigured and cannot dispatch until
-`adapter-revision:create` succeeds. Adapter revisions contain sorted immutable
-company-skill pins; ACPX owns native skill discovery.
-Provider credentials and CLI-native configuration stay
+`adapter-revision:create` succeeds. ACPX is the sole provider communication and
+execution contract. Provider credentials and CLI-native configuration stay
 outside Paperclip. Existing runs
 stay pinned to the revision they started with; there is no rollback writer, mixed agent update,
 agent-wide session reset, conversational-session API, managed instruction bundle, generic
@@ -349,116 +360,10 @@ pnpm paperclipai routine trigger:fire <public-id> [--payload-json '{...}']
 Prompt submission creates Paperclip work. It does not create a chat session.
 
 ```sh
-pnpm paperclipai board prompt --company-id <company-id> --agent <agent-name-or-id> "Prompt here"
+pnpm paperclipai board prompt --company-id <company-id> --agent <agent-id> "Prompt here"
 ```
 
-By default the command creates an ordinary task whose immutable request is the submitted text and whose explicit owner is the target agent. `--task <task-id>` submits an ordinary board comment; a provider is invoked only when that comment carries a valid typed mention of the current owner.
-
-## Skills Commands
-
-`paperclipai skills` covers three distinct operations:
-
-1. **Company install** — adds or updates a row in `company_skills` for the
-   whole company. This is what `skills install`, `skills import`, and
-   `skills create` do.
-2. **Agent selection** — appends an immutable adapter revision containing the
-   exact sorted company-skill version pins.
-3. **Invocation exposure** — ACPX runs use `operator_native`; Paperclip does
-   not materialize a skills home or inject skill content into the
-   Paperclip-authored request.
-
-Company skill mutations (`skills install`, `skills import`, and `skills create`)
-are open to same-company actors by default. Missing
-platform grants do not deny these commands; only an explicit company skill
-policy restriction does. Core safety and company boundary checks still apply,
-and `agents:create` remains required when a command also creates agents.
-
-### Catalog (app-shipped skills)
-
-The Paperclip app ships a curated catalog under `@paperclipai/skills-catalog`.
-Browse and inspect commands never mutate company state; `install` adds a catalog
-skill to the company library.
-
-```sh
-pnpm paperclipai skills browse [--kind bundled|optional] [--category <slug>] [--query <text>]
-pnpm paperclipai skills search "<text>" [--kind bundled|optional] [--category <slug>]
-pnpm paperclipai skills inspect <catalog-id-or-key-or-slug>
-pnpm paperclipai skills install <catalog-id-or-key-or-slug> [--as <slug>] [--force] --company-id <company-id>
-```
-
-Catalog semantics:
-
-- **Bundled** skills live in `packages/skills-catalog/catalog/bundled/<category>/<slug>`
-  and ship with the application catalog. They use canonical key
-  `paperclipai/bundled/<category>/<slug>`.
-- **Optional** skills live in `packages/skills-catalog/catalog/optional/<category>/<slug>`
-  and are domain-specific (browser, AWS ops, etc.). Same key
-  shape with `optional` in place of `bundled`.
-- `skills install` materializes the catalog files into a company-managed skill
-  directory and records provenance (`catalogId`, `catalogKey`, `packageVersion`,
-  `originHash`, …) so future updates and audit decisions stay consistent.
-- `--as <slug>` overrides the company skill slug. `--force` may replace a
-  same-key catalog-managed skill but never bypasses hard validation or hard-stop
-  audit findings.
-
-Examples:
-
-```sh
-pnpm paperclipai skills browse --kind bundled --company-id <company-id>
-pnpm paperclipai skills search "pull request" --kind bundled
-pnpm paperclipai skills inspect github-pr-workflow
-pnpm paperclipai skills install github-pr-workflow --company-id <company-id>
-pnpm paperclipai skills install paperclipai:optional:browser:agent-browser --company-id <company-id>
-```
-
-External GitHub, skills.sh, local-path, and URL sources still go through
-`skills import`; catalog commands are for the app-shipped catalog only.
-
-### Company library
-
-```sh
-pnpm paperclipai skills list --company-id <company-id>
-pnpm paperclipai skills show <skill-id-or-key-or-slug> --company-id <company-id>
-pnpm paperclipai skills file <skill-id-or-key-or-slug> [--path SKILL.md] --company-id <company-id>
-pnpm paperclipai skills import <source> --company-id <company-id>
-pnpm paperclipai skills create --name "Review PRs" [--slug review-prs] [--description "..."] [--body-file SKILL.md] --company-id <company-id>
-pnpm paperclipai skills check [skill-id-or-key-or-slug] --company-id <company-id>
-pnpm paperclipai skills update <skill-id-or-key-or-slug> [--force] --company-id <company-id>
-pnpm paperclipai skills update --all [--force] --company-id <company-id>
-pnpm paperclipai skills audit [skill-id-or-key-or-slug] --company-id <company-id>
-pnpm paperclipai skills reset <skill-id-or-key-or-slug> [--yes] [--force] --company-id <company-id>
-pnpm paperclipai skills remove <skill-id-or-key-or-slug> --yes --company-id <company-id>
-```
-
-`skills import <source>` accepts a skills.sh URL, the equivalent
-`<owner>/<repo>/<skill>` shorthand, a GitHub URL, a local path, or an
-`npx skills add …` command. See `references/company-skills.md` in the agent
-skill bundle for the source-type table.
-
-`skills check`, `skills update`, `skills audit`, and `skills reset` are the
-maintenance loop for catalog-installed skills:
-
-- `check` reports whether each skill's installed bytes match its pinned origin
-  (`hasUpdate`, `installedHash`, `originHash`, `updateHoldReason`,
-  `auditVerdict`).
-- `update` installs the pinned update through the existing install-update API.
-  `--all` checks every company skill and updates only those with
-  `hasUpdate=true`. `--force` discards local-modification or soft-audit holds;
-  hard-stop audit findings still block the update.
-- `audit` re-scans installed bytes and reports findings without executing
-  anything.
-- `reset` reinstalls a catalog-managed skill from its pinned origin, discarding
-  local edits. Prompts in a TTY; requires `--yes` for non-interactive use.
-
-### Notes
-
-- Skill references accept company skill `id`, canonical `key`, or unique
-  `slug`; catalog references accept catalog `id`, `key`, or unique `slug`.
-- `skills file` prints raw file content in human mode so it can be piped.
-- `skills create --body-file -` reads the skill markdown body from stdin.
-- `skills remove` and `skills reset` prompt in a TTY and require `--yes` in
-  non-interactive use.
-- `--json` prints the raw API result for each command.
+Resource arguments are canonical UUIDs; the CLI does not perform an alias or identifier lookup. By default the prompt command creates an ordinary task whose immutable request is the submitted text and whose explicit owner is the target agent. `--task <task-uuid>` submits an ordinary board comment; a provider is invoked only when that comment carries a valid typed mention of the current owner.
 
 ## Secrets Commands
 
@@ -521,7 +426,7 @@ pnpm paperclipai activity task <task-id>
 pnpm paperclipai dashboard get --company-id <company-id>
 ```
 
-## Org And Agent Config Commands
+## Organization Commands
 
 ```sh
 pnpm paperclipai whoami
@@ -529,7 +434,6 @@ pnpm paperclipai openapi
 pnpm paperclipai org get --company-id <company-id>
 pnpm paperclipai org svg --company-id <company-id> [--out org.svg]
 pnpm paperclipai org png --company-id <company-id> [--out org.png]
-pnpm paperclipai agent-config list --company-id <company-id>
 ```
 
 ## Access, Profile, And Instance Commands
@@ -538,13 +442,12 @@ pnpm paperclipai agent-config list --company-id <company-id>
 pnpm paperclipai profile session
 pnpm paperclipai profile get
 pnpm paperclipai profile update --payload-json '{...}'
-pnpm paperclipai profile company-user <user-slug> --company-id <company-id>
+pnpm paperclipai profile company-user <user-id> --company-id <company-id>
 pnpm paperclipai invite list --company-id <company-id>
 pnpm paperclipai invite create --company-id <company-id> --payload-json '{...}'
 pnpm paperclipai invite revoke <invite-id>
 pnpm paperclipai invite show <token>
-pnpm paperclipai invite accept <token> [--payload-json '{...}']
-pnpm paperclipai invite onboarding:text <token>
+pnpm paperclipai invite accept <token>
 pnpm paperclipai join list --company-id <company-id> [--status pending_approval]
 pnpm paperclipai join approve <request-id> --company-id <company-id>
 pnpm paperclipai join reject <request-id> --company-id <company-id>
@@ -570,7 +473,8 @@ PAPERCLIP_CHALLENGE_SECRET=<challenge-secret> pnpm paperclipai auth challenge ca
 pnpm paperclipai auth revoke-current
 ```
 
-`--token <challenge-secret>` is still supported for compatibility, but `--token-env` avoids putting challenge secrets in shell history or process arguments.
+Challenge secrets are accepted only through `--token-env` so they do not enter
+shell history or process arguments.
 
 ## Instance Settings Commands
 
@@ -583,13 +487,13 @@ pnpm paperclipai instance settings:general:update --payload-json '{...}'
 PATCHes a JSON object and requires instance-admin access. The retained General
 settings are:
 
-| Key | Default | Behavior |
-| --- | --- | --- |
-| `enableWorkspaceBranchReconcileForward` | On | Allows a clean worktree to advance only when its checked-out branch is a proven descendant of the recorded branch. |
-| `enableWorkspaceDirtyQuarantineRepair` | On | Preserves dirty foreign-branch work on a rescue branch before restoring the recorded branch. |
-| `enableServerInfoDebugView` | Off | Shows server restart, running commit, and checkout-state details in the account-menu **Server Info** debug view. It changes only that view. |
-| `autoRestartDevServerWhenIdle` | Off | Lets the managed dev runner request a restart for backend changes after there are no queued or running task executions. Migrations remain explicit. |
-| `enableWorktreeRunExecution` | Off | In a worktree instance, permits automatic schedule and webhook dispatch only for routines created after the server-recorded activation cutoff. Normal instances are unaffected. |
+| Key                                     | Default | Behavior                                                                                                                                                                        |
+| --------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enableWorkspaceBranchReconcileForward` | On      | Allows a clean worktree to advance only when its checked-out branch is a proven descendant of the recorded branch.                                                              |
+| `enableWorkspaceDirtyQuarantineRepair`  | On      | Preserves dirty foreign-branch work on a rescue branch before restoring the recorded branch.                                                                                    |
+| `enableServerInfoDebugView`             | Off     | Shows server restart, running commit, and checkout-state details in the account-menu **Server Info** debug view. It changes only that view.                                     |
+| `autoRestartDevServerWhenIdle`          | Off     | Lets the managed dev runner request a restart for backend changes after there are no queued or running task executions. Migrations remain explicit.                             |
+| `enableWorktreeRunExecution`            | Off     | In a worktree instance, permits automatic schedule and webhook dispatch only for routines created after the server-recorded activation cutoff. Normal instances are unaffected. |
 
 For the worktree dispatch control, the server—not the client—controls the
 returned `worktreeRunExecutionActivatedAt` and
@@ -612,19 +516,13 @@ pnpm paperclipai sidebar project-preferences:update --company-id <company-id> --
 pnpm paperclipai sidebar badges --company-id <company-id>
 pnpm paperclipai inbox dismissals --company-id <company-id>
 pnpm paperclipai inbox dismiss --company-id <company-id> --payload-json '{"itemKey":"run:<run-id>"}'
-pnpm paperclipai llm agent-configuration
-pnpm paperclipai llm agent-configuration:adapter <adapter-type>
-pnpm paperclipai llm agent-icons
 ```
 
-## Adapter, Asset, And Skill Commands
+## Adapter And Asset Commands
 
 ```sh
 pnpm paperclipai adapter list
 pnpm paperclipai adapter get <adapter-type>
-pnpm paperclipai adapter config-schema <adapter-type>
-pnpm paperclipai adapter models <adapter-type> --company-id <company-id>
-pnpm paperclipai adapter model-profiles <adapter-type> --company-id <company-id>
 ```
 
 ACPX is the only local-agent availability, identity, model, session-settings,
@@ -635,18 +533,6 @@ probe diagnostics when a registry-listed local agent cannot initialize.
 pnpm paperclipai asset image:upload --company-id <company-id> --file ./image.png [--namespace docs] [--alt "..."]
 pnpm paperclipai asset logo:upload --company-id <company-id> --file ./logo.svg
 pnpm paperclipai asset content <asset-id> --out ./asset.bin
-```
-
-```sh
-pnpm paperclipai skill list --company-id <company-id>
-pnpm paperclipai skill get <skill-id> --company-id <company-id>
-pnpm paperclipai skill file <skill-id> --company-id <company-id> [--path SKILL.md]
-pnpm paperclipai skill create --company-id <company-id> --payload-json '{...}'
-pnpm paperclipai skill file:update <skill-id> --company-id <company-id> --payload-json '{...}'
-pnpm paperclipai skill import --company-id <company-id> --payload-json '{"source":"github:owner/repo/path"}'
-pnpm paperclipai skill update-status <skill-id> --company-id <company-id>
-pnpm paperclipai skill install-update <skill-id> --company-id <company-id>
-pnpm paperclipai skill delete <skill-id> --company-id <company-id>
 ```
 
 ## Cost, Finance, And Budget Commands

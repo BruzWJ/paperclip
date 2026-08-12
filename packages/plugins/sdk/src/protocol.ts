@@ -25,7 +25,6 @@ import type {
   PluginManagedAgentResolution,
   PluginManagedProjectResolution,
   PluginManagedRoutineResolution,
-  PluginManagedSkillResolution,
   Routine,
   RoutineRun,
   Agent,
@@ -33,7 +32,9 @@ import type {
   PrincipalPermissionGrant,
   ProviderSafeRunTrace,
   PluginWorkerLogLevel,
+  UserCompanyMembershipRole,
 } from "@paperclipai/shared";
+import { isCanonicalUuid } from "@paperclipai/shared";
 export type { PluginLauncherRenderContextSnapshot } from "@paperclipai/shared";
 
 import type {
@@ -54,6 +55,7 @@ import type {
   PluginAccessMember,
   PluginAssignmentPreviewInput,
   PluginAuthorizationAuditEntry,
+  PluginAuthorizationAuditDecision,
   PluginAuthorizationDecisionResult,
   PluginAuthorizationPolicyRecord,
   PluginAuthorizationPolicySummary,
@@ -72,6 +74,7 @@ import type {
   PluginProjectsClient,
   PluginAgentsClient,
   PluginRoutinesClient,
+  PluginListWindow,
 } from "./types.js";
 import type {
   PluginHealthDiagnostics,
@@ -165,15 +168,12 @@ export interface JsonRpcErrorResponse<TData = unknown> {
  * A JSON-RPC 2.0 response — either success or error.
  */
 export type JsonRpcResponse<TResult = unknown, TData = unknown> =
-  | JsonRpcSuccessResponse<TResult>
-  | JsonRpcErrorResponse<TData>;
+  JsonRpcSuccessResponse<TResult> | JsonRpcErrorResponse<TData>;
 
 /**
  * Any well-formed JSON-RPC 2.0 message exchanged by the plugin transport.
  */
-export type JsonRpcMessage =
-  | JsonRpcRequest
-  | JsonRpcResponse;
+export type JsonRpcMessage = JsonRpcRequest | JsonRpcResponse;
 
 // ---------------------------------------------------------------------------
 // Error Codes
@@ -371,33 +371,27 @@ interface PluginPerformActionActorBase {
 }
 
 export type PluginPerformActionActorContext =
-  | (
-    PluginPerformActionActorBase & {
+  | (PluginPerformActionActorBase & {
       /** Canonical Better Auth board principal. */
       type: "user";
       userId: string;
       agentId?: never;
       runId?: never;
-    }
-  )
-  | (
-    PluginPerformActionActorBase & {
+    })
+  | (PluginPerformActionActorBase & {
       /** Productive runtime principal. */
       type: "agent";
       agentId: string;
       runId: string;
       userId?: never;
-    }
-  )
-  | (
-    PluginPerformActionActorBase & {
-      /** Host-owned action with no human or runtime principal. */
+    })
+  | (PluginPerformActionActorBase & {
+      /** Host-owned action with no user or runtime principal. */
       type: "system";
       userId?: never;
       agentId?: never;
       runId?: never;
-    }
-  );
+    });
 
 export interface PluginPerformActionContext {
   /** Immutable authenticated actor context supplied by the host. */
@@ -428,8 +422,10 @@ function invalidPerformActionActorContext(message: string): never {
   );
 }
 
-function isNonBlankString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
+function isExactNonBlankString(value: unknown): value is string {
+  return (
+    typeof value === "string" && value.length > 0 && value === value.trim()
+  );
 }
 
 function hasExactKeys(
@@ -438,8 +434,10 @@ function hasExactKeys(
 ): boolean {
   const actual = Object.keys(value).sort();
   const canonical = [...expected].sort();
-  return actual.length === canonical.length
-    && actual.every((key, index) => key === canonical[index]);
+  return (
+    actual.length === canonical.length &&
+    actual.every((key, index) => key === canonical[index])
+  );
 }
 
 /**
@@ -453,14 +451,24 @@ export function decodePluginPerformActionActorContext(
   value: unknown,
 ): PluginPerformActionActorContext {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return invalidPerformActionActorContext("an exact actor object is required");
+    return invalidPerformActionActorContext(
+      "an exact actor object is required",
+    );
   }
 
   const actor = value as Record<string, unknown>;
-  const companyId = actor.companyId;
-  if (companyId !== null && !isNonBlankString(companyId)) {
+  const rawCompanyId = actor.companyId;
+  let companyId: string | null;
+  if (rawCompanyId === null) {
+    companyId = null;
+  } else if (
+    typeof rawCompanyId === "string" &&
+    isCanonicalUuid(rawCompanyId)
+  ) {
+    companyId = rawCompanyId;
+  } else {
     return invalidPerformActionActorContext(
-      '"companyId" must be null or a non-blank string',
+      '"companyId" must be null or an exact canonical UUID',
     );
   }
 
@@ -470,9 +478,9 @@ export function decodePluginPerformActionActorContext(
         'the "user" branch accepts exactly type, userId, and companyId',
       );
     }
-    if (!isNonBlankString(actor.userId)) {
+    if (!isExactNonBlankString(actor.userId)) {
       return invalidPerformActionActorContext(
-        '"userId" must be a non-blank string for a user actor',
+        '"userId" must be an exact non-blank string for a user actor',
       );
     }
     return {
@@ -488,15 +496,22 @@ export function decodePluginPerformActionActorContext(
         'the "agent" branch accepts exactly type, agentId, runId, and companyId',
       );
     }
-    if (!isNonBlankString(actor.agentId) || !isNonBlankString(actor.runId)) {
+    const agentId = actor.agentId;
+    if (typeof agentId !== "string" || !isCanonicalUuid(agentId)) {
       return invalidPerformActionActorContext(
-        '"agentId" and "runId" must be non-blank strings for an agent actor',
+        '"agentId" and "runId" must be exact canonical UUIDs for an agent actor',
+      );
+    }
+    const runId = actor.runId;
+    if (typeof runId !== "string" || !isCanonicalUuid(runId)) {
+      return invalidPerformActionActorContext(
+        '"agentId" and "runId" must be exact canonical UUIDs for an agent actor',
       );
     }
     return {
       type: "agent",
-      agentId: actor.agentId,
-      runId: actor.runId,
+      agentId,
+      runId,
       companyId,
     };
   }
@@ -584,7 +599,10 @@ export interface HostToWorkerMethods {
   /** @see PLUGIN_SPEC.md §12.5 */
   shutdown: [params: Record<string, never>, result: void];
   /** @see PLUGIN_SPEC.md §13.3 */
-  validateConfig: [params: ValidateConfigParams, result: PluginConfigValidationResult];
+  validateConfig: [
+    params: ValidateConfigParams,
+    result: PluginConfigValidationResult,
+  ];
   /** Blocking hook before one exact provider prompt. */
   beforePrompt: [
     params: PluginBeforePromptInput,
@@ -656,7 +674,10 @@ export type HostToWorkerOptionalMethodName =
  */
 export interface WorkerToHostMethods {
   // Config
-  "config.get": [params: Record<string, never>, result: Record<string, unknown>];
+  "config.get": [
+    params: Record<string, never>,
+    result: Record<string, unknown>,
+  ];
 
   // Trusted local folders
   "localFolders.configure": [
@@ -672,7 +693,13 @@ export interface WorkerToHostMethods {
     result: PluginLocalFolderStatus,
   ];
   "localFolders.list": [
-    params: { companyId: string; folderKey: string; relativePath?: string | null; recursive?: boolean; maxEntries?: number },
+    params: {
+      companyId: string;
+      folderKey: string;
+      relativePath?: string | null;
+      recursive?: boolean;
+      maxEntries?: number;
+    },
     result: PluginLocalFolderListing,
   ];
   "localFolders.readText": [
@@ -694,38 +721,20 @@ export interface WorkerToHostMethods {
   ];
 
   // State
-  "state.get": [
-    params: ScopeKey,
-    result: unknown,
-  ];
-  "state.set": [
-    params: ScopeKey & { value: unknown },
-    result: void,
-  ];
-  "state.delete": [
-    params: ScopeKey,
-    result: void,
-  ];
+  "state.get": [params: ScopeKey, result: unknown];
+  "state.set": [params: ScopeKey & { value: unknown }, result: void];
+  "state.delete": [params: ScopeKey, result: void];
 
   // Restricted plugin database namespace
-  "db.query": [
-    params: { sql: string; params?: unknown[] },
-    result: unknown[],
-  ];
+  "db.query": [params: { sql: string; params?: unknown[] }, result: unknown[]];
   "db.execute": [
     params: { sql: string; params?: unknown[] },
     result: { rowCount: number },
   ];
 
   // Entities
-  "entities.upsert": [
-    params: PluginEntityUpsert,
-    result: PluginEntityRecord,
-  ];
-  "entities.list": [
-    params: PluginEntityQuery,
-    result: PluginEntityRecord[],
-  ];
+  "entities.upsert": [params: PluginEntityUpsert, result: PluginEntityRecord];
+  "entities.list": [params: PluginEntityQuery, result: PluginEntityRecord[]];
 
   // Events
   "events.emit": [
@@ -740,7 +749,12 @@ export interface WorkerToHostMethods {
   // HTTP
   "http.fetch": [
     params: { url: string; init?: Record<string, unknown> },
-    result: { status: number; statusText: string; headers: Record<string, string>; body: string },
+    result: {
+      status: number;
+      statusText: string;
+      headers: Record<string, string>;
+      body: string;
+    },
   ];
 
   "runtime.records.readRun": [
@@ -748,7 +762,12 @@ export interface WorkerToHostMethods {
     result: ProviderSafeRunTrace,
   ];
   "runtime.records.readTaskComments": [
-    params: { companyId: string; taskId: string; cursor?: string; limit?: number },
+    params: {
+      companyId: string;
+      taskId: string;
+      cursor?: string;
+      limit?: number;
+    },
     result: PluginRunPage<PluginRunTaskCommentProjection>,
   ];
   "runtime.records.readSession": [
@@ -782,12 +801,15 @@ export interface WorkerToHostMethods {
 
   // Telemetry
   "telemetry.track": [
-    params: { eventName: string; dimensions?: Record<string, string | number | boolean> },
+    params: {
+      eventName: string;
+      dimensions?: Record<string, string | number | boolean>;
+    },
     result: void,
   ];
 
   // Logger
-  "log": [
+  log: [
     params: {
       level: PluginWorkerLogLevel;
       message: string;
@@ -803,10 +825,7 @@ export interface WorkerToHostMethods {
     params: Parameters<PluginCompaniesClient["list"]>[0],
     result: Company[],
   ];
-  "companies.get": [
-    params: { companyId: string },
-    result: Company | null,
-  ];
+  "companies.get": [params: { companyId: string }, result: Company | null];
 
   // Projects (read)
   "projects.list": [
@@ -855,7 +874,9 @@ export interface WorkerToHostMethods {
     params: {
       routineKey: string;
       companyId: string;
-      status?: Parameters<PluginRoutinesClient["managed"]["update"]>[2]["status"];
+      status?: Parameters<
+        PluginRoutinesClient["managed"]["update"]
+      >[2]["status"];
     },
     result: Routine,
   ];
@@ -868,19 +889,6 @@ export interface WorkerToHostMethods {
     },
     result: RoutineRun,
   ];
-  "skills.managed.get": [
-    params: { skillKey: string; companyId: string },
-    result: PluginManagedSkillResolution,
-  ];
-  "skills.managed.reconcile": [
-    params: { skillKey: string; companyId: string },
-    result: PluginManagedSkillResolution,
-  ];
-  "skills.managed.reset": [
-    params: { skillKey: string; companyId: string },
-    result: PluginManagedSkillResolution,
-  ];
-
   // Tasks
   "tasks.list": [
     params: {
@@ -1052,7 +1060,7 @@ export interface WorkerToHostMethods {
       memberId: string;
       companyId: string;
       patch: {
-        membershipRole?: string | null;
+        membershipRole?: UserCompanyMembershipRole;
         status?: "pending" | "active" | "suspended";
       };
     },
@@ -1062,18 +1070,13 @@ export interface WorkerToHostMethods {
     params: {
       companyId: string;
       state?: "active" | "revoked" | "accepted" | "expired";
-      limit?: number;
-      offset?: number;
-    },
+    } & PluginListWindow,
     result: { invites: PluginAccessInvite[]; nextOffset: number | null },
   ];
   "access.invites.create": [
     params: {
       companyId: string;
-      allowedJoinTypes?: "human" | "agent" | "both";
-      humanRole?: string | null;
-      defaultsPayload?: Record<string, unknown> | null;
-      agentMessage?: string | null;
+      userRole?: string | null;
     },
     result: PluginAccessInvite & { token: string },
   ];
@@ -1092,7 +1095,10 @@ export interface WorkerToHostMethods {
       companyId: string;
       principalType: string;
       principalId: string;
-      grants: Array<{ permissionKey: string; scope?: Record<string, unknown> | null }>;
+      grants: Array<{
+        permissionKey: string;
+        scope?: Record<string, unknown> | null;
+      }>;
       grantedByUserId?: string | null;
     },
     result: PrincipalPermissionGrant[],
@@ -1102,7 +1108,11 @@ export interface WorkerToHostMethods {
     result: PluginAuthorizationPolicySummary,
   ];
   "authorization.policies.get": [
-    params: { companyId: string; resourceType: "company" | "agent" | "task"; resourceId: string },
+    params: {
+      companyId: string;
+      resourceType: "company" | "agent" | "task";
+      resourceId: string;
+    },
     result: PluginAuthorizationPolicyRecord | null,
   ];
   "authorization.policies.update": [
@@ -1126,10 +1136,8 @@ export interface WorkerToHostMethods {
       actorId?: string;
       entityType?: string;
       entityId?: string;
-      decision?: string;
-      limit?: number;
-      offset?: number;
-    },
+      decision?: PluginAuthorizationAuditDecision;
+    } & PluginListWindow,
     result: PluginAuthorizationAuditEntry[],
   ];
 }
@@ -1204,9 +1212,10 @@ export function createErrorResponse<TData = unknown>(
   const response: JsonRpcErrorResponse<TData> = {
     jsonrpc: JSONRPC_VERSION,
     id,
-    error: data !== undefined
-      ? { code, message, data }
-      : { code, message } as JsonRpcError<TData>,
+    error:
+      data !== undefined
+        ? { code, message, data }
+        : ({ code, message } as JsonRpcError<TData>),
   };
   return response;
 }
@@ -1251,7 +1260,10 @@ export function isJsonRpcResponse(value: unknown): value is JsonRpcResponse {
 export function isJsonRpcSuccessResponse(
   response: JsonRpcResponse,
 ): response is JsonRpcSuccessResponse {
-  return "result" in response && !("error" in response && response.error !== undefined);
+  return (
+    "result" in response &&
+    !("error" in response && response.error !== undefined)
+  );
 }
 
 /**
@@ -1322,7 +1334,9 @@ export function parseMessage(line: string): JsonRpcMessage {
   }
 
   if (!isJsonRpcRequest(parsed) && !isJsonRpcResponse(parsed)) {
-    throw new JsonRpcParseError("Message must be a JSON-RPC request or response");
+    throw new JsonRpcParseError(
+      "Message must be a JSON-RPC request or response",
+    );
   }
 
   return parsed as JsonRpcMessage;

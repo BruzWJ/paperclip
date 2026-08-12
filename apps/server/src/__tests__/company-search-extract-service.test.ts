@@ -30,7 +30,7 @@ describe("extract-search query validation", () => {
       contains: "github.com/paperclipai/paperclip/pull",
       kind: "url",
       scope: "comments",
-      status: "in_progress,in_review",
+      status: ["in_progress", "in_review"],
       limit: "200",
       offset: "5000",
       matchesPerTask: "200",
@@ -40,16 +40,34 @@ describe("extract-search query validation", () => {
     expect(parsed.kind).toBe("url");
     expect(parsed.scope).toBe("comments");
     expect(parsed.status).toEqual(["in_progress", "in_review"]);
-    expect(parsed.matchesPerTask).toBe(COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK);
-    expect(() => companySearchExtractQuerySchema.parse({ contains: ".*", kind: "regex" })).toThrow();
-    expect(() => companySearchExtractQuerySchema.parse({ contains: "x" })).toThrow();
-    expect(() => companySearchExtractQuerySchema.parse({ contains: "needle", limit: "201" })).toThrow();
-    expect(() => companySearchExtractQuerySchema.parse({ contains: "needle", matchesPerTask: "201" })).toThrow();
-    expect(() => companySearchExtractQuerySchema.parse({
-      contains: "needle",
-      updatedWithin: "30d",
-      updatedAfter: "2026-01-01T00:00:00.000Z",
-    })).toThrow();
+    expect(parsed.matchesPerTask).toBe(
+      COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK,
+    );
+    expect(() =>
+      companySearchExtractQuerySchema.parse({ contains: ".*", kind: "regex" }),
+    ).toThrow();
+    expect(() =>
+      companySearchExtractQuerySchema.parse({ contains: "x" }),
+    ).toThrow();
+    expect(() =>
+      companySearchExtractQuerySchema.parse({
+        contains: "needle",
+        limit: "201",
+      }),
+    ).toThrow();
+    expect(() =>
+      companySearchExtractQuerySchema.parse({
+        contains: "needle",
+        matchesPerTask: "201",
+      }),
+    ).toThrow();
+    expect(() =>
+      companySearchExtractQuerySchema.parse({
+        contains: "needle",
+        updatedWithin: "30d",
+        updatedAfter: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toThrow();
   });
 });
 
@@ -60,15 +78,27 @@ describe("companySearchExtractService", () => {
     const thirdUrl = "https://github.com/paperclipai/paperclip/pull/789";
     const { db } = createMockDb({
       select: [
-        [taskRow({ request: `Primary ${firstUrl} and duplicate ${firstUrl}.` })],
-        [{ id: "comment-1", taskId, body: `Review ${secondUrl} and repeat ${firstUrl}` }],
-        [{
-          id: "document-1",
-          taskId,
-          key: "plan",
-          title: `PR notes ${thirdUrl}`,
-          body: `Also see [the second PR](${secondUrl}).`,
-        }],
+        [
+          taskRow({
+            request: `Primary ${firstUrl} and duplicate ${firstUrl}.`,
+          }),
+        ],
+        [
+          {
+            id: "comment-1",
+            taskId,
+            body: `Review ${secondUrl} and repeat ${firstUrl}`,
+          },
+        ],
+        [
+          {
+            id: "document-1",
+            taskId,
+            key: "plan",
+            title: `PR notes ${thirdUrl}`,
+            body: `Also see [the second PR](${secondUrl}).`,
+          },
+        ],
       ],
     });
 
@@ -98,19 +128,27 @@ describe("companySearchExtractService", () => {
   it("keeps URL sources selected by scheme-less queries", async () => {
     const titleUrl = "https://github.com/paperclipai/paperclip/pull/101";
     const requestUrl = "https://github.com/paperclipai/paperclip/pull/102";
-    const documentTitleUrl = "https://github.com/paperclipai/paperclip/pull/103";
+    const documentTitleUrl =
+      "https://github.com/paperclipai/paperclip/pull/103";
     const documentBodyUrl = "https://github.com/paperclipai/paperclip/pull/104";
     const { db } = createMockDb({
       select: [
-        [taskRow({ title: `Review ${titleUrl}`, request: `Then merge ${requestUrl}` })],
+        [
+          taskRow({
+            title: `Review ${titleUrl}`,
+            request: `Then merge ${requestUrl}`,
+          }),
+        ],
         [],
-        [{
-          id: "document-1",
-          taskId,
-          key: "plan",
-          title: `Tracking ${documentTitleUrl}`,
-          body: `Final follow-up ${documentBodyUrl}`,
-        }],
+        [
+          {
+            id: "document-1",
+            taskId,
+            key: "plan",
+            title: `Tracking ${documentTitleUrl}`,
+            body: `Final follow-up ${documentBodyUrl}`,
+          },
+        ],
       ],
     });
 
@@ -123,7 +161,9 @@ describe("companySearchExtractService", () => {
       }),
     );
 
-    expect(result.results[0]?.matches.map((match) => [match.field, match.value])).toEqual([
+    expect(
+      result.results[0]?.matches.map((match) => [match.field, match.value]),
+    ).toEqual([
       ["title", titleUrl],
       ["request", requestUrl],
       ["document_title", documentTitleUrl],
@@ -156,7 +196,8 @@ describe("companySearchExtractService", () => {
   it("uses the default distinct-match cap and marks truncation explicitly", async () => {
     const urls = Array.from(
       { length: COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK + 1 },
-      (_, index) => `https://github.com/paperclipai/paperclip/pull/${index + 1}`,
+      (_, index) =>
+        `https://github.com/paperclipai/paperclip/pull/${index + 1}`,
     );
     const { db } = createMockDb({
       select: [[taskRow({ request: urls.join(" ") })], [], []],
@@ -170,8 +211,12 @@ describe("companySearchExtractService", () => {
       }),
     );
 
-    expect(result.matchesPerTask).toBe(COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK);
-    expect(result.results[0]?.matches).toHaveLength(COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK);
+    expect(result.matchesPerTask).toBe(
+      COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK,
+    );
+    expect(result.results[0]?.matches).toHaveLength(
+      COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK,
+    );
     expect(result.results[0]?.matchesTruncated).toBe(true);
     expect(result.truncated).toBe(true);
   });
@@ -179,7 +224,8 @@ describe("companySearchExtractService", () => {
   it("supports a bounded per-task match cap for complete machine extraction", async () => {
     const urls = Array.from(
       { length: COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_TASK + 1 },
-      (_, index) => `https://github.com/paperclipai/paperclip/pull/${index + 1}`,
+      (_, index) =>
+        `https://github.com/paperclipai/paperclip/pull/${index + 1}`,
     );
     const { db } = createMockDb({
       select: [[taskRow({ request: urls.join(" ") })], [], []],
@@ -190,11 +236,13 @@ describe("companySearchExtractService", () => {
       companySearchExtractQuerySchema.parse({
         contains: "github.com/paperclipai/paperclip/pull",
         kind: "url",
-        matchesPerTask: COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK,
+        matchesPerTask: String(COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK),
       }),
     );
 
-    expect(result.matchesPerTask).toBe(COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK);
+    expect(result.matchesPerTask).toBe(
+      COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_TASK,
+    );
     expect(result.results[0]?.matches).toHaveLength(urls.length);
     expect(result.results[0]?.matchesTruncated).toBe(false);
     expect(result.truncated).toBe(false);

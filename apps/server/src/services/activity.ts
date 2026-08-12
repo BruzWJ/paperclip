@@ -12,15 +12,6 @@ export interface ActivityFilters {
 }
 
 const DEFAULT_ACTIVITY_LIMIT = 100;
-const MAX_ACTIVITY_LIMIT = 500;
-
-export function normalizeActivityLimit(limit: number | undefined) {
-  if (!Number.isFinite(limit)) return DEFAULT_ACTIVITY_LIMIT;
-  return Math.max(
-    1,
-    Math.min(MAX_ACTIVITY_LIMIT, Math.floor(limit ?? DEFAULT_ACTIVITY_LIMIT)),
-  );
-}
 
 export function activityService(db: Db) {
   const taskIdAsText = sql<string>`${tasks.id}::text`;
@@ -28,7 +19,7 @@ export function activityService(db: Db) {
   return {
     list: (filters: ActivityFilters) => {
       const conditions = [eq(activityLog.companyId, filters.companyId)];
-      const limit = normalizeActivityLimit(filters.limit);
+      const limit = filters.limit ?? DEFAULT_ACTIVITY_LIMIT;
 
       if (filters.agentId) {
         conditions.push(eq(activityLog.agentId, filters.agentId));
@@ -75,12 +66,5 @@ export function activityService(db: Db) {
           ),
         )
         .orderBy(desc(activityLog.createdAt)),
-
-    create: (data: typeof activityLog.$inferInsert) =>
-      db
-        .insert(activityLog)
-        .values(data)
-        .returning()
-        .then((rows) => rows[0]),
   };
 }

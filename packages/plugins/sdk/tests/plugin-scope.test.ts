@@ -1,21 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { normalizePluginScopeId } from "../src/plugin-scope.js";
+import { requireExactPluginScopeId } from "../src/plugin-scope.js";
 
-describe("normalizePluginScopeId", () => {
+describe("requireExactPluginScopeId", () => {
+  const taskId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
   it("accepts only identifier-free instance scope", () => {
-    expect(normalizePluginScopeId("instance", undefined)).toBeNull();
-    expect(() => normalizePluginScopeId("instance", "instance")).toThrow(
+    expect(requireExactPluginScopeId("instance", undefined)).toBeNull();
+    expect(() => requireExactPluginScopeId("instance", "instance")).toThrow(
       "must not include scopeId",
     );
   });
 
   it("requires canonical object scope identifiers", () => {
-    expect(normalizePluginScopeId("task", "task-id")).toBe("task-id");
-    expect(() => normalizePluginScopeId("task", undefined)).toThrow(
-      "requires a canonical non-empty scopeId",
+    expect(requireExactPluginScopeId("task", taskId)).toBe(taskId);
+    expect(() => requireExactPluginScopeId("task", undefined)).toThrow(
+      "requires an exact canonical UUID scopeId",
     );
-    expect(() => normalizePluginScopeId("task", " task-id ")).toThrow(
-      "requires a canonical non-empty scopeId",
+    expect(() => requireExactPluginScopeId("task", ` ${taskId} `)).toThrow(
+      "requires an exact canonical UUID scopeId",
+    );
+    expect(() => requireExactPluginScopeId("task", taskId.toUpperCase())).toThrow(
+      "requires an exact canonical UUID scopeId",
     );
   });
 });

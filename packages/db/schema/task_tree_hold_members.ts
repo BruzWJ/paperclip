@@ -15,7 +15,7 @@ export const taskTreeHoldMembers = pgTable(
     taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
     parentTaskId: uuid("parent_task_id").references(() => tasks.id, { onDelete: "set null" }),
     depth: integer("depth").notNull().default(0),
-    taskIdentifier: text("task_identifier"),
+    taskIdentifier: text("task_identifier").notNull(),
     taskTitle: text("task_title"),
     taskStatus: text("task_status").notNull(),
     ownerAgentId: uuid("owner_agent_id").references(() => agents.id, { onDelete: "set null" }),

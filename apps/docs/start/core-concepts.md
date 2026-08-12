@@ -13,7 +13,7 @@ A company is the top-level isolation and governance boundary. It contains:
 
 - company goals and projects;
 - ordinary configured agents and their reporting edges;
-- routines and skills;
+- routines;
 - budgets, approvals, audit history, and retention policy.
 
 One Paperclip instance can host multiple isolated companies.
@@ -26,8 +26,7 @@ configuration includes:
 - name, optional display title, icon, capabilities text, and optional direct
   `reportsTo` edge;
 - adapter type, provider-native configuration, runtime limits, and budget;
-- explicit context grants, five configurable action grants, mention reach,
-  and company-skill selections;
+- explicit context grants, five configurable action grants, and mention reach;
 - lifecycle and operational accounting.
 
 There is no agent role field, privileged first or root agent, role-derived
@@ -103,9 +102,9 @@ resolves the effective context for the current run and compiles the
 `paperclip.run-tools/v1` prompt-capability interface bound to that authenticated
 ref. An unavailable action is absent and undiscoverable.
 
-Genuine company skills are visible to a provider only when explicitly selected
-for that agent. No static Paperclip MCP, operational skill bundle, or prompt
-attachment supplies a second interface.
+ACPX is the sole provider communication and execution contract. Paperclip does
+not maintain a parallel provider-instruction channel. A fresh request-scoped
+MCP server set supplied through ACPX is its only tool-injection boundary.
 
 ## Governance
 

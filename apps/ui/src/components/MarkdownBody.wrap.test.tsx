@@ -8,7 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "../context/ThemeContext";
 import { MarkdownBody } from "./MarkdownBody";
 
-vi.mock("@/lib/router", () => ({
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
+}));
+
+vi.mock("@tanstack/react-router", () => ({
   Link: ({
     children,
     to,
@@ -96,5 +100,25 @@ describe("MarkdownBody code block wrapping", () => {
     expect(actions?.getAttribute("data-active")).toBeNull();
     expect(pre?.style.overflowX).toBe("auto");
     expect(pre?.style.whiteSpace).toBe("");
+  });
+
+  it("fails closed for unknown same-origin links while preserving external, file, and hash anchors", () => {
+    flushSync(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <MarkdownBody>
+              {"[Internal](/11111111-1111-4111-8111-111111111111/dashboard) [External](https://example.com/docs) [File](/api/assets/asset-1/content) [Section](#details)"}
+            </MarkdownBody>
+          </ThemeProvider>
+        </QueryClientProvider>,
+      );
+    });
+
+    expect(container.querySelector('a[href="/11111111-1111-4111-8111-111111111111/dashboard"]')).toBeNull();
+    expect(container.textContent).toContain("Internal");
+    expect(container.querySelector('a[href="https://example.com/docs"]')?.getAttribute("target")).toBe("_blank");
+    expect(container.querySelector('a[href="/api/assets/asset-1/content"]')).not.toBeNull();
+    expect(container.querySelector('a[href="#details"]')).not.toBeNull();
   });
 });

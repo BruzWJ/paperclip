@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./validators/canonical-uuid.js";
 
 export const ADAPTER_RUNTIME_READINESS_INCOMPLETE_REASONS = [
   "run_not_preflightable",
@@ -20,9 +21,9 @@ export type AdapterRuntimeReadinessIncompleteReason =
 
 export const adapterRuntimeReadinessScopeSchema = z
   .object({
-    runId: z.string().uuid(),
-    agentId: z.string().uuid(),
-    adapterConfigRevisionId: z.string().uuid(),
+    runId: canonicalUuidSchema,
+    agentId: canonicalUuidSchema,
+    adapterConfigRevisionId: canonicalUuidSchema,
   })
   .strict();
 
@@ -44,7 +45,6 @@ const adapterRuntimeReadinessIncompleteSchema = z
     status: z.literal("incomplete"),
     scope: adapterRuntimeReadinessScopeSchema,
     reason: z.enum(ADAPTER_RUNTIME_READINESS_INCOMPLETE_REASONS),
-    remediationCommand: z.string().min(1).nullable(),
   })
   .strict();
 

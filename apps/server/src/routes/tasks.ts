@@ -1,20 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  Router,
-  type Request,
-  type Response,
-} from "express";
+import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { z } from "zod";
-import { and, asc, desc, eq, inArray, isNull, notInArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
-  activityLog,
   agents,
   documents,
   taskComments,
   taskDocuments,
-  taskRelations,
   tasks as taskRows,
   taskWorkProducts,
 } from "@paperclipai/db";
@@ -43,8 +37,9 @@ import {
   updateTaskTitleSchema,
   updateTaskExecutionPolicySchema,
   decideTaskExecutionStageSchema,
-  isUuidLike,
-  normalizeTaskIdentifier as normalizeTaskReferenceIdentifier,
+  canonicalUuidSchema,
+  isCanonicalUuid,
+  parseTaskNumber,
   type CompactTask,
   type CompanySearchExtractQuery,
   type CompanySearchExtractResponse,
@@ -58,7 +53,6 @@ import {
   type TaskSubtreeDiagnosticEdge,
   type TaskSubtreeDiagnosticNode,
   type TaskSubtreeDiagnosticsResponse,
-  type TaskRelationTaskSummary,
   type SourceTrustMetadata,
 } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
@@ -73,13 +67,12 @@ import {
   companySearchService,
   goalService,
   taskApprovalService,
-  inboxAgentPolicyService,
   TASK_LIST_DEFAULT_LIMIT,
   TASK_LIST_MAX_LIMIT,
   taskReferenceService,
   taskService,
   type TaskFilters,
-  clampTaskListLimit,
+  parseStatusFilter,
   documentService,
   documentAnnotationService,
   logActivity,
@@ -91,7 +84,7 @@ import {
 } from "../services/index.js";
 import type { PluginDomainEventPublisher } from "../services/plugin-domain-event-publisher.js";
 import { logger } from "../middleware/logger.js";
-import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
+import { conflict, forbidden, unprocessable } from "../errors.js";
 import {
   assertBoard,
   assertCompanyAccess,
@@ -106,11 +99,7 @@ import {
   normalizeUploadAttachmentContentType,
   SVG_CONTENT_TYPE,
 } from "../attachment-types.js";
-import {
-  TASK_BLOCKER_DIAGNOSTICS_MAX_BLOCKERS,
-} from "../services/tasks.js";
-import { authorizationDeniedDetails } from "../services/authorization.js";
-import { redactSensitiveText } from "../redaction.js";
+import { TASK_BLOCKER_DIAGNOSTICS_MAX_BLOCKERS } from "../services/tasks.js";
 import {
   createCompanySearchRateLimiter,
   type CompanySearchRateLimiter,
@@ -127,37 +116,50 @@ import {
   isLowTrustQuarantined,
 } from "../services/source-trust.js";
 import { taskIngressRoutes } from "./task-ingress.js";
-import {
-  LOW_TRUST_TASK_ANCESTRY_MAX_DEPTH,
-} from "../services/trust-preset-resolver.js";
+import { LOW_TRUST_TASK_ANCESTRY_MAX_DEPTH } from "../services/trust-preset-resolver.js";
 
 const MAX_TASK_COMMENT_LIMIT = 500;
-const taskCommentRootPageQuerySchema = z.object({
-  cursor: z.string().trim().min(1).optional(),
-  limit: z.coerce.number().int().positive().max(MAX_TASK_COMMENT_LIMIT).optional(),
-  entryLimit: z.coerce.number().int().positive().max(MAX_TASK_COMMENT_LIMIT).optional(),
-}).strict();
-const taskCommentThreadPageQuerySchema = z.object({
-  cursor: z.string().trim().min(1).optional(),
-  limit: z.coerce.number().int().positive().max(MAX_TASK_COMMENT_LIMIT).optional(),
-}).strict();
+const taskCommentRootPageQuerySchema = z
+  .object({
+    cursor: z.string().min(1).refine((value) => value.trim() === value).optional(),
+    limit: z.string().regex(/^[1-9]\d*$/).transform(Number)
+      .pipe(z.number().int().max(MAX_TASK_COMMENT_LIMIT)).optional(),
+    entryLimit: z.string().regex(/^[1-9]\d*$/).transform(Number)
+      .pipe(z.number().int().max(MAX_TASK_COMMENT_LIMIT)).optional(),
+  })
+  .strict();
+const taskCommentThreadPageQuerySchema = z
+  .object({
+    cursor: z.string().min(1).refine((value) => value.trim() === value).optional(),
+    limit: z.string().regex(/^[1-9]\d*$/).transform(Number)
+      .pipe(z.number().int().max(MAX_TASK_COMMENT_LIMIT)).optional(),
+  })
+  .strict();
 const inboxArchiveBodySchema = z.object({}).strict().default({});
 const promoteLowTrustOutputSchema = z.object({
   sourceArtifactKind: z.enum(["comment", "document", "work_product", "task"]),
-  sourceArtifactId: z.string().uuid(),
+  sourceArtifactId: canonicalUuidSchema,
   title: z.string().trim().min(1).max(200),
   summary: z.string().trim().min(1).max(8_000),
 });
 
-
-type NormalizedExecutionPolicy = NonNullable<ReturnType<typeof normalizeTaskExecutionPolicy>>;
+type NormalizedExecutionPolicy = NonNullable<
+  ReturnType<typeof normalizeTaskExecutionPolicy>
+>;
 type CompanySearchService = {
-  extract(companyId: string, query: CompanySearchExtractQuery): Promise<CompanySearchExtractResponse>;
-  search(companyId: string, query: CompanySearchQuery): Promise<CompanySearchResponse>;
+  extract(
+    companyId: string,
+    query: CompanySearchExtractQuery,
+  ): Promise<CompanySearchExtractResponse>;
+  search(
+    companyId: string,
+    query: CompanySearchQuery,
+  ): Promise<CompanySearchResponse>;
 };
 type ActivityTaskRelationSummary = {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
 };
 type ActivityExecutionParticipant = Pick<
@@ -168,13 +170,22 @@ function buildAttachmentContentPath(attachmentId: string): string {
   return `/api/attachments/${attachmentId}/content`;
 }
 
-const GENERIC_RESPONSE_ATTACHMENT_CONTENT_TYPES = new Set(GENERIC_ATTACHMENT_CONTENT_TYPES);
+const GENERIC_RESPONSE_ATTACHMENT_CONTENT_TYPES = new Set(
+  GENERIC_ATTACHMENT_CONTENT_TYPES,
+);
 
-function inferVideoContentTypeFromFilename(filename: string | null | undefined): string | null {
+function inferVideoContentTypeFromFilename(
+  filename: string | null | undefined,
+): string | null {
   const lower = (filename ?? "").toLowerCase();
   if (lower.endsWith(".mp4") || lower.endsWith(".m4v")) return "video/mp4";
   if (lower.endsWith(".webm")) return "video/webm";
-  if (lower.endsWith(".mov") || lower.endsWith(".qt") || lower.endsWith(".quicktime")) return "video/quicktime";
+  if (
+    lower.endsWith(".mov") ||
+    lower.endsWith(".qt") ||
+    lower.endsWith(".quicktime")
+  )
+    return "video/quicktime";
   return null;
 }
 
@@ -183,30 +194,46 @@ function resolveAttachmentResponseContentType(input: {
   objectContentType?: string | null;
   originalFilename?: string | null;
 }) {
-  const storedContentType = normalizeContentType(input.storedContentType || input.objectContentType);
-  if (!GENERIC_RESPONSE_ATTACHMENT_CONTENT_TYPES.has(storedContentType)) return storedContentType;
-  return inferVideoContentTypeFromFilename(input.originalFilename) ?? storedContentType;
+  const storedContentType = normalizeContentType(
+    input.storedContentType || input.objectContentType,
+  );
+  if (!GENERIC_RESPONSE_ATTACHMENT_CONTENT_TYPES.has(storedContentType))
+    return storedContentType;
+  return (
+    inferVideoContentTypeFromFilename(input.originalFilename) ??
+    storedContentType
+  );
 }
 
-function requiresPaperclipAttachmentMetadata(input: {
-  type?: unknown;
-  provider?: unknown;
-}, fallback?: {
-  type?: string | null;
-  provider?: string | null;
-}) {
-  const type = typeof input.type === "string" ? input.type : fallback?.type ?? null;
-  const provider = typeof input.provider === "string" ? input.provider : fallback?.provider ?? null;
+function requiresPaperclipAttachmentMetadata(
+  input: {
+    type?: unknown;
+    provider?: unknown;
+  },
+  fallback?: {
+    type?: string | null;
+    provider?: string | null;
+  },
+) {
+  const type =
+    typeof input.type === "string" ? input.type : (fallback?.type ?? null);
+  const provider =
+    typeof input.provider === "string"
+      ? input.provider
+      : (fallback?.provider ?? null);
   return type === "artifact" && provider === "paperclip";
 }
 
-const attachmentArtifactMetadataInputSchema = z.object({
-  attachmentId: z.string().uuid(),
-}).passthrough();
+const attachmentArtifactMetadataInputSchema = z
+  .object({
+    attachmentId: canonicalUuidSchema,
+  })
+  .passthrough();
 
 type TaskBlockerDiagnosticReadableTask = {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: string;
   priority: string;
@@ -225,6 +252,7 @@ function toTaskBlockerDiagnosticSummary(
 ): TaskBlockerDiagnosticTaskSummary {
   return {
     id: task.id,
+    taskNumber: task.taskNumber,
     identifier: task.identifier,
     title: task.title,
     boardPresentationStatus:
@@ -236,7 +264,7 @@ function toTaskBlockerDiagnosticSummary(
 }
 
 function blockerDiagnosticLabel(task: TaskBlockerDiagnosticTaskSummary) {
-  return task.title ?? task.identifier ?? `Task ${task.id}`;
+  return task.title ?? task.identifier;
 }
 
 function buildTaskBlockerDiagnosticsResponse(input: {
@@ -252,30 +280,37 @@ function buildTaskBlockerDiagnosticsResponse(input: {
   maxBlockers?: number;
 }): TaskBlockerDiagnosticsResponse {
   const task = toTaskBlockerDiagnosticSummary(input.task);
-  const visibleBlockerIds = new Set(input.visibleBlockers.map((blocker) => blocker.id));
+  const visibleBlockerIds = new Set(
+    input.visibleBlockers.map((blocker) => blocker.id),
+  );
   const omittedUnauthorizedBlockerCount = input.blockers.filter(
     (blocker) => !visibleBlockerIds.has(blocker.id),
   ).length;
-  const completeVisibleSet = !input.truncated && omittedUnauthorizedBlockerCount === 0;
+  const completeVisibleSet =
+    !input.truncated && omittedUnauthorizedBlockerCount === 0;
   const unresolvedIds = new Set(input.readiness.unresolvedBlockerTaskIds);
 
-  const blockers: TaskBlockerDiagnosticNode[] = input.visibleBlockers.map((blockerRow) => {
-    const blocker = toTaskBlockerDiagnosticSummary(blockerRow);
-    const isUnresolved = unresolvedIds.has(blocker.id);
-    const flags: TaskBlockerDiagnosticFlag[] = [];
-    if (
-      task.boardPresentationStatus === "blocked" &&
-      blocker.boardPresentationStatus === "done"
-    ) flags.push("done_but_blocking");
-    if (blocker.boardPresentationStatus === "cancelled") flags.push("cancelled_blocker_in_set");
+  const blockers: TaskBlockerDiagnosticNode[] = input.visibleBlockers.map(
+    (blockerRow) => {
+      const blocker = toTaskBlockerDiagnosticSummary(blockerRow);
+      const isUnresolved = unresolvedIds.has(blocker.id);
+      const flags: TaskBlockerDiagnosticFlag[] = [];
+      if (
+        task.boardPresentationStatus === "blocked" &&
+        blocker.boardPresentationStatus === "done"
+      )
+        flags.push("done_but_blocking");
+      if (blocker.boardPresentationStatus === "cancelled")
+        flags.push("cancelled_blocker_in_set");
 
-    return {
-      ...blocker,
-      isUnresolved,
-      isDependencyReady: blocker.boardPresentationStatus === "done",
-      flags,
-    };
-  });
+      return {
+        ...blocker,
+        isUnresolved,
+        isDependencyReady: blocker.boardPresentationStatus === "done",
+        flags,
+      };
+    },
+  );
 
   const readiness: TaskBlockerDiagnosticsReadiness | null = completeVisibleSet
     ? {
@@ -321,7 +356,8 @@ function buildTaskBlockerDiagnosis(input: {
       input.maxBlockers
     } blockers, so readiness is not reported.`;
   }
-  const omittedUnauthorizedBlockerCount = input.omittedUnauthorizedBlockerCount ?? 0;
+  const omittedUnauthorizedBlockerCount =
+    input.omittedUnauthorizedBlockerCount ?? 0;
   if (omittedUnauthorizedBlockerCount > 0) {
     return `One or more blockers for ${blockerDiagnosticLabel(
       input.task,
@@ -364,10 +400,11 @@ function buildTaskBlockerDiagnosis(input: {
   return null;
 }
 
-
 function dateToIso(value: Date | string | null | undefined) {
   if (!value) return null;
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+  return value instanceof Date
+    ? value.toISOString()
+    : new Date(value).toISOString();
 }
 
 type TaskSubtreeDiagnosticAuthzNode = TaskBlockerDiagnosticAuthzTask & {
@@ -381,7 +418,9 @@ type TaskSubtreeDiagnosticBlockerAuthzRow = TaskBlockerDiagnosticAuthzTask & {
   relationCreatedAt: Date | string;
 };
 
-function groupBlockersByBlockedTaskId(rows: TaskSubtreeDiagnosticBlockerAuthzRow[]) {
+function groupBlockersByBlockedTaskId(
+  rows: TaskSubtreeDiagnosticBlockerAuthzRow[],
+) {
   const map = new Map<string, TaskSubtreeDiagnosticBlockerAuthzRow[]>();
   for (const row of rows) {
     const taskRows = map.get(row.blockedTaskId) ?? [];
@@ -416,7 +455,8 @@ function buildTaskSubtreeDiagnosis(input: {
   const blockedNodeWithDiagnosis = input.nodes.find(
     (node) => node.task.boardPresentationStatus === "blocked" && node.diagnosis,
   );
-  const firstNodeWithDiagnosis = blockedNodeWithDiagnosis ?? input.nodes.find((node) => node.diagnosis);
+  const firstNodeWithDiagnosis =
+    blockedNodeWithDiagnosis ?? input.nodes.find((node) => node.diagnosis);
   if (!firstNodeWithDiagnosis?.diagnosis) return null;
 
   return `${blockerDiagnosticLabel(firstNodeWithDiagnosis.task)} appears to be the subtree stall point: ${
@@ -430,11 +470,14 @@ function buildTaskSubtreeDiagnosticsResponse(input: {
   visibleNodes: TaskSubtreeDiagnosticAuthzNode[];
   blockersByTaskId: Map<string, TaskSubtreeDiagnosticBlockerAuthzRow[]>;
   visibleBlockers: TaskSubtreeDiagnosticBlockerAuthzRow[];
-  readinessByTaskId: Map<string, {
-    allBlockersDone: boolean;
-    isDependencyReady: boolean;
-    unresolvedBlockerTaskIds: string[];
-  }>;
+  readinessByTaskId: Map<
+    string,
+    {
+      allBlockersDone: boolean;
+      isDependencyReady: boolean;
+      unresolvedBlockerTaskIds: string[];
+    }
+  >;
   truncatedNodes: boolean;
   truncatedDepth: boolean;
   truncatedBlockerTaskIds: Set<string>;
@@ -442,10 +485,13 @@ function buildTaskSubtreeDiagnosticsResponse(input: {
 }): TaskSubtreeDiagnosticsResponse {
   const task = toTaskBlockerDiagnosticSummary(input.task);
   const visibleNodeIds = new Set(input.visibleNodes.map((node) => node.id));
-  const visibleBlockerIdsByTaskId = groupBlockersByBlockedTaskId(input.visibleBlockers);
-  const omittedUnauthorizedNodeCount = input.truncatedNodes || input.truncatedDepth
-    ? null
-    : input.nodes.filter((node) => !visibleNodeIds.has(node.id)).length;
+  const visibleBlockerIdsByTaskId = groupBlockersByBlockedTaskId(
+    input.visibleBlockers,
+  );
+  const omittedUnauthorizedNodeCount =
+    input.truncatedNodes || input.truncatedDepth
+      ? null
+      : input.nodes.filter((node) => !visibleNodeIds.has(node.id)).length;
   const nodeResponses: TaskSubtreeDiagnosticNode[] = [];
   const edges: TaskSubtreeDiagnosticEdge[] = [];
 
@@ -484,13 +530,17 @@ function buildTaskSubtreeDiagnosticsResponse(input: {
     }
     nodeResponses.push({
       task: toTaskBlockerDiagnosticSummary(node),
-      parentId: node.parentId && visibleNodeIds.has(node.parentId) ? node.parentId : null,
+      parentId:
+        node.parentId && visibleNodeIds.has(node.parentId)
+          ? node.parentId
+          : null,
       depth: node.depth,
       diagnosis: nodeDiagnosis,
       likelyReason: nodeDiagnosis,
       blockers: blockerResponse.blockers,
       blockerReadiness: blockerResponse.readiness,
-      omittedUnauthorizedBlockerCount: blockerResponse.omittedUnauthorizedBlockerCount,
+      omittedUnauthorizedBlockerCount:
+        blockerResponse.omittedUnauthorizedBlockerCount,
       truncated: blockerResponse.truncated,
       truncatedSections: {
         blockers: blockerResponse.truncated,
@@ -498,7 +548,10 @@ function buildTaskSubtreeDiagnosticsResponse(input: {
     });
   }
 
-  edges.sort((left, right) => taskSubtreeEdgeTimestamp(right) - taskSubtreeEdgeTimestamp(left));
+  edges.sort(
+    (left, right) =>
+      taskSubtreeEdgeTimestamp(right) - taskSubtreeEdgeTimestamp(left),
+  );
   const truncatedSections = {
     nodes: input.truncatedNodes,
     depth: input.truncatedDepth,
@@ -529,11 +582,13 @@ function buildTaskSubtreeDiagnosticsResponse(input: {
 
 function summarizeTaskRelationForActivity(relation: {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
 }): ActivityTaskRelationSummary {
   return {
     id: relation.id,
+    taskNumber: relation.taskNumber,
     identifier: relation.identifier,
     title: relation.title,
   };
@@ -550,20 +605,27 @@ function companySearchRateLimitActor(req: Request, companyId: string) {
   };
 }
 
-function summarizeTaskReferenceActivityDetails(input:
-  | {
-      addedReferencedTasks: ActivityTaskRelationSummary[];
-      removedReferencedTasks: ActivityTaskRelationSummary[];
-      currentReferencedTasks: ActivityTaskRelationSummary[];
-    }
-  | null
-  | undefined,
+function summarizeTaskReferenceActivityDetails(
+  input:
+    | {
+        addedReferencedTasks: ActivityTaskRelationSummary[];
+        removedReferencedTasks: ActivityTaskRelationSummary[];
+        currentReferencedTasks: ActivityTaskRelationSummary[];
+      }
+    | null
+    | undefined,
 ) {
   if (!input) return {};
   return {
-    ...(input.addedReferencedTasks.length > 0 ? { addedReferencedTasks: input.addedReferencedTasks } : {}),
-    ...(input.removedReferencedTasks.length > 0 ? { removedReferencedTasks: input.removedReferencedTasks } : {}),
-    ...(input.currentReferencedTasks.length > 0 ? { currentReferencedTasks: input.currentReferencedTasks } : {}),
+    ...(input.addedReferencedTasks.length > 0
+      ? { addedReferencedTasks: input.addedReferencedTasks }
+      : {}),
+    ...(input.removedReferencedTasks.length > 0
+      ? { removedReferencedTasks: input.removedReferencedTasks }
+      : {}),
+    ...(input.currentReferencedTasks.length > 0
+      ? { currentReferencedTasks: input.currentReferencedTasks }
+      : {}),
   };
 }
 
@@ -580,31 +642,56 @@ function summarizeTaskMonitor(
 ) {
   const state = parseTaskExecutionState(task.executionState);
   return {
-    nextCheckAt: task.monitorNextCheckAt?.toISOString() ?? policy?.monitor?.nextCheckAt ?? null,
-    lastTriggeredAt: task.monitorLastTriggeredAt?.toISOString() ?? state?.monitor?.lastTriggeredAt ?? null,
+    nextCheckAt:
+      task.monitorNextCheckAt?.toISOString() ??
+      policy?.monitor?.nextCheckAt ??
+      null,
+    lastTriggeredAt:
+      task.monitorLastTriggeredAt?.toISOString() ??
+      state?.monitor?.lastTriggeredAt ??
+      null,
     attemptCount: task.monitorAttemptCount ?? state?.monitor?.attemptCount ?? 0,
-    notes: policy?.monitor?.notes ?? task.monitorNotes ?? state?.monitor?.notes ?? null,
-    scheduledBy: task.monitorScheduledBy ?? policy?.monitor?.scheduledBy ?? state?.monitor?.scheduledBy ?? null,
+    notes:
+      policy?.monitor?.notes ??
+      task.monitorNotes ??
+      state?.monitor?.notes ??
+      null,
+    scheduledBy:
+      task.monitorScheduledBy ??
+      policy?.monitor?.scheduledBy ??
+      state?.monitor?.scheduledBy ??
+      null,
     kind: policy?.monitor?.kind ?? state?.monitor?.kind ?? null,
-    serviceName: policy?.monitor?.serviceName ?? state?.monitor?.serviceName ?? null,
-    externalRef: redactTaskMonitorExternalRef(policy?.monitor?.externalRef ?? state?.monitor?.externalRef ?? null),
+    serviceName:
+      policy?.monitor?.serviceName ?? state?.monitor?.serviceName ?? null,
+    externalRef: redactTaskMonitorExternalRef(
+      policy?.monitor?.externalRef ?? state?.monitor?.externalRef ?? null,
+    ),
     timeoutAt: policy?.monitor?.timeoutAt ?? state?.monitor?.timeoutAt ?? null,
-    maxAttempts: policy?.monitor?.maxAttempts ?? state?.monitor?.maxAttempts ?? null,
-    recoveryPolicy: policy?.monitor?.recoveryPolicy ?? state?.monitor?.recoveryPolicy ?? null,
+    maxAttempts:
+      policy?.monitor?.maxAttempts ?? state?.monitor?.maxAttempts ?? null,
+    recoveryPolicy:
+      policy?.monitor?.recoveryPolicy ?? state?.monitor?.recoveryPolicy ?? null,
     status: state?.monitor?.status ?? (policy?.monitor ? "scheduled" : null),
     clearReason: state?.monitor?.clearReason ?? null,
   };
 }
 
-function activityExecutionParticipantKey(participant: ActivityExecutionParticipant): string {
-  return participant.type === "agent" ? `agent:${participant.agentId}` : `user:${participant.userId}`;
+function activityExecutionParticipantKey(
+  participant: ActivityExecutionParticipant,
+): string {
+  return participant.type === "agent"
+    ? `agent:${participant.agentId}`
+    : `user:${participant.userId}`;
 }
 
 function summarizeExecutionParticipants(
   policy: NormalizedExecutionPolicy | null,
   stageType: NormalizedExecutionPolicy["stages"][number]["type"],
 ): ActivityExecutionParticipant[] {
-  const stage = policy?.stages.find((candidate) => candidate.type === stageType);
+  const stage = policy?.stages.find(
+    (candidate) => candidate.type === stageType,
+  );
   return (
     stage?.participants.map((participant) => ({
       type: participant.type,
@@ -619,21 +706,37 @@ function diffExecutionParticipants(
   nextPolicy: NormalizedExecutionPolicy | null,
   stageType: NormalizedExecutionPolicy["stages"][number]["type"],
 ) {
-  const previousParticipants = summarizeExecutionParticipants(previousPolicy, stageType);
-  const nextParticipants = summarizeExecutionParticipants(nextPolicy, stageType);
-  const previousByKey = new Map(previousParticipants.map((participant) => [
-    activityExecutionParticipantKey(participant),
-    participant,
-  ]));
-  const nextByKey = new Map(nextParticipants.map((participant) => [
-    activityExecutionParticipantKey(participant),
-    participant,
-  ]));
+  const previousParticipants = summarizeExecutionParticipants(
+    previousPolicy,
+    stageType,
+  );
+  const nextParticipants = summarizeExecutionParticipants(
+    nextPolicy,
+    stageType,
+  );
+  const previousByKey = new Map(
+    previousParticipants.map((participant) => [
+      activityExecutionParticipantKey(participant),
+      participant,
+    ]),
+  );
+  const nextByKey = new Map(
+    nextParticipants.map((participant) => [
+      activityExecutionParticipantKey(participant),
+      participant,
+    ]),
+  );
 
   return {
     participants: nextParticipants,
-    addedParticipants: nextParticipants.filter((participant) => !previousByKey.has(activityExecutionParticipantKey(participant))),
-    removedParticipants: previousParticipants.filter((participant) => !nextByKey.has(activityExecutionParticipantKey(participant))),
+    addedParticipants: nextParticipants.filter(
+      (participant) =>
+        !previousByKey.has(activityExecutionParticipantKey(participant)),
+    ),
+    removedParticipants: previousParticipants.filter(
+      (participant) =>
+        !nextByKey.has(activityExecutionParticipantKey(participant)),
+    ),
   };
 }
 
@@ -654,14 +757,15 @@ function toPublicTask<T extends object>(
 }
 
 function toCompactTask(
-  task: Omit<CompactTask, "workMode" | "priority" | "ownerAssignmentSource" | "originKind"> &
-    {
-      workMode: string;
-      priority: string;
-      ownerAssignmentSource: string | null;
-      originKind: string | null;
-    } &
-    InternalTaskRuntimeFields,
+  task: Omit<
+    CompactTask,
+    "workMode" | "priority" | "ownerAssignmentSource" | "originKind"
+  > & {
+    workMode: string;
+    priority: string;
+    ownerAssignmentSource: string | null;
+    originKind: string | null;
+  } & InternalTaskRuntimeFields,
 ): CompactTask {
   return {
     id: task.id,
@@ -710,13 +814,27 @@ function toCompactTask(
     ...(task.labelIds ? { labelIds: task.labelIds } : {}),
     ...(task.labels ? { labels: task.labels } : {}),
     ...(task.blockedBy ? { blockedBy: task.blockedBy } : {}),
-    ...(task.blockerAttention ? { blockerAttention: task.blockerAttention } : {}),
-    ...(task.blockedInboxAttention !== undefined ? { blockedInboxAttention: task.blockedInboxAttention } : {}),
-    ...(task.liveDescendantCount !== undefined ? { liveDescendantCount: task.liveDescendantCount } : {}),
-    ...(task.myLastTouchAt !== undefined ? { myLastTouchAt: task.myLastTouchAt } : {}),
-    ...(task.lastExternalCommentAt !== undefined ? { lastExternalCommentAt: task.lastExternalCommentAt } : {}),
-    ...(task.lastActivityAt !== undefined ? { lastActivityAt: task.lastActivityAt } : {}),
-    ...(task.isUnreadForMe !== undefined ? { isUnreadForMe: task.isUnreadForMe } : {}),
+    ...(task.blockerAttention
+      ? { blockerAttention: task.blockerAttention }
+      : {}),
+    ...(task.blockedInboxAttention !== undefined
+      ? { blockedInboxAttention: task.blockedInboxAttention }
+      : {}),
+    ...(task.liveDescendantCount !== undefined
+      ? { liveDescendantCount: task.liveDescendantCount }
+      : {}),
+    ...(task.myLastTouchAt !== undefined
+      ? { myLastTouchAt: task.myLastTouchAt }
+      : {}),
+    ...(task.lastExternalCommentAt !== undefined
+      ? { lastExternalCommentAt: task.lastExternalCommentAt }
+      : {}),
+    ...(task.lastActivityAt !== undefined
+      ? { lastActivityAt: task.lastActivityAt }
+      : {}),
+    ...(task.isUnreadForMe !== undefined
+      ? { isUnreadForMe: task.isUnreadForMe }
+      : {}),
   };
 }
 
@@ -727,7 +845,10 @@ function compactTaskListEtag(tasks: CompactTask[]): string {
   return `"compact-tasks:${hash}"`;
 }
 
-function requestMatchesEtag(ifNoneMatchHeader: string | undefined, etag: string): boolean {
+function requestMatchesEtag(
+  ifNoneMatchHeader: string | undefined,
+  etag: string,
+): boolean {
   if (!ifNoneMatchHeader) return false;
   return ifNoneMatchHeader
     .split(",")
@@ -741,6 +862,33 @@ export const TASK_LIST_SERVER_CACHE_MAX_ENTRIES = 256;
 const TASK_LIST_STORM_WINDOW_MS = 500;
 const TASK_LIST_STORM_THRESHOLD = 4;
 const TASK_LIST_MAX_ACTOR_CLIENT_INFLIGHT = 8;
+const TASK_LIST_QUERY_KEYS = new Set([
+  "attention",
+  "descendantOf",
+  "excludeRoutineExecutions",
+  "hasPlanDocument",
+  "inboxArchivedByUserId",
+  "includeBlockedBy",
+  "includeBlockedInboxAttention",
+  "includeLiveDescendantSummary",
+  "labelId",
+  "limit",
+  "offset",
+  "originId",
+  "originKind",
+  "ownerAgentId",
+  "ownerUserId",
+  "parentId",
+  "participantAgentId",
+  "projectId",
+  "q",
+  "sortDir",
+  "sortField",
+  "status",
+  "touchedByUserId",
+  "unreadForUserId",
+  "view",
+]);
 
 type TaskListPreparedResponse =
   | {
@@ -772,7 +920,10 @@ type TaskListStormEvent = {
 };
 
 type TaskListDiagnostics = {
-  onComputeStart?: (context: { companyId: string; cacheKeyHash: string }) => void | Promise<void>;
+  onComputeStart?: (context: {
+    companyId: string;
+    cacheKeyHash: string;
+  }) => void | Promise<void>;
   onStormDetected?: (event: TaskListStormEvent) => void;
 };
 
@@ -820,11 +971,15 @@ function normalizeTaskListCacheValue(value: unknown): unknown {
   if (value === undefined) return undefined;
   if (value === null) return null;
   if (Array.isArray(value)) {
-    return value.map(normalizeTaskListCacheValue).sort((a, b) => stableJson(a).localeCompare(stableJson(b)));
+    return value
+      .map(normalizeTaskListCacheValue)
+      .sort((a, b) => stableJson(a).localeCompare(stableJson(b)));
   }
   if (typeof value === "object") {
     const normalized: Record<string, unknown> = {};
-    for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+    for (const [key, nestedValue] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
       const next = normalizeTaskListCacheValue(nestedValue);
       if (next !== undefined) normalized[key] = next;
     }
@@ -835,9 +990,10 @@ function normalizeTaskListCacheValue(value: unknown): unknown {
 
 function taskListActorIdentity(req: Request, companyId: string) {
   if (req.actor.type === "board") {
-    const sessionPart = req.actor.source === "session"
-      ? `cookie:${shortHash(String(req.headers.cookie ?? "no-cookie"))}`
-      : req.actor.keyId;
+    const sessionPart =
+      req.actor.source === "session"
+        ? `cookie:${shortHash(String(req.headers.cookie ?? "no-cookie"))}`
+        : req.actor.keyId;
     const key = [
       "board",
       companyId,
@@ -857,7 +1013,9 @@ function taskListClientIdentity(req: Request) {
     ? req.headers["x-forwarded-for"][0]
     : req.headers["x-forwarded-for"];
   const client = [
-    String(forwardedFor ?? req.ip ?? "unknown-ip").split(",")[0]?.trim() ?? "unknown-ip",
+    String(forwardedFor ?? req.ip ?? "unknown-ip")
+      .split(",")[0]
+      ?.trim() ?? "unknown-ip",
     req.header("user-agent") ?? "unknown-agent",
   ].join(":");
   return { key: client, hash: shortHash(client) };
@@ -881,7 +1039,9 @@ function taskListRequestKey(input: {
   const route = "GET /api/companies/:companyId/tasks";
   const actor = taskListActorIdentity(input.req, input.companyId);
   const client = taskListClientIdentity(input.req);
-  const normalizedQuery = normalizeTaskListCacheValue(input.normalizedQuery) as Record<string, unknown>;
+  const normalizedQuery = normalizeTaskListCacheValue(
+    input.normalizedQuery,
+  ) as Record<string, unknown>;
   const queryKeys = Object.keys(normalizedQuery).sort();
   const key = stableJson({
     actor: actor.key,
@@ -905,14 +1065,18 @@ function pruneTaskListResponseCache(now: number) {
   }
 }
 
-function touchTaskListResponseCacheEntry(key: string, entry: TaskListCacheEntry) {
+function touchTaskListResponseCacheEntry(
+  key: string,
+  entry: TaskListCacheEntry,
+) {
   taskListResponseCache.delete(key);
   taskListResponseCache.set(key, entry);
 }
 
 function trimTaskListResponseCache() {
   while (taskListResponseCache.size > TASK_LIST_SERVER_CACHE_MAX_ENTRIES) {
-    const oldestKey = taskListResponseCache.keys().next().value as string | undefined;
+    const oldestKey = taskListResponseCache.keys().next().value as
+      string | undefined;
     if (oldestKey === undefined) return;
     taskListResponseCache.delete(oldestKey);
   }
@@ -945,10 +1109,16 @@ async function coordinateTaskListGet(input: {
   const now = Date.now();
   pruneTaskListResponseCache(now);
 
-  const cached = input.allowTtlCache ? taskListResponseCache.get(input.requestKey.key) : undefined;
+  const cached = input.allowTtlCache
+    ? taskListResponseCache.get(input.requestKey.key)
+    : undefined;
   if (cached && cached.expiresAt > now) {
     touchTaskListResponseCacheEntry(input.requestKey.key, cached);
-    return { response: cached.response, cacheStatus: "hit", identicalInFlightCount: 0 };
+    return {
+      response: cached.response,
+      cacheStatus: "hit",
+      identicalInFlightCount: 0,
+    };
   }
 
   const existing = taskListInflight.get(input.requestKey.key);
@@ -983,13 +1153,23 @@ async function coordinateTaskListGet(input: {
   }
 
   const actorClientKey = `${input.requestKey.actor.key}:${input.requestKey.client.key}`;
-  const actorClientInflight = taskListActorClientInflight.get(actorClientKey) ?? 0;
+  const actorClientInflight =
+    taskListActorClientInflight.get(actorClientKey) ?? 0;
   if (actorClientInflight >= TASK_LIST_MAX_ACTOR_CLIENT_INFLIGHT) {
     if (cached && cached.staleUntil > now) {
       touchTaskListResponseCacheEntry(input.requestKey.key, cached);
-      return { response: cached.response, cacheStatus: "stale", identicalInFlightCount: 0 };
+      return {
+        response: cached.response,
+        cacheStatus: "stale",
+        identicalInFlightCount: 0,
+      };
     }
-    return { response: null, cacheStatus: "retry", identicalInFlightCount: 0, retryAfterSeconds: 1 };
+    return {
+      response: null,
+      cacheStatus: "retry",
+      identicalInFlightCount: 0,
+      retryAfterSeconds: 1,
+    };
   }
 
   taskListActorClientInflight.set(actorClientKey, actorClientInflight + 1);
@@ -1044,37 +1224,42 @@ function logTaskListRequest(input: {
   input.res.once("finish", () => {
     const contentEncoding = input.res.getHeader("content-encoding");
     const contentLength = Number(input.res.getHeader("content-length"));
-    logger.debug({
-      event: "safe_get_request_observed",
-      route: input.requestKey.route,
-      companyId: input.companyId,
-      actorType: input.requestKey.actor.actorType,
-      actorIdentityHash: input.requestKey.actor.hash,
-      clientHash: input.requestKey.client.hash,
-      cacheKeyHash: input.requestKey.keyHash,
-      queryKeys: input.requestKey.queryKeys,
-      requestCount: input.identicalInFlightCount,
-      durationMs: Date.now() - input.startedAt,
-      statusCode: input.res.statusCode,
-      responseBytes: input.bodyBytes,
-      compressedBytes: contentEncoding && Number.isFinite(contentLength) ? contentLength : null,
-      contentEncoding: contentEncoding ? String(contentEncoding) : null,
-      cacheStatus: input.cacheStatus,
-      etagOutcome: input.etagOutcome,
-      referer: safeRefererPath(input.req),
-      visibilityHint: input.req.header("x-paperclip-tab-visible") ?? null,
-    }, "safe authenticated GET observed");
+    logger.debug(
+      {
+        event: "safe_get_request_observed",
+        route: input.requestKey.route,
+        companyId: input.companyId,
+        actorType: input.requestKey.actor.actorType,
+        actorIdentityHash: input.requestKey.actor.hash,
+        clientHash: input.requestKey.client.hash,
+        cacheKeyHash: input.requestKey.keyHash,
+        queryKeys: input.requestKey.queryKeys,
+        requestCount: input.identicalInFlightCount,
+        durationMs: Date.now() - input.startedAt,
+        statusCode: input.res.statusCode,
+        responseBytes: input.bodyBytes,
+        compressedBytes:
+          contentEncoding && Number.isFinite(contentLength)
+            ? contentLength
+            : null,
+        contentEncoding: contentEncoding ? String(contentEncoding) : null,
+        cacheStatus: input.cacheStatus,
+        etagOutcome: input.etagOutcome,
+        referer: safeRefererPath(input.req),
+        visibilityHint: input.req.header("x-paperclip-tab-visible") ?? null,
+      },
+      "safe authenticated GET observed",
+    );
   });
 }
 
 export function requireNamedBoardUser(req: Request): string {
   if (
-    req.actor.type !== "board"
-    || req.actor.userId.trim().length === 0
+    req.actor.type !== "board" ||
+    !req.actor.userId ||
+    req.actor.userId.trim() !== req.actor.userId
   ) {
-    throw forbidden(
-      "Task commands require an authenticated named board user",
-    );
+    throw forbidden("Task commands require an exact authenticated board user ID");
   }
   assertBoard(req);
   return req.actor.userId;
@@ -1121,7 +1306,7 @@ export function taskRoutes(
     pluginDomainEvents: PluginDomainEventPublisher;
   },
 ) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = taskService(db);
   const ordinaryTasks = opts.ordinaryTasks;
   const executionPolicyControl = taskExecutionPolicyControlService(db);
@@ -1132,7 +1317,8 @@ export function taskRoutes(
     searchSvc ??= companySearchService(db);
     return searchSvc;
   };
-  const searchRateLimiter = opts.searchRateLimiter ?? defaultCompanySearchRateLimiter;
+  const searchRateLimiter =
+    opts.searchRateLimiter ?? defaultCompanySearchRateLimiter;
   const projectsSvc = projectService(db);
   const goalsSvc = goalService(db);
   const taskApprovalsSvc = taskApprovalService(db);
@@ -1167,13 +1353,21 @@ export function taskRoutes(
       if (row.id !== input.taskId) {
         let cursor = row.parentId;
         let isDescendant = false;
-        for (let depth = 0; cursor && depth < LOW_TRUST_TASK_ANCESTRY_MAX_DEPTH; depth += 1) {
+        for (
+          let depth = 0;
+          cursor && depth < LOW_TRUST_TASK_ANCESTRY_MAX_DEPTH;
+          depth += 1
+        ) {
           if (cursor === input.taskId) {
             isDescendant = true;
             break;
           }
           const parent = await db
-            .select({ id: taskRows.id, companyId: taskRows.companyId, parentId: taskRows.parentId })
+            .select({
+              id: taskRows.id,
+              companyId: taskRows.companyId,
+              parentId: taskRows.parentId,
+            })
             .from(taskRows)
             .where(eq(taskRows.id, cursor))
             .then((rows) => rows[0] ?? null);
@@ -1189,7 +1383,12 @@ export function taskRoutes(
       const row = await db
         .select({ sourceTrust: taskComments.sourceTrust })
         .from(taskComments)
-        .where(and(eq(taskComments.id, input.artifactId), eq(taskComments.taskId, input.taskId)))
+        .where(
+          and(
+            eq(taskComments.id, input.artifactId),
+            eq(taskComments.taskId, input.taskId),
+          ),
+        )
         .then((rows) => rows[0] ?? null);
       return row?.sourceTrust ?? null;
     }
@@ -1199,7 +1398,12 @@ export function taskRoutes(
         .select({ sourceTrust: documents.sourceTrust })
         .from(taskDocuments)
         .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
-        .where(and(eq(documents.id, input.artifactId), eq(taskDocuments.taskId, input.taskId)))
+        .where(
+          and(
+            eq(documents.id, input.artifactId),
+            eq(taskDocuments.taskId, input.taskId),
+          ),
+        )
         .then((rows) => rows[0] ?? null);
       return row?.sourceTrust ?? null;
     }
@@ -1207,7 +1411,12 @@ export function taskRoutes(
     const row = await db
       .select({ sourceTrust: taskWorkProducts.sourceTrust })
       .from(taskWorkProducts)
-      .where(and(eq(taskWorkProducts.id, input.artifactId), eq(taskWorkProducts.taskId, input.taskId)))
+      .where(
+        and(
+          eq(taskWorkProducts.id, input.artifactId),
+          eq(taskWorkProducts.taskId, input.taskId),
+        ),
+      )
       .then((rows) => rows[0] ?? null);
     return row?.sourceTrust ?? null;
   }
@@ -1227,50 +1436,111 @@ export function taskRoutes(
     | { kind: "invalid" }
     | { kind: "range"; start: number; end: number };
 
-  function parseAttachmentRangeHeader(raw: string | undefined, contentLength: number): ParsedAttachmentRange {
+  function parseAttachmentRangeHeader(
+    raw: string | undefined,
+    contentLength: number,
+  ): ParsedAttachmentRange {
     if (!raw) return { kind: "none" };
-    if (!Number.isSafeInteger(contentLength) || contentLength <= 0) return { kind: "invalid" };
+    if (!Number.isSafeInteger(contentLength) || contentLength <= 0)
+      return { kind: "invalid" };
 
     const prefix = "bytes=";
-    if (!raw.toLowerCase().startsWith(prefix)) return { kind: "invalid" };
-    const spec = raw.slice(prefix.length).trim();
+    if (!raw.startsWith(prefix)) return { kind: "invalid" };
+    const spec = raw.slice(prefix.length);
     if (!spec || spec.includes(",")) return { kind: "invalid" };
 
     const [startRaw, endRaw] = spec.split("-", 2);
     if (endRaw === undefined) return { kind: "invalid" };
 
     if (startRaw === "") {
-      const suffixLength = Number.parseInt(endRaw, 10);
-      if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return { kind: "invalid" };
+      if (!/^[1-9]\d*$/.test(endRaw)) return { kind: "invalid" };
+      const suffixLength = Number(endRaw);
+      if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0)
+        return { kind: "invalid" };
       const start = Math.max(contentLength - suffixLength, 0);
       return { kind: "range", start, end: contentLength - 1 };
     }
 
-    const start = Number.parseInt(startRaw, 10);
-    if (!Number.isSafeInteger(start) || start < 0 || start >= contentLength) return { kind: "invalid" };
-    const end = endRaw === "" ? contentLength - 1 : Number.parseInt(endRaw, 10);
+    if (!/^(?:0|[1-9]\d*)$/.test(startRaw)) return { kind: "invalid" };
+    const start = Number(startRaw);
+    if (!Number.isSafeInteger(start) || start < 0 || start >= contentLength)
+      return { kind: "invalid" };
+    if (endRaw !== "" && !/^(?:0|[1-9]\d*)$/.test(endRaw)) {
+      return { kind: "invalid" };
+    }
+    const end = endRaw === "" ? contentLength - 1 : Number(endRaw);
     if (!Number.isSafeInteger(end) || end < start) return { kind: "invalid" };
     return { kind: "range", start, end: Math.min(end, contentLength - 1) };
   }
 
-  function parseBooleanQuery(value: unknown) {
-    return value === true || value === "true" || value === "1";
+  function parseBooleanQuery(value: unknown, field: string) {
+    if (value === undefined || value === "false") return false;
+    if (value === "true") return true;
+    throw unprocessable(`${field} must be true or false`);
   }
 
-  function parseOptionalBooleanQuery(value: unknown) {
+  function parseOptionalBooleanQuery(value: unknown, field: string) {
     if (value === undefined) return undefined;
-    if (value === true || value === "true" || value === "1") return true;
-    if (value === false || value === "false" || value === "0") return false;
-    return null;
+    return parseBooleanQuery(value, field);
+  }
+
+  function parseOptionalCanonicalUuidQuery(value: unknown, field: string): string | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value !== "string" || !isCanonicalUuid(value)) {
+      throw unprocessable(`${field} must be an exact canonical UUID`);
+    }
+    return value;
+  }
+
+  function parseOptionalExactNonBlankQuery(value: unknown, field: string): string | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value !== "string" || value.length === 0 || value.trim() !== value) {
+      throw unprocessable(`${field} must be an exact non-blank value`);
+    }
+    return value;
+  }
+
+  function parseAttachmentDownloadQuery(value: unknown) {
+    if (value === undefined) return false;
+    if (value === "1") return true;
+    throw unprocessable("download must be 1 when provided");
   }
 
   function shouldIncludeDocumentAnnotations(req: Request) {
-    if (req.query.includeAnnotations === "false" || req.query.includeAnnotations === "0") return false;
-    return parseBooleanQuery(req.query.includeAnnotations);
+    return parseBooleanQuery(
+      req.query.includeAnnotations,
+      "includeAnnotations",
+    );
   }
 
   function shouldIncludeDocumentAnnotationComments(req: Request) {
-    return parseBooleanQuery(req.query.includeAnnotationComments);
+    return parseBooleanQuery(
+      req.query.includeAnnotationComments,
+      "includeAnnotationComments",
+    );
+  }
+
+  function parseTaskDocumentKeyParam(
+    req: Request,
+    res: Response,
+  ): string | null {
+    const parsed = taskDocumentKeySchema.safeParse(req.params.key);
+    if (parsed.success) return parsed.data;
+    res
+      .status(400)
+      .json({
+        error: "Invalid document key",
+        details: validationDetails(parsed.error),
+      });
+    return null;
+  }
+
+  function parseDocumentAnnotationStatus(
+    value: unknown,
+  ): "open" | "resolved" | "all" {
+    if (value === undefined || value === "open") return "open";
+    if (value === "resolved" || value === "all") return value;
+    throw unprocessable("status must be open, resolved, or all");
   }
 
   function annotationActorInput(req: Request) {
@@ -1289,7 +1559,9 @@ export function taskRoutes(
     task: { id: string; companyId: string };
     metadata: Record<string, unknown> | null | undefined;
   }) {
-    const parsed = attachmentArtifactMetadataInputSchema.safeParse(input.metadata);
+    const parsed = attachmentArtifactMetadataInputSchema.safeParse(
+      input.metadata,
+    );
     if (!parsed.success) {
       throw unprocessable("Invalid attachment artifact metadata", {
         code: "invalid_attachment_artifact_metadata",
@@ -1298,11 +1570,18 @@ export function taskRoutes(
     }
 
     const attachment = await svc.getAttachmentById(parsed.data.attachmentId);
-    if (!attachment || attachment.companyId !== input.task.companyId || attachment.taskId !== input.task.id) {
-      throw unprocessable("Attachment artifact must reference an attachment on the same task", {
-        code: "invalid_attachment_artifact_metadata",
-        attachmentId: parsed.data.attachmentId,
-      });
+    if (
+      !attachment ||
+      attachment.companyId !== input.task.companyId ||
+      attachment.taskId !== input.task.id
+    ) {
+      throw unprocessable(
+        "Attachment artifact must reference an attachment on the same task",
+        {
+          code: "invalid_attachment_artifact_metadata",
+          attachmentId: parsed.data.attachmentId,
+        },
+      );
     }
 
     const contentPath = buildAttachmentContentPath(attachment.id);
@@ -1317,16 +1596,11 @@ export function taskRoutes(
     });
   }
 
-  function parseDateQuery(value: unknown, field: string) {
-    if (typeof value !== "string" || value.trim().length === 0) return undefined;
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-      throw new HttpError(400, `Invalid ${field} query value`);
-    }
-    return parsed;
-  }
-
-  async function runSingleFileUpload(req: Request, res: Response, fileSizeLimit: number) {
+  async function runSingleFileUpload(
+    req: Request,
+    res: Response,
+    fileSizeLimit: number,
+  ) {
     const upload = multer({
       storage: multer.memoryStorage(),
       limits: { fileSize: fileSizeLimit, files: 1 },
@@ -1339,7 +1613,10 @@ export function taskRoutes(
     });
   }
 
-  async function assertCanManageTaskApprovalLinks(req: Request, companyId: string) {
+  async function assertCanManageTaskApprovalLinks(
+    req: Request,
+    companyId: string,
+  ) {
     assertCompanyAccess(req, companyId);
     assertBoard(req);
     return true;
@@ -1356,7 +1633,10 @@ export function taskRoutes(
     res: Response,
     task: { companyId: string },
   ) {
-    if (req.actor.type === "board" && actorCanAccessCompany(req, task.companyId)) {
+    if (
+      req.actor.type === "board" &&
+      actorCanAccessCompany(req, task.companyId)
+    ) {
       return true;
     }
     res.status(403).json({ error: "Board access required" });
@@ -1385,7 +1665,10 @@ export function taskRoutes(
     res: Response,
     task: { companyId: string },
   ) {
-    if (req.actor.type === "board" && actorCanAccessCompany(req, task.companyId)) {
+    if (
+      req.actor.type === "board" &&
+      actorCanAccessCompany(req, task.companyId)
+    ) {
       return true;
     }
     res.status(403).json({ error: "Board access required" });
@@ -1414,34 +1697,31 @@ export function taskRoutes(
   }
 
   async function resolveWorkProductCreatedByRunId(
-    req: Request,
     res: Response,
     companyId: string,
     input: { createdByRunId?: string | null },
     mode: "create" | "update",
   ): Promise<string | null | undefined> {
-    const hasCreatedByRunId = Object.prototype.hasOwnProperty.call(input, "createdByRunId");
+    const hasCreatedByRunId = Object.prototype.hasOwnProperty.call(
+      input,
+      "createdByRunId",
+    );
     if (mode === "update" && !hasCreatedByRunId) return undefined;
 
     const requestedRunId = input.createdByRunId ?? null;
     if (!requestedRunId) return null;
     const run = await loadWorkProductRunAttribution(requestedRunId);
-    if (!run || run.companyId !== companyId || run.agentCompanyId !== companyId) {
-      res.status(403).json({ error: "createdByRunId is not valid for this company" });
+    if (
+      !run ||
+      run.companyId !== companyId ||
+      run.agentCompanyId !== companyId
+    ) {
+      res
+        .status(403)
+        .json({ error: "createdByRunId is not valid for this company" });
       return undefined;
     }
     return requestedRunId;
-  }
-
-  async function resolveTaskRouteId(rawId: string): Promise<string> {
-    const identifier = normalizeTaskReferenceIdentifier(rawId);
-    if (identifier) {
-      const task = await svc.getByIdentifier(identifier);
-      if (task) {
-        return task.id;
-      }
-    }
-    return rawId;
   }
 
   async function resolveTaskProjectAndGoal(task: {
@@ -1449,9 +1729,16 @@ export function taskRoutes(
     projectId: string | null;
     goalId: string | null;
   }) {
-    const projectPromise = task.projectId ? projectsSvc.getById(task.projectId) : Promise.resolve(null);
-    const directGoalPromise = task.goalId ? goalsSvc.getById(task.goalId) : Promise.resolve(null);
-    const [project, directGoal] = await Promise.all([projectPromise, directGoalPromise]);
+    const projectPromise = task.projectId
+      ? projectsSvc.getById(task.projectId)
+      : Promise.resolve(null);
+    const directGoalPromise = task.goalId
+      ? goalsSvc.getById(task.goalId)
+      : Promise.resolve(null);
+    const [project, directGoal] = await Promise.all([
+      projectPromise,
+      directGoalPromise,
+    ]);
 
     if (directGoal) {
       return { project, goal: directGoal };
@@ -1465,12 +1752,13 @@ export function taskRoutes(
     return { project, goal: null };
   }
 
-  function compactTaskProject(project: Awaited<ReturnType<typeof resolveTaskProjectAndGoal>>["project"]) {
+  function compactTaskProject(
+    project: Awaited<ReturnType<typeof resolveTaskProjectAndGoal>>["project"],
+  ) {
     if (!project) return null;
     return {
       id: project.id,
       companyId: project.companyId,
-      urlKey: project.urlKey,
       goalIds: project.goalIds,
       goals: project.goals,
       name: project.name,
@@ -1492,25 +1780,60 @@ export function taskRoutes(
     };
   }
 
-  // Resolve task identifiers (e.g. "PAP-39") to UUIDs for all /tasks/:id routes
-  router.param("id", async (req, res, next, rawId) => {
-    try {
-      req.params.id = await resolveTaskRouteId(rawId);
-      next();
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  // Resolve task identifiers (e.g. "PAP-39") to UUIDs for company-scoped attachment routes.
-  router.param("taskId", async (req, res, next, rawId) => {
-    try {
-      req.params.taskId = await resolveTaskRouteId(rawId);
-      next();
-    } catch (err) {
-      next(err);
-    }
-  });
+  async function respondWithTaskDetail(
+    req: Request,
+    res: Response,
+    task: NonNullable<Awaited<ReturnType<typeof svc.getById>>>,
+  ) {
+    const inboxArchiveFieldsPromise =
+      req.actor.type === "board" && req.actor.userId
+        ? svc.getActiveInboxArchiveFields(task, req.actor.userId)
+        : Promise.resolve({});
+    const [
+      { project, goal },
+      ancestors,
+      mentionedProjectIds,
+      documentPayload,
+      relations,
+      blockerAttention,
+      referenceSummary,
+      inboxArchiveFields,
+    ] = await Promise.all([
+      resolveTaskProjectAndGoal(task),
+      svc.getAncestors(task.id),
+      svc.findMentionedProjectIds(task.id, { includeCommentBodies: false }),
+      documentsSvc.getTaskDocumentPayload(task),
+      svc.getRelationSummaries(task.id),
+      svc
+        .listBlockerAttention(task.companyId, [task])
+        .then((map) => map.get(task.id) ?? null),
+      taskReferencesSvc.listTaskReferenceSummary(task.id),
+      inboxArchiveFieldsPromise,
+    ]);
+    const mentionedProjects =
+      mentionedProjectIds.length > 0
+        ? await projectsSvc.listByIds(task.companyId, mentionedProjectIds)
+        : [];
+    const workProducts = await workProductsSvc.listForTask(task.id);
+    res.json({
+      ...toPublicTask(task),
+      ...inboxArchiveFields,
+      goalId: goal?.id ?? task.goalId,
+      ancestors,
+      ...(blockerAttention ? { blockerAttention } : {}),
+      blockedBy: relations.blockedBy,
+      blocks: relations.blocks,
+      relatedWork: referenceSummary,
+      referencedTaskIdentifiers: referenceSummary.outbound
+        .map((item) => item.task.identifier)
+        .filter((identifier): identifier is string => identifier !== null),
+      ...documentPayload,
+      project: compactTaskProject(project),
+      goal: goal ?? null,
+      mentionedProjects: mentionedProjects.map(toPublicProject),
+      workProducts,
+    });
+  }
 
   router.get("/companies/:companyId/search/extract", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -1521,17 +1844,26 @@ export function taskRoutes(
       resource: { type: "company", companyId },
     });
     if (!companyScopeDecision.allowed) {
-      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      res
+        .status(403)
+        .json({
+          error:
+            "Company search is outside this actor's authorization boundary",
+        });
       return;
     }
     const parsedQuery = companySearchExtractQuerySchema.safeParse(req.query);
     if (!parsedQuery.success) {
       res.status(400).json({
-        error: validationDetails(parsedQuery.error)[0]?.message ?? "Invalid extract search query",
+        error:
+          validationDetails(parsedQuery.error)[0]?.message ??
+          "Invalid extract search query",
       });
       return;
     }
-    const rateLimit = searchRateLimiter.consume(companySearchRateLimitActor(req, companyId));
+    const rateLimit = searchRateLimiter.consume(
+      companySearchRateLimitActor(req, companyId),
+    );
     res.setHeader("X-RateLimit-Limit", String(rateLimit.limit));
     res.setHeader("X-RateLimit-Remaining", String(rateLimit.remaining));
     if (!rateLimit.allowed) {
@@ -1542,7 +1874,10 @@ export function taskRoutes(
       });
       return;
     }
-    const result = await getSearchService().extract(companyId, parsedQuery.data);
+    const result = await getSearchService().extract(
+      companyId,
+      parsedQuery.data,
+    );
     res.json(result);
   });
 
@@ -1555,25 +1890,26 @@ export function taskRoutes(
       resource: { type: "company", companyId },
     });
     if (!companyScopeDecision.allowed) {
-      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      res
+        .status(403)
+        .json({
+          error:
+            "Company search is outside this actor's authorization boundary",
+        });
       return;
     }
     const parsedQuery = companySearchQuerySchema.safeParse(req.query);
     if (!parsedQuery.success) {
       res.status(400).json({
-        error: validationDetails(parsedQuery.error)[0]?.message ?? "Invalid search query",
+        error:
+          validationDetails(parsedQuery.error)[0]?.message ??
+          "Invalid search query",
       });
       return;
     }
-    let query = parsedQuery.data;
-    if (query.ownerUserId === "me") {
-      if (req.actor.type !== "board" || !req.actor.userId) {
-        res.status(403).json({ error: "ownerUserId=me requires board authentication" });
-        return;
-      }
-      query = { ...query, ownerUserId: req.actor.userId };
-    }
-    const rateLimit = searchRateLimiter.consume(companySearchRateLimitActor(req, companyId));
+    const rateLimit = searchRateLimiter.consume(
+      companySearchRateLimitActor(req, companyId),
+    );
     res.setHeader("X-RateLimit-Limit", String(rateLimit.limit));
     res.setHeader("X-RateLimit-Remaining", String(rateLimit.remaining));
     if (!rateLimit.allowed) {
@@ -1584,7 +1920,7 @@ export function taskRoutes(
       });
       return;
     }
-    const result = await getSearchService().search(companyId, query);
+    const result = await getSearchService().search(companyId, parsedQuery.data);
     res.json(result);
   });
 
@@ -1592,140 +1928,160 @@ export function taskRoutes(
     const startedAt = Date.now();
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    const unsupportedQueryKeys = Object.keys(req.query)
+      .filter((key) => !TASK_LIST_QUERY_KEYS.has(key))
+      .sort();
+    if (unsupportedQueryKeys.length > 0) {
+      res.status(422).json({
+        error: `Unsupported task-list query parameter${unsupportedQueryKeys.length === 1 ? "" : "s"}: ${unsupportedQueryKeys.join(", ")}`,
+      });
+      return;
+    }
     const ownerUserFilterRaw = req.query.ownerUserId as string | undefined;
-    const touchedByUserFilterRaw = req.query.touchedByUserId as string | undefined;
-    const inboxArchivedByUserFilterRaw = req.query.inboxArchivedByUserId as string | undefined;
-    const unreadForUserFilterRaw = req.query.unreadForUserId as string | undefined;
-    const ownerUserId =
-      ownerUserFilterRaw === "me" && req.actor.type === "board"
-        ? req.actor.userId
-        : ownerUserFilterRaw;
-    const touchedByUserId =
-      touchedByUserFilterRaw === "me" && req.actor.type === "board"
-        ? req.actor.userId
-        : touchedByUserFilterRaw;
-    const inboxArchivedByUserId =
-      inboxArchivedByUserFilterRaw === "me" && req.actor.type === "board"
-        ? req.actor.userId
-        : inboxArchivedByUserFilterRaw;
-    const unreadForUserId =
-      unreadForUserFilterRaw === "me" && req.actor.type === "board"
-        ? req.actor.userId
-        : unreadForUserFilterRaw;
-    const rawLimit = req.query.limit as string | undefined;
-    const parsedLimit = rawLimit !== undefined && /^\d+$/.test(rawLimit)
-      ? Number.parseInt(rawLimit, 10)
-      : null;
-    const limit = parsedLimit === null ? TASK_LIST_DEFAULT_LIMIT : clampTaskListLimit(parsedLimit);
-    const rawOffset = req.query.offset as string | undefined;
-    const parsedOffset = rawOffset !== undefined && /^\d+$/.test(rawOffset)
-      ? Number.parseInt(rawOffset, 10)
-      : null;
+    const touchedByUserFilterRaw = req.query.touchedByUserId as
+      string | undefined;
+    const inboxArchivedByUserFilterRaw = req.query.inboxArchivedByUserId as
+      string | undefined;
+    const unreadForUserFilterRaw = req.query.unreadForUserId as
+      string | undefined;
+    const ownerUserId = ownerUserFilterRaw;
+    const touchedByUserId = touchedByUserFilterRaw;
+    const inboxArchivedByUserId = inboxArchivedByUserFilterRaw;
+    const unreadForUserId = unreadForUserFilterRaw;
+    const rawLimit = req.query.limit;
+    const parsedLimit =
+      typeof rawLimit === "string" && /^[1-9]\d*$/.test(rawLimit)
+        ? Number(rawLimit)
+        : null;
+    const limit = parsedLimit ?? TASK_LIST_DEFAULT_LIMIT;
+    const rawOffset = req.query.offset;
+    const parsedOffset =
+      typeof rawOffset === "string" && /^(?:0|[1-9]\d*)$/.test(rawOffset)
+        ? Number(rawOffset)
+        : null;
     const attention = req.query.attention as string | undefined;
     const sortField = req.query.sortField as string | undefined;
     const sortDir = req.query.sortDir as string | undefined;
     const view = req.query.view as string | undefined;
     const compactView = view === "compact";
-    const hasPlanDocument = parseOptionalBooleanQuery(req.query.hasPlanDocument);
-    const includeLiveDescendantSummary = parseOptionalBooleanQuery(req.query.includeLiveDescendantSummary);
-    const ownerAgentFilterRaw = req.query.ownerAgentId;
-    let ownerAgentId: string | null | undefined;
+    const hasPlanDocument = parseOptionalBooleanQuery(
+      req.query.hasPlanDocument,
+      "hasPlanDocument",
+    );
+    const includeLiveDescendantSummary = parseOptionalBooleanQuery(
+      req.query.includeLiveDescendantSummary,
+      "includeLiveDescendantSummary",
+    );
+    const ownerAgentId = parseOptionalCanonicalUuidQuery(
+      req.query.ownerAgentId,
+      "ownerAgentId",
+    );
+    const participantAgentId = parseOptionalCanonicalUuidQuery(
+      req.query.participantAgentId,
+      "participantAgentId",
+    );
+    const projectId = parseOptionalCanonicalUuidQuery(req.query.projectId, "projectId");
+    const parentId = parseOptionalCanonicalUuidQuery(req.query.parentId, "parentId");
+    const descendantOf = parseOptionalCanonicalUuidQuery(req.query.descendantOf, "descendantOf");
+    const labelId = parseOptionalCanonicalUuidQuery(req.query.labelId, "labelId");
+    const originKind = parseOptionalExactNonBlankQuery(req.query.originKind, "originKind");
+    const originId = parseOptionalExactNonBlankQuery(req.query.originId, "originId");
 
-    if (ownerUserFilterRaw === "me" && (!ownerUserId || req.actor.type !== "board")) {
-      res.status(403).json({ error: "ownerUserId=me requires board authentication" });
-      return;
-    }
-    if (touchedByUserFilterRaw === "me" && (!touchedByUserId || req.actor.type !== "board")) {
-      res.status(403).json({ error: "touchedByUserId=me requires board authentication" });
-      return;
-    }
-    if (inboxArchivedByUserFilterRaw === "me" && (!inboxArchivedByUserId || req.actor.type !== "board")) {
-      res.status(403).json({ error: "inboxArchivedByUserId=me requires board authentication" });
-      return;
-    }
-    if (unreadForUserFilterRaw === "me" && (!unreadForUserId || req.actor.type !== "board")) {
-      res.status(403).json({ error: "unreadForUserId=me requires board authentication" });
-      return;
+    for (const [field, value] of Object.entries({
+      ownerUserId,
+      touchedByUserId,
+      inboxArchivedByUserId,
+      unreadForUserId,
+    })) {
+      if (
+        value !== undefined &&
+        (typeof value !== "string" ||
+          value.length === 0 ||
+          value.trim() !== value)
+      ) {
+        res
+          .status(422)
+          .json({ error: `${field} must be an exact non-blank user ID` });
+        return;
+      }
     }
     if (attention !== undefined && attention !== "blocked") {
-      res.status(400).json({ error: "attention must be 'blocked' when provided" });
+      res
+        .status(400)
+        .json({ error: "attention must be 'blocked' when provided" });
       return;
     }
     if (view !== undefined && view !== "compact") {
       res.status(400).json({ error: "view must be 'compact' when provided" });
       return;
     }
-    if (rawLimit !== undefined && (parsedLimit === null || !Number.isInteger(parsedLimit) || parsedLimit <= 0)) {
-      res.status(400).json({ error: `limit must be a positive integer up to ${TASK_LIST_MAX_LIMIT}` });
+    if (
+      rawLimit !== undefined &&
+      (parsedLimit === null ||
+        !Number.isSafeInteger(parsedLimit) ||
+        parsedLimit <= 0 ||
+        parsedLimit > TASK_LIST_MAX_LIMIT)
+    ) {
+      res
+        .status(400)
+        .json({
+          error: `limit must be a positive integer up to ${TASK_LIST_MAX_LIMIT}`,
+        });
       return;
     }
-    if (rawOffset !== undefined && (parsedOffset === null || !Number.isInteger(parsedOffset) || parsedOffset < 0)) {
+    if (
+      rawOffset !== undefined &&
+      (parsedOffset === null ||
+        !Number.isSafeInteger(parsedOffset) ||
+        parsedOffset < 0)
+    ) {
       res.status(400).json({ error: "offset must be a non-negative integer" });
       return;
     }
     if (sortField !== undefined && sortField !== "updated") {
-      res.status(400).json({ error: "sortField must be 'updated' when provided" });
+      res
+        .status(400)
+        .json({ error: "sortField must be 'updated' when provided" });
       return;
     }
     if (sortDir !== undefined && sortDir !== "asc" && sortDir !== "desc") {
-      res.status(400).json({ error: "sortDir must be 'asc' or 'desc' when provided" });
+      res
+        .status(400)
+        .json({ error: "sortDir must be 'asc' or 'desc' when provided" });
       return;
-    }
-    if (hasPlanDocument === null) {
-      res.status(400).json({ error: "hasPlanDocument must be true or false when provided" });
-      return;
-    }
-    if (includeLiveDescendantSummary === null) {
-      res.status(400).json({ error: "includeLiveDescendantSummary must be true or false when provided" });
-      return;
-    }
-    if (ownerAgentFilterRaw !== undefined) {
-      if (typeof ownerAgentFilterRaw !== "string") {
-        res.status(422).json({ error: "ownerAgentId must be a UUID or 'null'" });
-        return;
-      }
-      const normalizedOwnerAgentFilter = ownerAgentFilterRaw.trim();
-      if (normalizedOwnerAgentFilter.length === 0) {
-        ownerAgentId = undefined;
-      } else if (normalizedOwnerAgentFilter.toLowerCase() === "null") {
-        ownerAgentId = null;
-      } else if (isUuidLike(normalizedOwnerAgentFilter)) {
-        ownerAgentId = normalizedOwnerAgentFilter;
-      } else {
-        res.status(422).json({ error: "ownerAgentId must be a UUID or 'null'" });
-        return;
-      }
     }
     const offset = parsedOffset ?? 0;
 
     const listFilters: TaskFilters = {
       attention: attention === "blocked" ? "blocked" : undefined,
-      status: req.query.status as string | string[] | undefined,
+      status: parseStatusFilter(req.query.status),
       ownerAgentId,
-      participantAgentId: req.query.participantAgentId as string | undefined,
+      participantAgentId,
       ownerUserId,
       touchedByUserId,
       inboxArchivedByUserId,
       unreadForUserId,
-      projectId: req.query.projectId as string | undefined,
-      parentId: req.query.parentId as string | undefined,
-      descendantOf: req.query.descendantOf as string | undefined,
-      labelId: req.query.labelId as string | undefined,
-      originKind: req.query.originKind as string | undefined,
-      originKindPrefix: req.query.originKindPrefix as string | undefined,
-      originId: req.query.originId as string | undefined,
-      includeRoutineExecutions:
-        req.query.includeRoutineExecutions === "true" || req.query.includeRoutineExecutions === "1",
-      excludeRoutineExecutions:
-        req.query.excludeRoutineExecutions === "true" || req.query.excludeRoutineExecutions === "1",
-      includePluginOperations:
-        req.query.includePluginOperations === "true" || req.query.includePluginOperations === "1",
-      includeBlockedBy: req.query.includeBlockedBy === "true" || req.query.includeBlockedBy === "1",
-      includeBlockedInboxAttention:
-        req.query.includeBlockedInboxAttention === "true" || req.query.includeBlockedInboxAttention === "1",
+      projectId,
+      parentId,
+      descendantOf,
+      labelId,
+      originKind,
+      originId,
+      excludeRoutineExecutions: parseBooleanQuery(
+        req.query.excludeRoutineExecutions,
+        "excludeRoutineExecutions",
+      ),
+      includeBlockedBy: parseBooleanQuery(
+        req.query.includeBlockedBy,
+        "includeBlockedBy",
+      ),
+      includeBlockedInboxAttention: parseBooleanQuery(
+        req.query.includeBlockedInboxAttention,
+        "includeBlockedInboxAttention",
+      ),
       includeLiveDescendantSummary: includeLiveDescendantSummary === true,
       hasPlanDocument,
-      q: req.query.q as string | undefined,
+      q: parseOptionalExactNonBlankQuery(req.query.q, "q"),
       limit,
       offset,
       sortField: sortField === "updated" ? "updated" : undefined,
@@ -1747,7 +2103,7 @@ export function taskRoutes(
       diagnostics: opts.taskListDiagnostics,
       compute: async () => {
         const rawResult = await svc.list(companyId, listFilters);
-        const result = await actorCanReadCompanyScope(req, companyId)
+        const result = (await actorCanReadCompanyScope(req, companyId))
           ? rawResult
           : await filterTasksForActor(req, rawResult);
         if (compactView) {
@@ -1791,7 +2147,10 @@ export function taskRoutes(
     if (coordinated.response.kind === "compact") {
       res.setHeader("Cache-Control", coordinated.response.cacheControl);
       res.setHeader("ETag", coordinated.response.etag);
-      const etagMatched = requestMatchesEtag(req.header("if-none-match"), coordinated.response.etag);
+      const etagMatched = requestMatchesEtag(
+        req.header("if-none-match"),
+        coordinated.response.etag,
+      );
       logTaskListRequest({
         req,
         res,
@@ -1799,7 +2158,9 @@ export function taskRoutes(
         requestKey,
         startedAt,
         cacheStatus: coordinated.cacheStatus,
-        bodyBytes: etagMatched ? 0 : estimatedJsonBytes(coordinated.response.body),
+        bodyBytes: etagMatched
+          ? 0
+          : estimatedJsonBytes(coordinated.response.body),
         etagOutcome: etagMatched ? "not_modified" : "fresh",
         identicalInFlightCount: coordinated.identicalInFlightCount,
       });
@@ -1825,68 +2186,27 @@ export function taskRoutes(
     res.json(coordinated.response.body);
   });
 
-  router.get("/companies/:companyId/tasks/count", async (req, res) => {
+  router.get("/companies/:companyId/tasks/:taskNumber", async (req, res) => {
     const companyId = req.params.companyId as string;
+    const taskNumber = parseTaskNumber(req.params.taskNumber as string);
+    if (!isCanonicalUuid(companyId)) {
+      res.status(400).json({ error: "companyId must be a canonical UUID" });
+      return;
+    }
+    if (taskNumber === null) {
+      res
+        .status(400)
+        .json({ error: "taskNumber must be a canonical positive integer" });
+      return;
+    }
     assertCompanyAccess(req, companyId);
-    const attention = req.query.attention as string | undefined;
-    const hasPlanDocument = parseOptionalBooleanQuery(req.query.hasPlanDocument);
-    if (attention !== "blocked") {
-      res.status(400).json({ error: "tasks/count currently requires attention=blocked" });
+    const task = await svc.getByCompanyTaskNumber(companyId, taskNumber);
+    if (!task) {
+      res.status(404).json({ error: "Task not found" });
       return;
     }
-    if (req.query.limit !== undefined || req.query.offset !== undefined) {
-      res.status(400).json({ error: "tasks/count does not accept limit or offset" });
-      return;
-    }
-    if (hasPlanDocument === null) {
-      res.status(400).json({ error: "hasPlanDocument must be true or false when provided" });
-      return;
-    }
-
-    const blockedCountFilters = {
-      attention: "blocked",
-      status: req.query.status as string | string[] | undefined,
-      ownerAgentId: req.query.ownerAgentId as string | undefined,
-      participantAgentId: req.query.participantAgentId as string | undefined,
-      ownerUserId: req.query.ownerUserId as string | undefined,
-      projectId: req.query.projectId as string | undefined,
-      parentId: req.query.parentId as string | undefined,
-      descendantOf: req.query.descendantOf as string | undefined,
-      labelId: req.query.labelId as string | undefined,
-      originKind: req.query.originKind as string | undefined,
-      originKindPrefix: req.query.originKindPrefix as string | undefined,
-      originId: req.query.originId as string | undefined,
-      includeRoutineExecutions:
-        req.query.includeRoutineExecutions === "true" || req.query.includeRoutineExecutions === "1",
-      excludeRoutineExecutions:
-        req.query.excludeRoutineExecutions === "true" || req.query.excludeRoutineExecutions === "1",
-      includePluginOperations:
-        req.query.includePluginOperations === "true" || req.query.includePluginOperations === "1",
-      includeBlockedBy: true,
-      includeBlockedInboxAttention: true,
-      hasPlanDocument,
-      q: req.query.q as string | undefined,
-    } as const;
-
-    if (!(await actorCanReadCompanyScope(req, companyId))) {
-      let offset = 0;
-      let visibleCount = 0;
-      while (true) {
-        const rows = await svc.list(companyId, {
-          ...blockedCountFilters,
-          limit: TASK_LIST_MAX_LIMIT,
-          offset,
-        });
-        visibleCount += (await filterTasksForActor(req, rows)).length;
-        if (rows.length < TASK_LIST_MAX_LIMIT) break;
-        offset += rows.length;
-      }
-      res.json({ count: visibleCount });
-      return;
-    }
-
-    const count = await svc.count(companyId, blockedCountFilters);
-    res.json({ count });
+    if (!(await assertTaskReadAllowed(req, res, task))) return;
+    await respondWithTaskDetail(req, res, task);
   });
 
   router.get("/companies/:companyId/labels", async (req, res) => {
@@ -1896,26 +2216,35 @@ export function taskRoutes(
     res.json(result);
   });
 
-  router.post("/companies/:companyId/labels", validate(createTaskLabelSchema), async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    const label = await svc.createLabel(companyId, req.body);
-    await logActivity(db, {
-      companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "label.created",
-      entityType: "label",
-      entityId: label.id,
-      details: { name: label.name, color: label.color },
-    });
-    res.status(201).json(label);
-  });
+  router.post(
+    "/companies/:companyId/labels",
+    validate(createTaskLabelSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      const label = await svc.createLabel(companyId, req.body);
+      await logActivity(db, {
+        companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "label.created",
+        entityType: "label",
+        entityId: label.id,
+        details: { name: label.name, color: label.color },
+      });
+      res.status(201).json(label);
+    },
+  );
 
   router.delete("/labels/:labelId", async (req, res) => {
     assertBoard(req);
     const labelId = req.params.labelId as string;
-    const existing = await getAccessibleResource(req, res, svc.getLabelById(labelId), "Label not found");
+    const existing = await getAccessibleResource(
+      req,
+      res,
+      svc.getLabelById(labelId),
+      "Label not found",
+    );
     if (!existing) return;
     const removed = await svc.deleteLabel(labelId);
     if (!removed) {
@@ -1936,7 +2265,12 @@ export function taskRoutes(
 
   router.get("/tasks/:id/diagnostics/blockers", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
 
@@ -1956,7 +2290,8 @@ export function taskRoutes(
         taskId: task.id,
         actorType: req.actor.type,
         visibleBlockerCount: response.blockers.length,
-        omittedUnauthorizedBlockerCount: response.omittedUnauthorizedBlockerCount,
+        omittedUnauthorizedBlockerCount:
+          response.omittedUnauthorizedBlockerCount,
         truncated: response.truncated,
       },
       "task blocker diagnostics read",
@@ -1967,7 +2302,12 @@ export function taskRoutes(
 
   router.get("/tasks/:id/diagnostics/subtree", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
 
@@ -2008,56 +2348,25 @@ export function taskRoutes(
 
   router.get("/tasks/:id", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
-    const inboxArchiveFieldsPromise = req.actor.type === "board" && req.actor.userId
-      ? svc.getActiveInboxArchiveFields(task, req.actor.userId)
-      : Promise.resolve({});
-    const [
-      { project, goal },
-      ancestors,
-      mentionedProjectIds,
-      documentPayload,
-      relations,
-      blockerAttention,
-      referenceSummary,
-      inboxArchiveFields,
-    ] = await Promise.all([
-      resolveTaskProjectAndGoal(task),
-      svc.getAncestors(task.id),
-      svc.findMentionedProjectIds(task.id, { includeCommentBodies: false }),
-      documentsSvc.getTaskDocumentPayload(task),
-      svc.getRelationSummaries(task.id),
-      svc.listBlockerAttention(task.companyId, [task]).then((map) => map.get(task.id) ?? null),
-      taskReferencesSvc.listTaskReferenceSummary(task.id),
-      inboxArchiveFieldsPromise,
-    ]);
-    const mentionedProjects = mentionedProjectIds.length > 0
-      ? await projectsSvc.listByIds(task.companyId, mentionedProjectIds)
-      : [];
-    const workProducts = await workProductsSvc.listForTask(task.id);
-    res.json({
-      ...toPublicTask(task),
-      ...inboxArchiveFields,
-      goalId: goal?.id ?? task.goalId,
-      ancestors,
-      ...(blockerAttention ? { blockerAttention } : {}),
-      blockedBy: relations.blockedBy,
-      blocks: relations.blocks,
-      relatedWork: referenceSummary,
-      referencedTaskIdentifiers: referenceSummary.outbound.map((item) => item.task.identifier ?? item.task.id),
-      ...documentPayload,
-      project: compactTaskProject(project),
-      goal: goal ?? null,
-      mentionedProjects: mentionedProjects.map(toPublicProject),
-      workProducts,
-    });
+    await respondWithTaskDetail(req, res, task);
   });
 
   router.get("/tasks/:id/work-products", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
     const workProducts = await workProductsSvc.listForTask(task.id);
@@ -2066,26 +2375,36 @@ export function taskRoutes(
 
   router.get("/tasks/:id/documents", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
     const docs = await documentsSvc.listTaskDocuments(task.id, {
-      includeSystem: req.query.includeSystem === "true",
+      includeSystem: parseBooleanQuery(
+        req.query.includeSystem,
+        "includeSystem",
+      ),
     });
     res.json(docs);
   });
 
   router.get("/tasks/:id/documents/:key", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
-    const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-    if (!keyParsed.success) {
-      res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-      return;
-    }
-    const doc = await documentsSvc.getTaskDocumentByKey(task.id, keyParsed.data);
+    const documentKey = parseTaskDocumentKeyParam(req, res);
+    if (!documentKey) return;
+    const doc = await documentsSvc.getTaskDocumentByKey(task.id, documentKey);
     if (!doc) {
       res.status(404).json({ error: "Document not found" });
       return;
@@ -2094,28 +2413,41 @@ export function taskRoutes(
       res.json(doc);
       return;
     }
-    const annotations = await documentAnnotationsSvc.listThreadsForTaskDocument(task.id, keyParsed.data, {
-      status: "open",
-      includeComments: shouldIncludeDocumentAnnotationComments(req),
-    });
+    const annotations = await documentAnnotationsSvc.listThreadsForTaskDocument(
+      task.id,
+      documentKey,
+      {
+        status: "open",
+        includeComments: shouldIncludeDocumentAnnotationComments(req),
+      },
+    );
     res.json({ ...doc, annotations });
   });
 
   router.get("/tasks/:id/documents/:key/annotations", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
-    const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-    if (!keyParsed.success) {
-      res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-      return;
-    }
-    const status = req.query.status === "resolved" || req.query.status === "all" ? req.query.status : "open";
-    const threads = await documentAnnotationsSvc.listThreadsForTaskDocument(task.id, keyParsed.data, {
-      status,
-      includeComments: parseBooleanQuery(req.query.includeComments),
-    });
+    const documentKey = parseTaskDocumentKeyParam(req, res);
+    if (!documentKey) return;
+    const status = parseDocumentAnnotationStatus(req.query.status);
+    const threads = await documentAnnotationsSvc.listThreadsForTaskDocument(
+      task.id,
+      documentKey,
+      {
+        status,
+        includeComments: parseBooleanQuery(
+          req.query.includeComments,
+          "includeComments",
+        ),
+      },
+    );
     res.json(threads);
   });
 
@@ -2124,21 +2456,33 @@ export function taskRoutes(
     validate(createDocumentAnnotationThreadSchema),
     async (req, res) => {
       const id = req.params.id as string;
-      const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
       if (!task) return;
       if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
-      const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-      if (!keyParsed.success) {
-        res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-        return;
-      }
+      const documentKey = parseTaskDocumentKeyParam(req, res);
+      if (!documentKey) return;
 
       const { userId, annotationActor } = annotationActorInput(req);
-      const referenceSummaryBefore = await taskReferencesSvc.listTaskReferenceSummary(task.id);
-      const thread = await documentAnnotationsSvc.createThread(task.id, keyParsed.data, req.body, annotationActor);
+      const referenceSummaryBefore =
+        await taskReferencesSvc.listTaskReferenceSummary(task.id);
+      const thread = await documentAnnotationsSvc.createThread(
+        task.id,
+        documentKey,
+        req.body,
+        annotationActor,
+      );
       const firstComment = thread.comments[0];
-      const referenceSummaryAfter = await taskReferencesSvc.listTaskReferenceSummary(task.id);
-      const referenceDiff = taskReferencesSvc.diffTaskReferenceSummary(referenceSummaryBefore, referenceSummaryAfter);
+      const referenceSummaryAfter =
+        await taskReferencesSvc.listTaskReferenceSummary(task.id);
+      const referenceDiff = taskReferencesSvc.diffTaskReferenceSummary(
+        referenceSummaryBefore,
+        referenceSummaryAfter,
+      );
 
       await logActivity(db, {
         companyId: task.companyId,
@@ -2148,7 +2492,6 @@ export function taskRoutes(
         entityType: "task",
         entityId: task.id,
         details: {
-          key: thread.documentKey,
           documentKey: thread.documentKey,
           documentId: thread.documentId,
           threadId: thread.id,
@@ -2156,9 +2499,15 @@ export function taskRoutes(
           revisionNumber: thread.currentRevisionNumber,
           quote: thread.selectedText.slice(0, 240),
           ...summarizeTaskReferenceActivityDetails({
-            addedReferencedTasks: referenceDiff.addedReferencedTasks.map(summarizeTaskRelationForActivity),
-            removedReferencedTasks: referenceDiff.removedReferencedTasks.map(summarizeTaskRelationForActivity),
-            currentReferencedTasks: referenceDiff.currentReferencedTasks.map(summarizeTaskRelationForActivity),
+            addedReferencedTasks: referenceDiff.addedReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
+            removedReferencedTasks: referenceDiff.removedReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
+            currentReferencedTasks: referenceDiff.currentReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
           }),
         },
       });
@@ -2167,53 +2516,65 @@ export function taskRoutes(
     },
   );
 
-  router.get("/tasks/:id/documents/:key/annotations/:threadId", async (req, res) => {
-    const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
-    if (!task) return;
-    if (!(await assertTaskReadAllowed(req, res, task))) return;
-    const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-    if (!keyParsed.success) {
-      res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-      return;
-    }
-    const thread = await documentAnnotationsSvc.getThreadForTaskDocument(
-      task.id,
-      keyParsed.data,
-      req.params.threadId as string,
-    );
-    if (!thread) {
-      res.status(404).json({ error: "Annotation thread not found" });
-      return;
-    }
-    res.json(thread);
-  });
+  router.get(
+    "/tasks/:id/documents/:key/annotations/:threadId",
+    async (req, res) => {
+      const id = req.params.id as string;
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
+      if (!task) return;
+      if (!(await assertTaskReadAllowed(req, res, task))) return;
+      const documentKey = parseTaskDocumentKeyParam(req, res);
+      if (!documentKey) return;
+      const thread = await documentAnnotationsSvc.getThreadForTaskDocument(
+        task.id,
+        documentKey,
+        req.params.threadId as string,
+      );
+      if (!thread) {
+        res.status(404).json({ error: "Annotation thread not found" });
+        return;
+      }
+      res.json(thread);
+    },
+  );
 
   router.post(
     "/tasks/:id/documents/:key/annotations/:threadId/comments",
     validate(createDocumentAnnotationCommentSchema),
     async (req, res) => {
       const id = req.params.id as string;
-      const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
       if (!task) return;
       if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
-      const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-      if (!keyParsed.success) {
-        res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-        return;
-      }
+      const documentKey = parseTaskDocumentKeyParam(req, res);
+      if (!documentKey) return;
 
       const { userId, annotationActor } = annotationActorInput(req);
-      const referenceSummaryBefore = await taskReferencesSvc.listTaskReferenceSummary(task.id);
+      const referenceSummaryBefore =
+        await taskReferencesSvc.listTaskReferenceSummary(task.id);
       const comment = await documentAnnotationsSvc.addComment(
         task.id,
-        keyParsed.data,
+        documentKey,
         req.params.threadId as string,
         req.body,
         annotationActor,
       );
-      const referenceSummaryAfter = await taskReferencesSvc.listTaskReferenceSummary(task.id);
-      const referenceDiff = taskReferencesSvc.diffTaskReferenceSummary(referenceSummaryBefore, referenceSummaryAfter);
+      const referenceSummaryAfter =
+        await taskReferencesSvc.listTaskReferenceSummary(task.id);
+      const referenceDiff = taskReferencesSvc.diffTaskReferenceSummary(
+        referenceSummaryBefore,
+        referenceSummaryAfter,
+      );
 
       await logActivity(db, {
         companyId: task.companyId,
@@ -2223,15 +2584,20 @@ export function taskRoutes(
         entityType: "task",
         entityId: task.id,
         details: {
-          key: keyParsed.data,
-          documentKey: keyParsed.data,
+          documentKey,
           threadId: comment.threadId,
           commentId: comment.id,
           bodySnippet: comment.body.slice(0, 120),
           ...summarizeTaskReferenceActivityDetails({
-            addedReferencedTasks: referenceDiff.addedReferencedTasks.map(summarizeTaskRelationForActivity),
-            removedReferencedTasks: referenceDiff.removedReferencedTasks.map(summarizeTaskRelationForActivity),
-            currentReferencedTasks: referenceDiff.currentReferencedTasks.map(summarizeTaskRelationForActivity),
+            addedReferencedTasks: referenceDiff.addedReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
+            removedReferencedTasks: referenceDiff.removedReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
+            currentReferencedTasks: referenceDiff.currentReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
           }),
         },
       });
@@ -2245,18 +2611,20 @@ export function taskRoutes(
     validate(updateDocumentAnnotationThreadSchema),
     async (req, res) => {
       const id = req.params.id as string;
-      const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
       if (!task) return;
       if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
-      const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-      if (!keyParsed.success) {
-        res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-        return;
-      }
+      const documentKey = parseTaskDocumentKeyParam(req, res);
+      if (!documentKey) return;
       const { userId, annotationActor } = annotationActorInput(req);
       const thread = await documentAnnotationsSvc.updateThread(
         task.id,
-        keyParsed.data,
+        documentKey,
         req.params.threadId as string,
         req.body,
         annotationActor,
@@ -2265,13 +2633,13 @@ export function taskRoutes(
         companyId: task.companyId,
         actorType: "user",
         actorId: userId,
-        action: thread.status === "resolved"
-          ? "task.document_annotation_thread_resolved"
-          : "task.document_annotation_thread_reopened",
+        action:
+          thread.status === "resolved"
+            ? "task.document_annotation_thread_resolved"
+            : "task.document_annotation_thread_reopened",
         entityType: "task",
         entityId: task.id,
         details: {
-          key: thread.documentKey,
           documentKey: thread.documentKey,
           documentId: thread.documentId,
           threadId: thread.id,
@@ -2282,110 +2650,132 @@ export function taskRoutes(
     },
   );
 
-  router.put("/tasks/:id/documents/:key", validate(upsertTaskDocumentSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
-    if (!task) return;
-    if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
-    const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-    if (!keyParsed.success) {
-      res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-      return;
-    }
+  router.put(
+    "/tasks/:id/documents/:key",
+    validate(upsertTaskDocumentSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
+      if (!task) return;
+      if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
+      const documentKey = parseTaskDocumentKeyParam(req, res);
+      if (!documentKey) return;
 
-    assertBoard(req);
-    const referenceSummaryBefore = await taskReferencesSvc.listTaskReferenceSummary(task.id);
-    const result = await documentsSvc.upsertTaskDocument({
-      taskId: task.id,
-      key: keyParsed.data,
-      title: req.body.title ?? null,
-      format: req.body.format,
-      body: req.body.body,
-      changeSummary: req.body.changeSummary ?? null,
-      baseRevisionId: req.body.baseRevisionId ?? null,
-      createdByUserId: req.actor.userId,
-      lockedDocumentStrategy: "conflict",
-    });
-    const doc = result.document;
-    const redirectedFromLockedDocument =
-      "redirectedFromLockedDocument" in result ? result.redirectedFromLockedDocument : null;
-    const referenceSummaryAfter = await taskReferencesSvc.listTaskReferenceSummary(task.id);
-    const referenceDiff = taskReferencesSvc.diffTaskReferenceSummary(referenceSummaryBefore, referenceSummaryAfter);
-    const remappedAnnotations = result.created
-      ? []
-      : await documentAnnotationsSvc.remapOpenThreadsForDocument({
+      assertBoard(req);
+      const referenceSummaryBefore =
+        await taskReferencesSvc.listTaskReferenceSummary(task.id);
+      const result = await documentsSvc.upsertTaskDocument({
         taskId: task.id,
-        key: doc.key,
-        documentId: doc.id,
-        nextRevisionId: doc.latestRevisionId,
-        nextRevisionNumber: doc.latestRevisionNumber,
-        nextBody: doc.body,
+        key: documentKey,
+        title: req.body.title ?? null,
+        format: req.body.format,
+        body: req.body.body,
+        changeSummary: req.body.changeSummary ?? null,
+        baseRevisionId: req.body.baseRevisionId ?? null,
+        createdByUserId: req.actor.userId,
+        lockedDocumentStrategy: "conflict",
       });
+      const doc = result.document;
+      const redirectedFromLockedDocument =
+        "redirectedFromLockedDocument" in result
+          ? result.redirectedFromLockedDocument
+          : null;
+      const referenceSummaryAfter =
+        await taskReferencesSvc.listTaskReferenceSummary(task.id);
+      const referenceDiff = taskReferencesSvc.diffTaskReferenceSummary(
+        referenceSummaryBefore,
+        referenceSummaryAfter,
+      );
+      const remappedAnnotations = result.created
+        ? []
+        : await documentAnnotationsSvc.remapOpenThreadsForDocument({
+            taskId: task.id,
+            key: doc.key,
+            documentId: doc.id,
+            nextRevisionId: doc.latestRevisionId,
+            nextRevisionNumber: doc.latestRevisionNumber,
+            nextBody: doc.body,
+          });
 
-    await logActivity(db, {
-      companyId: task.companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: result.created ? "task.document_created" : "task.document_updated",
-      entityType: "task",
-      entityId: task.id,
-      details: {
-        key: doc.key,
-        documentId: doc.id,
-        title: doc.title,
-        format: doc.format,
-        revisionNumber: doc.latestRevisionNumber,
-        redirectedFromLockedDocument,
-        ...summarizeTaskReferenceActivityDetails({
-          addedReferencedTasks: referenceDiff.addedReferencedTasks.map(summarizeTaskRelationForActivity),
-          removedReferencedTasks: referenceDiff.removedReferencedTasks.map(summarizeTaskRelationForActivity),
-          currentReferencedTasks: referenceDiff.currentReferencedTasks.map(summarizeTaskRelationForActivity),
-        }),
-      },
-    });
-
-    for (const remap of remappedAnnotations) {
       await logActivity(db, {
         companyId: task.companyId,
         actorType: "user",
         actorId: req.actor.userId,
-        action: "task.document_annotation_remapped",
+        action: result.created
+          ? "task.document_created"
+          : "task.document_updated",
         entityType: "task",
         entityId: task.id,
         details: {
           key: doc.key,
           documentId: doc.id,
-          threadId: remap.thread.id,
+          title: doc.title,
+          format: doc.format,
           revisionNumber: doc.latestRevisionNumber,
-          anchorState: remap.thread.anchorState,
-          anchorConfidence: remap.thread.anchorConfidence,
-          snapshotId: remap.snapshot.id,
+          redirectedFromLockedDocument,
+          ...summarizeTaskReferenceActivityDetails({
+            addedReferencedTasks: referenceDiff.addedReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
+            removedReferencedTasks: referenceDiff.removedReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
+            currentReferencedTasks: referenceDiff.currentReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
+          }),
         },
       });
-    }
 
+      for (const remap of remappedAnnotations) {
+        await logActivity(db, {
+          companyId: task.companyId,
+          actorType: "user",
+          actorId: req.actor.userId,
+          action: "task.document_annotation_remapped",
+          entityType: "task",
+          entityId: task.id,
+          details: {
+            key: doc.key,
+            documentId: doc.id,
+            threadId: remap.thread.id,
+            revisionNumber: doc.latestRevisionNumber,
+            anchorState: remap.thread.anchorState,
+            anchorConfidence: remap.thread.anchorConfidence,
+            snapshotId: remap.snapshot.id,
+          },
+        });
+      }
 
-    res.status(result.created ? 201 : 200).json(doc);
-  });
+      res.status(result.created ? 201 : 200).json(doc);
+    },
+  );
 
   router.post("/tasks/:id/documents/:key/lock", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (req.actor.type !== "board") {
       res.status(403).json({ error: "Board authentication required" });
       return;
     }
-    const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-    if (!keyParsed.success) {
-      res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-      return;
-    }
+    const documentKey = parseTaskDocumentKeyParam(req, res);
+    if (!documentKey) return;
 
     assertBoard(req);
     const result = await documentsSvc.lockTaskDocument({
       taskId: task.id,
-      key: keyParsed.data,
+      key: documentKey,
       lockedByUserId: req.actor.userId,
     });
 
@@ -2411,20 +2801,22 @@ export function taskRoutes(
 
   router.post("/tasks/:id/documents/:key/unlock", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (req.actor.type !== "board") {
       res.status(403).json({ error: "Board authentication required" });
       return;
     }
-    const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-    if (!keyParsed.success) {
-      res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-      return;
-    }
+    const documentKey = parseTaskDocumentKeyParam(req, res);
+    if (!documentKey) return;
 
     assertBoard(req);
-    const result = await documentsSvc.unlockTaskDocument(task.id, keyParsed.data);
+    const result = await documentsSvc.unlockTaskDocument(task.id, documentKey);
 
     if (result.changed) {
       await logActivity(db, {
@@ -2447,15 +2839,20 @@ export function taskRoutes(
 
   router.get("/tasks/:id/documents/:key/revisions", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
-    const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-    if (!keyParsed.success) {
-      res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-      return;
-    }
-    const revisions = await documentsSvc.listTaskDocumentRevisions(task.id, keyParsed.data);
+    const documentKey = parseTaskDocumentKeyParam(req, res);
+    if (!documentKey) return;
+    const revisions = await documentsSvc.listTaskDocumentRevisions(
+      task.id,
+      documentKey,
+    );
     res.json(revisions);
   });
 
@@ -2465,33 +2862,41 @@ export function taskRoutes(
     async (req, res) => {
       const id = req.params.id as string;
       const revisionId = req.params.revisionId as string;
-      const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
       if (!task) return;
       if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
-      const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-      if (!keyParsed.success) {
-        res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-        return;
-      }
+      const documentKey = parseTaskDocumentKeyParam(req, res);
+      if (!documentKey) return;
 
       assertBoard(req);
-      const referenceSummaryBefore = await taskReferencesSvc.listTaskReferenceSummary(task.id);
+      const referenceSummaryBefore =
+        await taskReferencesSvc.listTaskReferenceSummary(task.id);
       const result = await documentsSvc.restoreTaskDocumentRevision({
         taskId: task.id,
-        key: keyParsed.data,
+        key: documentKey,
         revisionId,
         createdByUserId: req.actor.userId,
       });
-      const referenceSummaryAfter = await taskReferencesSvc.listTaskReferenceSummary(task.id);
-      const referenceDiff = taskReferencesSvc.diffTaskReferenceSummary(referenceSummaryBefore, referenceSummaryAfter);
-      const remappedAnnotations = await documentAnnotationsSvc.remapOpenThreadsForDocument({
-        taskId: task.id,
-        key: result.document.key,
-        documentId: result.document.id,
-        nextRevisionId: result.document.latestRevisionId,
-        nextRevisionNumber: result.document.latestRevisionNumber,
-        nextBody: result.document.body,
-      });
+      const referenceSummaryAfter =
+        await taskReferencesSvc.listTaskReferenceSummary(task.id);
+      const referenceDiff = taskReferencesSvc.diffTaskReferenceSummary(
+        referenceSummaryBefore,
+        referenceSummaryAfter,
+      );
+      const remappedAnnotations =
+        await documentAnnotationsSvc.remapOpenThreadsForDocument({
+          taskId: task.id,
+          key: result.document.key,
+          documentId: result.document.id,
+          nextRevisionId: result.document.latestRevisionId,
+          nextRevisionNumber: result.document.latestRevisionNumber,
+          nextBody: result.document.body,
+        });
 
       await logActivity(db, {
         companyId: task.companyId,
@@ -2509,9 +2914,15 @@ export function taskRoutes(
           restoredFromRevisionId: result.restoredFromRevisionId,
           restoredFromRevisionNumber: result.restoredFromRevisionNumber,
           ...summarizeTaskReferenceActivityDetails({
-            addedReferencedTasks: referenceDiff.addedReferencedTasks.map(summarizeTaskRelationForActivity),
-            removedReferencedTasks: referenceDiff.removedReferencedTasks.map(summarizeTaskRelationForActivity),
-            currentReferencedTasks: referenceDiff.currentReferencedTasks.map(summarizeTaskRelationForActivity),
+            addedReferencedTasks: referenceDiff.addedReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
+            removedReferencedTasks: referenceDiff.removedReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
+            currentReferencedTasks: referenceDiff.currentReferencedTasks.map(
+              summarizeTaskRelationForActivity,
+            ),
           }),
         },
       });
@@ -2536,32 +2947,38 @@ export function taskRoutes(
         });
       }
 
-
       res.json(result.document);
     },
   );
 
   router.delete("/tasks/:id/documents/:key", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (req.actor.type !== "board") {
       res.status(403).json({ error: "Board authentication required" });
       return;
     }
-    const keyParsed = taskDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
-    if (!keyParsed.success) {
-      res.status(400).json({ error: "Invalid document key", details: validationDetails(keyParsed.error) });
-      return;
-    }
-    const referenceSummaryBefore = await taskReferencesSvc.listTaskReferenceSummary(task.id);
-    const removed = await documentsSvc.deleteTaskDocument(task.id, keyParsed.data);
+    const documentKey = parseTaskDocumentKeyParam(req, res);
+    if (!documentKey) return;
+    const referenceSummaryBefore =
+      await taskReferencesSvc.listTaskReferenceSummary(task.id);
+    const removed = await documentsSvc.deleteTaskDocument(task.id, documentKey);
     if (!removed) {
       res.status(404).json({ error: "Document not found" });
       return;
     }
-    const referenceSummaryAfter = await taskReferencesSvc.listTaskReferenceSummary(task.id);
-    const referenceDiff = taskReferencesSvc.diffTaskReferenceSummary(referenceSummaryBefore, referenceSummaryAfter);
+    const referenceSummaryAfter =
+      await taskReferencesSvc.listTaskReferenceSummary(task.id);
+    const referenceDiff = taskReferencesSvc.diffTaskReferenceSummary(
+      referenceSummaryBefore,
+      referenceSummaryAfter,
+    );
     assertBoard(req);
     await logActivity(db, {
       companyId: task.companyId,
@@ -2575,229 +2992,315 @@ export function taskRoutes(
         documentId: removed.id,
         title: removed.title,
         ...summarizeTaskReferenceActivityDetails({
-          addedReferencedTasks: referenceDiff.addedReferencedTasks.map(summarizeTaskRelationForActivity),
-          removedReferencedTasks: referenceDiff.removedReferencedTasks.map(summarizeTaskRelationForActivity),
-          currentReferencedTasks: referenceDiff.currentReferencedTasks.map(summarizeTaskRelationForActivity),
+          addedReferencedTasks: referenceDiff.addedReferencedTasks.map(
+            summarizeTaskRelationForActivity,
+          ),
+          removedReferencedTasks: referenceDiff.removedReferencedTasks.map(
+            summarizeTaskRelationForActivity,
+          ),
+          currentReferencedTasks: referenceDiff.currentReferencedTasks.map(
+            summarizeTaskRelationForActivity,
+          ),
         }),
       },
     });
     res.json({ ok: true });
   });
 
-  router.post("/tasks/:id/work-products", validate(createTaskWorkProductSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
-    if (!task) return;
-    if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
-    assertBoard(req);
-    const createInput = {
-      ...req.body,
-      projectId: req.body.projectId ?? task.projectId ?? null,
-    };
-    const createdByRunId = await resolveWorkProductCreatedByRunId(req, res, task.companyId, req.body, "create");
-    if (createdByRunId === undefined) return;
-    createInput.createdByRunId = createdByRunId;
-    if (requiresPaperclipAttachmentMetadata(createInput)) {
-      createInput.metadata = await canonicalizePaperclipArtifactMetadata({
-        task,
-        metadata: req.body.metadata ?? null,
-      });
-    }
-    const product = await workProductsSvc.createForTask(task.id, task.companyId, createInput);
-    if (!product) {
-      res.status(422).json({ error: "Invalid work product payload" });
-      return;
-    }
-    await logActivity(db, {
-      companyId: task.companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "task.work_product_created",
-      entityType: "task",
-      entityId: task.id,
-      details: { workProductId: product.id, type: product.type, provider: product.provider },
-    });
-    res.status(201).json(product);
-  });
-
-  router.post("/tasks/:id/low-trust/promotions", validate(promoteLowTrustOutputSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
-    if (!task) return;
-    if (!(await assertTaskReadAllowed(req, res, task))) return;
-    if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
-    assertBoard(req);
-    const sourceTrust = await lookupLowTrustSourceArtifact({
-      taskId: task.id,
-      artifactKind: req.body.sourceArtifactKind,
-      artifactId: req.body.sourceArtifactId,
-    });
-    if (!sourceTrust) {
-      res.status(404).json({ error: "Low-trust source artifact not found" });
-      return;
-    }
-    if (!isLowTrustQuarantined(sourceTrust)) {
-      res.status(422).json({ error: "Source artifact is not quarantined low-trust output" });
-      return;
-    }
-
-    const promotedAt = new Date();
-    const promotionTrust = buildPromotedSourceTrust({
-      sourceTaskId: task.id,
-      sourceArtifactKind: req.body.sourceArtifactKind,
-      sourceArtifactId: req.body.sourceArtifactId,
-      promotedByActorType: "user",
-      promotedByActorId: req.actor.userId,
-      promotedAt,
-    });
-    const product = await db.transaction(async (tx) => {
-      const markPromoted = { sourceTrust: promotionTrust, updatedAt: promotedAt };
-      const updatedSource = await (async () => {
-        if (req.body.sourceArtifactKind === "task") {
-          return tx
-            .update(taskRows)
-            .set(markPromoted)
-            .where(and(
-              eq(taskRows.id, req.body.sourceArtifactId),
-              eq(taskRows.sourceTrust, sourceTrust),
-            ))
-            .returning({ id: taskRows.id });
-        }
-        if (req.body.sourceArtifactKind === "comment") {
-          return tx
-            .select({ id: taskComments.id })
-            .from(taskComments)
-            .where(and(
-              eq(taskComments.id, req.body.sourceArtifactId),
-              eq(taskComments.taskId, task.id),
-              eq(taskComments.sourceTrust, sourceTrust),
-            ))
-            .limit(1);
-        }
-        if (req.body.sourceArtifactKind === "document") {
-          return tx
-            .update(documents)
-            .set(markPromoted)
-            .where(and(
-              eq(documents.id, req.body.sourceArtifactId),
-              eq(documents.sourceTrust, sourceTrust),
-            ))
-            .returning({ id: documents.id });
-        }
-        return tx
-          .update(taskWorkProducts)
-          .set(markPromoted)
-          .where(and(
-            eq(taskWorkProducts.id, req.body.sourceArtifactId),
-            eq(taskWorkProducts.taskId, task.id),
-            eq(taskWorkProducts.sourceTrust, sourceTrust),
-          ))
-          .returning({ id: taskWorkProducts.id });
-      })();
-      if (!updatedSource[0]) return null;
-
-      return tx
-        .insert(taskWorkProducts)
-        .values({
-          companyId: task.companyId,
-          taskId: task.id,
-          projectId: task.projectId ?? null,
-          type: "artifact",
-          provider: "paperclip",
-          externalId: req.body.sourceArtifactId,
-          title: req.body.title,
-          status: "approved",
-          reviewState: "approved",
-          isPrimary: false,
-          healthStatus: "unknown",
-          summary: req.body.summary,
-          metadata: {
-            promotion: {
-              sourceArtifactKind: req.body.sourceArtifactKind,
-              sourceArtifactId: req.body.sourceArtifactId,
-            },
-          },
-          sourceTrust: promotionTrust,
-        })
-        .returning()
-        .then((rows) => rows[0] ?? null);
-    });
-    if (!product) {
-      res.status(422).json({ error: "Source artifact is not quarantined low-trust output" });
-      return;
-    }
-
-    await logActivity(db, {
-      companyId: task.companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "task.low_trust_output_promoted",
-      entityType: "task",
-      entityId: task.id,
-      details: {
-        sourceArtifacts: [{
-          artifactKind: req.body.sourceArtifactKind,
-          artifactId: req.body.sourceArtifactId,
-        }],
-        reviewerPrincipal: {
-          actorType: "user",
-          actorId: req.actor.userId,
-        },
-        targetTaskId: task.id,
-        promotedWorkProductId: product.id,
-        decision: "promoted",
-      },
-    });
-
-    res.status(201).json(product);
-  });
-
-  router.patch("/work-products/:id", validate(updateTaskWorkProductSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const existing = await getAccessibleResource(req, res, workProductsSvc.getById(id), "Work product not found");
-    if (!existing) return;
-    const task = await svc.getById(existing.taskId);
-    if (!task) {
-      res.status(404).json({ error: "Task not found" });
-      return;
-    }
-    if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
-    assertBoard(req);
-    const patch = { ...req.body };
-    const createdByRunId = await resolveWorkProductCreatedByRunId(req, res, existing.companyId, req.body, "update");
-    if (createdByRunId === undefined && Object.prototype.hasOwnProperty.call(req.body, "createdByRunId")) return;
-    if (createdByRunId !== undefined) patch.createdByRunId = createdByRunId;
-    if (requiresPaperclipAttachmentMetadata(patch, existing)) {
-      if (patch.metadata !== undefined) {
-        patch.metadata = await canonicalizePaperclipArtifactMetadata({
+  router.post(
+    "/tasks/:id/work-products",
+    validate(createTaskWorkProductSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
+      if (!task) return;
+      if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
+      assertBoard(req);
+      const createInput = {
+        ...req.body,
+        projectId: req.body.projectId ?? task.projectId ?? null,
+      };
+      const createdByRunId = await resolveWorkProductCreatedByRunId(
+        res,
+        task.companyId,
+        req.body,
+        "create",
+      );
+      if (createdByRunId === undefined) return;
+      createInput.createdByRunId = createdByRunId;
+      if (requiresPaperclipAttachmentMetadata(createInput)) {
+        createInput.metadata = await canonicalizePaperclipArtifactMetadata({
           task,
-          metadata: patch.metadata ?? null,
+          metadata: req.body.metadata ?? null,
         });
-      } else if (!requiresPaperclipAttachmentMetadata(existing)) {
-        res.status(422).json({ error: "Attachment-backed artifact metadata is required" });
+      }
+      const product = await workProductsSvc.createForTask(
+        task.id,
+        task.companyId,
+        createInput,
+      );
+      if (!product) {
+        res.status(422).json({ error: "Invalid work product payload" });
         return;
       }
-    }
-    const product = await workProductsSvc.update(id, patch);
-    if (!product) {
-      res.status(404).json({ error: "Work product not found" });
-      return;
-    }
-    await logActivity(db, {
-      companyId: existing.companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "task.work_product_updated",
-      entityType: "task",
-      entityId: existing.taskId,
-      details: { workProductId: product.id, changedKeys: Object.keys(req.body).sort() },
-    });
-    res.json(product);
-  });
+      await logActivity(db, {
+        companyId: task.companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "task.work_product_created",
+        entityType: "task",
+        entityId: task.id,
+        details: {
+          workProductId: product.id,
+          type: product.type,
+          provider: product.provider,
+        },
+      });
+      res.status(201).json(product);
+    },
+  );
+
+  router.post(
+    "/tasks/:id/low-trust/promotions",
+    validate(promoteLowTrustOutputSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
+      if (!task) return;
+      if (!(await assertTaskReadAllowed(req, res, task))) return;
+      if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
+      assertBoard(req);
+      const sourceTrust = await lookupLowTrustSourceArtifact({
+        taskId: task.id,
+        artifactKind: req.body.sourceArtifactKind,
+        artifactId: req.body.sourceArtifactId,
+      });
+      if (!sourceTrust) {
+        res.status(404).json({ error: "Low-trust source artifact not found" });
+        return;
+      }
+      if (!isLowTrustQuarantined(sourceTrust)) {
+        res
+          .status(422)
+          .json({
+            error: "Source artifact is not quarantined low-trust output",
+          });
+        return;
+      }
+
+      const promotedAt = new Date();
+      const promotionTrust = buildPromotedSourceTrust({
+        sourceTaskId: task.id,
+        sourceArtifactKind: req.body.sourceArtifactKind,
+        sourceArtifactId: req.body.sourceArtifactId,
+        promotedByActorType: "user",
+        promotedByActorId: req.actor.userId,
+        promotedAt,
+      });
+      const product = await db.transaction(async (tx) => {
+        const markPromoted = {
+          sourceTrust: promotionTrust,
+          updatedAt: promotedAt,
+        };
+        const updatedSource = await (async () => {
+          if (req.body.sourceArtifactKind === "task") {
+            return tx
+              .update(taskRows)
+              .set(markPromoted)
+              .where(
+                and(
+                  eq(taskRows.id, req.body.sourceArtifactId),
+                  eq(taskRows.sourceTrust, sourceTrust),
+                ),
+              )
+              .returning({ id: taskRows.id });
+          }
+          if (req.body.sourceArtifactKind === "comment") {
+            return tx
+              .select({ id: taskComments.id })
+              .from(taskComments)
+              .where(
+                and(
+                  eq(taskComments.id, req.body.sourceArtifactId),
+                  eq(taskComments.taskId, task.id),
+                  eq(taskComments.sourceTrust, sourceTrust),
+                ),
+              )
+              .limit(1);
+          }
+          if (req.body.sourceArtifactKind === "document") {
+            return tx
+              .update(documents)
+              .set(markPromoted)
+              .where(
+                and(
+                  eq(documents.id, req.body.sourceArtifactId),
+                  eq(documents.sourceTrust, sourceTrust),
+                ),
+              )
+              .returning({ id: documents.id });
+          }
+          return tx
+            .update(taskWorkProducts)
+            .set(markPromoted)
+            .where(
+              and(
+                eq(taskWorkProducts.id, req.body.sourceArtifactId),
+                eq(taskWorkProducts.taskId, task.id),
+                eq(taskWorkProducts.sourceTrust, sourceTrust),
+              ),
+            )
+            .returning({ id: taskWorkProducts.id });
+        })();
+        if (!updatedSource[0]) return null;
+
+        return tx
+          .insert(taskWorkProducts)
+          .values({
+            companyId: task.companyId,
+            taskId: task.id,
+            projectId: task.projectId ?? null,
+            type: "artifact",
+            provider: "paperclip",
+            externalId: req.body.sourceArtifactId,
+            title: req.body.title,
+            status: "approved",
+            reviewState: "approved",
+            isPrimary: false,
+            healthStatus: "unknown",
+            summary: req.body.summary,
+            metadata: {
+              promotion: {
+                sourceArtifactKind: req.body.sourceArtifactKind,
+                sourceArtifactId: req.body.sourceArtifactId,
+              },
+            },
+            sourceTrust: promotionTrust,
+          })
+          .returning()
+          .then((rows) => rows[0] ?? null);
+      });
+      if (!product) {
+        res
+          .status(422)
+          .json({
+            error: "Source artifact is not quarantined low-trust output",
+          });
+        return;
+      }
+
+      await logActivity(db, {
+        companyId: task.companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "task.low_trust_output_promoted",
+        entityType: "task",
+        entityId: task.id,
+        details: {
+          sourceArtifacts: [
+            {
+              artifactKind: req.body.sourceArtifactKind,
+              artifactId: req.body.sourceArtifactId,
+            },
+          ],
+          reviewerPrincipal: {
+            actorType: "user",
+            actorId: req.actor.userId,
+          },
+          targetTaskId: task.id,
+          promotedWorkProductId: product.id,
+          decision: "promoted",
+        },
+      });
+
+      res.status(201).json(product);
+    },
+  );
+
+  router.patch(
+    "/work-products/:id",
+    validate(updateTaskWorkProductSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const existing = await getAccessibleResource(
+        req,
+        res,
+        workProductsSvc.getById(id),
+        "Work product not found",
+      );
+      if (!existing) return;
+      const task = await svc.getById(existing.taskId);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" });
+        return;
+      }
+      if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
+      assertBoard(req);
+      const patch = { ...req.body };
+      const createdByRunId = await resolveWorkProductCreatedByRunId(
+        res,
+        existing.companyId,
+        req.body,
+        "update",
+      );
+      if (
+        createdByRunId === undefined &&
+        Object.prototype.hasOwnProperty.call(req.body, "createdByRunId")
+      )
+        return;
+      if (createdByRunId !== undefined) patch.createdByRunId = createdByRunId;
+      if (requiresPaperclipAttachmentMetadata(patch, existing)) {
+        if (patch.metadata !== undefined) {
+          patch.metadata = await canonicalizePaperclipArtifactMetadata({
+            task,
+            metadata: patch.metadata ?? null,
+          });
+        } else if (!requiresPaperclipAttachmentMetadata(existing)) {
+          res
+            .status(422)
+            .json({ error: "Attachment-backed artifact metadata is required" });
+          return;
+        }
+      }
+      const product = await workProductsSvc.update(id, patch);
+      if (!product) {
+        res.status(404).json({ error: "Work product not found" });
+        return;
+      }
+      await logActivity(db, {
+        companyId: existing.companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "task.work_product_updated",
+        entityType: "task",
+        entityId: existing.taskId,
+        details: {
+          workProductId: product.id,
+          changedKeys: Object.keys(req.body).sort(),
+        },
+      });
+      res.json(product);
+    },
+  );
 
   router.delete("/work-products/:id", async (req, res) => {
     const id = req.params.id as string;
-    const existing = await getAccessibleResource(req, res, workProductsSvc.getById(id), "Work product not found");
+    const existing = await getAccessibleResource(
+      req,
+      res,
+      workProductsSvc.getById(id),
+      "Work product not found",
+    );
     if (!existing) return;
     const task = await svc.getById(existing.taskId);
     if (!task) {
@@ -2825,7 +3328,12 @@ export function taskRoutes(
 
   router.post("/tasks/:id/read", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (req.actor.type !== "board") {
       res.status(403).json({ error: "Board authentication required" });
@@ -2835,7 +3343,12 @@ export function taskRoutes(
       res.status(403).json({ error: "Board user context required" });
       return;
     }
-    const readState = await svc.markRead(task.companyId, task.id, req.actor.userId, new Date());
+    const readState = await svc.markRead(
+      task.companyId,
+      task.id,
+      req.actor.userId,
+      new Date(),
+    );
     await logActivity(db, {
       companyId: task.companyId,
       actorType: "user",
@@ -2850,7 +3363,12 @@ export function taskRoutes(
 
   router.delete("/tasks/:id/read", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (req.actor.type !== "board") {
       res.status(403).json({ error: "Board authentication required" });
@@ -2860,7 +3378,11 @@ export function taskRoutes(
       res.status(403).json({ error: "Board user context required" });
       return;
     }
-    const removed = await svc.markUnread(task.companyId, task.id, req.actor.userId);
+    const removed = await svc.markUnread(
+      task.companyId,
+      task.id,
+      req.actor.userId,
+    );
     await logActivity(db, {
       companyId: task.companyId,
       actorType: "user",
@@ -2886,90 +3408,138 @@ export function taskRoutes(
     };
   }
 
-  router.post("/tasks/:id/inbox-archive", validate(inboxArchiveBodySchema), async (req, res) => {
-    const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
-    if (!task) return;
-    const target = resolveInboxArchiveTarget(req);
-    const archiveState = await svc.archiveInbox(task.companyId, task.id, target.userId, new Date(), {
-      archivedByActorType: "user",
-    });
-    await logActivity(db, {
-      companyId: task.companyId,
-      actorType: "user",
-      actorId: target.userId,
-      action: "task.inbox_archived",
-      entityType: "task",
-      entityId: task.id,
-      details: {
-        userId: target.userId,
-        archivedAt: archiveState.archivedAt,
-        targetResolvedFrom: target.targetResolvedFrom,
-      },
-    });
-    res.json(archiveState);
-  });
+  router.post(
+    "/tasks/:id/inbox-archive",
+    validate(inboxArchiveBodySchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
+      if (!task) return;
+      const target = resolveInboxArchiveTarget(req);
+      const archiveState = await svc.archiveInbox(
+        task.companyId,
+        task.id,
+        target.userId,
+        new Date(),
+        {
+          archivedByActorType: "user",
+        },
+      );
+      await logActivity(db, {
+        companyId: task.companyId,
+        actorType: "user",
+        actorId: target.userId,
+        action: "task.inbox_archived",
+        entityType: "task",
+        entityId: task.id,
+        details: {
+          userId: target.userId,
+          archivedAt: archiveState.archivedAt,
+          targetResolvedFrom: target.targetResolvedFrom,
+        },
+      });
+      res.json(archiveState);
+    },
+  );
 
-  router.delete("/tasks/:id/inbox-archive", validate(inboxArchiveBodySchema), async (req, res) => {
-    const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
-    if (!task) return;
-    const target = resolveInboxArchiveTarget(req);
-    const removed = await svc.unarchiveInbox(task.companyId, task.id, target.userId);
-    await logActivity(db, {
-      companyId: task.companyId,
-      actorType: "user",
-      actorId: target.userId,
-      action: "task.inbox_unarchived",
-      entityType: "task",
-      entityId: task.id,
-      details: {
-        userId: target.userId,
-        targetResolvedFrom: target.targetResolvedFrom,
-      },
-    });
-    res.json(removed ?? { ok: true, userId: target.userId });
-  });
+  router.delete(
+    "/tasks/:id/inbox-archive",
+    validate(inboxArchiveBodySchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
+      if (!task) return;
+      const target = resolveInboxArchiveTarget(req);
+      const removed = await svc.unarchiveInbox(
+        task.companyId,
+        task.id,
+        target.userId,
+      );
+      await logActivity(db, {
+        companyId: task.companyId,
+        actorType: "user",
+        actorId: target.userId,
+        action: "task.inbox_unarchived",
+        entityType: "task",
+        entityId: task.id,
+        details: {
+          userId: target.userId,
+          targetResolvedFrom: target.targetResolvedFrom,
+        },
+      });
+      res.json(removed ?? { ok: true, userId: target.userId });
+    },
+  );
 
   router.get("/tasks/:id/approvals", async (req, res) => {
     const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
     const approvals = await taskApprovalsSvc.listApprovalsForTask(id);
     res.json(approvals);
   });
 
-  router.post("/tasks/:id/approvals", validate(linkTaskApprovalSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
-    if (!task) return;
-    if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
-    if (!(await assertCanManageTaskApprovalLinks(req, task.companyId))) return;
-    assertBoard(req);
+  router.post(
+    "/tasks/:id/approvals",
+    validate(linkTaskApprovalSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const task = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
+      if (!task) return;
+      if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
+      if (!(await assertCanManageTaskApprovalLinks(req, task.companyId)))
+        return;
+      assertBoard(req);
 
-    await taskApprovalsSvc.link(id, req.body.approvalId, {
-      userId: req.actor.userId,
-    });
+      await taskApprovalsSvc.link(id, req.body.approvalId, {
+        userId: req.actor.userId,
+      });
 
-    await logActivity(db, {
-      companyId: task.companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "task.approval_linked",
-      entityType: "task",
-      entityId: task.id,
-      details: { approvalId: req.body.approvalId },
-    });
+      await logActivity(db, {
+        companyId: task.companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "task.approval_linked",
+        entityType: "task",
+        entityId: task.id,
+        details: { approvalId: req.body.approvalId },
+      });
 
-    const approvals = await taskApprovalsSvc.listApprovalsForTask(id);
-    res.status(201).json(approvals);
-  });
+      const approvals = await taskApprovalsSvc.listApprovalsForTask(id);
+      res.status(201).json(approvals);
+    },
+  );
 
   router.delete("/tasks/:id/approvals/:approvalId", async (req, res) => {
     const id = req.params.id as string;
     const approvalId = req.params.approvalId as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
     if (!(await assertCanManageTaskApprovalLinks(req, task.companyId))) return;
@@ -2990,10 +3560,12 @@ export function taskRoutes(
     res.json({ ok: true });
   });
 
-  router.use(taskIngressRoutes({
-    ordinaryTasks,
-    getTaskById: (id) => svc.getById(id),
-  }));
+  router.use(
+    taskIngressRoutes({
+      ordinaryTasks,
+      getTaskById: (id) => svc.getById(id),
+    }),
+  );
 
   router.put(
     "/tasks/:id/execution-policy",
@@ -3069,10 +3641,7 @@ export function taskRoutes(
         });
       }
 
-      const previousMonitor = summarizeTaskMonitor(
-        existing,
-        previousPolicy,
-      );
+      const previousMonitor = summarizeTaskMonitor(existing, previousPolicy);
       const nextMonitor = summarizeTaskMonitor(task, nextPolicy);
       if (
         nextMonitor.nextCheckAt &&
@@ -3098,10 +3667,7 @@ export function taskRoutes(
             recoveryPolicy: nextMonitor.recoveryPolicy,
           },
         });
-      } else if (
-        !nextMonitor.nextCheckAt &&
-        previousMonitor.nextCheckAt
-      ) {
+      } else if (!nextMonitor.nextCheckAt && previousMonitor.nextCheckAt) {
         await logActivity(db, {
           companyId: task.companyId,
           actorType: "user",
@@ -3170,64 +3736,72 @@ export function taskRoutes(
     },
   );
 
-  router.patch("/tasks/:id", validate(updateTaskTitleSchema), async (req, res) => {
-    assertBoard(req);
-    const id = req.params.id as string;
-    const existing = await getAccessibleResource(
-      req,
-      res,
-      svc.getById(id),
-      "Task not found",
-    );
-    if (!existing) return;
+  router.patch(
+    "/tasks/:id",
+    validate(updateTaskTitleSchema),
+    async (req, res) => {
+      assertBoard(req);
+      const id = req.params.id as string;
+      const existing = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
+      if (!existing) return;
 
-    const task = await svc.updateTitle(id, req.body.title);
-    if (!task) {
-      res.status(404).json({ error: "Task not found" });
-      return;
-    }
+      const task = await svc.updateTitle(id, req.body.title);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" });
+        return;
+      }
 
-    await logActivity(db, {
-      companyId: task.companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "task.title_updated",
-      entityType: "task",
-      entityId: task.id,
-      details: {
-        identifier: task.identifier,
-        title: task.title,
-        _previous: { title: existing.title },
-      },
-    });
-
-    res.json(task);
-  });
-
-  router.post("/tasks/:id/reassign", validate(reassignTaskSchema), async (req, res) => {
-    const actorUserId = requireNamedBoardUser(req);
-    const id = req.params.id as string;
-    const existing = await getAccessibleResource(
-      req,
-      res,
-      svc.getById(id),
-      "Task not found",
-    );
-    if (!existing) return;
-
-    try {
-      const result = await ordinaryTasks.boardReassign({
-        companyId: existing.companyId,
-        taskId: existing.id,
-        ownerAgentId: req.body.ownerAgentId,
-        actorUserId,
-        idempotencyKey: req.body.idempotencyKey,
+      await logActivity(db, {
+        companyId: task.companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "task.title_updated",
+        entityType: "task",
+        entityId: task.id,
+        details: {
+          identifier: task.identifier,
+          title: task.title,
+          _previous: { title: existing.title },
+        },
       });
-      res.status(result.retried ? 200 : 201).json(result);
-    } catch (error) {
-      canonicalTaskMutationError(error);
-    }
-  });
+
+      res.json(task);
+    },
+  );
+
+  router.post(
+    "/tasks/:id/reassign",
+    validate(reassignTaskSchema),
+    async (req, res) => {
+      const actorUserId = requireNamedBoardUser(req);
+      const id = req.params.id as string;
+      const existing = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
+      if (!existing) return;
+
+      try {
+        const result = await ordinaryTasks.boardReassign({
+          companyId: existing.companyId,
+          taskId: existing.id,
+          ownerAgentId: req.body.ownerAgentId,
+          actorUserId,
+          idempotencyKey: req.body.idempotencyKey,
+        });
+        res.status(result.retried ? 200 : 201).json(result);
+      } catch (error) {
+        canonicalTaskMutationError(error);
+      }
+    },
+  );
 
   router.post(
     "/tasks/:id/creator-reassign",
@@ -3273,13 +3847,12 @@ export function taskRoutes(
       if (!existing) return;
 
       try {
-        const result =
-          await ordinaryTasks.userCreatorWithdrawalSelfAssign({
-            companyId: existing.companyId,
-            taskId: existing.id,
-            actorUserId,
-            idempotencyKey: req.body.idempotencyKey,
-          });
+        const result = await ordinaryTasks.userCreatorWithdrawalSelfAssign({
+          companyId: existing.companyId,
+          taskId: existing.id,
+          actorUserId,
+          idempotencyKey: req.body.idempotencyKey,
+        });
         res.status(result.retried ? 200 : 201).json(result);
       } catch (error) {
         canonicalTaskMutationError(error);
@@ -3308,8 +3881,7 @@ export function taskRoutes(
             kind: "user/board",
             companyId: existing.companyId,
             userId: actorUserId,
-            gatewayInvocationId:
-              `human-creator-form:${existing.companyId}:${randomUUID()}`,
+            gatewayInvocationId: `human-creator-form:${existing.companyId}:${randomUUID()}`,
           },
         );
         res.status(201).json(result);
@@ -3342,21 +3914,18 @@ export function taskRoutes(
               kind: "system-escalation-human",
               companyId: existing.companyId,
               actorUserId,
-              gatewayInvocationId:
-                `human-owner-form:${existing.companyId}:${randomUUID()}`,
+              gatewayInvocationId: `human-owner-form:${existing.companyId}:${randomUUID()}`,
             } as const)
           : existing.creatorKind === "user/board" &&
               existing.creatorUserId === actorUserId &&
               existing.ownerKind === "user" &&
               existing.ownerUserId === actorUserId &&
-              existing.ownerAssignmentSource ===
-                "user_creator_withdrawal"
+              existing.ownerAssignmentSource === "user_creator_withdrawal"
             ? ({
                 kind: "user-creator-withdrawal",
                 companyId: existing.companyId,
                 actorUserId,
-                gatewayInvocationId:
-                  `human-owner-form:${existing.companyId}:${randomUUID()}`,
+                gatewayInvocationId: `human-owner-form:${existing.companyId}:${randomUUID()}`,
               } as const)
             : null;
       if (!ownerAuthority) {
@@ -3386,33 +3955,42 @@ export function taskRoutes(
     },
   );
 
-  router.post("/tasks/:id/reopen", validate(reopenTaskSchema), async (req, res) => {
-    const actorUserId = requireNamedBoardUser(req);
+  router.post(
+    "/tasks/:id/reopen",
+    validate(reopenTaskSchema),
+    async (req, res) => {
+      const actorUserId = requireNamedBoardUser(req);
+      const id = req.params.id as string;
+      const existing = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Task not found",
+      );
+      if (!existing) return;
+
+      try {
+        const result = await ordinaryTasks.boardReopen({
+          companyId: existing.companyId,
+          taskId: existing.id,
+          actorUserId,
+          reason: req.body.reason,
+          idempotencyKey: req.body.idempotencyKey,
+        });
+        res.status(result.retried ? 200 : 201).json(result);
+      } catch (error) {
+        canonicalTaskMutationError(error);
+      }
+    },
+  );
+  router.get("/tasks/:id/comments", async (req, res) => {
     const id = req.params.id as string;
-    const existing = await getAccessibleResource(
+    const task = await getAccessibleResource(
       req,
       res,
       svc.getById(id),
       "Task not found",
     );
-    if (!existing) return;
-
-    try {
-      const result = await ordinaryTasks.boardReopen({
-        companyId: existing.companyId,
-        taskId: existing.id,
-        actorUserId,
-        reason: req.body.reason,
-        idempotencyKey: req.body.idempotencyKey,
-      });
-      res.status(result.retried ? 200 : 201).json(result);
-    } catch (error) {
-      canonicalTaskMutationError(error);
-    }
-  });
-  router.get("/tasks/:id/comments", async (req, res) => {
-    const id = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
     const query = taskCommentRootPageQuerySchema.safeParse(req.query);
@@ -3431,7 +4009,12 @@ export function taskRoutes(
   router.get("/tasks/:id/comments/:commentId", async (req, res) => {
     const id = req.params.id as string;
     const commentId = req.params.commentId as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
     const comment = await svc.getBoardComment(task.companyId, id, commentId);
@@ -3445,7 +4028,12 @@ export function taskRoutes(
   router.get("/tasks/:id/comments/:rootCommentId/thread", async (req, res) => {
     const id = req.params.id as string;
     const rootCommentId = req.params.rootCommentId as string;
-    const task = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(id),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
     const query = taskCommentThreadPageQuerySchema.safeParse(req.query);
@@ -3468,7 +4056,6 @@ export function taskRoutes(
     }
     res.json(page);
   });
-
 
   router.post(
     "/tasks/:id/comments",
@@ -3535,107 +4122,137 @@ export function taskRoutes(
 
   router.get("/tasks/:id/attachments", async (req, res) => {
     const taskId = req.params.id as string;
-    const task = await getAccessibleResource(req, res, svc.getById(taskId), "Task not found");
+    const task = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(taskId),
+      "Task not found",
+    );
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
     const attachments = await svc.listAttachments(taskId);
     res.json(attachments.map(withContentPath));
   });
 
-  router.post("/companies/:companyId/tasks/:taskId/attachments", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    const taskId = req.params.taskId as string;
-    assertCompanyAccess(req, companyId);
-    const task = await svc.getById(taskId);
-    if (!task) {
-      res.status(404).json({ error: "Task not found" });
-      return;
-    }
-    if (task.companyId !== companyId) {
-      res.status(422).json({ error: "Task does not belong to company" });
-      return;
-    }
-    if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
-
-    const company = await companiesSvc.getById(companyId);
-    const attachmentMaxBytes = normalizeTaskAttachmentMaxBytes(company?.attachmentMaxBytes);
-
-    try {
-      await runSingleFileUpload(req, res, attachmentMaxBytes);
-    } catch (err) {
-      if (err instanceof multer.MulterError) {
-        if (err.code === "LIMIT_FILE_SIZE") {
-          res.status(422).json({ error: `Attachment exceeds ${attachmentMaxBytes} bytes` });
-          return;
-        }
-        res.status(400).json({ error: err.message });
+  router.post(
+    "/companies/:companyId/tasks/:taskId/attachments",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const taskId = req.params.taskId as string;
+      assertCompanyAccess(req, companyId);
+      const task = await svc.getById(taskId);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" });
         return;
       }
-      throw err;
-    }
+      if (task.companyId !== companyId) {
+        res.status(422).json({ error: "Task does not belong to company" });
+        return;
+      }
+      if (!(await assertBoardTaskMutationAllowed(req, res, task))) return;
 
-    const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
-    if (!file) {
-      res.status(400).json({ error: "Missing file field 'file'" });
-      return;
-    }
-    const contentType = normalizeUploadAttachmentContentType({
-      contentType: file.mimetype,
-      originalFilename: file.originalname,
-    });
-    if (file.buffer.length <= 0) {
-      res.status(422).json({ error: "Attachment is empty" });
-      return;
-    }
+      const company = await companiesSvc.getById(companyId);
+      const attachmentMaxBytes = normalizeTaskAttachmentMaxBytes(
+        company?.attachmentMaxBytes,
+      );
 
-    const parsedMeta = createTaskAttachmentMetadataSchema.safeParse(req.body ?? {});
-    if (!parsedMeta.success) {
-      res.status(400).json({ error: "Invalid attachment metadata", details: validationDetails(parsedMeta.error) });
-      return;
-    }
+      try {
+        await runSingleFileUpload(req, res, attachmentMaxBytes);
+      } catch (err) {
+        if (err instanceof multer.MulterError) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            res
+              .status(422)
+              .json({
+                error: `Attachment exceeds ${attachmentMaxBytes} bytes`,
+              });
+            return;
+          }
+          res.status(400).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
 
-    assertBoard(req);
-    const stored = await storage.putFile({
-      companyId,
-      namespace: `tasks/${taskId}`,
-      originalFilename: file.originalname || null,
-      contentType,
-      body: file.buffer,
-    });
+      const file = (
+        req as Request & {
+          file?: { mimetype: string; buffer: Buffer; originalname: string };
+        }
+      ).file;
+      if (!file) {
+        res.status(400).json({ error: "Missing file field 'file'" });
+        return;
+      }
+      const contentType = normalizeUploadAttachmentContentType({
+        contentType: file.mimetype,
+        originalFilename: file.originalname,
+      });
+      if (file.buffer.length <= 0) {
+        res.status(422).json({ error: "Attachment is empty" });
+        return;
+      }
 
-    const attachment = await svc.createAttachment({
-      taskId,
-      taskCommentId: parsedMeta.data.taskCommentId ?? null,
-      provider: stored.provider,
-      objectKey: stored.objectKey,
-      contentType: stored.contentType,
-      byteSize: stored.byteSize,
-      sha256: stored.sha256,
-      originalFilename: stored.originalFilename,
-      createdByUserId: req.actor.userId,
-    });
+      const parsedMeta = createTaskAttachmentMetadataSchema.safeParse(
+        req.body ?? {},
+      );
+      if (!parsedMeta.success) {
+        res
+          .status(400)
+          .json({
+            error: "Invalid attachment metadata",
+            details: validationDetails(parsedMeta.error),
+          });
+        return;
+      }
 
-    await logActivity(db, {
-      companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "task.attachment_added",
-      entityType: "task",
-      entityId: taskId,
-      details: {
-        attachmentId: attachment.id,
-        originalFilename: attachment.originalFilename,
-        contentType: attachment.contentType,
-        byteSize: attachment.byteSize,
-      },
-    });
+      assertBoard(req);
+      const stored = await storage.putFile({
+        companyId,
+        namespace: `tasks/${taskId}`,
+        originalFilename: file.originalname || null,
+        contentType,
+        body: file.buffer,
+      });
 
-    res.status(201).json(withContentPath(attachment));
-  });
+      const attachment = await svc.createAttachment({
+        taskId,
+        taskCommentId: parsedMeta.data.taskCommentId ?? null,
+        provider: stored.provider,
+        objectKey: stored.objectKey,
+        contentType: stored.contentType,
+        byteSize: stored.byteSize,
+        sha256: stored.sha256,
+        originalFilename: stored.originalFilename,
+        createdByUserId: req.actor.userId,
+      });
+
+      await logActivity(db, {
+        companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "task.attachment_added",
+        entityType: "task",
+        entityId: taskId,
+        details: {
+          attachmentId: attachment.id,
+          originalFilename: attachment.originalFilename,
+          contentType: attachment.contentType,
+          byteSize: attachment.byteSize,
+        },
+      });
+
+      res.status(201).json(withContentPath(attachment));
+    },
+  );
 
   router.get("/attachments/:attachmentId/content", async (req, res, next) => {
     const attachmentId = req.params.attachmentId as string;
-    const attachment = await getAccessibleResource(req, res, svc.getAttachmentById(attachmentId), "Attachment not found");
+    const attachment = await getAccessibleResource(
+      req,
+      res,
+      svc.getAttachmentById(attachmentId),
+      "Attachment not found",
+    );
     if (!attachment) return;
     const task = await svc.getById(attachment.taskId);
     if (!task) {
@@ -3643,6 +4260,7 @@ export function taskRoutes(
       return;
     }
     if (!(await assertTaskReadAllowed(req, res, task))) return;
+    const forceDownload = parseAttachmentDownloadQuery(req.query.download);
 
     const contentLength = attachment.byteSize;
     const range = parseAttachmentRangeHeader(
@@ -3659,7 +4277,9 @@ export function taskRoutes(
     const object = await storage.getObject(
       attachment.companyId,
       attachment.objectKey,
-      range.kind === "range" ? { range: { start: range.start, end: range.end } } : undefined,
+      range.kind === "range"
+        ? { range: { start: range.start, end: range.end } }
+        : undefined,
     );
     const responseContentType = resolveAttachmentResponseContentType({
       storedContentType: attachment.contentType,
@@ -3670,13 +4290,21 @@ export function taskRoutes(
     res.setHeader("Cache-Control", "private, max-age=60");
     res.setHeader("X-Content-Type-Options", "nosniff");
     if (responseContentType === SVG_CONTENT_TYPE) {
-      res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
+      res.setHeader(
+        "Content-Security-Policy",
+        "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
+      );
     }
     const filename = attachment.originalFilename ?? "attachment";
-    const disposition = parseBooleanQuery(req.query.download)
+    const disposition = forceDownload
       ? "attachment"
-      : isInlineAttachmentContentType(responseContentType) ? "inline" : "attachment";
-    res.setHeader("Content-Disposition", `${disposition}; filename=\"${filename.replaceAll("\"", "")}\"`);
+      : isInlineAttachmentContentType(responseContentType)
+        ? "inline"
+        : "attachment";
+    res.setHeader(
+      "Content-Disposition",
+      `${disposition}; filename=\"${filename.replaceAll('"', "")}\"`,
+    );
 
     object.stream.on("error", (err) => {
       next(err);
@@ -3685,18 +4313,29 @@ export function taskRoutes(
       const rangeLength = range.end - range.start + 1;
       res.status(206);
       res.setHeader("Content-Length", String(rangeLength));
-      res.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${contentLength}`);
+      res.setHeader(
+        "Content-Range",
+        `bytes ${range.start}-${range.end}/${contentLength}`,
+      );
       object.stream.pipe(res);
       return;
     }
 
-    res.setHeader("Content-Length", String(contentLength || object.contentLength || 0));
+    res.setHeader(
+      "Content-Length",
+      String(contentLength || object.contentLength || 0),
+    );
     object.stream.pipe(res);
   });
 
   router.delete("/attachments/:attachmentId", async (req, res) => {
     const attachmentId = req.params.attachmentId as string;
-    const attachment = await getAccessibleResource(req, res, svc.getAttachmentById(attachmentId), "Attachment not found");
+    const attachment = await getAccessibleResource(
+      req,
+      res,
+      svc.getAttachmentById(attachmentId),
+      "Attachment not found",
+    );
     if (!attachment) return;
     const task = await svc.getById(attachment.taskId);
     if (!task) {
@@ -3708,7 +4347,10 @@ export function taskRoutes(
     try {
       await storage.deleteObject(attachment.companyId, attachment.objectKey);
     } catch (err) {
-      logger.warn({ err, attachmentId }, "storage delete failed while removing attachment");
+      logger.warn(
+        { err, attachmentId },
+        "storage delete failed while removing attachment",
+      );
     }
 
     const removed = await svc.removeAttachment(attachmentId);

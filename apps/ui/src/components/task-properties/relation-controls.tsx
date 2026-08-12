@@ -1,6 +1,6 @@
 import { useState, type MouseEvent } from "react";
 import type { Task } from "@paperclipai/shared";
-import { Link } from "@/lib/router";
+import { TaskLinkQuicklook } from "../TaskLinkQuicklook";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -32,7 +32,7 @@ export function RemovableTaskReferencePill({
   const chipClassName = cn(
     "paperclip-mention-chip paperclip-mention-chip--task",
     "inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs no-underline",
-    task.identifier && "hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
+    "hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
   );
   const content = (
     <>
@@ -63,26 +63,16 @@ export function RemovableTaskReferencePill({
         >
           <X className="h-3 w-3" />
         </button>
-        {task.identifier ? (
-          <Link
-            to={`/tasks/${taskLabel}`}
-            data-mention-kind="task"
-            className={chipClassName}
-            title={displayTitle}
-            aria-label={`Task ${taskLabel}: ${displayTitle}`}
-          >
-            {content}
-          </Link>
-        ) : (
-          <span
-            data-mention-kind="task"
-            className={chipClassName}
-            title={displayTitle}
-            aria-label={`Task: ${displayTitle}`}
-          >
-            {content}
-          </span>
-        )}
+        <TaskLinkQuicklook
+          taskId={task.id}
+          taskNumber={task.taskNumber}
+          data-mention-kind="task"
+          className={chipClassName}
+          title={displayTitle}
+          aria-label={`Task ${taskLabel}: ${displayTitle}`}
+        >
+          {content}
+        </TaskLinkQuicklook>
       </span>
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
         <DialogContent className="sm:max-w-md">

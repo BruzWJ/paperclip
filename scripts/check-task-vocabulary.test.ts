@@ -106,6 +106,20 @@ test("checks non-text file paths without reading binary content", () => {
   assert.ok(violations[0]?.startsWith(`${owner}: retired`));
 });
 
+test("ignores generated server UI build output", () => {
+  const retired = RETIRED_WORK_OBJECT_LEXEME;
+  const root = fixture({
+    "apps/server/src/routes/tasks.ts": "const taskRows = [];\n",
+    [`apps/server/ui-dist/assets/${retired}-vendor.js`]:
+      `const thirdPartyVocabulary = "${retired}";\n`,
+  });
+
+  assert.deepEqual(
+    scanTaskVocabulary(root, ["apps"], { checkRetainedContracts: false }),
+    [],
+  );
+});
+
 test("gate sources do not spell the retired lexeme", () => {
   const sources = [
     readFileSync(new URL("./check-task-vocabulary.ts", import.meta.url), "utf8"),

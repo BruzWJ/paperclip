@@ -7,22 +7,23 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
 
-vi.mock("@/lib/router", () => ({
-  NavLink: ({ to, children, className, ...props }: {
+const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
+
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => COMPANY_ID,
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ to, params, children, activeProps: _activeProps, inactiveProps: _inactiveProps, activeOptions: _activeOptions, state: _state, ...props }: {
     to: string;
+    params?: Record<string, string>;
     children: ReactNode;
-    className?: string | ((state: { isActive: boolean }) => string);
+    activeProps?: unknown;
+    inactiveProps?: unknown;
+    activeOptions?: unknown;
+    state?: unknown;
   }) => (
-    <a
-      href={to}
-      className={typeof className === "function" ? className({ isActive: false }) : className}
-      {...props}
-    >
-      {children}
-    </a>
-  ),
-  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
-    <a href={to} {...props}>{children}</a>
+    <a href={to.replace("$companyId", params?.companyId ?? "")} {...props}>{children}</a>
   ),
 }));
 
@@ -32,8 +33,7 @@ vi.mock("../context/DialogContext", () => ({
 
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({
-    selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", taskPrefix: "PAP", name: "Paperclip" },
+    selectedCompany: { id: COMPANY_ID, taskPrefix: "PAP", name: "Paperclip" },
   }),
 }));
 
@@ -51,16 +51,6 @@ vi.mock("../context/SidebarContext", () => ({
 
 vi.mock("../hooks/useInboxBadge", () => ({
   useInboxBadge: () => ({ inbox: 0, failedRuns: 0 }),
-}));
-
-vi.mock("../hooks/useSharedPolling", () => ({
-  useSharedPollingQuery: () => ({
-    enabled: false,
-    refetchInterval: false,
-    isLeader: false,
-    publish: vi.fn(),
-  }),
-  usePublishSharedQueryData: () => undefined,
 }));
 
 vi.mock("@/plugins/slots", () => ({ PluginSlotOutlet: () => null }));
@@ -102,7 +92,7 @@ describe("Sidebar Goals navigation", () => {
     const goals = links.find((link) => link.textContent?.trim() === "Goals");
     const artifacts = links.find((link) => link.textContent?.trim() === "Artifacts");
 
-    expect(goals?.getAttribute("href")).toBe("/goals");
+    expect(goals?.getAttribute("href")).toBe(`/${COMPANY_ID}/goals`);
     expect(links.indexOf(goals!)).toBeLessThan(links.indexOf(artifacts!));
   });
 });

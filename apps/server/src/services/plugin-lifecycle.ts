@@ -48,11 +48,13 @@ import {
 import type { PluginLoadAllResult, PluginLoader } from "./plugin-loader.js";
 import { badRequest, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
-import {
-  pausePluginManagedAgentsIntoTriageInTransaction,
-} from "./plugin-managed-agents.js";
+import { pausePluginManagedAgentsIntoTriageInTransaction } from "./plugin-managed-agents.js";
 import type { AgentSuspensionService } from "./agents.js";
 import type { RequestedAgentRunCancellations } from "./task-execution-cancellation.js";
+import {
+  publishCommittedActivity,
+  type PersistedActivityLog,
+} from "./activity-log.js";
 import { createTaskSessionAdmissionService } from "./task-session/admission.js";
 import { terminalizePluginCreatorEdgesInTransaction } from "./system-escalation-postgres.js";
 import { validatePluginInstanceConfig } from "./plugin-config-validator.js";
@@ -102,7 +104,8 @@ interface PluginLifecycleEvents {
 }
 
 type LifecycleEventName = keyof PluginLifecycleEvents;
-type LifecycleEventPayload<K extends LifecycleEventName> = PluginLifecycleEvents[K];
+type LifecycleEventPayload<K extends LifecycleEventName> =
+  PluginLifecycleEvents[K];
 
 // ---------------------------------------------------------------------------
 // PluginLifecycleManager
@@ -186,7 +189,6 @@ export interface PluginLifecycleManager {
     event: K,
     listener: (payload: LifecycleEventPayload<K>) => void,
   ): void;
-
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +257,10 @@ export function pluginLifecycleManager(
   ): Promise<T> {
     const previous = operationTails.get(identity) ?? Promise.resolve();
     const result = previous.catch(() => undefined).then(operation);
-    const settled = result.then(() => undefined, () => undefined);
+    const settled = result.then(
+      () => undefined,
+      () => undefined,
+    );
     operationTails.set(identity, settled);
     try {
       return await result;
@@ -266,7 +271,9 @@ export function pluginLifecycleManager(
     }
   }
 
-  async function installIdentity(options: PluginInstallRequest): Promise<string> {
+  async function installIdentity(
+    options: PluginInstallRequest,
+  ): Promise<string> {
     if (options.source === "npm") {
       return `install:npm:${options.packageName}`;
     }
@@ -297,7 +304,7 @@ export function pluginLifecycleManager(
     lastError: string | null = null,
     existingPlugin?: PluginRecord,
   ): Promise<PluginRecord> {
-    const plugin = existingPlugin ?? await requirePlugin(pluginId);
+    const plugin = existingPlugin ?? (await requirePlugin(pluginId));
     assertTransition(plugin, to);
 
     const previousStatus = plugin.status;
@@ -307,7 +314,8 @@ export function pluginLifecycleManager(
       lastError,
     });
 
-    if (!updated) throw notFound(`Plugin not found after status update: ${pluginId}`);
+    if (!updated)
+      throw notFound(`Plugin not found after status update: ${pluginId}`);
     const result = updated;
 
     log.info(
@@ -330,6 +338,7 @@ export function pluginLifecycleManager(
     plugin: PluginRecord;
     suspensionRequests: RequestedAgentRunCancellations[];
     dispatchRefIds: string[];
+    activities: PersistedActivityLog[];
   } | null> {
     const committed = await db.transaction(async (tx) => {
       // Global lock order for plugin-originated work is installation first,
@@ -343,6 +352,7 @@ export function pluginLifecycleManager(
           plugin,
           suspensionRequests: [],
           dispatchRefIds: [],
+          activities: [],
         };
       }
       assertTransition(plugin, "disabled");
@@ -387,18 +397,23 @@ export function pluginLifecycleManager(
       return {
         previousStatus: plugin.status,
         plugin: updated,
-        suspensionRequests:
-          managedAgentTransition.suspensionRequests,
+        suspensionRequests: managedAgentTransition.suspensionRequests,
         dispatchRefIds: pluginEscalations.flatMap((escalation) =>
           escalation.dispatchRefId ? [escalation.dispatchRefId] : [],
         ),
+        activities: managedAgentTransition.activities,
       };
     });
+    for (const activity of committed?.activities ?? []) {
+      publishCommittedActivity(activity);
+    }
     return committed;
   }
 
   async function finishDisabledTransition(
-    committed: NonNullable<Awaited<ReturnType<typeof commitDisabledTransition>>>,
+    committed: NonNullable<
+      Awaited<ReturnType<typeof commitDisabledTransition>>
+    >,
   ): Promise<void> {
     let teardownFailure: { error: unknown } | null = null;
     const deferredRecoveryErrors: unknown[] = [];
@@ -413,8 +428,9 @@ export function pluginLifecycleManager(
 
     for (const suspensionRequests of committed.suspensionRequests) {
       try {
-        await taskExecutionCancellation
-          .reconcileRequestedCancellations(suspensionRequests);
+        await taskExecutionCancellation.reconcileRequestedCancellations(
+          suspensionRequests,
+        );
       } catch (error) {
         deferredRecoveryErrors.push(error);
       }
@@ -462,9 +478,7 @@ export function pluginLifecycleManager(
     });
   }
 
-  async function deactivatePluginRuntime(
-    pluginId: string,
-  ): Promise<void> {
+  async function deactivatePluginRuntime(pluginId: string): Promise<void> {
     await pluginLoaderInstance.unloadSingle(pluginId);
     emitDomain("plugin.deactivated", { pluginId });
   }
@@ -551,17 +565,21 @@ export function pluginLifecycleManager(
     async install(installOptions: PluginInstallRequest): Promise<PluginRecord> {
       const sourceIdentity = await installIdentity(installOptions);
       return serializeLifecycleOperation(sourceIdentity, async () => {
-        const installed = await pluginLoaderInstance.installPlugin(installOptions);
-        return serializeLifecycleOperation(pluginIdentity(installed.id), async () => {
-          if (installed.status === "disabled") return installed;
-          if (installed.status !== "ready") {
-            throw new Error(
-              `New plugin installation has invalid status '${installed.status}'`,
-            );
-          }
-          await activateReadyPlugin(installed.id);
-          return installed;
-        });
+        const installed =
+          await pluginLoaderInstance.installPlugin(installOptions);
+        return serializeLifecycleOperation(
+          pluginIdentity(installed.id),
+          async () => {
+            if (installed.status === "disabled") return installed;
+            if (installed.status !== "ready") {
+              throw new Error(
+                `New plugin installation has invalid status '${installed.status}'`,
+              );
+            }
+            await activateReadyPlugin(installed.id);
+            return installed;
+          },
+        );
       });
     },
 
@@ -614,16 +632,13 @@ export function pluginLifecycleManager(
           );
         }
 
-        const transitionResult = await commitDisabledTransition(
-          pluginId,
-          {
-            lastError: null,
-            managedAgentReason: reason?.trim()
-              ? `plugin_disabled: ${reason.trim()}`
-              : "plugin_disabled",
-            terminalReason: "plugin_disabled",
-          },
-        );
+        const transitionResult = await commitDisabledTransition(pluginId, {
+          lastError: null,
+          managedAgentReason: reason?.trim()
+            ? `plugin_disabled: ${reason.trim()}`
+            : "plugin_disabled",
+          terminalReason: "plugin_disabled",
+        });
         if (!transitionResult) throw notFound(`Plugin not found: ${pluginId}`);
         const result = transitionResult.plugin;
         await finishDisabledTransition(transitionResult);
@@ -650,14 +665,11 @@ export function pluginLifecycleManager(
         // The live disabled row remains addressable if cleanup fails, so the
         // exact same uninstall operation can be retried.
         if (plugin.status !== "disabled") {
-          const disabled = await commitDisabledTransition(
-            pluginId,
-            {
-              lastError: null,
-              managedAgentReason: "plugin_uninstalled",
-              terminalReason: "plugin_uninstalled",
-            },
-          );
+          const disabled = await commitDisabledTransition(pluginId, {
+            lastError: null,
+            managedAgentReason: "plugin_uninstalled",
+            terminalReason: "plugin_uninstalled",
+          });
           if (!disabled) return null;
           plugin = disabled.plugin;
           await finishDisabledTransition(disabled);
@@ -668,7 +680,7 @@ export function pluginLifecycleManager(
         await pluginLoaderInstance.cleanupInstallArtifacts(plugin);
 
         const deleted = await db.transaction((tx) =>
-          deletePluginInstallationInTransaction(tx, pluginId)
+          deletePluginInstallationInTransaction(tx, pluginId),
         );
         if (!deleted) return null;
 
@@ -739,40 +751,36 @@ export function pluginLifecycleManager(
         });
         let committed = false;
         try {
-          await replaceReadyRuntime(
-            plugin,
-            "Plugin upgrade",
-            async () => {
-              await prepared.commit();
-              committed = true;
-              log.info(
+          await replaceReadyRuntime(plugin, "Plugin upgrade", async () => {
+            await prepared.commit();
+            committed = true;
+            log.info(
+              {
+                pluginId,
+                pluginKey: plugin.pluginKey,
+                oldVersion: prepared.oldManifest.version,
+                newVersion: prepared.newManifest.version,
+              },
+              "plugin lifecycle: package upgrade committed after runtime drain",
+            );
+
+            try {
+              await pluginLoaderInstance.cleanupInstallArtifacts(
+                prepared.previousPlugin,
+              );
+            } catch (err) {
+              // The registry now points at the immutable replacement tree.
+              // Startup reconciliation removes the old unreferenced tree.
+              log.warn(
                 {
                   pluginId,
-                  pluginKey: plugin.pluginKey,
-                  oldVersion: prepared.oldManifest.version,
-                  newVersion: prepared.newManifest.version,
+                  installRoot: prepared.previousPlugin.packagePath,
+                  err,
                 },
-                "plugin lifecycle: package upgrade committed after runtime drain",
+                "plugin lifecycle: deferred old package cleanup",
               );
-
-              try {
-                await pluginLoaderInstance.cleanupInstallArtifacts(
-                  prepared.previousPlugin,
-                );
-              } catch (err) {
-                // The registry now points at the immutable replacement tree.
-                // Startup reconciliation removes the old unreferenced tree.
-                log.warn(
-                  {
-                    pluginId,
-                    installRoot: prepared.previousPlugin.packagePath,
-                    err,
-                  },
-                  "plugin lifecycle: deferred old package cleanup",
-                );
-              }
-            },
-          );
+            }
+          });
         } catch (error) {
           if (!committed) {
             try {
@@ -841,10 +849,8 @@ export function pluginLifecycleManager(
           return registry.upsertConfig(pluginId, configJson);
         }
 
-        return replaceReadyRuntime(
-          plugin,
-          "Plugin configuration update",
-          () => registry.upsertConfig(pluginId, configJson),
+        return replaceReadyRuntime(plugin, "Plugin configuration update", () =>
+          registry.upsertConfig(pluginId, configJson),
         );
       });
     },
@@ -857,6 +863,5 @@ export function pluginLifecycleManager(
     off(event, listener) {
       emitter.off(event, listener);
     },
-
   };
 }

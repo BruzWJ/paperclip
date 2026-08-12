@@ -8,9 +8,7 @@ import {
   InvokableTaskOwnerRejected,
 } from "../services/agent-invokability.js";
 import {
-  clampTaskListLimit,
   deriveTaskUserContext,
-  TASK_LIST_MAX_LIMIT,
   taskService,
   parseStatusFilter,
 } from "../services/tasks.js";
@@ -92,7 +90,6 @@ function taskRow(overrides: Record<string, unknown> = {}): Record<string, unknow
     originKind: null,
     originId: null,
     hiddenAt: null,
-    harnessKind: null,
     startedAt: null,
     completedAt: null,
     cancelledAt: null,
@@ -118,18 +115,38 @@ beforeEach(() => {
 });
 
 describe("task service pure contracts", () => {
-  it("clamps untrusted task-list limits to the server maximum", () => {
-    expect(clampTaskListLimit(0)).toBe(1);
-    expect(clampTaskListLimit(25.9)).toBe(25);
-    expect(clampTaskListLimit(TASK_LIST_MAX_LIMIT + 10)).toBe(TASK_LIST_MAX_LIMIT);
+  it("rejects noncanonical secondary task resource UUIDs before DB access", async () => {
+    const harness = createMockDb();
+    const service = taskService(harness.db);
+    const uppercaseUuid = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA";
+
+    await expect(service.getLabelById(uppercaseUuid)).resolves.toBeNull();
+    await expect(service.deleteLabel(uppercaseUuid)).resolves.toBeNull();
+    await expect(service.getComment(uppercaseUuid)).resolves.toBeNull();
+    await expect(service.getAttachmentById(uppercaseUuid)).resolves.toBeNull();
+    await expect(service.removeAttachment(uppercaseUuid)).resolves.toBeNull();
+    await expect(
+      service.getBoardComment(uppercaseUuid, uppercaseUuid, uppercaseUuid),
+    ).resolves.toBeNull();
+    await expect(
+      service.getBoardCommentThread(
+        uppercaseUuid,
+        uppercaseUuid,
+        uppercaseUuid,
+      ),
+    ).resolves.toBeNull();
+    expect(harness.calls).toEqual([]);
   });
 
-  it("normalizes repeated, comma-separated, and invalid status filters", () => {
-    expect(parseStatusFilter(["todo,in_progress", "blocked", "unknown"])).toEqual([
+  it("accepts only the canonical repeated status representation", () => {
+    expect(parseStatusFilter(["todo", "in_progress", "blocked"])).toEqual([
       "todo",
       "in_progress",
       "blocked",
     ]);
+    expect(() => parseStatusFilter("todo,in_progress")).toThrow();
+    expect(() => parseStatusFilter(["todo", "todo"])).toThrow();
+    expect(() => parseStatusFilter("unknown")).toThrow();
     expect(parseStatusFilter(undefined)).toEqual([]);
   });
 
@@ -316,6 +333,7 @@ describe("task hierarchy and dependency diagnostics", () => {
       companyId,
       projectId: null,
       parentId: null,
+      taskNumber: 50,
       identifier: "PC-50",
       title: "Primary blocker",
       boardPresentationStatus: "todo",
@@ -369,10 +387,16 @@ describe("task hierarchy and dependency diagnostics", () => {
   it("projects blocked-by and blocking edges into sorted task summaries", async () => {
     const blockerId = "00000000-0000-4000-8000-000000000024";
     const dependentId = "00000000-0000-4000-8000-000000000025";
-    const relation = (currentTaskId: string, relatedId: string, title: string) => ({
+    const relation = (
+      currentTaskId: string,
+      relatedId: string,
+      title: string,
+      taskNumber: number,
+    ) => ({
       currentTaskId,
       relatedId,
-      identifier: null,
+      taskNumber,
+      identifier: `PC-${taskNumber}`,
       title,
       boardPresentationStatus: "todo",
       priority: "medium",
@@ -381,8 +405,8 @@ describe("task hierarchy and dependency diagnostics", () => {
     });
     const harness = createMockDb({ select: [
       [{ id: taskId, companyId }],
-      [relation(taskId, blockerId, "Blocker")],
-      [relation(taskId, dependentId, "Dependent")],
+      [relation(taskId, blockerId, "Blocker", 50)],
+      [relation(taskId, dependentId, "Dependent", 51)],
       [],
     ] });
     const service = taskService(harness.db);
@@ -426,7 +450,7 @@ describe("task list, lookup, and mentions", () => {
 
     const [result] = await service.list(companyId, {
       participantAgentId: agentId,
-      ownerAgentId: "null",
+      ownerAgentId: null,
       status: ["todo", "in_progress"],
       limit: 25,
     });
@@ -498,19 +522,53 @@ describe("task list, lookup, and mentions", () => {
       .resolves.toEqual([titleProjectId, commentProjectId]);
   });
 
-  it("accepts normalized identifiers and returns null for malformed task refs", async () => {
+  it("keeps UUID lookup and company-scoped task-number lookup as separate canonical operations", async () => {
     const row = taskRow({ identifier: "PC1A2-1064" });
-    const harness = createMockDb({ select: [[row], [], [], []] });
+    const harness = createMockDb({ select: [[row], [], []] });
     const service = taskService(harness.db);
 
-    await expect(service.getById("pc1a2-1064")).resolves.toMatchObject({
+    await expect(service.getById(taskId)).resolves.toMatchObject({
       id: taskId,
       identifier: "PC1A2-1064",
       labels: [],
     });
-    const invalid = createMockDb();
-    await expect(taskService(invalid.db).getById("not-a-uuid")).resolves.toBeNull();
-    expect(invalid.calls).toEqual([]);
+
+    const taskNumberHarness = createMockDb({ select: [[row], [], []] });
+    await expect(
+      taskService(taskNumberHarness.db).getByCompanyTaskNumber(companyId, 42),
+    ).resolves.toMatchObject({
+      id: taskId,
+      taskNumber: 42,
+      labels: [],
+    });
+
+    for (const nonUuid of ["PC1A2-1064", "pc1a2-1064", "not-a-uuid"]) {
+      const invalid = createMockDb();
+      await expect(taskService(invalid.db).getById(nonUuid)).resolves.toBeNull();
+      expect(invalid.calls).toEqual([]);
+    }
+
+    for (const invalidTaskNumber of [0, -1, 1.5, 2_147_483_648, Number.MAX_SAFE_INTEGER + 1]) {
+      const invalid = createMockDb();
+      await expect(
+        taskService(invalid.db).getByCompanyTaskNumber(
+          companyId,
+          invalidTaskNumber,
+        ),
+      ).resolves.toBeNull();
+      expect(invalid.calls).toEqual([]);
+    }
+
+    const invalidCompany = createMockDb();
+    await expect(
+      taskService(invalidCompany.db).getByCompanyTaskNumber("company-1", 42),
+    ).resolves.toBeNull();
+    expect(invalidCompany.calls).toEqual([]);
+
+    const duplicate = createMockDb({ select: [[row, { ...row, id: ownerAgentId }]] });
+    await expect(
+      taskService(duplicate.db).getByCompanyTaskNumber(companyId, 42),
+    ).rejects.toThrow("Task number is not unique within its company");
   });
 });
 

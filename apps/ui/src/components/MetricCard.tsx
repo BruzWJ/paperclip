@@ -1,18 +1,29 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link } from "@/lib/router";
+import {
+  Link,
+  type RegisteredRouter,
+  type ValidateLinkOptions,
+} from "@tanstack/react-router";
 
-interface MetricCardProps {
+interface MetricCardProps<
+  TRouter extends RegisteredRouter = RegisteredRouter,
+  TOptions = unknown,
+> {
   icon: LucideIcon;
   value: string | number;
   label: string;
   description?: ReactNode;
-  to?: string;
+  linkOptions?: ValidateLinkOptions<TRouter, TOptions>;
   onClick?: () => void;
 }
 
-export function MetricCard({ icon: Icon, value, label, description, to, onClick }: MetricCardProps) {
-  const isClickable = !!(to || onClick);
+export function MetricCard<
+  TRouter extends RegisteredRouter,
+  TOptions,
+>(props: MetricCardProps<TRouter, TOptions>): ReactNode;
+export function MetricCard({ icon: Icon, value, label, description, linkOptions, onClick }: MetricCardProps) {
+  const isClickable = !!(linkOptions || onClick);
 
   const inner = (
     <div className={`h-full px-4 py-4 sm:px-5 sm:py-5 rounded-lg transition-colors${isClickable ? " hover:bg-accent/50 cursor-pointer" : ""}`}>
@@ -33,9 +44,9 @@ export function MetricCard({ icon: Icon, value, label, description, to, onClick 
     </div>
   );
 
-  if (to) {
+  if (linkOptions) {
     return (
-      <Link to={to} className="no-underline text-inherit h-full" onClick={onClick}>
+      <Link {...linkOptions} className="no-underline text-inherit h-full" onClick={onClick}>
         {inner}
       </Link>
     );

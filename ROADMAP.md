@@ -26,10 +26,6 @@ Reusable companies matter. Import/export is the foundation for moving org struct
 
 Agent setup should feel repo-native and legible. Simple `AGENTS.md`-style configuration lowers the barrier to getting an agent team running and makes it easier for contributors to understand how a company is wired together.
 
-### ✅ Skills Manager, Skill Studio & Skills Store
-
-Agents need a practical way to discover, install, create, test, and share skills without every setup becoming bespoke. Skills Manager, Skill Studio, and the Skills Store make the skills layer reusable across an organization and easier to operate.
-
 ### ✅ Scheduled Routines
 
 Recurring work should be native. Routine tasks like reports, reviews, and other periodic work need first-class scheduling so the company keeps operating even when no human is manually kicking work off.
@@ -76,7 +72,7 @@ Agent work should recover from routine failures without waiting for a human to n
 
 ### ✅ Agent evals & feedback
 
-Agent performance should be measurable over time, not judged only from anecdotes. Evals, saved results, and structured feedback create a loop for improving skills, prompts, models, and employee quality.
+Agent performance should be measurable over time, not judged only from anecdotes. Evals, saved results, and structured feedback create a loop for improving prompts, models, and employee quality.
 
 ### ⚪ Knowledge Artifacts
 

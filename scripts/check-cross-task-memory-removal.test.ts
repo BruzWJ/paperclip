@@ -1,10 +1,5 @@
 import assert from "node:assert/strict";
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -201,7 +196,7 @@ for (const [provider, source] of [
   test(`rejects ${provider} provider-specific continuation lowering`, () => {
     const violations = scanCrossTaskMemoryRemovalFiles([
       {
-        path: `packages/adapters/${provider}/src/execute.ts`,
+        path: `apps/server/src/retired-${provider}-execution.ts`,
         source,
       },
     ]);
@@ -212,7 +207,7 @@ for (const [provider, source] of [
 test("rejects renamed provider continuation builders and result correlation", () => {
   const violations = scanCrossTaskMemoryRemovalFiles([
     {
-      path: "packages/adapters/gemini/src/args.ts",
+      path: "apps/server/src/retired-gemini-args.ts",
       source: "export function buildProviderSessionArguments() { return []; }",
     },
     {
@@ -222,19 +217,22 @@ test("rejects renamed provider continuation builders and result correlation", ()
     },
   ]);
   assert.ok(
-    violations.some((violation) =>
-      violation.term === "provider-continuation-builder"),
+    violations.some(
+      (violation) => violation.term === "provider-continuation-builder",
+    ),
   );
   assert.ok(
-    violations.some((violation) =>
-      violation.term === "AdapterExecutionResult.nativeCorrelation"),
+    violations.some(
+      (violation) =>
+        violation.term === "AdapterExecutionResult.nativeCorrelation",
+    ),
   );
 });
 
 test("rejects a renamed parsed provider-session result branch", () => {
   const violations = scanCrossTaskMemoryRemovalFiles([
     {
-      path: "packages/adapters/cursor/src/result.ts",
+      path: "apps/server/src/retired-cursor-result.ts",
       source: [
         "const response = JSON.parse(stdout);",
         "const conversationId = response.agent.id;",
@@ -256,7 +254,7 @@ test("rejects every legacy consumer class instead of checking only old filenames
     "apps/server/src/routes/agents.ts",
     "apps/server/src/routes/openapi.ts",
     "packages/cli/src/generated/client.ts",
-    "apps/ui/src/pages/AgentDetail.tsx",
+    "apps/ui/src/routes/_authenticated/$companyId/agents/$agentId/index.tsx",
     "skills/onboarding/AGENTS.md",
     "evals/promptfoo/tests/runtime.yaml",
     "apps/docs/adapters/overview.md",

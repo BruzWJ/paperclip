@@ -5,7 +5,7 @@ import {
   resolveDefaultSecretsKeyFilePath as resolveSharedDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir as resolveSharedDefaultStorageDir,
   resolveHomeAwarePath,
-  resolvePaperclipConfigPathForInstance,
+  resolvePaperclipInstanceConfigPath,
   resolvePaperclipHomeDir,
   resolvePaperclipInstanceId,
   resolvePaperclipInstanceRoot as resolveSharedPaperclipInstanceRoot,
@@ -23,7 +23,7 @@ export function resolvePaperclipInstanceRoot(instanceId?: string): string {
 }
 
 export function resolveDefaultConfigPath(instanceId?: string): string {
-  return resolvePaperclipConfigPathForInstance({ instanceId });
+  return resolvePaperclipInstanceConfigPath({ instanceId });
 }
 
 export function resolveDefaultContextPath(): string {

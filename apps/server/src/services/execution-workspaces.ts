@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   executionWorkspaces,
@@ -66,13 +66,14 @@ export type ExecutionWorkspaceBranchReconcileResult = {
 
 export type ExecutionWorkspaceGitWorktreeContention = {
   claimedByWorkspaceId: string;
-  claimedByTaskId: string | null;
-  claimedByTaskIdentifier: string | null;
+  claimedByTaskId: string;
+  claimedByTaskIdentifier: string;
   activeRun: {
     id: string;
     status: "queued" | "running";
-    taskId: string | null;
-    taskIdentifier: string | null;
+    taskId: string;
+    taskNumber: number;
+    taskIdentifier: string;
   } | null;
 } | null;
 
@@ -84,7 +85,8 @@ type ExecutionWorkspaceCurrentBinding = {
   ownershipEpoch: number;
   executionWorkspaceId: string;
   absoluteCwd: string;
-  taskIdentifier: string | null;
+  taskNumber: number;
+  taskIdentifier: string;
   taskTitle: string | null;
   taskStatus: string;
   taskUpdatedAt: Date;
@@ -891,6 +893,7 @@ export function executionWorkspaceService(db: Db) {
         executionWorkspaceId:
           taskExecutionWorkspaceBindings.executionWorkspaceId,
         absoluteCwd: taskExecutionWorkspaceBindings.absoluteCwd,
+        taskNumber: tasks.taskNumber,
         taskIdentifier: tasks.identifier,
         taskTitle: tasks.title,
         taskStatus: tasks.boardPresentationStatus,
@@ -1012,9 +1015,13 @@ export function executionWorkspaceService(db: Db) {
               right.createdAt.getTime() - left.createdAt.getTime(),
           )[0] ?? null;
         const activeTask = linkage
-          ? linkedTasks.find((task) => task.taskId === linkage.taskId) ??
-            null
+          ? linkedTasks.find((task) => task.taskId === linkage.taskId) ?? null
           : null;
+        if (linkage && !activeTask) {
+          throw conflict(
+            "Active execution references an unavailable task workspace binding",
+          );
+        }
         const claimedTask = activeTask ?? linkedTasks[0]!;
 
         return {
@@ -1025,8 +1032,9 @@ export function executionWorkspaceService(db: Db) {
             ? {
                 id: linkage.runId,
                 status: "running",
-                taskId: activeTask?.taskId ?? null,
-                taskIdentifier: activeTask?.taskIdentifier ?? null,
+                taskId: activeTask!.taskId,
+                taskNumber: activeTask!.taskNumber,
+                taskIdentifier: activeTask!.taskIdentifier,
               }
             : null,
         };

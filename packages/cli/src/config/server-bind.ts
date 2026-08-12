@@ -1,11 +1,9 @@
 import { execFileSync } from "node:child_process";
 import {
-  ALL_INTERFACES_BIND_HOST,
-  LOOPBACK_BIND_HOST,
-  inferBindModeFromHost,
   isAllInterfacesHost,
   isLoopbackHost,
-  normalizePublicOrigin,
+  parseExactPublicOrigin,
+  parseOptionalExactNonEmptyEnvironmentValue,
   type BindMode,
   type DeploymentExposure,
 } from "@paperclipai/shared";
@@ -19,14 +17,12 @@ type BaseServerInput = {
   serveUi: boolean;
 };
 
-export function inferConfiguredBind(server?: Partial<ServerConfig>): BindMode {
-  if (server?.bind) return server.bind;
-  return inferBindModeFromHost(server?.customBindHost ?? server?.host);
-}
-
 export function detectTailnetBindHost(): string | undefined {
-  const explicit = process.env.PAPERCLIP_TAILNET_BIND_HOST?.trim();
-  if (explicit) return explicit;
+  const explicit = parseOptionalExactNonEmptyEnvironmentValue(
+    process.env.PAPERCLIP_TAILNET_BIND_HOST,
+    "PAPERCLIP_TAILNET_BIND_HOST",
+  );
+  if (explicit !== undefined) return explicit;
 
   try {
     const stdout = execFileSync("tailscale", ["ip", "-4"], {
@@ -47,19 +43,10 @@ export function buildPresetServerConfig(
   bind: Exclude<BindMode, "custom">,
   input: BaseServerInput,
 ): { server: ServerConfig; auth: AuthConfig } {
-  const host =
-    bind === "loopback"
-      ? LOOPBACK_BIND_HOST
-      : bind === "tailnet"
-        ? (detectTailnetBindHost() ?? LOOPBACK_BIND_HOST)
-        : ALL_INTERFACES_BIND_HOST;
-
   return {
     server: {
       exposure: "private",
       bind,
-      customBindHost: undefined,
-      host,
       port: input.port,
       allowedHostnames: input.allowedHostnames,
       serveUi: input.serveUi,
@@ -70,32 +57,43 @@ export function buildPresetServerConfig(
   };
 }
 
-export function buildCustomServerConfig(input: BaseServerInput & {
-  exposure: DeploymentExposure;
-  host: string;
-  publicBaseUrl?: string;
-}): { server: ServerConfig; auth: AuthConfig } {
-  const normalizedHost = input.host.trim();
+export function buildCustomServerConfig(
+  input: BaseServerInput & {
+    exposure: DeploymentExposure;
+    customBindHost: string;
+    publicBaseUrl?: string;
+  },
+): { server: ServerConfig; auth: AuthConfig } {
+  const normalizedHost = input.customBindHost.trim();
+  if (!normalizedHost) {
+    throw new Error("Bind host is required");
+  }
+  if (normalizedHost !== input.customBindHost) {
+    throw new Error("Custom bind host must not contain surrounding whitespace");
+  }
+  if (isLoopbackHost(normalizedHost)) {
+    throw new Error(
+      "Use the loopback bind mode instead of a loopback custom bind host",
+    );
+  }
+  if (isAllInterfacesHost(normalizedHost)) {
+    throw new Error(
+      "Use the lan bind mode instead of an all-interfaces custom bind host",
+    );
+  }
   const publicBaseUrl = input.publicBaseUrl
-    ? normalizePublicOrigin(input.publicBaseUrl)
+    ? parseExactPublicOrigin(input.publicBaseUrl)
     : undefined;
   if (input.exposure === "public" && !publicBaseUrl) {
     throw new Error(
       "auth.publicBaseUrl is required when server.exposure=public",
     );
   }
-  const bind = isLoopbackHost(normalizedHost)
-    ? "loopback"
-    : isAllInterfacesHost(normalizedHost)
-      ? "lan"
-      : "custom";
-
   return {
     server: {
       exposure: input.exposure,
-      bind,
-      customBindHost: bind === "custom" ? normalizedHost : undefined,
-      host: normalizedHost,
+      bind: "custom",
+      customBindHost: normalizedHost,
       port: input.port,
       allowedHostnames: input.allowedHostnames,
       serveUi: input.serveUi,
@@ -103,85 +101,11 @@ export function buildCustomServerConfig(input: BaseServerInput & {
     auth:
       input.exposure === "public"
         ? {
-          disableSignUp: false,
-          publicBaseUrl,
-        }
+            disableSignUp: false,
+            publicBaseUrl,
+          }
         : {
-          disableSignUp: false,
-        },
+            disableSignUp: false,
+          },
   };
-}
-
-export function resolveQuickstartServerConfig(input: {
-  bind?: BindMode | null;
-  exposure?: DeploymentExposure | null;
-  host?: string | null;
-  port: number;
-  allowedHostnames: string[];
-  serveUi: boolean;
-  publicBaseUrl?: string;
-}): { server: ServerConfig; auth: AuthConfig } {
-  const trimmedHost = input.host?.trim();
-  const explicitBind = input.bind ?? null;
-
-  if (explicitBind === "tailnet" && input.exposure === "public") {
-    throw new Error(
-      "server.bind=tailnet is only supported when server.exposure=private",
-    );
-  }
-
-  if (
-    (explicitBind === "loopback" || explicitBind === "lan" || explicitBind === "tailnet") &&
-    input.exposure !== "public"
-  ) {
-    return buildPresetServerConfig(explicitBind, {
-      port: input.port,
-      allowedHostnames: input.allowedHostnames,
-      serveUi: input.serveUi,
-    });
-  }
-
-  if (explicitBind === "custom") {
-    return buildCustomServerConfig({
-      exposure: input.exposure ?? "private",
-      host: trimmedHost || LOOPBACK_BIND_HOST,
-      port: input.port,
-      allowedHostnames: input.allowedHostnames,
-      serveUi: input.serveUi,
-      publicBaseUrl: input.publicBaseUrl,
-    });
-  }
-
-  if (trimmedHost) {
-    return buildCustomServerConfig({
-      exposure: input.exposure ?? "private",
-      host: trimmedHost,
-      port: input.port,
-      allowedHostnames: input.allowedHostnames,
-      serveUi: input.serveUi,
-      publicBaseUrl: input.publicBaseUrl,
-    });
-  }
-
-  if (input.exposure === "public") {
-    return buildCustomServerConfig({
-      exposure: "public",
-      host:
-        explicitBind === "loopback"
-          ? LOOPBACK_BIND_HOST
-          : explicitBind === "tailnet"
-            ? (detectTailnetBindHost() ?? LOOPBACK_BIND_HOST)
-            : ALL_INTERFACES_BIND_HOST,
-      port: input.port,
-      allowedHostnames: input.allowedHostnames,
-      serveUi: input.serveUi,
-      publicBaseUrl: input.publicBaseUrl,
-    });
-  }
-
-  return buildPresetServerConfig("loopback", {
-    port: input.port,
-    allowedHostnames: input.allowedHostnames,
-    serveUi: input.serveUi,
-  });
 }

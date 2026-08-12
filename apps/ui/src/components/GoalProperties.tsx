@@ -1,13 +1,13 @@
 
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useQuery } from "@tanstack/react-query";
 import type { Goal, GoalLevel, GoalStatus } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
 import { goalsApi } from "../api/goals";
-import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "./StatusBadge";
-import { formatDate, cn, agentUrl } from "../lib/utils";
+import { formatDate } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
@@ -70,18 +70,16 @@ function PickerButton({
 }
 
 export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
-  const { selectedCompanyId } = useCompany();
+  const companyId = useCompanyRouteId();
 
   const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId!),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.agents.list(companyId),
+    queryFn: () => agentsApi.list(companyId),
   });
 
   const { data: allGoals } = useQuery({
-    queryKey: queryKeys.goals.list(selectedCompanyId!),
-    queryFn: () => goalsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.goals.list(companyId),
+    queryFn: () => goalsApi.list(companyId),
   });
 
   const ownerAgent = goal.ownerAgentId
@@ -126,7 +124,8 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
         <PropertyRow label="Owner">
           {ownerAgent ? (
             <Link
-              to={agentUrl(ownerAgent)}
+              to="/$companyId/agents/$agentId"
+              params={{ companyId, agentId: ownerAgent.id }}
               className="text-sm hover:underline"
             >
               {ownerAgent.name}
@@ -139,7 +138,8 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
         {goal.parentId && (
           <PropertyRow label="Parent Goal">
             <Link
-              to={`/goals/${goal.parentId}`}
+              to="/$companyId/goals/$goalId"
+              params={{ companyId, goalId: goal.parentId }}
               className="text-sm hover:underline"
             >
               {parentGoal?.title ?? goal.parentId.slice(0, 8)}

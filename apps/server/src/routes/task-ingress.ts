@@ -57,9 +57,9 @@ function requireNamedBoardTaskCreator(
 ) {
   try {
     assertBoard(req);
-    if (!req.actor.userId.trim()) {
+    if (!req.actor.userId || req.actor.userId.trim() !== req.actor.userId) {
       throw forbidden(
-        "Task creation requires an authenticated named board user",
+        "Task creation requires an exact authenticated board user ID",
       );
     }
     next();
@@ -72,7 +72,7 @@ export function taskIngressRoutes(input: {
   ordinaryTasks: OrdinaryTaskRuntime;
   getTaskById(id: string): Promise<TaskIngressParent | null>;
 }) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
 
   router.post(
     "/companies/:companyId/tasks",
@@ -81,7 +81,7 @@ export function taskIngressRoutes(input: {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
-      const userId = req.actor.userId!.trim();
+      const userId = req.actor.userId!;
       try {
         const created = await input.ordinaryTasks.create({
           companyId,
@@ -121,7 +121,7 @@ export function taskIngressRoutes(input: {
         "Parent task not found",
       );
       if (!parent) return;
-      const userId = req.actor.userId!.trim();
+      const userId = req.actor.userId!;
       try {
         const created = await input.ordinaryTasks.create({
           companyId: parent.companyId,

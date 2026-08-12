@@ -12,11 +12,6 @@ interface BoardActorBase {
   companyIds: string[];
   memberships: RequestActorMembership[];
   isInstanceAdmin: boolean;
-  agentId?: never;
-  companyId?: never;
-  runId?: never;
-  onBehalfOfUserId?: never;
-  onBehalfOfMemberships?: never;
 }
 
 export type BoardSessionActor = BoardActorBase & {
@@ -33,50 +28,20 @@ export type BoardKeyActor = BoardActorBase & {
 
 export type BoardActor = BoardSessionActor | BoardKeyActor;
 
-/**
- * Agent identity is accepted only at the isolated internal/runtime boundary.
- * Generic REST mounts reject this variant before a route handler can run.
- */
-export interface RuntimeAgentActor {
-  type: "agent";
-  source: "internal";
-  agentId: string;
-  companyId: string;
-  runId: string;
-  onBehalfOfUserId?: string | null;
-  onBehalfOfMemberships?: RequestActorMembership[];
-  userId?: never;
-  userName?: never;
-  userEmail?: never;
-  companyIds?: never;
-  memberships?: never;
-  isInstanceAdmin?: never;
-  sessionId?: never;
-  keyId?: never;
-}
-
 export interface UnauthenticatedActor {
   type: "none";
   source: "none";
   userId?: never;
   userName?: never;
   userEmail?: never;
-  agentId?: never;
-  companyId?: never;
   companyIds?: never;
   sessionId?: never;
   memberships?: never;
-  onBehalfOfMemberships?: never;
   isInstanceAdmin?: never;
   keyId?: never;
-  runId?: never;
-  onBehalfOfUserId?: never;
 }
 
-export type RequestActor =
-  | BoardActor
-  | RuntimeAgentActor
-  | UnauthenticatedActor;
+export type RequestActor = BoardActor | UnauthenticatedActor;
 
 export function isNonEmptyActorId(value: unknown): value is string {
   return (

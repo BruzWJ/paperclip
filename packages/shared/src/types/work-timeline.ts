@@ -6,12 +6,13 @@ import type {
 /**
  * Work Timeline (Gantt) types — shared between the aggregation service
  * (`apps/server/src/services/work-timeline.ts`) and the UI page
- * (`apps/ui/src/pages/Timeline.tsx`). Defined here so both sides consume one contract
+ * (`apps/ui/src/routes/_authenticated/$companyId/timeline/index.tsx`). Defined here so both sides consume one contract
  * without redefining DTOs. Returned by `GET /api/companies/:companyId/timeline`.
  */
 
 export type TimelineActorType = "agent" | "user" | "system" | "plugin";
-export type TimelineEventKind = "created" | "commented" | "approved" | "delegated" | "assigned";
+export type TimelineEventKind =
+  "created" | "commented" | "approved" | "delegated" | "assigned";
 export type TimelineEdgeKind = "delegation" | "assignment" | "mention";
 
 export interface WorkTimelineActor {
@@ -27,7 +28,8 @@ export interface WorkTimelineSpan {
   runId: string;
   kind: TaskExecutionRunKind;
   taskId: string;
-  taskIdentifier: string | null;
+  taskNumber: number;
+  taskIdentifier: string;
   /** Human-readable task title, shown truncated in the hover tooltip (bars carry no ID). */
   taskTitle: string | null;
   /** ISO timestamp of run start. */

@@ -232,7 +232,7 @@ describe("multilingual task routes", () => {
 
   it("reads the multilingual title and immutable request unchanged", async () => {
     const harness = createMockDb();
-    const response = await request(createApp(harness)).get("/api/tasks/LNG-1");
+    const response = await request(createApp(harness)).get(`/api/tasks/${taskId}`);
     expect(response.status, JSON.stringify(response.body)).toBe(200);
     expect(response.body.title).toBe(title);
     expect(response.body.request).toBe(taskRequest);
@@ -259,7 +259,7 @@ describe("multilingual task routes", () => {
   ])("preserves a multilingual comment body", async (message, expectedCommentId) => {
     const harness = createMockDb();
     const response = await request(createApp(harness))
-      .post("/api/tasks/LNG-1/comments")
+      .post(`/api/tasks/${taskId}/comments`)
       .send({ message, idempotencyKey: `comment-${expectedCommentId}` });
     expect(response.status, JSON.stringify(response.body)).toBe(201);
     expect(response.body.comment).toMatchObject({ id: expectedCommentId, body: message });
@@ -282,7 +282,7 @@ describe("multilingual task routes", () => {
   it("preserves multilingual document bodies", async () => {
     const harness = createMockDb();
     const response = await request(createApp(harness))
-      .put("/api/tasks/LNG-1/documents/qa-notes")
+      .put(`/api/tasks/${taskId}/documents/qa-notes`)
       .send({ title: "Multilingual QA", format: "markdown", body: documentBody });
     expect(response.status, JSON.stringify(response.body)).toBe(201);
     expect(response.body.body).toBe(documentBody);
@@ -296,7 +296,7 @@ describe("multilingual task routes", () => {
 
   it("lists multilingual comments as newest-first board groups", async () => {
     const harness = createMockDb();
-    const response = await request(createApp(harness)).get("/api/tasks/LNG-1/comments");
+    const response = await request(createApp(harness)).get(`/api/tasks/${taskId}/comments`);
     expect(response.status, JSON.stringify(response.body)).toBe(200);
     expect(response.body.groups.map((group: { root: { body: string } }) => group.root.body))
       .toEqual([completionNote, firstReply, taskRequest]);

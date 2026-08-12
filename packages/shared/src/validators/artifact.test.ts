@@ -3,6 +3,7 @@ import { companyArtifactsQuerySchema, companyArtifactsResponseSchema } from "./a
 
 const task = {
   id: "11111111-1111-4111-8111-111111111111",
+  taskNumber: 1,
   identifier: "PAP-1",
   title: "Build artifacts",
 };
@@ -21,7 +22,7 @@ const artifact = {
   project: null,
   createdByAgent: null,
   updatedAt: "2026-06-06T12:00:00.000Z",
-  href: "/PAP/tasks/PAP-1#document-plan",
+  taskFragment: "document-plan",
 };
 
 describe("companyArtifactsQuerySchema", () => {
@@ -52,6 +53,9 @@ describe("companyArtifactsQuerySchema", () => {
   it("rejects invalid grouped artifact query parameters", () => {
     expect(() => companyArtifactsQuerySchema.parse({ groupBy: "agent" })).toThrow();
     expect(() => companyArtifactsQuerySchema.parse({ groupTaskId: "PAP-1" })).toThrow();
+    expect(() => companyArtifactsQuerySchema.parse({ limit: "01" })).toThrow();
+    expect(() => companyArtifactsQuerySchema.parse({ q: " render" })).toThrow();
+    expect(() => companyArtifactsQuerySchema.parse({ unknown: "value" })).toThrow();
   });
 });
 
@@ -66,7 +70,6 @@ describe("companyArtifactsResponseSchema", () => {
       mediaKinds: ["document"],
       previewArtifacts: [artifact],
       updatedAt: "2026-06-06T12:00:00.000Z",
-      href: `/PAP/artifacts?groupBy=task&groupTaskId=${task.id}`,
     };
 
     expect(

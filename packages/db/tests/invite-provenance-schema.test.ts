@@ -1,10 +1,8 @@
 import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { INVITE_SOURCES as SHARED_INVITE_SOURCES } from "@paperclipai/shared";
-import {
-  invites,
-  INVITE_SOURCES,
-} from "../schema/invites.js";
+import { invites, INVITE_SOURCES } from "../schema/invites.js";
+import { joinRequests } from "../schema/join_requests.js";
 
 function renderedCheck(name: string): string {
   const constraint = getTableConfig(invites).checks.find(
@@ -49,24 +47,32 @@ describe("invite provenance schema", () => {
       `"invites"."invite_type" = 'bootstrap_admin'`,
     );
     expect(bootstrapCheck).toContain(`"invites"."company_id" IS NULL`);
-    expect(bootstrapCheck).toContain(
-      `"invites"."allowed_join_types" = 'human'`,
+  });
+
+  it("enforces one canonical user join-request identity", () => {
+    expect(
+      getTableConfig(joinRequests).indexes.map((index) => index.config.name),
+    ).toEqual(
+      expect.arrayContaining([
+        "join_requests_pending_user_id_uq",
+        "join_requests_pending_user_email_uq",
+      ]),
     );
   });
 
-  it("references a real Better Auth user for human inviter attribution", () => {
+  it("references a real Better Auth user for user inviter attribution", () => {
     const inviterForeignKey = getTableConfig(invites).foreignKeys.find(
       (foreignKey) =>
-        foreignKey.reference().columns.some(
-          (column) => column.name === "invited_by_user_id",
-        ),
+        foreignKey
+          .reference()
+          .columns.some((column) => column.name === "invited_by_user_id"),
     );
 
     expect(inviterForeignKey).toBeDefined();
     expect(
-      inviterForeignKey?.reference().foreignColumns.map(
-        (column) => column.name,
-      ),
+      inviterForeignKey
+        ?.reference()
+        .foreignColumns.map((column) => column.name),
     ).toEqual(["id"]);
     expect(inviterForeignKey?.getName()).toBe(
       "invites_invited_by_user_id_user_id_fk",

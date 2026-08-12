@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { approvals, taskApprovals, taskExecutionAuthorities, tasks } from "@paperclipai/db";
+import { isCanonicalUuid } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
 import { redactEventPayload } from "../redaction.js";
 
@@ -11,6 +12,7 @@ interface LinkActor {
 
 export function taskApprovalService(db: Db) {
   async function getTask(taskId: string) {
+    if (!isCanonicalUuid(taskId)) return null;
     return db
       .select()
       .from(tasks)
@@ -19,6 +21,7 @@ export function taskApprovalService(db: Db) {
   }
 
   async function getApproval(approvalId: string) {
+    if (!isCanonicalUuid(approvalId)) return null;
     return db
       .select()
       .from(approvals)
@@ -27,6 +30,8 @@ export function taskApprovalService(db: Db) {
   }
 
   async function assertTaskAndApprovalSameCompany(taskId: string, approvalId: string) {
+    if (!isCanonicalUuid(taskId)) throw notFound("Task not found");
+    if (!isCanonicalUuid(approvalId)) throw notFound("Approval not found");
     const task = await getTask(taskId);
     if (!task) throw notFound("Task not found");
 
@@ -141,6 +146,9 @@ export function taskApprovalService(db: Db) {
 
     linkManyForApproval: async (approvalId: string, taskIds: string[], actor?: LinkActor) => {
       if (taskIds.length === 0) return;
+      if (taskIds.some((taskId) => !isCanonicalUuid(taskId))) {
+        throw notFound("One or more tasks not found");
+      }
 
       const approval = await getApproval(approvalId);
       if (!approval) throw notFound("Approval not found");

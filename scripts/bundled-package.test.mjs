@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import cliEsbuildConfig from "../packages/cli/esbuild.config.mjs";
-import { bundledCliNpmDependencies } from "./cli-bundled-npm-dependencies.mjs";
 import { materializePublishManifest } from "./prepare-bundled-package.mjs";
 
 const adapterUtilsPackage = JSON.parse(
@@ -24,8 +22,6 @@ test("published adapter-utils exposes and bundles the ACPX runtime", () => {
     import: "./dist/acpx-runtime/index.js",
   });
   assert.deepEqual(adapterUtilsPackage.bundleDependencies, ["acpx", "zod"]);
-  assert.equal(bundledCliNpmDependencies.has("acpx"), true);
-  assert.equal(cliEsbuildConfig.external.includes("acpx"), false);
 });
 
 test("bundled package staging materializes publishConfig entrypoints", () => {

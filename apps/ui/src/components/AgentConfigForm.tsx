@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   Agent,
+  AgentAdapterConfigRevision,
   AgentAdapterConfigurationTestResult,
 } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
@@ -13,10 +14,10 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
 import { queryKeys } from "../lib/queryKeys";
-import { useCompany } from "../context/CompanyContext";
+import { useOptionalCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import {
   Field,
   DraftInput,
@@ -27,9 +28,9 @@ import { defaultCreateValues } from "./agent-config-defaults";
 import { findUIAdapter } from "../adapters";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { ReportsToPicker } from "./ReportsToPicker";
-import { listAdapterOptions, listVisibleAdapterTypes } from "../adapters/metadata";
+import { listAdapterOptions } from "../adapters/metadata";
 import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
-import { buildAgentUpdatePatch, omitUndefinedEntries, type AgentConfigOverlay } from "../lib/agent-config-patch";
+import { buildAgentUpdatePatch, type AgentConfigOverlay } from "../lib/agent-config-patch";
 import { publicRuntimeMessage } from "../lib/public-runtime-message";
 import {
   RuntimeAgentConfigurationFields,
@@ -79,8 +80,7 @@ function isOverlayDirty(o: AgentConfigOverlay): boolean {
     Object.keys(o.identity).length > 0 ||
     o.adapterType !== undefined ||
     Object.keys(o.adapterConfig).length > 0 ||
-    Object.keys(o.runtime).length > 0 ||
-    o.modelProfiles?.cheap !== undefined
+    Object.keys(o.runtime).length > 0
   );
 }
 
@@ -96,14 +96,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const editProps = mode === "edit" ? props : null;
   const cards = props.sectionLayout === "cards";
   const showAdapterTypeField = props.showAdapterTypeField ?? true;
-  const { selectedCompanyId } = useCompany();
+  const companyId = useOptionalCompanyRouteId();
 
   const { adapters: admittedAdapters } = useAdapterCatalogSyncState();
 
   const uploadMarkdownImage = useMutation({
     mutationFn: async ({ file, namespace }: { file: File; namespace: string }) => {
-      if (!selectedCompanyId) throw new Error("Select a company to upload images");
-      return assetsApi.uploadImage(selectedCompanyId, file, namespace);
+      if (!companyId) throw new Error("Select a company to upload images");
+      return assetsApi.uploadImage(companyId, file, namespace);
     },
   });
 
@@ -148,7 +148,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const handleSave = useCallback(async () => {
     if (isCreate) return;
     if (!isOverlayDirty(overlay)) return;
-    await props.onSave(buildAgentUpdatePatch(props.agent, overlay));
+    await props.onSave(buildAgentUpdatePatch(config, overlay));
   }, [isCreate, isDirty, overlay, props]);
 
   // Register referentially-stable actions that always delegate to the latest
@@ -180,13 +180,33 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     };
   }, [isCreate, props.onDirtyChange, props.onSaveActionChange, props.onCancelActionChange]);
 
-  // ---- Resolve values ----
-  const config = !isCreate ? ((props.agent.adapterConfig ?? {}) as Record<string, unknown>) : {};
+  const currentRevisionQuery = useQuery({
+    queryKey: editProps
+      ? queryKeys.agents.currentAdapterConfigRevisionRoot(editProps.agent.id)
+      : ["agents", "none", "adapter-config-revision-current"],
+    queryFn: () => agentsApi.getCurrentAdapterConfigRevision(editProps!.agent.id),
+    enabled:
+      editProps !== null
+      && editProps.agent.currentAdapterConfigRevisionId !== null,
+  });
+  const currentRevision = !isCreate
+    ? currentRevisionQuery.data as AgentAdapterConfigRevision | null | undefined
+    : null;
+  const config = currentRevision
+    ? Object.fromEntries(
+        currentRevision.acpConfiguration.sessionConfigSelections.map(
+          (selection) => [selection.configId, selection.value],
+        ),
+      )
+    : {};
 
   const adapterType = isCreate
     ? props.values.adapterType
-    : overlay.adapterType ?? props.agent.adapterType ?? "";
-  const hasAdapterType = adapterType.trim().length > 0;
+    : overlay.adapterType
+      ?? currentRevision?.acpConfiguration.launchProfile.registryName
+      ?? "";
+  const hasAdapterType =
+    adapterType.length > 0 && adapterType === adapterType.trim();
 
   const uiAdapter = findUIAdapter(adapterType);
   const catalogAdapter = useMemo(
@@ -199,9 +219,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     : null;
 
   const { data: companyAgents = [] } = useQuery({
-    queryKey: selectedCompanyId ? queryKeys.agents.list(selectedCompanyId) : ["agents", "none", "list"],
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: Boolean(!isCreate && selectedCompanyId),
+    queryKey: companyId ? queryKeys.agents.list(companyId) : ["agents", "none", "list"],
+    queryFn: () => agentsApi.list(companyId!),
+    enabled: Boolean(!isCreate && companyId),
   });
   const runtimeAccessQuery = useQuery({
     queryKey: editProps
@@ -211,7 +231,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         )
       : ["agents", "none", "runtime-configuration"],
     queryFn: () =>
-      agentsApi.getRuntimeConfiguration(editProps!.agent.id, editProps!.agent.companyId),
+      agentsApi.getRuntimeConfiguration(editProps!.agent.id),
     enabled: !isCreate,
     select: (snapshot): RuntimeAgentConfigurationValues => {
       const defaults = createEmptyRuntimeAgentConfigurationValues();
@@ -259,14 +279,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           error: null,
         };
       }
-      const patch = buildAgentUpdatePatch(props.agent, overlay);
+      const patch = buildAgentUpdatePatch(config, overlay);
       const nextAdapterConfig = patch.adapterConfig;
       return {
         adapterConfig:
           typeof nextAdapterConfig === "object"
           && nextAdapterConfig !== null
           && !Array.isArray(nextAdapterConfig)
-            ? nextAdapterConfig as Record<string, unknown>
+            ? nextAdapterConfig as Record<string, string | boolean>
             : { ...config },
         error: null,
       };
@@ -284,7 +304,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     () => draftTestConfiguration.adapterConfig === null
       ? null
       : JSON.stringify([
-          selectedCompanyId,
+          companyId,
           isCreate ? "create" : props.agent.id,
           adapterType,
           draftTestConfiguration.adapterConfig,
@@ -294,7 +314,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       draftTestConfiguration.adapterConfig,
       isCreate,
       props,
-      selectedCompanyId,
+      companyId,
     ],
   );
   const draftTestContextToken = useMemo(
@@ -315,7 +335,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     mutationFn: async (input: {
       companyId: string;
       adapterType: string;
-      adapterConfig: Record<string, unknown>;
+      adapterConfig: Record<string, string | boolean>;
       contextToken: object;
     }) => await adaptersApi.testConfiguration(
       input.companyId,
@@ -348,7 +368,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       : null;
   const visibleDraftTestResult = visibleDraftTestFeedback?.result ?? null;
   const draftTestDisabled =
-    !selectedCompanyId
+    !companyId
     || !hasAdapterType
     || draftTestConfiguration.adapterConfig === null
     || draftTestFingerprint === null
@@ -358,13 +378,13 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   function handleTestAgent() {
     if (
       draftTestDisabled
-      || !selectedCompanyId
+      || !companyId
       || draftTestConfiguration.adapterConfig === null
       || draftTestFingerprint === null
     ) return;
     setDraftTestFeedback(null);
     testDraftConfiguration.mutate({
-      companyId: selectedCompanyId,
+      companyId: companyId,
       adapterType,
       adapterConfig: draftTestConfiguration.adapterConfig,
       contextToken: draftTestContextToken,
@@ -514,7 +534,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     setOverlay((prev) => ({
                       ...prev,
                       adapterType: t,
-                      modelProfiles: { cheap: { cleared: true } },
                       adapterConfig: {},
                     }));
                   }

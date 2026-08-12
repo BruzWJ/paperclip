@@ -1,7 +1,7 @@
 import { deriveAgentAdapterConfigRevision } from "../../services/agent-adapter-config-revisions.js";
+import { resolveAcpAdapterRevisionConfiguration } from "@paperclipai/adapter-utils";
 import {
   CANONICAL_TEST_ADAPTER_DEFINITION,
-  CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
   CANONICAL_TEST_ADAPTER_TYPE,
   canonicalTestAdapterConfig,
 } from "./adapter-implementation.js";
@@ -11,24 +11,14 @@ import {
  * fixtures. Keeping this on the production derivation path prevents tests
  * from recreating retired provider/session revision shapes.
  */
-export function canonicalTestAgentAdapterRevision(
-  companySkills: {
-    readonly companySkillPins: readonly {
-      readonly key: string;
-      readonly versionId: string;
-    }[];
-  } = {
-    companySkillPins: [],
-  },
-) {
+export function canonicalTestAgentAdapterRevision() {
   return deriveAgentAdapterConfigRevision({
-    adapterType: CANONICAL_TEST_ADAPTER_TYPE,
-    adapterConfig: canonicalTestAdapterConfig(),
-    companySkillPins: companySkills.companySkillPins,
-    runtimeMetadata: {
-      implementationIdentity:
-        CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
-      definition: CANONICAL_TEST_ADAPTER_DEFINITION,
-    },
+    acpConfiguration: resolveAcpAdapterRevisionConfiguration({
+      adapter: {
+        type: CANONICAL_TEST_ADAPTER_TYPE,
+        definition: CANONICAL_TEST_ADAPTER_DEFINITION,
+      },
+      config: canonicalTestAdapterConfig(),
+    }),
   });
 }

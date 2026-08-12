@@ -1,5 +1,6 @@
 import type { InboxDismissalKind } from "./inbox-dismissal.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
+import type { CompanyBoardRouteTarget } from "./board-navigation.js";
 
 export type AttentionSourceKind =
   | "approval"
@@ -18,16 +19,27 @@ export type AttentionSubjectKind =
 
 export type AttentionSeverity = "critical" | "high" | "medium" | "low";
 
-export interface AttentionSubject {
-  kind: AttentionSubjectKind;
+interface AttentionSubjectBase {
   id: string;
   companyId: string;
   title: string | null;
-  identifier: string | null;
   status: string | null;
-  href: string | null;
   metadata?: Record<string, unknown>;
 }
+
+export type AttentionSubject =
+  | (AttentionSubjectBase & {
+      kind: "task";
+      taskNumber: number;
+      identifier: string;
+      routeTarget: Extract<CompanyBoardRouteTarget, { kind: "task" }>;
+    })
+  | (AttentionSubjectBase & {
+      kind: Exclude<AttentionSubjectKind, "task">;
+      taskNumber: null;
+      identifier: null;
+      routeTarget: Exclude<CompanyBoardRouteTarget, { kind: "task" }> | null;
+    });
 
 export interface AttentionDecisionVerb {
   id: string;
@@ -38,7 +50,6 @@ export interface AttentionDecisionVerb {
 export interface AttentionProjectRef {
   id: string;
   name: string;
-  urlKey: string;
   color: string | null;
   icon: string | null;
 }

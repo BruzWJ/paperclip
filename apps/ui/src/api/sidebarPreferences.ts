@@ -2,11 +2,26 @@ import type { SidebarOrderPreference, UpsertSidebarOrderPreference } from "@pape
 import { api } from "./client";
 
 export const sidebarPreferencesApi = {
-  getCompanyOrder: () => api.get<SidebarOrderPreference>("/sidebar-preferences/me"),
-  updateCompanyOrder: (data: UpsertSidebarOrderPreference) =>
-    api.put<SidebarOrderPreference>("/sidebar-preferences/me", data),
-  getProjectOrder: (companyId: string) =>
-    api.get<SidebarOrderPreference>(`/companies/${companyId}/sidebar-preferences/me`),
-  updateProjectOrder: (companyId: string, data: UpsertSidebarOrderPreference) =>
-    api.put<SidebarOrderPreference>(`/companies/${companyId}/sidebar-preferences/me`, data),
+  getCompanyOrder: (userId: string) =>
+    api.get<SidebarOrderPreference>(
+      `/users/${encodeURIComponent(userId)}/sidebar-preferences`,
+    ),
+  updateCompanyOrder: (userId: string, data: UpsertSidebarOrderPreference) =>
+    api.put<SidebarOrderPreference>(
+      `/users/${encodeURIComponent(userId)}/sidebar-preferences`,
+      data,
+    ),
+  getProjectOrder: (companyId: string, userId: string) =>
+    api.get<SidebarOrderPreference>(
+      `/companies/${companyId}/users/${encodeURIComponent(userId)}/sidebar-preferences`,
+    ),
+  updateProjectOrder: (
+    companyId: string,
+    userId: string,
+    data: UpsertSidebarOrderPreference,
+  ) =>
+    api.put<SidebarOrderPreference>(
+      `/companies/${companyId}/users/${encodeURIComponent(userId)}/sidebar-preferences`,
+      data,
+    ),
 };

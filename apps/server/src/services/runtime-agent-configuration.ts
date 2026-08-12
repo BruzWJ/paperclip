@@ -20,8 +20,7 @@ import {
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
   hireAgentApprovalPayloadSchema,
-  isUuidLike,
-  normalizeAgentUrlKey,
+  isCanonicalUuid,
   runtimeAgentHireConfigurationSchema,
   runtimeAgentUpdateConfigurationSchema,
   type AgentContextGrantKey,
@@ -289,11 +288,6 @@ function parseName(value: unknown): string {
       "name must be at most 160 characters",
     );
   }
-  if (!normalizeAgentUrlKey(name)) {
-    throw new RuntimeAgentConfigurationInvalid(
-      "name must contain at least one letter or digit",
-    );
-  }
   return name;
 }
 
@@ -315,7 +309,7 @@ function parseNullableAgentId(
   label: string,
 ): string | null {
   if (value === null) return null;
-  if (typeof value !== "string" || !isUuidLike(value)) {
+  if (typeof value !== "string" || !isCanonicalUuid(value)) {
     throw new RuntimeAgentConfigurationInvalid(
       `${label} must be a UUID or null`,
     );
@@ -798,7 +792,7 @@ function assertActorSource(
   assertNonempty(actor.actorId, "actorId");
   if (
     actor.kind === "plugin" &&
-    !isUuidLike(actor.pluginInstallationId)
+    !isCanonicalUuid(actor.pluginInstallationId)
   ) {
     throw new RuntimeAgentConfigurationInvalid(
       "pluginInstallationId must be a UUID",
@@ -851,30 +845,11 @@ function assertReportsTo(
   }
 }
 
-function assertUniqueName(
-  name: string,
-  companyAgents: readonly AgentRow[],
-  excludeAgentId?: string,
-): void {
-  const candidate = normalizeAgentUrlKey(name);
-  const collision = companyAgents.some(
-    (agent) =>
-      agent.id !== excludeAgentId &&
-      agent.status !== "terminated" &&
-      normalizeAgentUrlKey(agent.name) === candidate,
-  );
-  if (collision) {
-    throw new RuntimeAgentConfigurationConflict(
-      `Agent shortname '${candidate}' is already in use in this company`,
-    );
-  }
-}
-
 async function lockCompanyAndAgents(
   tx: RuntimeAgentConfigurationTransaction,
   companyId: string,
 ): Promise<{ company: CompanyRow; agents: AgentRow[] }> {
-  if (!isUuidLike(companyId)) {
+  if (!isCanonicalUuid(companyId)) {
     throw new RuntimeAgentConfigurationInvalid("companyId must be a UUID");
   }
   const locked = await lockCompanyAgentGraph(tx, companyId);
@@ -1411,27 +1386,6 @@ function hireApprovalPayload(
   };
 }
 
-function sourceForActor(
-  actor: InternalActor,
-  controlSource?: RuntimeAgentConfigurationControlSource,
-): "board" | "onboarding" | "agent_hire" | "agent_configure" | "plugin_control" {
-  if (actor.kind === "agent") {
-    return controlSource === undefined
-      ? "agent_configure"
-      : (() => {
-        throw new RuntimeAgentConfigurationInvalid(
-          "Agent run cannot choose a control-plane source",
-        );
-      })();
-  }
-  if (!controlSource) {
-    throw new RuntimeAgentConfigurationInvalid(
-      "Control-plane source is required",
-    );
-  }
-  return controlSource;
-}
-
 export function createRuntimeAgentConfigurationService(
   db: Db,
   options: RuntimeAgentConfigurationServiceOptions = {},
@@ -1507,7 +1461,7 @@ export function createRuntimeAgentConfigurationService(
     if (retry) return retry;
 
     const agentId = idFactory();
-    if (!isUuidLike(agentId)) {
+    if (!isCanonicalUuid(agentId)) {
       throw new RuntimeAgentConfigurationInvalid(
         "idFactory must produce UUIDs",
       );
@@ -1516,7 +1470,6 @@ export function createRuntimeAgentConfigurationService(
       input.actor.kind === "agent"
         ? input.actor.actorId
         : input.configuration.reportsTo;
-    assertUniqueName(input.configuration.name, locked.agents);
     assertReportsTo(agentId, reportsTo, locked.agents);
 
     const requiresApproval =
@@ -1578,7 +1531,7 @@ export function createRuntimeAgentConfigurationService(
     let approvalId: string | null = null;
     if (requiresApproval) {
       approvalId = idFactory();
-      if (!isUuidLike(approvalId)) {
+      if (!isCanonicalUuid(approvalId)) {
         throw new RuntimeAgentConfigurationInvalid(
           "idFactory must produce UUIDs",
         );
@@ -1640,7 +1593,7 @@ export function createRuntimeAgentConfigurationService(
     configuration: ParsedUpdateConfiguration;
     idempotencyKey: string | null;
   }): Promise<RuntimeAgentConfigurationResult> {
-    if (!isUuidLike(input.targetAgentId)) {
+    if (!isCanonicalUuid(input.targetAgentId)) {
       throw new RuntimeAgentConfigurationInvalid(
         "targetAgentId must be a UUID",
       );
@@ -1764,13 +1717,6 @@ export function createRuntimeAgentConfigurationService(
         );
       }
 
-      if (input.configuration.name !== undefined) {
-        assertUniqueName(
-          input.configuration.name,
-          locked.agents,
-          input.targetAgentId,
-        );
-      }
       if (input.configuration.reportsTo !== undefined) {
         assertReportsTo(
           input.targetAgentId,
@@ -1877,9 +1823,9 @@ export function createRuntimeAgentConfigurationService(
     configuration: ParsedCreateConfiguration;
   }) {
     if (
-      !isUuidLike(input.approvalId) ||
-      !isUuidLike(input.expectedAgentId) ||
-      !isUuidLike(input.expectedAuditId) ||
+      !isCanonicalUuid(input.approvalId) ||
+      !isCanonicalUuid(input.expectedAgentId) ||
+      !isCanonicalUuid(input.expectedAuditId) ||
       !/^[a-f0-9]{64}$/.test(input.expectedRequestDigest)
     ) {
       throw new RuntimeAgentConfigurationInvalid(
@@ -2007,11 +1953,6 @@ export function createRuntimeAgentConfigurationService(
         });
       const before = supersededAudit.afterSnapshot;
 
-      assertUniqueName(
-        input.configuration.name,
-        locked.agents,
-        target.id,
-      );
       assertReportsTo(
         target.id,
         input.configuration.reportsTo,
@@ -2075,7 +2016,7 @@ export function createRuntimeAgentConfigurationService(
         target.id,
       );
       const auditId = idFactory();
-      if (!isUuidLike(auditId)) {
+      if (!isCanonicalUuid(auditId)) {
         throw new RuntimeAgentConfigurationInvalid(
           "idFactory must produce UUIDs",
         );
@@ -2138,7 +2079,7 @@ export function createRuntimeAgentConfigurationService(
       companyId: string;
       targetAgentId: string;
     }): Promise<RuntimeAgentConfigurationSnapshot> {
-      if (!isUuidLike(input.targetAgentId)) {
+      if (!isCanonicalUuid(input.targetAgentId)) {
         throw new RuntimeAgentConfigurationInvalid(
           "targetAgentId must be a UUID",
         );

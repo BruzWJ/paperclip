@@ -33,7 +33,7 @@ describe("static SPA fallback HTML", () => {
       '<html><body><script type="module" src="/assets/index-old.js"></script></body></html>',
       "utf8",
     );
-    await expect(request(app).get("/PAP/tasks/PAP-9939")).resolves.toMatchObject({
+    await expect(request(app).get("/00000000-0000-4000-8000-000000000001/tasks/9939")).resolves.toMatchObject({
       text: expect.stringContaining("/assets/index-old.js"),
     });
 
@@ -42,7 +42,7 @@ describe("static SPA fallback HTML", () => {
       '<html><body><script type="module" src="/assets/index-new.js"></script></body></html>',
       "utf8",
     );
-    const res = await request(app).get("/PAP/tasks/PAP-9939");
+    const res = await request(app).get("/00000000-0000-4000-8000-000000000001/tasks/9939");
     expect(res.text).toContain("/assets/index-new.js");
     expect(res.text).not.toContain("/assets/index-old.js");
   });

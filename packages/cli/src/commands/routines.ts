@@ -6,6 +6,7 @@ import {
   routines,
 } from "@paperclipai/db";
 import { eq, inArray } from "drizzle-orm";
+import { isCanonicalUuid } from "@paperclipai/shared";
 import { loadPaperclipEnvFile } from "../config/env.js";
 import { readConfig, resolveConfigPath } from "../config/store.js";
 
@@ -29,10 +30,6 @@ type ClosableDb = ReturnType<typeof createDb> & {
     end?: (options?: { timeout?: number }) => Promise<void>;
   };
 };
-
-function nonEmpty(value: string | null | undefined): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
 
 async function closeDb(db: ClosableDb): Promise<void> {
   await db.$client?.end?.({ timeout: 5 }).catch(() => undefined);
@@ -62,13 +59,18 @@ export async function disableAllRoutinesInConfig(
 ): Promise<DisableAllRoutinesResult> {
   const configPath = resolveConfigPath(options.config);
   loadPaperclipEnvFile(configPath);
-  const companyId =
-    nonEmpty(options.companyId)
-    ?? nonEmpty(process.env.PAPERCLIP_BOARD_COMPANY_ID)
-    ?? null;
-  if (!companyId) {
+  const selectedCompanyId = options.companyId !== undefined
+    ? { source: "--company-id", value: options.companyId }
+    : process.env.PAPERCLIP_BOARD_COMPANY_ID !== undefined
+      ? { source: "PAPERCLIP_BOARD_COMPANY_ID", value: process.env.PAPERCLIP_BOARD_COMPANY_ID }
+      : null;
+  if (!selectedCompanyId) {
     throw new Error("Company ID is required. Pass --company-id or set PAPERCLIP_BOARD_COMPANY_ID.");
   }
+  if (!isCanonicalUuid(selectedCompanyId.value)) {
+    throw new Error(`${selectedCompanyId.source} must be an exact canonical company UUID.`);
+  }
+  const companyId = selectedCompanyId.value;
 
   const handle = await openConfiguredDb(configPath);
   try {

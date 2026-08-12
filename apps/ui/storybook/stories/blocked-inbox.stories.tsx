@@ -8,12 +8,12 @@ import { defaultTaskFilterState } from "@/lib/task-filters";
 import { queryKeys } from "@/lib/queryKeys";
 import { storybookTasks } from "../fixtures/paperclipData";
 
-const companyId = "company-storybook";
+const companyId = "11111111-1111-4111-8111-111111111111";
 const blockedViewDefaults = {
   groupBy: "none" as const,
   sortBy: "most_recent" as const,
   taskFilters: defaultTaskFilterState,
-  currentUserId: "user-1",
+  currentUserId: "a7000000-0000-4000-8000-000000000001",
   liveTaskIds: new Set<string>(),
   showStatusColumn: true,
   showIdentifierColumn: true,
@@ -45,7 +45,7 @@ const baseTask = storybookTasks[0]!;
 const fixtureTasks: Task[] = [
   {
     ...baseTask,
-    id: "task-decision-1",
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddd012",
     identifier: "PAP-401",
     title: "Approve plan: rewrite onboarding flow",
     boardPresentationStatus: "in_review",
@@ -60,7 +60,7 @@ const fixtureTasks: Task[] = [
   },
   {
     ...baseTask,
-    id: "task-stalled-critical",
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddd018",
     identifier: "PAP-410",
     title: "Ship invoice export — blocker is stalled",
     boardPresentationStatus: "blocked",
@@ -80,7 +80,7 @@ const fixtureTasks: Task[] = [
   },
   {
     ...baseTask,
-    id: "task-stalled-high",
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddd019",
     identifier: "PAP-412",
     title: "Run nightly maintenance",
     boardPresentationStatus: "blocked",
@@ -94,7 +94,7 @@ const fixtureTasks: Task[] = [
   },
   {
     ...baseTask,
-    id: "task-external",
+    id: "dddddddd-dddd-4ddd-8ddd-ddddddddd014",
     identifier: "PAP-440",
     title: "Awaiting upstream provider response",
     boardPresentationStatus: "blocked",
@@ -187,7 +187,7 @@ function BlockedTabEmptyState() {
     <div className="rounded-lg border border-border bg-background p-4">
       <BlockedInboxView
         {...blockedViewDefaults}
-        companyId="company-empty"
+        companyId="44444444-4444-4444-8444-444444444444"
         searchQuery=""
         agentNameById={new Map()}
         taskLinkState={null}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation } from "@/lib/router";
+import { Link, useMatches } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MoreHorizontal,
@@ -13,7 +14,6 @@ import {
   Users,
   AlertTriangle,
 } from "lucide-react";
-import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useToastActions } from "../context/ToastContext";
@@ -25,7 +25,7 @@ import {
 } from "../api/runs";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { queryKeys } from "../lib/queryKeys";
-import { cn, agentRouteRef, agentUrl, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
+import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { useAgentOrder } from "../hooks/useAgentOrder";
 import {
   isStarred,
@@ -34,7 +34,6 @@ import {
   useResourceMembershipMutation,
   useResourceMemberships,
 } from "../hooks/useResourceMemberships";
-import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 import {
   AGENT_SORT_MODE_UPDATED_EVENT,
   getAgentSortModeStorageKey,
@@ -60,8 +59,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { Agent } from "@paperclipai/shared";
 
 /**
- * When no agent is running, the sidebar falls back to showing at most this many
- * recently-active agents plus a "See all agents" link (IA Phase 5).
+ * When no agent has a live run, the sidebar falls back to showing at most this
+ * many recently updated agents plus a "See all agents" link (IA Phase 5).
  */
 const RECENT_AGENT_LIMIT = 3;
 const LIVE_AGENT_LINGER_MS = 120_000;
@@ -71,6 +70,16 @@ const AGENT_SORT_CHOICES: SidebarSectionRadioChoice[] = [
   { value: "alphabetical", label: "Alphabetical" },
   { value: "recent", label: "Recent" },
 ];
+
+function isAgentSortModeUpdatedDetail(value: unknown): value is AgentSortModeUpdatedDetail {
+  if (typeof value !== "object" || value === null) return false;
+  const storageKey = Reflect.get(value, "storageKey");
+  const sortMode = Reflect.get(value, "sortMode");
+  return (
+    typeof storageKey === "string" &&
+    (sortMode === "top" || sortMode === "alphabetical" || sortMode === "recent")
+  );
+}
 
 function agentTimestamp(agent: Agent, field: "updatedAt" | "createdAt"): number {
   const raw = agent[field];
@@ -133,10 +142,9 @@ function SidebarAgentItem({
   onToggleStar?: (agent: Agent, starred: boolean) => void;
   starPending?: boolean;
 }) {
-  const routeRef = agentRouteRef(agent);
-  const href = activeTab ? `${agentUrl(agent)}/${activeTab}` : agentUrl(agent);
-  const editHref = `${agentUrl(agent)}/configuration`;
-  const isActive = activeAgentId === routeRef;
+  const companyId = useCompanyRouteId();
+  const agentId = agent.id;
+  const isActive = activeAgentId === agentId;
   const isPaused = agent.status === "paused";
   const isBudgetPaused = isPaused && agent.pauseReason === "budget";
   const hasInvalidOrgChain = agent.orgChainHealth?.status === "invalid_org_chain";
@@ -155,32 +163,43 @@ function SidebarAgentItem({
 
   // C11 (DECISION-SHEET.md): the row itself is a SidebarNavItem, so agent rows
   // share the nav-row chrome (type, active state, rail tooltip, live dot).
-  const navItem = (
+  const navItemProps = {
+    label: agent.name,
+    iconNode: <AgentIcon icon={agent.icon} className="shrink-0 h-4 w-4" />,
+    active: isActive,
+    liveCount: runCount,
+    className: cn(
+      "min-w-0 flex-1",
+      // Reserve room for the hover ⋯ menu; starred rows widen it for the
+      // inline unstar star.
+      starred && !isMobile ? "pr-14" : "pr-8",
+    ),
+    trailing: hasInvalidOrgChain ? (
+      <span className="ml-1 flex shrink-0 items-center gap-1">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="Invalid reporting chain" />
+      </span>
+    ) : undefined,
+    trailingLabel,
+    liveAccessory:
+      agent.pauseReason === "budget" ? (
+        <BudgetSidebarMarker title="Agent paused by budget" />
+      ) : undefined,
+  };
+  const navItem = activeTab ? (
     <SidebarNavItem
-      to={href}
-      label={agent.name}
-      iconNode={<AgentIcon icon={agent.icon} className="shrink-0 h-4 w-4" />}
-      active={isActive}
-      liveCount={runCount}
-      className={cn(
-        "min-w-0 flex-1",
-        // Reserve room for the hover ⋯ menu; starred rows widen it for the
-        // inline unstar star.
-        starred && !isMobile ? "pr-14" : "pr-8",
-      )}
-      trailing={
-        hasInvalidOrgChain ? (
-          <span className="ml-1 flex shrink-0 items-center gap-1">
-            {hasInvalidOrgChain ? (
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="Invalid reporting chain" />
-            ) : null}
-          </span>
-        ) : undefined
-      }
-      trailingLabel={trailingLabel}
-      liveAccessory={
-        agent.pauseReason === "budget" ? <BudgetSidebarMarker title="Agent paused by budget" /> : undefined
-      }
+      {...navItemProps}
+      linkOptions={{
+        to: "/$companyId/agents/$agentId/$tab",
+        params: { companyId, agentId, tab: activeTab },
+      }}
+    />
+  ) : (
+    <SidebarNavItem
+      {...navItemProps}
+      linkOptions={{
+        to: "/$companyId/agents/$agentId",
+        params: { companyId, agentId },
+      }}
     />
   );
 
@@ -246,7 +265,12 @@ function SidebarAgentItem({
           ) : null}
           <DropdownMenuItem asChild>
             <Link
-              to={editHref}
+              to="/$companyId/agents/$agentId/$tab"
+              params={{
+                companyId,
+                agentId,
+                tab: "configuration",
+              }}
               onClick={() => {
                 if (isMobile) setSidebarOpen(false);
               }}
@@ -285,53 +309,55 @@ function SidebarAgentItem({
 }
 
 export function SidebarAgents() {
+  const companyId = useCompanyRouteId();
   const [open, setOpen] = useState(true);
   const [pendingAgentIds, setPendingAgentIds] = useState<Set<string>>(() => new Set());
   const [liveLingerVersion, setLiveLingerVersion] = useState(0);
   const lastSeenLiveAtRef = useRef<Map<string, number>>(new Map());
   const queryClient = useQueryClient();
-  const { selectedCompanyId } = useCompany();
   const { openNewAgent } = useDialogActions();
   const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
   const rail = collapsed && !peeking;
   const { pushToast } = useToastActions();
-  const location = useLocation();
+  const activeAgentRoute = useMatches({
+    select: (matches) => {
+      for (const match of matches) {
+        const agentId = Reflect.get(match.params, "agentId");
+        if (typeof agentId !== "string") continue;
+
+        const tab = Reflect.get(match.params, "tab");
+        const runId = Reflect.get(match.params, "runId");
+        return {
+          agentId,
+          tab: typeof tab === "string" ? tab : typeof runId === "string" ? "runs" : null,
+        };
+      }
+      return null;
+    },
+  });
 
   const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId!),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.agents.list(companyId),
+    queryFn: () => agentsApi.list(companyId),
   });
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
   });
-  const membershipsQuery = useResourceMemberships(selectedCompanyId);
-  const membershipMutation = useResourceMembershipMutation(selectedCompanyId);
+  const membershipsQuery = useResourceMemberships(companyId);
+  const membershipMutation = useResourceMembershipMutation(companyId);
 
   const activeRunStatuses = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
-  const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, {
+  const activeRunsQueryKey = queryKeys.runs(companyId, {
     status: activeRunStatuses,
   });
-  const sharedLiveRuns = useSharedPollingQuery({
-    companyId: selectedCompanyId,
-    resourceKey: "active-runs",
+  const { data: activeRunPage } = useQuery({
     queryKey: activeRunsQueryKey,
-    enabled: !!selectedCompanyId,
-    // Event-sourced via LiveUpdatesProvider (task 9627); no interval poll needed.
-    refetchInterval: false,
-    leaderOnly: true,
-  });
-  const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
-    queryKey: activeRunsQueryKey,
-    queryFn: () => runsApi.listForCompany(selectedCompanyId!, {
+    queryFn: () => runsApi.listForCompany(companyId, {
       status: activeRunStatuses,
       limit: 200,
     }),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
   });
-  usePublishSharedQueryData(sharedLiveRuns, activeRunPage, activeRunsUpdatedAt);
 
   const liveCountByAgent = useMemo(() => {
     const counts = new Map<string, number>();
@@ -359,18 +385,17 @@ export function SidebarAgents() {
     );
     return filtered;
   }, [agents, membershipsQuery.data, membershipsQuery.isSuccess]);
-  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const currentUserId = session?.user.id ?? null;
   const sortModeStorageKey = useMemo(() => {
-    if (!selectedCompanyId) return null;
-    return getAgentSortModeStorageKey(selectedCompanyId, currentUserId);
-  }, [currentUserId, selectedCompanyId]);
+    return getAgentSortModeStorageKey(companyId, currentUserId);
+  }, [companyId, currentUserId]);
   const [sortMode, setSortMode] = useState<AgentSidebarSortMode>(() => {
     if (!sortModeStorageKey) return "top";
     return readAgentSortMode(sortModeStorageKey);
   });
   const { orderedAgents } = useAgentOrder({
     agents: visibleAgents,
-    companyId: selectedCompanyId,
+    companyId,
     userId: currentUserId,
   });
   const sortedAgents = useMemo(
@@ -394,8 +419,8 @@ export function SidebarAgents() {
     }
   }, [liveAgentIds, sortedAgentIdSet]);
 
-  // If any agent has a live run, show only those
-  // active agents. Agents that just stopped running linger briefly so clustered
+  // If any agent has a live run, show only those agents. Agents whose runs just
+  // stopped linger briefly so clustered
   // run boundaries do not make rows pop out and the section does not immediately
   // swap to the recent fallback during short all-idle gaps. Otherwise fall back
   // to up to RECENT_AGENT_LIMIT agents. Either way a "See all agents" link is
@@ -417,9 +442,8 @@ export function SidebarAgents() {
   // agents, so users never lose the entry point to the full list.
   const showSeeAllLink = sortedAgents.length > 0;
 
-  const agentMatch = location.pathname.match(/^\/(?:[^/]+\/)?agents\/([^/]+)(?:\/([^/]+))?/);
-  const activeAgentId = agentMatch?.[1] ?? null;
-  const activeTab = agentMatch?.[2] ?? null;
+  const activeAgentId = activeAgentRoute?.agentId ?? null;
+  const activeTab = activeAgentRoute?.tab ?? null;
 
   useEffect(() => {
     if (!sortModeStorageKey) {
@@ -437,8 +461,9 @@ export function SidebarAgents() {
       setSortMode(readAgentSortMode(sortModeStorageKey));
     };
     const onCustomEvent = (event: Event) => {
-      const detail = (event as CustomEvent<AgentSortModeUpdatedDetail>).detail;
-      if (!detail || detail.storageKey !== sortModeStorageKey) return;
+      if (!(event instanceof CustomEvent)) return;
+      const detail = event.detail;
+      if (!isAgentSortModeUpdatedDetail(detail) || detail.storageKey !== sortModeStorageKey) return;
       setSortMode(detail.sortMode);
     };
 
@@ -487,8 +512,8 @@ export function SidebarAgents() {
   const pauseResumeAgent = useMutation({
     mutationFn: ({ agent, action }: { agent: Agent; action: "pause" | "resume" }) =>
       action === "pause"
-        ? agentsApi.pause(agent.id, selectedCompanyId ?? undefined)
-        : agentsApi.resume(agent.id, selectedCompanyId ?? undefined),
+        ? agentsApi.pause(agent.id)
+        : agentsApi.resume(agent.id),
     onMutate: ({ agent }) => {
       setPendingAgentIds((current) => {
         const next = new Set(current);
@@ -497,17 +522,14 @@ export function SidebarAgents() {
       });
     },
     onSuccess: async (_agent, { agent, action }) => {
-      if (selectedCompanyId) {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.runs(selectedCompanyId) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(selectedCompanyId) }),
-        ]);
-      }
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentRouteRef(agent)) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(companyId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.runs(companyId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(companyId) }),
       ]);
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.agents.detail(agent.id),
+      });
       pushToast({
         title: action === "pause" ? "Agent paused" : "Agent resumed",
         body: agent.name,
@@ -613,7 +635,19 @@ export function SidebarAgents() {
       menu={{
         ariaLabel: "Agents section actions",
         actions: [
-          { type: "item", label: "Browse agents", icon: Users, href: "/agents/all" },
+          {
+            type: "item",
+            label: "Browse agents",
+            icon: Users,
+            renderLink: (content) => (
+              <Link
+                to="/$companyId/agents"
+                params={{ companyId }}
+              >
+                {content}
+              </Link>
+            ),
+          },
           { type: "separator" },
         ],
         radioLabel: "Agent sort",
@@ -640,7 +674,8 @@ export function SidebarAgents() {
         // (plain Link) that must not adopt nav-row active-route highlighting.
         const seeAllLink = (
           <Link
-            to="/agents/all"
+            to="/$companyId/agents"
+            params={{ companyId }}
             state={SIDEBAR_SCROLL_RESET_STATE}
             aria-label={rail ? "See all agents" : undefined}
             onClick={() => {

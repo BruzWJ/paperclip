@@ -10,32 +10,32 @@ import {
 } from "@/components/RoutineList";
 
 const projectById = new Map<string, RoutineListProjectSummary>([
-  ["p1", { name: "Board UI", color: "#6366f1" }],
-  ["p2", { name: "Growth", color: "#10b981" }],
+  ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", { name: "Board UI", color: "#6366f1" }],
+  ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6", { name: "Growth", color: "#10b981" }],
 ]);
 const agentById = new Map<string, RoutineListAgentSummary>([
-  ["a1", { name: "CodexCoder", icon: null }],
-  ["a2", { name: "Digest Bot", icon: null }],
+  ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", { name: "CodexCoder", icon: null }],
+  ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7", { name: "Digest Bot", icon: null }],
 ]);
 
 type Group = { key: string; label: string | null; items: RoutineListRowItem[] };
 
 const GROUPS: Group[] = [
   {
-    key: "p1",
+    key: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
     label: "Board UI",
     items: [
-      { id: "r1", title: "Weekly digest", status: "active", projectId: "p1", assigneeAgentId: "a2", lastRun: { triggeredAt: "2026-06-09T08:00:00Z", status: "succeeded" } },
-      { id: "r2", title: "Triage stale tasks", status: "active", projectId: "p1", assigneeAgentId: "a1", lastRun: { triggeredAt: "2026-06-08T08:00:00Z", status: "succeeded" } },
-      { id: "r3", title: "Nightly changelog draft", status: "paused", projectId: "p1", assigneeAgentId: "a1", lastRun: null },
+      { id: "ffffffff-ffff-4fff-8fff-fffffffffff6", title: "Weekly digest", status: "active", projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7", lastRun: { triggeredAt: "2026-06-09T08:00:00Z", status: "succeeded" } },
+      { id: "ffffffff-ffff-4fff-8fff-fffffffffff7", title: "Triage stale tasks", status: "active", projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", lastRun: { triggeredAt: "2026-06-08T08:00:00Z", status: "succeeded" } },
+      { id: "ffffffff-ffff-4fff-8fff-fffffffffff8", title: "Nightly changelog draft", status: "paused", projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", lastRun: null },
     ],
   },
   {
-    key: "p2",
+    key: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
     label: "Growth",
     items: [
-      { id: "r4", title: "Lead enrichment sweep", status: "active", projectId: "p2", assigneeAgentId: "a1", lastRun: { triggeredAt: "2026-06-09T06:00:00Z", status: "running" } },
-      { id: "r5", title: "Outbound follow-ups", status: "active", projectId: "p2", assigneeAgentId: "a2", lastRun: { triggeredAt: "2026-06-07T06:00:00Z", status: "failed" } },
+      { id: "ffffffff-ffff-4fff-8fff-fffffffffff9", title: "Lead enrichment sweep", status: "active", projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6", assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", lastRun: { triggeredAt: "2026-06-09T06:00:00Z", status: "running" } },
+      { id: "ffffffff-ffff-4fff-8fff-fffffffffff0", title: "Outbound follow-ups", status: "active", projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6", assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7", lastRun: { triggeredAt: "2026-06-07T06:00:00Z", status: "failed" } },
     ],
   },
 ];
@@ -73,7 +73,6 @@ function GroupedList() {
                     agentById={agentById}
                     runningRoutineId={null}
                     statusMutationRoutineId={null}
-                    href={`#${routine.id}`}
                     runNowButton
                     divider={false}
                     onRunNow={() => {}}

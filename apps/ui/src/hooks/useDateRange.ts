@@ -42,8 +42,8 @@ function computeRange(preset: DatePreset): { from: string; to: string } {
   }
 }
 
-// floor a Date to the nearest minute so the query key is stable across
-// 30s refetch ticks (prevents new cache entries on every poll cycle)
+// Floor a Date to the nearest minute so the query key changes only at the
+// calendar cadence used by sliding ranges.
 function floorToMinute(d: Date): string {
   const floored = new Date(d);
   floored.setSeconds(0, 0);

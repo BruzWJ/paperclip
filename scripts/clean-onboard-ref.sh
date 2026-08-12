@@ -18,7 +18,8 @@ Environment overrides:
   KEEP_TEMP=1                 Keep the temp directory and detached worktree for debugging
   PC_TEST_ROOT=/tmp/custom    Base temp directory to use
   PC_DATA=/tmp/data           Paperclip data dir to use
-  PAPERCLIP_HOST=127.0.0.1    Host passed to the onboarded server
+  PAPERCLIP_BIND=loopback     Bind mode passed to the onboarded server
+  PAPERCLIP_BIND_HOST=10.0.0.2  Exact host when PAPERCLIP_BIND=custom
   PAPERCLIP_PORT=3232         Port passed to the onboarded server
 
 Notes:
@@ -45,7 +46,8 @@ export PC_HOME="${PC_HOME:-$PC_TEST_ROOT/home}"
 export PC_CACHE="${PC_CACHE:-$PC_TEST_ROOT/npm-cache}"
 export PC_DATA="${PC_DATA:-$PC_TEST_ROOT/paperclip-data}"
 export PC_REPO="${PC_REPO:-$PC_TEST_ROOT/repo}"
-export PAPERCLIP_HOST="${PAPERCLIP_HOST:-127.0.0.1}"
+export PAPERCLIP_BIND="${PAPERCLIP_BIND:-loopback}"
+export PAPERCLIP_BIND_HOST="${PAPERCLIP_BIND_HOST:-}"
 export PAPERCLIP_PORT="${PAPERCLIP_PORT:-3100}"
 export PAPERCLIP_OPEN_ON_LISTEN="${PAPERCLIP_OPEN_ON_LISTEN:-false}"
 
@@ -68,7 +70,8 @@ echo "PC_TEST_ROOT: $PC_TEST_ROOT"
 echo "PC_HOME: $PC_HOME"
 echo "PC_DATA: $PC_DATA"
 echo "PC_REPO: $PC_REPO"
-echo "PAPERCLIP_HOST: $PAPERCLIP_HOST"
+echo "PAPERCLIP_BIND: $PAPERCLIP_BIND"
+echo "PAPERCLIP_BIND_HOST: $PAPERCLIP_BIND_HOST"
 echo "PAPERCLIP_PORT: $PAPERCLIP_PORT"
 
 git -C "$REPO_ROOT" worktree add --detach "$PC_REPO" "$TARGET_COMMIT"
@@ -80,7 +83,8 @@ env \
   HOME="$PC_HOME" \
   npm_config_cache="$PC_CACHE" \
   npm_config_userconfig="$PC_HOME/.npmrc" \
-  HOST="$PAPERCLIP_HOST" \
+  PAPERCLIP_BIND="$PAPERCLIP_BIND" \
+  PAPERCLIP_BIND_HOST="$PAPERCLIP_BIND_HOST" \
   PORT="$PAPERCLIP_PORT" \
   PAPERCLIP_OPEN_ON_LISTEN="$PAPERCLIP_OPEN_ON_LISTEN" \
   pnpm paperclipai onboard --yes --data-dir "$PC_DATA"

@@ -11,9 +11,7 @@ const boardApiKeyId = "board-key-1";
 const taskId = "00000000-0000-4000-8000-000000000002";
 const targetAgentId = "00000000-0000-4000-8000-000000000003";
 
-const mocks = vi.hoisted(() => ({
-  routeExecution: vi.fn(),
-}));
+const mocks = vi.hoisted(() => ({ routeExecution: vi.fn() }));
 
 function fakeDb() {
   return {
@@ -27,6 +25,8 @@ function fakeDb() {
 
 function createApp(authenticated = true) {
   const app = express();
+  app.set("case sensitive routing", true);
+  app.set("strict routing", true);
   app.use(express.json());
   app.use((req, _res, next) => {
     req.actor = authenticated
@@ -70,7 +70,7 @@ describe("Board MCP route", () => {
     mocks.routeExecution.mockResolvedValue({ agents: [] });
   });
 
-  it("places accessible companies in initialize instructions instead of a list_companies tool", async () => {
+  it("places accessible companies in initialize instructions", async () => {
     await request(createApp())
       .post("/mcp")
       .set("accept", "application/json, text/event-stream")
@@ -80,12 +80,14 @@ describe("Board MCP route", () => {
         expect(body.result.instructions).toContain(
           `- Acme Board: companyId=${companyId}, membershipRole=viewer`,
         );
-        expect(body.result.instructions).toContain("mention_board is intentionally unavailable");
+        expect(body.result.instructions).toContain(
+          "mention_board is intentionally unavailable",
+        );
         expect(body.result.instructions).not.toContain("list_companies");
       });
   });
 
-  it("exposes the complete managed-tool catalog without list_companies or mention_board", async () => {
+  it("exposes board tools without list_companies or mention_board", async () => {
     await request(createApp())
       .post("/mcp")
       .set("accept", "application/json, text/event-stream")
@@ -101,7 +103,7 @@ describe("Board MCP route", () => {
       });
   });
 
-  it("calls the same app-owned managed-tool router used by ACPX", async () => {
+  it("calls the app-owned router with board-user authority", async () => {
     await request(createApp())
       .post("/mcp")
       .set("accept", "application/json, text/event-stream")
@@ -119,12 +121,16 @@ describe("Board MCP route", () => {
     expect(mocks.routeExecution).toHaveBeenCalledWith(
       { name: "list_agents", companyId },
       expect.objectContaining({
-        authority: expect.objectContaining({ kind: "board_user", userId, credentialId: boardApiKeyId }),
+        authority: expect.objectContaining({
+          kind: "board_user",
+          userId,
+          credentialId: boardApiKeyId,
+        }),
       }),
     );
   });
 
-  it("forwards mention_agent's explicit target agentId unchanged", async () => {
+  it("forwards exact mention_agent input unchanged", async () => {
     await request(createApp())
       .post("/mcp")
       .set("accept", "application/json, text/event-stream")
@@ -156,7 +162,31 @@ describe("Board MCP route", () => {
     );
   });
 
-  it("requires the existing board-key actor", async () => {
+  it("rejects noncanonical UUIDs instead of normalizing them", async () => {
+    const uppercaseCompanyId = "aaaaaaaa-0000-4000-8000-000000000001".toUpperCase();
+    await request(createApp())
+      .post("/mcp")
+      .set("accept", "application/json, text/event-stream")
+      .send({
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: {
+          name: "list_agents",
+          arguments: { companyId: uppercaseCompanyId },
+        },
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.result.isError).toBe(true);
+        expect(body.result.content[0].text).toContain(
+          "Expected an exact lowercase canonical UUID",
+        );
+      });
+    expect(mocks.routeExecution).not.toHaveBeenCalled();
+  });
+
+  it("requires an existing board-key actor", async () => {
     await request(createApp(false))
       .post("/mcp")
       .set("accept", "application/json, text/event-stream")
@@ -165,5 +195,10 @@ describe("Board MCP route", () => {
       .expect(({ body }) => {
         expect(body.error.data.code).toBe("board_mcp_authentication_required");
       });
+  });
+
+  it("keeps the endpoint strict and case-sensitive", async () => {
+    await request(createApp()).post("/MCP").send(initializeRequest).expect(404);
+    await request(createApp()).post("/mcp/").send(initializeRequest).expect(404);
   });
 });

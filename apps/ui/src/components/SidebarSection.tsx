@@ -1,5 +1,4 @@
 import { useState, type ComponentType, type ReactNode } from "react";
-import { Link } from "@/lib/router";
 import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "../context/SidebarContext";
@@ -27,7 +26,7 @@ export type SidebarSectionMenuAction =
       type: "item";
       label: string;
       icon?: SidebarSectionIcon;
-      href?: string;
+      renderLink?: (content: ReactNode) => ReactNode;
       onSelect?: () => void;
     }
   | { type: "separator" };
@@ -119,10 +118,10 @@ function SidebarSectionHeader({
               <span>{action.label}</span>
             </>
           );
-          if (action.href) {
+          if (action.renderLink) {
             return (
               <DropdownMenuItem key={`${action.label}-${index}`} asChild>
-                <Link to={action.href}>{content}</Link>
+                {action.renderLink(content)}
               </DropdownMenuItem>
             );
           }

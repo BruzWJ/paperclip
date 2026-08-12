@@ -13,9 +13,7 @@ import {
   type InvokableTaskOwnerRevision,
 } from "../services/agent-invokability.js";
 import type { TaskSessionDbTransaction } from "../services/task-session/event-store.js";
-import {
-  lockPluginInstallationCompanyScopeInTransaction,
-} from "../services/plugin-authorization-locks.js";
+import { lockPluginInstallationCompanyScopeInTransaction } from "../services/plugin-authorization-locks.js";
 import { pluginRegistryService } from "../services/plugin-registry.js";
 import {
   assertPluginInstallationRequestScope,
@@ -68,9 +66,8 @@ function canonicalInvokableCatalog() {
       companyId: COMPANY_ID,
       name: "Ready",
       reportsTo: null,
-      status: "active",
-      currentAdapterConfigRevisionId:
-        "00000000-0000-4000-8000-000000000020",
+      status: "idle",
+      currentAdapterConfigRevisionId: "00000000-0000-4000-8000-000000000020",
     },
     {
       id: "00000000-0000-4000-8000-000000000011",
@@ -78,17 +75,15 @@ function canonicalInvokableCatalog() {
       name: "Paused",
       reportsTo: null,
       status: "paused",
-      currentAdapterConfigRevisionId:
-        "00000000-0000-4000-8000-000000000021",
+      currentAdapterConfigRevisionId: "00000000-0000-4000-8000-000000000021",
     },
     {
       id: "00000000-0000-4000-8000-000000000012",
       companyId: COMPANY_ID,
       name: "Missing current revision",
       reportsTo: null,
-      status: "active",
-      currentAdapterConfigRevisionId:
-        "00000000-0000-4000-8000-000000000022",
+      status: "idle",
+      currentAdapterConfigRevisionId: "00000000-0000-4000-8000-000000000022",
     },
   ];
   const revisions: InvokableTaskOwnerRevision[] = [
@@ -134,9 +129,7 @@ describe("plugin task owner authorization", () => {
     expect([...catalog.keys()]).toEqual([
       "00000000-0000-4000-8000-000000000010",
     ]);
-    expect(
-      catalog.get("00000000-0000-4000-8000-000000000010"),
-    ).toMatchObject({
+    expect(catalog.get("00000000-0000-4000-8000-000000000010")).toMatchObject({
       owner: { name: "Ready" },
       revisionId: "00000000-0000-4000-8000-000000000020",
     });
@@ -195,11 +188,13 @@ describe("plugin task owner authorization", () => {
       },
     } as unknown as Db;
 
-    await expect(assertPluginInstallationRequestScope(db, {
-      companyId: COMPANY_ID,
-      pluginInstallationId: INSTALLATION_ID,
-      pluginKey: PLUGIN_KEY,
-    })).resolves.toMatchObject({ id: INSTALLATION_ID });
+    await expect(
+      assertPluginInstallationRequestScope(db, {
+        companyId: COMPANY_ID,
+        pluginInstallationId: INSTALLATION_ID,
+        pluginKey: PLUGIN_KEY,
+      }),
+    ).resolves.toMatchObject({ id: INSTALLATION_ID });
   });
 
   it.each([
@@ -277,10 +272,7 @@ describe("plugin task owner authorization", () => {
       companyId: COMPANY_ID,
     });
 
-    expect(lockOrder).toEqual([
-      plugins,
-      companies,
-    ]);
+    expect(lockOrder).toEqual([plugins, companies]);
     expect(scope).toMatchObject({
       installation: { id: INSTALLATION_ID },
       company: { id: COMPANY_ID },
@@ -318,11 +310,7 @@ describe("plugin task owner authorization", () => {
       },
       update(table: unknown) {
         expect(table).toBe(pluginCompanySettings);
-        expect(lockOrder).toEqual([
-          plugins,
-          companies,
-          pluginCompanySettings,
-        ]);
+        expect(lockOrder).toEqual([plugins, companies, pluginCompanySettings]);
         return {
           set() {
             return {
@@ -363,9 +351,8 @@ describe("plugin task owner authorization", () => {
       companyId: COMPANY_ID,
       name: "Ready",
       reportsTo: null,
-      status: "active",
-      currentAdapterConfigRevisionId:
-        "00000000-0000-4000-8000-000000000020",
+      status: "idle",
+      currentAdapterConfigRevisionId: "00000000-0000-4000-8000-000000000020",
     } as typeof agents.$inferSelect;
     const revision = {
       id: owner.currentAdapterConfigRevisionId,

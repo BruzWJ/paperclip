@@ -36,6 +36,7 @@ import {
   type CompanySearchSort,
   type CompanySearchUpdatedWithinOption,
 } from "@paperclipai/shared";
+import { notFound } from "../errors.js";
 import { companyArtifactsService } from "./company-artifacts.js";
 import { companySearchExtractService } from "./company-search-extract.js";
 import { visibleTaskCondition } from "./task-visibility.js";
@@ -57,7 +58,8 @@ export const COMPANY_SEARCH_BRANCH_FETCH_LIMIT = COMPANY_SEARCH_MAX_OFFSET + COM
 
 type TaskSearchRow = {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   request: string | null;
   status: string;
@@ -217,12 +219,8 @@ function iso(value: Date | string | null | undefined) {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
-function routePrefix(taskPrefix: string | null | undefined) {
-  return taskPrefix?.trim() || "company";
-}
-
-function taskHref(prefix: string, task: { id: string; identifier: string | null }, suffix = "") {
-  return `/${prefix}/tasks/${encodeURIComponent(task.identifier ?? task.id)}${suffix}`;
+function requireCompany(company: { id: string } | null) {
+  if (!company) throw notFound("Company not found");
 }
 
 function matchTerms(normalizedQuery: string, tokens: string[]) {
@@ -274,7 +272,7 @@ function taskOnlyFiltersActive(query: CompanySearchQuery) {
 function activeTaskFilters(query: CompanySearchQuery): Array<{ key: CompanySearchTaskFilterKey; values: string[] }> {
   const filters: Array<{ key: CompanySearchTaskFilterKey; values: string[] }> = [];
   if (query.status.length > 0) filters.push({ key: "status", values: query.status });
-  if (query.ownerAgentId !== undefined) filters.push({ key: "ownerAgentId", values: [query.ownerAgentId ?? "null"] });
+  if (query.ownerAgentId !== undefined) filters.push({ key: "ownerAgentId", values: [query.ownerAgentId] });
   if (query.ownerUserId) filters.push({ key: "ownerUserId", values: [query.ownerUserId] });
   if (query.projectId) filters.push({ key: "projectId", values: [query.projectId] });
   if (query.labelId) filters.push({ key: "labelId", values: [query.labelId] });
@@ -321,7 +319,7 @@ function taskFilterConditions(companyId: string, query: CompanySearchQuery, omit
     conditions.push(query.priority.length === 1 ? eq(tasks.priority, query.priority[0]!) : inArray(tasks.priority, query.priority));
   }
   if (omit !== "ownerAgentId" && query.ownerAgentId !== undefined) {
-    conditions.push(query.ownerAgentId === null ? isNull(tasks.ownerAgentId) : eq(tasks.ownerAgentId, query.ownerAgentId));
+    conditions.push(eq(tasks.ownerAgentId, query.ownerAgentId));
   }
   if (omit !== "ownerUserId" && query.ownerUserId) {
     conditions.push(eq(tasks.ownerUserId, query.ownerUserId));
@@ -359,9 +357,7 @@ function matchedFacetConditions(companyId: string, query: CompanySearchQuery, om
     conditions.push(sql`m.priority = ANY(${sqlTextArray(query.priority)})`);
   }
   if (omit !== "ownerAgentId" && query.ownerAgentId !== undefined) {
-    conditions.push(query.ownerAgentId === null
-      ? sql`m.owner_agent_id IS NULL`
-      : sql`m.owner_agent_id = ${query.ownerAgentId}`);
+    conditions.push(sql`m.owner_agent_id = ${query.ownerAgentId}`);
   }
   if (omit !== "ownerUserId" && query.ownerUserId) {
     conditions.push(sql`m.owner_user_id = ${query.ownerUserId}`);
@@ -460,14 +456,21 @@ function selectPrimarySnippets(row: TaskSearchRow, normalizedQuery: string, toke
   return candidates.filter((snippet): snippet is CompanySearchSnippet => Boolean(snippet)).slice(0, 2);
 }
 
-function taskResult(row: TaskSearchRow, prefix: string, normalizedQuery: string, tokens: string[]): CompanySearchResult {
+function taskResult(
+  row: TaskSearchRow,
+  normalizedQuery: string,
+  tokens: string[],
+): CompanySearchResult | null {
   const snippets = selectPrimarySnippets(row, normalizedQuery, tokens);
   const sourceLabel = snippets[0]?.label ?? null;
-  const documentSuffix = row.documentKey ? `#document-${encodeURIComponent(row.documentKey)}` : "";
-  const commentSuffix = row.commentId ? `#comment-${encodeURIComponent(row.commentId)}` : "";
-  const suffix = row.commentId ? commentSuffix : documentSuffix;
+  const fragment = row.commentId
+    ? `comment-${row.commentId}`
+    : row.documentKey
+      ? `document-${row.documentKey}`
+      : null;
   const task: CompanySearchTaskSummary = {
     id: row.id,
+    taskNumber: row.taskNumber,
     identifier: row.identifier,
     title: row.title,
     boardPresentationStatus:
@@ -488,7 +491,7 @@ function taskResult(row: TaskSearchRow, prefix: string, normalizedQuery: string,
     type: "task",
     score: Number(row.score),
     title: taskDisplayLabel(row),
-    href: taskHref(prefix, row, suffix),
+    routeTarget: { kind: "task", taskNumber: row.taskNumber, hash: fragment },
     matchedFields: row.matchedFields ?? [],
     sourceLabel,
     snippet: snippets[0]?.text ?? null,
@@ -499,7 +502,11 @@ function taskResult(row: TaskSearchRow, prefix: string, normalizedQuery: string,
   };
 }
 
-function scoreSimpleRow(row: SimpleSearchRow, normalizedQuery: string, tokens: string[]) {
+function scoreSimpleRow(
+  row: Pick<SimpleSearchRow, "id" | "title" | "description" | "createdAt" | "updatedAt">,
+  normalizedQuery: string,
+  tokens: string[],
+) {
   const haystack = [row.title, row.description].filter(Boolean).join(" ").toLowerCase();
   let score = haystack.includes(normalizedQuery) ? 90 : 0;
   for (const token of tokens) {
@@ -509,7 +516,11 @@ function scoreSimpleRow(row: SimpleSearchRow, normalizedQuery: string, tokens: s
   return score;
 }
 
-function artifactResult(artifact: CompanyArtifact, normalizedQuery: string, tokens: string[]): CompanySearchResult {
+function artifactResult(
+  artifact: CompanyArtifact,
+  normalizedQuery: string,
+  tokens: string[],
+): CompanySearchResult | null {
   const terms = matchTerms(normalizedQuery, tokens);
   const snippet = createSnippet(
     "artifact",
@@ -522,8 +533,10 @@ function artifactResult(artifact: CompanyArtifact, normalizedQuery: string, toke
     source: artifact.source,
     mediaKind: artifact.mediaKind,
     taskId: artifact.task.id,
+    taskNumber: artifact.task.taskNumber,
     taskIdentifier: artifact.task.identifier,
     taskTitle: artifact.task.title,
+    taskFragment: artifact.taskFragment,
     projectId: artifact.project?.id ?? null,
     projectName: artifact.project?.name ?? null,
     updatedAt: artifact.updatedAt,
@@ -542,7 +555,11 @@ function artifactResult(artifact: CompanyArtifact, normalizedQuery: string, toke
     type: "artifact",
     score,
     title: artifact.title,
-    href: artifact.href,
+    routeTarget: {
+      kind: "task",
+      taskNumber: artifact.task.taskNumber,
+      hash: artifact.taskFragment,
+    },
     matchedFields: ["artifact"],
     sourceLabel: snippet?.label ?? "Artifact",
     snippet: snippet?.text ?? artifact.previewText,
@@ -767,7 +784,7 @@ export function companySearchService(db: Db) {
           conditions.length > 0 ? sql`WHERE ${sql.join(conditions, sql` AND `)}` : sql``;
         // Count branches must match the result branch's column list; the
         // trailing NULLs pad the task data columns.
-        const countTail = sql`, NULL::uuid, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::uuid, NULL::text, NULL::uuid, NULL::timestamptz, NULL::timestamptz, NULL::double precision, NULL::text[]`;
+        const countTail = sql`, NULL::uuid, NULL::integer, NULL::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::uuid, NULL::text, NULL::uuid, NULL::timestamptz, NULL::timestamptz, NULL::double precision, NULL::text[]`;
         const branches: SQL[] = [];
 
         const wantResultRows = scopeIncludesTasks(scope)
@@ -805,6 +822,7 @@ export function companySearchService(db: Db) {
               NULL::text AS value,
               0 AS count,
               m.id,
+              m.task_number AS "taskNumber",
               m.identifier,
               m.title,
               m.request,
@@ -910,6 +928,7 @@ export function companySearchService(db: Db) {
           matched AS MATERIALIZED (
             SELECT
               tasks.id,
+              tasks.task_number,
               tasks.identifier,
               tasks.title,
               tasks.request,
@@ -953,6 +972,7 @@ export function companySearchService(db: Db) {
           if (row.kind === "result") {
             taskRowsRaw.push({
               id: row.id,
+              taskNumber: row.taskNumber,
               identifier: row.identifier,
               title: row.title,
               request: row.request,
@@ -1091,7 +1111,7 @@ export function companySearchService(db: Db) {
 
       async function fetchAgentRows() {
         if (!hasSearchText || !scopeIncludesAgents(scope) || hasTaskOnlyFilters) return [];
-        return db
+        const rows = await db
           .select({
             id: agents.id,
             title: agents.name,
@@ -1103,11 +1123,12 @@ export function companySearchService(db: Db) {
           .where(and(eq(agents.companyId, companyId), simpleCondition))
           .orderBy(desc(agents.updatedAt), desc(agents.id))
           .limit(fetchLimit);
+        return rows;
       }
 
       async function fetchProjectRows() {
         if (!hasSearchText || !scopeIncludesProjects(scope) || hasTaskOnlyFilters) return [];
-        return db
+        const rows = await db
           .select({
             id: projects.id,
             title: projects.name,
@@ -1119,6 +1140,7 @@ export function companySearchService(db: Db) {
           .where(and(eq(projects.companyId, companyId), isNull(projects.archivedAt), projectCondition))
           .orderBy(desc(projects.updatedAt), desc(projects.id))
           .limit(fetchLimit);
+        return rows;
       }
 
       async function countArtifacts(filters: CompanySearchQuery = query) {
@@ -1210,6 +1232,8 @@ export function companySearchService(db: Db) {
       async function fetchArtifactRows() {
         if (!hasSearchText || !scopeIncludesArtifacts(scope)) return [];
         const result = await companyArtifactsService(db).list(companyId, {
+          kind: "all",
+          groupBy: "none",
           q: normalizedQuery.slice(0, COMPANY_ARTIFACTS_MAX_QUERY_LENGTH),
           limit: Math.min(fetchLimit, COMPANY_ARTIFACTS_MAX_LIMIT),
         }, { taskConditions: taskFilters });
@@ -1218,7 +1242,7 @@ export function companySearchService(db: Db) {
 
       const [company, taskSearchData, artifactRows, agentRows, projectRows, artifactCount, agentCount, projectCount] = await Promise.all([
         db
-          .select({ taskPrefix: companies.taskPrefix })
+          .select({ id: companies.id })
           .from(companies)
           .where(eq(companies.id, companyId))
           .then((rows) => rows[0] ?? null),
@@ -1230,7 +1254,7 @@ export function companySearchService(db: Db) {
         scopeIncludesAgents(scope) ? countAgents(query) : Promise.resolve(0),
         scopeIncludesProjects(scope) ? countProjects(query) : Promise.resolve(0),
       ]);
-      const prefix = routePrefix(company?.taskPrefix);
+      requireCompany(company);
       const { rows: taskRows, aggregates } = taskSearchData;
 
       const countsByType = emptySearchCounts();
@@ -1247,28 +1271,32 @@ export function companySearchService(db: Db) {
         + projectCount;
 
       const results: SearchResultWithSort[] = [
-        ...taskRows.map((row) => {
-          const result = taskResult(row, prefix, normalizedQuery, tokens);
-          return {
+        ...taskRows.flatMap((row) => {
+          const result = taskResult(row, normalizedQuery, tokens);
+          if (!result) return [];
+          return [{
             ...result,
             sortCreatedAt: iso(row.createdAt),
             sortPriorityRank: priorityRank(row.priority),
-          };
+          }];
         }),
-        ...artifactRows.map((artifact) => ({
-          ...artifactResult(artifact, normalizedQuery, tokens),
-          sortCreatedAt: artifact.updatedAt,
-          sortPriorityRank: TASK_PRIORITIES.length,
-        })),
-        ...(agentRows as SimpleSearchRow[]).map((row) => {
+        ...artifactRows.flatMap((artifact) => {
+          const result = artifactResult(artifact, normalizedQuery, tokens);
+          return result ? [{
+            ...result,
+            sortCreatedAt: artifact.updatedAt,
+            sortPriorityRank: TASK_PRIORITIES.length,
+          }] : [];
+        }),
+        ...(agentRows as SimpleSearchRow[]).flatMap((row) => {
           const terms = matchTerms(normalizedQuery, tokens);
           const snippet = createSnippet("capabilities", "Agent", row.description ?? row.title, terms);
-          return {
+          return [{
             id: row.id,
             type: "agent" as const,
             score: scoreSimpleRow(row, normalizedQuery, tokens),
             title: row.title,
-            href: `/${prefix}/agents/${encodeURIComponent(row.id)}`,
+            routeTarget: { kind: "agent" as const, id: row.id },
             matchedFields: ["agent"],
             sourceLabel: snippet?.label ?? null,
             snippet: snippet?.text ?? null,
@@ -1277,17 +1305,17 @@ export function companySearchService(db: Db) {
             previewImageUrl: null,
             sortCreatedAt: iso(row.createdAt),
             sortPriorityRank: TASK_PRIORITIES.length,
-          };
+          }];
         }),
-        ...(projectRows as SimpleSearchRow[]).map((row) => {
+        ...(projectRows as SimpleSearchRow[]).flatMap((row) => {
           const terms = matchTerms(normalizedQuery, tokens);
           const snippet = createSnippet("description", "Project", row.description ?? row.title, terms);
-          return {
+          return [{
             id: row.id,
             type: "project" as const,
             score: scoreSimpleRow(row, normalizedQuery, tokens),
             title: row.title,
-            href: `/${prefix}/projects/${encodeURIComponent(row.id)}`,
+            routeTarget: { kind: "project" as const, id: row.id },
             matchedFields: ["project"],
             sourceLabel: snippet?.label ?? null,
             snippet: snippet?.text ?? null,
@@ -1296,7 +1324,7 @@ export function companySearchService(db: Db) {
             previewImageUrl: null,
             sortCreatedAt: iso(row.createdAt),
             sortPriorityRank: TASK_PRIORITIES.length,
-          };
+          }];
         }),
       ].sort(compareSearchResults(sort));
 

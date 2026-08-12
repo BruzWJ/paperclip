@@ -56,12 +56,8 @@ export type {
 export interface PluginHostContext {
   /** UUID of the currently active company, if any. */
   companyId: string | null;
-  /** URL prefix for the current company (e.g. `"my-company"`). */
-  companyPrefix: string | null;
   /** UUID of the currently active project, if any. */
   projectId: string | null;
-  /** Canonical URL reference for the active project, if available. */
-  projectRef: string | null;
   /** UUID of the current entity (for detail tab contexts), if any. */
   entityId: string | null;
   /** Type of the current entity when mounted on an entity-scoped surface. */
@@ -112,7 +108,7 @@ export interface HostNavigationOptions {
   /** Replace the current history entry instead of pushing a new one. */
   replace?: boolean;
   /** Optional state forwarded to the host router. */
-  state?: unknown;
+  state?: Record<string, unknown>;
 }
 
 /**
@@ -138,14 +134,13 @@ export interface HostNavigationLinkProps
 
 /**
  * Snapshot of the host router location, exposed to plugin UI through
- * `useHostLocation()`. Mirrors the relevant subset of `Location` from
- * `react-router-dom` so plugins can react to URL changes without importing
- * router internals.
+ * `useHostLocation()`. This stable host contract lets plugins react to URL
+ * changes without importing the host application's router.
  *
  * @see PLUGIN_SPEC.md §19 — UI Extension Model
  */
 export interface HostLocation {
-  /** Current pathname, e.g. `/PAP/wiki`. */
+  /** Current pathname, e.g. `/11111111-1111-4111-8111-111111111111/wiki`. */
   pathname: string;
   /** Current search string, e.g. `?tab=config` (includes the leading `?`). */
   search: string;
@@ -160,10 +155,12 @@ export interface HostLocation {
  */
 export interface HostNavigation {
   /**
-   * Resolve a Paperclip-internal path using the active company prefix.
+   * Resolve a Paperclip-internal path using the active company UUID.
    *
-   * For example, in company `PAP`, `resolveHref("/wiki")` returns
-   * `"/PAP/wiki"`, while `resolveHref("/PAP/wiki")` stays unchanged.
+   * For example, in company `11111111-1111-4111-8111-111111111111`,
+   * `resolveHref("/wiki")` returns
+   * `"/11111111-1111-4111-8111-111111111111/wiki"`. The input is always an
+   * absolute company-relative path; pre-scoped UUID paths are rejected.
    */
   resolveHref(to: string): string;
   /** Navigate through the host router without reloading the document. */
@@ -211,7 +208,7 @@ export interface PluginDetailTabProps {
  * in `context.entityId` and `context.entityType` is `"project"`.
  *
  * Use this slot to add a link (e.g. "Files", "Linear Sync") that navigates to
- * the project detail with a plugin tab selected: `/projects/:projectRef?tab=plugin:key:slotId`.
+ * the project detail with a plugin tab selected: `/projects/:projectId?tab=plugin:key:slotId`.
  *
  * @see PLUGIN_SPEC.md §19.5.1 — Project sidebar items
  */

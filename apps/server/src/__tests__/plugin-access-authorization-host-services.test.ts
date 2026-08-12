@@ -18,22 +18,30 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../services/plugin-task-authorization.js", async () => ({
-  ...await vi.importActual<typeof import("../services/plugin-task-authorization.js")>("../services/plugin-task-authorization.js"),
+  ...(await vi.importActual<
+    typeof import("../services/plugin-task-authorization.js")
+  >("../services/plugin-task-authorization.js")),
   assertPluginInstallationRequestScope: mocks.assertPluginAvailable,
 }));
 
 vi.mock("../services/agents.js", async () => ({
-  ...await vi.importActual<typeof import("../services/agents.js")>("../services/agents.js"),
+  ...(await vi.importActual<typeof import("../services/agents.js")>(
+    "../services/agents.js",
+  )),
   agentService: () => ({ getById: mocks.agentGetById }),
 }));
 
 vi.mock("../services/authorization.js", async () => ({
-  ...await vi.importActual<typeof import("../services/authorization.js")>("../services/authorization.js"),
+  ...(await vi.importActual<typeof import("../services/authorization.js")>(
+    "../services/authorization.js",
+  )),
   authorizationService: () => ({ decide: mocks.authorizationDecide }),
 }));
 
 vi.mock("../services/activity-log.js", async () => ({
-  ...await vi.importActual<typeof import("../services/activity-log.js")>("../services/activity-log.js"),
+  ...(await vi.importActual<typeof import("../services/activity-log.js")>(
+    "../services/activity-log.js",
+  )),
   logActivity: mocks.logActivity,
 }));
 
@@ -88,7 +96,9 @@ describe("plugin access and authorization host services", () => {
       }),
     );
     await host.events.subscribe({ eventPattern: "agent.run.finished" });
-    const handler = subscribe.mock.calls[0]![1] as (event: unknown) => Promise<void>;
+    const handler = subscribe.mock.calls[0]![1] as (
+      event: unknown,
+    ) => Promise<void>;
     const event = {
       eventId: "event",
       eventType: "agent.run.finished",
@@ -111,7 +121,9 @@ describe("plugin access and authorization host services", () => {
     await handler(event);
     expect(deliver).toHaveBeenCalledOnce();
 
-    mocks.assertPluginAvailable.mockRejectedValueOnce(new Error("database unavailable"));
+    mocks.assertPluginAvailable.mockRejectedValueOnce(
+      new Error("database unavailable"),
+    );
     await expect(handler(event)).rejects.toThrow("database unavailable");
     expect(deliver).toHaveBeenCalledOnce();
     await host.dispose();
@@ -131,8 +143,9 @@ describe("plugin access and authorization host services", () => {
       noopPluginEventDelivery,
       createPluginHostServicesTestOptions({
         manifest: createPluginManifestFake({ id: pluginKey }),
-        pluginRuntimeRecordsReader:
-          createPluginRuntimeRecordsReaderFake({ readSession }),
+        pluginRuntimeRecordsReader: createPluginRuntimeRecordsReaderFake({
+          readSession,
+        }),
       }),
     );
 
@@ -160,11 +173,13 @@ describe("plugin access and authorization host services", () => {
         { companyId },
       ),
     );
-    await expect(host.runtimeRecords.readSession({
-      companyId,
-      sessionId: "ses_plugin_host",
-      snapshotHighWaterSeq: 3,
-    })).rejects.toThrow("not ready");
+    await expect(
+      host.runtimeRecords.readSession({
+        companyId,
+        sessionId: "ses_plugin_host",
+        snapshotHighWaterSeq: 3,
+      }),
+    ).rejects.toThrow("not ready");
     expect(readSession).toHaveBeenCalledOnce();
     await host.dispose();
   });
@@ -177,27 +192,28 @@ describe("plugin access and authorization host services", () => {
     });
     const host = services(harness.db);
 
-    await expect(host.authorization.setGrants({
-      companyId,
-      principalType: "agent",
-      principalId: actorAgentId,
-      grants: [{ permissionKey: "agents:configure" }],
-    })).rejects.toThrow("Agent not found");
+    await expect(
+      host.authorization.setGrants({
+        companyId,
+        principalType: "agent",
+        principalId: actorAgentId,
+        grants: [{ permissionKey: "agents:configure" }],
+      }),
+    ).rejects.toThrow("Agent not found");
 
     expect(harness.calls).toEqual([]);
     expect(mocks.logActivity).not.toHaveBeenCalled();
     await host.dispose();
   });
 
-  it("redacts invite hashes, tokens, and sensitive defaults at the plugin boundary", async () => {
+  it("projects the concrete user invite contract at the plugin boundary", async () => {
     const invite = {
       id: "00000000-0000-4000-8000-000000000020",
       companyId,
       inviteType: "company_join",
       tokenHash: "sha256-secret-token-hash",
-      allowedJoinTypes: "human",
       defaultsPayload: {
-        human: { role: "operator", apiKey: "secret-value" },
+        user: { role: "operator", apiKey: "secret-value" },
         secret: "top-secret",
       },
       expiresAt: new Date("2099-01-01T00:00:00.000Z"),
@@ -213,31 +229,31 @@ describe("plugin access and authorization host services", () => {
 
     const created = await host.access.createInvite({
       companyId,
-      allowedJoinTypes: "human",
-      defaultsPayload: invite.defaultsPayload,
+      userRole: "operator",
     });
     const listed = await host.access.listInvites({ companyId });
 
     expect(created.token).toMatch(/^pcp_invite_/);
     expect(created).not.toHaveProperty("tokenHash");
-    expect(created.defaultsPayload).toMatchObject({
-      human: { role: "operator", apiKey: "***REDACTED***" },
-      secret: "***REDACTED***",
-    });
+    expect(created).not.toHaveProperty("defaultsPayload");
+    expect(created.userRole).toBe("operator");
     expect(listed.invites).toHaveLength(1);
     expect(listed.invites[0]).not.toHaveProperty("token");
     expect(listed.invites[0]).not.toHaveProperty("tokenHash");
-    expect(mocks.logActivity).toHaveBeenCalledWith(harness.db, expect.objectContaining({
-      actorType: "plugin",
-      actorId: pluginId,
-      action: "invite.created_by_plugin",
-      entityType: "invite",
-      entityId: invite.id,
-      details: expect.objectContaining({
-        sourcePluginId: pluginId,
-        sourcePluginKey: pluginKey,
+    expect(mocks.logActivity).toHaveBeenCalledWith(
+      harness.db,
+      expect.objectContaining({
+        actorType: "plugin",
+        actorId: pluginId,
+        action: "invite.created_by_plugin",
+        entityType: "invite",
+        entityId: invite.id,
+        details: expect.objectContaining({
+          sourcePluginId: pluginId,
+          sourcePluginKey: pluginKey,
+        }),
       }),
-    }));
+    );
     const activity = mocks.logActivity.mock.calls[0]?.[1] as {
       details?: Record<string, unknown>;
     };
@@ -252,7 +268,6 @@ describe("plugin access and authorization host services", () => {
       companyId,
       inviteType: "company_join",
       tokenHash: "sha256-secret-token-hash",
-      allowedJoinTypes: "human",
       defaultsPayload: null,
       expiresAt: new Date("2099-01-01T00:00:00.000Z"),
       source: "plugin_host",
@@ -265,10 +280,12 @@ describe("plugin access and authorization host services", () => {
     const harness = createMockDb({ select: [[invite]], update: [[]] });
     const host = services(harness.db);
 
-    await expect(host.access.revokeInvite({
-      companyId,
-      inviteId: invite.id,
-    })).rejects.toThrow("Invite was not revoked");
+    await expect(
+      host.access.revokeInvite({
+        companyId,
+        inviteId: invite.id,
+      }),
+    ).rejects.toThrow("Invite was not revoked");
 
     expect(mocks.logActivity).not.toHaveBeenCalled();
     await host.dispose();
@@ -292,7 +309,10 @@ describe("plugin access and authorization host services", () => {
       ...allowRow,
       id: "00000000-0000-4000-8000-000000000031",
       entityId: "task-2",
-      details: { reason: "deny_scope", authorization: "Bearer should-not-leak" },
+      details: {
+        reason: "deny_scope",
+        authorization: "Bearer should-not-leak",
+      },
     };
     const harness = createMockDb({ select: [[allowRow], [denyRow]] });
     const host = services(harness.db);
@@ -310,9 +330,69 @@ describe("plugin access and authorization host services", () => {
     });
 
     expect(allowed).toHaveLength(1);
-    expect(allowed[0]).toMatchObject({ entityId: "task-1", details: { decision: "allow", secret: "***REDACTED***" } });
+    expect(allowed[0]).toMatchObject({
+      entityId: "task-1",
+      details: { decision: "allow", secret: "***REDACTED***" },
+    });
     expect(denied).toHaveLength(1);
-    expect(denied[0]).toMatchObject({ entityId: "task-2", details: { authorization: "***REDACTED***" } });
+    expect(denied[0]).toMatchObject({
+      entityId: "task-2",
+      details: { authorization: "***REDACTED***" },
+    });
+    await host.dispose();
+  });
+
+  it("rejects non-numeric, rounded, clamped, and unbounded plugin list windows", async () => {
+    const harness = createMockDb();
+    const host = services(harness.db);
+    const invalidWindows = [
+      { limit: "2" },
+      { limit: 1.5 },
+      { limit: 0 },
+      { limit: 101 },
+      { offset: "1" },
+      { offset: -1 },
+      { offset: 1.5 },
+      { offset: Number.POSITIVE_INFINITY },
+      { offset: Number.MAX_SAFE_INTEGER },
+    ];
+
+    for (const window of invalidWindows) {
+      await expect(host.companies.list(window as never)).rejects.toThrow(
+        "must be an exact integer between",
+      );
+    }
+
+    expect(harness.calls).toEqual([]);
+    await host.dispose();
+  });
+
+  it("rejects authorization audit decision aliases and invalid windows", async () => {
+    const harness = createMockDb();
+    const host = services(harness.db);
+
+    for (const decision of [" Allow ", "ALLOW", "allowed", ""] as const) {
+      await expect(
+        host.authorization.searchAudit({
+          companyId,
+          decision: decision as never,
+        }),
+      ).rejects.toThrow('decision must be exactly "allow" or "deny"');
+    }
+    await expect(
+      host.authorization.searchAudit({
+        companyId,
+        limit: "50" as never,
+      }),
+    ).rejects.toThrow("limit must be an exact integer between 1 and 100");
+    await expect(
+      host.authorization.searchAudit({
+        companyId,
+        offset: -1,
+      }),
+    ).rejects.toThrow("offset must be an exact integer between 0 and");
+
+    expect(harness.calls).toEqual([]);
     await host.dispose();
   });
 
@@ -320,15 +400,35 @@ describe("plugin access and authorization host services", () => {
     const unknownUserId = "unknown-user";
     const persistedAdminId = "persisted-admin";
     mocks.agentGetById.mockResolvedValue({ id: actorAgentId, companyId });
-    mocks.authorizationDecide.mockImplementation(async (input: { actor: { type: string; userId?: string } }) => {
-      if (input.actor.type === "none") {
-        return { allowed: false, reason: "deny_unauthenticated", action: "agent_config:update", explanation: "Unauthenticated" };
-      }
-      if (input.actor.type === "board" && input.actor.userId === persistedAdminId) {
-        return { allowed: true, reason: "allow_instance_admin", action: "agent_config:update", explanation: "Instance admin" };
-      }
-      return { allowed: false, reason: "deny_no_grant", action: "agent_config:update", explanation: "No grant" };
-    });
+    mocks.authorizationDecide.mockImplementation(
+      async (input: { actor: { type: string; userId?: string } }) => {
+        if (input.actor.type === "none") {
+          return {
+            allowed: false,
+            reason: "deny_unauthenticated",
+            action: "agent_config:update",
+            explanation: "Unauthenticated",
+          };
+        }
+        if (
+          input.actor.type === "board" &&
+          input.actor.userId === persistedAdminId
+        ) {
+          return {
+            allowed: true,
+            reason: "allow_instance_admin",
+            action: "agent_config:update",
+            explanation: "Instance admin",
+          };
+        }
+        return {
+          allowed: false,
+          reason: "deny_no_grant",
+          action: "agent_config:update",
+          explanation: "No grant",
+        };
+      },
+    );
     const harness = createMockDb({ select: [[], [{ id: persistedAdminId }]] });
     const host = services(harness.db);
     const agentInput = {
@@ -350,12 +450,25 @@ describe("plugin access and authorization host services", () => {
     });
 
     expect(preview).toMatchObject({ allowed: false, reason: "deny_no_grant" });
-    expect(injectedBoardPreview).toMatchObject({ allowed: false, reason: "deny_unauthenticated" });
-    expect(persistedAdminPreview).toMatchObject({ allowed: true, reason: "allow_instance_admin" });
-    expect(mocks.authorizationDecide).toHaveBeenCalledWith(expect.objectContaining({
-      actor: { type: "agent", agentId: actorAgentId, companyId, source: "internal" },
-      resource: { type: "agent", companyId, agentId: targetAgentId },
-    }));
+    expect(injectedBoardPreview).toMatchObject({
+      allowed: false,
+      reason: "deny_unauthenticated",
+    });
+    expect(persistedAdminPreview).toMatchObject({
+      allowed: true,
+      reason: "allow_instance_admin",
+    });
+    expect(mocks.authorizationDecide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actor: {
+          type: "agent",
+          agentId: actorAgentId,
+          companyId,
+          source: "internal",
+        },
+        resource: { type: "agent", companyId, agentId: targetAgentId },
+      }),
+    );
     await host.dispose();
   });
 
@@ -363,16 +476,21 @@ describe("plugin access and authorization host services", () => {
     const harness = createMockDb();
     const host = services(harness.db);
 
-    await expect(host.authorization.updatePolicy({
-      companyId,
-      resourceType: "agent",
-      resourceId: targetAgentId,
-      policy: {
-        reviewLabel: "protected",
-        apiKey: "sk-test-secret",
-        nested: { authorization: "Bearer should-not-persist", safeLabel: "kept" },
-      },
-    } as never)).rejects.toThrow(
+    await expect(
+      host.authorization.updatePolicy({
+        companyId,
+        resourceType: "agent",
+        resourceId: targetAgentId,
+        policy: {
+          reviewLabel: "protected",
+          apiKey: "sk-test-secret",
+          nested: {
+            authorization: "Bearer should-not-persist",
+            safeLabel: "kept",
+          },
+        },
+      } as never),
+    ).rejects.toThrow(
       "Plugin authorization policy updates only support task resources.",
     );
 

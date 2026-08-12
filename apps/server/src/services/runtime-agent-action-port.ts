@@ -33,7 +33,7 @@ async function mapInvalidArguments<T>(action: () => Promise<T>): Promise<T> {
 /**
  * Production adapters for the two runtime-agent action descriptors. The
  * same shared Zod contracts back descriptor generation, call validation, and
- * this execution boundary. No provider/adapter/role/skill/icon/environment/
+ * this execution boundary. No provider/adapter/role/icon/environment/
  * budget/lifecycle field has a place in either accepted object.
  */
 export function createRuntimeAgentActionPort(

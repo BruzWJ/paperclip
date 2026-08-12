@@ -1,6 +1,6 @@
 import type { CompanyPortabilityFileEntry } from "@paperclipai/shared";
 import {
-  normalizeArchivePath,
+  requireArchivePath,
   readZipArchive as readZipArchiveWith,
 } from "@paperclipai/shared/zip-archive";
 
@@ -69,38 +69,52 @@ function base64ToBytes(base64: string) {
   return bytes;
 }
 
-function portableFileEntryToBytes(entry: CompanyPortabilityFileEntry): Uint8Array {
+function portableFileEntryToBytes(
+  entry: CompanyPortabilityFileEntry,
+): Uint8Array {
   if (typeof entry === "string") return textEncoder.encode(entry);
   return base64ToBytes(entry.data);
 }
 
 async function inflateRaw(bytes: Uint8Array) {
   if (typeof DecompressionStream !== "function") {
-    throw new Error("Unsupported zip archive: this browser cannot read compressed zip entries.");
+    throw new Error(
+      "Unsupported zip archive: this browser cannot read compressed zip entries.",
+    );
   }
   const body = new Uint8Array(bytes.byteLength);
   body.set(bytes);
-  const stream = new Blob([body]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  const stream = new Blob([body])
+    .stream()
+    .pipeThrough(new DecompressionStream("deflate-raw"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-export async function readZipArchive(source: ArrayBuffer | Uint8Array): Promise<{
+export async function readZipArchive(
+  source: ArrayBuffer | Uint8Array,
+): Promise<{
   rootPath: string | null;
   files: Record<string, CompanyPortabilityFileEntry>;
 }> {
   return readZipArchiveWith(source, inflateRaw);
 }
 
-export function createZipArchive(files: Record<string, CompanyPortabilityFileEntry>, rootPath: string): Uint8Array {
-  const normalizedRoot = normalizeArchivePath(rootPath);
+export function createZipArchive(
+  files: Record<string, CompanyPortabilityFileEntry>,
+  rootPath: string,
+): Uint8Array {
+  const exactRoot = requireArchivePath(rootPath);
   const localChunks: Uint8Array[] = [];
   const centralChunks: Uint8Array[] = [];
   const archiveDate = getDosDateTime(new Date());
   let localOffset = 0;
   let entryCount = 0;
 
-  for (const [relativePath, contents] of Object.entries(files).sort(([left], [right]) => left.localeCompare(right))) {
-    const archivePath = normalizeArchivePath(`${normalizedRoot}/${relativePath}`);
+  for (const [relativePath, contents] of Object.entries(files).sort(
+    ([left], [right]) => left.localeCompare(right),
+  )) {
+    requireArchivePath(relativePath);
+    const archivePath = requireArchivePath(`${exactRoot}/${relativePath}`);
     const fileName = textEncoder.encode(archivePath);
     const body = portableFileEntryToBytes(contents);
     const checksum = crc32(body);
@@ -156,5 +170,9 @@ export function createZipArchive(files: Record<string, CompanyPortabilityFileEnt
   writeUint32(endOfCentralDirectory, 16, localOffset);
   writeUint16(endOfCentralDirectory, 20, 0);
 
-  return concatChunks([...localChunks, centralDirectory, endOfCentralDirectory]);
+  return concatChunks([
+    ...localChunks,
+    centralDirectory,
+    endOfCentralDirectory,
+  ]);
 }

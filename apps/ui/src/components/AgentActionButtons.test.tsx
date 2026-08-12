@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -8,7 +7,6 @@ import { canonicalizeMoneyAmount, type Agent } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentActionButtons } from "./AgentActionButtons";
 
-const mockNavigate = vi.hoisted(() => vi.fn());
 const mockOpenNewTask = vi.hoisted(() => vi.fn());
 const mockPushToast = vi.hoisted(() => vi.fn());
 const mockAgentsApi = vi.hoisted(() => ({
@@ -21,13 +19,8 @@ const mockAgentsApi = vi.hoisted(() => ({
   create: vi.fn(),
   hire: vi.fn(),
 }));
-
-vi.mock("@/lib/router", () => ({
-  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
-    <a href={to} {...props}>{children}</a>
-  ),
-  useNavigate: () => mockNavigate,
-}));
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const AGENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 vi.mock("../context/DialogContext", () => ({
   useDialogActions: () => ({ openNewTask: mockOpenNewTask }),
@@ -61,20 +54,16 @@ async function flushReact() {
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
   return {
-    id: "agent-1",
-    companyId: "company-1",
+    id: AGENT_ID,
+    companyId: COMPANY_ID,
     name: "Alpha Agent",
-    urlKey: "alpha",
     title: null,
     icon: null,
-    status: "active",
+    status: "idle",
     reportsTo: null,
     capabilities: null,
     instruction: null,
-    adapterType: "codex",
-    adapterConfig: {},
     currentAdapterConfigRevisionId: null,
-    runtimeConfig: {},
     budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
     knownSpendAmount: canonicalizeMoneyAmount("0"),
     pauseReason: null,
@@ -122,7 +111,7 @@ describe("AgentActionButtons", () => {
     root = createRoot(container);
     root.render(
       <QueryClientProvider client={queryClient}>
-        <AgentActionButtons agent={agent} companyId="company-1" />
+        <AgentActionButtons agent={agent} companyId={COMPANY_ID} />
       </QueryClientProvider>,
     );
   }
@@ -152,18 +141,17 @@ describe("AgentActionButtons", () => {
     });
     await flushReact();
 
-    expect(mockAgentsApi.clearError).toHaveBeenCalledWith("agent-1", "company-1");
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "detail", "agent-1"] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "detail", "alpha"] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "runtime-state", "agent-1"] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "company-1"] });
+    expect(mockAgentsApi.clearError).toHaveBeenCalledWith(AGENT_ID);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "detail", AGENT_ID] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "runtime-state", AGENT_ID] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", COMPANY_ID] });
     expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["runs", "company-1", "all-agents", "all-statuses"],
+      queryKey: ["runs", COMPANY_ID, "all-agents", "all-statuses"],
     });
   });
 
   it("keeps the normal pause action for non-error agents", async () => {
-    render(makeAgent({ status: "active" }));
+    render(makeAgent({ status: "idle" }));
     await flushReact();
 
     expect(container.textContent).toContain("Pause");

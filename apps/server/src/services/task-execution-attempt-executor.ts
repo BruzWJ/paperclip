@@ -558,7 +558,6 @@ function findPromptAuthorityLoss(
 
 function canonicalClosure(
   result: AcpxOneShotPromptResult,
-  prompt: ResolvedTaskExecutionPrompt,
 ): TaskExecutionPromptClosure {
   if (result.kind === "error") {
     const phase = acpxRuntimePhase(result.phase);
@@ -573,20 +572,6 @@ function canonicalClosure(
   const settlement = result.settlement;
   if (settlement === null) {
     return { kind: "cancelled", settlement: null };
-  }
-  const knownContextLimit =
-    prompt.acpConfiguration.model?.limits?.contextTokenLimit;
-  if (
-    knownContextLimit !== undefined &&
-    settlement.occupancy.size !== knownContextLimit
-  ) {
-    return {
-      kind: "error",
-      failure: "runtime",
-      phase: "prompt",
-      promptTransmitted: true,
-      message: "ACP terminal occupancy size differs from the immutable model revision",
-    };
   }
   return result.kind === "completed"
     ? { kind: "settled", settlement }
@@ -872,7 +857,7 @@ export function createTaskExecutionAttemptExecutor(options: {
       return await options.repository.closePrompt({
         prompt: input.prompt,
         capability: capabilityIdentity,
-        outcome: canonicalClosure(result, input.prompt),
+        outcome: canonicalClosure(result),
       });
     } catch (closureError) {
       throw new AggregateError(

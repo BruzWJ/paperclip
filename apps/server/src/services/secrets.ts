@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, like, ne, notInArray, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  like,
+  ne,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -34,37 +44,25 @@ import type {
 import {
   CLASS3_STATIC_LEASE_ALLOWLIST,
   createSecretProviderConfigSchema,
-  deriveProjectUrlKey,
   envBindingSchema,
-  isUuidLike,
-  normalizeAgentUrlKey,
+  isCanonicalUuid,
   secretProviderConfigPayloadSchema,
   secretProviderConfigDiscoveryPreviewSchema,
   updateSecretProviderConfigSchema,
 } from "@paperclipai/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
-import {
-  checkSecretProviders,
-  getSecretProvider,
-  listSecretProviders,
-} from "../secrets/provider-registry.js";
+import { createSecretProviderRegistry } from "../secrets/provider-registry.js";
 import type {
   PreparedSecretVersion,
   RemoteSecretListResult,
   SecretProviderHealthCheck,
   SecretProviderModule,
+  SecretsRuntimeConfig,
   SecretProviderVaultRuntimeConfig,
   SecretProviderWriteContext,
 } from "../secrets/types.js";
 import { isSecretProviderClientError } from "../secrets/types.js";
-import { findServerAdapter } from "../adapters/index.js";
-import { logActivity } from "./activity-log.js";
-import {
-  adapterConfigPathHasRootKey,
-  appendAdapterConfigPathIndex,
-  appendAdapterConfigPathKey,
-} from "./adapter-config-path.js";
 import {
   readTaskExecutionRun,
   resolveTaskExecutionRunIdentityById,
@@ -78,8 +76,11 @@ const COMING_SOON_SECRET_PROVIDERS: ReadonlySet<SecretProvider> = new Set([
   "gcp_secret_manager",
   "vault",
 ]);
-const USER_SECRET_DEFINITION_KEY_UNIQUE_CONSTRAINT = "user_secret_definitions_company_key_uq";
-const USER_SECRET_VALUE_UNIQUE_CONSTRAINT = "company_secrets_user_definition_owner_uq";
+const USER_SECRET_DEFINITION_KEY_UNIQUE_CONSTRAINT =
+  "user_secret_definitions_company_key_uq";
+const USER_SECRET_VALUE_UNIQUE_CONSTRAINT =
+  "company_secrets_user_definition_owner_uq";
+const SECRET_KEY_RE = /^[a-zA-Z0-9_.-]{1,120}$/;
 type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type SecretBindingDb = Pick<Db | DbTransaction, "select" | "delete" | "insert">;
 
@@ -147,7 +148,8 @@ export function requireSecretMutationActor(
             keys.includes("type") &&
             keys.includes("userId") &&
             typeof userId === "string" &&
-            userId.trim().length > 0
+            userId.length > 0 &&
+            userId.trim() === userId
           ) {
             return { userId, agentId: null };
           }
@@ -164,7 +166,7 @@ export function requireSecretMutationActor(
             keys.includes("type") &&
             keys.includes("agentId") &&
             typeof agentId === "string" &&
-            agentId.trim().length > 0
+            isCanonicalUuid(agentId)
           ) {
             return { userId: null, agentId };
           }
@@ -188,7 +190,11 @@ export function requireSecretMutationActor(
 function isUniqueConstraintViolation(error: unknown, constraintName: string) {
   const seen = new Set<unknown>();
   let current = error;
-  while (typeof current === "object" && current !== null && !seen.has(current)) {
+  while (
+    typeof current === "object" &&
+    current !== null &&
+    !seen.has(current)
+  ) {
     seen.add(current);
     const maybe = current as {
       code?: string;
@@ -203,13 +209,16 @@ function isUniqueConstraintViolation(error: unknown, constraintName: string) {
   return false;
 }
 
-function remoteProviderHttpError(error: unknown, context: {
-  companyId: string;
-  provider: SecretProvider;
-  providerConfigId: string;
-  operation: string;
-  providerConfig?: Record<string, unknown> | null;
-}): HttpError {
+function remoteProviderHttpError(
+  error: unknown,
+  context: {
+    companyId: string;
+    provider: SecretProvider;
+    providerConfigId: string;
+    operation: string;
+    providerConfig?: Record<string, unknown> | null;
+  },
+): HttpError {
   if (isSecretProviderClientError(error)) {
     logger.warn(
       {
@@ -222,7 +231,11 @@ function remoteProviderHttpError(error: unknown, context: {
       },
       "remote secret provider request failed",
     );
-    return new HttpError(error.status, error.message, safeRemoteProviderErrorDetails(error, context));
+    return new HttpError(
+      error.status,
+      error.message,
+      safeRemoteProviderErrorDetails(error, context),
+    );
   }
   if (error instanceof HttpError) return error;
   logger.warn(
@@ -236,20 +249,30 @@ function remoteProviderHttpError(error: unknown, context: {
     },
     "remote secret provider request failed",
   );
-  return new HttpError(502, "Remote secret provider request failed.", safeRemoteProviderErrorDetails(null, context));
+  return new HttpError(
+    502,
+    "Remote secret provider request failed.",
+    safeRemoteProviderErrorDetails(null, context),
+  );
 }
 
-function remoteProviderWriteHttpError(error: unknown, context: {
-  companyId: string;
-  provider: SecretProvider;
-  providerConfigId?: string | null;
-  providerConfig: SecretProviderVaultRuntimeConfig | null;
-  operation: string;
-}): HttpError {
+function remoteProviderWriteHttpError(
+  error: unknown,
+  context: {
+    companyId: string;
+    provider: SecretProvider;
+    providerConfigId?: string | null;
+    providerConfig: SecretProviderVaultRuntimeConfig | null;
+    operation: string;
+  },
+): HttpError {
   return remoteProviderHttpError(error, {
     companyId: context.companyId,
     provider: context.provider,
-    providerConfigId: context.providerConfig?.id ?? context.providerConfigId ?? "deployment-default",
+    providerConfigId:
+      context.providerConfig?.id ??
+      context.providerConfigId ??
+      "deployment-default",
     operation: context.operation,
     providerConfig: context.providerConfig?.config ?? null,
   });
@@ -268,7 +291,10 @@ async function throwProviderWriteOrReservedRowRollbackError(input: {
   try {
     await input.rollbackReservedRow();
   } catch (rollbackError) {
-    const providerConfigId = input.providerConfig?.id ?? input.providerConfigId ?? "deployment-default";
+    const providerConfigId =
+      input.providerConfig?.id ??
+      input.providerConfigId ??
+      "deployment-default";
     logger.warn(
       {
         err: rollbackError,
@@ -280,17 +306,21 @@ async function throwProviderWriteOrReservedRowRollbackError(input: {
       },
       "remote secret provider write failed and reserved secret rollback failed",
     );
-    throw new HttpError(500, "Secret create failed and Paperclip could not roll back the local secret reservation.", {
-      code: "secret_create_rollback_failed",
-      provider: input.provider,
-      operation: input.operation,
-      providerConfigId,
-      providerError: {
-        status: providerError.status,
-        message: providerError.message,
-        details: providerError.details ?? null,
+    throw new HttpError(
+      500,
+      "Secret create failed and Paperclip could not roll back the local secret reservation.",
+      {
+        code: "secret_create_rollback_failed",
+        provider: input.provider,
+        operation: input.operation,
+        providerConfigId,
+        providerError: {
+          status: providerError.status,
+          message: providerError.message,
+          details: providerError.details ?? null,
+        },
       },
-    });
+    );
   }
   throw providerError;
 }
@@ -299,7 +329,9 @@ function providerConfigIdentifier(input: {
   providerConfigId?: string | null;
   providerConfig: SecretProviderVaultRuntimeConfig | null;
 }) {
-  return input.providerConfig?.id ?? input.providerConfigId ?? "deployment-default";
+  return (
+    input.providerConfig?.id ?? input.providerConfigId ?? "deployment-default"
+  );
 }
 
 async function deleteLocalSecretCreateReservationOrThrow(input: {
@@ -312,8 +344,12 @@ async function deleteLocalSecretCreateReservationOrThrow(input: {
   operation: string;
 }) {
   try {
-    await input.db.delete(companySecretVersions).where(eq(companySecretVersions.secretId, input.secretId));
-    await input.db.delete(companySecrets).where(eq(companySecrets.id, input.secretId));
+    await input.db
+      .delete(companySecretVersions)
+      .where(eq(companySecretVersions.secretId, input.secretId));
+    await input.db
+      .delete(companySecrets)
+      .where(eq(companySecrets.id, input.secretId));
   } catch (rollbackError) {
     const providerConfigId = providerConfigIdentifier(input);
     logger.warn(
@@ -326,12 +362,16 @@ async function deleteLocalSecretCreateReservationOrThrow(input: {
       },
       "secret create failed and local reserved secret rollback failed",
     );
-    throw new HttpError(500, "Secret create failed and Paperclip could not roll back the local secret reservation.", {
-      code: "secret_create_rollback_failed",
-      provider: input.provider,
-      operation: input.operation,
-      providerConfigId,
-    });
+    throw new HttpError(
+      500,
+      "Secret create failed and Paperclip could not roll back the local secret reservation.",
+      {
+        code: "secret_create_rollback_failed",
+        provider: input.provider,
+        operation: input.operation,
+        providerConfigId,
+      },
+    );
   }
 }
 
@@ -343,13 +383,17 @@ function throwProviderCleanupFailedAfterCreateRollback(input: {
   operation: string;
 }): never {
   const providerConfigId = providerConfigIdentifier(input);
-  throw new HttpError(500, "Secret create failed and Paperclip could not clean up the remote provider secret.", {
-    code: "secret_create_provider_cleanup_failed",
-    provider: input.provider,
-    operation: input.operation,
-    providerConfigId,
-    localCleanupHandle: true,
-  });
+  throw new HttpError(
+    500,
+    "Secret create failed and Paperclip could not clean up the remote provider secret.",
+    {
+      code: "secret_create_provider_cleanup_failed",
+      provider: input.provider,
+      operation: input.operation,
+      providerConfigId,
+      localCleanupHandle: true,
+    },
+  );
 }
 
 function safeRemoteProviderErrorDetails(
@@ -376,7 +420,8 @@ function safeRemoteProviderErrorDetails(
     };
     const region = safeString(context.providerConfig?.region);
     if (region) details.region = region;
-    details.credentialPath = "Paperclip server runtime/provider credential path";
+    details.credentialPath =
+      "Paperclip server runtime/provider credential path";
     if (error?.code === "access_denied") {
       if (context.operation === "secret.create") {
         details.requiredCapability = "secretsmanager:CreateSecret";
@@ -400,7 +445,10 @@ function safeRemoteProviderErrorDetails(
   };
   const region = safeString(context.providerConfig?.region);
   if (region) details.region = region;
-  details.providerVaultContext = context.providerConfigId === "discovery-preview" ? "draft_config" : "provider_config";
+  details.providerVaultContext =
+    context.providerConfigId === "discovery-preview"
+      ? "draft_config"
+      : "provider_config";
   details.credentialPath = "Paperclip server runtime/provider credential path";
   if (error?.code === "access_denied") {
     details.requiredCapability = "secretsmanager:ListSecrets";
@@ -416,12 +464,16 @@ function safeString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function remoteImportRowFailureReason(error: unknown, fallback: string, context: {
-  companyId: string;
-  provider: SecretProvider;
-  providerConfigId: string;
-  operation: string;
-}): string {
+function remoteImportRowFailureReason(
+  error: unknown,
+  fallback: string,
+  context: {
+    companyId: string;
+    provider: SecretProvider;
+    providerConfigId: string;
+    operation: string;
+  },
+): string {
   if (isSecretProviderClientError(error)) {
     logger.warn(
       {
@@ -526,10 +578,6 @@ type SecretResolutionOptions = {
   allowUserSecretScope?: boolean;
 };
 
-type ResolveAdapterConfigForRuntimeOptions = {
-  adapterType?: string | null;
-};
-
 export type RuntimeSecretManifestEntry = {
   configPath: string;
   envKey: string | null;
@@ -558,7 +606,9 @@ export type MissingRuntimeBinding = {
   errorCode?: SecretResolutionErrorCode;
 };
 
-function missingRuntimeConsumerType(consumerType: SecretAccessConsumerType): SecretBindingTargetType {
+function missingRuntimeConsumerType(
+  consumerType: SecretAccessConsumerType,
+): SecretBindingTargetType {
   return consumerType;
 }
 
@@ -581,7 +631,8 @@ type SecretResolutionErrorCode =
   | "provider_error";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return null;
   return value as Record<string, unknown>;
 }
 
@@ -598,10 +649,54 @@ function normalizeSecretKey(input: string) {
     .slice(0, 120);
 }
 
+function requireExactSecretKey(input: string) {
+  if (!SECRET_KEY_RE.test(input)) {
+    throw unprocessable(
+      "Secret key must use exact letters, numbers, dot, underscore, or hyphen",
+    );
+  }
+  return input;
+}
+
+function requireExactOpaqueSecretReference(input: string, label: string) {
+  if (input.length === 0 || input.trim() !== input) {
+    throw unprocessable(
+      `${label} must be a non-empty exact value without surrounding whitespace`,
+    );
+  }
+  return input;
+}
+
+function requireOptionalExactOpaqueSecretReference(
+  input: string | null | undefined,
+  label: string,
+) {
+  return input == null ? null : requireExactOpaqueSecretReference(input, label);
+}
+
+function assertExactPreparedSecretReferences(
+  prepared: PreparedSecretVersion,
+): PreparedSecretVersion {
+  requireOptionalExactOpaqueSecretReference(
+    prepared.externalRef,
+    "Provider secret reference",
+  );
+  requireOptionalExactOpaqueSecretReference(
+    prepared.providerVersionRef,
+    "Provider secret version reference",
+  );
+  return prepared;
+}
+
 function deriveSecretNameFromExternalRef(externalRef: string) {
-  const trimmed = externalRef.trim();
-  const arnMatch = /^arn:[^:]+:secretsmanager:[^:]*:[^:]*:secret:(.+)$/i.exec(trimmed);
-  const name = arnMatch?.[1] ?? trimmed;
+  const exactRef = requireExactOpaqueSecretReference(
+    externalRef,
+    "Provider secret reference",
+  );
+  const arnMatch = /^arn:[^:]+:secretsmanager:[^:]*:[^:]*:secret:(.+)$/i.exec(
+    exactRef,
+  );
+  const name = arnMatch?.[1] ?? exactRef;
   return name.split("/").filter(Boolean).at(-1) ?? name;
 }
 
@@ -636,28 +731,37 @@ function assertClass3StaticLeaseAllowed(input: {
   const projectionClass = input.projectionClass ?? "unclassified";
   if (projectionClass !== "class_3_static_lease") return;
   if (!input.projectionAllowlistKey?.trim()) {
-    throw unprocessable("Class-3 static lease bindings require an allowlist key", {
-      code: "class_3_static_lease_allowlist_required",
-      targetType: input.targetType,
-      configPath: input.configPath,
-    });
+    throw unprocessable(
+      "Class-3 static lease bindings require an allowlist key",
+      {
+        code: "class_3_static_lease_allowlist_required",
+        targetType: input.targetType,
+        configPath: input.configPath,
+      },
+    );
   }
-  const allowed = CLASS3_STATIC_LEASE_ALLOWLIST.some((entry) =>
-    entry.key === input.projectionAllowlistKey
-    && entry.targetType === input.targetType
-    && entry.configPath === input.configPath
+  const allowed = CLASS3_STATIC_LEASE_ALLOWLIST.some(
+    (entry) =>
+      entry.key === input.projectionAllowlistKey &&
+      entry.targetType === input.targetType &&
+      entry.configPath === input.configPath,
   );
   if (!allowed) {
-    throw unprocessable("Class-3 static lease binding is outside the approved allowlist", {
-      code: "class_3_static_lease_not_allowed",
-      allowlistKey: input.projectionAllowlistKey,
-      targetType: input.targetType,
-      configPath: input.configPath,
-    });
+    throw unprocessable(
+      "Class-3 static lease binding is outside the approved allowlist",
+      {
+        code: "class_3_static_lease_not_allowed",
+        allowlistKey: input.projectionAllowlistKey,
+        targetType: input.targetType,
+        configPath: input.configPath,
+      },
+    );
   }
 }
 
-function defaultProviderConfigStatus(provider: SecretProvider): SecretProviderConfigStatus {
+function defaultProviderConfigStatus(
+  provider: SecretProvider,
+): SecretProviderConfigStatus {
   return COMING_SOON_SECRET_PROVIDERS.has(provider) ? "coming_soon" : "ready";
 }
 
@@ -675,17 +779,27 @@ function secretResolutionErrorCode(error: unknown): SecretResolutionErrorCode {
         return details.code;
     }
     if (error.message === "Secret is not active") return "secret_inactive";
-    if (error.message === "User secret value is not configured") return "user_secret_missing";
-    if (error.message === "Responsible user is required for user secret resolution") {
+    if (error.message === "User secret value is not configured")
+      return "user_secret_missing";
+    if (
+      error.message ===
+      "Responsible user is required for user secret resolution"
+    ) {
       return "responsible_user_missing";
     }
-    if (error.message === "User secret definition not found") return "user_secret_definition_missing";
-    if (error.message === "User secret definition is not active") return "user_secret_definition_inactive";
-    if (error.message === "User-scoped secrets must be resolved through user secret declarations") {
+    if (error.message === "User secret definition not found")
+      return "user_secret_definition_missing";
+    if (error.message === "User secret definition is not active")
+      return "user_secret_definition_inactive";
+    if (
+      error.message ===
+      "User-scoped secrets must be resolved through user secret declarations"
+    ) {
       return "secret_scope_invalid";
     }
     if (error.message === "Secret version not found") return "version_missing";
-    if (error.message === "Secret version is not active") return "version_inactive";
+    if (error.message === "Secret version is not active")
+      return "version_inactive";
     if (
       error.message === "Secret resolution requires a binding config path" ||
       error.message.startsWith("Secret is not bound to ")
@@ -697,21 +811,6 @@ function secretResolutionErrorCode(error: unknown): SecretResolutionErrorCode {
   return "provider_error";
 }
 
-function assertRuntimeSecretConfigPath(configPath: string) {
-  if (adapterConfigPathHasRootKey(configPath, "access")) {
-    throw unprocessable(
-      "Agent API secret bindings have been retired; use an environment or provider-configuration binding",
-    );
-  }
-}
-
-function assertSecretBindingConfigPath(input: {
-  targetType: SecretBindingTargetType;
-  configPath: string;
-}) {
-  assertRuntimeSecretConfigPath(input.configPath);
-}
-
 function missingUserSecretDefinitionRuntimeBinding(
   entry: {
     key: string;
@@ -720,7 +819,8 @@ function missingUserSecretDefinitionRuntimeBinding(
   },
   context: Omit<SecretConsumerContext, "configPath">,
   definition: typeof userSecretDefinitions.$inferSelect | null,
-  errorCode: "user_secret_definition_missing" | "user_secret_definition_inactive",
+  errorCode:
+    "user_secret_definition_missing" | "user_secret_definition_inactive",
 ): MissingRuntimeBinding {
   return {
     consumerType: missingRuntimeConsumerType(context.consumerType),
@@ -738,13 +838,19 @@ function missingUserSecretDefinitionRuntimeBinding(
   };
 }
 
-function assertSelectableProviderConfig(config: {
-  provider: string;
-  status: string;
-  companyId: string;
-}, companyId: string, provider: SecretProvider) {
-  if (config.companyId !== companyId) throw unprocessable("Provider vault must belong to same company");
-  if (config.provider !== provider) throw unprocessable("Provider vault must match the secret provider");
+function assertSelectableProviderConfig(
+  config: {
+    provider: string;
+    status: string;
+    companyId: string;
+  },
+  companyId: string,
+  provider: SecretProvider,
+) {
+  if (config.companyId !== companyId)
+    throw unprocessable("Provider vault must belong to same company");
+  if (config.provider !== provider)
+    throw unprocessable("Provider vault must match the secret provider");
   if (config.status === "coming_soon") {
     throw unprocessable("Provider vault is locked while coming soon");
   }
@@ -753,19 +859,19 @@ function assertSelectableProviderConfig(config: {
   }
 }
 
-export function secretService(db: Db) {
+export function secretService(db: Db, secretsRuntime: SecretsRuntimeConfig) {
+  const providerRegistry = createSecretProviderRegistry(secretsRuntime);
+  const getSecretProvider = providerRegistry.get;
 
   type NormalizeEnvOptions = {
     strictMode?: boolean;
     fieldPath?: string;
   };
-  type NormalizeAdapterConfigOptions = {
-    strictMode?: boolean;
-    adapterType?: string | null;
-    actor: SecretMutationActor;
-  };
-
-  async function getById(id: string, source: Pick<Db | DbTransaction, "select"> = db) {
+  async function getById(
+    id: string,
+    source: Pick<Db | DbTransaction, "select"> = db,
+  ) {
+    if (!isCanonicalUuid(id)) return null;
     return source
       .select()
       .from(companySecrets)
@@ -777,25 +883,30 @@ export function secretService(db: Db) {
     return db
       .select()
       .from(companySecrets)
-      .where(and(
-        eq(companySecrets.companyId, companyId),
-        eq(companySecrets.scope, "company"),
-        eq(companySecrets.name, name),
-        ne(companySecrets.status, "deleted"),
-      ))
+      .where(
+        and(
+          eq(companySecrets.companyId, companyId),
+          eq(companySecrets.scope, "company"),
+          eq(companySecrets.name, name),
+          ne(companySecrets.status, "deleted"),
+        ),
+      )
       .then((rows) => rows[0] ?? null);
   }
 
   async function getByKey(companyId: string, key: string) {
+    if (!SECRET_KEY_RE.test(key)) return null;
     return db
       .select()
       .from(companySecrets)
-      .where(and(
-        eq(companySecrets.companyId, companyId),
-        eq(companySecrets.key, key),
-        eq(companySecrets.scope, "company"),
-        ne(companySecrets.status, "deleted"),
-      ))
+      .where(
+        and(
+          eq(companySecrets.companyId, companyId),
+          eq(companySecrets.key, key),
+          eq(companySecrets.scope, "company"),
+          ne(companySecrets.status, "deleted"),
+        ),
+      )
       .then((rows) => rows[0] ?? null);
   }
 
@@ -804,13 +915,18 @@ export function secretService(db: Db) {
     definitionId: string,
     source: Pick<Db | DbTransaction, "select"> = db,
   ) {
+    if (!isCanonicalUuid(companyId) || !isCanonicalUuid(definitionId)) {
+      return null;
+    }
     return source
       .select()
       .from(userSecretDefinitions)
-      .where(and(
-        eq(userSecretDefinitions.companyId, companyId),
-        eq(userSecretDefinitions.id, definitionId),
-      ))
+      .where(
+        and(
+          eq(userSecretDefinitions.companyId, companyId),
+          eq(userSecretDefinitions.id, definitionId),
+        ),
+      )
       .then((rows) => rows[0] ?? null);
   }
 
@@ -819,14 +935,17 @@ export function secretService(db: Db) {
     key: string,
     source: Pick<Db | DbTransaction, "select"> = db,
   ) {
+    if (!isCanonicalUuid(companyId) || !SECRET_KEY_RE.test(key)) return null;
     return source
       .select()
       .from(userSecretDefinitions)
-      .where(and(
-        eq(userSecretDefinitions.companyId, companyId),
-        eq(userSecretDefinitions.key, key),
-        ne(userSecretDefinitions.status, "deleted"),
-      ))
+      .where(
+        and(
+          eq(userSecretDefinitions.companyId, companyId),
+          eq(userSecretDefinitions.key, key),
+          ne(userSecretDefinitions.status, "deleted"),
+        ),
+      )
       .then((rows) => rows[0] ?? null);
   }
 
@@ -838,9 +957,17 @@ export function secretService(db: Db) {
     const definition = input.definitionId
       ? await getUserSecretDefinitionById(companyId, input.definitionId, source)
       : input.definitionKey
-        ? await getUserSecretDefinitionByKey(companyId, input.definitionKey, source)
+        ? await getUserSecretDefinitionByKey(
+            companyId,
+            input.definitionKey,
+            source,
+          )
         : null;
-    if (!definition || definition.deletedAt || definition.status === "deleted") {
+    if (
+      !definition ||
+      definition.deletedAt ||
+      definition.status === "deleted"
+    ) {
       throw notFound("User secret definition not found");
     }
     if (definition.companyId !== companyId) {
@@ -857,17 +984,23 @@ export function secretService(db: Db) {
     return db
       .select()
       .from(companySecrets)
-      .where(and(
-        eq(companySecrets.companyId, input.companyId),
-        eq(companySecrets.scope, "user"),
-        eq(companySecrets.ownerUserId, input.ownerUserId),
-        eq(companySecrets.userSecretDefinitionId, input.definitionId),
-        ne(companySecrets.status, "deleted"),
-      ))
+      .where(
+        and(
+          eq(companySecrets.companyId, input.companyId),
+          eq(companySecrets.scope, "user"),
+          eq(companySecrets.ownerUserId, input.ownerUserId),
+          eq(companySecrets.userSecretDefinitionId, input.definitionId),
+          ne(companySecrets.status, "deleted"),
+        ),
+      )
       .then((rows) => rows[0] ?? null);
   }
 
-  async function getUserSecretValueById(companyId: string, ownerUserId: string, secretId: string) {
+  async function getUserSecretValueById(
+    companyId: string,
+    ownerUserId: string,
+    secretId: string,
+  ) {
     const secret = await getById(secretId);
     if (!secret || secret.status === "deleted" || secret.scope !== "user") {
       throw notFound("User secret value not found");
@@ -920,9 +1053,10 @@ export function secretService(db: Db) {
   ) {
     if (!context) return null;
     if (!context.configPath) {
-      throw unprocessable("Secret resolution requires a binding config path", { code: "binding_missing" });
+      throw unprocessable("Secret resolution requires a binding config path", {
+        code: "binding_missing",
+      });
     }
-    assertRuntimeSecretConfigPath(context.configPath);
     const binding = await getBinding({
       companyId,
       secretId,
@@ -1001,12 +1135,15 @@ export function secretService(db: Db) {
     const secret = await getById(secretId, source);
     if (!secret) throw notFound("Secret not found");
     if (secret.status === "deleted") throw notFound("Secret not found");
-    if (secret.companyId !== companyId) throw unprocessable("Secret must belong to same company");
-    if (secret.scope !== "company") throw unprocessable("Secret references require company-scoped secrets");
+    if (secret.companyId !== companyId)
+      throw unprocessable("Secret must belong to same company");
+    if (secret.scope !== "company")
+      throw unprocessable("Secret references require company-scoped secrets");
     return secret;
   }
 
   async function getProviderConfigById(id: string) {
+    if (!isCanonicalUuid(id)) return null;
     return db
       .select()
       .from(companySecretProviderConfigs)
@@ -1055,9 +1192,15 @@ export function secretService(db: Db) {
     provider: SecretProvider,
     config: Record<string, unknown>,
   ): Record<string, unknown> {
-    const parsed = secretProviderConfigPayloadSchema.safeParse({ provider, config });
+    const parsed = secretProviderConfigPayloadSchema.safeParse({
+      provider,
+      config,
+    });
     if (!parsed.success) {
-      throw unprocessable("Invalid provider vault config", parsed.error.flatten());
+      throw unprocessable(
+        "Invalid provider vault config",
+        parsed.error.flatten(),
+      );
     }
     return parsed.data.config;
   }
@@ -1090,7 +1233,10 @@ export function secretService(db: Db) {
         details: { code: "disabled", message: "Provider vault is disabled." },
       };
     }
-    if (input.status === "coming_soon" || COMING_SOON_SECRET_PROVIDERS.has(input.provider)) {
+    if (
+      input.status === "coming_soon" ||
+      COMING_SOON_SECRET_PROVIDERS.has(input.provider)
+    ) {
       return {
         configId: input.id,
         provider: input.provider,
@@ -1099,7 +1245,9 @@ export function secretService(db: Db) {
         details: {
           code: "runtime_locked",
           message: "Provider vault runtime is locked while coming soon.",
-          guidance: ["Draft metadata may be saved, but create, rotate, and resolve stay unavailable."],
+          guidance: [
+            "Draft metadata may be saved, but create, rotate, and resolve stay unavailable.",
+          ],
         },
       };
     }
@@ -1114,7 +1262,9 @@ export function secretService(db: Db) {
   }): Omit<SecretProviderConfigHealthResponse, "checkedAt"> {
     const status: SecretProviderConfigHealthStatus =
       input.health.status === "ok"
-        ? input.providerStatus === "warning" ? "warning" : "ready"
+        ? input.providerStatus === "warning"
+          ? "warning"
+          : "ready"
         : input.health.status === "error"
           ? "error"
           : "warning";
@@ -1128,7 +1278,10 @@ export function secretService(db: Db) {
       status,
       message: input.health.message,
       details: {
-        code: input.health.status === "ok" ? "provider_ready" : "provider_needs_attention",
+        code:
+          input.health.status === "ok"
+            ? "provider_ready"
+            : "provider_needs_attention",
         message: input.health.message,
         guidance: guidance.length > 0 ? guidance : undefined,
       },
@@ -1145,27 +1298,49 @@ export function secretService(db: Db) {
     const accessContext = options?.accessContext ?? bindingContext;
     const secret = await getById(secretId);
     if (!secret) throw notFound("Secret not found");
-    if (secret.companyId !== companyId) throw unprocessable("Secret must belong to same company");
+    if (secret.companyId !== companyId)
+      throw unprocessable("Secret must belong to same company");
     if (secret.scope !== "company" && !options?.allowUserSecretScope) {
-      throw unprocessable("User-scoped secrets must be resolved through user secret declarations", {
-        code: "secret_scope_invalid",
-      });
+      throw unprocessable(
+        "User-scoped secrets must be resolved through user secret declarations",
+        {
+          code: "secret_scope_invalid",
+        },
+      );
     }
-    const resolvedVersion = version === "latest" ? secret.latestVersion : version;
+    const resolvedVersion =
+      version === "latest" ? secret.latestVersion : version;
     const providerId = secret.provider as SecretProvider;
     const configPath = accessContext?.configPath ?? null;
     try {
       if (secret.status === "deleted") {
-        throw new HttpError(404, "Secret not found", { code: "secret_deleted" });
+        throw new HttpError(404, "Secret not found", {
+          code: "secret_deleted",
+        });
       }
       if (secret.status !== "active") {
-        throw unprocessable("Secret is not active", { code: "secret_inactive" });
+        throw unprocessable("Secret is not active", {
+          code: "secret_inactive",
+        });
       }
-      const binding = await assertBindingContext(companyId, secret.id, bindingContext);
+      const binding = await assertBindingContext(
+        companyId,
+        secret.id,
+        bindingContext,
+      );
       const versionRow = await getSecretVersion(secret.id, resolvedVersion);
-      if (!versionRow) throw new HttpError(404, "Secret version not found", { code: "version_missing" });
-      if (versionRow.status === "disabled" || versionRow.status === "destroyed" || versionRow.revokedAt) {
-        throw unprocessable("Secret version is not active", { code: "version_inactive" });
+      if (!versionRow)
+        throw new HttpError(404, "Secret version not found", {
+          code: "version_missing",
+        });
+      if (
+        versionRow.status === "disabled" ||
+        versionRow.status === "destroyed" ||
+        versionRow.revokedAt
+      ) {
+        throw unprocessable("Secret version is not active", {
+          code: "version_inactive",
+        });
       }
       const provider = getSecretProvider(providerId);
       const providerConfig = await getSelectableRuntimeProviderConfig({
@@ -1173,6 +1348,14 @@ export function secretService(db: Db) {
         provider: providerId,
         providerConfigId: secret.providerConfigId,
       });
+      requireOptionalExactOpaqueSecretReference(
+        secret.externalRef,
+        "Stored provider secret reference",
+      );
+      requireOptionalExactOpaqueSecretReference(
+        versionRow.providerVersionRef,
+        "Stored provider secret version reference",
+      );
       const value = await provider.resolveVersion({
         material: versionRow.material as Record<string, unknown>,
         externalRef: secret.externalRef,
@@ -1209,7 +1392,9 @@ export function secretService(db: Db) {
         value,
         manifestEntry: {
           configPath: configPath ?? "",
-          envKey: configPath?.startsWith("env.") ? configPath.slice("env.".length) : null,
+          envKey: configPath?.startsWith("env.")
+            ? configPath.slice("env.".length)
+            : null,
           secretId: secret.id,
           bindingId: binding?.id ?? null,
           secretKey: secret.key,
@@ -1242,7 +1427,9 @@ export function secretService(db: Db) {
   function isSecretResolutionOptions(
     value: SecretBindingContext | SecretResolutionOptions | undefined,
   ): value is SecretResolutionOptions {
-    return Boolean(value && ("bindingContext" in value || "accessContext" in value));
+    return Boolean(
+      value && ("bindingContext" in value || "accessContext" in value),
+    );
   }
 
   async function resolveSecretValue(
@@ -1254,7 +1441,9 @@ export function secretService(db: Db) {
     const options = isSecretResolutionOptions(contextOrOptions)
       ? contextOrOptions
       : { bindingContext: contextOrOptions, accessContext: contextOrOptions };
-    return (await resolveSecretValueInternal(companyId, secretId, version, options)).value;
+    return (
+      await resolveSecretValueInternal(companyId, secretId, version, options)
+    ).value;
   }
 
   async function resolveSecretVersion(
@@ -1265,8 +1454,10 @@ export function secretService(db: Db) {
   ): Promise<number> {
     const secret = await getById(secretId);
     if (!secret) throw notFound("Secret not found");
-    if (secret.companyId !== companyId) throw unprocessable("Secret must belong to same company");
-    const resolvedVersion = version === "latest" ? secret.latestVersion : version;
+    if (secret.companyId !== companyId)
+      throw unprocessable("Secret must belong to same company");
+    const resolvedVersion =
+      version === "latest" ? secret.latestVersion : version;
     if (secret.status === "deleted") {
       throw new HttpError(404, "Secret not found", { code: "secret_deleted" });
     }
@@ -1275,9 +1466,18 @@ export function secretService(db: Db) {
     }
     await assertBindingContext(companyId, secret.id, context);
     const versionRow = await getSecretVersion(secret.id, resolvedVersion);
-    if (!versionRow) throw new HttpError(404, "Secret version not found", { code: "version_missing" });
-    if (versionRow.status === "disabled" || versionRow.status === "destroyed" || versionRow.revokedAt) {
-      throw unprocessable("Secret version is not active", { code: "version_inactive" });
+    if (!versionRow)
+      throw new HttpError(404, "Secret version not found", {
+        code: "version_missing",
+      });
+    if (
+      versionRow.status === "disabled" ||
+      versionRow.status === "destroyed" ||
+      versionRow.revokedAt
+    ) {
+      throw unprocessable("Secret version is not active", {
+        code: "version_inactive",
+      });
     }
     return resolvedVersion;
   }
@@ -1288,7 +1488,8 @@ export function secretService(db: Db) {
     opts?: NormalizeEnvOptions,
   ): Promise<AgentEnvConfig> {
     const record = asRecord(envValue);
-    if (!record) throw unprocessable(`${opts?.fieldPath ?? "env"} must be an object`);
+    if (!record)
+      throw unprocessable(`${opts?.fieldPath ?? "env"} must be an object`);
 
     const normalized: AgentEnvConfig = {};
     for (const [key, rawBinding] of Object.entries(record)) {
@@ -1303,13 +1504,19 @@ export function secretService(db: Db) {
 
       const binding = canonicalizeBinding(parsed.data as EnvBinding);
       if (binding.type === "plain") {
-        if (opts?.strictMode && isSensitiveEnvKey(key) && binding.value.trim().length > 0) {
+        if (
+          opts?.strictMode &&
+          isSensitiveEnvKey(key) &&
+          binding.value.trim().length > 0
+        ) {
           throw unprocessable(
             `Strict secret mode requires secret references for sensitive key: ${key}`,
           );
         }
         if (binding.value === REDACTED_SENTINEL) {
-          throw unprocessable(`Refusing to persist redacted placeholder for key: ${key}`);
+          throw unprocessable(
+            `Refusing to persist redacted placeholder for key: ${key}`,
+          );
         }
         normalized[key] = binding;
         continue;
@@ -1331,235 +1538,18 @@ export function secretService(db: Db) {
     return normalized;
   }
 
-  async function normalizeAdapterConfigForPersistenceInternal(
-    companyId: string,
-    adapterConfig: Record<string, unknown>,
-    opts: NormalizeAdapterConfigOptions,
-  ) {
-    requireSecretMutationActor(opts.actor);
-    const normalized = { ...adapterConfig };
-    if (Object.prototype.hasOwnProperty.call(adapterConfig, "env")) {
-      normalized.env = await normalizeEnvConfig(companyId, adapterConfig.env, opts);
-    }
-    const secretFieldKeys = await listAdapterSchemaSecretFieldKeys(opts?.adapterType);
-    for (const key of secretFieldKeys) {
-      if (!Object.prototype.hasOwnProperty.call(adapterConfig, key)) continue;
-      const value = await normalizeSchemaSecretFieldForPersistence(companyId, {
-        adapterType: opts.adapterType ?? null,
-        key,
-        rawValue: adapterConfig[key],
-        actor: opts.actor,
-      });
-      if (value === undefined) {
-        delete normalized[key];
-      } else {
-        normalized[key] = value;
-      }
-    }
-    return normalized;
-  }
-
-  async function listAdapterSchemaSecretFieldKeys(adapterType: string | null | undefined): Promise<string[]> {
-    if (!adapterType) return [];
-    const adapter = findServerAdapter(adapterType);
-    if (!adapter) return [];
-    return adapter.definition.configSchema.fields
-      .filter((field) => field.meta?.secret === true)
-      .map((field) => field.key);
-  }
-
-  async function normalizeSchemaSecretFieldForPersistence(
-    companyId: string,
-    input: {
-      adapterType: string | null;
-      key: string;
-      rawValue: unknown;
-      actor: SecretMutationActor;
-    },
-  ): Promise<EnvBinding | undefined> {
-    requireSecretMutationActor(input.actor);
-    if (input.rawValue === null || input.rawValue === undefined) return undefined;
-    const parsed = envBindingSchema.safeParse(input.rawValue);
-    if (!parsed.success) {
-      throw unprocessable(`${input.key} must be a string, plain binding, or secret reference`);
-    }
-    const binding = canonicalizeBinding(parsed.data as EnvBinding);
-    if (binding.type === "secret_ref") {
-      await assertSecretInCompany(companyId, binding.secretId);
-      return {
-        type: "secret_ref",
-        secretId: binding.secretId,
-        version: binding.version,
-        projectionClass: binding.projectionClass,
-        projectionAllowlistKey: binding.projectionAllowlistKey,
-      };
-    }
-    if (binding.type === "user_secret_ref") {
-      throw unprocessable(`${input.key} must be a string, plain binding, or company secret reference`);
-    }
-    const value = binding.value.trim();
-    if (!value) return undefined;
-    if (value === REDACTED_SENTINEL) {
-      throw unprocessable(`Refusing to persist redacted placeholder for key: ${input.key}`);
-    }
-    const id = randomUUID();
-    const adapterPart = normalizeSecretKey(input.adapterType ?? "adapter");
-    const fieldPart = normalizeSecretKey(input.key);
-    const secret = await createManagedLocalSecret(companyId, {
-      name: `${adapterPart}.${fieldPart}.${id}`,
-      key: `${adapterPart}.${fieldPart}.${id}`,
-      value,
-      description: `Adapter config secret for ${input.adapterType ?? "adapter"}.${input.key}`,
-    }, input.actor);
-    return {
-      type: "secret_ref",
-      secretId: secret.id,
-      version: "latest",
-    };
-  }
-
-  async function createManagedLocalSecret(
-    companyId: string,
-    input: {
-      name: string;
-      key: string;
-      value: string;
-      description?: string | null;
-    },
-    actor: SecretMutationActor,
-  ) {
-    const attribution = requireSecretMutationActor(actor);
-    const existing = await getByName(companyId, input.name);
-    if (existing) throw conflict(`Secret already exists: ${input.name}`);
-    const key = normalizeSecretKey(input.key);
-    if (!key) throw unprocessable("Secret key is required");
-    const duplicateKey = await db
-      .select()
-      .from(companySecrets)
-      .where(and(
-        eq(companySecrets.companyId, companyId),
-        eq(companySecrets.scope, "company"),
-        eq(companySecrets.key, key),
-        ne(companySecrets.status, "deleted"),
-      ))
-      .then((rows) => rows[0] ?? null);
-    if (duplicateKey) throw conflict(`Secret key already exists: ${key}`);
-
-    const provider = getSecretProvider("local_encrypted");
-    const providerConfig = await getSelectableRuntimeProviderConfig({
-      companyId,
-      provider: "local_encrypted",
-      providerConfigId: null,
-    });
-    const providerWriteContext = {
-      companyId,
-      secretKey: key,
-      secretName: input.name,
-      version: 1,
-    };
-    const reservedSecret = await db
-      .insert(companySecrets)
-      .values({
-        companyId,
-        key,
-        name: input.name,
-        provider: "local_encrypted",
-        providerConfigId: null,
-        status: "archived",
-        managedMode: "paperclip_managed",
-        externalRef: null,
-        providerMetadata: null,
-        latestVersion: 0,
-        description: input.description ?? null,
-        createdByAgentId: attribution.agentId,
-        createdByUserId: attribution.userId,
-      })
-      .returning()
-      .then((rows) => rows[0]);
-
-    let prepared: PreparedSecretVersion | null = null;
-    try {
-      prepared = await provider.createSecret({
-        value: input.value,
-        externalRef: null,
-        providerConfig,
-        context: providerWriteContext,
-      });
-      const preparedSecret = prepared;
-      await db.insert(companySecretVersions).values({
-        secretId: reservedSecret.id,
-        version: 1,
-        material: preparedSecret.material,
-        valueSha256: preparedSecret.valueSha256,
-        fingerprintSha256: preparedSecret.fingerprintSha256 ?? preparedSecret.valueSha256,
-        providerVersionRef: preparedSecret.providerVersionRef ?? null,
-        status: "disabled",
-        createdByAgentId: attribution.agentId,
-        createdByUserId: attribution.userId,
-      });
-      return await db.transaction(async (tx) => {
-        await tx
-          .update(companySecretVersions)
-          .set({ status: "current" })
-          .where(and(
-            eq(companySecretVersions.secretId, reservedSecret.id),
-            eq(companySecretVersions.version, 1),
-          ));
-        const secret = await tx
-          .update(companySecrets)
-          .set({
-            status: "active",
-            externalRef: preparedSecret.externalRef,
-            latestVersion: 1,
-            lastRotatedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(companySecrets.id, reservedSecret.id))
-          .returning()
-          .then((rows) => rows[0]);
-        if (!secret) throw notFound("Secret not found");
-        return secret;
-      });
-    } catch (error) {
-      if (prepared) {
-        await cleanupPreparedProviderWrite({
-          provider,
-          prepared,
-          providerConfig,
-          context: providerWriteContext,
-          mode: "delete",
-          operation: "adapter_config_secret.create_rollback",
-        }).catch(() => false);
-      }
-      await db.delete(companySecretVersions).where(eq(companySecretVersions.secretId, reservedSecret.id)).catch(() => undefined);
-      await db.delete(companySecrets).where(eq(companySecrets.id, reservedSecret.id)).catch(() => undefined);
-      throw error;
-    }
-  }
-
   function collectTargetIds(
     bindings: Array<typeof companySecretBindings.$inferSelect>,
     targetType: SecretBindingTargetType,
-    opts?: { uuidOnly?: boolean },
   ) {
     return [
       ...new Set(
         bindings
           .filter((binding) => binding.targetType === targetType)
           .map((binding) => binding.targetId)
-          .filter((id) => !opts?.uuidOnly || isUuidLike(id)),
+          .filter(isCanonicalUuid),
       ),
     ];
-  }
-
-  function fallbackBindingTarget(binding: typeof companySecretBindings.$inferSelect): CompanySecretBindingTarget {
-    return {
-      type: binding.targetType as SecretBindingTargetType,
-      id: binding.targetId,
-      label: binding.targetId,
-      href: null,
-      status: null,
-    };
   }
 
   async function buildBindingTargetMap(
@@ -1570,8 +1560,7 @@ export function secretService(db: Db) {
     const setTarget = (target: CompanySecretBindingTarget) => {
       targetMap.set(`${target.type}:${target.id}`, target);
     };
-
-    const agentIds = collectTargetIds(bindings, "agent", { uuidOnly: true });
+    const agentIds = collectTargetIds(bindings, "agent");
     if (agentIds.length > 0) {
       const rows = await db
         .select({
@@ -1581,19 +1570,21 @@ export function secretService(db: Db) {
           status: agents.status,
         })
         .from(agents)
-        .where(and(eq(agents.companyId, companyId), inArray(agents.id, agentIds)));
+        .where(
+          and(eq(agents.companyId, companyId), inArray(agents.id, agentIds)),
+        );
       for (const row of rows) {
         setTarget({
           type: "agent",
           id: row.id,
           label: row.title ? `${row.name} (${row.title})` : row.name,
-          href: `/agents/${normalizeAgentUrlKey(row.name) ?? row.id}`,
+          routeTarget: { kind: "agent", id: row.id },
           status: row.status,
         });
       }
     }
 
-    const projectIds = collectTargetIds(bindings, "project", { uuidOnly: true });
+    const projectIds = collectTargetIds(bindings, "project");
     if (projectIds.length > 0) {
       const rows = await db
         .select({
@@ -1602,19 +1593,24 @@ export function secretService(db: Db) {
           status: projects.status,
         })
         .from(projects)
-        .where(and(eq(projects.companyId, companyId), inArray(projects.id, projectIds)));
+        .where(
+          and(
+            eq(projects.companyId, companyId),
+            inArray(projects.id, projectIds),
+          ),
+        );
       for (const row of rows) {
         setTarget({
           type: "project",
           id: row.id,
           label: row.name,
-          href: `/projects/${deriveProjectUrlKey(row.name, row.id)}`,
+          routeTarget: { kind: "project", id: row.id },
           status: row.status,
         });
       }
     }
 
-    const routineIds = collectTargetIds(bindings, "routine", { uuidOnly: true });
+    const routineIds = collectTargetIds(bindings, "routine");
     if (routineIds.length > 0) {
       const rows = await db
         .select({
@@ -1623,55 +1619,83 @@ export function secretService(db: Db) {
           status: routines.status,
         })
         .from(routines)
-        .where(and(eq(routines.companyId, companyId), inArray(routines.id, routineIds)));
+        .where(
+          and(
+            eq(routines.companyId, companyId),
+            inArray(routines.id, routineIds),
+          ),
+        );
       for (const row of rows) {
         setTarget({
           type: "routine",
           id: row.id,
           label: row.title,
-          href: `/routines/${row.id}`,
+          routeTarget: { kind: "routine", id: row.id },
           status: row.status,
         });
       }
     }
 
-    const taskIds = collectTargetIds(bindings, "task", { uuidOnly: true });
-    if (taskIds.length > 0) {
-      const rows = await db
-        .select({
-          id: tasks.id,
-          identifier: tasks.identifier,
-          title: tasks.title,
-          boardPresentationStatus: tasks.boardPresentationStatus,
-        })
-        .from(tasks)
-        .where(and(eq(tasks.companyId, companyId), inArray(tasks.id, taskIds)));
-      for (const row of rows) {
+    const taskIds = collectTargetIds(bindings, "task");
+    const taskTargetIds = new Set(taskIds);
+    const runIds = collectTargetIds(bindings, "run");
+    const runTargets = await Promise.all(
+      runIds.map(async (runId) => {
+        const identity = await resolveTaskExecutionRunIdentityById(db, runId);
+        if (!identity || identity.companyId !== companyId) return null;
+        const run = await readTaskExecutionRun(db, identity);
+        if (!run) return null;
+        return { run, taskId: identity.taskId };
+      }),
+    );
+    const linkedTaskIds = [
+      ...new Set([
+        ...taskIds,
+        ...runTargets.flatMap((target) => (target ? [target.taskId] : [])),
+      ]),
+    ];
+    const taskRows =
+      linkedTaskIds.length > 0
+        ? await db
+            .select({
+              id: tasks.id,
+              taskNumber: tasks.taskNumber,
+              identifier: tasks.identifier,
+              title: tasks.title,
+              boardPresentationStatus: tasks.boardPresentationStatus,
+            })
+            .from(tasks)
+            .where(
+              and(
+                eq(tasks.companyId, companyId),
+                inArray(tasks.id, linkedTaskIds),
+              ),
+            )
+        : [];
+    const taskById = new Map(taskRows.map((row) => [row.id, row]));
+    for (const row of taskRows) {
+      if (taskTargetIds.has(row.id)) {
         setTarget({
           type: "task",
           id: row.id,
-          label: row.title ?? row.identifier ?? `Task ${row.id}`,
-          href: `/tasks/${row.identifier ?? row.id}`,
+          label: row.title ?? row.identifier,
+          routeTarget: { kind: "task", taskNumber: row.taskNumber, hash: null },
           status: row.boardPresentationStatus,
         });
       }
     }
 
-    const runIds = collectTargetIds(bindings, "run", { uuidOnly: true });
-    if (runIds.length > 0) {
-      const runs = await Promise.all(runIds.map(async (runId) => {
-        const identity = await resolveTaskExecutionRunIdentityById(db, runId);
-        if (!identity || identity.companyId !== companyId) return null;
-        return readTaskExecutionRun(db, identity);
-      }));
-      for (const run of runs) {
-        if (!run) continue;
+    for (const target of runTargets) {
+      if (target) {
+        const task = taskById.get(target.taskId);
         setTarget({
           type: "run",
-          id: run.runId,
-          label: `Run ${run.runId.slice(0, 8)}`,
-          href: `/runs/${run.runId}`,
-          status: run.status,
+          id: target.run.runId,
+          label: `Run ${target.run.runId.slice(0, 8)}`,
+          routeTarget: task
+            ? { kind: "task", taskNumber: task.taskNumber, hash: null }
+            : null,
+          status: target.run.status,
         });
       }
     }
@@ -1679,7 +1703,10 @@ export function secretService(db: Db) {
     return targetMap;
   }
 
-  async function buildRemoteImportConflictMaps(companyId: string, provider: SecretProvider) {
+  async function buildRemoteImportConflictMaps(
+    companyId: string,
+    provider: SecretProvider,
+  ) {
     const activeSecrets = await db
       .select({
         id: companySecrets.id,
@@ -1691,27 +1718,42 @@ export function secretService(db: Db) {
         status: companySecrets.status,
       })
       .from(companySecrets)
-      .where(and(eq(companySecrets.companyId, companyId), ne(companySecrets.status, "deleted")));
+      .where(
+        and(
+          eq(companySecrets.companyId, companyId),
+          ne(companySecrets.status, "deleted"),
+        ),
+      );
+    const externalReferenceSecrets = activeSecrets.filter(
+      (secret) =>
+        secret.provider === provider && typeof secret.externalRef === "string",
+    );
     return {
       byProviderConfigExternalRef: new Map(
-        activeSecrets
-          .filter((secret) =>
-            secret.provider === provider &&
-            typeof secret.externalRef === "string" &&
-            secret.externalRef.trim()
-          )
-          .map((secret) => [
-            remoteImportExternalRefKey(secret.providerConfigId, secret.externalRef!),
-            secret,
-          ]),
+        externalReferenceSecrets.map((secret) => [
+          remoteImportExternalRefKey(
+            secret.providerConfigId,
+            requireExactOpaqueSecretReference(
+              secret.externalRef!,
+              "Stored provider secret reference",
+            ),
+          ),
+          secret,
+        ]),
       ),
       byName: new Map(activeSecrets.map((secret) => [secret.name, secret])),
       byKey: new Map(activeSecrets.map((secret) => [secret.key, secret])),
     };
   }
 
-  function remoteImportExternalRefKey(providerConfigId: string | null | undefined, externalRef: string) {
-    return `${providerConfigId ?? "default"}\0${externalRef.trim()}`;
+  function remoteImportExternalRefKey(
+    providerConfigId: string | null | undefined,
+    externalRef: string,
+  ) {
+    return `${providerConfigId ?? "default"}\0${requireExactOpaqueSecretReference(
+      externalRef,
+      "Provider secret reference",
+    )}`;
   }
 
   function sanitizeRemoteProviderMetadata(
@@ -1720,13 +1762,19 @@ export function secretService(db: Db) {
   ): Record<string, unknown> | null {
     if (!metadata || provider !== "aws_secrets_manager") return null;
     const safe: Record<string, unknown> = {};
-    for (const key of ["createdDate", "lastAccessedDate", "lastChangedDate", "deletedDate"]) {
+    for (const key of [
+      "createdDate",
+      "lastAccessedDate",
+      "lastChangedDate",
+      "deletedDate",
+    ]) {
       const value = metadata[key];
       if (typeof value === "string" || value === null) safe[key] = value;
     }
     for (const key of ["hasDescription", "hasKmsKey", "tagCount"]) {
       const value = metadata[key];
-      if (typeof value === "boolean" || typeof value === "number") safe[key] = value;
+      if (typeof value === "boolean" || typeof value === "number")
+        safe[key] = value;
     }
     return Object.keys(safe).length > 0 ? safe : null;
   }
@@ -1746,7 +1794,8 @@ export function secretService(db: Db) {
       conflicts.push({
         type: "exact_reference",
         existingSecretId: duplicate.id,
-        message: "An existing secret already links this exact provider reference.",
+        message:
+          "An existing secret already links this exact provider reference.",
       });
       return conflicts;
     }
@@ -1769,20 +1818,26 @@ export function secretService(db: Db) {
     return conflicts;
   }
 
-  async function getRemoteImportProviderConfig(companyId: string, providerConfigId: string) {
+  async function getRemoteImportProviderConfig(
+    companyId: string,
+    providerConfigId: string,
+  ) {
     const providerConfig = await getProviderConfigById(providerConfigId);
     if (!providerConfig) throw notFound("Provider vault not found");
     const provider = providerConfig.provider as SecretProvider;
     assertSelectableProviderConfig(providerConfig, companyId, provider);
-    return { providerConfig, provider, runtimeConfig: toProviderVaultRuntimeConfig(providerConfig) };
+    return {
+      providerConfig,
+      provider,
+      runtimeConfig: toProviderVaultRuntimeConfig(providerConfig),
+    };
   }
 
   async function createUserSecretValueInternal(
     companyId: string,
     ownerUserId: string,
     input: {
-      definitionId?: string | null;
-      definitionKey?: string | null;
+      definitionId: string;
       value?: string | null;
       externalRef?: string | null;
       providerVersionRef?: string | null;
@@ -1791,7 +1846,17 @@ export function secretService(db: Db) {
     actor: SecretMutationActor,
   ) {
     const attribution = requireSecretMutationActor(actor);
-    const definition = await resolveUserSecretDefinition(companyId, input);
+    requireOptionalExactOpaqueSecretReference(
+      input.externalRef,
+      "Provider secret reference",
+    );
+    requireOptionalExactOpaqueSecretReference(
+      input.providerVersionRef,
+      "Provider secret version reference",
+    );
+    const definition = await resolveUserSecretDefinition(companyId, {
+      definitionId: input.definitionId,
+    });
     if (definition.status !== "active") {
       throw unprocessable("User secret definition is not active");
     }
@@ -1803,11 +1868,14 @@ export function secretService(db: Db) {
     if (existing) throw conflict("User secret value already exists");
 
     const providerId = definition.provider as SecretProvider;
-    const managedMode = definition.managedMode as "paperclip_managed" | "external_reference";
-    if (managedMode === "external_reference" && !input.externalRef?.trim()) {
-      throw unprocessable("External reference user secrets require externalRef");
+    const managedMode = definition.managedMode as
+      "paperclip_managed" | "external_reference";
+    if (managedMode === "external_reference" && input.externalRef == null) {
+      throw unprocessable(
+        "External reference user secrets require externalRef",
+      );
     }
-    if (managedMode === "paperclip_managed" && input.externalRef?.trim()) {
+    if (managedMode === "paperclip_managed" && input.externalRef != null) {
       throw unprocessable("Managed user secrets cannot override externalRef");
     }
     if (managedMode === "paperclip_managed" && !input.value?.trim()) {
@@ -1815,7 +1883,9 @@ export function secretService(db: Db) {
     }
 
     const providerConfigId =
-      input.providerConfigId === undefined ? definition.providerConfigId : input.providerConfigId;
+      input.providerConfigId === undefined
+        ? definition.providerConfigId
+        : input.providerConfigId;
     const provider = getSecretProvider(providerId);
     const providerConfig = await getSelectableRuntimeProviderConfig({
       companyId,
@@ -1856,7 +1926,9 @@ export function secretService(db: Db) {
         .returning()
         .then((rows) => rows[0]);
     } catch (error) {
-      if (isUniqueConstraintViolation(error, USER_SECRET_VALUE_UNIQUE_CONSTRAINT)) {
+      if (
+        isUniqueConstraintViolation(error, USER_SECRET_VALUE_UNIQUE_CONSTRAINT)
+      ) {
         throw conflict("User secret value already exists");
       }
       throw error;
@@ -1864,7 +1936,7 @@ export function secretService(db: Db) {
 
     let prepared: PreparedSecretVersion;
     try {
-      prepared =
+      prepared = assertExactPreparedSecretReferences(
         managedMode === "external_reference"
           ? await provider.linkExternalSecret({
               externalRef: input.externalRef ?? "",
@@ -1877,11 +1949,15 @@ export function secretService(db: Db) {
               externalRef: null,
               providerConfig,
               context: providerWriteContext,
-            });
+            }),
+      );
     } catch (error) {
       throw await throwProviderWriteOrReservedRowRollbackError({
         error,
-        rollbackReservedRow: () => db.delete(companySecrets).where(eq(companySecrets.id, reservedSecret.id)),
+        rollbackReservedRow: () =>
+          db
+            .delete(companySecrets)
+            .where(eq(companySecrets.id, reservedSecret.id)),
         companyId,
         provider: provider.id,
         providerConfigId,
@@ -1957,6 +2033,14 @@ export function secretService(db: Db) {
     const versionRow = await getSecretVersion(secret.id, secret.latestVersion);
     const providerId = secret.provider as SecretProvider;
     const provider = getSecretProvider(providerId);
+    requireOptionalExactOpaqueSecretReference(
+      secret.externalRef,
+      "Stored provider secret reference",
+    );
+    requireOptionalExactOpaqueSecretReference(
+      versionRow?.providerVersionRef,
+      "Stored provider secret version reference",
+    );
     if (secret.status !== "deleted") {
       await db
         .update(companySecrets)
@@ -1973,7 +2057,9 @@ export function secretService(db: Db) {
       ? await getProviderConfigById(secret.providerConfigId)
       : null;
     const providerRuntimeConfig =
-      providerConfig && providerConfig.status !== "disabled" && providerConfig.status !== "coming_soon"
+      providerConfig &&
+      providerConfig.status !== "disabled" &&
+      providerConfig.status !== "coming_soon"
         ? toProviderVaultRuntimeConfig(providerConfig)
         : null;
     if (!secret.providerConfigId || providerRuntimeConfig) {
@@ -2006,15 +2092,19 @@ export function secretService(db: Db) {
     actor: SecretMutationActor,
   ) {
     const attribution = requireSecretMutationActor(actor);
-    const existing = await resolveUserSecretDefinition(companyId, { definitionId });
+    const existing = await resolveUserSecretDefinition(companyId, {
+      definitionId,
+    });
     const values = await db
       .select({ id: companySecrets.id })
       .from(companySecrets)
-      .where(and(
-        eq(companySecrets.companyId, companyId),
-        eq(companySecrets.scope, "user"),
-        eq(companySecrets.userSecretDefinitionId, definitionId),
-      ));
+      .where(
+        and(
+          eq(companySecrets.companyId, companyId),
+          eq(companySecrets.scope, "user"),
+          eq(companySecrets.userSecretDefinitionId, definitionId),
+        ),
+      );
     for (const value of values) {
       await removeSecretInternal(value.id);
     }
@@ -2028,387 +2118,18 @@ export function secretService(db: Db) {
         updatedByUserId: attribution.userId,
         updatedAt: new Date(),
       })
-      .where(and(
-        eq(userSecretDefinitions.companyId, companyId),
-        eq(userSecretDefinitions.id, definitionId),
-      ))
+      .where(
+        and(
+          eq(userSecretDefinitions.companyId, companyId),
+          eq(userSecretDefinitions.id, definitionId),
+        ),
+      )
       .returning()
       .then((rows) => rows[0] ?? null);
   }
 
-  type RuntimeConfigReference = {
-    configPath: string;
-    envKey: string;
-    binding: Extract<
-      CanonicalEnvBinding,
-      { type: "secret_ref" | "user_secret_ref" }
-    >;
-  };
-
-  function runtimeConfigReferences(
-    value: unknown,
-    path = "",
-    result: RuntimeConfigReference[] = [],
-  ): RuntimeConfigReference[] {
-    if (Array.isArray(value)) {
-      value.forEach((entry, index) =>
-        runtimeConfigReferences(
-          entry,
-          appendAdapterConfigPathIndex(path, index),
-          result,
-        ),
-      );
-      return result;
-    }
-    const candidate = asRecord(value);
-    if (!candidate) return result;
-    if (
-      candidate.type === "plain" ||
-      candidate.type === "secret_ref" ||
-      candidate.type === "user_secret_ref"
-    ) {
-      const parsed = envBindingSchema.safeParse(candidate);
-      if (!parsed.success) {
-        throw unprocessable(
-          `Invalid runtime binding at ${path || "$"}`,
-        );
-      }
-      const binding = canonicalizeBinding(
-        parsed.data as EnvBinding,
-      );
-      if (binding.type === "plain") return result;
-      if (
-        binding.type === "secret_ref" ||
-        binding.type === "user_secret_ref"
-      ) {
-        assertRuntimeSecretConfigPath(path || "$");
-        result.push({
-          configPath: path || "$",
-          envKey: path.startsWith("env.")
-            ? path.slice("env.".length)
-            : path,
-          binding,
-        });
-        return result;
-      }
-    }
-    for (const [key, entry] of Object.entries(candidate)) {
-      runtimeConfigReferences(
-        entry,
-        appendAdapterConfigPathKey(path, key),
-        result,
-      );
-    }
-    return result;
-  }
-
-  async function collectMissingConfigurationBindings(
-    companyId: string,
-    adapterConfig: Readonly<Record<string, unknown>>,
-    context: Omit<SecretBindingContext, "configPath">,
-  ): Promise<MissingRuntimeBinding[]> {
-    const references = runtimeConfigReferences(adapterConfig);
-    const missing: MissingRuntimeBinding[] = [];
-    for (const entry of references) {
-      if (entry.binding.type === "secret_ref") {
-        const binding = await getBinding({
-          companyId,
-          secretId: entry.binding.secretId,
-          consumerType: context.consumerType,
-          consumerId: context.consumerId,
-          configPath: entry.configPath,
-        });
-        if (binding) continue;
-        const secret = await getById(
-          entry.binding.secretId,
-        ).catch(() => null);
-        missing.push({
-          consumerType: context.consumerType,
-          consumerId: context.consumerId,
-          configPath: entry.configPath,
-          envKey: entry.envKey,
-          bindingType: "secret_ref",
-          secretId: entry.binding.secretId,
-          secretName: secret?.name ?? null,
-        });
-        continue;
-      }
-      if (
-        !entry.binding.required ||
-        entry.binding.allowMissingOverride
-      ) {
-        continue;
-      }
-      let definition:
-        | typeof userSecretDefinitions.$inferSelect
-        | null = null;
-      try {
-        definition = await resolveUserSecretDefinition(
-          companyId,
-          { definitionKey: entry.binding.key },
-        );
-      } catch {
-        missing.push({
-          consumerType: context.consumerType,
-          consumerId: context.consumerId,
-          configPath: entry.configPath,
-          envKey: entry.envKey,
-          bindingType: "user_secret_ref",
-          secretId: null,
-          secretName: null,
-          userSecretDefinitionId: null,
-          userSecretDefinitionKey: entry.binding.key,
-          userSecretDefinitionName: null,
-          responsibleUserId:
-            context.responsibleUserId ?? null,
-          errorCode: "user_secret_definition_missing",
-        });
-        continue;
-      }
-      if (definition.status !== "active") {
-        missing.push({
-          consumerType: context.consumerType,
-          consumerId: context.consumerId,
-          configPath: entry.configPath,
-          envKey: entry.envKey,
-          bindingType: "user_secret_ref",
-          secretId: null,
-          secretName: null,
-          userSecretDefinitionId: definition.id,
-          userSecretDefinitionKey: definition.key,
-          userSecretDefinitionName: definition.name,
-          responsibleUserId:
-            context.responsibleUserId ?? null,
-          errorCode: "user_secret_definition_inactive",
-        });
-        continue;
-      }
-      const declaration = await db
-        .select()
-        .from(userSecretDeclarations)
-        .where(
-          and(
-            eq(userSecretDeclarations.companyId, companyId),
-            eq(
-              userSecretDeclarations.userSecretDefinitionId,
-              definition.id,
-            ),
-            eq(
-              userSecretDeclarations.targetType,
-              context.consumerType,
-            ),
-            eq(
-              userSecretDeclarations.targetId,
-              context.consumerId,
-            ),
-            eq(
-              userSecretDeclarations.configPath,
-              entry.configPath,
-            ),
-          ),
-        )
-        .then((rows) => rows[0] ?? null);
-      if (!declaration) {
-        missing.push({
-          consumerType: context.consumerType,
-          consumerId: context.consumerId,
-          configPath: entry.configPath,
-          envKey: entry.envKey,
-          bindingType: "user_secret_ref",
-          secretId: null,
-          secretName: null,
-          userSecretDefinitionId: definition.id,
-          userSecretDefinitionKey: definition.key,
-          userSecretDefinitionName: definition.name,
-          responsibleUserId:
-            context.responsibleUserId ?? null,
-          errorCode: "binding_missing",
-        });
-        continue;
-      }
-      if (!context.responsibleUserId?.trim()) {
-        missing.push({
-          consumerType: context.consumerType,
-          consumerId: context.consumerId,
-          configPath: entry.configPath,
-          envKey: entry.envKey,
-          bindingType: "user_secret_ref",
-          secretId: null,
-          secretName: null,
-          userSecretDefinitionId: definition.id,
-          userSecretDefinitionKey: definition.key,
-          userSecretDefinitionName: definition.name,
-          responsibleUserId: null,
-          errorCode: "responsible_user_missing",
-        });
-        continue;
-      }
-      const secret = await getUserSecretValue({
-        companyId,
-        ownerUserId: context.responsibleUserId,
-        definitionId: definition.id,
-      });
-      if (!secret || secret.status !== "active") {
-        missing.push({
-          consumerType: context.consumerType,
-          consumerId: context.consumerId,
-          configPath: entry.configPath,
-          envKey: entry.envKey,
-          bindingType: "user_secret_ref",
-          secretId: secret?.id ?? null,
-          secretName: null,
-          userSecretDefinitionId: definition.id,
-          userSecretDefinitionKey: definition.key,
-          userSecretDefinitionName: definition.name,
-          responsibleUserId: context.responsibleUserId,
-          errorCode: secret
-            ? "secret_inactive"
-            : "user_secret_missing",
-        });
-      }
-    }
-    return missing;
-  }
-
-  async function resolveConfigurationBindings(
-    companyId: string,
-    adapterConfig: Readonly<Record<string, unknown>>,
-    context: Omit<SecretBindingContext, "configPath">,
-  ): Promise<{
-    config: Record<string, unknown>;
-    secretKeys: Set<string>;
-    secretValues: string[];
-    manifest: RuntimeSecretManifestEntry[];
-  }> {
-    const secretKeys = new Set<string>();
-    const secretValues = new Set<string>();
-    const manifest: RuntimeSecretManifestEntry[] = [];
-    const omit = Symbol("optional-user-secret-omitted");
-
-    const visit = async (
-      value: unknown,
-      path: string,
-      arrayEntry = false,
-    ): Promise<unknown | typeof omit> => {
-      if (Array.isArray(value)) {
-        const entries = await Promise.all(
-          value.map((entry, index) =>
-            visit(
-              entry,
-              appendAdapterConfigPathIndex(path, index),
-              true,
-            ),
-          ),
-        );
-        return entries.map((entry) =>
-          entry === omit ? null : entry,
-        );
-      }
-      const candidate = asRecord(value);
-      if (!candidate) return value;
-      if (
-        candidate.type === "plain" ||
-        candidate.type === "secret_ref" ||
-        candidate.type === "user_secret_ref"
-      ) {
-        assertRuntimeSecretConfigPath(path || "$");
-        const parsed = envBindingSchema.safeParse(candidate);
-        if (!parsed.success) {
-          throw unprocessable(
-            `Invalid runtime binding at ${path || "$"}`,
-          );
-        }
-        const binding = canonicalizeBinding(
-          parsed.data as EnvBinding,
-        );
-        if (binding.type === "plain") {
-          return binding.value;
-        }
-        if (binding.type === "secret_ref") {
-          const resolved = await resolveSecretValueInternal(
-            companyId,
-            binding.secretId,
-            binding.version,
-            {
-              bindingContext: {
-                ...context,
-                configPath: path,
-              },
-              accessContext: {
-                ...context,
-                configPath: path,
-              },
-            },
-          );
-          secretKeys.add(
-            path.startsWith("env.")
-              ? path.slice("env.".length)
-              : path,
-          );
-          manifest.push(resolved.manifestEntry);
-          secretValues.add(resolved.value);
-          return resolved.value;
-        }
-        const resolved =
-          await secretService(db).resolveUserSecretValue(
-            companyId,
-            {
-              definitionKey: binding.key,
-              version: binding.version,
-              required: binding.required,
-              allowMissingOverride:
-                binding.allowMissingOverride,
-            },
-            {
-              ...context,
-              configPath: path,
-              responsibleUserId:
-                context.responsibleUserId ?? null,
-            },
-          );
-        if (!resolved) return arrayEntry ? null : omit;
-        secretKeys.add(
-          path.startsWith("env.")
-            ? path.slice("env.".length)
-            : path,
-        );
-        manifest.push(resolved.manifestEntry);
-        secretValues.add(resolved.value);
-        return resolved.value;
-      }
-      const entries = await Promise.all(
-        Object.entries(candidate).map(
-          async ([key, entry]) => {
-            const resolved = await visit(
-              entry,
-              appendAdapterConfigPathKey(path, key),
-            );
-            return [key, resolved] as const;
-          },
-        ),
-      );
-      return Object.fromEntries(
-        entries.filter(([, entry]) => entry !== omit),
-      );
-    };
-
-    const config = await visit(adapterConfig, "");
-    const resolvedConfig = asRecord(config);
-    if (!resolvedConfig) {
-      throw unprocessable(
-        "Adapter runtime configuration must remain an object",
-      );
-    }
-    return {
-      config: resolvedConfig,
-      secretKeys,
-      secretValues: [...secretValues],
-      manifest,
-    };
-  }
-
-  // Shared resolution tail for the two collectMissing*RuntimeBindings
-  // collectors: given pre-collected secret_ref and user_secret_ref entries,
+  // Shared resolution tail for the env binding collector: given pre-collected
+  // secret_ref and user_secret_ref entries,
   // report every binding a consumer still lacks WITHOUT resolving any values.
   async function collectMissingBindingsForRefs(
     companyId: string,
@@ -2422,43 +2143,49 @@ export function secretService(db: Db) {
   ): Promise<MissingRuntimeBinding[]> {
     if (secretRefs.length === 0 && userSecretRefs.length === 0) return [];
 
-    const bindingChecks = await Promise.all(secretRefs.map(async (entry) => ({
-      entry,
-      found: await getBinding({
-        companyId,
-        secretId: entry.secretId,
-        consumerType: context.consumerType,
-        consumerId: context.consumerId,
-        configPath: entry.configPath,
-      }),
-    })));
+    const bindingChecks = await Promise.all(
+      secretRefs.map(async (entry) => ({
+        entry,
+        found: await getBinding({
+          companyId,
+          secretId: entry.secretId,
+          consumerType: context.consumerType,
+          consumerId: context.consumerId,
+          configPath: entry.configPath,
+        }),
+      })),
+    );
     const missingEntries = bindingChecks
       .filter((check) => !check.found)
       .map((check) => check.entry);
 
     const secretRows = await Promise.all(
-      [...new Set(missingEntries.map((entry) => entry.secretId))].map(async (secretId) => [
-        secretId,
-        await getById(secretId).catch(() => null),
-      ] as const),
+      [...new Set(missingEntries.map((entry) => entry.secretId))].map(
+        async (secretId) =>
+          [secretId, await getById(secretId).catch(() => null)] as const,
+      ),
     );
     const secretsById = new Map(secretRows);
 
-    const missingSecretBindings: MissingRuntimeBinding[] = missingEntries.map((entry) => ({
-      consumerType: context.consumerType,
-      consumerId: context.consumerId,
-      configPath: entry.configPath,
-      envKey: entry.key,
-      bindingType: "secret_ref",
-      secretId: entry.secretId,
-      secretName: secretsById.get(entry.secretId)?.name ?? null,
-    }));
+    const missingSecretBindings: MissingRuntimeBinding[] = missingEntries.map(
+      (entry) => ({
+        consumerType: context.consumerType,
+        consumerId: context.consumerId,
+        configPath: entry.configPath,
+        envKey: entry.key,
+        bindingType: "secret_ref",
+        secretId: entry.secretId,
+        secretName: secretsById.get(entry.secretId)?.name ?? null,
+      }),
+    );
 
     const missingUserSecretBindings: MissingRuntimeBinding[] = [];
     for (const entry of userSecretRefs) {
       let definition: typeof userSecretDefinitions.$inferSelect | null = null;
       try {
-        definition = await resolveUserSecretDefinition(companyId, { definitionKey: entry.binding.key });
+        definition = await resolveUserSecretDefinition(companyId, {
+          definitionKey: entry.binding.key,
+        });
       } catch {
         missingUserSecretBindings.push(
           missingUserSecretDefinitionRuntimeBinding(
@@ -2485,13 +2212,15 @@ export function secretService(db: Db) {
       const declaration = await db
         .select()
         .from(userSecretDeclarations)
-        .where(and(
-          eq(userSecretDeclarations.companyId, companyId),
-          eq(userSecretDeclarations.userSecretDefinitionId, definition.id),
-          eq(userSecretDeclarations.targetType, context.consumerType),
-          eq(userSecretDeclarations.targetId, context.consumerId),
-          eq(userSecretDeclarations.configPath, entry.configPath),
-        ))
+        .where(
+          and(
+            eq(userSecretDeclarations.companyId, companyId),
+            eq(userSecretDeclarations.userSecretDefinitionId, definition.id),
+            eq(userSecretDeclarations.targetType, context.consumerType),
+            eq(userSecretDeclarations.targetId, context.consumerId),
+            eq(userSecretDeclarations.configPath, entry.configPath),
+          ),
+        )
         .then((rows) => rows[0] ?? null);
       if (!declaration) {
         missingUserSecretBindings.push({
@@ -2556,9 +2285,9 @@ export function secretService(db: Db) {
   }
 
   return {
-    listProviders: () => listSecretProviders(),
+    listProviders: () => providerRegistry.list(),
 
-    checkProviders: () => checkSecretProviders(),
+    checkProviders: () => providerRegistry.check(),
 
     previewProviderConfigDiscovery: async (
       companyId: string,
@@ -2578,12 +2307,17 @@ export function secretService(db: Db) {
         pageSize: input.pageSize,
       });
       if (!parsed.success) {
-        throw unprocessable("Invalid provider vault discovery config", parsed.error.flatten());
+        throw unprocessable(
+          "Invalid provider vault discovery config",
+          parsed.error.flatten(),
+        );
       }
       const providerId = parsed.data.provider as SecretProvider;
       const provider = getSecretProvider(providerId);
       if (!provider.discoverProviderConfigs) {
-        throw unprocessable(`${providerId} provider does not support provider vault discovery`);
+        throw unprocessable(
+          `${providerId} provider does not support provider vault discovery`,
+        );
       }
       const runtimeConfig = toDraftProviderVaultRuntimeConfig({
         companyId,
@@ -2631,21 +2365,36 @@ export function secretService(db: Db) {
     ) => {
       const attribution = requireSecretMutationActor(actor);
       const parsed = createSecretProviderConfigSchema.safeParse(input);
-      if (!parsed.success) throw unprocessable("Invalid provider vault config", parsed.error.flatten());
-      const status = input.status ?? defaultProviderConfigStatus(input.provider);
-      if ((status === "coming_soon" || status === "disabled") && input.isDefault) {
-        throw unprocessable("Only ready or warning provider vaults can be default");
+      if (!parsed.success)
+        throw unprocessable(
+          "Invalid provider vault config",
+          parsed.error.flatten(),
+        );
+      const status =
+        input.status ?? defaultProviderConfigStatus(input.provider);
+      if (
+        (status === "coming_soon" || status === "disabled") &&
+        input.isDefault
+      ) {
+        throw unprocessable(
+          "Only ready or warning provider vaults can be default",
+        );
       }
-      const normalizedConfig = validateProviderConfigPayload(input.provider, input.config ?? {});
+      const normalizedConfig = validateProviderConfigPayload(
+        input.provider,
+        input.config ?? {},
+      );
       return db.transaction(async (tx) => {
         if (input.isDefault) {
           await tx
             .update(companySecretProviderConfigs)
             .set({ isDefault: false, updatedAt: new Date() })
-            .where(and(
-              eq(companySecretProviderConfigs.companyId, companyId),
-              eq(companySecretProviderConfigs.provider, input.provider),
-            ));
+            .where(
+              and(
+                eq(companySecretProviderConfigs.companyId, companyId),
+                eq(companySecretProviderConfigs.provider, input.provider),
+              ),
+            );
         }
         return tx
           .insert(companySecretProviderConfigs)
@@ -2679,14 +2428,30 @@ export function secretService(db: Db) {
       const existing = await getProviderConfigById(id);
       if (!existing) return null;
       const parsed = updateSecretProviderConfigSchema.safeParse(patch);
-      if (!parsed.success) throw unprocessable("Invalid provider vault config", parsed.error.flatten());
+      if (!parsed.success)
+        throw unprocessable(
+          "Invalid provider vault config",
+          parsed.error.flatten(),
+        );
       const provider = existing.provider as SecretProvider;
-      const status = patch.status ?? (existing.status as SecretProviderConfigStatus);
-      if (COMING_SOON_SECRET_PROVIDERS.has(provider) && status !== "coming_soon" && status !== "disabled") {
-        throw unprocessable(`${provider} provider vaults are locked while coming soon`);
+      const status =
+        patch.status ?? (existing.status as SecretProviderConfigStatus);
+      if (
+        COMING_SOON_SECRET_PROVIDERS.has(provider) &&
+        status !== "coming_soon" &&
+        status !== "disabled"
+      ) {
+        throw unprocessable(
+          `${provider} provider vaults are locked while coming soon`,
+        );
       }
-      if ((status === "coming_soon" || status === "disabled") && patch.isDefault) {
-        throw unprocessable("Only ready or warning provider vaults can be default");
+      if (
+        (status === "coming_soon" || status === "disabled") &&
+        patch.isDefault
+      ) {
+        throw unprocessable(
+          "Only ready or warning provider vaults can be default",
+        );
       }
       const normalizedConfig =
         patch.config === undefined
@@ -2697,19 +2462,27 @@ export function secretService(db: Db) {
           await tx
             .update(companySecretProviderConfigs)
             .set({ isDefault: false, updatedAt: new Date() })
-            .where(and(
-              eq(companySecretProviderConfigs.companyId, existing.companyId),
-              eq(companySecretProviderConfigs.provider, existing.provider),
-            ));
+            .where(
+              and(
+                eq(companySecretProviderConfigs.companyId, existing.companyId),
+                eq(companySecretProviderConfigs.provider, existing.provider),
+              ),
+            );
         }
         return tx
           .update(companySecretProviderConfigs)
           .set({
             displayName: patch.displayName?.trim() ?? existing.displayName,
             status,
-            isDefault: status === "disabled" || status === "coming_soon" ? false : patch.isDefault ?? existing.isDefault,
+            isDefault:
+              status === "disabled" || status === "coming_soon"
+                ? false
+                : (patch.isDefault ?? existing.isDefault),
             config: normalizedConfig,
-            disabledAt: status === "disabled" ? existing.disabledAt ?? new Date() : null,
+            disabledAt:
+              status === "disabled"
+                ? (existing.disabledAt ?? new Date())
+                : null,
             updatedAt: new Date(),
           })
           .where(eq(companySecretProviderConfigs.id, id))
@@ -2744,12 +2517,17 @@ export function secretService(db: Db) {
         .then((rows) => rows[0] ?? null);
     },
 
-    setDefaultProviderConfig: async (id: string, actor: SecretMutationActor) => {
+    setDefaultProviderConfig: async (
+      id: string,
+      actor: SecretMutationActor,
+    ) => {
       requireSecretMutationActor(actor);
       const existing = await getProviderConfigById(id);
       if (!existing) return null;
       if (existing.status === "coming_soon" || existing.status === "disabled") {
-        throw unprocessable("Only ready or warning provider vaults can be default");
+        throw unprocessable(
+          "Only ready or warning provider vaults can be default",
+        );
       }
       return db.transaction(async (tx) => {
         const current = await tx
@@ -2759,30 +2537,45 @@ export function secretService(db: Db) {
           .then((rows) => rows[0] ?? null);
         if (!current) return null;
         if (current.status === "coming_soon" || current.status === "disabled") {
-          throw unprocessable("Only ready or warning provider vaults can be default");
+          throw unprocessable(
+            "Only ready or warning provider vaults can be default",
+          );
         }
         await tx
           .update(companySecretProviderConfigs)
           .set({ isDefault: false, updatedAt: new Date() })
-          .where(and(
-            eq(companySecretProviderConfigs.companyId, current.companyId),
-            eq(companySecretProviderConfigs.provider, current.provider),
-          ));
+          .where(
+            and(
+              eq(companySecretProviderConfigs.companyId, current.companyId),
+              eq(companySecretProviderConfigs.provider, current.provider),
+            ),
+          );
         const updated = await tx
           .update(companySecretProviderConfigs)
           .set({ isDefault: true, updatedAt: new Date() })
-          .where(and(
-            eq(companySecretProviderConfigs.id, id),
-            notInArray(companySecretProviderConfigs.status, ["coming_soon", "disabled"]),
-          ))
+          .where(
+            and(
+              eq(companySecretProviderConfigs.id, id),
+              notInArray(companySecretProviderConfigs.status, [
+                "coming_soon",
+                "disabled",
+              ]),
+            ),
+          )
           .returning()
           .then((rows) => rows[0] ?? null);
-        if (!updated) throw unprocessable("Only ready or warning provider vaults can be default");
+        if (!updated)
+          throw unprocessable(
+            "Only ready or warning provider vaults can be default",
+          );
         return updated;
       });
     },
 
-    checkProviderConfigHealth: async (id: string, actor: SecretMutationActor) => {
+    checkProviderConfigHealth: async (
+      id: string,
+      actor: SecretMutationActor,
+    ) => {
       requireSecretMutationActor(actor);
       const existing = await getProviderConfigById(id);
       if (!existing) return null;
@@ -2794,14 +2587,16 @@ export function secretService(db: Db) {
         config: existing.config ?? {},
       });
       const provider = getSecretProvider(existing.provider as SecretProvider);
-      const health = staticHealth ?? mapProviderModuleHealth({
-        configId: existing.id,
-        provider: existing.provider as SecretProvider,
-        providerStatus: existing.status as SecretProviderConfigStatus,
-        health: await provider.healthCheck({
-          providerConfig: toProviderVaultRuntimeConfig(existing),
-        }),
-      });
+      const health =
+        staticHealth ??
+        mapProviderModuleHealth({
+          configId: existing.id,
+          provider: existing.provider as SecretProvider,
+          providerStatus: existing.status as SecretProviderConfigStatus,
+          health: await provider.healthCheck({
+            providerConfig: toProviderVaultRuntimeConfig(existing),
+          }),
+        });
       await db
         .update(companySecretProviderConfigs)
         .set({
@@ -2820,11 +2615,13 @@ export function secretService(db: Db) {
         db
           .select()
           .from(companySecrets)
-          .where(and(
-            eq(companySecrets.companyId, companyId),
-            eq(companySecrets.scope, "company"),
-            ne(companySecrets.status, "deleted"),
-          ))
+          .where(
+            and(
+              eq(companySecrets.companyId, companyId),
+              eq(companySecrets.scope, "company"),
+              ne(companySecrets.status, "deleted"),
+            ),
+          )
           .orderBy(desc(companySecrets.createdAt)),
         db
           .select({
@@ -2835,7 +2632,9 @@ export function secretService(db: Db) {
           .where(eq(companySecretBindings.companyId, companyId))
           .groupBy(companySecretBindings.secretId),
       ]);
-      const countsBySecretId = new Map(referenceCounts.map((row) => [row.secretId, row.count]));
+      const countsBySecretId = new Map(
+        referenceCounts.map((row) => [row.secretId, row.count]),
+      );
       return secrets.map((secret) => ({
         ...secret,
         referenceCount: countsBySecretId.get(secret.id) ?? 0,
@@ -2848,7 +2647,10 @@ export function secretService(db: Db) {
         .from(companySecretBindings)
         .where(
           secretId
-            ? and(eq(companySecretBindings.companyId, companyId), eq(companySecretBindings.secretId, secretId))
+            ? and(
+                eq(companySecretBindings.companyId, companyId),
+                eq(companySecretBindings.secretId, secretId),
+              )
             : eq(companySecretBindings.companyId, companyId),
         )
         .orderBy(desc(companySecretBindings.createdAt)),
@@ -2857,29 +2659,44 @@ export function secretService(db: Db) {
       const bindings = await db
         .select()
         .from(companySecretBindings)
-        .where(and(eq(companySecretBindings.companyId, companyId), eq(companySecretBindings.secretId, secretId)))
+        .where(
+          and(
+            eq(companySecretBindings.companyId, companyId),
+            eq(companySecretBindings.secretId, secretId),
+          ),
+        )
         .orderBy(desc(companySecretBindings.createdAt));
       const targetMap = await buildBindingTargetMap(companyId, bindings);
-      return bindings.map((binding) => ({
-        ...binding,
-        target:
-          targetMap.get(`${binding.targetType}:${binding.targetId}`) ??
-          fallbackBindingTarget(binding),
-      }));
+      return bindings.flatMap((binding) => {
+        const target = targetMap.get(
+          `${binding.targetType}:${binding.targetId}`,
+        );
+        return target ? [{ ...binding, target }] : [];
+      });
     },
 
     listAccessEvents: (companyId: string, secretId: string) =>
       db
         .select()
         .from(secretAccessEvents)
-        .where(and(eq(secretAccessEvents.companyId, companyId), eq(secretAccessEvents.secretId, secretId)))
+        .where(
+          and(
+            eq(secretAccessEvents.companyId, companyId),
+            eq(secretAccessEvents.secretId, secretId),
+          ),
+        )
         .orderBy(desc(secretAccessEvents.createdAt)),
 
     listUserSecretDefinitions: (companyId: string) =>
       db
         .select()
         .from(userSecretDefinitions)
-        .where(and(eq(userSecretDefinitions.companyId, companyId), ne(userSecretDefinitions.status, "deleted")))
+        .where(
+          and(
+            eq(userSecretDefinitions.companyId, companyId),
+            ne(userSecretDefinitions.status, "deleted"),
+          ),
+        )
         .orderBy(desc(userSecretDefinitions.createdAt)),
 
     getUserSecretDefinitionById: (companyId: string, definitionId: string) =>
@@ -2901,10 +2718,15 @@ export function secretService(db: Db) {
       actor: SecretMutationActor,
     ) => {
       const attribution = requireSecretMutationActor(actor);
-      const key = input.key.trim();
+      const key = requireExactSecretKey(input.key);
       const duplicate = await getUserSecretDefinitionByKey(companyId, key);
-      if (duplicate) throw conflict(`User secret definition already exists: ${key}`);
-      await assertProviderConfigForSecret(companyId, input.provider, input.providerConfigId);
+      if (duplicate)
+        throw conflict(`User secret definition already exists: ${key}`);
+      await assertProviderConfigForSecret(
+        companyId,
+        input.provider,
+        input.providerConfigId,
+      );
       try {
         return await db
           .insert(userSecretDefinitions)
@@ -2927,7 +2749,12 @@ export function secretService(db: Db) {
           .returning()
           .then((rows) => rows[0]);
       } catch (error) {
-        if (isUniqueConstraintViolation(error, USER_SECRET_DEFINITION_KEY_UNIQUE_CONSTRAINT)) {
+        if (
+          isUniqueConstraintViolation(
+            error,
+            USER_SECRET_DEFINITION_KEY_UNIQUE_CONSTRAINT,
+          )
+        ) {
           throw conflict(`User secret definition already exists: ${key}`);
         }
         throw error;
@@ -2949,13 +2776,25 @@ export function secretService(db: Db) {
       actor: SecretMutationActor,
     ) => {
       const attribution = requireSecretMutationActor(actor);
-      const existing = await resolveUserSecretDefinition(companyId, { definitionId });
+      const existing = await resolveUserSecretDefinition(companyId, {
+        definitionId,
+      });
       if (patch.status === "deleted") {
-        return removeUserSecretDefinitionInternal(companyId, existing.id, actor);
+        return removeUserSecretDefinitionInternal(
+          companyId,
+          existing.id,
+          actor,
+        );
       }
-      const nextKey = patch.key?.trim() ?? existing.key;
+      const nextKey =
+        patch.key === undefined
+          ? existing.key
+          : requireExactSecretKey(patch.key);
       if (nextKey !== existing.key) {
-        const duplicate = await getUserSecretDefinitionByKey(companyId, nextKey);
+        const duplicate = await getUserSecretDefinitionByKey(
+          companyId,
+          nextKey,
+        );
         if (duplicate && duplicate.id !== existing.id) {
           throw conflict(`User secret definition already exists: ${nextKey}`);
         }
@@ -2972,23 +2811,34 @@ export function secretService(db: Db) {
         .set({
           key: nextKey,
           name: patch.name?.trim() ?? existing.name,
-          description: patch.description === undefined ? existing.description : patch.description,
+          description:
+            patch.description === undefined
+              ? existing.description
+              : patch.description,
           status: patch.status ?? existing.status,
           providerConfigId:
-            patch.providerConfigId === undefined ? existing.providerConfigId : patch.providerConfigId,
+            patch.providerConfigId === undefined
+              ? existing.providerConfigId
+              : patch.providerConfigId,
           providerMetadata:
-            patch.providerMetadata === undefined ? existing.providerMetadata : patch.providerMetadata,
+            patch.providerMetadata === undefined
+              ? existing.providerMetadata
+              : patch.providerMetadata,
           usageGuidance:
-            patch.usageGuidance === undefined ? existing.usageGuidance : patch.usageGuidance,
+            patch.usageGuidance === undefined
+              ? existing.usageGuidance
+              : patch.usageGuidance,
           updatedByAgentId: attribution.agentId,
           updatedByUserId: attribution.userId,
           deletedAt: existing.deletedAt,
           updatedAt: new Date(),
         })
-        .where(and(
-          eq(userSecretDefinitions.companyId, companyId),
-          eq(userSecretDefinitions.id, definitionId),
-        ))
+        .where(
+          and(
+            eq(userSecretDefinitions.companyId, companyId),
+            eq(userSecretDefinitions.id, definitionId),
+          ),
+        )
         .returning()
         .then((rows) => rows[0] ?? null);
     },
@@ -2999,60 +2849,93 @@ export function secretService(db: Db) {
       actor: SecretMutationActor,
     ) => removeUserSecretDefinitionInternal(companyId, definitionId, actor),
 
-    getUserSecretDefinitionCoverage: async (companyId: string, definitionId: string) => {
+    getUserSecretDefinitionCoverage: async (
+      companyId: string,
+      definitionId: string,
+    ) => {
       await resolveUserSecretDefinition(companyId, { definitionId });
       const [members, values] = await Promise.all([
         db
           .select({ principalId: companyMemberships.principalUserId })
           .from(companyMemberships)
-          .where(and(
-            eq(companyMemberships.companyId, companyId),
-            eq(companyMemberships.principalType, "user"),
-            eq(companyMemberships.status, "active"),
-          )),
+          .where(
+            and(
+              eq(companyMemberships.companyId, companyId),
+              eq(companyMemberships.principalType, "user"),
+              eq(companyMemberships.status, "active"),
+            ),
+          ),
         db
-          .select({ status: companySecrets.status, ownerUserId: companySecrets.ownerUserId })
+          .select({
+            status: companySecrets.status,
+            ownerUserId: companySecrets.ownerUserId,
+          })
           .from(companySecrets)
-          .where(and(
-            eq(companySecrets.companyId, companyId),
-            eq(companySecrets.scope, "user"),
-            eq(companySecrets.userSecretDefinitionId, definitionId),
-            ne(companySecrets.status, "deleted"),
-          )),
+          .where(
+            and(
+              eq(companySecrets.companyId, companyId),
+              eq(companySecrets.scope, "user"),
+              eq(companySecrets.userSecretDefinitionId, definitionId),
+              ne(companySecrets.status, "deleted"),
+            ),
+          ),
       ]);
       const memberIds = new Set(
-        members.flatMap((member) => member.principalId ? [member.principalId] : []),
+        members.flatMap((member) =>
+          member.principalId ? [member.principalId] : [],
+        ),
       );
-      const configuredCount = values.filter((value) =>
-        value.status === "active" && value.ownerUserId && memberIds.has(value.ownerUserId)
+      const configuredCount = values.filter(
+        (value) =>
+          value.status === "active" &&
+          value.ownerUserId &&
+          memberIds.has(value.ownerUserId),
       ).length;
-      const inactiveCount = values.filter((value) =>
-        value.status !== "active" && value.ownerUserId && memberIds.has(value.ownerUserId)
+      const inactiveCount = values.filter(
+        (value) =>
+          value.status !== "active" &&
+          value.ownerUserId &&
+          memberIds.has(value.ownerUserId),
       ).length;
       return {
         definitionId,
         configuredCount,
         inactiveCount,
-        missingCount: Math.max(0, memberIds.size - configuredCount - inactiveCount),
+        missingCount: Math.max(
+          0,
+          memberIds.size - configuredCount - inactiveCount,
+        ),
       };
     },
 
-    listCurrentUserSecretValues: async (companyId: string, ownerUserId: string) => {
+    listCurrentUserSecretValues: async (
+      companyId: string,
+      ownerUserId: string,
+    ) => {
       const definitions = await db
         .select()
         .from(userSecretDefinitions)
-        .where(and(eq(userSecretDefinitions.companyId, companyId), ne(userSecretDefinitions.status, "deleted")))
+        .where(
+          and(
+            eq(userSecretDefinitions.companyId, companyId),
+            ne(userSecretDefinitions.status, "deleted"),
+          ),
+        )
         .orderBy(desc(userSecretDefinitions.createdAt));
       const values = await db
         .select()
         .from(companySecrets)
-        .where(and(
-          eq(companySecrets.companyId, companyId),
-          eq(companySecrets.scope, "user"),
-          eq(companySecrets.ownerUserId, ownerUserId),
-          ne(companySecrets.status, "deleted"),
-        ));
-      const valuesByDefinitionId = new Map(values.map((value) => [value.userSecretDefinitionId, value]));
+        .where(
+          and(
+            eq(companySecrets.companyId, companyId),
+            eq(companySecrets.scope, "user"),
+            eq(companySecrets.ownerUserId, ownerUserId),
+            ne(companySecrets.status, "deleted"),
+          ),
+        );
+      const valuesByDefinitionId = new Map(
+        values.map((value) => [value.userSecretDefinitionId, value]),
+      );
       return definitions.map((definition) => ({
         definition,
         secret: valuesByDefinitionId.get(definition.id) ?? null,
@@ -3074,10 +2957,20 @@ export function secretService(db: Db) {
       actor: SecretMutationActor,
     ) => {
       requireSecretMutationActor(actor);
-      const secret = await getUserSecretValueById(companyId, ownerUserId, secretId);
+      const secret = await getUserSecretValueById(
+        companyId,
+        ownerUserId,
+        secretId,
+      );
       return await (async () => {
-        await resolveUserSecretDefinition(companyId, { definitionId: secret.userSecretDefinitionId });
-        return (await secretService(db).rotate(secret.id, input, actor));
+        await resolveUserSecretDefinition(companyId, {
+          definitionId: secret.userSecretDefinitionId,
+        });
+        return await secretService(db, secretsRuntime).rotate(
+          secret.id,
+          input,
+          actor,
+        );
       })();
     },
 
@@ -3095,14 +2988,21 @@ export function secretService(db: Db) {
       actor: SecretMutationActor,
     ) => {
       requireSecretMutationActor(actor);
-      const secret = await getUserSecretValueById(companyId, ownerUserId, secretId);
+      const secret = await getUserSecretValueById(
+        companyId,
+        ownerUserId,
+        secretId,
+      );
       if (
         patch.value != null ||
         patch.externalRef != null ||
         patch.providerVersionRef != null ||
         patch.providerConfigId != null
       ) {
-        return await secretService(db).rotateCurrentUserSecretValue(
+        return await secretService(
+          db,
+          secretsRuntime,
+        ).rotateCurrentUserSecretValue(
           companyId,
           ownerUserId,
           secret.id,
@@ -3111,7 +3011,10 @@ export function secretService(db: Db) {
         );
       }
       if (patch.status === "deleted") {
-        return await secretService(db).removeCurrentUserSecretValue(
+        return await secretService(
+          db,
+          secretsRuntime,
+        ).removeCurrentUserSecretValue(
           companyId,
           ownerUserId,
           secret.id,
@@ -3136,13 +3039,21 @@ export function secretService(db: Db) {
       actor: SecretMutationActor,
     ) => {
       requireSecretMutationActor(actor);
-      const secret = await getUserSecretValueById(companyId, ownerUserId, secretId);
-      return await secretService(db).remove(secret.id, actor);
+      const secret = await getUserSecretValueById(
+        companyId,
+        ownerUserId,
+        secretId,
+      );
+      return await secretService(db, secretsRuntime).remove(secret.id, actor);
     },
 
     syncUserSecretDeclarationsForTarget: async (
       companyId: string,
-      target: { targetType: SecretBindingTargetType; targetId: string; pathPrefix?: string },
+      target: {
+        targetType: SecretBindingTargetType;
+        targetId: string;
+        pathPrefix?: string;
+      },
       refs: Array<{
         definitionKey: string;
         configPath: string;
@@ -3191,20 +3102,24 @@ export function secretService(db: Db) {
         if (options.replaceAll) {
           await executor
             .delete(userSecretDeclarations)
-            .where(and(
-              eq(userSecretDeclarations.companyId, companyId),
-              eq(userSecretDeclarations.targetType, target.targetType),
-              eq(userSecretDeclarations.targetId, target.targetId),
-            ));
+            .where(
+              and(
+                eq(userSecretDeclarations.companyId, companyId),
+                eq(userSecretDeclarations.targetType, target.targetType),
+                eq(userSecretDeclarations.targetId, target.targetId),
+              ),
+            );
         } else {
           await executor
             .delete(userSecretDeclarations)
-            .where(and(
-              eq(userSecretDeclarations.companyId, companyId),
-              eq(userSecretDeclarations.targetType, target.targetType),
-              eq(userSecretDeclarations.targetId, target.targetId),
-              like(userSecretDeclarations.configPath, `${pathPrefix}.%`),
-            ));
+            .where(
+              and(
+                eq(userSecretDeclarations.companyId, companyId),
+                eq(userSecretDeclarations.targetType, target.targetType),
+                eq(userSecretDeclarations.targetId, target.targetId),
+                like(userSecretDeclarations.configPath, `${pathPrefix}.%`),
+              ),
+            );
         }
         if (normalizedRefs.length === 0) return;
         await executor.insert(userSecretDeclarations).values(
@@ -3243,13 +3158,20 @@ export function secretService(db: Db) {
       },
       context?: SecretConsumerContext,
     ): Promise<RuntimeSecretResolution | null> => {
-      const responsibleUserId = input.responsibleUserId ?? context?.responsibleUserId ?? null;
-      const optionalBinding = input.allowMissingOverride || input.required === false;
+      const responsibleUserId =
+        input.responsibleUserId ?? context?.responsibleUserId ?? null;
+      const optionalBinding =
+        input.allowMissingOverride || input.required === false;
       let definition: typeof userSecretDefinitions.$inferSelect;
       try {
         definition = await resolveUserSecretDefinition(companyId, input);
       } catch (error) {
-        if (optionalBinding && error instanceof HttpError && error.status === 404) return null;
+        if (
+          optionalBinding &&
+          error instanceof HttpError &&
+          error.status === 404
+        )
+          return null;
         throw error;
       }
       if (definition.status !== "active") {
@@ -3258,23 +3180,27 @@ export function secretService(db: Db) {
       }
       if (!responsibleUserId?.trim()) {
         if (optionalBinding) return null;
-        throw unprocessable("Responsible user is required for user secret resolution", {
-          code: "responsible_user_missing",
-        });
+        throw unprocessable(
+          "Responsible user is required for user secret resolution",
+          {
+            code: "responsible_user_missing",
+          },
+        );
       }
       let declaration: typeof userSecretDeclarations.$inferSelect | null = null;
       if (context?.configPath) {
-        assertRuntimeSecretConfigPath(context.configPath);
         declaration = await db
           .select()
           .from(userSecretDeclarations)
-          .where(and(
-            eq(userSecretDeclarations.companyId, companyId),
-            eq(userSecretDeclarations.userSecretDefinitionId, definition.id),
-            eq(userSecretDeclarations.targetType, context.consumerType),
-            eq(userSecretDeclarations.targetId, context.consumerId),
-            eq(userSecretDeclarations.configPath, context.configPath),
-          ))
+          .where(
+            and(
+              eq(userSecretDeclarations.companyId, companyId),
+              eq(userSecretDeclarations.userSecretDefinitionId, definition.id),
+              eq(userSecretDeclarations.targetType, context.consumerType),
+              eq(userSecretDeclarations.targetId, context.consumerId),
+              eq(userSecretDeclarations.configPath, context.configPath),
+            ),
+          )
           .then((rows) => rows[0] ?? null);
         if (!declaration) {
           if (optionalBinding) return null;
@@ -3311,7 +3237,9 @@ export function secretService(db: Db) {
         secret.id,
         input.version ?? "latest",
         {
-          accessContext: context ? { ...context, responsibleUserId } : undefined,
+          accessContext: context
+            ? { ...context, responsibleUserId }
+            : undefined,
           allowUserSecretScope: true,
         },
       );
@@ -3319,7 +3247,8 @@ export function secretService(db: Db) {
         ...resolution,
         manifestEntry: {
           ...resolution.manifestEntry,
-          bindingId: declaration?.id ?? resolution.manifestEntry.bindingId ?? null,
+          bindingId:
+            declaration?.id ?? resolution.manifestEntry.bindingId ?? null,
         },
       };
     },
@@ -3333,13 +3262,19 @@ export function secretService(db: Db) {
         pageSize?: number;
       },
     ) => {
-      const { providerConfig, provider: providerId, runtimeConfig } = await getRemoteImportProviderConfig(
+      const {
+        providerConfig,
+        provider: providerId,
+        runtimeConfig,
+      } = await getRemoteImportProviderConfig(
         companyId,
         input.providerConfigId,
       );
       const provider = getSecretProvider(providerId);
       if (!provider.listRemoteSecrets) {
-        throw unprocessable(`${providerId} provider does not support remote import listing`);
+        throw unprocessable(
+          `${providerId} provider does not support remote import listing`,
+        );
       }
       let listed: RemoteSecretListResult;
       try {
@@ -3360,53 +3295,78 @@ export function secretService(db: Db) {
       const maps = await buildRemoteImportConflictMaps(companyId, providerId);
       const candidates: RemoteSecretImportCandidate[] = [];
       for (const remote of listed.secrets) {
-        const externalRef = remote.externalRef.trim();
-        const remoteName = remote.name.trim() || deriveSecretNameFromExternalRef(externalRef);
+        const externalRef = requireExactOpaqueSecretReference(
+          remote.externalRef,
+          "Remote provider secret reference",
+        );
+        const providerVersionRef = requireOptionalExactOpaqueSecretReference(
+          remote.providerVersionRef,
+          "Remote provider secret version reference",
+        );
+        const remoteName =
+          remote.name.trim() || deriveSecretNameFromExternalRef(externalRef);
         const name = remoteName || deriveSecretNameFromExternalRef(externalRef);
         const key = normalizeSecretKey(name);
         let canonicalExternalRef = externalRef;
         const conflicts: RemoteSecretImportConflict[] = [];
         try {
-          const prepared = await provider.linkExternalSecret({
-            externalRef,
-            providerVersionRef: remote.providerVersionRef ?? null,
-            providerConfig: runtimeConfig,
-            context: {
-              companyId,
-              secretKey: key || "remote-import-preview",
-              secretName: name,
-              version: 1,
-            },
-          });
+          const prepared = assertExactPreparedSecretReferences(
+            await provider.linkExternalSecret({
+              externalRef,
+              providerVersionRef,
+              providerConfig: runtimeConfig,
+              context: {
+                companyId,
+                secretKey: key || "remote-import-preview",
+                secretName: name,
+                version: 1,
+              },
+            }),
+          );
           canonicalExternalRef = prepared.externalRef ?? externalRef;
         } catch (error) {
           conflicts.push({
             type: "provider_guardrail",
-            message: remoteImportRowFailureReason(error, "Provider rejected this external reference", {
-              companyId,
-              provider: providerId,
-              providerConfigId: providerConfig.id,
-              operation: "remote_import.preview.link_external_reference",
-            }),
+            message: remoteImportRowFailureReason(
+              error,
+              "Provider rejected this external reference",
+              {
+                companyId,
+                provider: providerId,
+                providerConfigId: providerConfig.id,
+                operation: "remote_import.preview.link_external_reference",
+              },
+            ),
           });
         }
-        conflicts.push(...remoteImportConflictsFor({
-          providerConfigId: providerConfig.id,
-          externalRef: canonicalExternalRef,
-          name,
-          key,
-          maps,
-        }));
-        const hasDuplicate = conflicts.some((conflict) => conflict.type === "exact_reference");
+        conflicts.push(
+          ...remoteImportConflictsFor({
+            providerConfigId: providerConfig.id,
+            externalRef: canonicalExternalRef,
+            name,
+            key,
+            maps,
+          }),
+        );
+        const hasDuplicate = conflicts.some(
+          (conflict) => conflict.type === "exact_reference",
+        );
         const hasConflict = conflicts.length > 0;
         candidates.push({
           externalRef,
           remoteName,
           name,
           key,
-          providerVersionRef: remote.providerVersionRef ?? null,
-          providerMetadata: sanitizeRemoteProviderMetadata(providerId, remote.metadata),
-          status: hasDuplicate ? "duplicate" : hasConflict ? "conflict" : "ready",
+          providerVersionRef,
+          providerMetadata: sanitizeRemoteProviderMetadata(
+            providerId,
+            remote.metadata,
+          ),
+          status: hasDuplicate
+            ? "duplicate"
+            : hasConflict
+              ? "conflict"
+              : "ready",
           importable: !hasConflict,
           conflicts,
         });
@@ -3435,21 +3395,41 @@ export function secretService(db: Db) {
       actor: SecretMutationActor,
     ) => {
       const attribution = requireSecretMutationActor(actor);
-      const { providerConfig, provider: providerId, runtimeConfig } = await getRemoteImportProviderConfig(
+      for (const selection of input.secrets) {
+        requireExactOpaqueSecretReference(
+          selection.externalRef,
+          "Provider secret reference",
+        );
+        requireOptionalExactOpaqueSecretReference(
+          selection.providerVersionRef,
+          "Provider secret version reference",
+        );
+      }
+      const {
+        providerConfig,
+        provider: providerId,
+        runtimeConfig,
+      } = await getRemoteImportProviderConfig(
         companyId,
         input.providerConfigId,
       );
       const provider = getSecretProvider(providerId);
       if (provider.descriptor().supportsExternalReferences === false) {
-        throw unprocessable(`${providerId} provider does not support linked external references`);
+        throw unprocessable(
+          `${providerId} provider does not support linked external references`,
+        );
       }
       const maps = await buildRemoteImportConflictMaps(companyId, providerId);
       const results: RemoteSecretImportRowResult[] = [];
 
       for (const selection of input.secrets) {
-        const externalRef = selection.externalRef.trim();
-        const name = selection.name?.trim() || deriveSecretNameFromExternalRef(externalRef);
-        const key = normalizeSecretKey(selection.key?.trim() || name);
+        const externalRef = selection.externalRef;
+        const name =
+          selection.name?.trim() ||
+          deriveSecretNameFromExternalRef(externalRef);
+        const key = requireExactSecretKey(
+          selection.key == null ? normalizeSecretKey(name) : selection.key,
+        );
         const description = selection.description?.trim() || null;
         let prepared: PreparedSecretVersion | undefined;
         const conflicts = remoteImportConflictsFor({
@@ -3459,39 +3439,33 @@ export function secretService(db: Db) {
           key,
           maps,
         });
-        if (!key) {
-          results.push({
-            externalRef,
-            name,
-            key,
-            status: "error",
-            reason: "Secret key is required",
-            secretId: null,
-            conflicts,
-          });
-          continue;
-        }
         if (conflicts.length === 0) {
           try {
-            prepared = await provider.linkExternalSecret({
-              externalRef,
-              providerVersionRef: selection.providerVersionRef ?? null,
-              providerConfig: runtimeConfig,
-              context: {
-                companyId,
-                secretKey: key,
-                secretName: name,
-                version: 1,
-              },
-            });
+            prepared = assertExactPreparedSecretReferences(
+              await provider.linkExternalSecret({
+                externalRef,
+                providerVersionRef: selection.providerVersionRef ?? null,
+                providerConfig: runtimeConfig,
+                context: {
+                  companyId,
+                  secretKey: key,
+                  secretName: name,
+                  version: 1,
+                },
+              }),
+            );
             const canonicalDuplicate = maps.byProviderConfigExternalRef.get(
-              remoteImportExternalRefKey(providerConfig.id, prepared.externalRef ?? externalRef),
+              remoteImportExternalRefKey(
+                providerConfig.id,
+                prepared.externalRef ?? externalRef,
+              ),
             );
             if (canonicalDuplicate) {
               conflicts.push({
                 type: "exact_reference",
                 existingSecretId: canonicalDuplicate.id,
-                message: "An existing secret already links this exact provider reference.",
+                message:
+                  "An existing secret already links this exact provider reference.",
               });
             }
           } catch (error) {
@@ -3500,12 +3474,16 @@ export function secretService(db: Db) {
               name,
               key,
               status: "error",
-              reason: remoteImportRowFailureReason(error, "Provider rejected this external reference", {
-                companyId,
-                provider: providerId,
-                providerConfigId: providerConfig.id,
-                operation: "remote_import.prepare_external_reference",
-              }),
+              reason: remoteImportRowFailureReason(
+                error,
+                "Provider rejected this external reference",
+                {
+                  companyId,
+                  provider: providerId,
+                  providerConfigId: providerConfig.id,
+                  operation: "remote_import.prepare_external_reference",
+                },
+              ),
               secretId: null,
               conflicts: [],
             });
@@ -3518,7 +3496,9 @@ export function secretService(db: Db) {
             name,
             key,
             status: "skipped",
-            reason: conflicts.some((conflict) => conflict.type === "exact_reference")
+            reason: conflicts.some(
+              (conflict) => conflict.type === "exact_reference",
+            )
               ? "exact_reference_duplicate"
               : "name_or_key_conflict",
             secretId: null,
@@ -3529,17 +3509,19 @@ export function secretService(db: Db) {
 
         try {
           if (!prepared) {
-            prepared = await provider.linkExternalSecret({
-              externalRef,
-              providerVersionRef: selection.providerVersionRef ?? null,
-              providerConfig: runtimeConfig,
-              context: {
-                companyId,
-                secretKey: key,
-                secretName: name,
-                version: 1,
-              },
-            });
+            prepared = assertExactPreparedSecretReferences(
+              await provider.linkExternalSecret({
+                externalRef,
+                providerVersionRef: selection.providerVersionRef ?? null,
+                providerConfig: runtimeConfig,
+                context: {
+                  companyId,
+                  secretKey: key,
+                  secretName: name,
+                  version: 1,
+                },
+              }),
+            );
           }
           if (!prepared) {
             throw unprocessable("Provider rejected this external reference");
@@ -3571,7 +3553,8 @@ export function secretService(db: Db) {
               version: 1,
               material: preparedSecret.material,
               valueSha256: preparedSecret.valueSha256,
-              fingerprintSha256: preparedSecret.fingerprintSha256 ?? preparedSecret.valueSha256,
+              fingerprintSha256:
+                preparedSecret.fingerprintSha256 ?? preparedSecret.valueSha256,
               providerVersionRef: preparedSecret.providerVersionRef ?? null,
               status: "current",
               createdByAgentId: attribution.agentId,
@@ -3580,7 +3563,10 @@ export function secretService(db: Db) {
             return inserted;
           });
           maps.byProviderConfigExternalRef.set(
-            remoteImportExternalRefKey(providerConfig.id, preparedSecret.externalRef ?? externalRef),
+            remoteImportExternalRefKey(
+              providerConfig.id,
+              preparedSecret.externalRef ?? externalRef,
+            ),
             secret,
           );
           maps.byName.set(name, secret);
@@ -3615,9 +3601,12 @@ export function secretService(db: Db) {
       return {
         providerConfigId: providerConfig.id,
         provider: providerId,
-        importedCount: results.filter((result) => result.status === "imported").length,
-        skippedCount: results.filter((result) => result.status === "skipped").length,
-        errorCount: results.filter((result) => result.status === "error").length,
+        importedCount: results.filter((result) => result.status === "imported")
+          .length,
+        skippedCount: results.filter((result) => result.status === "skipped")
+          .length,
+        errorCount: results.filter((result) => result.status === "error")
+          .length,
         results,
       };
     },
@@ -3634,19 +3623,30 @@ export function secretService(db: Db) {
       actor: SecretMutationActor,
     ) => {
       const attribution = requireSecretMutationActor(actor);
+      requireOptionalExactOpaqueSecretReference(
+        input.externalRef,
+        "Provider secret reference",
+      );
+      requireOptionalExactOpaqueSecretReference(
+        input.providerVersionRef,
+        "Provider secret version reference",
+      );
       const existing = await getByName(companyId, input.name);
       if (existing) throw conflict(`Secret already exists: ${input.name}`);
-      const key = normalizeSecretKey(input.key ?? input.name);
-      if (!key) throw unprocessable("Secret key is required");
+      const key = requireExactSecretKey(
+        input.key == null ? normalizeSecretKey(input.name) : input.key,
+      );
       const duplicateKey = await db
         .select()
         .from(companySecrets)
-        .where(and(
-          eq(companySecrets.companyId, companyId),
-          eq(companySecrets.scope, "company"),
-          eq(companySecrets.key, key),
-          ne(companySecrets.status, "deleted"),
-        ))
+        .where(
+          and(
+            eq(companySecrets.companyId, companyId),
+            eq(companySecrets.scope, "company"),
+            eq(companySecrets.key, key),
+            ne(companySecrets.status, "deleted"),
+          ),
+        )
         .then((rows) => rows[0] ?? null);
       if (duplicateKey) throw conflict(`Secret key already exists: ${key}`);
 
@@ -3657,10 +3657,10 @@ export function secretService(db: Db) {
         provider: input.provider,
         providerConfigId: input.providerConfigId,
       });
-      if (managedMode === "external_reference" && !input.externalRef?.trim()) {
+      if (managedMode === "external_reference" && input.externalRef == null) {
         throw unprocessable("External reference secrets require externalRef");
       }
-      if (managedMode === "paperclip_managed" && input.externalRef?.trim()) {
+      if (managedMode === "paperclip_managed" && input.externalRef != null) {
         throw unprocessable("Managed secrets cannot override externalRef");
       }
       if (managedMode === "paperclip_managed" && !input.value?.trim()) {
@@ -3694,7 +3694,7 @@ export function secretService(db: Db) {
 
       let prepared: PreparedSecretVersion;
       try {
-        prepared =
+        prepared = assertExactPreparedSecretReferences(
           managedMode === "external_reference"
             ? await provider.linkExternalSecret({
                 externalRef: input.externalRef ?? "",
@@ -3707,11 +3707,15 @@ export function secretService(db: Db) {
                 externalRef: null,
                 providerConfig,
                 context: providerWriteContext,
-              });
+              }),
+        );
       } catch (error) {
         throw await throwProviderWriteOrReservedRowRollbackError({
           error,
-          rollbackReservedRow: () => db.delete(companySecrets).where(eq(companySecrets.id, reservedSecret.id)),
+          rollbackReservedRow: () =>
+            db
+              .delete(companySecrets)
+              .where(eq(companySecrets.id, reservedSecret.id)),
           companyId,
           provider: provider.id,
           providerConfigId: input.providerConfigId ?? null,
@@ -3777,10 +3781,12 @@ export function secretService(db: Db) {
           await tx
             .update(companySecretVersions)
             .set({ status: "current" })
-            .where(and(
-              eq(companySecretVersions.secretId, reservedSecret.id),
-              eq(companySecretVersions.version, 1),
-            ));
+            .where(
+              and(
+                eq(companySecretVersions.secretId, reservedSecret.id),
+                eq(companySecretVersions.version, 1),
+              ),
+            );
 
           const secret = await tx
             .update(companySecrets)
@@ -3838,7 +3844,7 @@ export function secretService(db: Db) {
       actor: SecretMutationActor,
     ) => {
       requireSecretMutationActor(actor);
-      const service = secretService(db);
+      const service = secretService(db, secretsRuntime);
       const secret = await service.create(companyId, input, actor);
       try {
         await service.createBinding(
@@ -3882,23 +3888,44 @@ export function secretService(db: Db) {
       actor: SecretMutationActor,
     ) => {
       const attribution = requireSecretMutationActor(actor);
+      requireOptionalExactOpaqueSecretReference(
+        input.externalRef,
+        "Provider secret reference",
+      );
+      requireOptionalExactOpaqueSecretReference(
+        input.providerVersionRef,
+        "Provider secret version reference",
+      );
       const secret = await getById(secretId);
       if (!secret) throw notFound("Secret not found");
-      if (secret.status !== "active") throw unprocessable("Cannot rotate a non-active secret");
+      if (secret.status !== "active")
+        throw unprocessable("Cannot rotate a non-active secret");
       const providerId = secret.provider as SecretProvider;
       const provider = getSecretProvider(providerId);
       const providerConfigId =
-        input.providerConfigId === undefined ? secret.providerConfigId : input.providerConfigId;
+        input.providerConfigId === undefined
+          ? secret.providerConfigId
+          : input.providerConfigId;
       const providerConfig = await getSelectableRuntimeProviderConfig({
         companyId: secret.companyId,
         provider: providerId,
         providerConfigId,
       });
+      requireOptionalExactOpaqueSecretReference(
+        secret.externalRef,
+        "Stored provider secret reference",
+      );
       const nextVersion = secret.latestVersion + 1;
-      if (secret.managedMode === "external_reference" && !(input.externalRef ?? secret.externalRef)?.trim()) {
+      if (
+        secret.managedMode === "external_reference" &&
+        (input.externalRef ?? secret.externalRef) == null
+      ) {
         throw unprocessable("External reference secrets require externalRef");
       }
-      if (secret.managedMode !== "external_reference" && input.externalRef?.trim()) {
+      if (
+        secret.managedMode !== "external_reference" &&
+        input.externalRef != null
+      ) {
         throw unprocessable("Managed secrets cannot override externalRef");
       }
       if (secret.managedMode !== "external_reference" && !input.value?.trim()) {
@@ -3912,7 +3939,7 @@ export function secretService(db: Db) {
       };
       let prepared: PreparedSecretVersion;
       try {
-        prepared =
+        prepared = assertExactPreparedSecretReferences(
           secret.managedMode === "external_reference"
             ? await provider.linkExternalSecret({
                 externalRef: input.externalRef ?? secret.externalRef ?? "",
@@ -3925,7 +3952,8 @@ export function secretService(db: Db) {
                 externalRef: secret.externalRef ?? null,
                 providerConfig,
                 context: providerWriteContext,
-              });
+              }),
+        );
       } catch (error) {
         throw remoteProviderWriteHttpError(error, {
           companyId: secret.companyId,
@@ -3967,17 +3995,21 @@ export function secretService(db: Db) {
           await tx
             .update(companySecretVersions)
             .set({ status: "previous" })
-            .where(and(
-              eq(companySecretVersions.secretId, secret.id),
-              ne(companySecretVersions.version, nextVersion),
-            ));
+            .where(
+              and(
+                eq(companySecretVersions.secretId, secret.id),
+                ne(companySecretVersions.version, nextVersion),
+              ),
+            );
           await tx
             .update(companySecretVersions)
             .set({ status: "current" })
-            .where(and(
-              eq(companySecretVersions.secretId, secret.id),
-              eq(companySecretVersions.version, nextVersion),
-            ));
+            .where(
+              and(
+                eq(companySecretVersions.secretId, secret.id),
+                eq(companySecretVersions.version, nextVersion),
+              ),
+            );
 
           const updated = await tx
             .update(companySecrets)
@@ -4008,10 +4040,12 @@ export function secretService(db: Db) {
           if (cleaned) {
             await db
               .delete(companySecretVersions)
-              .where(and(
-                eq(companySecretVersions.secretId, secret.id),
-                eq(companySecretVersions.version, nextVersion),
-              ))
+              .where(
+                and(
+                  eq(companySecretVersions.secretId, secret.id),
+                  eq(companySecretVersions.version, nextVersion),
+                ),
+              )
               .catch(() => undefined);
           }
         }
@@ -4043,18 +4077,21 @@ export function secretService(db: Db) {
           throw conflict(`Secret already exists: ${patch.name}`);
         }
       }
-      const nextKey = patch.key ? normalizeSecretKey(patch.key) : secret.key;
+      const nextKey =
+        patch.key === undefined ? secret.key : requireExactSecretKey(patch.key);
       if (!nextKey) throw unprocessable("Secret key is required");
       if (nextKey !== secret.key) {
         const duplicateKey = await db
           .select()
           .from(companySecrets)
-          .where(and(
-            eq(companySecrets.companyId, secret.companyId),
-            eq(companySecrets.scope, "company"),
-            eq(companySecrets.key, nextKey),
-            ne(companySecrets.status, "deleted"),
-          ))
+          .where(
+            and(
+              eq(companySecrets.companyId, secret.companyId),
+              eq(companySecrets.scope, "company"),
+              eq(companySecrets.key, nextKey),
+              ne(companySecrets.status, "deleted"),
+            ),
+          )
           .then((rows) => rows[0] ?? null);
         if (duplicateKey && duplicateKey.id !== secret.id) {
           throw conflict(`Secret key already exists: ${nextKey}`);
@@ -4062,9 +4099,14 @@ export function secretService(db: Db) {
       }
       const deleting = patch.status === "deleted";
       if (deleting && secret.managedMode === "paperclip_managed") {
-        throw unprocessable("Managed secrets must be deleted through DELETE /secrets/:id");
+        throw unprocessable(
+          "Managed secrets must be deleted through DELETE /secrets/:id",
+        );
       }
-      if (secret.managedMode !== "external_reference" && patch.externalRef !== undefined) {
+      if (
+        secret.managedMode !== "external_reference" &&
+        patch.externalRef !== undefined
+      ) {
         throw unprocessable("Managed secrets cannot override externalRef");
       }
       if (
@@ -4106,16 +4148,26 @@ export function secretService(db: Db) {
         .update(companySecrets)
         .set({
           key: deleting ? `${secret.key}__deleted__${secret.id}` : nextKey,
-          name: deleting ? `${secret.name}__deleted__${secret.id}` : patch.name ?? secret.name,
+          name: deleting
+            ? `${secret.name}__deleted__${secret.id}`
+            : (patch.name ?? secret.name),
           status: patch.status ?? secret.status,
           providerConfigId:
-            patch.providerConfigId === undefined ? secret.providerConfigId : patch.providerConfigId,
+            patch.providerConfigId === undefined
+              ? secret.providerConfigId
+              : patch.providerConfigId,
           description:
-            patch.description === undefined ? secret.description : patch.description,
+            patch.description === undefined
+              ? secret.description
+              : patch.description,
           externalRef:
-            patch.externalRef === undefined ? secret.externalRef : patch.externalRef,
+            patch.externalRef === undefined
+              ? secret.externalRef
+              : patch.externalRef,
           providerMetadata:
-            patch.providerMetadata === undefined ? secret.providerMetadata : patch.providerMetadata,
+            patch.providerMetadata === undefined
+              ? secret.providerMetadata
+              : patch.providerMetadata,
           deletedAt: deleting ? new Date() : secret.deletedAt,
           updatedAt: new Date(),
         })
@@ -4141,7 +4193,6 @@ export function secretService(db: Db) {
     ) => {
       requireSecretMutationActor(actor);
       await assertSecretInCompany(input.companyId, input.secretId);
-      assertSecretBindingConfigPath(input);
       assertClass3StaticLeaseAllowed({
         targetType: input.targetType,
         configPath: input.configPath,
@@ -4160,7 +4211,8 @@ export function secretService(db: Db) {
           ),
         )
         .then((rows) => rows[0] ?? null);
-      if (existing) throw conflict(`Secret binding already exists at ${input.configPath}`);
+      if (existing)
+        throw conflict(`Secret binding already exists at ${input.configPath}`);
       return db
         .insert(companySecretBindings)
         .values({
@@ -4210,7 +4262,6 @@ export function secretService(db: Db) {
       }> = [];
       for (const ref of refs) {
         await assertSecretInCompany(companyId, ref.secretId, bindingDb);
-        assertSecretBindingConfigPath({ targetType: target.targetType, configPath: ref.configPath });
         const projectionClass = ref.projectionClass ?? "unclassified";
         const projectionAllowlistKey = ref.projectionAllowlistKey ?? null;
         assertClass3StaticLeaseAllowed({
@@ -4230,7 +4281,9 @@ export function secretService(db: Db) {
         });
       }
 
-      const pathPrefixes = [...new Set(normalizedRefs.map((ref) => ref.configPath.split(".")[0]))];
+      const pathPrefixes = [
+        ...new Set(normalizedRefs.map((ref) => ref.configPath.split(".")[0])),
+      ];
 
       const writeBindings = async (executor: SecretBindingDb) => {
         if (options.replaceAll) {
@@ -4294,9 +4347,10 @@ export function secretService(db: Db) {
       return normalizedRefs;
     },
 
-    listBindingCompanyIdsForTarget: async (
-      target: { targetType: SecretBindingTargetType; targetId: string },
-    ): Promise<string[]> =>
+    listBindingCompanyIdsForTarget: async (target: {
+      targetType: SecretBindingTargetType;
+      targetId: string;
+    }): Promise<string[]> =>
       db
         .select({ companyId: companySecretBindings.companyId })
         .from(companySecretBindings)
@@ -4310,7 +4364,11 @@ export function secretService(db: Db) {
 
     syncEnvBindingsForTarget: async (
       companyId: string,
-      target: { targetType: SecretBindingTargetType; targetId: string; pathPrefix?: string },
+      target: {
+        targetType: SecretBindingTargetType;
+        targetId: string;
+        pathPrefix?: string;
+      },
       envValue: unknown,
       options: {
         actor: SecretMutationActor;
@@ -4341,7 +4399,11 @@ export function secretService(db: Db) {
         if (!parsed.success) continue;
         const binding = canonicalizeBinding(parsed.data as EnvBinding);
         if (binding.type === "user_secret_ref") {
-          await resolveUserSecretDefinition(companyId, { definitionKey: binding.key }, bindingDb);
+          await resolveUserSecretDefinition(
+            companyId,
+            { definitionKey: binding.key },
+            bindingDb,
+          );
           userRefs.push({
             definitionKey: binding.key,
             configPath: `${pathPrefix}.${key}`,
@@ -4394,7 +4456,7 @@ export function secretService(db: Db) {
             projectionClass: ref.projectionClass,
             projectionAllowlistKey: ref.projectionAllowlistKey,
           })),
-          );
+        );
       };
 
       const writeUserDeclarations = async (targetDb: SecretBindingDb) => {
@@ -4411,7 +4473,11 @@ export function secretService(db: Db) {
         if (userRefs.length === 0) return;
         const definitions = new Map<string, string>();
         for (const ref of userRefs) {
-          const definition = await resolveUserSecretDefinition(companyId, { definitionKey: ref.definitionKey }, targetDb);
+          const definition = await resolveUserSecretDefinition(
+            companyId,
+            { definitionKey: ref.definitionKey },
+            targetDb,
+          );
           definitions.set(ref.definitionKey, definition.id);
         }
         await targetDb.insert(userSecretDeclarations).values(
@@ -4446,43 +4512,28 @@ export function secretService(db: Db) {
       return removeSecretInternal(secretId);
     },
 
-    normalizeAdapterConfigForPersistence: async (
-      companyId: string,
-      adapterConfig: Record<string, unknown>,
-      opts: NormalizeAdapterConfigOptions,
-    ) => normalizeAdapterConfigForPersistenceInternal(companyId, adapterConfig, opts),
-
     normalizeEnvBindingsForPersistence: async (
       companyId: string,
       envValue: unknown,
       opts?: NormalizeEnvOptions,
     ) => normalizeEnvConfig(companyId, envValue, opts),
 
-    normalizeHireApprovalPayloadForPersistence: async (
-      companyId: string,
-      payload: Record<string, unknown>,
-      opts: NormalizeAdapterConfigOptions,
-    ) => {
-      requireSecretMutationActor(opts.actor);
-      const normalized = { ...payload };
-      const adapterConfig = asRecord(payload.adapterConfig);
-      if (adapterConfig) {
-        normalized.adapterConfig = await normalizeAdapterConfigForPersistenceInternal(
-          companyId,
-          adapterConfig,
-          opts,
-        );
-      }
-      return normalized;
-    },
-
     resolveEnvBindings: async (
       companyId: string,
       envValue: unknown,
       context?: Omit<SecretBindingContext, "configPath">,
-    ): Promise<{ env: Record<string, string>; secretKeys: Set<string>; manifest: RuntimeSecretManifestEntry[] }> => {
+    ): Promise<{
+      env: Record<string, string>;
+      secretKeys: Set<string>;
+      manifest: RuntimeSecretManifestEntry[];
+    }> => {
       const record = asRecord(envValue);
-      if (!record) return { env: {} as Record<string, string>, secretKeys: new Set<string>(), manifest: [] };
+      if (!record)
+        return {
+          env: {} as Record<string, string>,
+          secretKeys: new Set<string>(),
+          manifest: [],
+        };
       const resolved: Record<string, string> = {};
       const secretKeys = new Set<string>();
       const manifest: RuntimeSecretManifestEntry[] = [];
@@ -4514,7 +4565,10 @@ export function secretService(db: Db) {
           manifest.push(secretResolution.manifestEntry);
           secretKeys.add(key);
         } else {
-          const secretResolution = await secretService(db).resolveUserSecretValue(
+          const secretResolution = await secretService(
+            db,
+            secretsRuntime,
+          ).resolveUserSecretValue(
             companyId,
             {
               definitionKey: binding.key,
@@ -4540,28 +4594,6 @@ export function secretService(db: Db) {
       return { env: resolved, secretKeys, manifest };
     },
 
-    collectMissingAdapterConfigurationRuntimeBindings: (
-      companyId: string,
-      adapterConfig: Readonly<Record<string, unknown>>,
-      context: Omit<SecretBindingContext, "configPath">,
-    ): Promise<MissingRuntimeBinding[]> =>
-      collectMissingConfigurationBindings(
-        companyId,
-        adapterConfig,
-        context,
-      ),
-
-    resolveAdapterConfigurationForRuntime: (
-      companyId: string,
-      adapterConfig: Readonly<Record<string, unknown>>,
-      context: Omit<SecretBindingContext, "configPath">,
-    ) =>
-      resolveConfigurationBindings(
-        companyId,
-        adapterConfig,
-        context,
-      ),
-
     // Pre-dispatch validation: list declared secret refs in an env-like config
     // that have no binding for the given consumer, WITHOUT resolving any secret
     // values. Callers use this to surface a configuration-incomplete blocker
@@ -4581,162 +4613,23 @@ export function secretService(db: Db) {
         if (binding.type !== "secret_ref") return [];
         return [{ key, configPath: `env.${key}`, secretId: binding.secretId }];
       });
-      const userSecretRefs = Object.entries(record).flatMap(([key, rawBinding]) => {
-        if (!ENV_KEY_RE.test(key)) return [];
-        const parsed = envBindingSchema.safeParse(rawBinding);
-        if (!parsed.success) return [];
-        const binding = canonicalizeBinding(parsed.data as EnvBinding);
-        if (binding.type !== "user_secret_ref") return [];
-        if (!binding.required || binding.allowMissingOverride) return [];
-        return [{ key, configPath: `env.${key}`, binding }];
-      });
-      return collectMissingBindingsForRefs(companyId, context, secretRefs, userSecretRefs);
-    },
-
-    collectMissingAdapterConfigRuntimeBindings: async (
-      companyId: string,
-      adapterConfig: Record<string, unknown>,
-      adapterType: string | null | undefined,
-      context: Omit<SecretBindingContext, "configPath">,
-    ): Promise<MissingRuntimeBinding[]> => {
-      const secretFieldKeys = await listAdapterSchemaSecretFieldKeys(adapterType);
-      const secretRefs = secretFieldKeys.flatMap((key) => {
-        const parsed = envBindingSchema.safeParse(adapterConfig[key]);
-        if (!parsed.success) return [];
-        const binding = canonicalizeBinding(parsed.data as EnvBinding);
-        if (binding.type !== "secret_ref") return [];
-        return [{ key, configPath: key, secretId: binding.secretId }];
-      });
-      const userSecretRefs = secretFieldKeys.flatMap((key) => {
-        const parsed = envBindingSchema.safeParse(adapterConfig[key]);
-        if (!parsed.success) return [];
-        const binding = canonicalizeBinding(parsed.data as EnvBinding);
-        if (binding.type !== "user_secret_ref") return [];
-        if (!binding.required || binding.allowMissingOverride) return [];
-        return [{ key, configPath: key, binding }];
-      });
-      return collectMissingBindingsForRefs(companyId, context, secretRefs, userSecretRefs);
-    },
-
-    resolveAdapterConfigForRuntime: async (
-      companyId: string,
-      adapterConfig: Record<string, unknown>,
-      context?: Omit<SecretBindingContext, "configPath">,
-      opts?: ResolveAdapterConfigForRuntimeOptions,
-    ): Promise<{ config: Record<string, unknown>; secretKeys: Set<string>; manifest: RuntimeSecretManifestEntry[] }> => {
-      const resolved = { ...adapterConfig };
-      const secretKeys = new Set<string>();
-      const manifest: RuntimeSecretManifestEntry[] = [];
-      if (Object.prototype.hasOwnProperty.call(adapterConfig, "env")) {
-        const record = asRecord(adapterConfig.env);
-        if (!record) {
-          resolved.env = {};
-        } else {
-          const env: Record<string, string> = {};
-          for (const [key, rawBinding] of Object.entries(record)) {
-            if (!ENV_KEY_RE.test(key)) {
-              throw unprocessable(`Invalid environment variable name: ${key}`);
-            }
-            const parsed = envBindingSchema.safeParse(rawBinding);
-            if (!parsed.success) {
-              throw unprocessable(`Invalid environment binding for key: ${key}`);
-            }
-            const binding = canonicalizeBinding(parsed.data as EnvBinding);
-            if (binding.type === "plain") {
-              env[key] = binding.value;
-            } else if (binding.type === "secret_ref") {
-              const secretResolution = await resolveSecretValueInternal(
-                companyId,
-                binding.secretId,
-                binding.version,
-                context
-                  ? {
-                      bindingContext: { ...context, configPath: `env.${key}` },
-                      accessContext: { ...context, configPath: `env.${key}` },
-                    }
-                  : undefined,
-              );
-              env[key] = secretResolution.value;
-              manifest.push(secretResolution.manifestEntry);
-              secretKeys.add(key);
-            } else {
-              const secretResolution = await secretService(db).resolveUserSecretValue(
-                companyId,
-                {
-                  definitionKey: binding.key,
-                  version: binding.version,
-                  required: binding.required,
-                  allowMissingOverride: binding.allowMissingOverride,
-                },
-                context
-                  ? {
-                      ...context,
-                      configPath: `env.${key}`,
-                      responsibleUserId: context.responsibleUserId ?? null,
-                    }
-                  : undefined,
-              );
-              if (secretResolution) {
-                env[key] = secretResolution.value;
-                manifest.push(secretResolution.manifestEntry);
-                secretKeys.add(key);
-              }
-            }
-          }
-          resolved.env = env;
-        }
-      }
-      const secretFieldKeys = await listAdapterSchemaSecretFieldKeys(opts?.adapterType);
-      for (const key of secretFieldKeys) {
-        const parsed = envBindingSchema.safeParse(adapterConfig[key]);
-        if (!parsed.success) continue;
-        const binding = canonicalizeBinding(parsed.data as EnvBinding);
-        if (binding.type === "plain") {
-          resolved[key] = binding.value;
-          continue;
-        }
-        if (binding.type === "user_secret_ref") {
-          const secretResolution = await secretService(db).resolveUserSecretValue(
-            companyId,
-            {
-              definitionKey: binding.key,
-              version: binding.version,
-              required: binding.required,
-              allowMissingOverride: binding.allowMissingOverride,
-            },
-            context
-              ? {
-                  ...context,
-                  configPath: key,
-                  responsibleUserId: context.responsibleUserId ?? null,
-                }
-              : undefined,
-          );
-          if (secretResolution) {
-            resolved[key] = secretResolution.value;
-            manifest.push(secretResolution.manifestEntry);
-            secretKeys.add(key);
-          } else {
-            delete resolved[key];
-          }
-          continue;
-        }
-        const secretResolution = await resolveSecretValueInternal(
-          companyId,
-          binding.secretId,
-          binding.version,
-          context
-            ? {
-                bindingContext: { ...context, configPath: key },
-                accessContext: { ...context, configPath: key },
-              }
-            : undefined,
-        );
-        resolved[key] = secretResolution.value;
-        manifest.push(secretResolution.manifestEntry);
-        secretKeys.add(key);
-      }
-      return { config: resolved, secretKeys, manifest };
+      const userSecretRefs = Object.entries(record).flatMap(
+        ([key, rawBinding]) => {
+          if (!ENV_KEY_RE.test(key)) return [];
+          const parsed = envBindingSchema.safeParse(rawBinding);
+          if (!parsed.success) return [];
+          const binding = canonicalizeBinding(parsed.data as EnvBinding);
+          if (binding.type !== "user_secret_ref") return [];
+          if (!binding.required || binding.allowMissingOverride) return [];
+          return [{ key, configPath: `env.${key}`, binding }];
+        },
+      );
+      return collectMissingBindingsForRefs(
+        companyId,
+        context,
+        secretRefs,
+        userSecretRefs,
+      );
     },
   };
 }

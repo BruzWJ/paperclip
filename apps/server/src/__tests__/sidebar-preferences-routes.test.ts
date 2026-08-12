@@ -73,7 +73,7 @@ describe("sidebar preference routes", () => {
       companyIds: ["company-1"],
     }));
 
-    const res = await request(app).get("/api/sidebar-preferences/me");
+    const res = await request(app).get("/api/users/user-1/sidebar-preferences");
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -91,7 +91,7 @@ describe("sidebar preference routes", () => {
     }));
 
     const res = await request(app)
-      .put("/api/sidebar-preferences/me")
+      .put("/api/users/user-1/sidebar-preferences")
       .send({ orderedIds: ORDERED_IDS });
 
     expect(res.status).toBe(200);
@@ -105,7 +105,9 @@ describe("sidebar preference routes", () => {
       companyIds: ["company-1"],
     }));
 
-    const res = await request(app).get("/api/companies/company-1/sidebar-preferences/me");
+    const res = await request(app).get(
+      "/api/companies/company-1/users/user-1/sidebar-preferences",
+    );
 
     expect(res.status).toBe(200);
     expect(mockSidebarPreferenceService.getProjectOrder).toHaveBeenCalledWith("company-1", "user-1");
@@ -119,7 +121,7 @@ describe("sidebar preference routes", () => {
     }));
 
     const res = await request(app)
-      .put("/api/companies/company-1/sidebar-preferences/me")
+      .put("/api/companies/company-1/users/user-1/sidebar-preferences")
       .send({ orderedIds: ORDERED_IDS });
 
     expect(res.status).toBe(200);
@@ -144,23 +146,27 @@ describe("sidebar preference routes", () => {
       companyIds: ["company-2"],
     }));
 
-    const res = await request(app).get("/api/companies/company-1/sidebar-preferences/me");
+    const res = await request(app).get(
+      "/api/companies/company-1/users/user-1/sidebar-preferences",
+    );
 
     expect(res.status).toBe(403);
     expect(mockSidebarPreferenceService.getProjectOrder).not.toHaveBeenCalled();
   });
 
-  it("rejects agent callers", async () => {
-    const app = await createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId: "company-1",
-      source: "internal",
-    });
+  it("rejects a route user ID that differs from the authenticated user", async () => {
+    const app = await createApp(testBoardSessionActor({
+      userId: "user-1",
+      isInstanceAdmin: true,
+      companyIds: ["company-1"],
+    }));
 
-    const res = await request(app).get("/api/sidebar-preferences/me");
+    const res = await request(app).get(
+      "/api/companies/company-1/users/user-2/sidebar-preferences",
+    );
 
     expect(res.status).toBe(403);
-    expect(mockSidebarPreferenceService.getCompanyOrder).not.toHaveBeenCalled();
+    expect(mockSidebarPreferenceService.getProjectOrder).not.toHaveBeenCalled();
   });
+
 });

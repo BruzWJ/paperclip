@@ -19,12 +19,31 @@ describe("parseTrustProxyEnv", () => {
     expect(app.get("trust proxy")).toBe(baseline);
   });
 
-  it("empty / false / 0 are treated as unset", () => {
-    expect(parseTrustProxyEnv("")).toBeUndefined();
-    expect(parseTrustProxyEnv("false")).toBeUndefined();
-    expect(parseTrustProxyEnv("0")).toBeUndefined();
-    const baseline = express().get("trust proxy");
-    expect(appWithEnv("0").get("trust proxy")).toBe(baseline);
+  it.each(["", "false", "0"])(
+    "rejects the disabled-value alias %j; omission is the only disabled form",
+    (raw) => {
+      expect(() => parseTrustProxyEnv(raw)).toThrow(/TRUST_PROXY/);
+    },
+  );
+
+  it.each([" ", " 2 ", "loopback, uniquelocal", "loopback\t"])(
+    "rejects whitespace-normalized alias %j",
+    (raw) => {
+      expect(() => parseTrustProxyEnv(raw)).toThrow(/whitespace/);
+    },
+  );
+
+  it.each(["loopback,", ",loopback", "loopback,,uniquelocal"])(
+    "rejects empty list token in %j",
+    (raw) => {
+      expect(() => parseTrustProxyEnv(raw)).toThrow(/empty subnet token/);
+    },
+  );
+
+  it("rejects duplicate subnet tokens", () => {
+    expect(() => parseTrustProxyEnv("loopback,loopback")).toThrow(
+      /duplicate subnet token/,
+    );
   });
 
   it("'true' yields boolean true and sets app accordingly", () => {
@@ -42,23 +61,7 @@ describe("parseTrustProxyEnv", () => {
   });
 
   it("integer with internal whitespace throws", () => {
-    // A value like "1 2" (digits + whitespace + digits) is clearly not
-    // a single int and not a subnet list either — must be rejected.
-    // This is distinct from " 2 " (surrounding whitespace), which the
-    // outer `raw.trim()` accepts; see the next test for that contract.
-    // The parser happens to reach the subnet-token path for "1 2"
-    // (the inner-whitespace integer guard only fires when the whole
-    // string is `^\s*\d+\s*$`), so we match the unrecognized-token
-    // error rather than the "invalid integer" branch.
-    expect(() => parseTrustProxyEnv("1 2")).toThrow(/unrecognized token "1 2"/);
-  });
-
-  it("integer with surrounding whitespace is accepted (trimmed)", () => {
-    // The parser intentionally trims the *outer* value before matching,
-    // so " 2 " is equivalent to "2". Locking this in so the contract
-    // doesn't drift relative to the "internal whitespace throws" case.
-    expect(parseTrustProxyEnv(" 2 ")).toBe(2);
-    expect(appWithEnv(" 2 ").get("trust proxy")).toBe(2);
+    expect(() => parseTrustProxyEnv("1 2")).toThrow(/whitespace/);
   });
 
   it("'loopback' yields a single-element array", () => {
@@ -79,12 +82,19 @@ describe("parseTrustProxyEnv", () => {
     expect(parseTrustProxyEnv("10.0.0.0/8")).toEqual(["10.0.0.0/8"]);
   });
 
-  it("mixed IPv4 + IPv6 CIDR list is accepted with whitespace tolerance", () => {
-    expect(parseTrustProxyEnv(" 10.0.0.0/8 , fd00::/8 ")).toEqual([
+  it("mixed IPv4 + IPv6 CIDR list is accepted", () => {
+    expect(parseTrustProxyEnv("10.0.0.0/8,fd00::/8")).toEqual([
       "10.0.0.0/8",
       "fd00::/8",
     ]);
   });
+
+  it.each(["999.0.0.1", "10.0.0.0/33", "fd00::/129", ":::", "10.0.0/8"])(
+    "strictly rejects malformed IP or CIDR %j",
+    (raw) => {
+      expect(() => parseTrustProxyEnv(raw)).toThrow(/unrecognized token/);
+    },
+  );
 
   it("'bogus' throws with a helpful message naming the bad token", () => {
     expect(() => parseTrustProxyEnv("bogus")).toThrow(/bogus/);

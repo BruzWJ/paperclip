@@ -5,6 +5,7 @@ import {
   createDocumentAnnotationCommentSchema,
   createDocumentAnnotationThreadSchema,
   createRoutineTriggerSchema,
+  isCanonicalUuid,
   rotateRoutineTriggerSecretSchema,
   runRoutineSchema,
   updateDocumentAnnotationThreadSchema,
@@ -28,22 +29,31 @@ import {
 } from "./authz.js";
 import { forbidden } from "../errors.js";
 import { getTelemetryClient } from "../telemetry.js";
+import type { SecretsRuntimeConfig } from "../secrets/types.js";
+import {
+  assertExactQueryKeys,
+  parseExactBooleanQuery,
+  parseExactOptionalEnum,
+  parseExactPositiveIntegerQuery,
+} from "./exact-query.js";
+
+const ANNOTATION_STATUSES = ["open", "resolved", "all"] as const;
 
 export function routineRoutes(
   db: Db,
-  opts: { ordinaryTasks: OrdinaryTaskRuntime },
+  opts: {
+    ordinaryTasks: OrdinaryTaskRuntime;
+    secretsRuntime: SecretsRuntimeConfig;
+  },
 ) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = routineService(db, {
     ordinaryTasks: opts.ordinaryTasks,
+    secretsRuntime: opts.secretsRuntime,
   });
   const documentAnnotationsSvc = documentAnnotationService(db);
   const access = accessService(db);
   const routineDocumentKey = "description";
-
-  function parseBooleanQuery(value: unknown) {
-    return value === true || value === "true" || value === "1";
-  }
 
   function annotationActorInput(req: Request) {
     assertBoard(req);
@@ -54,17 +64,21 @@ export function routineRoutes(
     };
   }
 
-  async function remapRoutineDescriptionAnnotations(req: Request, routineId: string) {
+  async function remapRoutineDescriptionAnnotations(
+    req: Request,
+    routineId: string,
+  ) {
     const doc = await svc.getDescriptionDocument(routineId);
     if (!doc) return;
-    const remapped = await documentAnnotationsSvc.remapOpenThreadsForRoutineDocument({
-      routineId,
-      key: routineDocumentKey,
-      documentId: doc.id,
-      nextRevisionId: doc.latestRevisionId,
-      nextRevisionNumber: doc.latestRevisionNumber,
-      nextBody: doc.body,
-    });
+    const remapped =
+      await documentAnnotationsSvc.remapOpenThreadsForRoutineDocument({
+        routineId,
+        key: routineDocumentKey,
+        documentId: doc.id,
+        nextRevisionId: doc.latestRevisionId,
+        nextRevisionNumber: doc.latestRevisionNumber,
+        nextBody: doc.body,
+      });
     assertBoard(req);
     for (const remap of remapped) {
       await logActivity(db, {
@@ -75,7 +89,6 @@ export function routineRoutes(
         entityType: "routine",
         entityId: routineId,
         details: {
-          key: doc.key,
           documentKey: doc.key,
           documentId: doc.id,
           threadId: remap.thread.id,
@@ -99,7 +112,11 @@ export function routineRoutes(
     if (!decision.allowed) throw forbidden(decision.explanation);
   }
 
-  function assertCanManageCompanyRoutine(req: Request, companyId: string, _assigneeAgentId?: string | null) {
+  function assertCanManageCompanyRoutine(
+    req: Request,
+    companyId: string,
+    _assigneeAgentId?: string | null,
+  ) {
     assertBoard(req);
     assertCompanyAccess(req, companyId);
   }
@@ -122,14 +139,17 @@ export function routineRoutes(
     return routine;
   }
 
-  async function logRoutineRevisionCreated(req: Request, input: {
-    companyId: string;
-    routineId: string;
-    revisionId: string | null;
-    revisionNumber: number;
-    changeSummary?: string | null;
-    triggerCount?: number | null;
-  }) {
+  async function logRoutineRevisionCreated(
+    req: Request,
+    input: {
+      companyId: string;
+      routineId: string;
+      revisionId: string | null;
+      revisionNumber: number;
+      changeSummary?: string | null;
+      triggerCount?: number | null;
+    },
+  ) {
     if (!input.revisionId) return;
     assertBoard(req);
     await logActivity(db, {
@@ -151,88 +171,129 @@ export function routineRoutes(
   router.get("/companies/:companyId/routines", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+    assertExactQueryKeys(req.query, ["projectId"]);
+    const projectId = req.query.projectId;
+    if (projectId !== undefined && (typeof projectId !== "string" || !isCanonicalUuid(projectId))) {
+      res.status(400).json({ error: "projectId must be an exact canonical UUID" });
+      return;
+    }
     const result = await svc.list(companyId, { projectId });
     res.json(result);
   });
 
-  router.post("/companies/:companyId/routines", validate(createRoutineSchema), async (req, res) => {
-    const companyId = req.params.companyId as string;
-    await assertBoardRoutineAuthority(req, companyId);
-    assertCanManageCompanyRoutine(req, companyId, req.body.assigneeAgentId);
-    const actorUserId = getBoardUserId(req);
-    const created = await svc.create(companyId, req.body, {
-      type: "user",
-      userId: actorUserId,
-    });
-    await logActivity(db, {
-      companyId,
-      actorType: "user",
-      actorId: actorUserId,
-      action: "routine.created",
-      entityType: "routine",
-      entityId: created.id,
-      details: { title: created.title, assigneeAgentId: created.assigneeAgentId },
-    });
-    const telemetryClient = getTelemetryClient();
-    if (telemetryClient) {
-      trackRoutineCreated(telemetryClient);
-    }
-    await logRoutineRevisionCreated(req, {
-      companyId,
-      routineId: created.id,
-      revisionId: created.latestRevisionId,
-      revisionNumber: created.latestRevisionNumber,
-      changeSummary: "Created routine",
-      triggerCount: 0,
-    });
-    res.status(201).json(created);
-  });
+  router.post(
+    "/companies/:companyId/routines",
+    validate(createRoutineSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      await assertBoardRoutineAuthority(req, companyId);
+      assertCanManageCompanyRoutine(req, companyId, req.body.assigneeAgentId);
+      const actorUserId = getBoardUserId(req);
+      const created = await svc.create(companyId, req.body, {
+        type: "user",
+        userId: actorUserId,
+      });
+      await logActivity(db, {
+        companyId,
+        actorType: "user",
+        actorId: actorUserId,
+        action: "routine.created",
+        entityType: "routine",
+        entityId: created.id,
+        details: {
+          title: created.title,
+          assigneeAgentId: created.assigneeAgentId,
+        },
+      });
+      const telemetryClient = getTelemetryClient();
+      if (telemetryClient) {
+        trackRoutineCreated(telemetryClient);
+      }
+      await logRoutineRevisionCreated(req, {
+        companyId,
+        routineId: created.id,
+        revisionId: created.latestRevisionId,
+        revisionNumber: created.latestRevisionNumber,
+        changeSummary: "Created routine",
+        triggerCount: 0,
+      });
+      res.status(201).json(created);
+    },
+  );
 
   router.get("/routines/:id", async (req, res) => {
-    const detail = await getAccessibleResource(req, res, svc.getDetail(req.params.id as string), "Routine not found");
+    const detail = await getAccessibleResource(
+      req,
+      res,
+      svc.getDetail(req.params.id as string),
+      "Routine not found",
+    );
     if (!detail) return;
     res.json(detail);
   });
 
   router.get("/routines/:id/revisions", async (req, res) => {
-    const routine = await getManageableRoutine(req, res, req.params.id as string);
+    const routine = await getManageableRoutine(
+      req,
+      res,
+      req.params.id as string,
+    );
     if (!routine) return;
     const revisions = await svc.listRevisions(routine.id);
     res.json(revisions);
   });
 
   router.get("/routines/:id/description/annotations", async (req, res) => {
-    const routine = await getManageableRoutine(req, res, req.params.id as string);
+    const routine = await getManageableRoutine(
+      req,
+      res,
+      req.params.id as string,
+    );
     if (!routine) return;
-    const status = req.query.status === "resolved" || req.query.status === "all" ? req.query.status : "open";
-    const threads = await documentAnnotationsSvc.listThreadsForRoutineDocument(routine.id, routineDocumentKey, {
-      status,
-      includeComments: parseBooleanQuery(req.query.includeComments),
-    });
+    assertExactQueryKeys(req.query, ["includeComments", "status"]);
+    const status = parseExactOptionalEnum(req.query.status, "status", ANNOTATION_STATUSES) ?? "open";
+    const threads = await documentAnnotationsSvc.listThreadsForRoutineDocument(
+      routine.id,
+      routineDocumentKey,
+      {
+        status,
+        includeComments: parseExactBooleanQuery(req.query.includeComments, "includeComments"),
+      },
+    );
     res.json(threads);
   });
 
-  router.get("/routines/:id/description/annotations/:threadId", async (req, res) => {
-    const routine = await getManageableRoutine(req, res, req.params.id as string);
-    if (!routine) return;
-    const thread = await documentAnnotationsSvc.getThreadForRoutineDocument(
-      routine.id,
-      routineDocumentKey,
-      req.params.threadId as string,
-    );
-    if (!thread) {
-      res.status(404).json({ error: "Annotation thread not found" });
-      return;
-    }
-    res.json(thread);
-  });
+  router.get(
+    "/routines/:id/description/annotations/:threadId",
+    async (req, res) => {
+      const routine = await getManageableRoutine(
+        req,
+        res,
+        req.params.id as string,
+      );
+      if (!routine) return;
+      const thread = await documentAnnotationsSvc.getThreadForRoutineDocument(
+        routine.id,
+        routineDocumentKey,
+        req.params.threadId as string,
+      );
+      if (!thread) {
+        res.status(404).json({ error: "Annotation thread not found" });
+        return;
+      }
+      res.json(thread);
+    },
+  );
 
   router.post(
     "/routines/:id/description/annotations",
     validate(createDocumentAnnotationThreadSchema),
     async (req, res) => {
-      const routine = await getManageableRoutine(req, res, req.params.id as string);
+      const routine = await getManageableRoutine(
+        req,
+        res,
+        req.params.id as string,
+      );
       if (!routine) return;
       const annotationActor = annotationActorInput(req);
       const thread = await documentAnnotationsSvc.createRoutineThread(
@@ -250,7 +311,6 @@ export function routineRoutes(
         entityType: "routine",
         entityId: routine.id,
         details: {
-          key: thread.documentKey,
           documentKey: thread.documentKey,
           documentId: thread.documentId,
           threadId: thread.id,
@@ -267,7 +327,11 @@ export function routineRoutes(
     "/routines/:id/description/annotations/:threadId/comments",
     validate(createDocumentAnnotationCommentSchema),
     async (req, res) => {
-      const routine = await getManageableRoutine(req, res, req.params.id as string);
+      const routine = await getManageableRoutine(
+        req,
+        res,
+        req.params.id as string,
+      );
       if (!routine) return;
       const annotationActor = annotationActorInput(req);
       const comment = await documentAnnotationsSvc.addRoutineComment(
@@ -285,7 +349,6 @@ export function routineRoutes(
         entityType: "routine",
         entityId: routine.id,
         details: {
-          key: routineDocumentKey,
           documentKey: routineDocumentKey,
           threadId: comment.threadId,
           commentId: comment.id,
@@ -300,7 +363,11 @@ export function routineRoutes(
     "/routines/:id/description/annotations/:threadId",
     validate(updateDocumentAnnotationThreadSchema),
     async (req, res) => {
-      const routine = await getManageableRoutine(req, res, req.params.id as string);
+      const routine = await getManageableRoutine(
+        req,
+        res,
+        req.params.id as string,
+      );
       if (!routine) return;
       const annotationActor = annotationActorInput(req);
       const thread = await documentAnnotationsSvc.updateRoutineThread(
@@ -314,13 +381,13 @@ export function routineRoutes(
         companyId: routine.companyId,
         actorType: "user",
         actorId: annotationActor.userId,
-        action: thread.status === "resolved"
-          ? "routine.document_annotation_thread_resolved"
-          : "routine.document_annotation_thread_reopened",
+        action:
+          thread.status === "resolved"
+            ? "routine.document_annotation_thread_resolved"
+            : "routine.document_annotation_thread_reopened",
         entityType: "routine",
         entityId: routine.id,
         details: {
-          key: thread.documentKey,
           documentKey: thread.documentKey,
           documentId: thread.documentId,
           threadId: thread.id,
@@ -331,151 +398,194 @@ export function routineRoutes(
     },
   );
 
-  router.patch("/routines/:id", validate(updateRoutineSchema), async (req, res) => {
-    const routine = await getManageableRoutine(req, res, req.params.id as string);
-    if (!routine) return;
-    const assigneeWillChange =
-      req.body.assigneeAgentId !== undefined &&
-      req.body.assigneeAgentId !== routine.assigneeAgentId;
-    if (assigneeWillChange) {
-      await assertBoardRoutineAuthority(req, routine.companyId);
-    }
-    const statusWillActivate =
-      req.body.status !== undefined &&
-      req.body.status === "active" &&
-      routine.status !== "active";
-    if (statusWillActivate) {
-      await assertBoardRoutineAuthority(req, routine.companyId);
-    }
-    const updated = await svc.update(routine.id, req.body, {
-      type: "user",
-      userId: getBoardUserId(req),
-    });
-    await logActivity(db, {
-      companyId: routine.companyId,
-      actorType: "user",
-      actorId: getBoardUserId(req),
-      action: "routine.updated",
-      entityType: "routine",
-      entityId: routine.id,
-      details: { title: updated?.title ?? routine.title },
-    });
-    if (updated && updated.latestRevisionId !== routine.latestRevisionId) {
-      await remapRoutineDescriptionAnnotations(req, routine.id);
-      await logRoutineRevisionCreated(req, {
-        companyId: routine.companyId,
-        routineId: routine.id,
-        revisionId: updated.latestRevisionId,
-        revisionNumber: updated.latestRevisionNumber,
-        changeSummary: "Updated routine",
-        triggerCount: null,
+  router.patch(
+    "/routines/:id",
+    validate(updateRoutineSchema),
+    async (req, res) => {
+      const routine = await getManageableRoutine(
+        req,
+        res,
+        req.params.id as string,
+      );
+      if (!routine) return;
+      const assigneeWillChange =
+        req.body.assigneeAgentId !== undefined &&
+        req.body.assigneeAgentId !== routine.assigneeAgentId;
+      if (assigneeWillChange) {
+        await assertBoardRoutineAuthority(req, routine.companyId);
+      }
+      const statusWillActivate =
+        req.body.status !== undefined &&
+        req.body.status === "active" &&
+        routine.status !== "active";
+      if (statusWillActivate) {
+        await assertBoardRoutineAuthority(req, routine.companyId);
+      }
+      const updated = await svc.update(routine.id, req.body, {
+        type: "user",
+        userId: getBoardUserId(req),
       });
-    }
-    res.json(updated);
-  });
+      await logActivity(db, {
+        companyId: routine.companyId,
+        actorType: "user",
+        actorId: getBoardUserId(req),
+        action: "routine.updated",
+        entityType: "routine",
+        entityId: routine.id,
+        details: { title: updated?.title ?? routine.title },
+      });
+      if (updated && updated.latestRevisionId !== routine.latestRevisionId) {
+        await remapRoutineDescriptionAnnotations(req, routine.id);
+        await logRoutineRevisionCreated(req, {
+          companyId: routine.companyId,
+          routineId: routine.id,
+          revisionId: updated.latestRevisionId,
+          revisionNumber: updated.latestRevisionNumber,
+          changeSummary: "Updated routine",
+          triggerCount: null,
+        });
+      }
+      res.json(updated);
+    },
+  );
 
-  router.post("/routines/:id/revisions/:revisionId/restore", async (req, res) => {
-    const routine = await getManageableRoutine(req, res, req.params.id as string);
-    if (!routine) return;
-    await assertBoardRoutineAuthority(req, routine.companyId);
-    const result = await svc.restoreRevision(routine.id, req.params.revisionId as string, {
-      type: "user",
-      userId: getBoardUserId(req),
-    });
-    await logActivity(db, {
-      companyId: routine.companyId,
-      actorType: "user",
-      actorId: getBoardUserId(req),
-      action: "routine.revision_restored",
-      entityType: "routine",
-      entityId: routine.id,
-      details: {
-        revisionId: result.revision.id,
-        revisionNumber: result.revision.revisionNumber,
-        restoredFromRevisionId: result.restoredFromRevisionId,
-        restoredFromRevisionNumber: result.restoredFromRevisionNumber,
-        triggerCount: result.revision.snapshot.triggers.length,
-      },
-    });
-    await remapRoutineDescriptionAnnotations(req, routine.id);
-    res.json(result);
-  });
+  router.post(
+    "/routines/:id/revisions/:revisionId/restore",
+    async (req, res) => {
+      const routine = await getManageableRoutine(
+        req,
+        res,
+        req.params.id as string,
+      );
+      if (!routine) return;
+      await assertBoardRoutineAuthority(req, routine.companyId);
+      const result = await svc.restoreRevision(
+        routine.id,
+        req.params.revisionId as string,
+        {
+          type: "user",
+          userId: getBoardUserId(req),
+        },
+      );
+      await logActivity(db, {
+        companyId: routine.companyId,
+        actorType: "user",
+        actorId: getBoardUserId(req),
+        action: "routine.revision_restored",
+        entityType: "routine",
+        entityId: routine.id,
+        details: {
+          revisionId: result.revision.id,
+          revisionNumber: result.revision.revisionNumber,
+          restoredFromRevisionId: result.restoredFromRevisionId,
+          restoredFromRevisionNumber: result.restoredFromRevisionNumber,
+          triggerCount: result.revision.snapshot.triggers.length,
+        },
+      });
+      await remapRoutineDescriptionAnnotations(req, routine.id);
+      res.json(result);
+    },
+  );
 
   router.get("/routines/:id/runs", async (req, res) => {
-    const routine = await getAccessibleResource(req, res, svc.get(req.params.id as string), "Routine not found");
+    const routine = await getAccessibleResource(
+      req,
+      res,
+      svc.get(req.params.id as string),
+      "Routine not found",
+    );
     if (!routine) return;
-    const limit = Number(req.query.limit ?? 50);
-    const result = await svc.listRuns(routine.id, Number.isFinite(limit) ? limit : 50);
+    assertExactQueryKeys(req.query, ["limit"]);
+    const limit = parseExactPositiveIntegerQuery(req.query.limit, "limit", {
+      defaultValue: 50,
+      max: 200,
+    });
+    const result = await svc.listRuns(routine.id, limit);
     res.json(result);
   });
 
-  router.post("/routines/:id/triggers", validate(createRoutineTriggerSchema), async (req, res) => {
-    const routine = await getManageableRoutine(req, res, req.params.id as string);
-    if (!routine) return;
-    await assertBoardRoutineAuthority(req, routine.companyId);
-    const created = await svc.createTrigger(routine.id, req.body, {
-      type: "user",
-      userId: getBoardUserId(req),
-    });
-    await logActivity(db, {
-      companyId: routine.companyId,
-      actorType: "user",
-      actorId: getBoardUserId(req),
-      action: "routine.trigger_created",
-      entityType: "routine_trigger",
-      entityId: created.trigger.id,
-      details: { routineId: routine.id, kind: created.trigger.kind },
-    });
-    await logRoutineRevisionCreated(req, {
-      companyId: routine.companyId,
-      routineId: routine.id,
-      revisionId: created.revision.id,
-      revisionNumber: created.revision.revisionNumber,
-      changeSummary: created.revision.changeSummary,
-      triggerCount: created.revision.snapshot.triggers.length,
-    });
-    res.status(201).json(created);
-  });
-
-  router.patch("/routine-triggers/:id", validate(updateRoutineTriggerSchema), async (req, res) => {
-    const trigger = await svc.getTrigger(req.params.id as string);
-    if (!trigger) {
-      res.status(404).json({ error: "Routine trigger not found" });
-      return;
-    }
-    const routine = await getManageableRoutine(
-      req,
-      res,
-      trigger.routineId,
-      "Routine trigger not found",
-    );
-    if (!routine) return;
-    await assertBoardRoutineAuthority(req, routine.companyId);
-    const updated = await svc.updateTrigger(trigger.id, req.body, {
-      type: "user",
-      userId: getBoardUserId(req),
-    });
-    await logActivity(db, {
-      companyId: routine.companyId,
-      actorType: "user",
-      actorId: getBoardUserId(req),
-      action: "routine.trigger_updated",
-      entityType: "routine_trigger",
-      entityId: trigger.id,
-      details: { routineId: routine.id, kind: updated?.trigger.kind ?? trigger.kind },
-    });
-    if (updated) {
+  router.post(
+    "/routines/:id/triggers",
+    validate(createRoutineTriggerSchema),
+    async (req, res) => {
+      const routine = await getManageableRoutine(
+        req,
+        res,
+        req.params.id as string,
+      );
+      if (!routine) return;
+      await assertBoardRoutineAuthority(req, routine.companyId);
+      const created = await svc.createTrigger(routine.id, req.body, {
+        type: "user",
+        userId: getBoardUserId(req),
+      });
+      await logActivity(db, {
+        companyId: routine.companyId,
+        actorType: "user",
+        actorId: getBoardUserId(req),
+        action: "routine.trigger_created",
+        entityType: "routine_trigger",
+        entityId: created.trigger.id,
+        details: { routineId: routine.id, kind: created.trigger.kind },
+      });
       await logRoutineRevisionCreated(req, {
         companyId: routine.companyId,
         routineId: routine.id,
-        revisionId: updated.revision.id,
-        revisionNumber: updated.revision.revisionNumber,
-        changeSummary: updated.revision.changeSummary,
-        triggerCount: updated.revision.snapshot.triggers.length,
+        revisionId: created.revision.id,
+        revisionNumber: created.revision.revisionNumber,
+        changeSummary: created.revision.changeSummary,
+        triggerCount: created.revision.snapshot.triggers.length,
       });
-    }
-    res.json(updated?.trigger ?? null);
-  });
+      res.status(201).json(created);
+    },
+  );
+
+  router.patch(
+    "/routine-triggers/:id",
+    validate(updateRoutineTriggerSchema),
+    async (req, res) => {
+      const trigger = await svc.getTrigger(req.params.id as string);
+      if (!trigger) {
+        res.status(404).json({ error: "Routine trigger not found" });
+        return;
+      }
+      const routine = await getManageableRoutine(
+        req,
+        res,
+        trigger.routineId,
+        "Routine trigger not found",
+      );
+      if (!routine) return;
+      await assertBoardRoutineAuthority(req, routine.companyId);
+      const updated = await svc.updateTrigger(trigger.id, req.body, {
+        type: "user",
+        userId: getBoardUserId(req),
+      });
+      await logActivity(db, {
+        companyId: routine.companyId,
+        actorType: "user",
+        actorId: getBoardUserId(req),
+        action: "routine.trigger_updated",
+        entityType: "routine_trigger",
+        entityId: trigger.id,
+        details: {
+          routineId: routine.id,
+          kind: updated?.trigger.kind ?? trigger.kind,
+        },
+      });
+      if (updated) {
+        await logRoutineRevisionCreated(req, {
+          companyId: routine.companyId,
+          routineId: routine.id,
+          revisionId: updated.revision.id,
+          revisionNumber: updated.revision.revisionNumber,
+          changeSummary: updated.revision.changeSummary,
+          triggerCount: updated.revision.snapshot.triggers.length,
+        });
+      }
+      res.json(updated?.trigger ?? null);
+    },
+  );
 
   router.delete("/routine-triggers/:id", async (req, res) => {
     const trigger = await svc.getTrigger(req.params.id as string);
@@ -557,35 +667,49 @@ export function routineRoutes(
     },
   );
 
-  router.post("/routines/:id/run", validate(runRoutineSchema), async (req, res) => {
-    const routine = await getManageableRoutine(req, res, req.params.id as string);
-    if (!routine) return;
-    await assertBoardRoutineAuthority(req, routine.companyId);
-    const run = await svc.runRoutine(routine.id, req.body, {
-      type: "user",
-      userId: getBoardUserId(req),
-    });
-    await logActivity(db, {
-      companyId: routine.companyId,
-      actorType: "user",
-      actorId: getBoardUserId(req),
-      action: "routine.run_triggered",
-      entityType: "routine_run",
-      entityId: run.id,
-      details: { routineId: routine.id, source: run.source, status: run.status },
-    });
-    res.status(202).json(run);
-  });
+  router.post(
+    "/routines/:id/run",
+    validate(runRoutineSchema),
+    async (req, res) => {
+      const routine = await getManageableRoutine(
+        req,
+        res,
+        req.params.id as string,
+      );
+      if (!routine) return;
+      await assertBoardRoutineAuthority(req, routine.companyId);
+      const run = await svc.runRoutine(routine.id, req.body, {
+        type: "user",
+        userId: getBoardUserId(req),
+      });
+      await logActivity(db, {
+        companyId: routine.companyId,
+        actorType: "user",
+        actorId: getBoardUserId(req),
+        action: "routine.run_triggered",
+        entityType: "routine_run",
+        entityId: run.id,
+        details: {
+          routineId: routine.id,
+          source: run.source,
+          status: run.status,
+        },
+      });
+      res.status(202).json(run);
+    },
+  );
 
   router.post("/routine-triggers/public/:publicId/fire", async (req, res) => {
     const result = await svc.firePublicTrigger(req.params.publicId as string, {
       authorizationHeader: req.header("authorization"),
       signatureHeader: req.header("x-paperclip-signature"),
-      hubSignatureHeader: req.header("x-hub-signature-256"),
       timestampHeader: req.header("x-paperclip-timestamp"),
       idempotencyKey: req.header("idempotency-key"),
       rawBody: (req as { rawBody?: Buffer }).rawBody ?? null,
-      payload: typeof req.body === "object" && req.body !== null ? req.body as Record<string, unknown> : null,
+      payload:
+        typeof req.body === "object" && req.body !== null
+          ? (req.body as Record<string, unknown>)
+          : null,
     });
     res.status(202).json(result);
   });

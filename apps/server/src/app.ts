@@ -5,11 +5,16 @@ import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure } from "@paperclipai/shared";
 import type { StorageService } from "./storage/types.js";
+import type { SecretsRuntimeConfig } from "./secrets/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
-import { applyTrustProxy, parseTrustProxyEnv } from "./middleware/trust-proxy.js";
+import {
+  applyTrustProxy,
+  parseTrustProxyEnv,
+} from "./middleware/trust-proxy.js";
 import { staticPrecompressed } from "./middleware/static-precompressed.js";
+import { canonicalRequestTarget } from "./middleware/canonical-pathname.js";
 import {
   createRequestAuthorityBoundary,
   createRequestAuthorityPolicy,
@@ -18,8 +23,6 @@ import {
 } from "./http/request-authority.js";
 import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
-import { companySkillRoutes } from "./routes/company-skills.js";
-import { companySkillPolicyRoutes } from "./routes/company-skill-policy.js";
 import { changeConsentRoutes } from "./routes/change-consents.js";
 import { inboxAgentPolicyRoutes } from "./routes/inbox-agent-policy.js";
 import { folderRoutes } from "./routes/folders.js";
@@ -47,7 +50,6 @@ import { resourceMembershipRoutes } from "./routes/resource-memberships.js";
 import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { openApiRoutes } from "./routes/openapi.js";
-import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
@@ -83,10 +85,12 @@ import {
 } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
-import { DEFAULT_JSON_BODY_LIMIT, PORTABLE_JSON_BODY_LIMIT } from "./http/body-limits.js";
+import {
+  DEFAULT_JSON_BODY_LIMIT,
+  PORTABLE_JSON_BODY_LIMIT,
+} from "./http/body-limits.js";
 import { COMPANY_IMPORTS_API_PATH } from "./routes/company-import-paths.js";
 import { apiCompression } from "./middleware/api-compression.js";
-import { denyGenericAgentRest } from "./routes/compiled-interface-only.js";
 import { rejectRunInterfaceBearerFromGenericApi } from "./middleware/prompt-capability-boundary.js";
 import type { TaskSessionStore } from "./services/task-session/store.js";
 import type { TaskExecutionCancellationService } from "./services/task-execution-cancellation.js";
@@ -94,9 +98,7 @@ import {
   localExecutionOrchestrator,
   type LocalExecutionOrchestrator,
 } from "./services/local-execution-orchestrator.js";
-import {
-  createPostgresAdapterConfigurationPreflightService,
-} from "./services/adapter-configuration-preflight.js";
+import { createPostgresAdapterConfigurationPreflightService } from "./services/adapter-configuration-preflight.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 const VITE_DEV_ASSET_PREFIXES = [
@@ -115,7 +117,6 @@ const VITE_DEV_STATIC_PATHS = new Set([
   "/favicon.ico",
   "/favicon.svg",
   "/site.webmanifest",
-  "/sw.js",
 ]);
 
 export function resolveViteHmrPort(serverPort: number): number {
@@ -134,8 +135,20 @@ export function resolveViteHmrHost(bindHost: string): string | undefined {
 export function shouldServeViteDevHtml(req: ExpressRequest): boolean {
   const pathname = req.path;
   if (VITE_DEV_STATIC_PATHS.has(pathname)) return false;
-  if (VITE_DEV_ASSET_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return false;
+  if (VITE_DEV_ASSET_PREFIXES.some((prefix) => pathname.startsWith(prefix)))
+    return false;
   return req.accepts(["html"]) === "html";
+}
+
+export function requireStaticUiDist(moduleDirectory: string): string {
+  const uiDist = path.resolve(moduleDirectory, "../ui-dist");
+  const indexPath = path.join(uiDist, "index.html");
+  if (!fs.existsSync(indexPath)) {
+    throw new Error(
+      `Static UI mode requires the canonical server artifact at ${indexPath}`,
+    );
+  }
+  return uiDist;
 }
 
 export async function createApp(
@@ -144,6 +157,7 @@ export async function createApp(
     uiMode: UiMode;
     serverPort: number;
     storageService: StorageService;
+    secretsRuntime: SecretsRuntimeConfig;
     deploymentExposure: DeploymentExposure;
     canonicalPublicUrl?: string;
     allowedHostnames: string[];
@@ -158,9 +172,10 @@ export async function createApp(
     pluginEventBus: PluginEventBus;
     pluginDomainEvents: PluginDomainEventPublisher;
     betterAuthHandler: express.RequestHandler;
-    resolveSession: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
+    resolveSession: (
+      req: ExpressRequest,
+    ) => Promise<BetterAuthSessionResult | null>;
     promptCapabilityGateway: PromptCapabilityGateway;
-    /** One app-owned managed-tool router shared by ACPX and Board MCP. */
     paperclipManagedTools: PaperclipManagedToolRouter;
     pluginRunTaskContextReader: PluginRunTaskContextReader;
     pluginRuntimeRecordsReader: PluginRuntimeRecordsReader;
@@ -187,13 +202,19 @@ export async function createApp(
   },
 ) {
   const app = express();
+  app.set("case sensitive routing", true);
+  app.set("strict routing", true);
   const ordinaryTasks = opts.ordinaryTaskRuntime;
   const pluginTaskControlPlane = createPluginTaskControlPlane(
     db,
     ordinaryTasks,
   );
   app.locals.paperclipDb = db;
-  const captureRawBody = (req: express.Request, _res: express.Response, buf: Buffer) => {
+  const captureRawBody = (
+    req: express.Request,
+    _res: express.Response,
+    buf: Buffer,
+  ) => {
     (req as unknown as { rawBody: Buffer }).rawBody = buf;
   };
 
@@ -210,36 +231,46 @@ export async function createApp(
       bindHost: opts.bindHost,
     }),
   });
-  (app.locals as { paperclipRequestAuthorityBoundary?: RequestAuthorityBoundary })
-    .paperclipRequestAuthorityBoundary = requestAuthorityBoundary;
+  (
+    app.locals as {
+      paperclipRequestAuthorityBoundary?: RequestAuthorityBoundary;
+    }
+  ).paperclipRequestAuthorityBoundary = requestAuthorityBoundary;
   app.use(requestAuthorityBoundary.middleware);
+  // Express decodes route parameters before validators see them. Plugin asset
+  // identities are host-owned, so fence that namespace on the raw target.
+  app.use("/_plugins", canonicalRequestTarget());
 
-  app.use(COMPANY_IMPORTS_API_PATH, express.json({
-    limit: PORTABLE_JSON_BODY_LIMIT,
-    verify: captureRawBody,
-  }));
-  app.use(express.json({
-    limit: DEFAULT_JSON_BODY_LIMIT,
-    verify: captureRawBody,
-  }));
+  app.use(
+    COMPANY_IMPORTS_API_PATH,
+    express.json({
+      limit: PORTABLE_JSON_BODY_LIMIT,
+      verify: captureRawBody,
+    }),
+  );
+  app.use(
+    express.json({
+      limit: DEFAULT_JSON_BODY_LIMIT,
+      verify: captureRawBody,
+    }),
+  );
   app.use("/api", apiCompression());
   app.use(httpLogger);
   // Prompt-capability authentication is intentionally isolated from the
   // generic API actor middleware and from other capability credentials.
+  app.use("/api/run-tools", canonicalRequestTarget());
   app.use("/api", runToolsRoutes(opts.promptCapabilityGateway));
-  // Board MCP uses the normal board-key actor middleware. Its transport is
-  // separate from run-scoped provider capability ingress, but its tools use
-  // the same app-owned managed-tool router below that boundary.
+  // Board MCP is a separate board-user ingress. It authenticates an existing
+  // board API key and never accepts or substitutes for an ACPX run bearer.
   app.use(
     "/api/mcp",
-    actorMiddleware(db, {
-      resolveSession: opts.resolveSession,
-    }),
+    canonicalRequestTarget(),
+    actorMiddleware(db, { resolveSession: opts.resolveSession }),
   );
-  app.use("/api", boardMcpRoutes({
-    db,
-    managedTools: opts.paperclipManagedTools,
-  }));
+  app.use(
+    "/api",
+    boardMcpRoutes({ db, managedTools: opts.paperclipManagedTools }),
+  );
   app.use("/api", rejectRunInterfaceBearerFromGenericApi());
   app.use(
     actorMiddleware(db, {
@@ -247,11 +278,10 @@ export async function createApp(
     }),
   );
   app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
-  // The run interface is mounted before generic actor resolution. Any exact
-  // runtime-agent actor reaching this point is categorically denied from the
-  // ambient REST surface.
-  app.use("/api", denyGenericAgentRest("REST"));
-  app.use(llmRoutes(db));
+  // Better Auth owns its external callback query contract. Everything below
+  // is Paperclip-owned API surface and therefore has one raw pathname/search
+  // spelling before Express performs decoding.
+  app.use("/api", canonicalRequestTarget());
 
   const workerManager = opts.pluginWorkerManager;
   const adapterReadinessLocalExecutionOrchestrator =
@@ -259,12 +289,11 @@ export async function createApp(
     localExecutionOrchestrator(db);
   const adapterConfigurationPreflight =
     createPostgresAdapterConfigurationPreflightService(db, {
-      localExecutionOrchestrator:
-        adapterReadinessLocalExecutionOrchestrator,
+      localExecutionOrchestrator: adapterReadinessLocalExecutionOrchestrator,
     });
 
   // Mount API routes
-  const api = Router();
+  const api = Router({ caseSensitive: true, strict: true });
   api.use(boardMutationGuard());
   api.use(
     "/health",
@@ -275,14 +304,11 @@ export async function createApp(
     }),
   );
   api.use(openApiRoutes());
-  api.use("/companies", companyRoutes(db, opts.storageService, ordinaryTasks));
-  api.use(llmRoutes(db));
+  api.use(
+    "/companies",
+    companyRoutes(db, opts.storageService, ordinaryTasks, opts.secretsRuntime),
+  );
   api.use(folderRoutes(db));
-  api.use(companySkillRoutes(db, {
-    ordinaryTasks,
-    taskExecutionCancellation: opts.taskExecutionCancellation,
-  }));
-  api.use(companySkillPolicyRoutes(db));
   api.use(changeConsentRoutes(db));
   api.use(inboxAgentPolicyRoutes(db));
   api.use(
@@ -294,35 +320,37 @@ export async function createApp(
     }),
   );
   api.use(assetRoutes(db, opts.storageService));
-  api.use(projectRoutes(db));
-  api.use(taskTreeControlRoutes(
-    db,
-    opts.taskExecutionCancellation,
-  ));
-  api.use(routineRoutes(db, { ordinaryTasks }));
+  api.use(projectRoutes(db, opts.secretsRuntime));
+  api.use(taskTreeControlRoutes(db, opts.taskExecutionCancellation));
+  api.use(
+    routineRoutes(db, {
+      ordinaryTasks,
+      secretsRuntime: opts.secretsRuntime,
+    }),
+  );
   api.use(goalRoutes(db));
   api.use(
     accessRoutes(db, {
       deploymentExposure: opts.deploymentExposure,
     }),
   );
-  api.use(approvalRoutes(db, {
-    pluginWorkerManager: workerManager,
-    ordinaryTasks,
-    taskExecutionCancellation: opts.taskExecutionCancellation,
-  }));
-  api.use(secretRoutes(db));
-  api.use(costRoutes(db, {
-    pluginWorkerManager: workerManager,
-    taskExecutionCancellation: opts.taskExecutionCancellation,
-  }));
+  api.use(
+    approvalRoutes(db, {
+      pluginWorkerManager: workerManager,
+      ordinaryTasks,
+      taskExecutionCancellation: opts.taskExecutionCancellation,
+    }),
+  );
+  api.use(secretRoutes(db, opts.secretsRuntime));
+  api.use(
+    costRoutes(db, {
+      pluginWorkerManager: workerManager,
+      taskExecutionCancellation: opts.taskExecutionCancellation,
+    }),
+  );
   api.use(activityRoutes(db));
   api.use(
-    runRoutes(
-      db,
-      opts.taskExecutionRunService,
-      adapterConfigurationPreflight,
-    ),
+    runRoutes(db, opts.taskExecutionRunService, adapterConfigurationPreflight),
   );
   api.use(dashboardRoutes(db));
   api.use(attentionRoutes(db));
@@ -372,11 +400,12 @@ export async function createApp(
         pluginRunTaskContextReader: opts.pluginRunTaskContextReader,
         pluginRuntimeRecordsReader: opts.pluginRuntimeRecordsReader,
         ordinaryTasks,
+        secretsRuntime: opts.secretsRuntime,
         taskExecutionCancellation: opts.taskExecutionCancellation,
       });
       return {
         handlers: createHostClientHandlers({
-          pluginId,
+          pluginKey: manifest.id,
           capabilities: manifest.capabilities,
           services,
         }),
@@ -384,91 +413,79 @@ export async function createApp(
       };
     },
   });
-  api.use(taskRoutes(db, opts.storageService, {
-    pluginWorkerManager: workerManager,
-    ordinaryTasks,
-    pluginDomainEvents: opts.pluginDomainEvents,
-  }));
-  let viteHtmlRenderer: ReturnType<typeof createCachedViteHtmlRenderer> | null = null;
   api.use(
-    pluginRoutes(
-      db,
-      lifecycle,
-      { scheduler, jobStore, workerManager },
-    ),
+    taskRoutes(db, opts.storageService, {
+      pluginWorkerManager: workerManager,
+      ordinaryTasks,
+      pluginDomainEvents: opts.pluginDomainEvents,
+    }),
   );
+  let viteHtmlRenderer: ReturnType<typeof createCachedViteHtmlRenderer> | null =
+    null;
+  api.use(pluginRoutes(db, lifecycle, { scheduler, jobStore, workerManager }));
   api.use(adapterRoutes());
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });
   });
-  // Direct port of TradingGoose's public /mcp/setup installer surface. Mount
-  // before UI fallbacks so curl/PowerShell receives the executable script.
+  // The installer must win over the SPA document fallback so curl and
+  // PowerShell receive an executable script rather than index.html.
   app.use(boardMcpSetupRoutes());
   app.use(pluginUiStaticRoutes(db));
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   if (opts.uiMode === "static") {
-    // Try published location first (apps/server/ui-dist/), then monorepo dev location (../../ui/dist)
-    const candidates = [
-      path.resolve(__dirname, "../ui-dist"),
-      path.resolve(__dirname, "../../ui/dist"),
-    ];
-    const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
-    if (uiDist) {
-      // Hashed asset files (Vite emits them under /assets/<name>.<hash>.<ext>)
-      // never change once built, so they can be cached aggressively. The UI
-      // build also emits precompressed <asset>.br / <asset>.gz sidecars;
-      // serve those when the client accepts the encoding, falling through to
-      // the plain express.static otherwise. Both paths send
-      // Vary: Accept-Encoding so a shared cache never mixes encoded and
-      // identity bodies for one URL.
-      app.use("/assets", staticPrecompressed(path.join(uiDist, "assets")));
-      app.use(
-        "/assets",
-        express.static(path.join(uiDist, "assets"), {
-          maxAge: "1y",
-          immutable: true,
-          setHeaders(res) {
-            res.setHeader("Vary", "Accept-Encoding");
-          },
-        }),
-      );
-      // Non-hashed static files (favicon.ico, manifest, robots.txt, etc.):
-      // short cache so operators who swap them out see the new version
-      // reasonably fast. Override for `index.html` specifically — it is
-      // served by this middleware for `/` and `/index.html`, and it must
-      // never outlive the asset hashes it points at.
-      app.use(
-        express.static(uiDist, {
-          maxAge: "1h",
-          setHeaders(res, filePath) {
-            if (path.basename(filePath) === "index.html") {
-              res.set("Cache-Control", "no-cache");
-            }
-          },
-        }),
-      );
-      // SPA fallback. Only for non-asset routes — if the browser asks for
-      // /assets/something.js that doesn't exist, we must NOT serve the HTML
-      // shell: the browser would try to load it as a JavaScript module, fail
-      // with a MIME-type error, and cache that broken response. Return 404
-      // instead. The index.html response itself is no-cache so a subsequent
-      // deploy's updated asset hashes are picked up on next load.
-      app.get(/.*/, (req, res) => {
-        if (req.path.startsWith("/assets/")) {
-          res.status(404).end();
-          return;
-        }
-        res
-          .status(200)
-          .set("Content-Type", "text/html")
-          .set("Cache-Control", "no-cache")
-          .end(readBrandedStaticIndexHtml(uiDist));
-      });
-    } else {
-      console.warn("[paperclip] UI dist not found; running in API-only mode");
-    }
+    const uiDist = requireStaticUiDist(__dirname);
+    // Hashed asset files (Vite emits them under /assets/<name>.<hash>.<ext>)
+    // never change once built, so they can be cached aggressively. The UI
+    // build also emits precompressed <asset>.br / <asset>.gz sidecars;
+    // serve those when the client accepts the encoding, falling through to
+    // the plain express.static otherwise. Both paths send
+    // Vary: Accept-Encoding so a shared cache never mixes encoded and
+    // identity bodies for one URL.
+    app.use("/assets", staticPrecompressed(path.join(uiDist, "assets")));
+    app.use(
+      "/assets",
+      express.static(path.join(uiDist, "assets"), {
+        maxAge: "1y",
+        immutable: true,
+        setHeaders(res) {
+          res.setHeader("Vary", "Accept-Encoding");
+        },
+      }),
+    );
+    // Non-hashed static files (favicon.ico, manifest, robots.txt, etc.):
+    // short cache so operators who swap them out see the new version
+    // reasonably fast. Override for `index.html` specifically — it is
+    // served by this middleware for `/` and `/index.html`, and it must
+    // never outlive the asset hashes it points at.
+    app.use(
+      express.static(uiDist, {
+        maxAge: "1h",
+        setHeaders(res, filePath) {
+          if (path.basename(filePath) === "index.html") {
+            res.set("Cache-Control", "no-cache");
+          }
+        },
+      }),
+    );
+    // SPA document handler. Only for non-asset routes — if the browser asks
+    // for /assets/something.js that doesn't exist, we must NOT serve the HTML
+    // shell: the browser would try to load it as a JavaScript module, fail
+    // with a MIME-type error, and cache that broken response. Return 404
+    // instead. The index.html response itself is no-cache so a subsequent
+    // deploy's updated asset hashes are picked up on next load.
+    app.get(/.*/, (req, res) => {
+      if (req.path.startsWith("/assets/")) {
+        res.status(404).end();
+        return;
+      }
+      res
+        .status(200)
+        .set("Content-Type", "text/html")
+        .set("Cache-Control", "no-cache")
+        .end(readBrandedStaticIndexHtml(uiDist));
+    });
   }
 
   if (opts.uiMode === "vite-dev") {
@@ -487,9 +504,12 @@ export async function createApp(
           port: hmrPort,
           clientPort: hmrPort,
         },
-        allowedHosts: opts.deploymentExposure === "private"
-          ? Array.from(requestAuthorityBoundary.policy.privateAllowedHostnames)
-          : undefined,
+        allowedHosts:
+          opts.deploymentExposure === "private"
+            ? Array.from(
+                requestAuthorityBoundary.policy.privateAllowedHostnames,
+              )
+            : undefined,
       },
     });
     viteHtmlRenderer = createCachedViteHtmlRenderer({
@@ -520,21 +540,20 @@ export async function createApp(
   app.use(errorHandler);
 
   scheduler.start();
-  const devWatcher = createPluginDevWatcher(
-    lifecycle,
-    async (pluginId) => {
-      const plugin = await pluginRegistry.getById(pluginId);
-      if (!plugin) return null;
-      if (plugin.source !== "local") return null;
-      if (!path.isAbsolute(plugin.packagePath)) {
-        throw new Error(`Plugin installation package root is not absolute: ${pluginId}`);
-      }
-      return {
-        packagePath: plugin.packagePath,
-        manifest: plugin.manifestJson,
-      };
-    },
-  );
+  const devWatcher = createPluginDevWatcher(lifecycle, async (pluginId) => {
+    const plugin = await pluginRegistry.getById(pluginId);
+    if (!plugin) return null;
+    if (plugin.source !== "local") return null;
+    if (!path.isAbsolute(plugin.packagePath)) {
+      throw new Error(
+        `Plugin installation package root is not absolute: ${pluginId}`,
+      );
+    }
+    return {
+      packagePath: plugin.packagePath,
+      manifest: plugin.manifestJson,
+    };
+  });
   let appServicesShutdown: Promise<void> | null = null;
   const shutdownAppServices = (): Promise<void> => {
     if (appServicesShutdown) return appServicesShutdown;
@@ -547,7 +566,10 @@ export async function createApp(
         result.status === "rejected" ? [result.reason] : [],
       );
       if (failures.length > 0) {
-        throw new AggregateError(failures, "Failed to shut down application services");
+        throw new AggregateError(
+          failures,
+          "Failed to shut down application services",
+        );
       }
     });
     return appServicesShutdown;

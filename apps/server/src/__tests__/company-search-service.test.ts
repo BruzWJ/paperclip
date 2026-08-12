@@ -11,13 +11,13 @@ import {
 import { createMockDb } from "./helpers/mock-db.js";
 
 describe("company search query validation", () => {
-  it("normalizes supported filters and rejects invalid query dimensions", () => {
+  it("accepts exact filters and rejects invalid query dimensions", () => {
     const parsed = companySearchQuerySchema.parse({
-      q: "x".repeat(COMPANY_SEARCH_MAX_QUERY_LENGTH + 50),
+      q: "x".repeat(COMPANY_SEARCH_MAX_QUERY_LENGTH),
       limit: "50",
       offset: "200",
       scope: "all",
-      status: "todo,blocked",
+      status: ["todo", "blocked"],
       priority: ["critical", "low"],
       sort: "priority",
       updatedWithin: "7d",
@@ -28,19 +28,42 @@ describe("company search query validation", () => {
     expect(parsed.priority).toEqual(["critical", "low"]);
     expect(parsed.sort).toBe("priority");
     expect(parsed.updatedWithin).toBe("7d");
-    expect(() => companySearchQuerySchema.parse({ q: "needle", limit: "500" })).toThrow();
-    expect(() => companySearchQuerySchema.parse({ q: "needle", offset: "9000" })).toThrow();
-    expect(() => companySearchQuerySchema.parse({ q: "needle", scope: "not-a-scope" })).toThrow();
-    expect(() => companySearchQuerySchema.parse({ q: "needle", status: "not-a-status" })).toThrow();
-    expect(() => companySearchQuerySchema.parse({ q: "needle", priority: "urgent" })).toThrow();
-    expect(() => companySearchQuerySchema.parse({ q: "needle", sort: "oldest" })).toThrow();
-    expect(() => companySearchQuerySchema.parse({ q: "needle", updatedWithin: "forever" })).toThrow();
-    expect(() => companySearchQuerySchema.parse({ q: "needle", projectId: "not-a-uuid" })).toThrow();
+    expect(() =>
+      companySearchQuerySchema.parse({
+        q: "x".repeat(COMPANY_SEARCH_MAX_QUERY_LENGTH + 1),
+      }),
+    ).toThrow();
+    expect(() =>
+      companySearchQuerySchema.parse({ q: "needle", limit: "500" }),
+    ).toThrow();
+    expect(() =>
+      companySearchQuerySchema.parse({ q: "needle", offset: "9000" }),
+    ).toThrow();
+    expect(() =>
+      companySearchQuerySchema.parse({ q: "needle", scope: "not-a-scope" }),
+    ).toThrow();
+    expect(() =>
+      companySearchQuerySchema.parse({ q: "needle", status: "not-a-status" }),
+    ).toThrow();
+    expect(() =>
+      companySearchQuerySchema.parse({ q: "needle", priority: "urgent" }),
+    ).toThrow();
+    expect(() =>
+      companySearchQuerySchema.parse({ q: "needle", sort: "oldest" }),
+    ).toThrow();
+    expect(() =>
+      companySearchQuerySchema.parse({ q: "needle", updatedWithin: "forever" }),
+    ).toThrow();
+    expect(() =>
+      companySearchQuerySchema.parse({ q: "needle", projectId: "not-a-uuid" }),
+    ).toThrow();
   });
 
   it("includes offset in the bounded per-branch fetch window", () => {
     expect(companySearchBranchFetchLimit(50, 0)).toBe(51);
-    expect(companySearchBranchFetchLimit(50, 200)).toBe(COMPANY_SEARCH_BRANCH_FETCH_LIMIT);
+    expect(companySearchBranchFetchLimit(50, 200)).toBe(
+      COMPANY_SEARCH_BRANCH_FETCH_LIMIT,
+    );
     expect(companySearchBranchFetchLimit(Number.NaN, -10)).toBe(51);
   });
 });
@@ -49,11 +72,10 @@ describe("companySearchService", () => {
   it("returns the canonical empty response without querying persistence", async () => {
     const mock = createMockDb();
     const query = companySearchQuerySchema.parse({
-      q: "   ",
       scope: "all",
       sort: "relevance",
-      limit: 25,
-      offset: 0,
+      limit: "25",
+      offset: "0",
     });
 
     const result = await companySearchService(mock.db).search(
@@ -81,5 +103,44 @@ describe("companySearchService", () => {
       project: 0,
     });
     expect(mock.calls).toEqual([]);
+  });
+
+  it("returns canonical typed route targets instead of opaque board hrefs", async () => {
+    const agentId = "00000000-0000-4000-8000-000000000010";
+    const mock = createMockDb({
+      select: [
+        [{ id: "00000000-0000-4000-8000-000000000001" }],
+        [
+          {
+            id: agentId,
+            title: "Codex Coder",
+            description: "Builds product features",
+            createdAt: new Date("2026-08-01T12:00:00.000Z"),
+            updatedAt: new Date("2026-08-02T12:00:00.000Z"),
+          },
+        ],
+        [{ count: 1 }],
+      ],
+      execute: [[]],
+    });
+    const query = companySearchQuerySchema.parse({
+      q: "codex",
+      scope: "agents",
+    });
+
+    const result = await companySearchService(mock.db).search(
+      "00000000-0000-4000-8000-000000000001",
+      query,
+    );
+
+    expect(result.results).toEqual([
+      expect.objectContaining({
+        id: agentId,
+        type: "agent",
+        routeTarget: { kind: "agent", id: agentId },
+      }),
+    ]);
+    expect(result.results[0]).not.toHaveProperty("href");
+    expect(mock.remaining("select")).toBe(0);
   });
 });

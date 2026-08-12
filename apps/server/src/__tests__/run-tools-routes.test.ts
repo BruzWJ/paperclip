@@ -98,6 +98,29 @@ describe("run-tools routes", () => {
     );
   });
 
+  it("rejects bearer whitespace and ingress-ordinal lexical aliases", async () => {
+    const runtime = service();
+    const paddedBearer = await request(app(runtime))
+      .post("/api/run-tools")
+      .set("authorization", "Bearer  pc_run_v1_secret")
+      .send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    expect(paddedBearer.status).toBe(401);
+    expect(runtime.listTools).not.toHaveBeenCalled();
+
+    const paddedOrdinal = await request(app(runtime))
+      .post("/api/run-tools")
+      .set("authorization", "Bearer pc_run_v1_secret")
+      .set(RUN_TOOLS_INGRESS_ORDINAL_HEADER, "00")
+      .send({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "read_task_comments", arguments: {} },
+      });
+    expect(paddedOrdinal.status).toBe(400);
+    expect(runtime.callTool).not.toHaveBeenCalled();
+  });
+
   it("maps a removed or forged descriptor to a denied call", async () => {
     const runtime = service();
     runtime.callTool = vi.fn(async () => {
@@ -159,15 +182,10 @@ describe("run-tools routes", () => {
 
   it("accepts MCP request metadata without adding it to tool arguments", async () => {
     const runtime = service();
-    const response = await postToolCall(
-      app(runtime),
-      "call-with-progress",
-      0,
-      {
-        progressToken: 0,
-        "io.modelcontextprotocol/clientInfo": { name: "opencode" },
-      },
-    );
+    const response = await postToolCall(app(runtime), "call-with-progress", 0, {
+      progressToken: 0,
+      "io.modelcontextprotocol/clientInfo": { name: "opencode" },
+    });
 
     expect(response.status).toBe(200);
     expect(runtime.callTool).toHaveBeenCalledWith({
@@ -182,12 +200,9 @@ describe("run-tools routes", () => {
   it("terminal-registers malformed MCP request metadata without blocking the next call", async () => {
     const runtime = service();
     const instance = app(runtime);
-    const invalid = await postToolCall(
-      instance,
-      "invalid-progress",
-      0,
-      { progressToken: false },
-    );
+    const invalid = await postToolCall(instance, "invalid-progress", 0, {
+      progressToken: false,
+    });
     const valid = await postToolCall(
       instance,
       "valid-after-invalid-progress",
@@ -208,11 +223,7 @@ describe("run-tools routes", () => {
     );
   });
 
-  it.each([
-    ["created"],
-    ["configured"],
-    ["change_consent_requested"],
-  ] as const)(
+  it.each([["created"], ["configured"], ["change_consent_requested"]] as const)(
     "serializes the closed %s action receipt identically as text and structured content",
     async (status) => {
       const runtime = service();
@@ -233,10 +244,12 @@ describe("run-tools routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.result).toEqual({
-        content: [{
-          type: "text",
-          text: JSON.stringify({ status }),
-        }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ status }),
+          },
+        ],
         structuredContent: { status },
       });
     },
@@ -326,38 +339,44 @@ describe("run-tools routes", () => {
 
   it("terminal-registers every malformed tools/call before the next ordinal", async () => {
     const runtime = service();
-    const post = (
-      ordinal: number,
-      body: Record<string, unknown>,
-    ) => request(app(runtime))
-      .post("/api/run-tools")
-      .set("authorization", "Bearer pc_run_v1_secret")
-      .set(RUN_TOOLS_INGRESS_ORDINAL_HEADER, String(ordinal))
-      .send(body);
+    const post = (ordinal: number, body: Record<string, unknown>) =>
+      request(app(runtime))
+        .post("/api/run-tools")
+        .set("authorization", "Bearer pc_run_v1_secret")
+        .set(RUN_TOOLS_INGRESS_ORDINAL_HEADER, String(ordinal))
+        .send(body);
 
-    await expect(post(0, {
-      jsonrpc: "2.0",
-      method: "tools/call",
-      params: { name: "read_task_comments", arguments: {} },
-    }).then((response) => response.status)).resolves.toBe(400);
-    await expect(post(1, {
-      jsonrpc: "2.0",
-      id: { invalid: true },
-      method: "tools/call",
-      params: { name: "read_task_comments", arguments: {} },
-    }).then((response) => response.status)).resolves.toBe(400);
-    await expect(post(2, {
-      jsonrpc: "2.0",
-      id: "bad-params",
-      method: "tools/call",
-      params: { name: 42, arguments: {} },
-    }).then((response) => response.status)).resolves.toBe(400);
-    await expect(post(3, {
-      jsonrpc: "1.0",
-      id: "bad-envelope",
-      method: "tools/call",
-      params: { name: "read_task_comments", arguments: {} },
-    }).then((response) => response.status)).resolves.toBe(400);
+    await expect(
+      post(0, {
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { name: "read_task_comments", arguments: {} },
+      }).then((response) => response.status),
+    ).resolves.toBe(400);
+    await expect(
+      post(1, {
+        jsonrpc: "2.0",
+        id: { invalid: true },
+        method: "tools/call",
+        params: { name: "read_task_comments", arguments: {} },
+      }).then((response) => response.status),
+    ).resolves.toBe(400);
+    await expect(
+      post(2, {
+        jsonrpc: "2.0",
+        id: "bad-params",
+        method: "tools/call",
+        params: { name: 42, arguments: {} },
+      }).then((response) => response.status),
+    ).resolves.toBe(400);
+    await expect(
+      post(3, {
+        jsonrpc: "1.0",
+        id: "bad-envelope",
+        method: "tools/call",
+        params: { name: "read_task_comments", arguments: {} },
+      }).then((response) => response.status),
+    ).resolves.toBe(400);
 
     const valid = await post(4, {
       jsonrpc: "2.0",

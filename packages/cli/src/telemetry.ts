@@ -4,7 +4,6 @@ import {
   resolveTelemetryConfig,
   loadOrCreateState,
   trackInstallStarted,
-  trackInstallCompleted,
   trackCompanyImported,
 } from "../../shared/src/telemetry/index.js";
 import { resolvePaperclipInstanceRoot } from "./config/home.js";
@@ -44,6 +43,5 @@ export async function flushTelemetry(): Promise<void> {
 
 export {
   trackInstallStarted,
-  trackInstallCompleted,
   trackCompanyImported,
 };

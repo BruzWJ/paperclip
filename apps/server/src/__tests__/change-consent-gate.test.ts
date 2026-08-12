@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  agentProfileChangeTargetKey,
   changeConsentGateService,
   consumeAcceptedChangeConsentInTransaction,
-  skillChangeTargetKey,
 } from "../services/change-consent-gate.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
@@ -21,7 +21,8 @@ const companyId = "00000000-0000-4000-8000-000000000001";
 const agentId = "00000000-0000-4000-8000-000000000002";
 const sourceRunId = "00000000-0000-4000-8000-000000000003";
 const actorRunId = "00000000-0000-4000-8000-000000000004";
-const targetKey = skillChangeTargetKey("00000000-0000-4000-8000-000000000005");
+const consentId = "00000000-0000-4000-8000-000000000006";
+const targetKey = agentProfileChangeTargetKey("00000000-0000-4000-8000-000000000005");
 
 describe("changeConsentGateService", () => {
   beforeEach(() => {
@@ -155,7 +156,7 @@ describe("changeConsentGateService", () => {
   it("persists a validated request against its canonical source run", async () => {
     const expiresAt = new Date(Date.now() + 60_000);
     const created = {
-      id: "consent-1",
+      id: consentId,
       companyId,
       requestedByAgentId: agentId,
       sourceRunId,
@@ -193,7 +194,7 @@ describe("changeConsentGateService", () => {
 
     await expect(service.decide({
       companyId,
-      consentId: "consent-1",
+      consentId,
       decision: "rejected",
       decidedByBoardId: "board-user",
       reason: "Needs revision",

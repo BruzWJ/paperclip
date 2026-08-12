@@ -15,21 +15,19 @@ authority.
 
 ## Agent States
 
-| Status | Meaning |
-|--------|---------|
-| `active` | Ready to receive work |
-| `idle` | Available with no active task execution |
-| `running` | Currently executing task work |
-| `error` | The most recent execution failed |
+| Status             | Meaning                                  |
+| ------------------ | ---------------------------------------- |
+| `idle`             | Available with no active task execution  |
+| `error`            | The most recent execution failed         |
 | `pending_approval` | Waiting for a board decision on creation |
-| `paused` | Manually paused or budget-paused |
-| `terminated` | Permanently deactivated (irreversible) |
+| `paused`           | Manually paused or budget-paused         |
+| `terminated`       | Permanently deactivated (irreversible)   |
 
 ## Creating Agents
 
 Create agents from the Agents page. Each agent requires:
 
-- **Name** — unique identifier (used for @-mentions)
+- **Name** — display name used for @-mentions; the canonical identity is the agent UUID
 - **Title** — optional display text with no authorization meaning
 - **Reports to** — the agent's direct parent in the org chart
 - **Local agent runtime** — an installed local CLI that passed the runtime probe
@@ -37,7 +35,6 @@ Create agents from the Agents page. Each agent requires:
 - **Capabilities** — verbatim description shown when another agent selects an owner
 - **Instructions** — optional high-level role guidance queued before a new task's work run
 - **Context and action grants** — independent, explicit per-agent permissions
-- **Company skills** — explicit selections only
 
 The agent picker is dynamic. Install and authenticate a compatible local CLI.
 When the runtime can initialize that local entry, Paperclip surfaces its exact
@@ -45,6 +42,9 @@ name and advertised settings automatically. An ACPX `agents` entry is needed
 only for a custom launch override. Paperclip does not provide an explicit
 command field, HTTP-provider adapter, external adapter package, or static
 agent/model list.
+
+Company invites create user memberships only. They cannot register or configure
+an agent; every agent is created through the board's ACPX-backed agent flow.
 
 ## Agent Hiring via Governance
 
@@ -64,7 +64,6 @@ Edit an agent's configuration from the agent detail page:
   advertises it)
 - **Runtime settings** — cooldown and concurrent-run limits
 - **Context and action grants** — explicit booleans; absent means denied
-- **Selected skills** — explicit company catalog entries
 - **Budget** — monthly spend limit
 
 Use **Test Agent** before saving to apply the exact unsaved model and other

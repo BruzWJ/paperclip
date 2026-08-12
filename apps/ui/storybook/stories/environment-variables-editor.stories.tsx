@@ -12,7 +12,7 @@ function secret(
 ): CompanySecret {
   return {
     id,
-    companyId: "company-storybook",
+    companyId: "11111111-1111-4111-8111-111111111111",
     scope: "company",
     ownerUserId: null,
     userSecretDefinitionId: null,
@@ -30,7 +30,7 @@ function secret(
     lastRotatedAt: null,
     deletedAt: null,
     createdByAgentId: null,
-    createdByUserId: "user-board",
+    createdByUserId: "a7000000-0000-4000-8000-000000000002",
     createdAt: new Date("2026-03-01T10:00:00.000Z"),
     updatedAt: new Date("2026-04-01T10:00:00.000Z"),
     ...overrides,
@@ -38,15 +38,15 @@ function secret(
 }
 
 const SECRETS: CompanySecret[] = [
-  secret("s-github", "GITHUB_TOKEN", { latestVersion: 3 }),
-  secret("s-db", "DB_CONNECTION", { latestVersion: 3 }),
-  secret("s-openai", "OPENAI_API_KEY", { latestVersion: 2 }),
-  secret("s-resend-long", "/paperclip-cloud/prod/provider/resend/api-key-with-a-very-long-name", { latestVersion: 4 }),
-  secret("s-legacy", "LEGACY_DEPLOY_KEY", { status: "disabled", latestVersion: 2 }),
-  secret("s-archived", "OLD_STRIPE_KEY", { status: "archived", latestVersion: 4 }),
+  secret("a3000000-0000-4000-8000-000000000003", "GITHUB_TOKEN", { latestVersion: 3 }),
+  secret("a3000000-0000-4000-8000-000000000005", "DB_CONNECTION", { latestVersion: 3 }),
+  secret("a3000000-0000-4000-8000-000000000004", "OPENAI_API_KEY", { latestVersion: 2 }),
+  secret("a3000000-0000-4000-8000-000000000008", "/paperclip-cloud/prod/provider/resend/api-key-with-a-very-long-name", { latestVersion: 4 }),
+  secret("a3000000-0000-4000-8000-000000000009", "RETIRED_DEPLOY_KEY", { status: "disabled", latestVersion: 2 }),
+  secret("a3000000-0000-4000-8000-00000000000a", "OLD_STRIPE_KEY", { status: "archived", latestVersion: 4 }),
 ];
 
-const RECENTLY_USED: CompanySecret[] = [SECRETS[2], secret("s-slack", "SLACK_WEBHOOK", { latestVersion: 1 })];
+const RECENTLY_USED: CompanySecret[] = [SECRETS[2], secret("a3000000-0000-4000-8000-00000000000b", "SLACK_WEBHOOK", { latestVersion: 1 })];
 
 function Surface({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }) {
   return (
@@ -104,8 +104,8 @@ export const Default: Story = {
       <Editor
         initial={{
           NODE_ENV: { type: "plain", value: "production" },
-          GH_TOKEN: { type: "secret_ref", secretId: "s-github", version: "latest" },
-          DB_URL: { type: "secret_ref", secretId: "s-db", version: 3 },
+          GH_TOKEN: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000003", version: "latest" },
+          DB_URL: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000005", version: 3 },
           STRIPE_API_KEY: { type: "plain", value: "sk-live-51H8xL0aBcDeFgHiJkLmNoPq" },
         }}
       />
@@ -135,7 +135,7 @@ export const PickerOpen: Story = {
 export const LongSecretName: Story = {
   render: () => (
     <Surface title="Long secret name">
-      <Editor initial={{ RESEND_API_KEY: { type: "secret_ref", secretId: "s-resend-long", version: "latest" } }} />
+      <Editor initial={{ RESEND_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000008", version: "latest" } }} />
     </Surface>
   ),
 };
@@ -162,7 +162,7 @@ export const StoreAsSecret: Story = {
 export const VersionPopover: Story = {
   render: () => (
     <Surface title="Version pinning" hint="The bound secret is pinned to v3 (amber tag). Click the tag to choose latest (recommended) or a specific version.">
-      <Editor initial={{ DB_URL: { type: "secret_ref", secretId: "s-db", version: 3 } }} />
+      <Editor initial={{ DB_URL: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000005", version: 3 } }} />
     </Surface>
   ),
 };
@@ -175,8 +175,8 @@ export const Validation: Story = {
         initial={{
           "API-URL": { type: "plain", value: "https://api.example.com" },
           PAPERCLIP_TOKEN: { type: "plain", value: "override" },
-          ABANDONED: { type: "secret_ref", secretId: "gone-1234", version: "latest" },
-          LEGACY: { type: "secret_ref", secretId: "s-legacy", version: "latest" },
+          ABANDONED: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-00000000000d", version: "latest" },
+          RETIRED: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000009", version: "latest" },
         }}
       />
     </Surface>
@@ -208,7 +208,7 @@ export const MobileStacked: Story = {
           <Editor
             initial={{
               NODE_ENV: { type: "plain", value: "production" },
-              GH_TOKEN: { type: "secret_ref", secretId: "s-github", version: "latest" },
+              GH_TOKEN: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000003", version: "latest" },
               STRIPE_API_KEY: { type: "plain", value: "sk-live-51H8xL0aBcDeFgHiJkLmNoPq" },
             }}
           />
@@ -226,8 +226,8 @@ export const Disabled: Story = {
         disabled
         initial={{
           NODE_ENV: { type: "plain", value: "production" },
-          GH_TOKEN: { type: "secret_ref", secretId: "s-github", version: "latest" },
-          LEGACY: { type: "secret_ref", secretId: "s-legacy", version: "latest" },
+          GH_TOKEN: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000003", version: "latest" },
+          RETIRED: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000009", version: "latest" },
         }}
       />
     </Surface>

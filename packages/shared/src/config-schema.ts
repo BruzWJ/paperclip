@@ -6,8 +6,16 @@ import {
   SECRET_PROVIDERS,
   STORAGE_PROVIDERS,
 } from "./constants.js";
-import { validateConfiguredBindMode } from "./network-bind.js";
-import { normalizePublicOrigin } from "./public-origin.js";
+import {
+  parseExactHostnameList,
+  validateConfiguredBindMode,
+} from "./network-bind.js";
+import { parseExactPublicOrigin } from "./public-origin.js";
+import {
+  parseExactStorageEndpoint,
+  parseExactStorageName,
+  parseExactStoragePrefix,
+} from "./storage-identity.js";
 
 export const configMetaSchema = z.object({
   version: z.literal(1),
@@ -29,27 +37,48 @@ export const loggingConfigSchema = z.object({
 export const serverConfigSchema = z
   .object({
     exposure: z.enum(DEPLOYMENT_EXPOSURES).default("private"),
-    bind: z.enum(BIND_MODES).optional(),
-    customBindHost: z.string().optional(),
-    host: z.string().default("127.0.0.1"),
+    bind: z.enum(BIND_MODES).default("loopback"),
+    customBindHost: z
+      .string()
+      .refine(
+        (value) => value.length > 0 && value.trim() === value,
+        "server.customBindHost must be exact and non-empty",
+      )
+      .optional(),
     port: z.number().int().min(1).max(65535).default(3100),
-    allowedHostnames: z.array(z.string().min(1)).default([]),
+    allowedHostnames: z
+      .array(z.string())
+      .superRefine((values, ctx) => {
+        try {
+          parseExactHostnameList(values);
+        } catch (error) {
+          addValidationDetail(ctx, {
+            message:
+              error instanceof Error ? error.message : "Invalid hostname list",
+          });
+        }
+      })
+      .default([]),
     serveUi: z.boolean().default(true),
   })
   .strict();
 
 export const authConfigSchema = z
   .object({
-    publicBaseUrl: z.string().transform((value, ctx) => {
-      try {
-        return normalizePublicOrigin(value);
-      } catch (error) {
-        addValidationDetail(ctx, {
-          message: error instanceof Error ? error.message : "Invalid public origin",
-        });
-        return z.NEVER;
-      }
-    }).optional(),
+    publicBaseUrl: z
+      .string()
+      .transform((value, ctx) => {
+        try {
+          return parseExactPublicOrigin(value);
+        } catch (error) {
+          addValidationDetail(ctx, {
+            message:
+              error instanceof Error ? error.message : "Invalid public origin",
+          });
+          return z.NEVER;
+        }
+      })
+      .optional(),
     disableSignUp: z.boolean().default(false),
   })
   .strict();
@@ -59,10 +88,46 @@ export const storageLocalDiskConfigSchema = z.object({
 });
 
 export const storageS3ConfigSchema = z.object({
-  bucket: z.string().min(1).default("paperclip"),
-  region: z.string().min(1).default("us-east-1"),
-  endpoint: z.string().optional(),
-  prefix: z.string().default(""),
+  bucket: z
+    .string()
+    .superRefine((value, ctx) => {
+      try {
+        parseExactStorageName(value, "storage.s3.bucket");
+      } catch (error) {
+        addValidationDetail(ctx, { message: (error as Error).message });
+      }
+    })
+    .default("paperclip"),
+  region: z
+    .string()
+    .superRefine((value, ctx) => {
+      try {
+        parseExactStorageName(value, "storage.s3.region");
+      } catch (error) {
+        addValidationDetail(ctx, { message: (error as Error).message });
+      }
+    })
+    .default("us-east-1"),
+  endpoint: z
+    .string()
+    .superRefine((value, ctx) => {
+      try {
+        parseExactStorageEndpoint(value);
+      } catch (error) {
+        addValidationDetail(ctx, { message: (error as Error).message });
+      }
+    })
+    .optional(),
+  prefix: z
+    .string()
+    .superRefine((value, ctx) => {
+      try {
+        parseExactStoragePrefix(value);
+      } catch (error) {
+        addValidationDetail(ctx, { message: (error as Error).message });
+      }
+    })
+    .default(""),
   forcePathStyle: z.boolean().default(false),
 });
 
@@ -80,7 +145,9 @@ export const storageConfigSchema = z.object({
 });
 
 export const secretsLocalEncryptedConfigSchema = z.object({
-  keyFilePath: z.string().default("~/.paperclip/instances/default/secrets/master.key"),
+  keyFilePath: z
+    .string()
+    .default("~/.paperclip/instances/default/secrets/master.key"),
 });
 
 export const secretsConfigSchema = z.object({
@@ -91,9 +158,11 @@ export const secretsConfigSchema = z.object({
   }),
 });
 
-export const telemetryConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-}).default({});
+export const telemetryConfigSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+  })
+  .default({});
 
 export const paperclipConfigSchema = z
   .object({
@@ -130,12 +199,13 @@ export const paperclipConfigSchema = z
     for (const message of validateConfiguredBindMode({
       exposure: value.server.exposure,
       bind: value.server.bind,
-      host: value.server.host,
       customBindHost: value.server.customBindHost,
     })) {
       addValidationDetail(ctx, {
         message,
-        path: message.includes("customBindHost") ? ["server", "customBindHost"] : ["server", "bind"],
+        path: message.includes("customBindHost")
+          ? ["server", "customBindHost"]
+          : ["server", "bind"],
       });
     }
 
@@ -159,10 +229,14 @@ export type DatabaseConfig = z.infer<typeof databaseConfigSchema>;
 export type LoggingConfig = z.infer<typeof loggingConfigSchema>;
 export type ServerConfig = z.infer<typeof serverConfigSchema>;
 export type StorageConfig = z.infer<typeof storageConfigSchema>;
-export type StorageLocalDiskConfig = z.infer<typeof storageLocalDiskConfigSchema>;
+export type StorageLocalDiskConfig = z.infer<
+  typeof storageLocalDiskConfigSchema
+>;
 export type StorageS3Config = z.infer<typeof storageS3ConfigSchema>;
 export type SecretsConfig = z.infer<typeof secretsConfigSchema>;
-export type SecretsLocalEncryptedConfig = z.infer<typeof secretsLocalEncryptedConfigSchema>;
+export type SecretsLocalEncryptedConfig = z.infer<
+  typeof secretsLocalEncryptedConfigSchema
+>;
 export type AuthConfig = z.infer<typeof authConfigSchema>;
 export type TelemetryConfig = z.infer<typeof telemetryConfigSchema>;
 export type ConfigMeta = z.infer<typeof configMetaSchema>;

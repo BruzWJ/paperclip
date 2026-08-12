@@ -138,7 +138,7 @@ fields.
 
 ## Configuration readiness
 
-Pre-dispatch readiness is distinct from runtime failure. Missing provider-native declarations, secret bindings, target availability, run-directory binding, selected tool/skill integrity, or adapter capability block before a run starts. The task retains explicit auditable waiting/recovery evidence.
+Pre-dispatch readiness is distinct from runtime failure. Missing provider-native declarations, secret bindings, target availability, run-directory binding, selected tool integrity, or adapter capability block before a run starts. The task retains explicit auditable waiting/recovery evidence.
 
 An adapter configuration edit creates a new immutable revision. An active run finishes on its recorded revision; the edit itself does not cancel, reset, or invoke anything. A later invocation on the new revision cannot resume the old revision's native correlation.
 

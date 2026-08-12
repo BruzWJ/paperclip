@@ -8,7 +8,8 @@ import type {
   TaskExecutionRunLivenessFact,
 } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { runsApi, type TaskExecutionRunJoinedDetail } from "../api/runs";
 import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
@@ -19,7 +20,6 @@ type TaskRunLedgerProps = {
   taskStatus: Task["boardPresentationStatus"];
   childTasks: Task[];
   agentMap: ReadonlyMap<string, Agent>;
-  hasLiveRuns: boolean;
   activityEvents?: ActivityEvent[];
   renderActivityEvent?: (event: ActivityEvent) => ReactNode;
   resolveUserLabel?: (userId: string) => string | null | undefined;
@@ -32,7 +32,7 @@ type TaskRunLedgerContentProps = {
   onSelectRun?: (runId: string) => void;
   taskStatus: Task["boardPresentationStatus"];
   childTasks: Task[];
-  agentMap: ReadonlyMap<string, Pick<Agent, "name">>;
+  agentMap: ReadonlyMap<string, Pick<Agent, "id" | "name">>;
   activityEvents?: ActivityEvent[];
   renderActivityEvent?: (event: ActivityEvent) => ReactNode;
 };
@@ -124,14 +124,14 @@ function statusLabel(status: string) {
 
 function runAgentName(
   run: TaskExecutionRunEnvelopeRecord,
-  agentMap: ReadonlyMap<string, Pick<Agent, "name">>,
+  agentMap: ReadonlyMap<string, Pick<Agent, "id" | "name">>,
 ) {
-  return agentMap.get(run.targetAgentId)?.name ?? run.targetAgentId.slice(0, 8);
+  return agentMap.get(run.targetAgentId)?.name ?? "Unknown agent";
 }
 
 function runSummary(
   run: TaskExecutionRunEnvelopeRecord,
-  agentMap: ReadonlyMap<string, Pick<Agent, "name">>,
+  agentMap: ReadonlyMap<string, Pick<Agent, "id" | "name">>,
 ) {
   const agent = runAgentName(run, agentMap);
   if (run.status === "running") return `Running now by ${agent}`;
@@ -157,7 +157,6 @@ export function TaskRunLedger({
   taskStatus,
   childTasks,
   agentMap,
-  hasLiveRuns,
   activityEvents,
   renderActivityEvent,
 }: TaskRunLedgerProps) {
@@ -165,7 +164,6 @@ export function TaskRunLedger({
   const { data: runPage } = useQuery({
     queryKey: queryKeys.tasks.runs(taskId),
     queryFn: () => runsApi.listForTask(taskId, { limit: 200 }),
-    refetchInterval: hasLiveRuns || taskStatus === "in_progress" ? 5000 : false,
     placeholderData:
       keepPreviousDataForSameQueryTail<TaskExecutionRunListPageRecord>(taskId),
   });
@@ -182,7 +180,6 @@ export function TaskRunLedger({
     queryKey: queryKeys.runDetail(effectiveSelectedRunId ?? "pending"),
     queryFn: () => runsApi.get(effectiveSelectedRunId!),
     enabled: Boolean(effectiveSelectedRunId),
-    refetchInterval: selectedRunId && hasLiveRuns ? 3000 : false,
   });
 
   return (
@@ -211,6 +208,7 @@ export function TaskRunLedgerContent({
   activityEvents,
   renderActivityEvent,
 }: TaskRunLedgerContentProps) {
+  const companyId = useCompanyRouteId();
   const orderedRuns = useMemo(
     () => [...runs].sort(compareRunsNewestFirst),
     [runs],
@@ -316,9 +314,14 @@ export function TaskRunLedgerContent({
                 : "No runs linked yet."}
           </p>
         </div>
-        {latestRun ? (
+        {latestRun && agentMap.has(latestRun.targetAgentId) ? (
           <Link
-            to={`/agents/${latestRun.targetAgentId}/runs/${latestRun.id}`}
+            to="/$companyId/agents/$agentId/runs/$runId"
+            params={{
+              companyId,
+              agentId: latestRun.targetAgentId,
+              runId: latestRun.id,
+            }}
             className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
           >
             Latest run

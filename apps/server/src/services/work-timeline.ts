@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   activityLog,
@@ -56,7 +56,8 @@ type TaskRow = {
   projectId: string | null;
   goalId: string | null;
   parentId: string | null;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   creatorKind: string | null;
   creatorAgentId: string | null;
@@ -110,7 +111,9 @@ function dateIso(value: Date | null | undefined) {
 }
 
 function readString(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  return typeof value === "string" && value.length > 0 && value.trim() === value
+    ? value
+    : null;
 }
 
 function maybeUuidList(ids: Iterable<string>) {
@@ -299,6 +302,7 @@ export function workTimelineService(db: Db) {
         projectId: tasks.projectId,
         goalId: tasks.goalId,
         parentId: tasks.parentId,
+        taskNumber: tasks.taskNumber,
         identifier: tasks.identifier,
         title: tasks.title,
         creatorKind: tasks.creatorKind,
@@ -580,6 +584,7 @@ export function workTimelineService(db: Db) {
     const spanByRunId = new Map<string, WorkTimelineSpan>();
     for (const row of runRows) {
       if (!taskById.has(row.taskId) || spanByRunId.has(row.runId)) continue;
+      const task = taskById.get(row.taskId)!;
       const runActorId = actorId("agent", row.targetAgentId);
       actorIds.add(runActorId);
       spanByRunId.set(row.runId, {
@@ -587,8 +592,9 @@ export function workTimelineService(db: Db) {
         runId: row.runId,
         kind: row.kind,
         taskId: row.taskId,
-        taskIdentifier: taskById.get(row.taskId)?.identifier ?? null,
-        taskTitle: taskById.get(row.taskId)?.title ?? null,
+        taskNumber: task.taskNumber,
+        taskIdentifier: task.identifier,
+        taskTitle: task.title,
         start: (row.startedAt ?? row.createdAt).toISOString(),
         end: dateIso(row.finishedAt),
         status: row.status,

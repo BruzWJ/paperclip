@@ -1,4 +1,4 @@
-import { PLUGIN_EVENT_TYPES } from "@paperclipai/shared";
+import { isCanonicalUuid, PLUGIN_EVENT_TYPES } from "@paperclipai/shared";
 import type {
   EventFilter,
   PluginEvent,
@@ -47,8 +47,10 @@ export function assertPluginEventSubscription(
       throw new Error(`Unsupported plugin event filter field: ${key}`);
     }
     const field = value[key];
-    if (typeof field !== "string" || field.length === 0 || field !== field.trim()) {
-      throw new Error(`Plugin event filter ${key} must be exact and non-empty`);
+    if (!isCanonicalUuid(typeof field === "string" ? field : undefined)) {
+      throw new Error(
+        `Plugin event filter ${key} must be an exact canonical UUID`,
+      );
     }
   }
   if (

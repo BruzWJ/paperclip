@@ -1,5 +1,4 @@
 import type {
-  ActivityEvent,
   Routine,
   RoutineDetail,
   RoutineListItem,
@@ -10,7 +9,7 @@ import type {
   RoutineTriggerSecretMaterial,
 } from "@paperclipai/shared";
 import { activityApi } from "./activity";
-import { api } from "./client";
+import { api, type RequestOptions } from "./client";
 
 export interface RoutineTriggerResponse {
   trigger: RoutineTrigger;
@@ -43,7 +42,8 @@ export const routinesApi = {
   },
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Routine>(`/companies/${companyId}/routines`, data),
-  get: (id: string) => api.get<RoutineDetail>(`/routines/${id}`),
+  get: (id: string, options?: RequestOptions) =>
+    api.get<RoutineDetail>(`/routines/${id}`, options),
   update: (id: string, data: Record<string, unknown>) => api.patch<Routine>(`/routines/${id}`, data),
   listRevisions: (id: string) => api.get<RoutineRevision[]>(`/routines/${id}/revisions`),
   restoreRevision: (

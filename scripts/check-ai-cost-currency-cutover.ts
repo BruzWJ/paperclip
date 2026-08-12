@@ -12,7 +12,8 @@ const REPOSITORY_ROOT = resolve(import.meta.dirname, "..");
 const GATE_PATH = "scripts/check-ai-cost-currency-cutover.ts";
 const SELF_TEST_PATH = "scripts/check-ai-cost-currency-cutover.test.ts";
 const BUDGET_OWNER = "apps/server/src/services/budgets.ts";
-const COMPANY_PURGE_OWNER = "apps/server/src/services/task-session-lifecycle.ts";
+const COMPANY_PURGE_OWNER =
+  "apps/server/src/services/task-session-lifecycle.ts";
 
 const RETIRED_AI_MONEY_TOKENS = [
   "budgetMonthlyCents",
@@ -51,12 +52,12 @@ const AI_MONEY_PRESENTATION_PATHS = [
   "apps/ui/src/components/BudgetIncidentCard.tsx",
   "apps/ui/src/components/BudgetPolicyCard.tsx",
   "apps/ui/src/lib/utils.ts",
-  "apps/ui/src/pages/AgentDetail.tsx",
-  "apps/ui/src/pages/Companies.tsx",
-  "apps/ui/src/pages/Costs.tsx",
-  "apps/ui/src/pages/Dashboard.tsx",
-  "apps/ui/src/pages/ProjectDetail.tsx",
-  "apps/ui/src/pages/UserProfile.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/agents/$agentId/index.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/companies/index.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/costs/index.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/dashboard/index.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/projects/$projectId/index.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/u/$userId/index.tsx",
 ] as const;
 
 const SUBORDINATE_BUDGET_SCHEMA_PATHS = [
@@ -286,10 +287,7 @@ function storageAndDtoOwnershipViolations(repositoryRoot: string): string[] {
     }
   }
 
-  const companySchema = read(
-    repositoryRoot,
-    "packages/db/schema/companies.ts",
-  );
+  const companySchema = read(repositoryRoot, "packages/db/schema/companies.ts");
   if (
     companySchema !== null &&
     /budgetCurrency\s*:\s*budgetCurrencyColumn\([^)]*\)\s*\.notNull\(\)\s*\.default\s*\(/s.test(
@@ -322,14 +320,17 @@ function storageAndDtoOwnershipViolations(repositoryRoot: string): string[] {
 function sharedMoneyContractViolations(repositoryRoot: string): string[] {
   const path = "packages/shared/src/money.ts";
   const source = read(repositoryRoot, path);
-  if (source === null) return [`${path}: required canonical money owner is missing`];
+  if (source === null)
+    return [`${path}: required canonical money owner is missing`];
 
   const violations: string[] = [];
   const catalog = source.match(
     /export const BUDGET_CURRENCIES\s*=\s*\[([\s\S]*?)\]\s*as const/,
   )?.[1];
   if (catalog === undefined) {
-    violations.push(`${path}: exact budget currency catalog is not statically closed`);
+    violations.push(
+      `${path}: exact budget currency catalog is not statically closed`,
+    );
   } else {
     const currencies = [...catalog.matchAll(/["']([^"']+)["']/g)].map(
       (match) => match[1]!,
@@ -427,7 +428,10 @@ function numberMoneyBoundaryViolations(repositoryRoot: string): string[] {
   ])) {
     for (const pattern of [
       new RegExp(`\\b(?:${moneyField})\\??\\s*:\\s*number\\b`, "g"),
-      new RegExp(`["']?(?:${moneyField})["']?\\s*:\\s*-?\\d+(?:\\.\\d+)?(?:e[+-]?\\d+)?`, "gi"),
+      new RegExp(
+        `["']?(?:${moneyField})["']?\\s*:\\s*-?\\d+(?:\\.\\d+)?(?:e[+-]?\\d+)?`,
+        "gi",
+      ),
       new RegExp(`\\b(?:${moneyField})\\s*:\\s*z\\.number\\(`, "g"),
     ]) {
       for (const match of file.source.matchAll(pattern)) {
@@ -507,7 +511,10 @@ function financeIsolationViolations(repositoryRoot: string): string[] {
       );
     }
   }
-  const financeService = read(repositoryRoot, "apps/server/src/services/finance.ts");
+  const financeService = read(
+    repositoryRoot,
+    "apps/server/src/services/finance.ts",
+  );
   if (
     financeService === null ||
     /\bcostEvents\b|budgetService|budgetCurrency/.test(financeService)
@@ -591,30 +598,46 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
       'budgetMonthlyAmount: moneyAmountColumn("budget_monthly_amount").notNull()',
       '"agents_budget_monthly_amount_check"',
     ]),
-    ...requireFileTokens(repositoryRoot, "packages/db/schema/budget_policies.ts", [
-      'limitAmount: moneyAmountColumn("limit_amount").notNull()',
-      '"budget_policies_limit_amount_check"',
-    ]),
-    ...requireFileTokens(repositoryRoot, "packages/db/schema/budget_incidents.ts", [
-      'limitAmount: moneyAmountColumn("limit_amount").notNull()',
-      'observedAmount: moneyAmountColumn("observed_amount").notNull()',
-      '"budget_incidents_amounts_check"',
-    ]),
-    ...requireFileTokens(repositoryRoot, "packages/db/schema/agent_runtime_state.ts", [
-      'aggregateKnownCostAmount: moneyAmountColumn(',
-      '"aggregate_known_cost_amount"',
-      '"agent_runtime_state_aggregates_check"',
-    ]),
+    ...requireFileTokens(
+      repositoryRoot,
+      "packages/db/schema/budget_policies.ts",
+      [
+        'limitAmount: moneyAmountColumn("limit_amount").notNull()',
+        '"budget_policies_limit_amount_check"',
+      ],
+    ),
+    ...requireFileTokens(
+      repositoryRoot,
+      "packages/db/schema/budget_incidents.ts",
+      [
+        'limitAmount: moneyAmountColumn("limit_amount").notNull()',
+        'observedAmount: moneyAmountColumn("observed_amount").notNull()',
+        '"budget_incidents_amounts_check"',
+      ],
+    ),
+    ...requireFileTokens(
+      repositoryRoot,
+      "packages/db/schema/agent_runtime_state.ts",
+      [
+        "aggregateKnownCostAmount: moneyAmountColumn(",
+        '"aggregate_known_cost_amount"',
+        '"agent_runtime_state_aggregates_check"',
+      ],
+    ),
     ...requireFileTokens(repositoryRoot, "packages/db/schema/cost_events.ts", [
       'knownDeltaAmount: moneyAmountColumn("known_delta_amount")',
       'name: "cost_events_company_budget_currency_fk"',
       '"cost_events_transition_check"',
       "table.observedCurrency} = ${table.budgetCurrency}",
     ]),
-    ...requireFileTokens(repositoryRoot, "packages/db/schema/finance_events.ts", [
-      'amount: moneyAmountColumn("amount").notNull()',
-      'currency: text("currency").notNull()',
-    ]),
+    ...requireFileTokens(
+      repositoryRoot,
+      "packages/db/schema/finance_events.ts",
+      [
+        'amount: moneyAmountColumn("amount").notNull()',
+        'currency: text("currency").notNull()',
+      ],
+    ),
     ...requireFileTokens(repositoryRoot, BUDGET_OWNER, [
       "async function upsertPolicyInTransaction",
       "companyCurrency(",
@@ -630,12 +653,16 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
       "costEvents.knownDeltaAmount",
       'eq(costEvents.kind, "known")',
     ]),
-    ...requireFileTokens(repositoryRoot, "apps/server/src/services/companies.ts", [
-      "const budgets = budgetService(db)",
-      "budgets.createCompany(data, actorUserId)",
-      '"budgetCurrency" | "budgetMonthlyAmount"',
-      "budgets.getCompanyMonthlyKnownSpend(companyIds)",
-    ]),
+    ...requireFileTokens(
+      repositoryRoot,
+      "apps/server/src/services/companies.ts",
+      [
+        "const budgets = budgetService(db)",
+        "budgets.createCompany(data, actorUserId)",
+        '"budgetCurrency" | "budgetMonthlyAmount"',
+        "budgets.getCompanyMonthlyKnownSpend(companyIds)",
+      ],
+    ),
     ...requireFileTokens(
       repositoryRoot,
       "apps/server/src/services/agent-operational-configuration.ts",
@@ -644,19 +671,28 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
         '"budgetMonthlyAmount"',
       ],
     ),
-    ...requireFileTokens(repositoryRoot, "packages/shared/src/validators/cost.ts", [
-      "budgetMonthlyAmount: moneyAmountSchema",
-      ".strict()",
-    ]),
-    ...requireFileTokens(repositoryRoot, "packages/shared/src/validators/company.ts", [
-      "budgetCurrency: budgetCurrencySchema.optional()",
-      "budgetMonthlyAmount: moneyAmountSchema.optional()",
-      "export const updateCompanySchema",
-    ]),
-    ...requireFileTokens(repositoryRoot, "packages/shared/src/validators/company-portability.ts", [
-      "budgetCurrency: budgetCurrencySchema",
-      "budgetMonthlyAmount: moneyAmountSchema",
-    ]),
+    ...requireFileTokens(
+      repositoryRoot,
+      "packages/shared/src/validators/cost.ts",
+      ["budgetMonthlyAmount: moneyAmountSchema", ".strict()"],
+    ),
+    ...requireFileTokens(
+      repositoryRoot,
+      "packages/shared/src/validators/company.ts",
+      [
+        "budgetCurrency: budgetCurrencySchema.optional()",
+        "budgetMonthlyAmount: moneyAmountSchema.optional()",
+        "export const updateCompanySchema",
+      ],
+    ),
+    ...requireFileTokens(
+      repositoryRoot,
+      "packages/shared/src/validators/company-portability.ts",
+      [
+        "budgetCurrency: budgetCurrencySchema",
+        "budgetMonthlyAmount: moneyAmountSchema",
+      ],
+    ),
     ...requireFileTokens(repositoryRoot, "apps/server/src/routes/openapi.ts", [
       "moneyAmountSchema",
       "budgetCurrencySchema",
@@ -668,21 +704,33 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
       "serializeMoneyAmount(amount)",
       "currency: BudgetCurrency | string",
     ]),
-    ...requireFileTokens(repositoryRoot, "apps/ui/src/pages/Costs.tsx", [
-      "formatMoneyAmount(summary.knownSpendAmount, summary.budgetCurrency)",
-      "formatMoneyAmount(summary.budgetMonthlyAmount, summary.budgetCurrency)",
-      "formatMoneyAmount(summary.remainingAmount, summary.budgetCurrency)",
-    ]),
-    ...requireFileTokens(repositoryRoot, "apps/ui/src/components/BudgetPolicyCard.tsx", [
-      "formatMoneyAmount(summary.observedAmount, summary.budgetCurrency)",
-      "formatMoneyAmount(summary.limitAmount, summary.budgetCurrency)",
-    ]),
-    ...requireFileTokens(repositoryRoot, "packages/cli/src/commands/client/cost.ts", [
-      "updateCompanyBudgetSchema.parse(",
-      "parseAgentBudgetPayload",
-      '"budgetMonthlyAmount"',
-      "/operational-configuration",
-    ]),
+    ...requireFileTokens(
+      repositoryRoot,
+      "apps/ui/src/routes/_authenticated/$companyId/costs/index.tsx",
+      [
+        "formatMoneyAmount(summary.knownSpendAmount, summary.budgetCurrency)",
+        "formatMoneyAmount(summary.budgetMonthlyAmount, summary.budgetCurrency)",
+        "formatMoneyAmount(summary.remainingAmount, summary.budgetCurrency)",
+      ],
+    ),
+    ...requireFileTokens(
+      repositoryRoot,
+      "apps/ui/src/components/BudgetPolicyCard.tsx",
+      [
+        "formatMoneyAmount(summary.observedAmount, summary.budgetCurrency)",
+        "formatMoneyAmount(summary.limitAmount, summary.budgetCurrency)",
+      ],
+    ),
+    ...requireFileTokens(
+      repositoryRoot,
+      "packages/cli/src/commands/client/cost.ts",
+      [
+        "updateCompanyBudgetSchema.parse(",
+        "parseAgentBudgetPayload",
+        '"budgetMonthlyAmount"',
+        "/operational-configuration",
+      ],
+    ),
   ];
 }
 

@@ -1,7 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 import {
   ChevronDown,
-  CircleAlert,
   CircleCheck,
   Info,
   OctagonAlert,
@@ -9,15 +8,32 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
 export type SystemNoticeTone = "neutral" | "info" | "success" | "warning" | "danger";
 
 export type SystemNoticeMetadataRow =
   | { kind: "text"; label: string; value: string }
   | { kind: "code"; label: string; value: string }
-  | { kind: "task"; label: string; identifier: string; href?: string; title?: string }
-  | { kind: "agent"; label: string; name: string; href?: string }
-  | { kind: "run"; label: string; runId: string; href?: string; status?: string };
+  | {
+      kind: "task";
+      label: string;
+      taskNumber: number;
+      identifier: string;
+      link?: boolean;
+      title?: string;
+    }
+  | {
+      kind: "task";
+      label: string;
+      taskNumber: null;
+      identifier: string | null;
+      link?: false;
+      title?: string;
+    }
+  | { kind: "agent"; label: string; name: string; agentId?: string }
+  | { kind: "run"; label: string; runId: string; agentId?: string; status?: string };
 
 export type SystemNoticeMetadataSection = {
   title?: string;
@@ -31,7 +47,7 @@ export type SystemNoticeProps = {
   /** Short visible body — one or two sentences from the system perspective. */
   body: ReactNode;
   /** Optional small chip for the originating run link. */
-  source?: { label: string; href?: string };
+  source?: { label: string; agentId?: string; runId?: string };
   /** Hidden-by-default metadata. Renders the Details affordance only when present. */
   metadata?: SystemNoticeMetadataSection[];
   /** Force the details panel open initially. Defaults to false (collapsed). */
@@ -112,6 +128,7 @@ function formatTimestamp(ts: string) {
 }
 
 function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTokens }) {
+  const companyId = useCompanyRouteId();
   return (
     <div className="grid grid-cols-(--gtc-8) gap-x-3 gap-y-0.5 px-3 py-1.5 text-xs">
       <div className="truncate text-(length:--text-micro) font-medium uppercase tracking-(--tracking-label) text-muted-foreground">
@@ -131,23 +148,24 @@ function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTo
             case "task": {
               const taskLabel = (
                 <>
-                  <span>{row.identifier}</span>
+                  <span>{row.identifier ?? "Task unavailable"}</span>
                   {row.title ? (
                     <span className="text-muted-foreground">— {row.title}</span>
                   ) : null}
                 </>
               );
-              if (row.href) {
+              if (row.link && row.taskNumber != null) {
                 return (
-                  <a
-                    href={row.href}
+                  <Link
+                    to="/$companyId/tasks/$taskNumber"
+                    params={{ companyId, taskNumber: String(row.taskNumber) }}
                     className={cn(
                       "inline-flex items-center gap-1 rounded-sm font-medium underline-offset-2 hover:underline",
                       tone.label,
                     )}
                   >
                     {taskLabel}
-                  </a>
+                  </Link>
                 );
               }
               return (
@@ -157,22 +175,18 @@ function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTo
               );
             }
             case "agent":
-              if (row.href) {
-                return (
-                  <a
-                    href={row.href}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-sm font-medium underline-offset-2 hover:underline",
-                      tone.label,
-                    )}
-                  >
-                    {row.name}
-                  </a>
-                );
-              }
-              return (
-                <span className={cn("font-medium", tone.label)}>{row.name}</span>
-              );
+              return row.agentId ? (
+                <Link
+                  to="/$companyId/agents/$agentId"
+                  params={{ companyId, agentId: row.agentId }}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-sm font-medium underline-offset-2 hover:underline",
+                    tone.label,
+                  )}
+                >
+                  {row.name}
+                </Link>
+              ) : <span className={cn("font-medium", tone.label)}>{row.name}</span>;
             case "run": {
               const runShort = row.runId.length > 12 ? `${row.runId.slice(0, 8)}…` : row.runId;
               const inner = (
@@ -183,14 +197,15 @@ function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTo
                   ) : null}
                 </>
               );
-              if (row.href) {
+              if (row.agentId) {
                 return (
-                  <a
-                    href={row.href}
+                  <Link
+                    to="/$companyId/agents/$agentId/runs/$runId"
+                    params={{ companyId, agentId: row.agentId, runId: row.runId }}
                     className="inline-flex items-center gap-2 rounded-sm font-mono text-(length:--text-micro) underline-offset-2 hover:underline"
                   >
                     {inner}
-                  </a>
+                  </Link>
                 );
               }
               return (
@@ -216,6 +231,7 @@ export function SystemNotice({
   timestamp,
   className,
 }: SystemNoticeProps) {
+  const companyId = useCompanyRouteId();
   const tokens = TONE_TOKENS[tone];
   const ToneIcon = tokens.icon;
   const [open, setOpen] = useState(detailsDefaultOpen);
@@ -257,13 +273,14 @@ export function SystemNotice({
             {source ? (
               <>
                 <span className="text-muted-foreground/60" aria-hidden>·</span>
-                {source.href ? (
-                  <a
-                    href={source.href}
+                {source.agentId && source.runId ? (
+                  <Link
+                    to="/$companyId/agents/$agentId/runs/$runId"
+                    params={{ companyId, agentId: source.agentId, runId: source.runId }}
                     className="rounded-sm font-medium normal-case tracking-normal text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                   >
                     {source.label}
-                  </a>
+                  </Link>
                 ) : (
                   <span className="font-medium normal-case tracking-normal text-muted-foreground">
                     {source.label}
@@ -333,5 +350,3 @@ export function SystemNotice({
     </section>
   );
 }
-
-export default SystemNotice;

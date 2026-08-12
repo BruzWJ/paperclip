@@ -9,10 +9,3 @@ export interface InstanceGeneralSettings {
   worktreeRunExecutionActivatedAt: string | null;
   worktreeRunExecutionActivationInstanceId: string | null;
 }
-
-export interface InstanceSettings {
-  id: string;
-  general: InstanceGeneralSettings;
-  createdAt: Date;
-  updatedAt: Date;
-}

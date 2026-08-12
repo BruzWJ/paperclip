@@ -17,7 +17,7 @@ import { appendCanonicalControlNotice } from "./task-session-producers.js";
 
 export interface ExecutionWorkspaceTaskRef {
   id: string;
-  identifier: string | null;
+  identifier: string;
 }
 
 export class WorkspaceRuntimeValidationFailure extends Error {
@@ -282,15 +282,13 @@ function formatUtcBranchTimestamp(date = new Date()) {
 }
 
 function buildDirtyQuarantineRescueBranch(sourceTask: ExecutionWorkspaceTaskRef | null) {
-  const taskComponent = sanitizeBranchName(sourceTask?.identifier ?? sourceTask?.id ?? "task");
+  const taskComponent = sanitizeBranchName(sourceTask?.identifier ?? "task");
   return sanitizeBranchName(`paperclip/rescue/${taskComponent}/${formatUtcBranchTimestamp()}`);
 }
 
-function formatTaskReference(taskId: string | null | undefined, identifier: string | null | undefined) {
-  if (!identifier) return taskId ? `\`${taskId}\`` : "`unknown`";
-  const match = identifier.match(/^([A-Z]+)-\d+$/);
-  if (!match) return `\`${identifier}\``;
-  return `[${identifier}](/${match[1]}/tasks/${identifier})`;
+function formatTaskReference(identifier: string | null | undefined) {
+  if (!identifier) return "`unavailable task`";
+  return `\`${identifier}\``;
 }
 
 async function readTaskCompanyId(db: Db, taskId: string | null | undefined): Promise<string | null> {
@@ -505,8 +503,12 @@ async function inspectGitWorktreeBranchIncoherence(input: {
   return {
     reason: GIT_WORKTREE_BRANCH_INCOHERENCE_REASON,
     fingerprint,
-    sourceTaskId: input.sourceTask?.id ?? null,
-    sourceIdentifier: input.sourceTask?.identifier ?? null,
+    ...(input.sourceTask
+      ? {
+          sourceTaskId: input.sourceTask.id,
+          sourceIdentifier: input.sourceTask.identifier,
+        }
+      : { sourceTaskId: null, sourceIdentifier: null }),
     executionWorkspaceId: input.executionWorkspaceId ?? null,
     worktreePath: path.resolve(input.worktreePath),
     repoRoot: path.resolve(input.repoRoot),
@@ -583,7 +585,7 @@ function formatDirtyQuarantineAuditComment(input: {
   return [
     "Execution workspace dirty worktree quarantined before restore.",
     "",
-    `- Source task: ${formatTaskReference(input.evidence.sourceTaskId, input.evidence.sourceIdentifier ?? input.sourceTask?.identifier ?? null)}`,
+    `- Source task: ${formatTaskReference(input.evidence.sourceIdentifier ?? input.sourceTask?.identifier ?? null)}`,
     `- Workspace: \`${input.evidence.executionWorkspaceId ?? "unpersisted"}\``,
     `- Worktree: \`${input.evidence.worktreePath}\``,
     `- Recorded branch: \`${input.evidence.expectedBranch}\``,
@@ -597,7 +599,7 @@ function formatDirtyQuarantineAuditComment(input: {
       : []),
     `- Fingerprint: \`${input.evidence.fingerprint}\``,
     input.claimant
-      ? `- Claimant: workspace \`${input.claimant.claimedByWorkspaceId}\` on task ${formatTaskReference(input.claimant.claimedByTaskId, input.claimant.claimedByTaskIdentifier)}${input.claimant.activeRun ? ` with active run \`${input.claimant.activeRun.id}\`` : " with no active run"}`
+      ? `- Claimant: workspace \`${input.claimant.claimedByWorkspaceId}\` on task ${formatTaskReference(input.claimant.claimedByTaskIdentifier)}${input.claimant.activeRun ? ` with active run \`${input.claimant.activeRun.id}\`` : " with no active run"}`
       : "- Claimant: none",
   ].join("\n");
 }
@@ -779,7 +781,7 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
         "Paperclip dirty workspace rescue",
         "-m",
         [
-          `Source-Task: ${input.evidence.sourceIdentifier ?? input.evidence.sourceTaskId ?? "unknown"}`,
+          `Source-Task: ${input.evidence.sourceIdentifier ?? "unidentified-task"}`,
           `Run-Id: ${input.runId ?? "unknown"}`,
           `Recorded-Branch: ${input.expectedBranchName}`,
           `Live-Branch: ${formatBranchForMessage(input.evidence.actualBranch)}`,

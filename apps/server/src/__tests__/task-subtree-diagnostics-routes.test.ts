@@ -3,7 +3,6 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@paperclipai/db";
 import { errorHandler } from "../middleware/index.js";
-import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { taskRoutes } from "../routes/tasks.js";
 import { createMockDb } from "./helpers/mock-db.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
@@ -67,7 +66,6 @@ function createApp(db: Db, actor: Express.Request["actor"] = boardActor()) {
     req.actor = actor;
     next();
   });
-  app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", taskRoutes(db, {} as never, { ordinaryTasks: {} as never }));
   app.use(errorHandler);
   return app;
@@ -198,26 +196,4 @@ describe("task subtree diagnostics route", () => {
     expect(res.body.diagnosis).toContain("bounded to depth 8 and 100 nodes");
   });
 
-  it("denies generic agent credentials before reading any subtree data", async () => {
-    const harness = createMockDb();
-    const actor = {
-      type: "agent",
-      agentId: "00000000-0000-4000-8000-000000000020",
-      companyId,
-      runId: "00000000-0000-4000-8000-000000000030",
-      source: "internal",
-    } as const;
-
-    const res = await request(createApp(harness.db, actor))
-      .get(`/api/tasks/${rootId}/diagnostics/subtree`);
-
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({
-      error: "Agent credentials cannot access the generic REST API; use the run-scoped compiled interface",
-      code: "compiled_run_interface_required",
-    });
-    expect(taskMocks.getById).not.toHaveBeenCalled();
-    expect(taskMocks.getSubtreeDiagnostics).not.toHaveBeenCalled();
-    expect(harness.calls).toEqual([]);
-  });
 });

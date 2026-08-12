@@ -14,11 +14,34 @@ const mockAdaptersApi = vi.hoisted(() => ({
   testConfiguration: vi.fn(),
 }));
 
-vi.mock("../context/CompanyContext", () => ({
-  useCompany: () => ({ selectedCompanyId: null }),
+const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
+const AGENT_ID = vi.hoisted(() => "22222222-2222-4222-8222-222222222222");
+const REVISION_ID = vi.hoisted(() => "33333333-3333-4333-8333-333333333333");
+
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useOptionalCompanyRouteId: () => COMPANY_ID,
 }));
 vi.mock("../api/agents", () => ({
-  agentsApi: { list: vi.fn(async () => []) },
+  agentsApi: {
+    list: vi.fn(async () => []),
+    getCurrentAdapterConfigRevision: vi.fn(async () => ({
+      id: REVISION_ID,
+      companyId: COMPANY_ID,
+      agentId: AGENT_ID,
+      revisionNumber: 1,
+      acpConfiguration: {
+        contractVersion: "acpx-runtime/v1",
+        launchProfile: { registryName: "missing-local-agent" },
+        sessionConfigSelections: [],
+        model: null,
+      },
+      digest: "a".repeat(64),
+      parentRevisionId: null,
+      createdByAgentId: null,
+      createdByUserId: null,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    })),
+  },
 }));
 vi.mock("../api/adapters", () => ({
   adaptersApi: mockAdaptersApi,
@@ -36,19 +59,15 @@ vi.mock("./MarkdownEditor", () => ({
   .IS_REACT_ACT_ENVIRONMENT = true;
 
 const agent = {
-  id: "agent-1",
-  companyId: "company-1",
+  id: AGENT_ID,
+  companyId: COMPANY_ID,
   name: "Test Agent",
-  urlKey: "test-agent",
   title: null,
   icon: null,
-  status: "active",
+  status: "idle",
   reportsTo: null,
   capabilities: null,
-  adapterType: "missing-local-agent",
-  adapterConfig: {},
-  currentAdapterConfigRevisionId: null,
-  runtimeConfig: {},
+  currentAdapterConfigRevisionId: REVISION_ID,
   pauseReason: null,
   pausedAt: null,
   instruction: null,
@@ -199,15 +218,12 @@ describe("AgentConfigForm (edit mode)", () => {
       {
         type: "missing-local-agent",
         label: "Available local agent",
-        source: "acpx",
         modelsCount: 0,
         loaded: true,
-        registryName: "missing-local-agent",
-        configSchema: { fields: [] },
+        configOptions: [],
         capabilities: {
           contractVersion: "acpx-runtime/v1",
           runtimeControls: [],
-          supportsModelProfiles: false,
         },
       },
     ]);
@@ -216,15 +232,12 @@ describe("AgentConfigForm (edit mode)", () => {
 
     await act(async () => {
       await vi.waitFor(() => {
-        expect(container.textContent).not.toContain(
-          "This adapter is not available from the local agent catalog.",
-        );
+        expect(
+          [...container.querySelectorAll("button")].some(
+            (button) => button.textContent === "Test Agent",
+          ),
+        ).toBe(true);
       });
     });
-    expect(
-      [...container.querySelectorAll("button")].some(
-        (button) => button.textContent === "Test Agent",
-      ),
-    ).toBe(true);
   });
 });

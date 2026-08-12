@@ -2,24 +2,11 @@ import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import type { StorageProvider, GetObjectResult, HeadObjectResult } from "./types.js";
 import { notFound, badRequest } from "../errors.js";
-
-function normalizeObjectKey(objectKey: string): string {
-  const normalized = objectKey.replace(/\\/g, "/").trim();
-  if (!normalized || normalized.startsWith("/")) {
-    throw badRequest("Invalid object key");
-  }
-
-  const parts = normalized.split("/").filter((part) => part.length > 0);
-  if (parts.length === 0 || parts.some((part) => part === "." || part === "..")) {
-    throw badRequest("Invalid object key");
-  }
-
-  return parts.join("/");
-}
+import { requireExactStorageObjectKey } from "./object-key.js";
 
 function resolveWithin(baseDir: string, objectKey: string): string {
-  const normalizedKey = normalizeObjectKey(objectKey);
-  const resolved = path.resolve(baseDir, normalizedKey);
+  const exactObjectKey = requireExactStorageObjectKey(objectKey);
+  const resolved = path.resolve(baseDir, exactObjectKey);
   const base = path.resolve(baseDir);
   if (resolved !== base && !resolved.startsWith(base + path.sep)) {
     throw badRequest("Invalid object key path");

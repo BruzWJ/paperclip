@@ -1,8 +1,9 @@
 import {
   addValidationDetail,
+  canonicalUuidSchema,
+  createTaskSchema,
   validationDetails,
   PAPERCLIP_RUNTIME_ACTION_KEYS,
-  createTaskSchema,
   runtimeAgentConfigureActionSchemaForTargets,
   runtimeAgentCreateConfigurationSchema,
   runtimeAgentHireConfigurationSchema,
@@ -125,30 +126,34 @@ export const PAPERCLIP_MANAGED_TOOL_METADATA = {
   { title: string; description: string; readOnly: boolean }
 >;
 
-const companyId = z.string().uuid();
-const taskId = z.string().uuid();
-const agentId = z.string().uuid();
-const runId = z.string().uuid();
-const commentId = z.string().uuid();
-const nonBlankMessage = z
-  .string()
-  .max(200_000)
-  .refine((value) => value.trim().length > 0, "Message must not be blank");
 const taskFiltersSchema = z.object({
   status: z.enum(["open", "blocked", "done", "cancelled"]).optional(),
   priority: z.enum(["critical", "high", "medium", "low"]).optional(),
 }).strict();
+
+const exactNonEmptyString = z.string().min(1).refine(
+  (value) => value.trim() === value,
+  "Value must not contain surrounding whitespace",
+);
+const exactTitle = z.string().min(1).max(240).refine(
+  (value) => value.trim() === value,
+  "Title must not contain surrounding whitespace",
+);
+const nonBlankMessage = z
+  .string()
+  .max(200_000)
+  .refine((value) => value.trim().length > 0, "Message must not be blank");
 const page = {
-  cursor: z.string().trim().min(1).optional(),
+  cursor: exactNonEmptyString.optional(),
   limit: z.number().int().min(1).max(100).optional(),
 };
 
 const boardTaskUpdateSchema = z.object({
-  companyId,
-  taskId,
-  title: z.string().trim().min(1).max(240).nullable().optional(),
+  companyId: canonicalUuidSchema,
+  taskId: canonicalUuidSchema,
+  title: exactTitle.nullable().optional(),
   message: nonBlankMessage.optional(),
-  replyToCommentId: commentId.optional(),
+  replyToCommentId: canonicalUuidSchema.optional(),
   reopen: z.boolean().optional(),
   status: z.enum(["open", "blocked", "done", "cancelled"]).optional(),
   structuredResult: z.unknown().optional(),
@@ -158,9 +163,7 @@ const boardTaskUpdateSchema = z.object({
     value.message === undefined &&
     value.status === undefined
   ) {
-    addValidationDetail(ctx, {
-      message: "Provide title, message, or status",
-    });
+    addValidationDetail(ctx, { message: "Provide title, message, or status" });
   }
   if (value.reopen && value.message === undefined) {
     addValidationDetail(ctx, {
@@ -217,47 +220,75 @@ const boardTaskUpdateSchema = z.object({
   }
 });
 
-/** The one public schema map used by Board MCP and its canonical router. */
+const boardTaskCreateSchema = createTaskSchema
+  .omit({ idempotencyKey: true, title: true })
+  .extend({
+    companyId: canonicalUuidSchema,
+    title: exactTitle.nullable().optional(),
+  })
+  .strict();
+const exactRuntimeAgentCreateConfigurationSchema = z.intersection(
+  z.object({ name: exactNonEmptyString }).passthrough(),
+  runtimeAgentCreateConfigurationSchema,
+);
+const exactRuntimeAgentUpdateConfigurationSchema = z.intersection(
+  z.object({ name: exactNonEmptyString.optional() }).passthrough(),
+  runtimeAgentUpdateConfigurationSchema,
+);
+
+/** The one public, exact schema map used by authenticated Board MCP. */
 export const boardMcpInputSchemas = {
   list_company_tasks: z.object({
-    companyId,
+    companyId: canonicalUuidSchema,
     filters: taskFiltersSchema.optional(),
     ...page,
   }).strict(),
-  list_sub_tasks: z.object({ companyId, taskId, ...page }).strict(),
-  read_task_comments: z.object({ companyId, taskId, ...page }).strict(),
+  list_sub_tasks: z.object({
+    companyId: canonicalUuidSchema,
+    taskId: canonicalUuidSchema,
+    ...page,
+  }).strict(),
+  read_task_comments: z.object({
+    companyId: canonicalUuidSchema,
+    taskId: canonicalUuidSchema,
+    ...page,
+  }).strict(),
   read_task_agent_run: z.object({
-    companyId,
-    runId,
+    companyId: canonicalUuidSchema,
+    runId: canonicalUuidSchema,
     cursor: page.cursor,
   }).strict(),
-  task_create: createTaskSchema
-    .omit({ idempotencyKey: true })
-    .extend({ companyId })
-    .strict(),
-  task_assign: z.object({ companyId, taskId, ownerAgentId: agentId }).strict(),
+  task_create: boardTaskCreateSchema,
+  task_assign: z.object({
+    companyId: canonicalUuidSchema,
+    taskId: canonicalUuidSchema,
+    ownerAgentId: canonicalUuidSchema,
+  }).strict(),
   task_update: boardTaskUpdateSchema,
   mention_agent: z.object({
-    companyId,
-    taskId,
-    agentId,
+    companyId: canonicalUuidSchema,
+    taskId: canonicalUuidSchema,
+    agentId: canonicalUuidSchema,
     message: nonBlankMessage,
   }).strict(),
   agent_hire: z.object({
-    companyId,
-    configuration: runtimeAgentCreateConfigurationSchema,
+    companyId: canonicalUuidSchema,
+    configuration: exactRuntimeAgentCreateConfigurationSchema,
   }).strict(),
   agent_configure: z.object({
-    companyId,
-    agentId,
-    configuration: runtimeAgentUpdateConfigurationSchema,
+    companyId: canonicalUuidSchema,
+    agentId: canonicalUuidSchema,
+    configuration: exactRuntimeAgentUpdateConfigurationSchema,
   }).strict(),
   list_agents: z.object({
-    companyId,
-    agentId: agentId.optional(),
+    companyId: canonicalUuidSchema,
+    agentId: canonicalUuidSchema.optional(),
     includeTerminated: z.boolean().optional(),
   }).strict(),
-  agent_read: z.object({ companyId, agentId }).strict(),
+  agent_read: z.object({
+    companyId: canonicalUuidSchema,
+    agentId: canonicalUuidSchema,
+  }).strict(),
 } satisfies Record<BoardManagedToolName, z.ZodTypeAny>;
 
 type ManagedToolPayload<Name extends PaperclipManagedToolName> =
@@ -323,7 +354,7 @@ export interface TaskCreateOwnerCatalogEntry extends AgentCatalogEntry {
 
 export interface TaskAssignOwnerCatalog {
   taskId: string;
-  identifier: string | null;
+  identifier: string;
   owners: readonly ({ kind: "self" } | TaskCreateOwnerCatalogEntry)[];
 }
 
@@ -656,7 +687,7 @@ function projectRuntimeTaskAssign(
             agentId: z.literal(owner.id),
           }).strict());
     return z.object({
-      taskId: z.literal(target.taskId).describe(target.identifier ?? target.taskId),
+      taskId: z.literal(target.taskId).describe(target.identifier),
       owner: unionSchema(owners),
     }).strict();
   }));

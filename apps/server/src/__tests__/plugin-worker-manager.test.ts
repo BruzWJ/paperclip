@@ -65,7 +65,7 @@ function completeHostHandlers(
 ): HostClientHandlers {
   return {
     ...createHostClientHandlers({
-      pluginId: "test.plugin",
+      pluginKey: "test.plugin",
       capabilities: [],
       services: {} as HostServices,
     }),
@@ -111,7 +111,7 @@ describe("plugin-worker-manager stderr failure context", () => {
       acknowledgeLog = resolve;
     }));
     const handlers = createHostClientHandlers({
-      pluginId: "test.plugin",
+      pluginKey: "test.plugin",
       capabilities: [],
       services: {
         logger: { log: loggerLog },
@@ -791,7 +791,7 @@ describe("plugin-worker-manager stderr failure context", () => {
 
   it("rejects performAction nested host calls that omit the invocation id", async () => {
     const handlers = createHostClientHandlers({
-      pluginId: "test.plugin",
+      pluginKey: "test.plugin",
       capabilities: ["companies.read"],
       services: {
         companies: {
@@ -840,7 +840,7 @@ describe("plugin-worker-manager stderr failure context", () => {
   it("rejects nested worker host calls that forge an unknown invocation id", async () => {
     const companiesGet = vi.fn(async (params: { companyId: string }) => ({ id: params.companyId }));
     const handlers = createHostClientHandlers({
-      pluginId: "test.plugin",
+      pluginKey: "test.plugin",
       capabilities: ["companies.read"],
       services: {
         companies: {
@@ -890,7 +890,7 @@ describe("plugin-worker-manager stderr failure context", () => {
   it("rejects missing or unknown invocation ids while a company invocation is active", async () => {
     const companiesGet = vi.fn(async () => ({ id: "company-2" }));
     const hostHandlers = createHostClientHandlers({
-      pluginId: "test.plugin",
+      pluginKey: "test.plugin",
       capabilities: ["companies.read"],
       services: {
         companies: {
@@ -1006,7 +1006,7 @@ describe("plugin instance config host calls", () => {
   it("allows instance config without company scope", async () => {
     const configGet = vi.fn(async () => ({ apiKey: "configured" }));
     const handlers = createHostClientHandlers({
-      pluginId: "test.plugin",
+      pluginKey: "test.plugin",
       capabilities: [],
       services: {
         config: { get: configGet },
@@ -1020,7 +1020,7 @@ describe("plugin instance config host calls", () => {
   it("keeps instance config independent from the invocation company", async () => {
     const configGet = vi.fn(async () => ({ apiKey: "configured" }));
     const hostHandlers = createHostClientHandlers({
-      pluginId: "test.plugin",
+      pluginKey: "test.plugin",
       capabilities: [],
       services: {
         config: { get: configGet },

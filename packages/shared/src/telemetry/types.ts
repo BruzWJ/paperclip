@@ -10,12 +10,7 @@ export interface TelemetryState {
   firstSeenVersion: string;
 }
 
-/**
- * Exponential-backoff-with-jitter parameters for the (future) batched-retry
- * sender. Shape mirrors the plugin worker crash-recovery backoff
- * (`apps/server/src/services/plugin-worker-manager.ts`). Consumed by the
- * batched-retry sender; nothing reads it yet.
- */
+/** Exponential-backoff-with-jitter parameters for telemetry batch retries. */
 export interface TelemetryBackoffConfig {
   baseDelayMs: number;
   maxDelayMs: number;
@@ -28,11 +23,7 @@ export interface TelemetryConfig {
   endpoint?: string;
   app?: string;
   schemaVersion?: string;
-  /**
-   * Optional, additive soft caps + backoff. Defaulted centrally in
-   * `resolveTelemetryConfig`; no wire/envelope change and no consumer today —
-   * the batched-retry sender is the first reader.
-   */
+  /** Optional soft caps and retry policy, defaulted by `resolveTelemetryConfig`. */
   maxEventsPerBatch?: number;
   maxBodyBytes?: number;
   maxPendingRetryBatches?: number;
@@ -66,8 +57,7 @@ export interface TelemetryEventEnvelope {
   batchId: string;
 }
 
-export type RegisteredPluginEventName = never;
-export type TelemetryEventName = PaperclipEventName | RegisteredPluginEventName;
+export type TelemetryEventName = PaperclipEventName;
 
 export type TelemetryEventDimensions<K extends TelemetryEventName> =
   K extends keyof EventDimensionsMap ? EventDimensionsMap[K] : never;

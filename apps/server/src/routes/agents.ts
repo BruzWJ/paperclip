@@ -1,19 +1,9 @@
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import {
-  agents as agentsTable,
-  tasks as tasksTable,
-} from "@paperclipai/db";
-import { and, eq } from "drizzle-orm";
-import {
-  agentCompanySkillPinsResponseSchema,
-  agentCompanySkillPinsUpdateSchema,
   agentAdapterConfigurationTestInputSchema,
   agentAdapterRevisionConfigurationSchema,
   agentOperationalConfigurationUpdateSchema,
-  deriveAgentUrlKey,
-  isUuidLike,
-  projectAgentAdapterAcpConfiguration,
   runtimeAgentCreateConfigurationSchema,
   runtimeAgentUpdateConfigurationSchema,
   type AgentAdapterConfigRevision,
@@ -33,15 +23,7 @@ import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import type { OrdinaryTaskRuntime } from "../services/ordinary-task-runtime.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
-import {
-  findServerAdapter,
-  listAdapterModelProfiles,
-  refreshAcpxAdapters,
-} from "../adapters/index.js";
-import { redactEventPayload } from "../redaction.js";
-import { redactCurrentUserValue } from "../log-redaction.js";
-import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
-import { instanceSettingsService } from "../services/instance-settings.js";
+import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, ORG_CHART_STYLES } from "./org-chart-svg.js";
 import { getTelemetryClient } from "../telemetry.js";
 import {
   RuntimeAgentConfigurationConflict,
@@ -50,13 +32,13 @@ import {
 } from "../services/runtime-agent-configuration.js";
 import { createAgentAdapterConfigurationService } from "../services/agent-adapter-config-revisions.js";
 import { createAgentOperationalConfigurationService } from "../services/agent-operational-configuration.js";
+import { assertExactQueryKeys, parseExactOptionalEnum } from "./exact-query.js";
 import {
   adoptPluginManagedAgentFromBoard,
   getPluginManagedAgentBinding,
   terminateAgentForHireRejectionInTransaction,
   terminatePluginManagedAgentFromBoard,
 } from "../services/plugin-managed-agents.js";
-import { createCompanyModelCatalog } from "../services/company-model-catalog.js";
 import type { TaskSessionStore } from "../services/task-session/store.js";
 import type { TaskExecutionCancellationService } from "../services/task-execution-cancellation.js";
 import { resolveInvokableTaskOwnerCatalogFromDb } from "../services/agent-invokability.js";
@@ -78,7 +60,7 @@ export function agentRoutes(
     >;
   },
 ) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const svc = agentService(db);
   const access = accessService(db);
   const approvalsSvc = approvalService(db, {
@@ -87,14 +69,12 @@ export function agentRoutes(
       terminateAgentForHireRejectionInTransaction,
     dispatchRef: options.ordinaryTasks.dispatchRef,
   });
-  const instanceSettings = instanceSettingsService(db);
   const runtimeAgentConfiguration =
     createRuntimeAgentConfigurationService(db);
   const adapterConfigurations =
     createAgentAdapterConfigurationService(db);
   const operationalConfigurations =
     createAgentOperationalConfigurationService(db);
-  const companyModelCatalog = createCompanyModelCatalog();
   const adapterConfigurationDraftTest =
     createAdapterConfigurationDraftTestService();
 
@@ -132,21 +112,14 @@ export function agentRoutes(
   async function filterAgentsForActor<T extends Record<string, unknown>>(
     req: Request,
     rows: T[],
-    fallbackCompanyId?: string,
   ) {
     const decisions = await Promise.all(rows.map((agent) => {
       const id = typeof agent.id === "string" ? agent.id : null;
-      const companyId = typeof agent.companyId === "string" ? agent.companyId : fallbackCompanyId ?? null;
+      const companyId = typeof agent.companyId === "string" ? agent.companyId : null;
       if (!id || !companyId) return Promise.resolve({ allowed: false });
       return decideAgentRead(req, { id, companyId });
     }));
     return rows.filter((_, index) => decisions[index]?.allowed);
-  }
-
-  async function getCurrentUserRedactionOptions() {
-    return {
-      enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
-    };
   }
 
   async function buildAgentAccessState(agent: NonNullable<Awaited<ReturnType<typeof svc.getById>>>) {
@@ -173,9 +146,7 @@ export function agentRoutes(
     ]);
 
     return {
-      ...(options?.restricted
-        ? redactForRestrictedAgentView(agent)
-        : agent),
+      ...agent,
       chainOfCommand,
       access: accessState,
       pluginManagement,
@@ -229,7 +200,7 @@ export function agentRoutes(
   }
 
   async function assertCanReadConfigurations(req: Request, companyId: string) {
-    // Reading agent configurations, skills, and config revisions is a
+    // Reading agent configurations and config revisions is a
     // read-only operation available to any board (human) member of the
     // company. Responses go through `redactAgentConfiguration` so secrets
     // are never exposed. Mutations still gate on agents:create or
@@ -245,19 +216,6 @@ export function agentRoutes(
     if (!agent) return null;
     await assertBoardCanManageAgentsForCompany(req, agent.companyId);
     return agent;
-  }
-
-  async function actorCanReadConfigurationsForCompany(req: Request, companyId: string) {
-    // Mirrors assertCanReadConfigurations but returns a boolean instead of
-    // throwing. Board actors only need company access; agent actors must pass
-    // the agent configuration read grant ladder so peer agents cannot snoop
-    // each others' configurations.
-    try {
-      assertCompanyAccess(req, companyId);
-    } catch {
-      return false;
-    }
-    return req.actor.type === "board";
   }
 
   async function assertCanUpdateAgent(req: Request, targetAgent: { id: string; companyId: string }) {
@@ -279,112 +237,6 @@ export function agentRoutes(
     await assertCanReadConfigurations(req, targetAgent.companyId);
   }
 
-  function assertKnownAdapterType(type: string | null | undefined): string {
-    if (
-      typeof type !== "string"
-      || type.length === 0
-      || type !== type.trim()
-    ) {
-      throw unprocessable("Adapter type must be an exact non-blank string");
-    }
-    if (!findServerAdapter(type)) {
-      throw unprocessable(`Unknown adapter type: ${type}`);
-    }
-    return type;
-  }
-
-  async function resolveCompanyIdForAgentReference(req: Request): Promise<string | null> {
-    const companyIdQuery = req.query.companyId;
-    const requestedCompanyId =
-      typeof companyIdQuery === "string" && companyIdQuery.trim().length > 0
-        ? companyIdQuery.trim()
-        : null;
-    if (requestedCompanyId) {
-      assertCompanyAccess(req, requestedCompanyId);
-      return requestedCompanyId;
-    }
-    return null;
-  }
-
-  async function normalizeAgentReference(req: Request, rawId: string): Promise<string> {
-    const raw = rawId.trim();
-    if (isUuidLike(raw)) return raw;
-
-    const companyId = await resolveCompanyIdForAgentReference(req);
-    if (!companyId) {
-      throw unprocessable("Agent shortname lookup requires companyId query parameter");
-    }
-
-    const resolved = await svc.resolveByReference(companyId, raw);
-    if (resolved.ambiguous) {
-      throw conflict("Agent shortname is ambiguous in this company. Use the agent ID.");
-    }
-    if (!resolved.agent) {
-      throw notFound("Agent not found");
-    }
-    return resolved.agent.id;
-  }
-
-  function redactForRestrictedAgentView(agent: Awaited<ReturnType<typeof svc.getById>>) {
-    if (!agent) return null;
-    return {
-      ...agent,
-      adapterConfig: agent.adapterConfig === null ? null : {},
-      runtimeConfig: {},
-    };
-  }
-
-  function redactAgentConfiguration(agent: Awaited<ReturnType<typeof svc.getById>>) {
-    if (!agent) return null;
-    return {
-      id: agent.id,
-      companyId: agent.companyId,
-      name: agent.name,
-      title: agent.title,
-      instruction: agent.instruction,
-      status: agent.status,
-      reportsTo: agent.reportsTo,
-      adapterType: agent.adapterType,
-      adapterConfig: redactEventPayload(agent.adapterConfig),
-      runtimeConfig: redactEventPayload(agent.runtimeConfig),
-      updatedAt: agent.updatedAt,
-    };
-  }
-
-  function redactRevisionSnapshot(snapshot: unknown): Record<string, unknown> {
-    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return {};
-    const record = snapshot as Record<string, unknown>;
-    return {
-      ...record,
-      adapterConfig:
-        typeof record.adapterConfig === "object" &&
-        record.adapterConfig !== null
-          ? redactEventPayload(
-              record.adapterConfig as Record<string, unknown>,
-            )
-          : null,
-      runtimeConfig: redactEventPayload(
-        typeof record.runtimeConfig === "object" && record.runtimeConfig !== null
-          ? (record.runtimeConfig as Record<string, unknown>)
-          : {},
-      ),
-      metadata:
-        typeof record.metadata === "object" && record.metadata !== null
-          ? redactEventPayload(record.metadata as Record<string, unknown>)
-          : record.metadata ?? null,
-    };
-  }
-
-  function redactConfigRevision(
-    revision: Record<string, unknown> & { beforeConfig: unknown; afterConfig: unknown },
-  ) {
-    return {
-      ...revision,
-      beforeConfig: redactRevisionSnapshot(revision.beforeConfig),
-      afterConfig: redactRevisionSnapshot(revision.afterConfig),
-    };
-  }
-
   function redactAdapterConfigRevision(
     revision: Awaited<
       ReturnType<typeof adapterConfigurations.createRevision>
@@ -395,16 +247,7 @@ export function agentRoutes(
       companyId: revision.companyId,
       agentId: revision.agentId,
       revisionNumber: revision.revisionNumber,
-      adapterType: revision.adapterType,
-      implementationIdentity: revision.implementationIdentity,
-      adapterConfigSchemaVersion: revision.adapterConfigSchemaVersion,
-      normalizedConfig: redactEventPayload(
-        revision.normalizedConfig,
-      ) ?? {},
-      runtimeConfig: redactEventPayload(revision.runtimeConfig) ?? {},
-      acpConfiguration: projectAgentAdapterAcpConfiguration(
-        revision.acpConfiguration,
-      ),
+      acpConfiguration: revision.acpConfiguration,
       digest: revision.digest,
       parentRevisionId: revision.parentRevisionId,
       createdByAgentId: revision.createdByAgentId,
@@ -425,37 +268,6 @@ export function agentRoutes(
       reports,
     };
   }
-
-  router.param("id", async (req, _res, next, rawId) => {
-    try {
-      req.params.id = await normalizeAgentReference(req, String(rawId));
-      next();
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.get("/companies/:companyId/adapters/:type/models", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    await refreshAcpxAdapters();
-    const type = assertKnownAdapterType(req.params.type as string);
-    res.json(
-      await companyModelCatalog.listModels({
-        companyId,
-        adapterType: type,
-      }),
-    );
-  });
-
-  router.get("/companies/:companyId/adapters/:type/model-profiles", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    await refreshAcpxAdapters();
-    const type = assertKnownAdapterType(req.params.type as string);
-    const profiles = await listAdapterModelProfiles(type);
-    res.json(profiles);
-  });
 
   router.post(
     "/companies/:companyId/adapters/:type/test-configuration",
@@ -483,12 +295,7 @@ export function agentRoutes(
       return;
     }
     const result = await filterAgentsForActor(req, await svc.list(companyId));
-    const canReadConfigs = await actorCanReadConfigurationsForCompany(req, companyId);
-    if (canReadConfigs) {
-      res.json(result);
-      return;
-    }
-    res.json(result.map((agent) => redactForRestrictedAgentView(agent)));
+    res.json(result);
   });
 
   router.get("/companies/:companyId/task-owner-catalog", async (req, res) => {
@@ -514,7 +321,7 @@ export function agentRoutes(
   router.get("/companies/:companyId/org", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const tree = await filterAgentsForActor(req, await svc.orgForCompany(companyId), companyId);
+    const tree = await filterAgentsForActor(req, await svc.orgForCompany(companyId));
     const leanTree = tree.map((node) => toLeanOrgNode(node as Record<string, unknown>));
     res.json(leanTree);
   });
@@ -522,8 +329,9 @@ export function agentRoutes(
   router.get("/companies/:companyId/org.svg", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const style = (ORG_CHART_STYLES.includes(req.query.style as OrgChartStyle) ? req.query.style : "warmth") as OrgChartStyle;
-    const tree = await filterAgentsForActor(req, await svc.orgForCompany(companyId), companyId);
+    assertExactQueryKeys(req.query, ["style"]);
+    const style = parseExactOptionalEnum(req.query.style, "style", ORG_CHART_STYLES) ?? "warmth";
+    const tree = await filterAgentsForActor(req, await svc.orgForCompany(companyId));
     const leanTree = tree.map((node) => toLeanOrgNode(node as Record<string, unknown>));
     const svg = renderOrgChartSvg(leanTree as unknown as OrgNode[], style);
     res.setHeader("Content-Type", "image/svg+xml");
@@ -534,8 +342,9 @@ export function agentRoutes(
   router.get("/companies/:companyId/org.png", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const style = (ORG_CHART_STYLES.includes(req.query.style as OrgChartStyle) ? req.query.style : "warmth") as OrgChartStyle;
-    const tree = await filterAgentsForActor(req, await svc.orgForCompany(companyId), companyId);
+    assertExactQueryKeys(req.query, ["style"]);
+    const style = parseExactOptionalEnum(req.query.style, "style", ORG_CHART_STYLES) ?? "warmth";
+    const tree = await filterAgentsForActor(req, await svc.orgForCompany(companyId));
     const leanTree = tree.map((node) => toLeanOrgNode(node as Record<string, unknown>));
     const png = await renderOrgChartPng(leanTree as unknown as OrgNode[], style);
     res.setHeader("Content-Type", "image/png");
@@ -543,25 +352,14 @@ export function agentRoutes(
     res.send(png);
   });
 
-  router.get("/companies/:companyId/agent-configurations", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    await assertCanReadConfigurations(req, companyId);
-    const rows = await svc.list(companyId);
-    res.json(rows.map((row) => redactAgentConfiguration(row)));
-  });
-
   router.get("/agents/:id", async (req, res) => {
     const id = req.params.id as string;
     const agent = await getAccessibleResource(req, res, svc.getById(id), "Agent not found");
     if (!agent) return;
     if (!(await assertAgentReadAllowed(req, res, agent))) return;
-    const canReadSensitiveDetail =
-      await actorCanReadConfigurationsForCompany(req, agent.companyId);
-    if (!canReadSensitiveDetail) {
-      res.json(await buildAgentDetail(agent, { restricted: true }));
-      return;
-    }
-    res.json(await buildAgentDetail(agent));
+    res.json(await buildAgentDetail(agent, {
+      restricted: req.actor.type !== "board",
+    }));
   });
 
   router.get("/agents/:id/runtime-state", async (req, res) => {
@@ -575,46 +373,6 @@ export function agentRoutes(
     if (!agent) return;
     if (!(await assertAgentReadAllowed(req, res, agent))) return;
     res.json(await svc.getRuntimeState(agent.id));
-  });
-
-  router.get("/agents/:id/configuration", async (req, res) => {
-    const id = req.params.id as string;
-    const agent = await svc.getById(id);
-    if (!agent) {
-      res.status(404).json({ error: "Agent not found" });
-      return;
-    }
-    await assertCanReadConfigurations(req, agent.companyId);
-    res.json(redactAgentConfiguration(agent));
-  });
-
-  router.get("/agents/:id/config-revisions", async (req, res) => {
-    const id = req.params.id as string;
-    const agent = await svc.getById(id);
-    if (!agent) {
-      res.status(404).json({ error: "Agent not found" });
-      return;
-    }
-    await assertCanReadConfigurations(req, agent.companyId);
-    const revisions = await svc.listConfigRevisions(id);
-    res.json(revisions.map((revision) => redactConfigRevision(revision)));
-  });
-
-  router.get("/agents/:id/config-revisions/:revisionId", async (req, res) => {
-    const id = req.params.id as string;
-    const revisionId = req.params.revisionId as string;
-    const agent = await svc.getById(id);
-    if (!agent) {
-      res.status(404).json({ error: "Agent not found" });
-      return;
-    }
-    await assertCanReadConfigurations(req, agent.companyId);
-    const revision = await svc.getConfigRevision(id, revisionId);
-    if (!revision) {
-      res.status(404).json({ error: "Revision not found" });
-      return;
-    }
-    res.json(redactConfigRevision(revision));
   });
 
   router.post(
@@ -776,77 +534,6 @@ export function agentRoutes(
     },
   );
 
-  router.get(
-    "/agents/:id/company-skill-pins",
-    async (req, res) => {
-      assertBoard(req);
-      const id = req.params.id as string;
-      const existing = await getAccessibleResource(
-        req,
-        res,
-        svc.getById(id),
-        "Agent not found",
-      );
-      if (!existing) return;
-      await assertCanReadAgent(req, existing);
-      const pins = await adapterConfigurations.getCompanySkillPins({
-        companyId: existing.companyId,
-        agentId: existing.id,
-      });
-      res.json(agentCompanySkillPinsResponseSchema.parse(pins));
-    },
-  );
-
-  router.put(
-    "/agents/:id/company-skill-pins",
-    validate(agentCompanySkillPinsUpdateSchema),
-    async (req, res) => {
-      assertBoard(req);
-      const id = req.params.id as string;
-      const existing = await getAccessibleResource(
-        req,
-        res,
-        svc.getById(id),
-        "Agent not found",
-      );
-      if (!existing) return;
-      await assertCanUpdateAgent(req, existing);
-      await assertNotPluginManagedTriage(existing);
-
-      const result =
-        await adapterConfigurations.replaceCompanySkillPins({
-          companyId: existing.companyId,
-          agentId: existing.id,
-          update: req.body,
-          actor: {
-            type: "user",
-            userId: req.actor.userId,
-          },
-        });
-
-      await logActivity(db, {
-        companyId: existing.companyId,
-        actorType: "user",
-        actorId: req.actor.userId,
-        action: "agent.company_skill_pins_updated",
-        entityType: "agent_adapter_config_revision",
-        entityId: result.revision.id,
-        details: {
-          targetAgentId: existing.id,
-          revisionNumber: result.revision.revisionNumber,
-          appended: result.appended,
-          selectedSkillCount: result.entries.length,
-        },
-      });
-
-      res.json(
-        agentCompanySkillPinsResponseSchema.parse({
-          entries: result.entries,
-        }),
-      );
-    },
-  );
-
   router.post(
     "/agents/:id/adapter-config-revisions",
     validate(agentAdapterRevisionConfigurationSchema),
@@ -882,7 +569,8 @@ export function agentRoutes(
         entityId: result.revision.id,
         details: {
           targetAgentId: existing.id,
-          adapterType: result.revision.adapterType,
+          adapterType:
+            result.revision.acpConfiguration.launchProfile.registryName,
           revisionNumber: result.revision.revisionNumber,
           appended: result.appended,
         },
@@ -892,13 +580,6 @@ export function agentRoutes(
         revision: redactAdapterConfigRevision(result.revision),
         current: {
           agentId: result.current.id,
-          adapterType: result.current.adapterType,
-          adapterConfig: redactEventPayload(
-            result.current.adapterConfig,
-          ),
-          runtimeConfig: redactEventPayload(
-            result.current.runtimeConfig,
-          ),
           currentAdapterConfigRevisionId:
             result.current.currentAdapterConfigRevisionId,
           updatedAt: result.current.updatedAt,

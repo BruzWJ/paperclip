@@ -21,6 +21,7 @@ vi.mock("../client/board-auth.js", () => ({
 }));
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
+const BOARD_KEY_ID = "33333333-3333-4333-8333-333333333333";
 const API_BASE = "http://127.0.0.1:3197";
 
 function createProgram(): Command {
@@ -31,12 +32,18 @@ function createProgram(): Command {
   return program;
 }
 
-function jsonResponse(body: unknown = { ok: true }, init: ResponseInit = { status: 200 }): Response {
+function jsonResponse(
+  body: unknown = { ok: true },
+  init: ResponseInit = { status: 200 },
+): Response {
   return new Response(JSON.stringify(body), init);
 }
 
 function createTempContextPath() {
-  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-connect-test-")), "context.json");
+  return path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-connect-test-")),
+    "context.json",
+  );
 }
 
 function readContext(filePath: string) {
@@ -53,8 +60,14 @@ describe("connect command", () => {
   beforeEach(() => {
     originalStdinIsTTY = process.stdin.isTTY;
     originalStdoutIsTTY = process.stdout.isTTY;
-    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
-    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+    Object.defineProperty(process.stdin, "isTTY", {
+      value: true,
+      configurable: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      value: true,
+      configurable: true,
+    });
     vi.restoreAllMocks();
     vi.mocked(loginBoardCli).mockResolvedValue({
       token: "board-login-token",
@@ -65,8 +78,14 @@ describe("connect command", () => {
   });
 
   afterEach(() => {
-    Object.defineProperty(process.stdin, "isTTY", { value: originalStdinIsTTY, configurable: true });
-    Object.defineProperty(process.stdout, "isTTY", { value: originalStdoutIsTTY, configurable: true });
+    Object.defineProperty(process.stdin, "isTTY", {
+      value: originalStdinIsTTY,
+      configurable: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      value: originalStdoutIsTTY,
+      configurable: true,
+    });
     vi.restoreAllMocks();
   });
 
@@ -74,44 +93,60 @@ describe("connect command", () => {
     const contextPath = createTempContextPath();
     vi.mocked(prompts.text).mockResolvedValue(API_BASE);
     vi.mocked(prompts.select).mockResolvedValue(COMPANY_ID);
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(String(input));
-      if (url.pathname === "/api/health") return jsonResponse({ status: "ok" });
-      if (url.pathname === "/api/companies") {
-        return jsonResponse([{ id: COMPANY_ID, name: "Connect Co" }]);
-      }
-      if (url.pathname === "/api/board-api-keys" && init?.method === "POST") {
-        return jsonResponse({
-          id: "board-key-1",
-          name: "connect-board-token",
-          token: "pcp_board_created",
-          createdAt: "2026-05-24T12:00:00.000Z",
-          expiresAt: null,
-        });
-      }
-      return jsonResponse({ error: `Unexpected ${init?.method ?? "GET"} ${url.pathname}` }, { status: 500 });
-    });
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/api/health")
+          return jsonResponse({ status: "ok" });
+        if (url.pathname === "/api/companies") {
+          return jsonResponse([{ id: COMPANY_ID, name: "Connect Co" }]);
+        }
+        if (url.pathname === "/api/board-api-keys" && init?.method === "POST") {
+          return jsonResponse({
+            id: BOARD_KEY_ID,
+            name: "connect-board-token",
+            token: "pcp_board_created",
+            createdAt: "2026-05-24T12:00:00.000Z",
+            expiresAt: null,
+          });
+        }
+        return jsonResponse(
+          { error: `Unexpected ${init?.method ?? "GET"} ${url.pathname}` },
+          { status: 500 },
+        );
+      },
+    );
     vi.stubGlobal("fetch", fetchMock);
 
-    await createProgram().parseAsync([
-      "connect",
-      "--profile",
-      "cli-board",
-      "--token-name",
-      "connect-board-token",
-      "--context",
-      contextPath,
-      "--api-base",
-      API_BASE,
-      "--json",
-    ], { from: "user" });
+    await createProgram().parseAsync(
+      [
+        "connect",
+        "--profile",
+        "cli-board",
+        "--token-name",
+        "connect-board-token",
+        "--context",
+        contextPath,
+        "--api-base",
+        API_BASE,
+        "--json",
+      ],
+      { from: "user" },
+    );
 
-    expect(loginBoardCli).toHaveBeenCalledWith(expect.objectContaining({
-      apiBase: API_BASE,
-      requestedAccess: "board",
-      command: "paperclipai connect",
-    }));
-    expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", new URL(String(call[0])).pathname])).toEqual([
+    expect(loginBoardCli).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiBase: API_BASE,
+        requestedAccess: "board",
+        command: "paperclipai connect",
+      }),
+    );
+    expect(
+      fetchMock.mock.calls.map((call) => [
+        call[1]?.method ?? "GET",
+        new URL(String(call[0])).pathname,
+      ]),
+    ).toEqual([
       ["GET", "/api/health"],
       ["GET", "/api/companies"],
       ["POST", "/api/board-api-keys"],
@@ -122,11 +157,10 @@ describe("connect command", () => {
         "cli-board": {
           apiBase: API_BASE,
           companyId: COMPANY_ID,
-          tokenId: "board-key-1",
+          tokenId: BOARD_KEY_ID,
           tokenName: "connect-board-token",
         },
       },
     });
   });
-
 });

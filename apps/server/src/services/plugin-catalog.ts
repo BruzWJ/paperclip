@@ -82,8 +82,10 @@ async function pathIsFileOrDirectory(filePath: string): Promise<boolean> {
 }
 
 async function isSourceCheckout(repoRoot: string): Promise<boolean> {
-  return await pathIsFileOrDirectory(path.join(repoRoot, ".git"))
-    && await pathIsFile(path.join(repoRoot, "pnpm-workspace.yaml"));
+  return (
+    (await pathIsFileOrDirectory(path.join(repoRoot, ".git"))) &&
+    (await pathIsFile(path.join(repoRoot, "pnpm-workspace.yaml")))
+  );
 }
 
 async function findPackageJsonFiles(pluginRoot: string): Promise<string[]> {
@@ -93,8 +95,8 @@ async function findPackageJsonFiles(pluginRoot: string): Promise<string[]> {
     const entries = await readdir(directory, { withFileTypes: true });
     for (const entry of entries) {
       if (
-        entry.name.startsWith(".")
-        || SKIPPED_DIRECTORY_NAMES.has(entry.name)
+        entry.name.startsWith(".") ||
+        SKIPPED_DIRECTORY_NAMES.has(entry.name)
       ) {
         continue;
       }
@@ -121,7 +123,10 @@ async function sourceManifestMetadata(
   if (path.isAbsolute(sourceDeclaration)) return {};
 
   const sourcePath = path.resolve(packageRoot, sourceDeclaration);
-  if (!isPathContained(packageRoot, sourcePath) || !(await pathIsFile(sourcePath))) {
+  if (
+    !isPathContained(packageRoot, sourcePath) ||
+    !(await pathIsFile(sourcePath))
+  ) {
     return {};
   }
 
@@ -145,8 +150,10 @@ async function declaredManifestIsBuilt(
   if (!(await pathIsFile(manifestPath))) return false;
   try {
     const canonicalManifest = await realpath(manifestPath);
-    return isPathContained(packageRoot, canonicalManifest)
-      && (await stat(canonicalManifest)).isFile();
+    return (
+      isPathContained(packageRoot, canonicalManifest) &&
+      (await stat(canonicalManifest)).isFile()
+    );
   } catch {
     return false;
   }
@@ -159,7 +166,10 @@ async function inspectPackage(
 ): Promise<CatalogPackage | null> {
   let packageJson: Record<string, unknown>;
   try {
-    packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as Record<string, unknown>;
+    packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
   } catch {
     return null;
   }
@@ -168,11 +178,11 @@ async function inspectPackage(
   const version = nonblankString(packageJson.version);
   const pluginDeclaration = packageJson.paperclipPlugin;
   if (
-    !packageNameResult.success
-    || !version
-    || !pluginDeclaration
-    || typeof pluginDeclaration !== "object"
-    || Array.isArray(pluginDeclaration)
+    !packageNameResult.success ||
+    !version ||
+    !pluginDeclaration ||
+    typeof pluginDeclaration !== "object" ||
+    Array.isArray(pluginDeclaration)
   ) {
     return null;
   }
@@ -182,22 +192,32 @@ async function inspectPackage(
   );
   if (!manifestDeclaration || path.isAbsolute(manifestDeclaration)) return null;
 
-  const packageRoot = await realpath(path.dirname(packageJsonPath)).catch(() => null);
+  const packageRoot = await realpath(path.dirname(packageJsonPath)).catch(
+    () => null,
+  );
   if (!packageRoot || !isPathContained(pluginRoot, packageRoot)) return null;
   const manifestPath = path.resolve(packageRoot, manifestDeclaration);
   if (!isPathContained(packageRoot, manifestPath)) return null;
 
-  const metadata = await sourceManifestMetadata(packageRoot, manifestDeclaration);
-  const relativePath = path.relative(repoRoot, packageRoot).split(path.sep).join("/");
-  const description = metadata.description
-    ?? nonblankString(packageJson.description)
-    ?? `Local Paperclip plugin from ${relativePath}.`;
+  const metadata = await sourceManifestMetadata(
+    packageRoot,
+    manifestDeclaration,
+  );
+  const relativePath = path
+    .relative(repoRoot, packageRoot)
+    .split(path.sep)
+    .join("/");
+  const description =
+    metadata.description ??
+    nonblankString(packageJson.description) ??
+    `Local Paperclip plugin from ${relativePath}.`;
 
   return {
     entry: {
       packageName: packageNameResult.data,
       version,
-      displayName: metadata.displayName ?? titleCasePluginName(packageNameResult.data),
+      displayName:
+        metadata.displayName ?? titleCasePluginName(packageNameResult.data),
       description,
       relativePath,
       kind: relativePath.startsWith("packages/plugins/examples/")
@@ -210,19 +230,26 @@ async function inspectPackage(
   };
 }
 
-export function pluginCatalogService(options: PluginCatalogServiceOptions = {}) {
+export function pluginCatalogService(
+  options: PluginCatalogServiceOptions = {},
+) {
   const configuredRepoRoot = path.resolve(options.repoRoot ?? defaultRepoRoot);
   const requireCheckoutMarkers = options.repoRoot === undefined;
-  const runBuild: BuildRunner = options.runBuild ?? (async (file, args, execOptions) => {
-    await execFileAsync(file, [...args], execOptions);
-  });
+  const runBuild: BuildRunner =
+    options.runBuild ??
+    (async (file, args, execOptions) => {
+      await execFileAsync(file, [...args], execOptions);
+    });
   const operationTails = new Map<string, Promise<void>>();
 
   async function resolveRoots(): Promise<{
     repoRoot: string;
     pluginRoot: string;
   } | null> {
-    if (requireCheckoutMarkers && !(await isSourceCheckout(configuredRepoRoot))) {
+    if (
+      requireCheckoutMarkers &&
+      !(await isSourceCheckout(configuredRepoRoot))
+    ) {
       return null;
     }
     const repoRoot = await realpath(configuredRepoRoot).catch(() => null);
@@ -231,7 +258,9 @@ export function pluginCatalogService(options: PluginCatalogServiceOptions = {}) 
         "Plugin catalog is unavailable in this source checkout",
       );
     }
-    const pluginRoot = await realpath(path.join(repoRoot, "packages", "plugins")).catch(() => null);
+    const pluginRoot = await realpath(
+      path.join(repoRoot, "packages", "plugins"),
+    ).catch(() => null);
     if (!pluginRoot || !isPathContained(repoRoot, pluginRoot)) {
       throw new PluginCatalogOperationError(
         "Plugin catalog is unavailable in this source checkout",
@@ -255,9 +284,12 @@ export function pluginCatalogService(options: PluginCatalogServiceOptions = {}) 
 
     const inspected = await Promise.all(
       packageJsonFiles.map((packageJsonPath) =>
-        inspectPackage(roots.repoRoot, roots.pluginRoot, packageJsonPath)),
+        inspectPackage(roots.repoRoot, roots.pluginRoot, packageJsonPath),
+      ),
     );
-    const packages = inspected.filter((entry): entry is CatalogPackage => entry !== null);
+    const packages = inspected.filter(
+      (entry): entry is CatalogPackage => entry !== null,
+    );
     const nameCounts = new Map<string, number>();
     for (const pluginPackage of packages) {
       nameCounts.set(
@@ -267,17 +299,25 @@ export function pluginCatalogService(options: PluginCatalogServiceOptions = {}) 
     }
 
     return packages
-      .filter((pluginPackage) => nameCounts.get(pluginPackage.entry.packageName) === 1)
+      .filter(
+        (pluginPackage) =>
+          nameCounts.get(pluginPackage.entry.packageName) === 1,
+      )
       .sort((left, right) => {
         if (left.entry.kind !== right.entry.kind) {
           return left.entry.kind === "first_party" ? -1 : 1;
         }
-        return left.entry.displayName.localeCompare(right.entry.displayName)
-          || left.entry.packageName.localeCompare(right.entry.packageName);
+        return (
+          left.entry.displayName.localeCompare(right.entry.displayName) ||
+          left.entry.packageName.localeCompare(right.entry.packageName)
+        );
       });
   }
 
-  async function serialize<T>(packageName: string, operation: () => Promise<T>): Promise<T> {
+  async function serialize<T>(
+    packageName: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
     const previous = operationTails.get(packageName) ?? Promise.resolve();
     let release!: () => void;
     const current = new Promise<void>((resolve) => {
@@ -305,65 +345,71 @@ export function pluginCatalogService(options: PluginCatalogServiceOptions = {}) 
         isInstalled(): Promise<boolean>;
         install(packageRoot: string): Promise<T>;
       },
-    ): Promise<T> => serialize(packageName, async () => {
-      const selected = (await discover()).find(
-        (entry) => entry.entry.packageName === packageName,
-      );
-      if (!selected) {
-        throw new PluginCatalogOperationError(`Catalog plugin not found: ${packageName}`);
-      }
-
-      let alreadyInstalled: boolean;
-      try {
-        alreadyInstalled = await dependencies.isInstalled();
-      } catch {
-        throw new PluginCatalogOperationError(
-          `Could not verify catalog plugin installation state: ${packageName}`,
+    ): Promise<T> =>
+      serialize(packageName, async () => {
+        const selected = (await discover()).find(
+          (entry) => entry.entry.packageName === packageName,
         );
-      }
-      if (alreadyInstalled) {
-        throw new PluginCatalogOperationError(
-          `Plugin package is already installed: ${packageName}`,
-        );
-      }
+        if (!selected) {
+          throw new PluginCatalogOperationError(
+            `Catalog plugin not found: ${packageName}`,
+          );
+        }
 
-      const roots = await resolveRoots();
-      if (!roots) {
-        throw new PluginCatalogOperationError(`Catalog plugin not found: ${packageName}`);
-      }
-      try {
-        await runBuild(
-          "pnpm",
-          ["--filter", packageName, "build"],
-          { cwd: roots.repoRoot, timeout: PLUGIN_BUILD_TIMEOUT_MS },
-        );
-      } catch {
-        throw new PluginCatalogOperationError(`Failed to build catalog plugin: ${packageName}`);
-      }
+        let alreadyInstalled: boolean;
+        try {
+          alreadyInstalled = await dependencies.isInstalled();
+        } catch {
+          throw new PluginCatalogOperationError(
+            `Could not verify catalog plugin installation state: ${packageName}`,
+          );
+        }
+        if (alreadyInstalled) {
+          throw new PluginCatalogOperationError(
+            `Plugin package is already installed: ${packageName}`,
+          );
+        }
 
-      const rebuilt = await inspectPackage(
-        roots.repoRoot,
-        roots.pluginRoot,
-        selected.packageJsonPath,
-      );
-      if (
-        !rebuilt
-        || rebuilt.entry.packageName !== packageName
-        || rebuilt.entry.relativePath !== selected.entry.relativePath
-        || !rebuilt.entry.built
-      ) {
-        throw new PluginCatalogOperationError(
-          `Catalog plugin build did not produce its declared manifest: ${packageName}`,
-        );
-      }
+        const roots = await resolveRoots();
+        if (!roots) {
+          throw new PluginCatalogOperationError(
+            `Catalog plugin not found: ${packageName}`,
+          );
+        }
+        try {
+          await runBuild("pnpm", ["--filter", packageName, "build"], {
+            cwd: roots.repoRoot,
+            timeout: PLUGIN_BUILD_TIMEOUT_MS,
+          });
+        } catch {
+          throw new PluginCatalogOperationError(
+            `Failed to build catalog plugin: ${packageName}`,
+          );
+        }
 
-      try {
-        return await dependencies.install(rebuilt.packageRoot);
-      } catch {
-        throw new PluginCatalogOperationError(`Failed to install catalog plugin: ${packageName}`);
-      }
-    }),
+        const rebuilt = await inspectPackage(
+          roots.repoRoot,
+          roots.pluginRoot,
+          selected.packageJsonPath,
+        );
+        if (
+          !rebuilt ||
+          rebuilt.entry.packageName !== packageName ||
+          rebuilt.entry.relativePath !== selected.entry.relativePath ||
+          !rebuilt.entry.built
+        ) {
+          throw new PluginCatalogOperationError(
+            `Catalog plugin build did not produce its declared manifest: ${packageName}`,
+          );
+        }
+
+        try {
+          return await dependencies.install(rebuilt.packageRoot);
+        } catch {
+          throw new PluginCatalogOperationError(
+            `Failed to install catalog plugin: ${packageName}`,
+          );
+        }
+      }),
   };
 }
-
-export type PluginCatalogService = ReturnType<typeof pluginCatalogService>;

@@ -22,6 +22,7 @@ import { notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
 import { routineService } from "./routines.js";
 import type { OrdinaryTaskRuntime } from "./ordinary-task-runtime.js";
+import type { SecretsRuntimeConfig } from "../secrets/types.js";
 
 const MANAGED_ROUTINE_RESOURCE_KIND = "routine";
 
@@ -29,6 +30,7 @@ interface PluginManagedRoutineServiceOptions {
   pluginId: string;
   manifest: import("@paperclipai/shared").PaperclipPluginManifestV1;
   ordinaryTasks: OrdinaryTaskRuntime;
+  secretsRuntime: SecretsRuntimeConfig;
 }
 
 interface RoutineOverrides {
@@ -61,10 +63,14 @@ function normalizeRef(
 ) {
   if (!ref) return null;
   if (ref.resourceKind !== resourceKind) {
-    throw unprocessable(`Managed routine ${resourceKind} ref must target ${resourceKind}`);
+    throw unprocessable(
+      `Managed routine ${resourceKind} ref must target ${resourceKind}`,
+    );
   }
   if (ref.pluginKey && ref.pluginKey !== pluginKey) {
-    throw unprocessable("Managed routine refs must target the declaring plugin");
+    throw unprocessable(
+      "Managed routine refs must target the declaring plugin",
+    );
   }
   return { ...ref, pluginKey };
 }
@@ -92,10 +98,14 @@ function managedByPlugin(row: {
   };
 }
 
-function triggerInput(trigger: NonNullable<PluginManagedRoutineDeclaration["triggers"]>[number]): CreateRoutineTrigger {
+function triggerInput(
+  trigger: NonNullable<PluginManagedRoutineDeclaration["triggers"]>[number],
+): CreateRoutineTrigger {
   if (trigger.kind === "schedule") {
     if (!trigger.cronExpression) {
-      throw unprocessable("Managed schedule routine triggers require cronExpression");
+      throw unprocessable(
+        "Managed schedule routine triggers require cronExpression",
+      );
     }
     return {
       kind: "schedule",
@@ -110,7 +120,10 @@ function triggerInput(trigger: NonNullable<PluginManagedRoutineDeclaration["trig
       kind: "webhook",
       label: trigger.label ?? null,
       enabled: trigger.enabled ?? true,
-      signingMode: (trigger.signingMode ?? "bearer") as Extract<CreateRoutineTrigger, { kind: "webhook" }>["signingMode"],
+      signingMode: (trigger.signingMode ?? "bearer") as Extract<
+        CreateRoutineTrigger,
+        { kind: "webhook" }
+      >["signingMode"],
       replayWindowSec: trigger.replayWindowSec ?? 300,
     };
   }
@@ -128,10 +141,13 @@ export function pluginManagedRoutineService(
   const pluginKey = options.manifest.id;
   const routinesSvc = routineService(db, {
     ordinaryTasks: options.ordinaryTasks,
+    secretsRuntime: options.secretsRuntime,
   });
 
   function declarationFor(routineKey: string) {
-    const declaration = options.manifest.routines?.find((routine) => routine.routineKey === routineKey);
+    const declaration = options.manifest.routines?.find(
+      (routine) => routine.routineKey === routineKey,
+    );
     if (!declaration) {
       throw notFound(`Managed routine declaration not found: ${routineKey}`);
     }
@@ -159,7 +175,10 @@ export function pluginManagedRoutineService(
         and(
           eq(pluginManagedResources.companyId, companyId),
           eq(pluginManagedResources.pluginId, options.pluginId),
-          eq(pluginManagedResources.resourceKind, MANAGED_ROUTINE_RESOURCE_KIND),
+          eq(
+            pluginManagedResources.resourceKind,
+            MANAGED_ROUTINE_RESOURCE_KIND,
+          ),
           eq(pluginManagedResources.resourceKey, routineKey),
         ),
       )
@@ -200,13 +219,21 @@ export function pluginManagedRoutineService(
       .then((rows) => rows[0]);
   }
 
-  async function getRoutineWithManagedBy(companyId: string, declaration: PluginManagedRoutineDeclaration) {
+  async function getRoutineWithManagedBy(
+    companyId: string,
+    declaration: PluginManagedRoutineDeclaration,
+  ) {
     const binding = await getBinding(companyId, declaration.routineKey);
     if (!binding) return null;
     const routine = await db
       .select()
       .from(routines)
-      .where(and(eq(routines.companyId, companyId), eq(routines.id, binding.resourceId)))
+      .where(
+        and(
+          eq(routines.companyId, companyId),
+          eq(routines.id, binding.resourceId),
+        ),
+      )
       .then((rows) => rows[0] ?? null);
     if (!routine) return null;
     return {
@@ -221,11 +248,17 @@ export function pluginManagedRoutineService(
     overrides?: RoutineOverrides,
   ) {
     if (overrides?.assigneeAgentId !== undefined) {
-      if (!overrides.assigneeAgentId) return { agentId: null, missingRef: null };
+      if (!overrides.assigneeAgentId)
+        return { agentId: null, missingRef: null };
       const row = await db
         .select({ id: agents.id })
         .from(agents)
-        .where(and(eq(agents.companyId, companyId), eq(agents.id, overrides.assigneeAgentId)))
+        .where(
+          and(
+            eq(agents.companyId, companyId),
+            eq(agents.id, overrides.assigneeAgentId),
+          ),
+        )
         .then((rows) => rows[0] ?? null);
       if (!row) throw notFound("Assignee agent not found");
       return { agentId: row.id, missingRef: null };
@@ -250,9 +283,13 @@ export function pluginManagedRoutineService(
     const row = await db
       .select({ id: agents.id })
       .from(agents)
-      .where(and(eq(agents.companyId, companyId), eq(agents.id, binding.resourceId)))
+      .where(
+        and(eq(agents.companyId, companyId), eq(agents.id, binding.resourceId)),
+      )
       .then((rows) => rows[0] ?? null);
-    return row ? { agentId: row.id, missingRef: null } : { agentId: null, missingRef: ref };
+    return row
+      ? { agentId: row.id, missingRef: null }
+      : { agentId: null, missingRef: ref };
   }
 
   async function resolveProjectId(
@@ -265,7 +302,12 @@ export function pluginManagedRoutineService(
       const row = await db
         .select({ id: projects.id })
         .from(projects)
-        .where(and(eq(projects.companyId, companyId), eq(projects.id, overrides.projectId)))
+        .where(
+          and(
+            eq(projects.companyId, companyId),
+            eq(projects.id, overrides.projectId),
+          ),
+        )
         .then((rows) => rows[0] ?? null);
       if (!row) throw notFound("Project not found");
       return { projectId: row.id, missingRef: null };
@@ -289,9 +331,16 @@ export function pluginManagedRoutineService(
     const row = await db
       .select({ id: projects.id })
       .from(projects)
-      .where(and(eq(projects.companyId, companyId), eq(projects.id, binding.resourceId)))
+      .where(
+        and(
+          eq(projects.companyId, companyId),
+          eq(projects.id, binding.resourceId),
+        ),
+      )
       .then((rows) => rows[0] ?? null);
-    return row ? { projectId: row.id, missingRef: null } : { projectId: null, missingRef: ref };
+    return row
+      ? { projectId: row.id, missingRef: null }
+      : { projectId: null, missingRef: ref };
   }
 
   async function resolveRefs(
@@ -347,11 +396,9 @@ export function pluginManagedRoutineService(
     if (existingCount > 0) return;
 
     for (const trigger of triggers) {
-      await routinesSvc.createTrigger(
-        routineId,
-        triggerInput(trigger),
-        { type: "system" },
-      );
+      await routinesSvc.createTrigger(routineId, triggerInput(trigger), {
+        type: "system",
+      });
     }
   }
 
@@ -362,21 +409,33 @@ export function pluginManagedRoutineService(
   ) {
     const refs = await resolveRefs(companyId, declaration, overrides);
     if (refs.missingRefs.length > 0) {
-      return resolution(companyId, declaration, null, "missing_refs", refs.missingRefs);
+      return resolution(
+        companyId,
+        declaration,
+        null,
+        "missing_refs",
+        refs.missingRefs,
+      );
     }
 
-    const created = await routinesSvc.create(companyId, {
-      projectId: refs.projectId,
-      goalId: declaration.goalId ?? null,
-      title: declaration.title,
-      description: declaration.description ?? null,
-      assigneeAgentId: refs.assigneeAgentId,
-      priority: declaration.priority ?? "medium",
-      status: declaration.status ?? (refs.assigneeAgentId ? "active" : "paused"),
-      concurrencyPolicy: declaration.concurrencyPolicy ?? "coalesce_if_active",
-      catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
-      variables: declaration.variables ?? [],
-    }, { type: "system" });
+    const created = await routinesSvc.create(
+      companyId,
+      {
+        projectId: refs.projectId,
+        goalId: declaration.goalId ?? null,
+        title: declaration.title,
+        description: declaration.description ?? null,
+        assigneeAgentId: refs.assigneeAgentId,
+        priority: declaration.priority ?? "medium",
+        status:
+          declaration.status ?? (refs.assigneeAgentId ? "active" : "paused"),
+        concurrencyPolicy:
+          declaration.concurrencyPolicy ?? "coalesce_if_active",
+        catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
+        variables: declaration.variables ?? [],
+      },
+      { type: "system" },
+    );
     await upsertBinding(companyId, declaration, created.id);
     await ensureDefaultTriggers(created.id, declaration);
     const routine = await getRoutineWithManagedBy(companyId, declaration);
@@ -400,10 +459,19 @@ export function pluginManagedRoutineService(
   async function get(routineKey: string, companyId: string) {
     const declaration = declarationFor(routineKey);
     const routine = await getRoutineWithManagedBy(companyId, declaration);
-    return resolution(companyId, declaration, routine, routine ? "resolved" : "missing");
+    return resolution(
+      companyId,
+      declaration,
+      routine,
+      routine ? "resolved" : "missing",
+    );
   }
 
-  async function reconcile(routineKey: string, companyId: string, overrides?: RoutineOverrides) {
+  async function reconcile(
+    routineKey: string,
+    companyId: string,
+    overrides?: RoutineOverrides,
+  ) {
     const declaration = declarationFor(routineKey);
     const current = await get(routineKey, companyId);
     if (current.routine) {
@@ -414,7 +482,11 @@ export function pluginManagedRoutineService(
     return createManagedRoutine(companyId, declaration, overrides);
   }
 
-  async function reset(routineKey: string, companyId: string, overrides?: RoutineOverrides) {
+  async function reset(
+    routineKey: string,
+    companyId: string,
+    overrides?: RoutineOverrides,
+  ) {
     const declaration = declarationFor(routineKey);
     const current = await get(routineKey, companyId);
     if (!current.routine) {
@@ -423,20 +495,35 @@ export function pluginManagedRoutineService(
 
     const refs = await resolveRefs(companyId, declaration, overrides);
     if (refs.missingRefs.length > 0) {
-      return resolution(companyId, declaration, current.routine, "missing_refs", refs.missingRefs);
+      return resolution(
+        companyId,
+        declaration,
+        current.routine,
+        "missing_refs",
+        refs.missingRefs,
+      );
     }
-    const updated = await routinesSvc.update(current.routine.id, {
-      projectId: refs.projectId,
-      goalId: declaration.goalId ?? null,
-      title: declaration.title,
-      description: declaration.description ?? null,
-      assigneeAgentId: refs.assigneeAgentId,
-      priority: declaration.priority ?? "medium",
-      status: declaration.status ?? (refs.assigneeAgentId ? "active" : "paused"),
-      concurrencyPolicy: declaration.concurrencyPolicy ?? "coalesce_if_active",
-      catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
-      variables: declaration.variables ?? [],
-    }, { type: "system" });
+    const updated = await routinesSvc.update(
+      current.routine.id,
+      {
+        baseRevisionId: current.routine.latestRevisionId ?? (() => {
+          throw new Error("Managed routine has no canonical revision");
+        })(),
+        projectId: refs.projectId,
+        goalId: declaration.goalId ?? null,
+        title: declaration.title,
+        description: declaration.description ?? null,
+        assigneeAgentId: refs.assigneeAgentId,
+        priority: declaration.priority ?? "medium",
+        status:
+          declaration.status ?? (refs.assigneeAgentId ? "active" : "paused"),
+        concurrencyPolicy:
+          declaration.concurrencyPolicy ?? "coalesce_if_active",
+        catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
+        variables: declaration.variables ?? [],
+      },
+      { type: "system" },
+    );
     if (!updated) throw notFound("Managed routine not found");
     await upsertBinding(companyId, declaration, updated.id);
     await ensureDefaultTriggers(updated.id, declaration);
@@ -466,18 +553,22 @@ export function pluginManagedRoutineService(
     const declaration = declarationFor(routineKey);
     const current = await get(routineKey, companyId);
     if (!current.routine) throw notFound("Managed routine not found");
-    const updatePatch: { status?: RoutineStatus } = {};
+    if (!current.routine.latestRevisionId) {
+      throw new Error("Managed routine has no canonical revision");
+    }
+    const updatePatch: {
+      status?: RoutineStatus;
+      baseRevisionId: string;
+    } = { baseRevisionId: current.routine.latestRevisionId };
     if (patch.status !== undefined) {
       if (!ROUTINE_STATUSES.includes(patch.status)) {
         throw unprocessable("Invalid routine status");
       }
       updatePatch.status = patch.status;
     }
-    const updated = await routinesSvc.update(
-      current.routine.id,
-      updatePatch,
-      { type: "system" },
-    );
+    const updated = await routinesSvc.update(current.routine.id, updatePatch, {
+      type: "system",
+    });
     if (!updated) throw notFound("Managed routine not found");
     await logActivity(db, {
       companyId,
@@ -499,15 +590,23 @@ export function pluginManagedRoutineService(
     return routine;
   }
 
-  async function run(routineKey: string, companyId: string, overrides?: RoutineOverrides) {
+  async function run(
+    routineKey: string,
+    companyId: string,
+    overrides?: RoutineOverrides,
+  ) {
     const declaration = declarationFor(routineKey);
     const current = await get(routineKey, companyId);
     if (!current.routine) throw notFound("Managed routine not found");
-    const run = await routinesSvc.runRoutine(current.routine.id, {
-      source: "manual",
-      assigneeAgentId: overrides?.assigneeAgentId,
-      projectId: overrides?.projectId,
-    }, { type: "system" });
+    const run = await routinesSvc.runRoutine(
+      current.routine.id,
+      {
+        source: "manual",
+        assigneeAgentId: overrides?.assigneeAgentId,
+        projectId: overrides?.projectId,
+      },
+      { type: "system" },
+    );
     await logActivity(db, {
       companyId,
       actorType: "plugin",

@@ -1,4 +1,10 @@
-import { test, expect, request as pwRequest, type APIRequestContext } from "./fixtures";
+import {
+  test,
+  expect,
+  request as pwRequest,
+  type APIRequestContext,
+  type Page,
+} from "./fixtures";
 
 /**
  * E2E: Sidebar takeover model (PAP-10695).
@@ -25,6 +31,9 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 const COMPANY_NAME_PREFIX = "E2E-SidebarTakeover";
 const COLLAPSED_STORAGE_KEY = "paperclip.sidebar.collapsed";
 const AUTH_STORAGE_STATE = process.env.PAPERCLIP_E2E_STORAGE_STATE_PATH;
+const API_ROUTE = new RegExp(
+  `^${BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\/api(?:\/|$)`,
+);
 
 // The sidebar header's "Open search" control only renders when the app sidebar
 // is expanded (pinned or peeking); in the collapsed rail it is hidden to fit
@@ -32,7 +41,82 @@ const AUTH_STORAGE_STATE = process.env.PAPERCLIP_E2E_STORAGE_STATE_PATH;
 // app sidebar's collapsed state (see Sidebar.tsx).
 const APP_SIDEBAR_EXPANDED_MARKER = "Open search";
 
-async function createCompany(board: APIRequestContext): Promise<{ id: string; prefix: string }> {
+function emptyDashboard(companyId: string) {
+  return {
+    companyId,
+    agents: { active: 0, running: 0, paused: 0, error: 0 },
+    tasks: { open: 0, inProgress: 0, blocked: 0, done: 0 },
+    costs: {
+      budgetCurrency: "USD",
+      monthKnownSpendAmount: "0",
+      monthBudgetAmount: "0",
+      monthRemainingAmount: "0",
+      monthUtilizationPercent: 0,
+      unpricedPromptCount: 0,
+    },
+    pendingApprovals: 0,
+    budgets: {
+      activeIncidents: 0,
+      pendingApprovals: 0,
+      pausedAgents: 0,
+      pausedProjects: 0,
+    },
+    runActivity: [],
+  };
+}
+
+function emptyAttentionFeed(companyId: string) {
+  return {
+    companyId,
+    generatedAt: new Date(0).toISOString(),
+    totalCount: 0,
+    countsBySourceKind: {
+      approval: 0,
+      join_request: 0,
+      review: 0,
+      budget_alert: 0,
+      mention_board: 0,
+    },
+    items: [],
+  };
+}
+
+async function installApiRoute(page: Page, board: APIRequestContext, companyId: string) {
+  // The shared fixture's `**/api/**` glob also matches Vite source modules
+  // such as `/src/api/tasks.ts`. Scope this spec's mock to the actual API
+  // origin so native client modules continue to load as JavaScript.
+  await page.unroute("**/api/**");
+  await page.route(API_ROUTE, async (route) => {
+    const browserRequest = route.request();
+    if (new URL(browserRequest.url()).pathname === `/api/companies/${companyId}/dashboard`) {
+      await route.fulfill({ json: emptyDashboard(companyId) });
+      return;
+    }
+    if (new URL(browserRequest.url()).pathname === `/api/companies/${companyId}/attention`) {
+      await route.fulfill({ json: emptyAttentionFeed(companyId) });
+      return;
+    }
+
+    let data: unknown;
+    try {
+      data = browserRequest.postDataJSON();
+    } catch {
+      data = browserRequest.postData() ?? undefined;
+    }
+
+    const response = await board.fetch(browserRequest.url(), {
+      method: browserRequest.method(),
+      ...(data === undefined ? {} : { data }),
+    });
+    await route.fulfill({
+      status: response.status(),
+      headers: response.headers(),
+      body: await response.body(),
+    });
+  });
+}
+
+async function createCompany(board: APIRequestContext): Promise<string> {
   const healthRes = await board.get(`${BASE_URL}/api/health`);
   expect(healthRes.ok()).toBe(true);
 
@@ -43,25 +127,19 @@ async function createCompany(board: APIRequestContext): Promise<{ id: string; pr
     throw new Error(`POST /api/companies → ${companyRes.status()}: ${await companyRes.text()}`);
   }
   const company = await companyRes.json();
-  return {
-    id: company.id,
-    prefix: company.taskPrefix ?? company.prefix ?? company.urlKey ?? "E2E",
-  };
+  return company.id;
 }
 
 test.describe("Sidebar takeover (collapse + secondary pane)", () => {
   let board: APIRequestContext;
   let companyId: string;
-  let prefix: string;
 
   test.beforeAll(async () => {
     board = await pwRequest.newContext({
       baseURL: BASE_URL,
       storageState: AUTH_STORAGE_STATE,
     });
-    const company = await createCompany(board);
-    companyId = company.id;
-    prefix = company.prefix;
+    companyId = await createCompany(board);
   });
 
   test.afterAll(async () => {
@@ -70,6 +148,8 @@ test.describe("Sidebar takeover (collapse + secondary pane)", () => {
   });
 
   test.beforeEach(async ({ page }) => {
+    await installApiRoute(page, board, companyId);
+
     // Start each test from a clean (unpinned) sidebar state so the route-driven
     // collapse is the only thing acting on it.
     await page.addInitScript((key) => {
@@ -78,7 +158,7 @@ test.describe("Sidebar takeover (collapse + secondary pane)", () => {
   });
 
   test("collapses the app sidebar to its rail and shows the settings sidebar beside it", async ({ page }) => {
-    await page.goto(`/${prefix}/company/settings`);
+    await page.goto(`/${companyId}/company/settings`);
 
     // The contextual (secondary) pane is present...
     const secondary = page.locator("[data-secondary-sidebar]");
@@ -103,7 +183,7 @@ test.describe("Sidebar takeover (collapse + secondary pane)", () => {
     // SidebarNavItem children read the *global* collapsed state and used to
     // render icon-only (label `w-0 text-transparent`), making the settings nav
     // unreadable in the default takeover state. The pane must force full labels.
-    await page.goto(`/${prefix}/company/settings`);
+    await page.goto(`/${companyId}/company/settings`);
 
     const secondary = page.locator("[data-secondary-sidebar]");
     await expect(secondary).toBeVisible();
@@ -131,7 +211,7 @@ test.describe("Sidebar takeover (collapse + secondary pane)", () => {
       { key: COLLAPSED_STORAGE_KEY },
     );
 
-    await page.goto(`/${prefix}/company/settings`);
+    await page.goto(`/${companyId}/company/settings`);
 
     // Secondary pane still shows on the takeover route.
     await expect(page.locator("[data-secondary-sidebar]")).toBeVisible();
@@ -139,7 +219,7 @@ test.describe("Sidebar takeover (collapse + secondary pane)", () => {
     // The app sidebar is hard-collapsed despite the stored expanded pin.
     await expect(page.getByLabel(APP_SIDEBAR_EXPANDED_MARKER)).toHaveCount(0);
 
-    await page.goto(`/${prefix}/dashboard`);
+    await page.goto(`/${companyId}/dashboard`);
 
     // Leaving the takeover route clears the force and restores the user's
     // persisted expanded pin.
@@ -148,12 +228,12 @@ test.describe("Sidebar takeover (collapse + secondary pane)", () => {
   });
 
   test("leaving the takeover route removes the secondary pane and restores the sidebar", async ({ page }) => {
-    await page.goto(`/${prefix}/company/settings`);
+    await page.goto(`/${companyId}/company/settings`);
     await expect(page.locator("[data-secondary-sidebar]")).toBeVisible();
     await expect(page.getByLabel(APP_SIDEBAR_EXPANDED_MARKER)).toHaveCount(0);
 
     // Navigate to a plain (non-takeover) route.
-    await page.goto(`/${prefix}/dashboard`);
+    await page.goto(`/${companyId}/dashboard`);
 
     // No secondary pane, and the app sidebar is no longer force-collapsed.
     await expect(page.locator("[data-secondary-sidebar]")).toHaveCount(0);

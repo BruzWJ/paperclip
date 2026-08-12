@@ -1,5 +1,6 @@
 import type { Goal } from "@paperclipai/shared";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { StatusBadge } from "./StatusBadge";
 import { ChevronRight } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -7,7 +8,7 @@ import { useState } from "react";
 
 interface GoalTreeProps {
   goals: Goal[];
-  goalLink?: (goal: Goal) => string;
+  linkGoals?: boolean;
   onSelect?: (goal: Goal) => void;
 }
 
@@ -16,14 +17,14 @@ interface GoalNodeProps {
   children: Goal[];
   allGoals: Goal[];
   depth: number;
-  goalLink?: (goal: Goal) => string;
+  linkGoals?: boolean;
   onSelect?: (goal: Goal) => void;
 }
 
-function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalNodeProps) {
+function GoalNode({ goal, children, allGoals, depth, linkGoals, onSelect }: GoalNodeProps) {
+  const companyId = useCompanyRouteId();
   const [expanded, setExpanded] = useState(true);
   const hasChildren = children.length > 0;
-  const link = goalLink?.(goal);
 
   const treeToggle = hasChildren ? (
     <button
@@ -55,14 +56,15 @@ function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalN
 
   return (
     <div>
-      {link ? (
+      {linkGoals ? (
         <div
           className={rowClasses}
           style={{ paddingLeft: `${depth * 16 + 12}px` }}
         >
           {treeToggle}
           <Link
-            to={link}
+            to="/$companyId/goals/$goalId"
+            params={{ companyId, goalId: goal.id }}
             className={cn(interactiveContentClasses, "no-underline text-inherit")}
           >
             {goalContent}
@@ -95,7 +97,7 @@ function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalN
               children={allGoals.filter((g) => g.parentId === child.id)}
               allGoals={allGoals}
               depth={depth + 1}
-              goalLink={goalLink}
+              linkGoals={linkGoals}
               onSelect={onSelect}
             />
           ))}
@@ -105,7 +107,7 @@ function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalN
   );
 }
 
-export function GoalTree({ goals, goalLink, onSelect }: GoalTreeProps) {
+export function GoalTree({ goals, linkGoals, onSelect }: GoalTreeProps) {
   const goalIds = new Set(goals.map((g) => g.id));
   const roots = goals.filter((g) => !g.parentId || !goalIds.has(g.parentId));
 
@@ -122,7 +124,7 @@ export function GoalTree({ goals, goalLink, onSelect }: GoalTreeProps) {
           children={goals.filter((g) => g.parentId === goal.id)}
           allGoals={goals}
           depth={0}
-          goalLink={goalLink}
+          linkGoals={linkGoals}
           onSelect={onSelect}
         />
       ))}

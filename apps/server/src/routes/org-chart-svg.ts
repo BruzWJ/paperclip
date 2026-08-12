@@ -20,13 +20,13 @@ export type OrgChartStyle =
   | "warmth"
   | "schematic";
 
-export const ORG_CHART_STYLES: OrgChartStyle[] = [
+export const ORG_CHART_STYLES = [
   "monochrome",
   "nebula",
   "circuit",
   "warmth",
   "schematic",
-];
+] as const satisfies readonly OrgChartStyle[];
 
 export interface OrgChartOverlay {
   companyName?: string;
@@ -206,7 +206,6 @@ function initials(name: string): string {
 }
 
 function statusColor(status: string): string {
-  if (status === "running") return "#3b82f6";
   if (status === "idle") return "#22c55e";
   if (status === "error") return "#ef4444";
   if (status === "paused") return "#f59e0b";

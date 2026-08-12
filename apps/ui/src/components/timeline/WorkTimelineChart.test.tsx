@@ -1,15 +1,37 @@
 // @vitest-environment jsdom
 
 import { flushSync } from "react-dom";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { WorkTimelineResult } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkTimelineChart } from "./WorkTimelineChart";
 import { computeLayout } from "@/lib/timeline/layout";
 
-vi.mock("@/lib/router", () => ({
-  useLocation: () => ({ pathname: "/PAP/timeline" }),
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    to,
+    params,
+    children,
+    ...props
+  }: {
+    to: string;
+    params?: Record<string, string>;
+    children: ReactNode;
+  } & Omit<ComponentProps<"a">, "href">) => {
+    const href = to
+      .replace("$companyId", params?.companyId ?? "")
+      .replace("$taskNumber", params?.taskNumber ?? "");
+    return (
+      <a href={href} {...props}>
+        {children}
+      </a>
+    );
+  },
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,6 +86,7 @@ function timelineSample(): WorkTimelineResult {
         runId: "run-1",
         kind: "productive",
         taskId: "task-1",
+        taskNumber: 12443,
         taskIdentifier: "PAP-12443",
         taskTitle: "Work Timeline sticky gutter",
         start: "2026-07-02T09:00:00.000Z",
@@ -76,6 +99,7 @@ function timelineSample(): WorkTimelineResult {
         runId: "run-2",
         kind: "productive",
         taskId: "task-2",
+        taskNumber: 12426,
         taskIdentifier: "PAP-12426",
         taskTitle: "QA validation",
         start: "2026-07-02T11:00:00.000Z",
@@ -213,6 +237,7 @@ describe("WorkTimelineChart", () => {
         runId: "run-3",
         kind: "productive",
         taskId: "task-3",
+        taskNumber: 12427,
         taskIdentifier: "PAP-12427",
         taskTitle: "Follow-up validation",
         start: "2026-07-02T11:45:00.000Z",
@@ -225,6 +250,7 @@ describe("WorkTimelineChart", () => {
         runId: "run-4",
         kind: "productive",
         taskId: "task-4",
+        taskNumber: 12428,
         taskIdentifier: "PAP-12428",
         taskTitle: "Unrelated work",
         start: "2026-07-02T13:00:00.000Z",
@@ -337,16 +363,17 @@ describe("WorkTimelineChart", () => {
     expect(onZoomScaleChange).toHaveBeenCalledTimes(1);
   });
 
-  it("opens task bars in a new company-prefixed window", () => {
-    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+  it("renders task bars as native company-scoped links", () => {
     renderChart(timelineSample());
 
     const bar = container.querySelector<SVGGElement>("[data-run-id='run-1']")!;
-    flushSync(() => {
-      bar.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    const link = bar.closest("a");
 
-    expect(open).toHaveBeenCalledWith("/PAP/tasks/task-1", "_blank", "noopener,noreferrer");
+    expect(link?.getAttribute("href")).toBe(
+      "/11111111-1111-4111-8111-111111111111/tasks/12443",
+    );
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
   it("lets minimap edge handles resize the visible range and update zoom", () => {

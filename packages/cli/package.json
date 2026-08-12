@@ -40,7 +40,6 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
-    "@paperclipai/adapter-utils": "workspace:*",
     "@paperclipai/db": "workspace:*",
     "@paperclipai/server": "workspace:*",
     "@paperclipai/shared": "workspace:*",

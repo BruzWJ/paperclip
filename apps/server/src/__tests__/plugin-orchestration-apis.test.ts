@@ -168,6 +168,12 @@ describe("plugin orchestration APIs without a database process", () => {
     await expect(host.tasks.registerCreatorCallback({
       callbackKey: " mission-progress ",
       callbackVersion: " 1 ",
+    })).rejects.toThrow(
+      "Creator callback key and version must be exact non-empty strings",
+    );
+    await expect(host.tasks.registerCreatorCallback({
+      callbackKey: "mission-progress",
+      callbackVersion: "1",
     })).resolves.toEqual({
       callbackKey: "mission-progress",
       callbackVersion: "1",
@@ -290,6 +296,17 @@ describe("plugin orchestration APIs without a database process", () => {
       path: root,
       access: "read",
     } as never)).rejects.toThrow("accepts only companyId, folderKey, and a non-empty path");
+    const paddedPath = `${root}/padded `;
+    await expect(
+      host.localFolders.configure({
+        companyId,
+        folderKey: "content-root",
+        path: paddedPath,
+      }),
+    ).rejects.toThrow(
+      "accepts only companyId, folderKey, and a non-empty path",
+    );
+    await expect(fs.stat(paddedPath)).rejects.toMatchObject({ code: "ENOENT" });
     expect(hostMocks.upsertCompanySettings).toHaveBeenCalledTimes(1);
     hostMocks.getCompanySettings.mockResolvedValue({
       settingsJson: (persistedSettings as { settingsJson: Record<string, unknown> })

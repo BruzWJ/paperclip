@@ -26,13 +26,15 @@ function buildOrderIds(projects: Project[], orderedIds: string[]) {
 export function useProjectOrder({ projects, companyId, userId }: UseProjectOrderParams) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(
-    () => queryKeys.sidebarPreferences.projectOrder(companyId ?? "__none__", userId ?? "__anon__"),
+    () => companyId && userId
+      ? queryKeys.sidebarPreferences.projectOrder(companyId, userId)
+      : ["sidebar-preferences", "project-order", companyId ?? null, userId ?? null] as const,
     [companyId, userId],
   );
 
   const { data } = useQuery({
     queryKey,
-    queryFn: () => sidebarPreferencesApi.getProjectOrder(companyId!),
+    queryFn: () => sidebarPreferencesApi.getProjectOrder(companyId!, userId!),
     enabled: Boolean(companyId && userId),
   });
 
@@ -65,7 +67,7 @@ export function useProjectOrder({ projects, companyId, userId }: UseProjectOrder
         orderedIds: filtered,
         updatedAt: current?.updatedAt ?? null,
       }));
-      void sidebarPreferencesApi.updateProjectOrder(companyId, { orderedIds: filtered })
+      void sidebarPreferencesApi.updateProjectOrder(companyId, userId, { orderedIds: filtered })
         .then((preference) => {
           queryClient.setQueryData(queryKey, preference);
         })

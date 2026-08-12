@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
@@ -17,6 +20,8 @@ import { describe, expect, it } from "vitest";
 describe("Express 5 /api/auth wildcard route", () => {
   function buildApp() {
     const app = express();
+    app.set("case sensitive routing", true);
+    app.set("strict routing", true);
     let callCount = 0;
     const handler = (_req: express.Request, res: express.Response) => {
       callCount += 1;
@@ -52,5 +57,46 @@ describe("Express 5 /api/auth wildcard route", () => {
       status: 200,
     });
     expect(getCallCount()).toBe(4);
+  });
+});
+
+describe("canonical Express routing", () => {
+  it("rejects route case and trailing-slash aliases", async () => {
+    const app = express();
+    app.set("case sensitive routing", true);
+    app.set("strict routing", true);
+    const api = express.Router({ caseSensitive: true, strict: true });
+    api.get("/things", (_req, res) => res.sendStatus(204));
+    app.use("/api", api);
+
+    await expect(request(app).get("/api/things")).resolves.toMatchObject({
+      status: 204,
+    });
+    for (const alias of ["/api/things/", "/api/Things", "/API/things"]) {
+      await expect(request(app).get(alias)).resolves.toMatchObject({
+        status: 404,
+      });
+    }
+  });
+
+  it("keeps every production API router strict and case-sensitive", () => {
+    const sourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+    const files = [
+      join(sourceRoot, "app.ts"),
+      ...readdirSync(join(sourceRoot, "routes"), {
+        recursive: true,
+        encoding: "utf8",
+      })
+        .filter((entry) => entry.endsWith(".ts"))
+        .map((entry) => join(sourceRoot, "routes", entry)),
+    ];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      expect(source).not.toMatch(/\bRouter\(\)/);
+      for (const match of source.matchAll(/\bRouter\(([^)]*)\)/g)) {
+        expect(match[1]).toContain("caseSensitive: true");
+        expect(match[1]).toContain("strict: true");
+      }
+    }
   });
 });

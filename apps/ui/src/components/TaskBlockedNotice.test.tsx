@@ -2,19 +2,21 @@
 
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
-import type { AnchorHTMLAttributes, ReactElement, ReactNode } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
 import { TaskBlockedNotice } from "./TaskBlockedNotice";
 import { ToastProvider } from "../context/ToastContext";
 
-vi.mock("@/lib/router", () => ({
-  Link: ({ children, to, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string }) => (
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to, ...props }: ComponentProps<"a"> & { to: string }) => (
     <a href={to} {...props}>{children}</a>
   ),
 }));
-
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -60,11 +62,9 @@ function withProviders(node: ReactNode) {
     },
   });
   return (
-    <MemoryRouter>
-      <QueryClientProvider client={client}>
-        <ToastProvider>{node}</ToastProvider>
-      </QueryClientProvider>
-    </MemoryRouter>
+    <QueryClientProvider client={client}>
+      <ToastProvider>{node}</ToastProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -84,6 +84,7 @@ describe("TaskBlockedNotice", () => {
         blockers={[
           {
             id: "blocker-1",
+            taskNumber: 123,
             identifier: "PAP-123",
             title: "Blocker",
             boardPresentationStatus: "in_progress",
@@ -116,6 +117,7 @@ describe("TaskBlockedNotice", () => {
         blockers={[
           {
             id: "blocker-1",
+            taskNumber: 1,
             identifier: "TASK-1",
             title: "Dependency work",
             boardPresentationStatus: "in_progress",
@@ -127,6 +129,7 @@ describe("TaskBlockedNotice", () => {
         allBlockers={[
           {
             id: "blocker-1",
+            taskNumber: 1,
             identifier: "TASK-1",
             title: "Dependency work",
             boardPresentationStatus: "in_progress",
@@ -163,6 +166,7 @@ describe("TaskBlockedNotice", () => {
         blockers={[
           {
             id: "blocker-11",
+            taskNumber: 11,
             identifier: "TASK-11",
             title: "Running work",
             boardPresentationStatus: "in_progress",
@@ -174,6 +178,7 @@ describe("TaskBlockedNotice", () => {
         allBlockers={[
           {
             id: "blocker-10",
+            taskNumber: 10,
             identifier: "TASK-10",
             title: "Tenth done step",
             boardPresentationStatus: "done",
@@ -183,6 +188,7 @@ describe("TaskBlockedNotice", () => {
           },
           {
             id: "blocker-9",
+            taskNumber: 9,
             identifier: "TASK-9",
             title: "Ninth done step",
             boardPresentationStatus: "done",
@@ -192,6 +198,7 @@ describe("TaskBlockedNotice", () => {
           },
           {
             id: "blocker-11",
+            taskNumber: 11,
             identifier: "TASK-11",
             title: "Running work",
             boardPresentationStatus: "in_progress",
@@ -225,6 +232,7 @@ describe("TaskBlockedNotice", () => {
         blockers={[
           {
             id: "blocker-1",
+            taskNumber: 500,
             identifier: "PAP-500",
             title: "Server work in flight",
             boardPresentationStatus: "in_progress",
@@ -253,6 +261,7 @@ describe("TaskBlockedNotice", () => {
         blockers={[
           {
             id: "blocker-1",
+            taskNumber: 600,
             identifier: "PAP-600",
             title: "Waiting in review",
             boardPresentationStatus: "in_review",
@@ -262,6 +271,7 @@ describe("TaskBlockedNotice", () => {
             terminalBlockers: [
               {
                 id: "terminal-1",
+                taskNumber: 777,
                 identifier: "PAP-777",
                 title: "Actual work",
                 boardPresentationStatus: "in_progress",
@@ -289,6 +299,7 @@ describe("TaskBlockedNotice", () => {
         blockers={[
           {
             id: "blocker-1",
+            taskNumber: 501,
             identifier: "PAP-501",
             title: "First",
             boardPresentationStatus: "in_progress",
@@ -298,6 +309,7 @@ describe("TaskBlockedNotice", () => {
           },
           {
             id: "blocker-2",
+            taskNumber: 502,
             identifier: "PAP-502",
             title: "Second",
             boardPresentationStatus: "todo",
@@ -340,6 +352,7 @@ describe("TaskBlockedNotice", () => {
         blockers={[
           {
             id: "blocker-1",
+            taskNumber: 1,
             identifier: "TASK-1",
             title: "Queued dependency",
             boardPresentationStatus: "todo",
@@ -349,6 +362,7 @@ describe("TaskBlockedNotice", () => {
             terminalBlockers: [
               {
                 id: "terminal-live",
+                taskNumber: 99,
                 identifier: "TASK-99",
                 title: "External running task",
                 boardPresentationStatus: "in_progress",
@@ -362,6 +376,7 @@ describe("TaskBlockedNotice", () => {
         allBlockers={[
           {
             id: "blocker-1",
+            taskNumber: 1,
             identifier: "TASK-1",
             title: "Queued dependency",
             boardPresentationStatus: "todo",

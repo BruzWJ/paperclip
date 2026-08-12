@@ -132,24 +132,15 @@ afterEach(() => {
 });
 
 describe("task list owner filters", () => {
-  it("passes canonical null and UUID owner filters to the task service", async () => {
+  it("passes canonical UUID owner filters to the task service", async () => {
     const app = createApp();
-    const nullResponse = await request(app)
-      .get(`/api/companies/${companyId}/tasks`)
-      .query({ status: "todo", ownerAgentId: "null", limit: "20" });
-    expect(nullResponse.status).toBe(200);
-    expect(services.tasks.list).toHaveBeenLastCalledWith(
-      companyId,
-      expect.objectContaining({ ownerAgentId: null, status: "todo", limit: 20 }),
-    );
-
     const uuidResponse = await request(app)
       .get(`/api/companies/${companyId}/tasks`)
       .query({ status: "todo", ownerAgentId, limit: "20" });
     expect(uuidResponse.status).toBe(200);
     expect(services.tasks.list).toHaveBeenLastCalledWith(
       companyId,
-      expect.objectContaining({ ownerAgentId, status: "todo", limit: 20 }),
+      expect.objectContaining({ ownerAgentId, status: ["todo"], limit: 20 }),
     );
   });
 
@@ -160,7 +151,78 @@ describe("task list owner filters", () => {
 
     expect(response.status).toBe(422);
     expect(response.body).toEqual({
-      error: "ownerAgentId must be a UUID or 'null'",
+      error: "ownerAgentId must be an exact canonical UUID",
+    });
+    expect(services.tasks.list).not.toHaveBeenCalled();
+  });
+
+  it.each(["null", " NULL ", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"])(
+    "rejects the owner-filter alias %j",
+    async (ownerAgentIdAlias) => {
+      const response = await request(createApp())
+        .get(`/api/companies/${companyId}/tasks`)
+        .query({ ownerAgentId: ownerAgentIdAlias });
+
+      expect(response.status).toBe(422);
+      expect(services.tasks.list).not.toHaveBeenCalled();
+    },
+  );
+
+  it("accepts repeated statuses and rejects comma-separated status aliases", async () => {
+    const app = createApp();
+    const canonicalResponse = await request(app)
+      .get(`/api/companies/${companyId}/tasks?status=todo&status=in_progress`);
+    expect(canonicalResponse.status).toBe(200);
+    expect(services.tasks.list).toHaveBeenLastCalledWith(
+      companyId,
+      expect.objectContaining({ status: ["todo", "in_progress"] }),
+    );
+
+    services.tasks.list.mockClear();
+    const aliasResponse = await request(app)
+      .get(`/api/companies/${companyId}/tasks?status=todo,in_progress`);
+    expect(aliasResponse.status).toBe(422);
+    expect(services.tasks.list).not.toHaveBeenCalled();
+  });
+
+  it("rejects numeric boolean query aliases", async () => {
+    const response = await request(createApp())
+      .get(`/api/companies/${companyId}/tasks`)
+      .query({ includeBlockedBy: "1" });
+
+    expect(response.status).toBe(422);
+    expect(response.body).toEqual({ error: "includeBlockedBy must be true or false" });
+    expect(services.tasks.list).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["limit", "01"],
+    ["offset", "00"],
+    ["touchedByUserId", " user-1"],
+    ["participantAgentId", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"],
+    ["projectId", ` ${companyId}`],
+    ["parentId", "not-a-uuid"],
+    ["descendantOf", ""],
+    ["labelId", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa "],
+    ["originKind", " plugin"],
+    ["originId", ""],
+  ])("rejects the non-exact %s query value %j", async (field, value) => {
+    const response = await request(createApp())
+      .get(`/api/companies/${companyId}/tasks`)
+      .query({ [field]: value });
+
+    expect(response.status).toBe(["limit", "offset"].includes(field) ? 400 : 422);
+    expect(services.tasks.list).not.toHaveBeenCalled();
+  });
+
+  it("rejects removed and unknown task-list selectors", async () => {
+    const response = await request(createApp())
+      .get(`/api/companies/${companyId}/tasks`)
+      .query({ includePluginOperations: "true", mystery: "value" });
+
+    expect(response.status).toBe(422);
+    expect(response.body).toEqual({
+      error: "Unsupported task-list query parameters: includePluginOperations, mystery",
     });
     expect(services.tasks.list).not.toHaveBeenCalled();
   });

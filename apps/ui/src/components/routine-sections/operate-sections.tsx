@@ -17,6 +17,7 @@ import { LiveRunWidget } from "../LiveRunWidget";
 import { RoutineHistoryTab } from "../RoutineHistoryTab";
 import { RoutineActivityRow } from "../RoutineActivityRow";
 import { useRoutineDetail } from "./context";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
 const DATE_WINDOW_OPTIONS: { value: string; label: string; ms: number | null }[] = [
   { value: "any", label: "Any time", ms: null },
@@ -27,6 +28,7 @@ const DATE_WINDOW_OPTIONS: { value: string; label: string; ms: number | null }[]
 
 export function RunsSection() {
   const ctx = useRoutineDetail();
+  const companyId = useCompanyRouteId();
   const { routine, routineRuns, hasLiveRun, activeTaskId, onOpenRunDialog } = ctx;
   const runs = useMemo(() => routineRuns ?? [], [routineRuns]);
 
@@ -171,9 +173,7 @@ export function RunsSection() {
                       </>
                     }
                     identifier={
-                      run.linkedTask
-                        ? run.linkedTask.identifier ?? run.linkedTask.id.slice(0, 8)
-                        : undefined
+                      run.linkedTask?.identifier ?? undefined
                     }
                     title={title}
                     subtitle={runRowSubtitle(run, routine.variables)}
@@ -181,9 +181,15 @@ export function RunsSection() {
                     trailing={
                       <span className="text-xs text-muted-foreground">{timeAgo(run.triggeredAt)}</span>
                     }
-                    to={
+                    linkOptions={
                       run.linkedTask
-                        ? `/tasks/${run.linkedTask.identifier ?? run.linkedTask.id}`
+                        ? {
+                            to: "/$companyId/tasks/$taskNumber",
+                            params: {
+                              companyId,
+                              taskNumber: String(run.linkedTask.taskNumber),
+                            },
+                          }
                         : undefined
                     }
                   />

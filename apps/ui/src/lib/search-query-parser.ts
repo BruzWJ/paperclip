@@ -1,24 +1,11 @@
 import {
-  COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS,
   TASK_PRIORITIES,
   TASK_STATUSES,
-  isUuidLike,
-  normalizeAgentUrlKey,
+  isCanonicalUuid,
   type TaskPriority,
   type TaskStatus,
 } from "@paperclipai/shared";
 import type { CompanySearchParams } from "@/api/search";
-
-const SEARCH_FILTER_PARAM_KEYS = [
-  "status",
-  "priority",
-  "ownerAgentId",
-  "ownerUserId",
-  "projectId",
-  "labelId",
-  "updatedWithin",
-  "updatedAfter",
-] as const;
 
 const OPEN_STATUSES: TaskStatus[] = ["backlog", "todo", "in_progress", "in_review", "blocked"];
 const CLOSED_STATUSES: TaskStatus[] = ["done", "cancelled"];
@@ -37,52 +24,59 @@ export interface SearchOperatorSuggestion {
   description: string;
 }
 
-export const SEARCH_OPERATOR_QUICK_FILTERS = ["owner:me", "is:open", "updated:>7d"] as const;
+export const SEARCH_OPERATOR_QUICK_FILTERS = ["is:open", "updated:>7d"] as const;
 
 export const SEARCH_OPERATOR_SUGGESTIONS: SearchOperatorSuggestion[] = [
-  { token: "status:todo", label: "Open todo tasks", description: "Filter by task status" },
-  { token: "status:blocked", label: "Blocked tasks", description: "Find blocked work" },
-  { token: "owner:me", label: "Owned by me", description: "Use your current board user" },
-  { token: "project:\"Paperclip App\"", label: "Project name", description: "Quote multi-word project names" },
-  { token: "label:bug", label: "Label", description: "Filter by task label" },
-  { token: "priority:high", label: "High priority", description: "Filter by priority" },
-  { token: "updated:>7d", label: "Recently updated", description: "Updated in the last 7 days" },
+  {
+    token: "status:todo",
+    label: "Open todo tasks",
+    description: "Filter by task status",
+  },
+  {
+    token: "status:blocked",
+    label: "Blocked tasks",
+    description: "Find blocked work",
+  },
+  {
+    token: "priority:high",
+    label: "High priority",
+    description: "Filter by priority",
+  },
+  {
+    token: "updated:>7d",
+    label: "Recently updated",
+    description: "Updated in the last 7 days",
+  },
 ];
 
 export interface SearchQueryParserContext {
-  currentAgentId?: string | null;
-  currentUserId?: string | null;
-  agents?: readonly { id: string; name: string; urlKey?: string | null }[];
-  projects?: readonly { id: string; name: string; urlKey?: string | null }[];
+  agents?: readonly { id: string; name: string }[];
+  projects?: readonly { id: string; name: string }[];
   labels?: readonly { id: string; name: string }[];
 }
 
 export interface ParsedSearchQuery {
   query: string;
-  filters: Pick<
-    CompanySearchParams,
-    | "status"
-    | "priority"
-    | "ownerAgentId"
-    | "ownerUserId"
-    | "projectId"
-    | "labelId"
-    | "updatedWithin"
-    | "updatedAfter"
-  >;
+  filters: Omit<
+    Pick<
+      CompanySearchParams,
+      | "status"
+      | "priority"
+      | "ownerAgentId"
+      | "ownerUserId"
+      | "projectId"
+      | "labelId"
+      | "updatedWithin"
+      | "updatedAfter"
+    >,
+    "ownerAgentId"
+  > & { ownerAgentId?: string };
   pills: SearchOperatorPill[];
 }
 
 interface QueryToken {
   raw: string;
   value: string;
-}
-
-function stripValueQuotes(value: string) {
-  if (value.length >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
-    return value.slice(1, -1);
-  }
-  return value;
 }
 
 function tokenizeQuery(input: string): QueryToken[] {
@@ -93,20 +87,20 @@ function tokenizeQuery(input: string): QueryToken[] {
     if (index >= input.length) break;
 
     const start = index;
-    if (input[index] === "\"") {
+    if (input[index] === '"') {
       index += 1;
-      while (index < input.length && input[index] !== "\"") index += 1;
-      if (input[index] === "\"") index += 1;
+      while (index < input.length && input[index] !== '"') index += 1;
+      if (input[index] === '"') index += 1;
       const raw = input.slice(start, index);
       tokens.push({ raw, value: raw });
       continue;
     }
 
     while (index < input.length && !/\s/.test(input[index] ?? "")) {
-      if (input[index] === ":" && input[index + 1] === "\"") {
+      if (input[index] === ":" && input[index + 1] === '"') {
         index += 2;
-        while (index < input.length && input[index] !== "\"") index += 1;
-        if (input[index] === "\"") index += 1;
+        while (index < input.length && input[index] !== '"') index += 1;
+        if (input[index] === '"') index += 1;
         break;
       }
       index += 1;
@@ -118,7 +112,11 @@ function tokenizeQuery(input: string): QueryToken[] {
   return tokens;
 }
 
-function currentTokenBounds(input: string): { start: number; end: number; token: string } {
+function currentTokenBounds(input: string): {
+  start: number;
+  end: number;
+  token: string;
+} {
   let end = input.length;
   while (end > 0 && /\s/.test(input[end - 1] ?? "")) end -= 1;
   let start = end;
@@ -129,9 +127,10 @@ function currentTokenBounds(input: string): { start: number; end: number; token:
 export function searchOperatorSuggestions(input: string, limit = 5): SearchOperatorSuggestion[] {
   const { token } = currentTokenBounds(input);
   const normalized = token.toLowerCase();
-  const candidates = normalized.length > 0
-    ? SEARCH_OPERATOR_SUGGESTIONS.filter((suggestion) => suggestion.token.toLowerCase().startsWith(normalized))
-    : SEARCH_OPERATOR_SUGGESTIONS;
+  const candidates =
+    normalized.length > 0
+      ? SEARCH_OPERATOR_SUGGESTIONS.filter((suggestion) => suggestion.token.toLowerCase().startsWith(normalized))
+      : SEARCH_OPERATOR_SUGGESTIONS;
   return candidates.slice(0, limit);
 }
 
@@ -140,22 +139,6 @@ export function applySearchOperatorSuggestion(input: string, token: string): str
   const prefix = input.slice(0, start).trimEnd();
   const suffix = input.slice(end).trimStart();
   return [prefix, token, suffix].filter(Boolean).join(" ").trim();
-}
-
-function normalizedLookup(value: string) {
-  return normalizeAgentUrlKey(value) ?? value.trim().toLowerCase();
-}
-
-function findByNameOrId<T extends { id: string; name: string; urlKey?: string | null }>(
-  entries: readonly T[] | undefined,
-  value: string,
-): T | null {
-  const normalized = normalizedLookup(value);
-  return entries?.find((entry) => {
-    if (entry.id === value) return true;
-    if (normalizedLookup(entry.name) === normalized) return true;
-    return entry.urlKey ? normalizedLookup(entry.urlKey) === normalized : false;
-  }) ?? null;
 }
 
 function addUnique<T extends string>(values: T[] | undefined, value: T): T[] {
@@ -167,15 +150,16 @@ function appendText(parts: string[], raw: string) {
 }
 
 function parseStatus(value: string): TaskStatus | null {
-  return (TASK_STATUSES as readonly string[]).includes(value) ? value as TaskStatus : null;
+  return (TASK_STATUSES as readonly string[]).includes(value) ? (value as TaskStatus) : null;
 }
 
 function parsePriority(value: string): TaskPriority | null {
-  return (TASK_PRIORITIES as readonly string[]).includes(value) ? value as TaskPriority : null;
+  return (TASK_PRIORITIES as readonly string[]).includes(value) ? (value as TaskPriority) : null;
 }
 
 function parseUpdatedWithin(value: string): string | null {
-  const normalized = value.startsWith(">") ? value.slice(1) : value;
+  if (!value.startsWith(">")) return null;
+  const normalized = value.slice(1);
   if (!/^[1-9]\d{0,2}(h|d|w|m)$/.test(normalized)) return null;
   return normalized;
 }
@@ -190,15 +174,14 @@ export function parseSearchQuery(input: string, context: SearchQueryParserContex
   const pills: SearchOperatorPill[] = [];
 
   for (const token of tokenizeQuery(input)) {
-    const match = /^([a-zA-Z]+):(.*)$/s.exec(token.value);
+    const match = /^([a-z]+):(.*)$/s.exec(token.value);
     if (!match) {
       appendText(textParts, token.raw);
       continue;
     }
 
-    const key = match[1]!.toLowerCase();
-    const rawValue = match[2]!;
-    const value = stripValueQuotes(rawValue).trim();
+    const key = match[1]!;
+    const value = match[2]!;
     if (!value) {
       appendText(textParts, token.raw);
       continue;
@@ -211,7 +194,11 @@ export function parseSearchQuery(input: string, context: SearchQueryParserContex
         continue;
       }
       filters.status = addUnique(filters.status, status);
-      pills.push({ key: "status", value: status, label: operatorLabel("status", status) });
+      pills.push({
+        key: "status",
+        value: status,
+        label: operatorLabel("status", status),
+      });
       continue;
     }
 
@@ -222,57 +209,50 @@ export function parseSearchQuery(input: string, context: SearchQueryParserContex
         continue;
       }
       filters.priority = addUnique(filters.priority, priority);
-      pills.push({ key: "priority", value: priority, label: operatorLabel("priority", priority) });
+      pills.push({
+        key: "priority",
+        value: priority,
+        label: operatorLabel("priority", priority),
+      });
       continue;
     }
 
     if (key === "owner") {
-      if (value.toLowerCase() === "me") {
-        if (context.currentAgentId) {
-          filters.ownerAgentId = context.currentAgentId;
-          pills.push({ key: "owner", value: "me", label: "owner:me" });
-          continue;
-        }
-        if (context.currentUserId) {
-          filters.ownerUserId = context.currentUserId;
-          pills.push({ key: "owner", value: "me", label: "owner:me" });
-          continue;
-        }
+      if (!isCanonicalUuid(value)) {
         appendText(textParts, token.raw);
         continue;
       }
-
-      const agent = findByNameOrId(context.agents, value);
-      if (!agent) {
-        appendText(textParts, token.raw);
-        continue;
-      }
-      filters.ownerAgentId = agent.id;
-      pills.push({ key: "owner", value: agent.name, label: operatorLabel("owner", agent.name) });
+      filters.ownerAgentId = value;
+      pills.push({
+        key: "owner",
+        value,
+        label: operatorLabel("owner", nameForId(context.agents, value)),
+      });
       continue;
     }
 
     if (key === "project") {
-      const project = findByNameOrId(context.projects, value);
-      if (!project) {
+      if (!isCanonicalUuid(value)) {
         appendText(textParts, token.raw);
         continue;
       }
-      filters.projectId = project.id;
-      pills.push({ key: "project", value: project.name, label: operatorLabel("project", project.name) });
+      filters.projectId = value;
+      pills.push({
+        key: "project",
+        value,
+        label: operatorLabel("project", nameForId(context.projects, value)),
+      });
       continue;
     }
 
     if (key === "label") {
-      const label = findByNameOrId(context.labels, value);
-      if (label) {
-        filters.labelId = label.id;
-        pills.push({ key: "label", value: label.name, label: operatorLabel("label", label.name) });
-        continue;
-      }
-      if (isUuidLike(value)) {
+      if (isCanonicalUuid(value)) {
         filters.labelId = value;
-        pills.push({ key: "label", value, label: operatorLabel("label", value.slice(0, 8)) });
+        pills.push({
+          key: "label",
+          value,
+          label: operatorLabel("label", nameForId(context.labels, value)),
+        });
         continue;
       }
       appendText(textParts, token.raw);
@@ -286,7 +266,11 @@ export function parseSearchQuery(input: string, context: SearchQueryParserContex
         continue;
       }
       filters.updatedWithin = updatedWithin;
-      pills.push({ key: "updated", value: `>${updatedWithin}`, label: operatorLabel("updated", `>${updatedWithin}`) });
+      pills.push({
+        key: "updated",
+        value: `>${updatedWithin}`,
+        label: operatorLabel("updated", `>${updatedWithin}`),
+      });
       continue;
     }
 
@@ -315,64 +299,16 @@ export function parseSearchQuery(input: string, context: SearchQueryParserContex
   };
 }
 
-function appendMulti(search: URLSearchParams, key: string, values: readonly string[] | undefined) {
-  for (const value of values ?? []) search.append(key, value);
-}
-
-export function clearSearchFilterParams(search: URLSearchParams) {
-  for (const key of SEARCH_FILTER_PARAM_KEYS) search.delete(key);
-}
-
-export function applySearchFiltersToParams(search: URLSearchParams, filters: ParsedSearchQuery["filters"]) {
-  clearSearchFilterParams(search);
-  appendMulti(search, "status", filters.status);
-  appendMulti(search, "priority", filters.priority);
-  if (filters.ownerAgentId !== undefined) search.set("ownerAgentId", filters.ownerAgentId ?? "null");
-  if (filters.ownerUserId !== undefined) search.set("ownerUserId", filters.ownerUserId);
-  if (filters.projectId !== undefined) search.set("projectId", filters.projectId);
-  if (filters.labelId !== undefined) search.set("labelId", filters.labelId);
-  if (filters.updatedWithin !== undefined) search.set("updatedWithin", filters.updatedWithin);
-  if (filters.updatedAfter !== undefined) search.set("updatedAfter", filters.updatedAfter);
-}
-
-function validValues<T extends string>(values: string[], allowed: readonly T[]): T[] {
-  return values.filter((value): value is T => (allowed as readonly string[]).includes(value));
-}
-
-export function readSearchFiltersFromParams(search: URLSearchParams): ParsedSearchQuery["filters"] {
-  const filters: ParsedSearchQuery["filters"] = {};
-  const statuses = validValues(search.getAll("status").flatMap((value) => value.split(",")), TASK_STATUSES);
-  const priorities = validValues(search.getAll("priority").flatMap((value) => value.split(",")), TASK_PRIORITIES);
-  const ownerAgentId = search.get("ownerAgentId");
-  const ownerUserId = search.get("ownerUserId");
-  const projectId = search.get("projectId");
-  const labelId = search.get("labelId");
-  const updatedWithin = search.get("updatedWithin");
-  const updatedAfter = search.get("updatedAfter");
-
-  if (statuses.length > 0) filters.status = statuses;
-  if (priorities.length > 0) filters.priority = priorities;
-  if (ownerAgentId !== null) filters.ownerAgentId = ownerAgentId === "null" ? null : ownerAgentId;
-  if (ownerUserId) filters.ownerUserId = ownerUserId;
-  if (projectId && isUuidLike(projectId)) filters.projectId = projectId;
-  if (labelId && isUuidLike(labelId)) filters.labelId = labelId;
-  if (updatedWithin && (/^[1-9]\d{0,2}(h|d|w|m)$/.test(updatedWithin) || (COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS as readonly string[]).includes(updatedWithin))) {
-    filters.updatedWithin = updatedWithin;
-  }
-  if (updatedAfter && !Number.isNaN(new Date(updatedAfter).getTime())) filters.updatedAfter = updatedAfter;
-  return filters;
-}
-
 export function hasSearchFilters(filters: ParsedSearchQuery["filters"]) {
   return Boolean(
-    filters.status?.length
-    || filters.priority?.length
-    || filters.ownerAgentId !== undefined
-    || filters.ownerUserId
-    || filters.projectId
-    || filters.labelId
-    || filters.updatedWithin
-    || filters.updatedAfter,
+    filters.status?.length ||
+    filters.priority?.length ||
+    filters.ownerAgentId !== undefined ||
+    filters.ownerUserId ||
+    filters.projectId ||
+    filters.labelId ||
+    filters.updatedWithin ||
+    filters.updatedAfter,
   );
 }
 
@@ -386,43 +322,63 @@ export function searchFilterPills(
 ): SearchOperatorPill[] {
   const pills: SearchOperatorPill[] = [];
   for (const status of filters.status ?? []) {
-    pills.push({ key: "status", value: status, label: operatorLabel("status", status) });
+    pills.push({
+      key: "status",
+      value: status,
+      label: operatorLabel("status", status),
+    });
   }
   for (const priority of filters.priority ?? []) {
-    pills.push({ key: "priority", value: priority, label: operatorLabel("priority", priority) });
+    pills.push({
+      key: "priority",
+      value: priority,
+      label: operatorLabel("priority", priority),
+    });
   }
   if (filters.ownerAgentId !== undefined) {
-    const value = filters.ownerAgentId === null
-      ? "board"
-      : nameForId(context.agents, filters.ownerAgentId);
-    pills.push({ key: "owner", value, label: operatorLabel("owner", value) });
+    const label = nameForId(context.agents, filters.ownerAgentId);
+    pills.push({
+      key: "owner",
+      value: filters.ownerAgentId,
+      label: operatorLabel("owner", label),
+    });
   }
   if (filters.ownerUserId) {
-    const value = filters.ownerUserId === context.currentUserId ? "me" : filters.ownerUserId.slice(0, 8);
-    pills.push({ key: "owner", value, label: operatorLabel("owner", value) });
+    pills.push({
+      key: "owner",
+      value: filters.ownerUserId,
+      label: operatorLabel("owner", filters.ownerUserId.slice(0, 8)),
+    });
   }
   if (filters.projectId) {
-    const value = nameForId(context.projects, filters.projectId);
-    pills.push({ key: "project", value, label: operatorLabel("project", value) });
+    const label = nameForId(context.projects, filters.projectId);
+    pills.push({
+      key: "project",
+      value: filters.projectId,
+      label: operatorLabel("project", label),
+    });
   }
   if (filters.labelId) {
-    const value = nameForId(context.labels, filters.labelId);
-    pills.push({ key: "label", value, label: operatorLabel("label", value) });
+    const label = nameForId(context.labels, filters.labelId);
+    pills.push({
+      key: "label",
+      value: filters.labelId,
+      label: operatorLabel("label", label),
+    });
   }
   if (filters.updatedWithin) {
-    pills.push({ key: "updated", value: `>${filters.updatedWithin}`, label: operatorLabel("updated", `>${filters.updatedWithin}`) });
+    pills.push({
+      key: "updated",
+      value: `>${filters.updatedWithin}`,
+      label: operatorLabel("updated", `>${filters.updatedWithin}`),
+    });
   }
   if (filters.updatedAfter) {
-    pills.push({ key: "updated", value: filters.updatedAfter, label: operatorLabel("updated", filters.updatedAfter) });
+    pills.push({
+      key: "updated",
+      value: filters.updatedAfter,
+      label: operatorLabel("updated", filters.updatedAfter),
+    });
   }
   return pills;
-}
-
-export function buildSearchPathFromQuery(input: string, context: SearchQueryParserContext = {}) {
-  const parsed = parseSearchQuery(input, context);
-  const search = new URLSearchParams();
-  if (parsed.query.length > 0) search.set("q", parsed.query);
-  applySearchFiltersToParams(search, parsed.filters);
-  const qs = search.toString();
-  return qs ? `/search?${qs}` : "/search";
 }

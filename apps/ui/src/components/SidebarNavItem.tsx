@@ -1,5 +1,9 @@
 import { createContext, useContext, type ReactNode } from "react";
-import { NavLink } from "@/lib/router";
+import {
+  Link,
+  type RegisteredRouter,
+  type ValidateLinkOptions,
+} from "@tanstack/react-router";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { useSidebar } from "../context/SidebarContext";
@@ -32,8 +36,11 @@ export function useSidebarNavExpanded() {
   return useContext(SidebarNavExpandedContext);
 }
 
-interface SidebarNavItemProps {
-  to: string;
+interface SidebarNavItemProps<
+  TRouter extends RegisteredRouter = RegisteredRouter,
+  TOptions = unknown,
+> {
+  linkOptions: ValidateLinkOptions<TRouter, TOptions>;
   label: string;
   icon?: LucideIcon;
   /**
@@ -57,7 +64,7 @@ interface SidebarNavItemProps {
   alert?: boolean;
   liveCount?: number;
   /**
-   * Overrides NavLink's own route matching for rows whose active state is
+   * Overrides the router link's own route matching for rows whose active state is
    * computed externally (agent rows match `/agents/:ref` across tab suffixes).
    */
   active?: boolean;
@@ -69,8 +76,12 @@ interface SidebarNavItemProps {
   liveAccessory?: ReactNode;
 }
 
+export function SidebarNavItem<
+  TRouter extends RegisteredRouter,
+  TOptions,
+>(props: SidebarNavItemProps<TRouter, TOptions>): ReactNode;
 export function SidebarNavItem({
-  to,
+  linkOptions,
   label,
   icon: Icon,
   iconNode,
@@ -114,26 +125,24 @@ export function SidebarNavItem({
     ? undefined
     : `${label}${railStatusText ? `, ${railStatusText}` : ""}${trailingLabel ? `, ${trailingLabel}` : ""}`;
 
+  const linkClassName = cn(
+    "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors",
+    className,
+  );
+  const activeClassName = "bg-accent text-foreground";
+  const inactiveClassName =
+    "text-foreground/80 hover:bg-accent/50 hover:text-foreground";
+
   const link = (
-    <NavLink
-      to={to}
+    <Link
+      {...linkOptions}
       state={SIDEBAR_SCROLL_RESET_STATE}
-      end={end}
+      activeOptions={{ exact: end }}
+      activeProps={{ className: active === false ? inactiveClassName : activeClassName }}
+      inactiveProps={{ className: active === true ? activeClassName : inactiveClassName }}
       aria-label={railAriaLabel}
       onClick={() => { if (isMobile) setSidebarOpen(false); }}
-      className={({ isActive }) =>
-        cn(
-          // One rhythm and one inset pill highlight: mx-2 floats the row off
-          // the sidebar edges, rounded-lg matches the card anchor, px-2 gives
-          // the icon breathing room inside the pill. Rows with hover menus
-          // (agents/projects) reserve extra right padding via className.
-          "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors",
-          (active ?? isActive)
-            ? "bg-accent text-foreground"
-            : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
-          className,
-        )
-      }
+      className={linkClassName}
     >
       <span className="relative shrink-0">
         {iconNode ?? (Icon ? <Icon className="h-4 w-4" /> : null)}
@@ -204,15 +213,14 @@ export function SidebarNavItem({
           {badge}
         </Badge>
       )}
-    </NavLink>
+    </Link>
   );
 
   if (!rail) return link;
 
-  // The tooltip wraps a plain block element rather than the NavLink directly:
-  // Radix `asChild` (Slot) drops React Router's *function* className, which would
-  // strip `flex` off the <a> and render it as a block — the in-flow label would
-  // then stack under the icon and the row would grow. Anchoring the tooltip to a
+  // The tooltip wraps a plain block element rather than the router link directly:
+  // Anchoring the tooltip to a wrapper keeps the link's flex layout stable, so
+  // the in-flow label does not stack under the icon and grow the row. The
   // wrapper keeps the <a> rendering normally (flex), so the row stays 1:1 with
   // the expanded state and the icon never moves (PAP-10676).
   return (

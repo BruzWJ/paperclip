@@ -3,18 +3,24 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Bot, Filter, Search, User, X } from "lucide-react";
 import { PriorityIcon } from "./PriorityIcon";
 import { StatusIcon } from "./StatusIcon";
 import {
   defaultTaskFilterState,
+  hasTaskOwnerFilter,
   taskFilterArraysEqual,
   taskFilterLabel,
   taskPriorityOrder,
   taskQuickFilterPresets,
   taskStatusOrder,
   toggleTaskFilterValue,
+  toggleTaskOwnerFilter,
   type TaskFilterState,
 } from "../lib/task-filters";
 import { formatOwnerUserLabel } from "../lib/task-owners";
@@ -25,6 +31,11 @@ type AgentOption = {
 };
 
 type ProjectOption = {
+  id: string;
+  name: string;
+};
+
+type UserOption = {
   id: string;
   name: string;
 };
@@ -47,6 +58,7 @@ export function TaskFiltersPopover({
   onChange,
   activeFilterCount,
   agents,
+  users,
   projects,
   labels,
   currentUserId,
@@ -59,6 +71,7 @@ export function TaskFiltersPopover({
   onChange: (patch: Partial<TaskFilterState>) => void;
   activeFilterCount: number;
   agents?: AgentOption[];
+  users?: UserOption[];
   projects?: ProjectOption[];
   labels?: LabelOption[];
   currentUserId?: string | null;
@@ -77,35 +90,74 @@ export function TaskFiltersPopover({
   const visibleCreatorOptions = useMemo(() => {
     if (!normalizedCreatorSearch) return creatorOptions;
     return creatorOptions.filter((option) =>
-      `${option.label} ${option.searchText ?? ""}`.toLowerCase().includes(normalizedCreatorSearch),
+      `${option.label} ${option.searchText ?? ""}`
+        .toLowerCase()
+        .includes(normalizedCreatorSearch),
     );
   }, [creatorOptions, normalizedCreatorSearch]);
   const selectedCreatorOptions = useMemo(
-    () => state.creators.map((creatorId) => {
-      const knownOption = creatorOptionById.get(creatorId);
-      if (knownOption) return knownOption;
-      if (creatorId.startsWith("agent:")) {
-        const agentId = creatorId.slice("agent:".length);
-        return { id: creatorId, label: agentId.slice(0, 8), kind: "agent" as const };
-      }
-      const userId = creatorId.startsWith("user:") ? creatorId.slice("user:".length) : creatorId;
-      return {
-        id: creatorId,
-        label: formatOwnerUserLabel(userId, currentUserId) ?? userId.slice(0, 5),
-        kind: "user" as const,
-      };
-    }),
+    () =>
+      state.creators.map((creatorId) => {
+        const knownOption = creatorOptionById.get(creatorId);
+        if (knownOption) return knownOption;
+        if (creatorId.startsWith("agent:")) {
+          const agentId = creatorId.slice("agent:".length);
+          return {
+            id: creatorId,
+            label: agentId.slice(0, 8),
+            kind: "agent" as const,
+          };
+        }
+        const userId = creatorId.startsWith("user:")
+          ? creatorId.slice("user:".length)
+          : creatorId;
+        return {
+          id: creatorId,
+          label:
+            formatOwnerUserLabel(userId, currentUserId) ?? userId.slice(0, 5),
+          kind: "user" as const,
+        };
+      }),
     [creatorOptionById, currentUserId, state.creators],
   );
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant={buttonVariant} size={iconOnly ? "icon" : "sm"} className={`text-xs ${iconOnly ? "relative h-8 w-8 shrink-0" : ""} ${activeFilterCount > 0 ? "text-blue-600 dark:text-blue-400" : ""}`} title={iconOnly ? (activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter") : undefined}>
-          <Filter className={iconOnly ? "h-3.5 w-3.5" : "h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1"} />
-          {!iconOnly && <span className="hidden sm:inline">{activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter"}</span>}
-          {!iconOnly && activeFilterCount > 0 ? <span className="ml-0.5 text-(length:--text-nano) font-medium sm:hidden">{activeFilterCount}</span> : null}
-          {iconOnly && activeFilterCount > 0 ? <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-(length:--text-nano) font-bold text-white">{activeFilterCount}</span> : null}
+        <Button
+          variant={buttonVariant}
+          size={iconOnly ? "icon" : "sm"}
+          className={`text-xs ${iconOnly ? "relative h-8 w-8 shrink-0" : ""} ${activeFilterCount > 0 ? "text-blue-600 dark:text-blue-400" : ""}`}
+          title={
+            iconOnly
+              ? activeFilterCount > 0
+                ? `Filters: ${activeFilterCount}`
+                : "Filter"
+              : undefined
+          }
+        >
+          <Filter
+            className={
+              iconOnly ? "h-3.5 w-3.5" : "h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1"
+            }
+          />
+          {!iconOnly && (
+            <span className="hidden sm:inline">
+              {activeFilterCount > 0
+                ? `Filters: ${activeFilterCount}`
+                : "Filter"}
+            </span>
+          )}
+          {!iconOnly && activeFilterCount > 0 ? (
+            <span className="ml-0.5 text-(length:--text-nano) font-medium sm:hidden">
+              {activeFilterCount}
+            </span>
+          ) : null}
+          {iconOnly && activeFilterCount > 0 ? (
+            <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-(length:--text-nano) font-bold text-white">
+              {activeFilterCount}
+            </span>
+          ) : null}
           {!iconOnly && activeFilterCount > 0 ? (
             <X
               className="ml-1 hidden h-3 w-3 sm:block"
@@ -139,7 +191,10 @@ export function TaskFiltersPopover({
             <span className="text-xs text-muted-foreground">Quick filters</span>
             <div className="flex flex-wrap gap-1.5">
               {taskQuickFilterPresets.map((preset) => {
-                const isActive = taskFilterArraysEqual(state.statuses, preset.statuses);
+                const isActive = taskFilterArraysEqual(
+                  state.statuses,
+                  preset.statuses,
+                );
                 return (
                   <button
                     key={preset.label}
@@ -149,7 +204,11 @@ export function TaskFiltersPopover({
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
                     }`}
-                    onClick={() => onChange({ statuses: isActive ? [] : [...preset.statuses] })}
+                    onClick={() =>
+                      onChange({
+                        statuses: isActive ? [] : [...preset.statuses],
+                      })
+                    }
                   >
                     {preset.label}
                   </button>
@@ -166,10 +225,20 @@ export function TaskFiltersPopover({
                 <span className="text-xs text-muted-foreground">Status</span>
                 <div className="space-y-0.5">
                   {taskStatusOrder.map((status) => (
-                    <label key={status} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                    <label
+                      key={status}
+                      className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50"
+                    >
                       <Checkbox
                         checked={state.statuses.includes(status)}
-                        onCheckedChange={() => onChange({ statuses: toggleTaskFilterValue(state.statuses, status) })}
+                        onCheckedChange={() =>
+                          onChange({
+                            statuses: toggleTaskFilterValue(
+                              state.statuses,
+                              status,
+                            ),
+                          })
+                        }
                       />
                       <StatusIcon status={status} />
                       <span className="text-sm">{taskFilterLabel(status)}</span>
@@ -182,13 +251,25 @@ export function TaskFiltersPopover({
                 <span className="text-xs text-muted-foreground">Priority</span>
                 <div className="space-y-0.5">
                   {taskPriorityOrder.map((priority) => (
-                    <label key={priority} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                    <label
+                      key={priority}
+                      className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50"
+                    >
                       <Checkbox
                         checked={state.priorities.includes(priority)}
-                        onCheckedChange={() => onChange({ priorities: toggleTaskFilterValue(state.priorities, priority) })}
+                        onCheckedChange={() =>
+                          onChange({
+                            priorities: toggleTaskFilterValue(
+                              state.priorities,
+                              priority,
+                            ),
+                          })
+                        }
                       />
                       <PriorityIcon priority={priority} />
-                      <span className="text-sm">{taskFilterLabel(priority)}</span>
+                      <span className="text-sm">
+                        {taskFilterLabel(priority)}
+                      </span>
                     </label>
                   ))}
                 </div>
@@ -201,26 +282,62 @@ export function TaskFiltersPopover({
                 <div className="max-h-32 space-y-0.5 overflow-y-auto">
                   <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
                     <Checkbox
-                      checked={state.owners.includes("__board")}
-                      onCheckedChange={() => onChange({ owners: toggleTaskFilterValue(state.owners, "__board") })}
+                      checked={hasTaskOwnerFilter(state.owners, {
+                        ownerKind: "board",
+                      })}
+                      onCheckedChange={() =>
+                        onChange({
+                          owners: toggleTaskOwnerFilter(state.owners, {
+                            ownerKind: "board",
+                          }),
+                        })
+                      }
                     />
                     <span className="text-sm">Board escalation</span>
                   </label>
-                  {currentUserId ? (
-                    <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                  {(users ?? []).map((user) => (
+                    <label
+                      key={user.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50"
+                    >
                       <Checkbox
-                        checked={state.owners.includes("__me")}
-                        onCheckedChange={() => onChange({ owners: toggleTaskFilterValue(state.owners, "__me") })}
+                        checked={hasTaskOwnerFilter(state.owners, {
+                          ownerKind: "user",
+                          ownerUserId: user.id,
+                        })}
+                        onCheckedChange={() =>
+                          onChange({
+                            owners: toggleTaskOwnerFilter(state.owners, {
+                              ownerKind: "user",
+                              ownerUserId: user.id,
+                            }),
+                          })
+                        }
                       />
                       <User className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-sm">Me</span>
+                      <span className="text-sm">
+                        {user.id === currentUserId ? "Me" : user.name}
+                      </span>
                     </label>
-                  ) : null}
+                  ))}
                   {(agents ?? []).map((agent) => (
-                    <label key={agent.id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                    <label
+                      key={agent.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50"
+                    >
                       <Checkbox
-                        checked={state.owners.includes(agent.id)}
-                        onCheckedChange={() => onChange({ owners: toggleTaskFilterValue(state.owners, agent.id) })}
+                        checked={hasTaskOwnerFilter(state.owners, {
+                          ownerKind: "agent",
+                          ownerAgentId: agent.id,
+                        })}
+                        onCheckedChange={() =>
+                          onChange({
+                            owners: toggleTaskOwnerFilter(state.owners, {
+                              ownerKind: "agent",
+                              ownerAgentId: agent.id,
+                            }),
+                          })
+                        }
                       />
                       <span className="text-sm">{agent.name}</span>
                     </label>
@@ -234,13 +351,27 @@ export function TaskFiltersPopover({
                   {selectedCreatorOptions.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {selectedCreatorOptions.map((creator) => (
-                        <Badge key={creator.id} variant="secondary" className="gap-1 pr-1">
-                          {creator.kind === "agent" ? <Bot className="h-3 w-3" /> : <User className="h-3 w-3" />}
+                        <Badge
+                          key={creator.id}
+                          variant="secondary"
+                          className="gap-1 pr-1"
+                        >
+                          {creator.kind === "agent" ? (
+                            <Bot className="h-3 w-3" />
+                          ) : (
+                            <User className="h-3 w-3" />
+                          )}
                           <span>{creator.label}</span>
                           <button
                             type="button"
                             className="rounded-full p-0.5 hover:bg-accent"
-                            onClick={() => onChange({ creators: state.creators.filter((value) => value !== creator.id) })}
+                            onClick={() =>
+                              onChange({
+                                creators: state.creators.filter(
+                                  (value) => value !== creator.id,
+                                ),
+                              })
+                            }
                             aria-label={`Remove creator ${creator.label}`}
                           >
                             <X className="h-3 w-3" />
@@ -260,24 +391,43 @@ export function TaskFiltersPopover({
                     />
                   </div>
                   <div className="max-h-32 space-y-0.5 overflow-y-auto">
-                    {visibleCreatorOptions.length > 0 ? visibleCreatorOptions.map((creator) => {
-                      const selected = state.creators.includes(creator.id);
-                      return (
-                        <button
-                          key={creator.id}
-                          type="button"
-                          className={`flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-sm ${
-                            selected ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                          }`}
-                          onClick={() => onChange({ creators: toggleTaskFilterValue(state.creators, creator.id) })}
-                        >
-                          {creator.kind === "agent" ? <Bot className="h-3.5 w-3.5" /> : <User className="h-3.5 w-3.5" />}
-                          <span className="min-w-0 flex-1 truncate">{creator.label}</span>
-                          {selected ? <X className="h-3 w-3" /> : null}
-                        </button>
-                      );
-                    }) : (
-                      <div className="px-2 py-1 text-xs text-muted-foreground">No creators match.</div>
+                    {visibleCreatorOptions.length > 0 ? (
+                      visibleCreatorOptions.map((creator) => {
+                        const selected = state.creators.includes(creator.id);
+                        return (
+                          <button
+                            key={creator.id}
+                            type="button"
+                            className={`flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-sm ${
+                              selected
+                                ? "bg-accent text-foreground"
+                                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                            }`}
+                            onClick={() =>
+                              onChange({
+                                creators: toggleTaskFilterValue(
+                                  state.creators,
+                                  creator.id,
+                                ),
+                              })
+                            }
+                          >
+                            {creator.kind === "agent" ? (
+                              <Bot className="h-3.5 w-3.5" />
+                            ) : (
+                              <User className="h-3.5 w-3.5" />
+                            )}
+                            <span className="min-w-0 flex-1 truncate">
+                              {creator.label}
+                            </span>
+                            {selected ? <X className="h-3 w-3" /> : null}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="px-2 py-1 text-xs text-muted-foreground">
+                        No creators match.
+                      </div>
                     )}
                   </div>
                 </div>
@@ -288,10 +438,20 @@ export function TaskFiltersPopover({
                   <span className="text-xs text-muted-foreground">Project</span>
                   <div className="max-h-32 space-y-0.5 overflow-y-auto">
                     {projects.map((project) => (
-                      <label key={project.id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                      <label
+                        key={project.id}
+                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50"
+                      >
                         <Checkbox
                           checked={state.projects.includes(project.id)}
-                          onCheckedChange={() => onChange({ projects: toggleTaskFilterValue(state.projects, project.id) })}
+                          onCheckedChange={() =>
+                            onChange({
+                              projects: toggleTaskFilterValue(
+                                state.projects,
+                                project.id,
+                              ),
+                            })
+                          }
                         />
                         <span className="text-sm">{project.name}</span>
                       </label>
@@ -307,12 +467,25 @@ export function TaskFiltersPopover({
                   <span className="text-xs text-muted-foreground">Labels</span>
                   <div className="max-h-32 space-y-0.5 overflow-y-auto">
                     {labels.map((label) => (
-                      <label key={label.id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                      <label
+                        key={label.id}
+                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50"
+                      >
                         <Checkbox
                           checked={state.labels.includes(label.id)}
-                          onCheckedChange={() => onChange({ labels: toggleTaskFilterValue(state.labels, label.id) })}
+                          onCheckedChange={() =>
+                            onChange({
+                              labels: toggleTaskFilterValue(
+                                state.labels,
+                                label.id,
+                              ),
+                            })
+                          }
                         />
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: label.color }} />
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: label.color }}
+                        />
                         <span className="text-sm">{label.name}</span>
                       </label>
                     ))}
@@ -321,11 +494,15 @@ export function TaskFiltersPopover({
               ) : null}
 
               <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Visibility</span>
+                <span className="text-xs text-muted-foreground">
+                  Visibility
+                </span>
                 <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
                   <Checkbox
                     checked={state.liveOnly}
-                    onCheckedChange={(checked) => onChange({ liveOnly: checked === true })}
+                    onCheckedChange={(checked) =>
+                      onChange({ liveOnly: checked === true })
+                    }
                   />
                   <span className="text-sm">Live runs only</span>
                 </label>
@@ -333,7 +510,9 @@ export function TaskFiltersPopover({
                   <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
                     <Checkbox
                       checked={state.hideRoutineExecutions}
-                      onCheckedChange={(checked) => onChange({ hideRoutineExecutions: checked === true })}
+                      onCheckedChange={(checked) =>
+                        onChange({ hideRoutineExecutions: checked === true })
+                      }
                     />
                     <span className="text-sm">Hide routine runs</span>
                   </label>

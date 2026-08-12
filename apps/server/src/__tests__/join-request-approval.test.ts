@@ -6,9 +6,9 @@ import { testBoardSessionActor } from "./helpers/request-actor.js";
 const approvalMocks = vi.hoisted(() => ({
   ensureMembership: vi.fn(async () => undefined),
   setPrincipalGrants: vi.fn(async () => undefined),
-  createRuntimeAgent: vi.fn(),
-  createAdapterRevision: vi.fn(),
-  logActivity: vi.fn(async () => undefined),
+  persistedActivity: { row: { id: "activity-1" }, taskId: null },
+  persistActivityLog: vi.fn(),
+  publishCommittedActivity: vi.fn(),
 }));
 
 vi.mock("../services/access.js", () => ({
@@ -18,166 +18,100 @@ vi.mock("../services/access.js", () => ({
   }),
 }));
 
-vi.mock("../services/runtime-agent-configuration.js", () => ({
-  createRuntimeAgentConfigurationService: () => ({
-    createInTransaction: approvalMocks.createRuntimeAgent,
-  }),
-}));
-
-vi.mock("../services/agent-adapter-config-revisions.js", () => ({
-  createAgentAdapterConfigurationService: () => ({
-    createRevision: approvalMocks.createAdapterRevision,
-  }),
-}));
-
 vi.mock("../services/activity-log.js", () => ({
-  logActivity: approvalMocks.logActivity,
+  persistActivityLog: approvalMocks.persistActivityLog,
+  publishCommittedActivity: approvalMocks.publishCommittedActivity,
 }));
 
 import { createJoinRequestApprovalService } from "../services/join-request-approval.js";
 
-function createApprovalService(db: ReturnType<typeof createMockDb>["db"]) {
-  return createJoinRequestApprovalService(db);
-}
-
-function approvalFixture() {
-  const companyId = randomUUID();
-  const requestId = randomUUID();
-  const inviteId = randomUUID();
-  const createdAgentId = randomUUID();
-  const revisionId = randomUUID();
-  const now = new Date("2026-01-01T00:00:00.000Z");
-  const joinRequest = {
-    id: requestId,
-    inviteId,
-    companyId,
-    requestType: "agent",
-    status: "pending_approval",
-    requestingUserId: null,
-    agentName: "Requested agent",
-    adapterType: "codex",
-    capabilities: "Research primary sources",
-    agentDefaultsPayload: { model: "gpt-5.6" },
-    createdAgentId: null,
-    createdAgentAdapterConfigRevisionId: null,
-    approvedByUserId: null,
-    approvedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-  const invite = {
-    id: inviteId,
-    companyId,
-    defaultsPayload: { agent: { grants: [] } },
-  };
-  const approved = {
-    ...joinRequest,
-    status: "approved",
-    createdAgentId,
-    createdAgentAdapterConfigRevisionId: revisionId,
-    approvedByUserId: "board-user",
-    approvedAt: now,
-    updatedAt: now,
-  };
-  const boardActor = {
-    actorId: "board-user",
-    userId: "board-user",
-    authorization: testBoardSessionActor({
-      userId: "board-user",
-      companyIds: [companyId],
-      memberships: [{ companyId, membershipRole: "owner", status: "active" }],
-      isInstanceAdmin: true,
-    }),
-  };
-  return {
-    companyId,
-    requestId,
-    createdAgentId,
-    revisionId,
-    joinRequest,
-    invite,
-    approved,
-    boardActor,
-  };
-}
-
 describe("join request approval", () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
+  afterEach(() => vi.clearAllMocks());
 
-  it("atomically creates the ordinary agent and its first adapter revision", async () => {
-    const fixture = approvalFixture();
-    approvalMocks.createRuntimeAgent.mockResolvedValue({ agentId: fixture.createdAgentId });
-    approvalMocks.createAdapterRevision.mockResolvedValue({
-      revision: { id: fixture.revisionId },
-    });
-    const harness = createMockDb({
-      select: [
-        [fixture.joinRequest],
-        [fixture.invite],
-        [],
-        [fixture.approved],
-      ],
-      update: [[fixture.approved]],
-    });
-    const service = createApprovalService(harness.db);
-
-    const approved = await service.approve({
-      companyId: fixture.companyId,
-      requestId: fixture.requestId,
-      actor: fixture.boardActor,
-    });
-
-    expect(approved).toMatchObject({
-      id: fixture.requestId,
+  it("atomically activates the invited user membership and grants", async () => {
+    const companyId = randomUUID();
+    const requestId = randomUUID();
+    const inviteId = randomUUID();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const joinRequest = {
+      id: requestId,
+      inviteId,
+      companyId,
+      status: "pending_approval",
+      requestIp: "127.0.0.1",
+      requestingUserId: "invited-user",
+      requestEmailSnapshot: "user@example.com",
+      approvedByUserId: null,
+      approvedAt: null,
+      rejectedByUserId: null,
+      rejectedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const invite = {
+      id: inviteId,
+      companyId,
+      defaultsPayload: { user: { role: "viewer", grants: [] } },
+    };
+    const approved = {
+      ...joinRequest,
       status: "approved",
-      createdAgentId: fixture.createdAgentId,
-      createdAgentAdapterConfigRevisionId: fixture.revisionId,
       approvedByUserId: "board-user",
+      approvedAt: now,
+    };
+    const harness = createMockDb({
+      select: [[joinRequest], [invite], [approved]],
+      update: [[approved]],
     });
-    expect(approvalMocks.createRuntimeAgent).toHaveBeenCalledWith(expect.objectContaining({
-      transaction: harness.db,
-      companyId: fixture.companyId,
-      idempotencyKey: `join-request:${fixture.requestId}:runtime-agent`,
-      configuration: expect.objectContaining({
-        name: "Requested agent",
-        capabilities: "Research primary sources",
+    approvalMocks.persistActivityLog.mockResolvedValue(
+      approvalMocks.persistedActivity,
+    );
+    const service = createJoinRequestApprovalService(harness.db);
+    const actor = {
+      actorId: "board-user",
+      userId: "board-user",
+      authorization: testBoardSessionActor({
+        userId: "board-user",
+        companyIds: [companyId],
+        memberships: [{ companyId, membershipRole: "owner", status: "active" }],
+        isInstanceAdmin: true,
       }),
-    }));
-    expect(approvalMocks.createAdapterRevision).toHaveBeenCalledWith(expect.objectContaining({
-      companyId: fixture.companyId,
-      agentId: fixture.createdAgentId,
-      configuration: expect.objectContaining({
-        adapterType: "codex",
-        adapterConfig: { model: "gpt-5.6" },
-      }),
-    }));
+    };
+
+    await expect(
+      service.approve({ companyId, requestId, actor }),
+    ).resolves.toMatchObject({ id: requestId, status: "approved" });
     expect(approvalMocks.ensureMembership).toHaveBeenCalledWith(
-      fixture.companyId,
-      "agent",
-      fixture.createdAgentId,
-      "member",
+      companyId,
+      "user",
+      "invited-user",
+      "viewer",
       "active",
     );
-    expect(approvalMocks.logActivity).toHaveBeenCalledWith(harness.db, expect.objectContaining({
-      companyId: fixture.companyId,
-      action: "join.approved",
-      entityId: fixture.requestId,
-      details: expect.objectContaining({
-        createdAgentId: fixture.createdAgentId,
-        createdAgentAdapterConfigRevisionId: fixture.revisionId,
+    expect(approvalMocks.setPrincipalGrants).toHaveBeenCalledWith(
+      companyId,
+      "user",
+      "invited-user",
+      [],
+      "board-user",
+    );
+    expect(approvalMocks.persistActivityLog).toHaveBeenCalledWith(
+      harness.db,
+      expect.objectContaining({
+        companyId,
+        action: "join.approved",
+        entityId: requestId,
+        details: null,
       }),
-    }));
+    );
+    expect(approvalMocks.publishCommittedActivity).toHaveBeenCalledWith(
+      approvalMocks.persistedActivity,
+    );
 
-    await expect(service.approve({
-      companyId: fixture.companyId,
-      requestId: fixture.requestId,
-      actor: fixture.boardActor,
-    })).resolves.toMatchObject({ createdAgentId: fixture.createdAgentId });
-
+    await expect(
+      service.approve({ companyId, requestId, actor }),
+    ).resolves.toMatchObject({ status: "approved" });
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("update")).toBe(0);
-    expect((harness.db.transaction as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(2);
   });
 });

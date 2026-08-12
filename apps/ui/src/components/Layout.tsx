@@ -11,10 +11,13 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Outlet,
   useLocation,
+  useMatch,
+  useMatchRoute,
   useNavigate,
-  useNavigationType,
-  useParams,
-} from "@/lib/router";
+  useRouterState,
+} from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { useNavigationAction } from "@/lib/navigation-action";
 import { Sidebar } from "./Sidebar";
 import { CompanySettingsSidebar } from "./CompanySettingsSidebar";
 import { CompanySettingsNav } from "./access/CompanySettingsNav";
@@ -38,22 +41,21 @@ import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
-import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
 import { instanceSettingsApi } from "../api/instanceSettings";
-import { shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
 import {
   applyMainContentScrollTop,
   NavigationScrollMemory,
   resetNavigationScroll,
   shouldResetScrollOnNavigation,
+  type NavigationScrollRoute,
 } from "../lib/navigation-scroll";
 import { lazyPage } from "../lib/lazy-page";
 import { queryKeys } from "../lib/queryKeys";
 import { scheduleMainContentFocus } from "../lib/main-content-focus";
 import { pinDocumentScrollToZero } from "../lib/pin-document-scroll";
 import { cn } from "../lib/utils";
-import { NotFoundPage } from "../pages/NotFound";
+import { NotFoundPage } from "@/components/NotFoundPage";
 import {
   PluginSlotMount,
   resolveRouteSidebarSlot,
@@ -76,37 +78,6 @@ const NewGoalDialog = lazyPage(
   () => import("./NewGoalDialog"),
   "NewGoalDialog",
 );
-function getCompanyRouteSegment(
-  pathname: string,
-  companyPrefix: string | undefined,
-): string | null {
-  return getCompanyPathSegments(pathname, companyPrefix)[0] ?? null;
-}
-
-function getCompanyPathSegments(
-  pathname: string,
-  companyPrefix: string | undefined,
-): string[] {
-  if (!companyPrefix) return [];
-  const segments = pathname.split("/").filter(Boolean);
-  if (segments.length < 2) return [];
-  if (segments[0]?.toUpperCase() !== companyPrefix.toUpperCase()) return [];
-  return segments.slice(1);
-}
-
-function isSkillsStoreRoute(
-  pathname: string,
-  companyPrefix: string | undefined,
-) {
-  const segments = pathname.split("/").filter(Boolean);
-  if (segments[0]?.toLowerCase() === "skills") return true;
-  if (!companyPrefix) return false;
-  return (
-    segments[0]?.toUpperCase() === companyPrefix.toUpperCase() &&
-    segments[1]?.toLowerCase() === "skills"
-  );
-}
-
 export function Layout() {
   const {
     sidebarOpen,
@@ -125,59 +96,62 @@ export function Layout() {
     companies,
     loading: companiesLoading,
     selectedCompany,
-    selectedCompanyId,
-    selectionSource,
-    setSelectedCompanyId,
   } = useCompany();
-  const { companyPrefix, pluginRoutePath: matchedPluginRoutePath } = useParams<{
-    companyPrefix: string;
-    pluginRoutePath?: string;
-  }>();
+  const companyId = useCompanyRouteId();
+  const pluginRouteMatch = useMatch({
+    from: "/_authenticated/$companyId/$pluginRoutePath/$/",
+    shouldThrow: false,
+  });
+  const taskIndexRouteMatch = useMatch({
+    from: "/_authenticated/$companyId/tasks/",
+    shouldThrow: false,
+  });
+  const taskDetailRouteMatch = useMatch({
+    from: "/_authenticated/$companyId/tasks/$taskNumber/",
+    shouldThrow: false,
+  });
   const navigate = useNavigate();
   const location = useLocation();
-  const navigationType = useNavigationType();
-  const isCompanySettingsRoute =
-    location.pathname.includes("/company/settings");
-  const companyPathSegments = getCompanyPathSegments(
-    location.pathname,
-    companyPrefix,
+  const leafMatchId = useRouterState({
+    select: (state) => state.matches.at(-1)?.id ?? "__root__",
+  });
+  const matchRoute = useMatchRoute();
+  const navigationType = useNavigationAction();
+  const isCompanySettingsRoute = Boolean(
+    matchRoute({
+      to: "/$companyId/company/settings",
+      params: { companyId },
+      fuzzy: true,
+    }),
   );
-  // The Skills Store renders its own secondary (category) sidebar, so the main
-  // app nav collapses to its rail throughout the Skills Store section (PAP-10879).
-  const isSkillsRoute = isSkillsStoreRoute(location.pathname, companyPrefix);
   const onboardingTriggered = useRef(false);
   const lastMainScrollTop = useRef(0);
-  const previousPathname = useRef<string | null>(null);
+  const previousScrollRoute = useRef<NavigationScrollRoute | null>(null);
   const mainContentRef = useRef<HTMLElement | null>(null);
   const scrollMemory = useRef(new NavigationScrollMemory());
-  const activeScrollKey = useRef<string>(location.key);
+  const locationKey = location.state.__TSR_key ?? location.href;
+  const currentScrollRoute = useMemo<NavigationScrollRoute>(() => {
+    if (taskDetailRouteMatch) {
+      return {
+        matchId: leafMatchId,
+        kind: "task-detail",
+        taskRef: taskDetailRouteMatch.params.taskNumber,
+      };
+    }
+    return {
+      matchId: leafMatchId,
+      kind: taskIndexRouteMatch ? "task-index" : "other",
+    };
+  }, [leafMatchId, taskDetailRouteMatch, taskIndexRouteMatch]);
+  const activeScrollKey = useRef<string>(locationKey);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const matchedCompany = useMemo(() => {
-    if (!companyPrefix) return null;
-    const requestedPrefix = companyPrefix.toUpperCase();
-    return (
-      companies.find(
-        (company) => company.taskPrefix.toUpperCase() === requestedPrefix,
-      ) ?? null
-    );
-  }, [companies, companyPrefix]);
-  const hasUnknownCompanyPrefix =
-    Boolean(companyPrefix) &&
-    !companiesLoading &&
-    companies.length > 0 &&
-    !matchedCompany;
-  const pluginRoutePath = useMemo(
-    () =>
-      matchedPluginRoutePath ??
-      getCompanyRouteSegment(location.pathname, companyPrefix),
-    [companyPrefix, location.pathname, matchedPluginRoutePath],
-  );
-  const routeSidebarCompanyId = matchedCompany?.id ?? null;
-  const routeSidebarCompanyPrefix = matchedCompany?.taskPrefix ?? null;
+  const hasUnknownCompanyId =
+    !companiesLoading && companies.length > 0 && !selectedCompany;
+  const pluginRoutePath = pluginRouteMatch?.params.pluginRoutePath ?? null;
+  const routeSidebarCompanyId = companyId;
   const { slots: routeSidebarSlots } = usePluginSlots({
     slotTypes: ["page", "routeSidebar"],
-    companyId: routeSidebarCompanyId,
     enabled: Boolean(routeSidebarCompanyId && pluginRoutePath),
   });
   const routeSidebarSlot = useMemo(
@@ -187,9 +161,8 @@ export function Layout() {
   const sidebarContext = useMemo(
     () => ({
       companyId: routeSidebarCompanyId,
-      companyPrefix: routeSidebarCompanyPrefix,
     }),
-    [routeSidebarCompanyId, routeSidebarCompanyPrefix],
+    [routeSidebarCompanyId],
   );
   // Takeover routes (company settings, plugin `routeSidebar`) no longer replace
   // the app `<Sidebar/>`. Instead the host collapses it to its rail and renders
@@ -224,7 +197,7 @@ export function Layout() {
   // is active, but does NOT mutate the persisted preference. Clearing the force
   // on cleanup restores the user's expanded/collapsed choice when navigating
   // off the takeover route (PAP-10694).
-  const forceRailCollapsed = hasSecondarySidebar || isSkillsRoute;
+  const forceRailCollapsed = hasSecondarySidebar;
   useLayoutEffect(() => {
     setForceCollapsed(forceRailCollapsed);
     return () => setForceCollapsed(false);
@@ -237,52 +210,6 @@ export function Layout() {
       openOnboarding();
     }
   }, [companies, companiesLoading, openOnboarding]);
-
-  useEffect(() => {
-    if (!companyPrefix || companiesLoading || companies.length === 0) return;
-
-    if (!matchedCompany) {
-      const fallback =
-        (selectedCompanyId
-          ? companies.find((company) => company.id === selectedCompanyId)
-          : null) ??
-        companies[0] ??
-        null;
-      if (fallback && selectedCompanyId !== fallback.id) {
-        setSelectedCompanyId(fallback.id, { source: "route_sync" });
-      }
-      return;
-    }
-
-    if (companyPrefix !== matchedCompany.taskPrefix) {
-      const suffix = location.pathname.replace(/^\/[^/]+/, "");
-      navigate(`/${matchedCompany.taskPrefix}${suffix}${location.search}`, {
-        replace: true,
-      });
-      return;
-    }
-
-    if (
-      shouldSyncCompanySelectionFromRoute({
-        selectionSource,
-        selectedCompanyId,
-        routeCompanyId: matchedCompany.id,
-      })
-    ) {
-      setSelectedCompanyId(matchedCompany.id, { source: "route_sync" });
-    }
-  }, [
-    companyPrefix,
-    companies,
-    companiesLoading,
-    matchedCompany,
-    location.pathname,
-    location.search,
-    navigate,
-    selectionSource,
-    selectedCompanyId,
-    setSelectedCompanyId,
-  ]);
 
   const togglePanel = togglePanelVisible;
   // Cmd/Ctrl+B: collapse/expand the pinned rail on desktop; on mobile keep
@@ -401,8 +328,6 @@ export function Layout() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [peeking, clearPeekTimer, setPeeking]);
 
-  useCompanyPageMemory();
-
   useKeyboardShortcuts({
     enabled: keyboardShortcutsEnabled,
     onNewTask: () => openNewTask(),
@@ -411,7 +336,11 @@ export function Layout() {
     onToggleCollapse: toggleCollapse,
     onTogglePanel: togglePanel,
     onShowShortcuts: () => setShortcutsOpen(true),
-    onGoToInbox: () => navigate("/inbox"),
+    onGoToInbox: () =>
+      void navigate({
+        to: "/$companyId/inbox",
+        params: { companyId },
+      }),
   });
 
   useEffect(() => {
@@ -545,19 +474,19 @@ export function Layout() {
   useLayoutEffect(() => {
     const main = mainContentRef.current;
     const shouldResetScroll = shouldResetScrollOnNavigation({
-      previousPathname: previousPathname.current,
-      pathname: location.pathname,
+      previousRoute: previousScrollRoute.current,
+      route: currentScrollRoute,
       navigationType,
       state: location.state,
     });
 
-    previousPathname.current = location.pathname;
+    previousScrollRoute.current = currentScrollRoute;
 
     const isHistoryPop = navigationType === "POP";
     const restoredScrollTop = isHistoryPop
-      ? scrollMemory.current.recall(location.key)
+      ? scrollMemory.current.recall(locationKey)
       : 0;
-    activeScrollKey.current = location.key;
+    activeScrollKey.current = locationKey;
 
     if (isHistoryPop) {
       applyMainContentScrollTop(main, restoredScrollTop);
@@ -572,7 +501,7 @@ export function Layout() {
     if (shouldResetScroll) {
       resetNavigationScroll(main);
     }
-  }, [location.key, location.pathname, location.state, navigationType]);
+  }, [currentScrollRoute, location.state, locationKey, navigationType]);
 
   return (
     <GeneralSettingsProvider value={{ keyboardShortcutsEnabled }}>
@@ -674,27 +603,23 @@ export function Layout() {
                 tabIndex={-1}
                 className={cn(
                   "flex-1 p-4 outline-none md:p-6",
-                  // Reserve the scrollbar gutter on desktop so pages whose height
-                  // changes (e.g. switching skill-detail tabs) don't widen/shift
-                  // when the vertical scrollbar appears or disappears (PAP-10907).
+                  // Reserve the scrollbar gutter on desktop so dynamic page height
+                  // changes don't widen or shift the content area.
                   isMobile
                     ? "overflow-visible pb-(--sz-calc-14)"
                     : "overflow-auto [scrollbar-gutter:stable]",
                 )}
               >
-                {hasUnknownCompanyPrefix ? (
+                {hasUnknownCompanyId ? (
                   <NotFoundPage
-                    scope="invalid_company_prefix"
-                    requestedPrefix={
-                      companyPrefix ?? selectedCompany?.taskPrefix
-                    }
+                    scope="invalid_company_id"
+                    requestedCompanyId={companyId}
                   />
                 ) : (
                   <RouteErrorBoundary>
-                    {/* Route-level code splitting (see App.tsx): page chunks
-                        load lazily, so the routed page suspends here while the
-                        shell (sidebar, top bar) stays mounted. Inside the
-                        error boundary so chunk-load failures surface there. */}
+                    {/* TanStack Router loads page chunks lazily while the shell
+                        stays mounted. Keep the suspension point inside the error
+                        boundary so chunk-load failures surface there. */}
                     <Suspense
                       fallback={
                         <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">

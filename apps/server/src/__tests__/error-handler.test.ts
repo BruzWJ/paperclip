@@ -72,19 +72,8 @@ describe("errorHandler", () => {
     expect(res.__errorContext?.error?.message).toBe("db exploded");
   });
 
-  it("does not mutate run state while returning a structured responsible-user denial", () => {
-    const db = { marker: "db" };
-    const req = {
-      ...makeReq(),
-      app: { locals: { paperclipDb: db } },
-      actor: {
-        type: "agent",
-        agentId: "agent-1",
-        companyId: "company-1",
-        runId: "run-1",
-        source: "internal",
-      },
-    } as unknown as Request;
+  it("returns a structured responsible-user denial", () => {
+    const req = makeReq();
     const res = makeRes();
     const next = vi.fn() as unknown as NextFunction;
     const err = new HttpError(403, "Responsible user is not authorized", {

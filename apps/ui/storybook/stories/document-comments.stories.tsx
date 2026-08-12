@@ -11,33 +11,33 @@ import type { PendingAnchor } from "@/components/DocumentAnnotationLayer";
 import type { CompanyUserProfile } from "@/lib/company-members";
 import { queryKeys } from "@/lib/queryKeys";
 
-const taskId = "task-doc-comments";
+const taskId = "dddddddd-dddd-4ddd-8ddd-ddddddddd013";
 const documentKey = "plan";
-const currentUserId = "user-board";
+const currentUserId = "a7000000-0000-4000-8000-000000000002";
 
 const userProfileMap = new Map<string, CompanyUserProfile>([
   [currentUserId, { label: "Dotta", image: null }],
-  ["user-pm", { label: "Mara Product", image: null }],
+  ["a7000000-0000-4000-8000-000000000004", { label: "Mara Product", image: null }],
 ]);
 
 function makeThread(
   overrides: Partial<DocumentAnnotationThreadWithComments> = {},
 ): DocumentAnnotationThreadWithComments {
-  const id = overrides.id ?? "thread-1";
+  const id = overrides.id ?? "a9000000-0000-4000-8000-000000000001";
   const status: DocumentAnnotationThreadStatus = overrides.status ?? "open";
   const anchorState: DocumentAnnotationAnchorState = overrides.anchorState ?? "active";
   return {
     id,
-    companyId: "co-1",
+    companyId: "11111111-1111-4111-8111-111111111111",
     taskId,
-    documentId: "doc-1",
+    documentId: "a2000000-0000-4000-8000-000000000004",
     documentKey,
     status,
     anchorState,
     anchorConfidence: "exact",
-    originalRevisionId: "rev-4",
+    originalRevisionId: "a2100000-0000-4000-8000-000000000005",
     originalRevisionNumber: 4,
-    currentRevisionId: "rev-4",
+    currentRevisionId: "a2100000-0000-4000-8000-000000000005",
     currentRevisionNumber: 4,
     selectedText:
       "the assistant should keep the existing editor selection highlighted while the comment composer is open",
@@ -61,14 +61,14 @@ function makeThread(
     comments: [
       {
         id: `${id}-c1`,
-        companyId: "co-1",
+        companyId: "11111111-1111-4111-8111-111111111111",
         threadId: id,
         taskId,
-        documentId: "doc-1",
+        documentId: "a2000000-0000-4000-8000-000000000004",
         body: "Please confirm this is still the behaviour we want.",
         authorType: "user",
         authorAgentId: null,
-        authorUserId: "user-pm",
+        authorUserId: "a7000000-0000-4000-8000-000000000004",
         createdByRunId: null,
         createdAt: new Date("2026-06-12T00:01:00Z"),
         updatedAt: new Date("2026-06-12T00:01:00Z"),
@@ -101,7 +101,7 @@ function PanelFrame({
   const [client] = useState(() => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(queryKeys.auth.session, {
-      session: { id: "sess-1", userId: currentUserId },
+      session: { id: "b0000000-0000-4000-8000-000000000002", userId: currentUserId },
       user: { id: currentUserId, email: "dotta@example.local", name: "Dotta", image: null },
     });
     return qc;
@@ -116,10 +116,9 @@ function PanelFrame({
           <DocumentAnnotationPanel
             open
             onOpenChange={() => undefined}
-            taskId={taskId}
-            documentKey={documentKey}
+            target={{ kind: "task", taskId, documentKey }}
             documentRevisionNumber={4}
-            baseRevisionId="rev-4"
+            baseRevisionId="a2100000-0000-4000-8000-000000000005"
             baseRevisionNumber={4}
             threads={threads}
             focusedThreadId={focused}
@@ -155,12 +154,12 @@ function DocumentCommentsMatrix() {
             <PanelFrame
               label="With comments (one expanded)"
               threads={[
-                makeThread({ id: "thread-1" }),
-                makeThread({ id: "thread-2", status: "resolved", selectedText: "a resolved thread stays in the same list" }),
+                makeThread({ id: "a9000000-0000-4000-8000-000000000001" }),
+                makeThread({ id: "a9000000-0000-4000-8000-000000000002", status: "resolved", selectedText: "a resolved thread stays in the same list" }),
               ]}
-              focusedThreadId="thread-1"
+              focusedThreadId="a9000000-0000-4000-8000-000000000001"
             />
-            <PanelFrame label="Composing a new comment" threads={[makeThread({ id: "thread-1" })]} pending={pendingAnchor} />
+            <PanelFrame label="Composing a new comment" threads={[makeThread({ id: "a9000000-0000-4000-8000-000000000001" })]} pending={pendingAnchor} />
           </div>
         </section>
       </main>

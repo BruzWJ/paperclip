@@ -17,7 +17,10 @@ import type {
   TaskMonitorScheduledBy,
   TaskOwnerKind,
 } from "@paperclipai/shared";
-import { taskExecutionPolicySchema, taskExecutionStateSchema } from "@paperclipai/shared";
+import {
+  taskExecutionPolicySchema,
+  taskExecutionStateSchema,
+} from "@paperclipai/shared";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { conflict, unprocessable } from "../errors.js";
 import { recordNamedBoardLifecycleCommandInTransaction } from "./task-board-lifecycle-command.js";
@@ -64,13 +67,18 @@ type TransitionInput = {
 
 type TransitionResult = {
   patch: Record<string, unknown>;
-  decision?: Pick<TaskExecutionDecision, "stageId" | "stageType" | "outcome" | "body">;
+  decision?: Pick<
+    TaskExecutionDecision,
+    "stageId" | "stageType" | "outcome" | "body"
+  >;
 };
 
 const COMPLETED_STATUS: TaskExecutionState["status"] = "completed";
 const PENDING_STATUS: TaskExecutionState["status"] = "pending";
-const CHANGES_REQUESTED_STATUS: TaskExecutionState["status"] = "changes_requested";
-const MONITOR_INVALID_MESSAGE = "Monitor can only be scheduled on tasks owned by an agent in in_progress or in_review";
+const CHANGES_REQUESTED_STATUS: TaskExecutionState["status"] =
+  "changes_requested";
+const MONITOR_INVALID_MESSAGE =
+  "Monitor can only be scheduled on tasks owned by an agent in in_progress or in_review";
 const MONITOR_BOUNDS_EXHAUSTED_MESSAGE = "Monitor bounds are already exhausted";
 export const REDACTED_TASK_MONITOR_EXTERNAL_REF = "[redacted]";
 
@@ -80,20 +88,21 @@ function normalizeMonitorNotes(notes: string | null | undefined) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function normalizeMonitorText(value: string | null | undefined) {
+function exactMonitorTextOrNull(value: string | null | undefined) {
   if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  return value.length > 0 && value.trim() === value ? value : null;
 }
 
 export function redactTaskMonitorExternalRef(value: string | null | undefined) {
-  return normalizeMonitorText(value) ? REDACTED_TASK_MONITOR_EXTERNAL_REF : null;
+  return exactMonitorTextOrNull(value)
+    ? REDACTED_TASK_MONITOR_EXTERNAL_REF
+    : null;
 }
 
 function monitorMetadataFromPolicy(monitor: TaskExecutionMonitorPolicy) {
   return {
     kind: monitor.kind ?? null,
-    serviceName: normalizeMonitorText(monitor.serviceName),
+    serviceName: exactMonitorTextOrNull(monitor.serviceName),
     externalRef: redactTaskMonitorExternalRef(monitor.externalRef),
     timeoutAt: monitor.timeoutAt ?? null,
     maxAttempts: monitor.maxAttempts ?? null,
@@ -101,10 +110,12 @@ function monitorMetadataFromPolicy(monitor: TaskExecutionMonitorPolicy) {
   };
 }
 
-function monitorMetadataFromState(state: TaskExecutionMonitorState | null | undefined) {
+function monitorMetadataFromState(
+  state: TaskExecutionMonitorState | null | undefined,
+) {
   return {
     kind: state?.kind ?? null,
-    serviceName: normalizeMonitorText(state?.serviceName),
+    serviceName: exactMonitorTextOrNull(state?.serviceName),
     externalRef: redactTaskMonitorExternalRef(state?.externalRef),
     timeoutAt: state?.timeoutAt ?? null,
     maxAttempts: state?.maxAttempts ?? null,
@@ -134,7 +145,10 @@ function isoString(value: Date | string | null | undefined): string | null {
   return value;
 }
 
-function monitorStatesEqual(left: TaskExecutionMonitorState | null, right: TaskExecutionMonitorState | null): boolean {
+function monitorStatesEqual(
+  left: TaskExecutionMonitorState | null,
+  right: TaskExecutionMonitorState | null,
+): boolean {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
@@ -157,14 +171,34 @@ function derivePersistedMonitorState(input: {
 }): TaskExecutionMonitorState | null {
   const fromState = input.state?.monitor ?? null;
   const scheduledMonitor = input.policy?.monitor ?? null;
-  const nextCheckAt = isoString(input.task.monitorNextCheckAt) ?? scheduledMonitor?.nextCheckAt ?? fromState?.nextCheckAt ?? null;
-  const lastTriggeredAt = isoString(input.task.monitorLastTriggeredAt) ?? fromState?.lastTriggeredAt ?? null;
-  const attemptCount = input.task.monitorAttemptCount ?? fromState?.attemptCount ?? 0;
-  const notes = scheduledMonitor?.notes ?? normalizeMonitorNotes(input.task.monitorNotes) ?? fromState?.notes ?? null;
-  const scheduledByRaw = input.task.monitorScheduledBy ?? scheduledMonitor?.scheduledBy ?? fromState?.scheduledBy ?? null;
+  const nextCheckAt =
+    isoString(input.task.monitorNextCheckAt) ??
+    scheduledMonitor?.nextCheckAt ??
+    fromState?.nextCheckAt ??
+    null;
+  const lastTriggeredAt =
+    isoString(input.task.monitorLastTriggeredAt) ??
+    fromState?.lastTriggeredAt ??
+    null;
+  const attemptCount =
+    input.task.monitorAttemptCount ?? fromState?.attemptCount ?? 0;
+  const notes =
+    scheduledMonitor?.notes ??
+    normalizeMonitorNotes(input.task.monitorNotes) ??
+    fromState?.notes ??
+    null;
+  const scheduledByRaw =
+    input.task.monitorScheduledBy ??
+    scheduledMonitor?.scheduledBy ??
+    fromState?.scheduledBy ??
+    null;
   const scheduledBy =
-    scheduledByRaw === "owner" || scheduledByRaw === "board" ? scheduledByRaw : null;
-  const metadata = scheduledMonitor ? monitorMetadataFromPolicy(scheduledMonitor) : monitorMetadataFromState(fromState);
+    scheduledByRaw === "owner" || scheduledByRaw === "board"
+      ? scheduledByRaw
+      : null;
+  const metadata = scheduledMonitor
+    ? monitorMetadataFromPolicy(scheduledMonitor)
+    : monitorMetadataFromState(fromState);
 
   if (nextCheckAt) {
     return {
@@ -191,7 +225,11 @@ function derivePersistedMonitorState(input: {
     };
   }
 
-  if (fromState?.status === "triggered" || lastTriggeredAt || attemptCount > 0) {
+  if (
+    fromState?.status === "triggered" ||
+    lastTriggeredAt ||
+    attemptCount > 0
+  ) {
     return {
       status: "triggered",
       nextCheckAt: null,
@@ -266,7 +304,8 @@ function monitorClearReasonForTask(
   if (status === "done") return "done";
   if (status === "cancelled") return "cancelled";
   if (!taskAllowsMonitor(status, ownerKind, ownerAgentId, ownerUserId)) {
-    if (ownerKind !== "agent" || ownerUserId || !ownerAgentId) return "invalid_owner";
+    if (ownerKind !== "agent" || ownerUserId || !ownerAgentId)
+      return "invalid_owner";
     return "invalid_status";
   }
   return null;
@@ -298,21 +337,24 @@ function nextOwner(input: {
   task: TaskLike;
   requestedOwnerPatch: RequestedOwnerPatch;
 }) {
-  const ownerKind = input.requestedOwnerPatch.ownerKind !== undefined
-    ? input.requestedOwnerPatch.ownerKind
-    : input.task.ownerKind ?? null;
+  const ownerKind =
+    input.requestedOwnerPatch.ownerKind !== undefined
+      ? input.requestedOwnerPatch.ownerKind
+      : (input.task.ownerKind ?? null);
   const ownerAgentId =
     input.requestedOwnerPatch.ownerAgentId !== undefined
-      ? input.requestedOwnerPatch.ownerAgentId ?? null
-      : input.task.ownerAgentId ?? null;
+      ? (input.requestedOwnerPatch.ownerAgentId ?? null)
+      : (input.task.ownerAgentId ?? null);
   const ownerUserId =
     input.requestedOwnerPatch.ownerUserId !== undefined
-      ? input.requestedOwnerPatch.ownerUserId ?? null
-      : input.task.ownerUserId ?? null;
+      ? (input.requestedOwnerPatch.ownerUserId ?? null)
+      : (input.task.ownerUserId ?? null);
   return { ownerKind, ownerAgentId, ownerUserId };
 }
 
-export function stripMonitorFromExecutionPolicy(policy: TaskExecutionPolicy | null): TaskExecutionPolicy | null {
+export function stripMonitorFromExecutionPolicy(
+  policy: TaskExecutionPolicy | null,
+): TaskExecutionPolicy | null {
   if (!policy) return null;
   if (!policy.monitor) return policy;
   if (policy.stages.length === 0) return null;
@@ -337,7 +379,9 @@ export function setTaskExecutionPolicyMonitorScheduledBy(
   };
 }
 
-export function normalizeTaskExecutionPolicy(input: unknown): TaskExecutionPolicy | null {
+export function normalizeTaskExecutionPolicy(
+  input: unknown,
+): TaskExecutionPolicy | null {
   if (input == null) return null;
   const parsed = taskExecutionPolicySchema.safeParse(input);
   if (!parsed.success) {
@@ -346,19 +390,31 @@ export function normalizeTaskExecutionPolicy(input: unknown): TaskExecutionPolic
 
   const stages = parsed.data.stages
     .map((stage) => {
-      const participants: TaskExecutionStage["participants"] = stage.participants
-        .map((participant) => ({
-          id: participant.id ?? randomUUID(),
-          type: participant.type,
-          agentId: participant.type === "agent" ? participant.agentId ?? null : null,
-          userId: participant.type === "user" ? participant.userId ?? null : null,
-        }))
-        .filter((participant) => (participant.type === "agent" ? Boolean(participant.agentId) : Boolean(participant.userId)));
+      const participants: TaskExecutionStage["participants"] =
+        stage.participants
+          .map((participant) => ({
+            id: participant.id ?? randomUUID(),
+            type: participant.type,
+            agentId:
+              participant.type === "agent"
+                ? (participant.agentId ?? null)
+                : null,
+            userId:
+              participant.type === "user" ? (participant.userId ?? null) : null,
+          }))
+          .filter((participant) =>
+            participant.type === "agent"
+              ? Boolean(participant.agentId)
+              : Boolean(participant.userId),
+          );
 
       const dedupedParticipants: TaskExecutionStage["participants"] = [];
       const seen = new Set<string>();
       for (const participant of participants) {
-        const key = participant.type === "agent" ? `agent:${participant.agentId}` : `user:${participant.userId}`;
+        const key =
+          participant.type === "agent"
+            ? `agent:${participant.agentId}`
+            : `user:${participant.userId}`;
         if (seen.has(key)) continue;
         seen.add(key);
         dedupedParticipants.push(participant);
@@ -376,22 +432,25 @@ export function normalizeTaskExecutionPolicy(input: unknown): TaskExecutionPolic
 
   const monitor = parsed.data.monitor
     ? {
-      nextCheckAt: parsed.data.monitor.nextCheckAt,
-      notes: normalizeMonitorNotes(parsed.data.monitor.notes),
-      scheduledBy: parsed.data.monitor.scheduledBy,
-      kind: parsed.data.monitor.kind ?? null,
-      serviceName: normalizeMonitorText(parsed.data.monitor.serviceName),
-      externalRef: redactTaskMonitorExternalRef(parsed.data.monitor.externalRef),
-      timeoutAt: parsed.data.monitor.timeoutAt ?? null,
-      maxAttempts: parsed.data.monitor.maxAttempts ?? null,
-      recoveryPolicy: parsed.data.monitor.recoveryPolicy ?? null,
-    }
+        nextCheckAt: parsed.data.monitor.nextCheckAt,
+        notes: normalizeMonitorNotes(parsed.data.monitor.notes),
+        scheduledBy: parsed.data.monitor.scheduledBy,
+        kind: parsed.data.monitor.kind ?? null,
+        serviceName: parsed.data.monitor.serviceName ?? null,
+        externalRef: redactTaskMonitorExternalRef(
+          parsed.data.monitor.externalRef,
+        ),
+        timeoutAt: parsed.data.monitor.timeoutAt ?? null,
+        maxAttempts: parsed.data.monitor.maxAttempts ?? null,
+        recoveryPolicy: parsed.data.monitor.recoveryPolicy ?? null,
+      }
     : null;
 
   const reviewPreset = parsed.data.reviewPreset;
   const authorizationPolicy = parsed.data.authorizationPolicy;
 
-  if (stages.length === 0 && !monitor && !reviewPreset && !authorizationPolicy) return null;
+  if (stages.length === 0 && !monitor && !reviewPreset && !authorizationPolicy)
+    return null;
 
   return {
     mode: parsed.data.mode ?? "normal",
@@ -403,14 +462,18 @@ export function normalizeTaskExecutionPolicy(input: unknown): TaskExecutionPolic
   };
 }
 
-export function parseTaskExecutionState(input: unknown): TaskExecutionState | null {
+export function parseTaskExecutionState(
+  input: unknown,
+): TaskExecutionState | null {
   if (input == null) return null;
   const parsed = taskExecutionStateSchema.safeParse(input);
   if (!parsed.success) return null;
   return parsed.data;
 }
 
-export function ownerPrincipal(input: OwnerLike): TaskExecutionStagePrincipal | null {
+export function ownerPrincipal(
+  input: OwnerLike,
+): TaskExecutionStagePrincipal | null {
   if (input.ownerKind === "agent" && input.ownerAgentId) {
     return { type: "agent", agentId: input.ownerAgentId, userId: null };
   }
@@ -421,23 +484,34 @@ export function ownerPrincipal(input: OwnerLike): TaskExecutionStagePrincipal | 
 }
 
 function actorPrincipal(actor: ActorLike): TaskExecutionStagePrincipal | null {
-  if (actor.agentId) return { type: "agent", agentId: actor.agentId, userId: null };
-  if (actor.userId) return { type: "user", userId: actor.userId, agentId: null };
+  if (actor.agentId)
+    return { type: "agent", agentId: actor.agentId, userId: null };
+  if (actor.userId)
+    return { type: "user", userId: actor.userId, agentId: null };
   return null;
 }
 
-function principalsEqual(a: TaskExecutionStagePrincipal | null, b: TaskExecutionStagePrincipal | null): boolean {
+function principalsEqual(
+  a: TaskExecutionStagePrincipal | null,
+  b: TaskExecutionStagePrincipal | null,
+): boolean {
   if (!a || !b) return false;
   if (a.type !== b.type) return false;
   return a.type === "agent" ? a.agentId === b.agentId : a.userId === b.userId;
 }
 
-function findStageById(policy: TaskExecutionPolicy, stageId: string | null | undefined) {
+function findStageById(
+  policy: TaskExecutionPolicy,
+  stageId: string | null | undefined,
+) {
   if (!stageId) return null;
   return policy.stages.find((stage) => stage.id === stageId) ?? null;
 }
 
-function nextPendingStage(policy: TaskExecutionPolicy, state: TaskExecutionState | null) {
+function nextPendingStage(
+  policy: TaskExecutionPolicy,
+  state: TaskExecutionState | null,
+) {
   const completed = new Set(state?.completedStageIds ?? []);
   return policy.stages.find((stage) => !completed.has(stage.id)) ?? null;
 }
@@ -448,8 +522,14 @@ function nextPendingStageAfter(
   state: TaskExecutionState | null,
 ) {
   const completed = new Set(state?.completedStageIds ?? []);
-  const completedIndex = policy.stages.findIndex((stage) => stage.id === completedStage.id);
-  return policy.stages.find((stage, index) => index > completedIndex && !completed.has(stage.id)) ?? null;
+  const completedIndex = policy.stages.findIndex(
+    (stage) => stage.id === completedStage.id,
+  );
+  return (
+    policy.stages.find(
+      (stage, index) => index > completedIndex && !completed.has(stage.id),
+    ) ?? null
+  );
 }
 
 function selectStageParticipant(
@@ -459,23 +539,43 @@ function selectStageParticipant(
     exclude?: TaskExecutionStagePrincipal | null;
   },
 ): TaskExecutionStagePrincipal | null {
-  const participants = stage.participants.filter((participant) => !principalsEqual(participant, opts?.exclude ?? null));
+  const participants = stage.participants.filter(
+    (participant) => !principalsEqual(participant, opts?.exclude ?? null),
+  );
   if (participants.length === 0) return null;
   if (opts?.preferred) {
-    const preferred = participants.find((participant) => principalsEqual(participant, opts.preferred ?? null));
+    const preferred = participants.find((participant) =>
+      principalsEqual(participant, opts.preferred ?? null),
+    );
     if (preferred) return preferred;
   }
   const first = participants[0];
-  return first ? { type: first.type, agentId: first.agentId ?? null, userId: first.userId ?? null } : null;
+  return first
+    ? {
+        type: first.type,
+        agentId: first.agentId ?? null,
+        userId: first.userId ?? null,
+      }
+    : null;
 }
 
-function stageHasParticipant(stage: TaskExecutionStage, participant: TaskExecutionStagePrincipal | null): boolean {
+function stageHasParticipant(
+  stage: TaskExecutionStage,
+  participant: TaskExecutionStagePrincipal | null,
+): boolean {
   if (!participant) return false;
-  return stage.participants.some((candidate) => principalsEqual(candidate, participant));
+  return stage.participants.some((candidate) =>
+    principalsEqual(candidate, participant),
+  );
 }
 
-function buildCompletedState(previous: TaskExecutionState | null, currentStage: TaskExecutionStage): TaskExecutionState {
-  const completedStageIds = Array.from(new Set([...(previous?.completedStageIds ?? []), currentStage.id]));
+function buildCompletedState(
+  previous: TaskExecutionState | null,
+  currentStage: TaskExecutionStage,
+): TaskExecutionState {
+  const completedStageIds = Array.from(
+    new Set([...(previous?.completedStageIds ?? []), currentStage.id]),
+  );
   return {
     status: COMPLETED_STATUS,
     currentStageId: null,
@@ -554,7 +654,10 @@ function buildPendingState(input: {
   };
 }
 
-function buildChangesRequestedState(previous: TaskExecutionState, currentStage: TaskExecutionStage): TaskExecutionState {
+function buildChangesRequestedState(
+  previous: TaskExecutionState,
+  currentStage: TaskExecutionStage,
+): TaskExecutionState {
   return {
     ...previous,
     status: CHANGES_REQUESTED_STATUS,
@@ -578,7 +681,9 @@ function buildPendingStagePatch(input: {
   input.patch.executionState = buildPendingState({
     previous: input.previous,
     stage: input.stage,
-    stageIndex: input.policy.stages.findIndex((candidate) => candidate.id === input.stage.id),
+    stageIndex: input.policy.stages.findIndex(
+      (candidate) => candidate.id === input.stage.id,
+    ),
     participant: input.participant,
     returnOwner: input.returnOwner,
     reviewRequest: input.reviewRequest,
@@ -592,7 +697,11 @@ function clearExecutionStatePatch(input: {
   returnOwner: TaskExecutionStagePrincipal | null;
 }) {
   input.patch.executionState = null;
-  if (input.requestedStatus === undefined && input.taskStatus === "in_review" && input.returnOwner) {
+  if (
+    input.requestedStatus === undefined &&
+    input.taskStatus === "in_review" &&
+    input.returnOwner
+  ) {
     input.patch.status = "in_progress";
   }
 }
@@ -602,24 +711,40 @@ function canAutoSkipPendingStage(input: {
   returnOwner: TaskExecutionStagePrincipal | null;
   requestedStatus?: string;
 }) {
-  if (input.requestedStatus !== "done" || input.stage.type !== "review" || !input.returnOwner) {
+  if (
+    input.requestedStatus !== "done" ||
+    input.stage.type !== "review" ||
+    !input.returnOwner
+  ) {
     return false;
   }
-  return input.stage.participants.length > 0 &&
-    input.stage.participants.every((participant) => principalsEqual(participant, input.returnOwner));
+  return (
+    input.stage.participants.length > 0 &&
+    input.stage.participants.every((participant) =>
+      principalsEqual(participant, input.returnOwner),
+    )
+  );
 }
 
-function applyTaskExecutionStageTransition(input: TransitionInput): TransitionResult {
+function applyTaskExecutionStageTransition(
+  input: TransitionInput,
+): TransitionResult {
   const patch: Record<string, unknown> = {};
   const existingState = parseTaskExecutionState(input.task.executionState);
   const currentOwner = ownerPrincipal(input.task);
   const actor = actorPrincipal(input.actor);
-  const currentStage = input.policy ? findStageById(input.policy, existingState?.currentStageId) : null;
+  const currentStage = input.policy
+    ? findStageById(input.policy, existingState?.currentStageId)
+    : null;
   const requestedStatus = input.requestedStatus;
-  const activeStage = currentStage && existingState?.status === PENDING_STATUS ? currentStage : null;
-  const effectiveReviewRequest = input.reviewRequest === undefined
-    ? existingState?.reviewRequest ?? null
-    : input.reviewRequest;
+  const activeStage =
+    currentStage && existingState?.status === PENDING_STATUS
+      ? currentStage
+      : null;
+  const effectiveReviewRequest =
+    input.reviewRequest === undefined
+      ? (existingState?.reviewRequest ?? null)
+      : input.reviewRequest;
 
   if (!input.policy) {
     if (existingState) {
@@ -662,7 +787,9 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
         exclude: existingState?.returnOwner ?? null,
       });
     if (!currentParticipant) {
-      throw unprocessable(`No eligible ${activeStage.type} participant is configured for this task`);
+      throw unprocessable(
+        `No eligible ${activeStage.type} participant is configured for this task`,
+      );
     }
 
     if (!stageHasParticipant(activeStage, currentParticipant)) {
@@ -695,7 +822,9 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
     if (principalsEqual(currentParticipant, actor)) {
       if (requestedStatus === "done") {
         if (!input.commentBody?.trim()) {
-          throw unprocessable("Approving a review or approval stage requires a comment");
+          throw unprocessable(
+            "Approving a review or approval stage requires a comment",
+          );
         }
         const approvedState = buildCompletedState(existingState, activeStage);
         // Only stages after the stage being approved are advance candidates.
@@ -703,7 +832,11 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
         // earlier completedStageIds no longer match the policy (e.g. stage ids
         // were regenerated by a mid-flow policy edit), turning a final-stage
         // approval into an endless re-review loop (#7893).
-        const nextStage = nextPendingStageAfter(input.policy, activeStage, approvedState);
+        const nextStage = nextPendingStageAfter(
+          input.policy,
+          activeStage,
+          approvedState,
+        );
 
         if (!nextStage) {
           patch.executionState = approvedState;
@@ -722,7 +855,9 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
           exclude: existingState?.returnOwner ?? null,
         });
         if (!participant) {
-          throw unprocessable(`No eligible ${nextStage.type} participant is configured for this task`);
+          throw unprocessable(
+            `No eligible ${nextStage.type} participant is configured for this task`,
+          );
         }
 
         buildPendingStagePatch({
@@ -753,7 +888,10 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
           throw unprocessable("This execution stage has no return owner");
         }
         patch.status = "in_progress";
-        patch.executionState = buildChangesRequestedState(existingState, activeStage);
+        patch.executionState = buildChangesRequestedState(
+          existingState,
+          activeStage,
+        );
         return {
           patch,
           decision: {
@@ -770,10 +908,15 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
       requestedStatus !== undefined && requestedStatus !== "in_review";
     const stageStateDrifted =
       input.task.boardPresentationStatus !== "in_review" ||
-      !principalsEqual(existingState?.currentParticipant ?? null, currentParticipant);
+      !principalsEqual(
+        existingState?.currentParticipant ?? null,
+        currentParticipant,
+      );
 
     if (attemptedStageAdvance && !stageStateDrifted) {
-      throw unprocessable("Only the active reviewer or approver can advance the current execution stage");
+      throw unprocessable(
+        "Only the active reviewer or approver can advance the current execution stage",
+      );
     }
 
     if (stageStateDrifted) {
@@ -793,8 +936,7 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
   }
 
   const shouldStartWorkflow =
-    requestedStatus === "done" ||
-    requestedStatus === "in_review";
+    requestedStatus === "done" || requestedStatus === "in_review";
 
   if (!shouldStartWorkflow) {
     return { patch };
@@ -802,7 +944,10 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
 
   // A workflow whose execution already completed is terminal for approve/done:
   // closing the task must not restart the chain at the first stage (#7893).
-  if (requestedStatus === "done" && existingState?.status === COMPLETED_STATUS) {
+  if (
+    requestedStatus === "done" &&
+    existingState?.status === COMPLETED_STATUS
+  ) {
     return { patch };
   }
 
@@ -817,11 +962,18 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
   let participant = selectStageParticipant(pendingStage, {
     preferred:
       existingState?.status === CHANGES_REQUESTED_STATUS
-        ? existingState.currentParticipant ?? null
+        ? (existingState.currentParticipant ?? null)
         : null,
     exclude: returnOwner,
   });
-  while (!participant && canAutoSkipPendingStage({ stage: pendingStage, returnOwner, requestedStatus })) {
+  while (
+    !participant &&
+    canAutoSkipPendingStage({
+      stage: pendingStage,
+      returnOwner,
+      requestedStatus,
+    })
+  ) {
     skippedStageIds.push(pendingStage.id);
     pendingStage = nextPendingStage(
       input.policy,
@@ -842,13 +994,15 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
     participant = selectStageParticipant(pendingStage, {
       preferred:
         existingState?.status === CHANGES_REQUESTED_STATUS
-          ? existingState.currentParticipant ?? null
+          ? (existingState.currentParticipant ?? null)
           : null,
       exclude: returnOwner,
     });
   }
   if (!participant) {
-    throw unprocessable(`No eligible ${pendingStage.type} participant is configured for this task`);
+    throw unprocessable(
+      `No eligible ${pendingStage.type} participant is configured for this task`,
+    );
   }
 
   buildPendingStagePatch({
@@ -870,9 +1024,14 @@ function applyTaskExecutionStageTransition(input: TransitionInput): TransitionRe
   return { patch };
 }
 
-function applyMonitorTransition(input: TransitionInput, stagePatch: Record<string, unknown>) {
+function applyMonitorTransition(
+  input: TransitionInput,
+  stagePatch: Record<string, unknown>,
+) {
   const patch: Record<string, unknown> = {};
-  const previousPolicy = input.previousPolicy ?? normalizeTaskExecutionPolicy(input.task.executionPolicy ?? null);
+  const previousPolicy =
+    input.previousPolicy ??
+    normalizeTaskExecutionPolicy(input.task.executionPolicy ?? null);
   const existingState = parseTaskExecutionState(input.task.executionState);
   const currentMonitorState = derivePersistedMonitorState({
     task: input.task,
@@ -882,7 +1041,7 @@ function applyMonitorTransition(input: TransitionInput, stagePatch: Record<strin
   const nextStatus =
     typeof stagePatch.status === "string"
       ? (stagePatch.status as string)
-      : input.requestedStatus ?? input.task.boardPresentationStatus;
+      : (input.requestedStatus ?? input.task.boardPresentationStatus);
   const { ownerKind, ownerAgentId, ownerUserId } = nextOwner({
     task: input.task,
     requestedOwnerPatch: input.requestedOwnerPatch,
@@ -892,7 +1051,12 @@ function applyMonitorTransition(input: TransitionInput, stagePatch: Record<strin
       ? parseTaskExecutionState(stagePatch.executionState)
       : existingState;
   const invalidReason = input.policy?.monitor
-    ? monitorClearReasonForTask(nextStatus, ownerKind, ownerAgentId, ownerUserId)
+    ? monitorClearReasonForTask(
+        nextStatus,
+        ownerKind,
+        ownerAgentId,
+        ownerUserId,
+      )
     : null;
 
   let targetMonitorState = currentMonitorState;
@@ -917,7 +1081,9 @@ function applyMonitorTransition(input: TransitionInput, stagePatch: Record<strin
       });
       if (exhaustedReason) {
         if (input.monitorExplicitlyUpdated) {
-          throw unprocessable(MONITOR_BOUNDS_EXHAUSTED_MESSAGE, { clearReason: exhaustedReason });
+          throw unprocessable(MONITOR_BOUNDS_EXHAUSTED_MESSAGE, {
+            clearReason: exhaustedReason,
+          });
         }
         patch.executionPolicy = stripMonitorFromExecutionPolicy(input.policy);
         patch.monitorNextCheckAt = null;
@@ -930,63 +1096,44 @@ function applyMonitorTransition(input: TransitionInput, stagePatch: Record<strin
         patch.monitorNextCheckAt = new Date(input.policy.monitor.nextCheckAt);
         patch.monitorNotes = input.policy.monitor.notes ?? null;
         patch.monitorScheduledBy = input.policy.monitor.scheduledBy;
-        targetMonitorState = buildScheduledMonitorState(currentMonitorState, input.policy.monitor);
+        targetMonitorState = buildScheduledMonitorState(
+          currentMonitorState,
+          input.policy.monitor,
+        );
       }
     }
   } else if (previousPolicy?.monitor) {
     patch.monitorNextCheckAt = null;
     targetMonitorState = buildClearedMonitorState({
       previous: currentMonitorState,
-      clearReason:
-        input.monitorExplicitlyUpdated
-          ? "manual"
-          : monitorClearReasonForTask(nextStatus, ownerKind, ownerAgentId, ownerUserId) ?? "manual",
+      clearReason: input.monitorExplicitlyUpdated
+        ? "manual"
+        : (monitorClearReasonForTask(
+            nextStatus,
+            ownerKind,
+            ownerAgentId,
+            ownerUserId,
+          ) ?? "manual"),
       clearedAt: new Date(),
     });
   }
 
-  if (stagePatch.executionState !== undefined || !monitorStatesEqual(currentMonitorState, targetMonitorState)) {
-    patch.executionState = executionStateWithMonitor(stageState, targetMonitorState);
+  if (
+    stagePatch.executionState !== undefined ||
+    !monitorStatesEqual(currentMonitorState, targetMonitorState)
+  ) {
+    patch.executionState = executionStateWithMonitor(
+      stageState,
+      targetMonitorState,
+    );
   }
 
   return patch;
 }
 
-export function buildInitialTaskMonitorFields(input: {
-  policy: TaskExecutionPolicy | null;
-  status: string;
-  ownerKind: TaskOwnerKind;
-  ownerAgentId?: string | null;
-  ownerUserId?: string | null;
-}) {
-  if (!input.policy?.monitor) return {};
-  if (!taskAllowsMonitor(
-    input.status,
-    input.ownerKind,
-    input.ownerAgentId ?? null,
-    input.ownerUserId ?? null,
-  )) {
-    throw unprocessable(MONITOR_INVALID_MESSAGE);
-  }
-  const exhaustedReason = exhaustedMonitorClearReason({
-    monitor: input.policy.monitor,
-    attemptCount: 0,
-    now: new Date(),
-  });
-  if (exhaustedReason) {
-    throw unprocessable(MONITOR_BOUNDS_EXHAUSTED_MESSAGE, { clearReason: exhaustedReason });
-  }
-
-  const monitorState = buildScheduledMonitorState(null, input.policy.monitor);
-  return {
-    monitorNextCheckAt: new Date(input.policy.monitor.nextCheckAt),
-    monitorNotes: input.policy.monitor.notes ?? null,
-    monitorScheduledBy: input.policy.monitor.scheduledBy,
-    executionState: executionStateWithMonitor(null, monitorState) as Record<string, unknown> | null,
-  };
-}
-
-export function applyTaskExecutionPolicyTransition(input: TransitionInput): TransitionResult {
+export function applyTaskExecutionPolicyTransition(
+  input: TransitionInput,
+): TransitionResult {
   const stageResult = applyTaskExecutionStageTransition(input);
   const monitorPatch = applyMonitorTransition(input, stageResult.patch);
   Object.assign(stageResult.patch, monitorPatch);
@@ -1012,7 +1159,9 @@ function deterministicExecutionPolicyDecisionId(input: {
 }) {
   const bytes = Buffer.from(
     createHash("sha256")
-      .update(`task-execution-policy-decision\0${input.companyId}\0${input.taskId}\0${input.idempotencyKey}`)
+      .update(
+        `task-execution-policy-decision\0${input.companyId}\0${input.taskId}\0${input.idempotencyKey}`,
+      )
       .digest("hex")
       .slice(0, 32),
     "hex",
@@ -1031,13 +1180,19 @@ function assertUnchangedTaskOwnership(patch: Record<string, unknown>) {
     "ownerAssignmentSource",
     "ownershipEpoch",
   ];
-  const emitted = forbiddenKeys.filter((key) => Object.prototype.hasOwnProperty.call(patch, key));
+  const emitted = forbiddenKeys.filter((key) =>
+    Object.prototype.hasOwnProperty.call(patch, key),
+  );
   if (emitted.length > 0) {
-    throw new Error(`Execution-policy transition attempted to mutate canonical ownership: ${emitted.join(", ")}`);
+    throw new Error(
+      `Execution-policy transition attempted to mutate canonical ownership: ${emitted.join(", ")}`,
+    );
   }
 }
 
-export function taskExecutionPolicyPersistencePatch(patch: Record<string, unknown>) {
+export function taskExecutionPolicyPersistencePatch(
+  patch: Record<string, unknown>,
+) {
   assertUnchangedTaskOwnership(patch);
   return {
     ...(typeof patch.status === "string"
@@ -1057,7 +1212,7 @@ export function taskExecutionPolicyPersistencePatch(patch: Record<string, unknow
           executionPolicy:
             patch.executionPolicy === null
               ? null
-              : patch.executionPolicy as Record<string, unknown>,
+              : (patch.executionPolicy as Record<string, unknown>),
         }
       : {}),
     ...(patch.executionState !== undefined
@@ -1065,7 +1220,7 @@ export function taskExecutionPolicyPersistencePatch(patch: Record<string, unknow
           executionState:
             patch.executionState === null
               ? null
-              : patch.executionState as Record<string, unknown>,
+              : (patch.executionState as Record<string, unknown>),
         }
       : {}),
     ...(patch.monitorNextCheckAt !== undefined
@@ -1090,7 +1245,9 @@ function assertExecutionPolicyActor(actor: TaskExecutionPolicyActor) {
   const hasAgent = Boolean(actor.agentId);
   const hasUser = Boolean(actor.userId);
   if (hasAgent === hasUser) {
-    throw unprocessable("An execution-policy decision requires exactly one participant identity");
+    throw unprocessable(
+      "An execution-policy decision requires exactly one participant identity",
+    );
   }
 }
 
@@ -1139,7 +1296,9 @@ async function lockTaskForExecutionPolicy(
     .limit(1)
     .then((rows) => rows[0] ?? null);
   if (!task) {
-    throw conflict("Task changed or was removed while applying its execution policy");
+    throw conflict(
+      "Task changed or was removed while applying its execution policy",
+    );
   }
   return task;
 }
@@ -1191,8 +1350,7 @@ export function taskExecutionPolicyControlService(
           transition.patch,
         );
         const persistencePatch = {
-          executionPolicy:
-            normalizedPolicy as Record<string, unknown> | null,
+          executionPolicy: normalizedPolicy as Record<string, unknown> | null,
           ...transitionPatch,
         };
         if (!taskPatchChangesPersistedState(task, persistencePatch)) {
@@ -1243,7 +1401,7 @@ export function taskExecutionPolicyControlService(
     }): Promise<TaskExecutionPolicyControlResult> {
       assertExecutionPolicyActor(input.actor);
       const body = input.body.trim();
-      const idempotencyKey = input.idempotencyKey.trim();
+      const idempotencyKey = input.idempotencyKey;
       const decisionId = deterministicExecutionPolicyDecisionId({
         companyId: input.companyId,
         taskId: input.taskId,
@@ -1345,8 +1503,7 @@ export function taskExecutionPolicyControlService(
           lastDecisionId: decisionId,
         };
         const finalApproval =
-          input.outcome === "approved" &&
-          nextState.status === COMPLETED_STATUS;
+          input.outcome === "approved" && nextState.status === COMPLETED_STATUS;
 
         let terminalUpdate: typeof taskUpdates.$inferSelect | null = null;
         if (finalApproval) {
@@ -1369,10 +1526,7 @@ export function taskExecutionPolicyControlService(
             )
             .limit(1)
             .then((rows) => rows[0] ?? null);
-          if (
-            !terminalUpdate?.disposition ||
-            !terminalUpdate.runId
-          ) {
+          if (!terminalUpdate?.disposition || !terminalUpdate.runId) {
             throw unprocessable(
               "Final approval requires a canonical current-owner done update",
             );

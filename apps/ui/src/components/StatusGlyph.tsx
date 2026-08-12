@@ -10,7 +10,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "../lib/utils";
-import { taskStatusIconVar, taskStatusIconVarDefault } from "../lib/status-colors";
+import {
+  taskStatusIconVar,
+  taskStatusIconVarDefault,
+} from "../lib/status-colors";
 
 /**
  * Unified task status glyph — the single source-of-truth icon for every
@@ -33,16 +36,6 @@ export type StatusGlyphSize = "sm" | "md" | "lg";
 
 /** sm 14 / md 16 / lg 20 — the only sizes the unified glyph ships at. */
 const SIZE_PX: Record<StatusGlyphSize, number> = { sm: 14, md: 16, lg: 20 };
-
-export type StatusGlyphStatus =
-  | "backlog"
-  | "todo"
-  | "in_progress"
-  | "in_review"
-  | "done"
-  | "blocked"
-  | "cancelled"
-  | "in_queue";
 
 /** Status → Lucide icon. `in_queue` borrows the blocked icon; its colour var resolves to blue. */
 const STATUS_ICON: Record<string, LucideIcon> = {
@@ -68,7 +61,12 @@ interface StatusGlyphProps {
   title?: string;
 }
 
-export function StatusGlyph({ status, size = "md", className, title }: StatusGlyphProps) {
+export function StatusGlyph({
+  status,
+  size = "md",
+  className,
+  title,
+}: StatusGlyphProps) {
   const px = SIZE_PX[size];
   const Icon = STATUS_ICON[status] ?? STATUS_ICON_DEFAULT;
   const cssVar = taskStatusIconVar[status] ?? taskStatusIconVarDefault;

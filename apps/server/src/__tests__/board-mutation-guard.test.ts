@@ -10,7 +10,6 @@ import {
 } from "../http/request-authority.js";
 
 function createApp(
-  actorType: "board" | "agent",
   boardSource: "session" | "board_key" = "session",
   trustProxy = false,
 ) {
@@ -26,33 +25,25 @@ function createApp(
   app.use(boundary.middleware);
   app.use(express.json());
   app.use((req, _res, next) => {
-    req.actor = actorType === "board"
-      ? boardSource === "session"
-        ? testBoardSessionActor({
-            userId: "user-1",
-            sessionId: "session-1",
-            userName: "User One",
-            userEmail: "user@example.com",
-            companyIds: [],
-            memberships: [],
-            isInstanceAdmin: false,
-          })
-        : testBoardKeyActor({
-            userId: "user-1",
-            keyId: "board-key-1",
-            userName: "User One",
-            userEmail: "user@example.com",
-            companyIds: [],
-            memberships: [],
-            isInstanceAdmin: false,
-          })
-      : {
-          type: "agent",
-          source: "internal",
-          agentId: "agent-1",
-          companyId: "company-1",
-          runId: "run-1",
-        };
+    req.actor = boardSource === "session"
+      ? testBoardSessionActor({
+          userId: "user-1",
+          sessionId: "session-1",
+          userName: "User One",
+          userEmail: "user@example.com",
+          companyIds: [],
+          memberships: [],
+          isInstanceAdmin: false,
+        })
+      : testBoardKeyActor({
+          userId: "user-1",
+          keyId: "board-key-1",
+          userName: "User One",
+          userEmail: "user@example.com",
+          companyIds: [],
+          memberships: [],
+          isInstanceAdmin: false,
+        });
     next();
   });
   app.use(boardMutationGuard());
@@ -67,7 +58,7 @@ function createApp(
 
 describe("boardMutationGuard", () => {
   it("allows safe methods for board actor", async () => {
-    const app = createApp("board");
+    const app = createApp();
     const res = await request(app).get("/read");
     expect([200, 204]).toContain(res.status);
   });
@@ -102,13 +93,13 @@ describe("boardMutationGuard", () => {
   });
 
   it("allows board bearer-key mutations without origin", async () => {
-    const app = createApp("board", "board_key");
+    const app = createApp("board_key");
     const res = await request(app).post("/mutate").send({ ok: true });
     expect([200, 204]).toContain(res.status);
   });
 
   it("allows board mutations from trusted origin", async () => {
-    const app = createApp("board");
+    const app = createApp();
     const res = await request(app)
       .post("/mutate")
       .set("Host", "localhost:3100")
@@ -118,7 +109,7 @@ describe("boardMutationGuard", () => {
   });
 
   it("allows board mutations from trusted referer origin", async () => {
-    const app = createApp("board");
+    const app = createApp();
     const res = await request(app)
       .post("/mutate")
       .set("Host", "localhost:3100")
@@ -128,7 +119,7 @@ describe("boardMutationGuard", () => {
   });
 
   it("allows canonical forwarded authority only from a trusted immediate proxy", async () => {
-    const app = createApp("board", "session", true);
+    const app = createApp("session", true);
     const res = await request(app)
       .post("/mutate")
       .set("Host", "127.0.0.1")
@@ -140,7 +131,7 @@ describe("boardMutationGuard", () => {
   });
 
   it("rejects direct forwarded-authority spoofing", async () => {
-    const app = createApp("board");
+    const app = createApp();
     const res = await request(app)
       .post("/mutate")
       .set("Host", "localhost:3100")
@@ -246,32 +237,4 @@ describe("boardMutationGuard", () => {
     });
   });
 
-  it("does not block authenticated agent mutations", async () => {
-    const middleware = boardMutationGuard();
-    const req = {
-      method: "POST",
-      actor: {
-        type: "agent",
-        source: "internal",
-        agentId: "agent-1",
-        companyId: "company-1",
-        runId: "run-1",
-      },
-      requestAuthority: {
-        ...canonicalizeAuthority("localhost:3100", "http"),
-        immediatePeerTrusted: false,
-      },
-      header: () => undefined,
-    } as any;
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    } as any;
-    const next = vi.fn();
-
-    middleware(req, res, next);
-
-    expect(next).toHaveBeenCalledOnce();
-    expect(res.status).not.toHaveBeenCalled();
-  });
 });

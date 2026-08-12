@@ -54,16 +54,6 @@ function boardActor(): TestActor {
   });
 }
 
-function agentActor(): TestActor {
-  return {
-    type: "agent",
-    agentId: ownerAgentId,
-    companyId,
-    source: "internal",
-    runId: "55555555-5555-4555-8555-555555555555",
-  };
-}
-
 function createResult(retried = false) {
   return {
     task: {
@@ -199,19 +189,6 @@ describe("canonical board task ingress", () => {
       })
       .expect(400);
 
-    expect(create).not.toHaveBeenCalled();
-  });
-
-  it("denies agent REST creation before accepting any payload shape", async () => {
-    const create = vi.fn();
-    const app = await createApp({ actor: agentActor(), create });
-
-    const response = await request(app)
-      .post(`/api/companies/${companyId}/tasks`)
-      .send({ description: "legacy agent bypass" })
-      .expect(403);
-
-    expect(response.body.error).toContain("Board access required");
     expect(create).not.toHaveBeenCalled();
   });
 

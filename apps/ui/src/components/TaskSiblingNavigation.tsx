@@ -1,10 +1,10 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Task } from "@paperclipai/shared";
 import type { TaskSiblingNavigation as TaskSiblingNavigationState } from "@/lib/task-detail-subtasks";
-import { createTaskDetailPath, withTaskDetailHeaderSeed } from "@/lib/taskDetailBreadcrumb";
+import { withTaskDetailHeaderSeed } from "@/lib/taskDetailBreadcrumb";
 import { cn } from "@/lib/utils";
-import { Link } from "@/lib/router";
 import { StatusIcon } from "./StatusIcon";
+import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 
 type TaskSiblingNavigationProps = {
   navigation: TaskSiblingNavigationState | null;
@@ -45,27 +45,18 @@ function SiblingLink({
   linkState?: unknown;
   className?: string;
 }) {
-  const taskPathId = task.identifier ?? task.id;
   const label = direction === "previous" ? "Previous" : "Next";
   const ariaDirection = direction === "previous" ? "Previous sub-task" : "Next sub-task";
-  const identifier = task.identifier ?? task.id.slice(0, 8);
+  const identifier = task.identifier;
   const Icon = direction === "previous" ? ChevronLeft : ChevronRight;
-
-  return (
-    <Link
-      // design-allow(card-pattern): navigation <Link> card; Card renders a div and would break anchor semantics (C5a Run 3)
-      to={createTaskDetailPath(taskPathId)}
-      state={withTaskDetailHeaderSeed(linkState, task)}
-      taskPrefetch={task}
-      taskQuicklookSide="top"
-      taskQuicklookAlign={direction === "previous" ? "start" : "end"}
-      aria-label={`${ariaDirection}: ${identifier} - ${task.title}`}
-      className={cn(
-        "group min-w-0 rounded-lg border border-border bg-card px-3 py-2.5 text-left no-underline transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
-        direction === "next" && "sm:text-right",
-        className,
-      )}
-    >
+  const cardClassName = cn(
+    "group min-w-0 rounded-lg border border-border bg-card px-3 py-2.5 text-left no-underline transition-colors",
+    "hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
+    direction === "next" && "sm:text-right",
+    className,
+  );
+  const content = (
+    <>
       <div className="min-w-0 space-y-1.5">
         <div className={cn(
           "flex items-center gap-1.5 text-xs text-muted-foreground transition-colors group-hover:text-foreground",
@@ -86,6 +77,22 @@ function SiblingLink({
           {task.title}
         </div>
       </div>
-    </Link>
+    </>
+  );
+
+  return (
+    <TaskLinkQuicklook
+      // design-allow(card-pattern): navigation <Link> card; Card renders a div and would break anchor semantics (C5a Run 3)
+      taskId={task.id}
+      taskNumber={task.taskNumber}
+      state={withTaskDetailHeaderSeed(linkState, task)}
+      taskPrefetch={task}
+      taskQuicklookSide="top"
+      taskQuicklookAlign={direction === "previous" ? "start" : "end"}
+      aria-label={`${ariaDirection}: ${identifier} - ${task.title}`}
+      className={cardClassName}
+    >
+      {content}
+    </TaskLinkQuicklook>
   );
 }

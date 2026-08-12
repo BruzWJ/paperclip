@@ -1,7 +1,4 @@
-import {
-  COMPANY_SEARCH_SORTS,
-  type CompanySearchSort,
-} from "@paperclipai/shared";
+import { isCanonicalUuid, type CompanySearchSort } from "@paperclipai/shared";
 import type { ParsedSearchQuery } from "./search-query-parser";
 
 /**
@@ -31,13 +28,6 @@ export function updatedWithinLabel(value: string): string {
   return UPDATED_WITHIN_LABELS[value] ?? `Updated ≤ ${value}`;
 }
 
-const SORT_SET = new Set<string>(COMPANY_SEARCH_SORTS);
-
-export function parseSearchSort(params: URLSearchParams): CompanySearchSort {
-  const raw = params.get("sort");
-  return raw && SORT_SET.has(raw) ? (raw as CompanySearchSort) : "relevance";
-}
-
 /** Count active filter dimensions (owner counts once regardless of shape). */
 export function countActiveFilters(filters: SearchFilters): number {
   let count = 0;
@@ -51,42 +41,34 @@ export function countActiveFilters(filters: SearchFilters): number {
 }
 
 // ---------------------------------------------------------------------------
-// Owner: the UI treats ownership as a single choice, but the wire model splits
-// it across ownerAgentId (string | null) and ownerUserId (string). These
-// helpers translate between a single opaque token and that split representation.
-//   "me"          → ownerUserId = currentUserId
-//   "board"       → ownerAgentId = null (board-owned)
-//   "agent:<id>"  → ownerAgentId
-//   "user:<id>"   → ownerUserId
+// Owner selection uses the exact persisted identity as the menu value. Agent
+// identities are canonical UUIDs; the current board user's opaque id is matched
+// exactly. No aliases or sentinel identities cross this boundary.
 // ---------------------------------------------------------------------------
 
-export function ownerToken(filters: SearchFilters, currentUserId: string | null): string | undefined {
-  if (filters.ownerAgentId === null) return "board";
-  if (typeof filters.ownerAgentId === "string") return `agent:${filters.ownerAgentId}`;
-  if (filters.ownerUserId) {
-    return filters.ownerUserId === currentUserId ? "me" : `user:${filters.ownerUserId}`;
-  }
+export function ownerSelectionId(filters: SearchFilters): string | undefined {
+  if (filters.ownerAgentId) return filters.ownerAgentId;
+  if (filters.ownerUserId) return filters.ownerUserId;
   return undefined;
 }
 
-export function applyOwnerToken(
+export function applyOwnerSelectionId(
   filters: SearchFilters,
-  token: string | undefined,
+  ownerId: string | undefined,
   currentUserId: string | null,
 ): SearchFilters {
   const next: SearchFilters = { ...filters };
   delete next.ownerAgentId;
   delete next.ownerUserId;
-  if (!token) return next;
-  if (token === "board") {
-    next.ownerAgentId = null;
-  } else if (token === "me") {
-    if (currentUserId) next.ownerUserId = currentUserId;
-  } else if (token.startsWith("agent:")) {
-    next.ownerAgentId = token.slice("agent:".length);
-  } else if (token.startsWith("user:")) {
-    next.ownerUserId = token.slice("user:".length);
+  if (ownerId === undefined) return next;
+  if (currentUserId !== null && ownerId === currentUserId) {
+    next.ownerUserId = currentUserId;
+    return next;
   }
+  if (!isCanonicalUuid(ownerId)) {
+    throw new Error("Owner agent selection must be a canonical UUID");
+  }
+  next.ownerAgentId = ownerId;
   return next;
 }
 
@@ -109,8 +91,7 @@ function humanize(value: string): string {
 }
 
 function ownerChipLabel(filters: SearchFilters, lookups: FilterChipLookups): string {
-  if (filters.ownerAgentId === null) return "Board";
-  if (typeof filters.ownerAgentId === "string") {
+  if (filters.ownerAgentId) {
     return lookups.agentName(filters.ownerAgentId) ?? "Agent";
   }
   if (filters.ownerUserId) {
@@ -208,7 +189,7 @@ export function describeLoosenSuggestion(filterKey: string, values: string[], lo
     case "ownerAgentId":
       return `Owner: ${values.map((id) => lookups.agentName(id) ?? "Agent").join(", ")}`;
     case "ownerUserId":
-      return `Owner: ${values.map((id) => (id === lookups.currentUserId ? "Me" : lookups.userName(id) ?? "User")).join(", ")}`;
+      return `Owner: ${values.map((id) => (id === lookups.currentUserId ? "Me" : (lookups.userName(id) ?? "User"))).join(", ")}`;
     case "projectId":
       return `Project: ${values.map((id) => lookups.projectName(id) ?? "Project").join(", ")}`;
     case "labelId":

@@ -1,23 +1,13 @@
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { deriveInitials } from "./Identity";
 import { TaskReferenceActivitySummary } from "./TaskReferenceActivitySummary";
 import { timeAgo } from "../lib/timeAgo";
 import { cn } from "../lib/utils";
 import { formatActivityVerb } from "../lib/activity-format";
-import { deriveProjectUrlKey, type ActivityEvent, type Agent } from "@paperclipai/shared";
+import type { ActivityEvent, Agent } from "@paperclipai/shared";
 import type { CompanyUserProfile } from "../lib/company-members";
-
-function entityLink(entityType: string, entityId: string, name?: string | null): string | null {
-  switch (entityType) {
-    case "task": return `/tasks/${name ?? entityId}`;
-    case "agent": return `/agents/${entityId}`;
-    case "project": return `/projects/${deriveProjectUrlKey(name, entityId)}`;
-    case "goal": return `/goals/${entityId}`;
-    case "approval": return `/approvals/${entityId}`;
-    default: return null;
-  }
-}
 
 interface ActivityRowProps {
   event: ActivityEvent;
@@ -29,6 +19,7 @@ interface ActivityRowProps {
 }
 
 export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, entityTitleMap, className }: ActivityRowProps) {
+  const companyId = useCompanyRouteId();
   const verb = formatActivityVerb(event.action, event.details, { agentMap, userProfileMap });
 
   const isRunEvent = event.entityType === "task_execution_run";
@@ -42,9 +33,16 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
 
   const entityTitle = entityTitleMap?.get(`${event.entityType}:${event.entityId}`);
 
-  const link = isRunEvent && runAgentId
-    ? `/agents/${runAgentId}/runs/${event.entityId}`
-    : entityLink(event.entityType, event.entityId, name);
+  const runAgentRef = runAgentId ?? null;
+  const entityAgentRef = event.entityType === "agent"
+    ? event.entityId
+    : null;
+  const linkable = Boolean(
+    runAgentRef
+    || entityAgentRef
+    || event.entityType === "goal"
+    || event.entityType === "approval",
+  );
 
   const actor = event.actorType === "agent" ? agentMap.get(event.actorId) : null;
   const userProfile = event.actorType === "user" ? userProfileMap?.get(event.actorId) : null;
@@ -74,16 +72,22 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
 
   const classes = cn(
     "px-4 py-2 text-sm",
-    link && "cursor-pointer hover:bg-accent/50 transition-colors",
+    linkable && "cursor-pointer hover:bg-accent/50 transition-colors",
     className,
   );
 
-  if (link) {
-    return (
-      <Link to={link} className={cn(classes, "no-underline text-inherit block")}>
-        {inner}
-      </Link>
-    );
+  const linkClassName = cn(classes, "no-underline text-inherit block");
+  if (isRunEvent && runAgentRef) {
+    return <Link to="/$companyId/agents/$agentId/runs/$runId" params={{ companyId, agentId: runAgentRef, runId: event.entityId }} className={linkClassName}>{inner}</Link>;
+  }
+  if (event.entityType === "agent" && entityAgentRef) {
+    return <Link to="/$companyId/agents/$agentId" params={{ companyId, agentId: entityAgentRef }} className={linkClassName}>{inner}</Link>;
+  }
+  if (event.entityType === "goal") {
+    return <Link to="/$companyId/goals/$goalId" params={{ companyId, goalId: event.entityId }} className={linkClassName}>{inner}</Link>;
+  }
+  if (event.entityType === "approval") {
+    return <Link to="/$companyId/approvals/$approvalId" params={{ companyId, approvalId: event.entityId }} className={linkClassName}>{inner}</Link>;
   }
 
   return (

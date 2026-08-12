@@ -1,4 +1,4 @@
-import type { AdapterModel, AdapterModelLimits } from "./types.js";
+import type { AdapterModel } from "./types.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -15,87 +15,26 @@ function exactNonEmptyString(value: unknown, label: string): string {
   return value;
 }
 
-function positiveInteger(value: unknown, label: string): number {
-  if (!Number.isInteger(value) || Number(value) <= 0) {
-    throw new Error(`${label} must be a positive integer`);
-  }
-  return Number(value);
-}
-
-/** Validate immutable token limits without inventing a missing input limit. */
-export function validateAdapterModelLimits(value: unknown): AdapterModelLimits {
-  if (!isRecord(value)) {
-    throw new Error("Adapter model limits must be an object");
-  }
-  const allowed = new Set([
-    "contextTokenLimit",
-    "inputTokenLimit",
-    "outputTokenLimit",
-  ]);
-  const unknown = Object.keys(value).find((key) => !allowed.has(key));
-  if (unknown) {
-    throw new Error(`Adapter model limits contain unknown field ${unknown}`);
-  }
-  const limits: AdapterModelLimits = {
-    contextTokenLimit: positiveInteger(
-      value.contextTokenLimit,
-      "Adapter model limits.contextTokenLimit",
-    ),
-    ...(value.inputTokenLimit === undefined
-      ? {}
-      : {
-          inputTokenLimit: positiveInteger(
-            value.inputTokenLimit,
-            "Adapter model limits.inputTokenLimit",
-          ),
-        }),
-    outputTokenLimit: positiveInteger(
-      value.outputTokenLimit,
-      "Adapter model limits.outputTokenLimit",
-    ),
-  };
-  if (limits.outputTokenLimit > limits.contextTokenLimit) {
-    throw new Error(
-      "Adapter model outputTokenLimit cannot exceed contextTokenLimit",
-    );
-  }
-  if (
-    limits.inputTokenLimit !== undefined &&
-    limits.inputTokenLimit > limits.contextTokenLimit
-  ) {
-    throw new Error(
-      "Adapter model inputTokenLimit cannot exceed contextTokenLimit",
-    );
-  }
-  return limits;
-}
-
 /** Validate one exact value for the adapter's stable ACP model option. */
 export function validateAdapterModel(value: unknown): AdapterModel {
   if (!isRecord(value)) {
-    throw new Error("Adapter model catalog entry must be an object");
+    throw new Error("Adapter model must be an object");
   }
-  const allowed = new Set(["id", "label", "value", "limits"]);
+  const allowed = new Set(["value", "label"]);
   const unknown = Object.keys(value).find((key) => !allowed.has(key));
   if (unknown) {
-    throw new Error(`Adapter model catalog entry contains unknown field ${unknown}`);
+    throw new Error(`Adapter model contains unknown field ${unknown}`);
   }
   return {
-    id: exactNonEmptyString(value.id, "Adapter model catalog entry id"),
-    label: exactNonEmptyString(
-      value.label,
-      "Adapter model catalog entry label",
-    ),
     value: exactNonEmptyString(
       value.value,
-      "Adapter model catalog entry value",
+      "Adapter model value",
     ),
-    limits:
-      value.limits === null ? null : validateAdapterModelLimits(value.limits),
+    label: exactNonEmptyString(value.label, "Adapter model label"),
   };
 }
 
-export function requireAdapterCatalogModel(input: {
+export function requireAdapterModel(input: {
   adapterType: string;
   selection: unknown;
   models: readonly AdapterModel[];
@@ -104,32 +43,11 @@ export function requireAdapterCatalogModel(input: {
     input.selection,
     `Adapter ${input.adapterType} model selection`,
   );
-  const matches = input.models.filter((model) => model.id === selection);
+  const matches = input.models.filter((model) => model.value === selection);
   if (matches.length !== 1) {
     throw new Error(
-      `Adapter ${input.adapterType} model selection is not an exact catalog entry`,
+      `Adapter ${input.adapterType} model selection is not one exact advertised value`,
     );
   }
   return validateAdapterModel(matches[0]);
-}
-
-export function sameAdapterModel(
-  left: AdapterModel,
-  right: AdapterModel,
-): boolean {
-  if (
-    left.id !== right.id ||
-    left.label !== right.label ||
-    left.value !== right.value
-  ) {
-    return false;
-  }
-  if (left.limits === null || right.limits === null) {
-    return left.limits === right.limits;
-  }
-  return (
-    left.limits.contextTokenLimit === right.limits.contextTokenLimit &&
-    left.limits.inputTokenLimit === right.limits.inputTokenLimit &&
-    left.limits.outputTokenLimit === right.limits.outputTokenLimit
-  );
 }

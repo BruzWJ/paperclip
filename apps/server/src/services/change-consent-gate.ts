@@ -2,6 +2,7 @@ import type { Db } from "@paperclipai/db";
 import { changeConsents } from "@paperclipai/db";
 import { and, desc, eq, gt, inArray, isNull, lt, ne } from "drizzle-orm";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
+import { isCanonicalUuid } from "@paperclipai/shared";
 import {
   readTaskExecutionRun,
   resolveTaskExecutionRunIdentityById,
@@ -15,15 +16,13 @@ export function agentProfileChangeTargetKey(agentId: string) {
   return `agent:${agentId}:profile`;
 }
 
-export function skillChangeTargetKey(skillId: string) {
-  return `skill:${skillId}`;
-}
-
 export type ChangeConsentTransaction =
   Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-function readNonEmptyString(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+function readExactNonEmptyString(value: unknown) {
+  return typeof value === "string" && value.length > 0 && value.trim() === value
+    ? value
+    : null;
 }
 
 function hasDisplayedDiff(value: string) {
@@ -41,11 +40,11 @@ export async function consumeAcceptedChangeConsentInTransaction(
     now?: Date;
   },
 ): Promise<boolean> {
-  const actorAgentId = readNonEmptyString(input.actorAgentId);
-  if (!actorAgentId) return false;
+  const actorAgentId = input.actorAgentId;
+  if (!isCanonicalUuid(actorAgentId)) return false;
 
-  const actorRunId = readNonEmptyString(input.actorRunId);
-  if (!actorRunId) {
+  const actorRunId = input.actorRunId;
+  if (!isCanonicalUuid(actorRunId)) {
     throw forbidden(
       "Agent mutations requiring change consent need a run id",
       { code: "change_consent_run_id_required" },
@@ -54,7 +53,7 @@ export async function consumeAcceptedChangeConsentInTransaction(
   const targetKeys = [
     ...new Set(
       input.targetKeys
-        .map(readNonEmptyString)
+        .map(readExactNonEmptyString)
         .filter((key): key is string => Boolean(key)),
     ),
   ];
@@ -63,7 +62,7 @@ export async function consumeAcceptedChangeConsentInTransaction(
       code: "change_consent_target_required",
     });
   }
-  const displayedDiff = readNonEmptyString(input.displayedDiff);
+  const displayedDiff = readExactNonEmptyString(input.displayedDiff);
   if (!displayedDiff || !hasDisplayedDiff(displayedDiff)) {
     throw forbidden("Mutation requires the exact displayed change-consent diff", {
       code: "change_consent_diff_required",
@@ -148,8 +147,15 @@ export function changeConsentGateService(db: Db) {
       displayedDiff: string;
       expiresAt: Date;
     }) => {
-      const targetKey = readNonEmptyString(input.targetKey);
-      const displayedDiff = readNonEmptyString(input.displayedDiff);
+      if (
+        !isCanonicalUuid(input.companyId) ||
+        !isCanonicalUuid(input.requestedByAgentId) ||
+        !isCanonicalUuid(input.sourceRunId)
+      ) {
+        throw badRequest("Change consent identity is invalid");
+      }
+      const targetKey = readExactNonEmptyString(input.targetKey);
+      const displayedDiff = readExactNonEmptyString(input.displayedDiff);
       if (!targetKey) throw badRequest("Change consent target is required");
       if (!displayedDiff || !hasDisplayedDiff(displayedDiff)) {
         throw badRequest("Change consent requires the exact displayed diff");
@@ -201,7 +207,10 @@ export function changeConsentGateService(db: Db) {
       decidedByBoardId: string;
       reason?: string | null;
     }) => {
-      const boardId = readNonEmptyString(input.decidedByBoardId);
+      if (!isCanonicalUuid(input.companyId) || !isCanonicalUuid(input.consentId)) {
+        throw notFound("Change consent not found");
+      }
+      const boardId = readExactNonEmptyString(input.decidedByBoardId);
       if (!boardId) throw badRequest("Board decision identity is required");
       const now = new Date();
       await expirePending(input.companyId, now);
@@ -209,7 +218,10 @@ export function changeConsentGateService(db: Db) {
         .update(changeConsents)
         .set({
           status: input.decision,
-          decisionReason: readNonEmptyString(input.reason),
+          decisionReason:
+            input.reason === null || input.reason === undefined
+              ? null
+              : input.reason,
           decidedByBoardId: boardId,
           decidedAt: now,
           updatedAt: now,

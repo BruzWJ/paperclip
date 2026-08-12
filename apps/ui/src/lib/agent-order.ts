@@ -29,8 +29,8 @@ function normalizeSortMode(value: unknown): AgentSidebarSortMode {
 
 function resolveUserId(userId: string | null | undefined): string {
   if (!userId) return ANONYMOUS_USER_ID;
-  const trimmed = userId.trim();
-  return trimmed.length > 0 ? trimmed : ANONYMOUS_USER_ID;
+  if (userId.trim() !== userId) throw new Error("User ID must be exact");
+  return userId;
 }
 
 export function getAgentOrderStorageKey(companyId: string, userId: string | null | undefined): string {

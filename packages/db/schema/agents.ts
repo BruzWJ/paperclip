@@ -5,15 +5,10 @@ import {
   uuid,
   text,
   timestamp,
-  jsonb,
   index,
   unique,
 } from "drizzle-orm/pg-core";
-import type {
-  AgentAdapterType,
-  AgentStatus,
-  PauseReason,
-} from "@paperclipai/shared";
+import type { AgentStatus, PauseReason } from "@paperclipai/shared";
 import { companies } from "./companies.js";
 import { agentAdapterConfigRevisions } from "./agent_adapter_config_revisions.js";
 import {
@@ -32,13 +27,10 @@ export const agents = pgTable(
     status: text("status").$type<AgentStatus>().notNull().default("idle"),
     reportsTo: uuid("reports_to").references((): AnyPgColumn => agents.id),
     capabilities: text("capabilities"),
-    adapterType: text("adapter_type").$type<AgentAdapterType>(),
-    adapterConfig: jsonb("adapter_config").$type<Record<string, unknown>>(),
     currentAdapterConfigRevisionId: uuid("current_adapter_config_revision_id").references(
       (): AnyPgColumn => agentAdapterConfigRevisions.id,
       { onDelete: "restrict" },
     ),
-    runtimeConfig: jsonb("runtime_config").$type<Record<string, unknown>>().notNull().default({}),
     budgetMonthlyAmount: moneyAmountColumn("budget_monthly_amount").notNull(),
     pauseReason: text("pause_reason").$type<PauseReason>(),
     pausedAt: timestamp("paused_at", { withTimezone: true }),

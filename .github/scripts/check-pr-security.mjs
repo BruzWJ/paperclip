@@ -120,11 +120,7 @@ export function scanTestPatterns(files) {
 }
 
 const SENSITIVE_PATHS = [
-  // Advisory 2 & 11: OS command injection / privilege escalation via provisionCommand / cleanupCommand
-  'apps/server/src/services/workspace-realization.ts',
-  'apps/server/src/routes/execution-workspaces.ts',
-  'apps/server/src/routes/workspace-command-authz.ts',
-  // Advisory 3 & 6: Cross-tenant agent API key minting and IDOR on /agents/:id/keys
+  // Agent lifecycle and configuration changes must preserve tenant authorization.
   'apps/server/src/routes/agents.ts',
   // Advisory 4: Approval decision attribution spoofing via decidedByUserId
   'apps/server/src/routes/approvals.ts',
@@ -134,8 +130,6 @@ const SENSITIVE_PATHS = [
   'apps/server/src/routes/authz.ts',
   // Advisory 8: Unauthenticated RCE via import authorization bypass
   'apps/server/src/routes/companies.ts',
-  // Advisory 9: Malicious skills able to exfiltrate / destroy user data
-  'apps/server/src/routes/company-skills.ts',
 ];
 
 export function scanSensitivePaths(files) {

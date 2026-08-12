@@ -22,7 +22,6 @@ COPY apps/ui/package.json apps/ui/
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY packages/adapter-utils/package.json packages/adapter-utils/
-COPY packages/skills-catalog/package.json packages/skills-catalog/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
 COPY patches/ patches/
 COPY scripts/link-plugin-dev-sdk.mjs scripts/
@@ -35,6 +34,7 @@ COPY --from=deps /app /app
 COPY . .
 # Turborepo honors package dependency order (^build) and caches package outputs.
 RUN pnpm exec turbo run build --filter=@paperclipai/server
+RUN bash scripts/prepare-server-ui-dist.sh
 RUN test -f apps/server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
 FROM base AS production
@@ -53,7 +53,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
-  HOST=0.0.0.0 \
+  PAPERCLIP_BIND=lan \
   PORT=3100 \
   SERVE_UI=true \
   PAPERCLIP_HOME=/paperclip \

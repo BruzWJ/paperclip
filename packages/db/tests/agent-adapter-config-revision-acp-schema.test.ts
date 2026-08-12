@@ -35,7 +35,7 @@ describe("immutable ACP adapter revision schema", () => {
     expect(sql).not.toContain("'frontendDigest'");
   });
 
-  it("allows empty selections and a missing target model without widening other fields", () => {
+  it("allows empty selections and a missing ACPX model without catalog metadata", () => {
     const constraint = getTableConfig(agentAdapterConfigRevisions).checks.find(
       (candidate) =>
         candidate.name ===
@@ -43,8 +43,10 @@ describe("immutable ACP adapter revision schema", () => {
     );
     expect(constraint).toBeDefined();
     const sql = dialect.sqlToQuery(constraint!.value).sql;
-    expect(sql).toContain("'{model,limits}'");
+    expect(sql).toContain("'value', 'label'");
     expect(sql).toContain("= 'null'");
     expect(sql).not.toContain("jsonb_array_length");
+    expect(sql).not.toContain("'{model,id}'");
+    expect(sql).not.toContain("'{model,limits}'");
   });
 });

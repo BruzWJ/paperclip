@@ -2,18 +2,13 @@ import { z } from "zod";
 import { moneyAmountSchema } from "../money.js";
 import { agentAdapterTypeSchema } from "../adapter-type.js";
 import { AGENT_ICON_NAMES } from "../constants.js";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
 } from "../task-runtime.js";
-import {
-  adapterConfigSchema,
-  agentRuntimeConfigSchema,
-} from "./agent.js";
-import {
-  companySkillPinsSchema,
-} from "./company-skill-pins.js";
+import { adapterConfigSchema } from "./agent.js";
 
 function requiredBooleanShape<Key extends string>(
   keys: readonly Key[],
@@ -53,7 +48,7 @@ const runtimeAgentConfigurationFieldsSchema = z
     name: z.string().trim().min(1).max(160),
     title: z.string().max(240).nullable(),
     capabilities: z.string().max(8_000).nullable(),
-    reportsTo: z.string().uuid().nullable(),
+    reportsTo: canonicalUuidSchema.nullable(),
     instruction: z.string()
       .min(1)
       .max(20_000)
@@ -116,7 +111,7 @@ function runtimeAgentConfigureActionSchemaForTarget(
  * after the compiled descriptor has already constrained the target catalog.
  */
 export const runtimeAgentConfigureActionSchema =
-  runtimeAgentConfigureActionSchemaForTarget(z.string().uuid());
+  runtimeAgentConfigureActionSchemaForTarget(canonicalUuidSchema);
 
 /**
  * Builds the dynamic provider descriptor contract for the exact target
@@ -146,8 +141,6 @@ export const agentAdapterRevisionConfigurationSchema = z
   .object({
     adapterType: agentAdapterTypeSchema,
     adapterConfig: adapterConfigSchema,
-    runtimeConfig: agentRuntimeConfigSchema,
-    companySkillPins: companySkillPinsSchema,
   })
   .strict();
 

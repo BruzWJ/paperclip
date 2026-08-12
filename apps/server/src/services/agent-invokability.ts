@@ -1,6 +1,10 @@
 import type { Db } from "@paperclipai/db";
 import { agentAdapterConfigRevisions, agents } from "@paperclipai/db";
-import { getAgentWorkEligibility, type AgentEligibilityAgent, type AgentOrgChainHealth } from "@paperclipai/shared";
+import {
+  getAgentWorkEligibility,
+  type AgentEligibilityAgent,
+  type AgentOrgChainHealth,
+} from "@paperclipai/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
@@ -38,16 +42,13 @@ export type AgentInvokability =
  * adapter revision remains resolvable for that same agent in that company.
  * A non-null pointer alone is intentionally not sufficient.
  */
-export type InvokableTaskOwnerAgent = AgentOrgRow & Pick<
-  typeof agents.$inferSelect,
-  "currentAdapterConfigRevisionId"
-> & Partial<Pick<typeof agents.$inferSelect, "title" | "icon" | "instruction">>;
+export type InvokableTaskOwnerAgent = AgentOrgRow &
+  Pick<typeof agents.$inferSelect, "currentAdapterConfigRevisionId"> &
+  Partial<Pick<typeof agents.$inferSelect, "title" | "icon" | "instruction">>;
 
 export type InvokableTaskOwnerRevision = Pick<
   typeof agentAdapterConfigRevisions.$inferSelect,
-  | "id"
-  | "companyId"
-  | "agentId"
+  "id" | "companyId" | "agentId"
 >;
 
 export type InvokableTaskOwnerRejectionReason =
@@ -95,7 +96,9 @@ function blocked(
   return { invokable: false, reason, message, details, invalidOrgChain };
 }
 
-function statusBlockReason(status: AgentStatus): AgentInvokabilityBlockReason | null {
+function statusBlockReason(
+  status: AgentStatus,
+): AgentInvokabilityBlockReason | null {
   if (status === "paused") return "paused";
   if (status === "terminated") return "terminated";
   if (status === "pending_approval") return "pending_approval";
@@ -112,7 +115,9 @@ function toEligibilityAgent(row: AgentOrgRow): AgentEligibilityAgent {
   };
 }
 
-function invalidChainReason(health: AgentOrgChainHealth): AgentInvokabilityBlockReason {
+function invalidChainReason(
+  health: AgentOrgChainHealth,
+): AgentInvokabilityBlockReason {
   if (health.reason === "terminated_ancestor") return "manager_terminated";
   if (health.reason === "cycle") return "reporting_cycle";
   return "manager_missing";
@@ -133,9 +138,10 @@ export function evaluateAgentInvokability(
 
   if (eligibility.invokable) return { invokable: true };
 
-  const directStatusReason = eligibility.invokabilityReason === "unknown_status"
-    ? "unknown_status"
-    : statusBlockReason(agent.status);
+  const directStatusReason =
+    eligibility.invokabilityReason === "unknown_status"
+      ? "unknown_status"
+      : statusBlockReason(agent.status);
   if (directStatusReason) {
     return blocked(
       directStatusReason,
@@ -190,10 +196,7 @@ export function resolveInvokableTaskOwner<
       },
     );
   }
-  const invokability = evaluateAgentInvokability(
-    owner,
-    companyAgents,
-  );
+  const invokability = evaluateAgentInvokability(owner, companyAgents);
   if (!invokability.invokable) {
     throw new InvokableTaskOwnerRejected(
       invokability.message,
@@ -244,8 +247,9 @@ export function resolveInvokableTaskOwner<
 export function resolveInvokableTaskOwnerCatalog<
   Owner extends InvokableTaskOwnerAgent,
   Revision extends InvokableTaskOwnerRevision,
->(input: Omit<InvokableTaskOwnerSnapshot<Owner, Revision>, "ownerAgentId">):
-  ReadonlyMap<string, InvokableTaskOwnerResolution<Owner, Revision>> {
+>(
+  input: Omit<InvokableTaskOwnerSnapshot<Owner, Revision>, "ownerAgentId">,
+): ReadonlyMap<string, InvokableTaskOwnerResolution<Owner, Revision>> {
   const result = new Map<
     string,
     InvokableTaskOwnerResolution<Owner, Revision>
@@ -424,22 +428,4 @@ export async function resolveInvokableTaskOwnerCatalogInTransaction(
     companyAgents,
     adapterRevisions,
   });
-}
-
-export async function evaluateAgentInvokabilityFromDb(
-  db: Db,
-  agent: AgentOrgRow | null | undefined,
-): Promise<AgentInvokability> {
-  if (!agent) return evaluateAgentInvokability(agent, []);
-  const companyAgents = await db
-    .select({
-      id: agents.id,
-      companyId: agents.companyId,
-      name: agents.name,
-      reportsTo: agents.reportsTo,
-      status: agents.status,
-    })
-    .from(agents)
-    .where(eq(agents.companyId, agent.companyId));
-  return evaluateAgentInvokability(agent, companyAgents);
 }

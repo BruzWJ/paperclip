@@ -43,25 +43,24 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
 /**
  * Agent status chip — bordered chip recoloured from the editable
  * `--status-agent-*` base hue via the `.status-chip` color-mix helper. The
- * provider-facing `active` state is presented to operators as "idle".
+ * canonical lifecycle status.
  */
 export function AgentStatusBadge({ status }: { status: string }) {
   const cssVar = agentStatusVar[status] ?? agentStatusVarDefault;
-  const label = status === "active" ? "idle" : status;
   return (
     <span
       className="status-chip inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium leading-none whitespace-nowrap shrink-0"
       style={scStyle(cssVar)}
     >
-      {label.replace(/_/g, " ")}
+      {status.replace(/_/g, " ")}
     </span>
   );
 }
 
 /**
  * Agent status indicator — status capsule (vertical 8x16, r4) filled from the
- * editable `--status-agent-*` base hue. Running agents pulse, broken (error)
- * agents blink; both honor `prefers-reduced-motion`.
+ * editable `--status-agent-*` base hue. Broken agents blink while honoring
+ * `prefers-reduced-motion`.
  */
 export function AgentStatusCapsule({ status }: { status: string }) {
   const cssVar = agentStatusVar[status] ?? agentStatusVarDefault;

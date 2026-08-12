@@ -1,5 +1,6 @@
 import { memo, useMemo } from "react";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type {
   Agent,
@@ -18,10 +19,7 @@ import { cn, relativeTime } from "../lib/utils";
 import { Bot, ExternalLink } from "lucide-react";
 import { Identity } from "./Identity";
 import { StatusBadge } from "./StatusBadge";
-import {
-  usePublishSharedQueryData,
-  useSharedPollingQuery,
-} from "../hooks/useSharedPolling";
+import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 
 const MIN_DASHBOARD_RUNS = 4;
 const DASHBOARD_RUN_CARD_LIMIT = 4;
@@ -74,19 +72,11 @@ export function ActiveAgentsPanel({
     queryScope,
     limit,
   ] as const;
-  const sharedRuns = useSharedPollingQuery({
-    companyId,
-    resourceKey: "active-runs:" + queryScope + ":" + String(limit),
-    queryKey: runsQueryKey,
-    enabled: Boolean(companyId),
-    leaderOnly: true,
-  });
-  const { data: runPage, dataUpdatedAt } = useQuery<TaskExecutionRunListPageRecord>({
+  const { data: runPage } = useQuery<TaskExecutionRunListPageRecord>({
     queryKey: runsQueryKey,
     queryFn: () => runsApi.listForCompany(companyId, { status, limit }),
-    enabled: sharedRuns.enabled,
+    enabled: Boolean(companyId),
   });
-  usePublishSharedQueryData(sharedRuns, runPage, dataUpdatedAt);
 
   const { data: agents = [] } = useQuery({
     queryKey: queryKeys.agents.list(companyId),
@@ -146,7 +136,11 @@ export function ActiveAgentsPanel({
       )}
       {showMoreLink && hiddenRunCount > 0 ? (
         <div className="mt-3 flex justify-end text-xs text-muted-foreground">
-          <Link to="/dashboard/live" className="hover:text-foreground hover:underline">
+          <Link
+            to="/$companyId/dashboard/live"
+            params={{ companyId }}
+            className="hover:text-foreground hover:underline"
+          >
             {hiddenRunCount} more active run{hiddenRunCount === 1 ? "" : "s"}
           </Link>
         </div>
@@ -166,7 +160,8 @@ const AgentRunCard = memo(function AgentRunCard({
   task?: Task;
   className?: string;
 }) {
-  const agentRef = agent?.urlKey ?? run.targetAgentId;
+  const companyId = useCompanyRouteId();
+  const agentRef = agent?.id ?? null;
   const agentName = agent?.name ?? run.targetAgentId.slice(0, 8);
   return (
     <div className={cn(
@@ -190,7 +185,8 @@ const AgentRunCard = memo(function AgentRunCard({
           </div>
           {agentRef ? (
             <Link
-              to={"/agents/" + agentRef + "/runs/" + run.id}
+              to="/$companyId/agents/$agentId/runs/$runId"
+              params={{ companyId, agentId: agentRef, runId: run.id }}
               className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-(length:--text-nano) text-muted-foreground transition-colors hover:text-foreground"
               aria-label={`Open ${agentName}'s ${run.kind} run`}
             >
@@ -204,13 +200,21 @@ const AgentRunCard = memo(function AgentRunCard({
           <p className="font-medium capitalize">{run.kind} run</p>
           <p className="mt-1 font-mono text-muted-foreground">{run.id}</p>
         </div>
-        <Link
-          to={"/tasks/" + (task?.identifier ?? run.taskId)}
-          className="rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 text-blue-700 hover:underline dark:text-blue-300"
-        >
-          {task?.identifier ?? run.taskId.slice(0, 8)}
-          {task?.title ? " - " + task.title : ""}
-        </Link>
+        {task ? (
+          <TaskLinkQuicklook
+            taskId={task.id}
+            taskNumber={task.taskNumber}
+            taskPrefetch={task}
+            className="rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 text-blue-700 hover:underline dark:text-blue-300"
+          >
+            {task.identifier}
+            {task.title ? " - " + task.title : ""}
+          </TaskLinkQuicklook>
+        ) : (
+          <div className="rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 text-muted-foreground">
+            Task unavailable
+          </div>
+        )}
       </div>
     </div>
   );

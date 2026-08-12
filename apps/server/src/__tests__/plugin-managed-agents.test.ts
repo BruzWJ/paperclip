@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  pluginEntities,
-  pluginManagedResources,
-} from "@paperclipai/db";
+import { pluginEntities, pluginManagedResources } from "@paperclipai/db";
 import {
   pluginManifestV1Schema,
   type PaperclipPluginManifestV1,
@@ -17,7 +14,9 @@ import { createMockDb } from "./helpers/mock-db.js";
 const mocks = vi.hoisted(() => ({
   getAgentById: vi.fn(),
   lockCompanyAgentGraph: vi.fn(),
-  logActivity: vi.fn(),
+  persistedActivity: { row: { id: "activity-1" }, taskId: null },
+  persistActivityLog: vi.fn(),
+  publishCommittedActivity: vi.fn(),
 }));
 
 vi.mock("../services/agents.js", async (importOriginal) => {
@@ -33,7 +32,8 @@ vi.mock("../services/agent-org-graph-lock.js", () => ({
 }));
 
 vi.mock("../services/activity-log.js", () => ({
-  logActivity: mocks.logActivity,
+  persistActivityLog: mocks.persistActivityLog,
+  publishCommittedActivity: mocks.publishCommittedActivity,
 }));
 
 const now = new Date("2026-01-02T03:04:05.000Z");
@@ -55,12 +55,14 @@ function manifest(): PaperclipPluginManifestV1 {
     categories: ["automation"],
     capabilities: ["agents.managed"],
     entrypoints: { worker: "./dist/worker.js" },
-    agents: [{
-      agentKey: "wiki-maintainer",
-      displayName: "Wiki Maintainer",
-      title: "Maintains plugin-owned knowledge",
-      capabilities: "Maintains a plugin-owned wiki.",
-    }],
+    agents: [
+      {
+        agentKey: "wiki-maintainer",
+        displayName: "Wiki Maintainer",
+        title: "Maintains plugin-owned knowledge",
+        capabilities: "Maintains a plugin-owned wiki.",
+      },
+    ],
   };
 }
 
@@ -126,10 +128,7 @@ function agent(overrides: Record<string, unknown> = {}) {
     status: "idle",
     pauseReason: null,
     pausedAt: null,
-    adapterType: null,
-    adapterConfig: null,
     currentAdapterConfigRevisionId: null,
-    runtimeConfig: {},
     instruction: null,
     createdAt: now,
     updatedAt: now,
@@ -147,20 +146,22 @@ function service(db: ReturnType<typeof createMockDb>["db"]) {
 describe("plugin-managed agents", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.logActivity.mockResolvedValue(undefined);
+    mocks.persistActivityLog.mockResolvedValue(mocks.persistedActivity);
   });
 
   it("rejects managed-agent instruction declarations", () => {
     const pluginManifest = manifest();
     const parsed = pluginManifestV1Schema.safeParse({
       ...pluginManifest,
-      agents: [{
-        ...pluginManifest.agents![0]!,
-        instructions: {
-          entryFile: "AGENTS.md",
-          content: "Paperclip-managed instructions are forbidden.",
+      agents: [
+        {
+          ...pluginManifest.agents![0]!,
+          instructions: {
+            entryFile: "AGENTS.md",
+            content: "Paperclip-managed instructions are forbidden.",
+          },
         },
-      }],
+      ],
     });
 
     expect(parsed.success).toBe(false);
@@ -169,17 +170,18 @@ describe("plugin-managed agents", () => {
   it("returns a canonical missing resolution only when both provenance rows are absent", async () => {
     const harness = createMockDb({ select: [[], []] });
 
-    await expect(service(harness.db).get("wiki-maintainer", companyId))
-      .resolves.toEqual({
-        pluginKey,
-        resourceKind: "agent",
-        resourceKey: "wiki-maintainer",
-        companyId,
-        agentId: null,
-        agent: null,
-        status: "missing",
-        approvalId: null,
-      });
+    await expect(
+      service(harness.db).get("wiki-maintainer", companyId),
+    ).resolves.toEqual({
+      pluginKey,
+      resourceKind: "agent",
+      resourceKey: "wiki-maintainer",
+      companyId,
+      agentId: null,
+      agent: null,
+      status: "missing",
+      approvalId: null,
+    });
     expect(harness.remaining("select")).toBe(0);
     expect(mocks.getAgentById).not.toHaveBeenCalled();
   });
@@ -189,12 +191,13 @@ describe("plugin-managed agents", () => {
     const harness = createMockDb({ select: [[binding()], [entity()]] });
     mocks.getAgentById.mockResolvedValue(canonicalAgent);
 
-    await expect(service(harness.db).get("wiki-maintainer", companyId))
-      .resolves.toMatchObject({
-        status: "resolved",
-        agentId,
-        agent: canonicalAgent,
-      });
+    await expect(
+      service(harness.db).get("wiki-maintainer", companyId),
+    ).resolves.toMatchObject({
+      status: "resolved",
+      agentId,
+      agent: canonicalAgent,
+    });
     expect(mocks.getAgentById).toHaveBeenCalledWith(agentId);
     expect(harness.remaining("select")).toBe(0);
   });
@@ -208,8 +211,9 @@ describe("plugin-managed agents", () => {
       const harness = createMockDb({ select: [[binding()], [entity()]] });
       mocks.getAgentById.mockResolvedValueOnce(unavailableAgent);
 
-      await expect(service(harness.db).get("wiki-maintainer", companyId))
-        .rejects.toMatchObject({ status: 409 });
+      await expect(
+        service(harness.db).get("wiki-maintainer", companyId),
+      ).rejects.toMatchObject({ status: 409 });
     }
   });
 
@@ -224,8 +228,9 @@ describe("plugin-managed agents", () => {
     for (const [bindings, entities] of invalidPairs) {
       const harness = createMockDb({ select: [bindings, entities] });
 
-      await expect(service(harness.db).get("wiki-maintainer", companyId))
-        .rejects.toMatchObject({ status: 409 });
+      await expect(
+        service(harness.db).get("wiki-maintainer", companyId),
+      ).rejects.toMatchObject({ status: 409 });
       expect(mocks.getAgentById).not.toHaveBeenCalled();
     }
   });
@@ -235,41 +240,37 @@ describe("plugin-managed agents", () => {
       select: [[binding({ lifecycleState: "triage_paused" })]],
     });
 
-    await expect(service(harness.db).reconcile("wiki-maintainer", companyId))
-      .resolves.toMatchObject({
-        status: "missing",
-        agentId: null,
-        agent: null,
-      });
-    expect(harness.calls.filter((call) => call.operation === "insert")).toEqual([]);
+    await expect(
+      service(harness.db).reconcile("wiki-maintainer", companyId),
+    ).resolves.toMatchObject({
+      status: "missing",
+      agentId: null,
+      agent: null,
+    });
+    expect(harness.calls.filter((call) => call.operation === "insert")).toEqual(
+      [],
+    );
     expect(mocks.getAgentById).not.toHaveBeenCalled();
   });
 
-  it("refreshes active provenance without overwriting ordinary agent configuration", async () => {
+  it("refreshes active provenance without overwriting ordinary agent identity", async () => {
     const configuredAgent = agent({
       name: "Knowledge Lead",
-      adapterConfig: { command: "custom" },
     });
     const harness = createMockDb({
-      select: [
-        [binding()],
-        [binding()],
-        [entity()],
-        [binding()],
-        [entity()],
-      ],
+      select: [[binding()], [binding()], [entity()], [binding()], [entity()]],
       update: [[{ id: bindingId }], [entity()]],
     });
     mocks.getAgentById.mockResolvedValue(configuredAgent);
 
-    await expect(service(harness.db).reset("wiki-maintainer", companyId))
-      .resolves.toMatchObject({
-        status: "resolved",
-        agent: {
-          name: "Knowledge Lead",
-          adapterConfig: { command: "custom" },
-        },
-      });
+    await expect(
+      service(harness.db).reset("wiki-maintainer", companyId),
+    ).resolves.toMatchObject({
+      status: "resolved",
+      agent: {
+        name: "Knowledge Lead",
+      },
+    });
 
     const updateTargets = harness.calls
       .filter((call) => call.operation === "update" && call.method === "update")
@@ -282,18 +283,20 @@ describe("plugin-managed agents", () => {
   it("requires an exact authenticated board actor before triage persistence", async () => {
     const harness = createMockDb();
 
-    await expect(pausePluginManagedAgentsIntoTriageInTransaction(
-      harness.db as never,
-      {
-        pluginId,
-        pluginKey,
-        reason: "plugin_disabled",
-        actorType: "user",
-        actorId: null,
-      },
-      {} as never,
-      now,
-    )).rejects.toMatchObject({ status: 409 });
+    await expect(
+      pausePluginManagedAgentsIntoTriageInTransaction(
+        harness.db as never,
+        {
+          pluginId,
+          pluginKey,
+          reason: "plugin_disabled",
+          actorType: "user",
+          actorId: null,
+        },
+        {} as never,
+        now,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
     expect(harness.calls).toEqual([]);
   });
 
@@ -305,7 +308,8 @@ describe("plugin-managed agents", () => {
       fence: { refIds: [], correlationIds: [] },
       requests: [],
     };
-    const requestAgentSuspensionsInTransaction = vi.fn()
+    const requestAgentSuspensionsInTransaction = vi
+      .fn()
       .mockResolvedValue(suspensionResult);
     const harness = createMockDb({
       select: [[{ companyId }], [binding()], [entity()]],
@@ -313,20 +317,23 @@ describe("plugin-managed agents", () => {
     });
     mocks.lockCompanyAgentGraph.mockResolvedValue({ agents: [agent()] });
 
-    await expect(pausePluginManagedAgentsIntoTriageInTransaction(
-      harness.db as never,
-      {
-        pluginId,
-        pluginKey,
-        reason: "plugin_disabled",
-        actorType: "system",
-        actorId: pluginId,
-      },
-      { requestAgentSuspensionsInTransaction } as never,
-      now,
-    )).resolves.toEqual({
+    await expect(
+      pausePluginManagedAgentsIntoTriageInTransaction(
+        harness.db as never,
+        {
+          pluginId,
+          pluginKey,
+          reason: "plugin_disabled",
+          actorType: "system",
+          actorId: pluginId,
+        },
+        { requestAgentSuspensionsInTransaction } as never,
+        now,
+      ),
+    ).resolves.toEqual({
       triagePausedAgentIds: [agentId],
       suspensionRequests: [suspensionResult],
+      activities: [mocks.persistedActivity],
     });
 
     expect(mocks.lockCompanyAgentGraph).toHaveBeenCalledWith(
@@ -350,7 +357,7 @@ describe("plugin-managed agents", () => {
       expect.anything(),
       expect.objectContaining({ companyId, agentIds: [agentId] }),
     );
-    expect(mocks.logActivity).toHaveBeenCalledWith(
+    expect(mocks.persistActivityLog).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         companyId,
@@ -360,6 +367,7 @@ describe("plugin-managed agents", () => {
         entityId: agentId,
       }),
     );
+    expect(mocks.publishCommittedActivity).not.toHaveBeenCalled();
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("update")).toBe(0);
   });
@@ -386,11 +394,13 @@ describe("plugin-managed agents", () => {
       agents: [agent({ status: "paused", pauseReason: "system" })],
     });
 
-    await expect(adoptPluginManagedAgentFromBoard(harness.db, {
-      companyId,
-      agentId,
-      actorUserId: "board-user",
-    })).resolves.toEqual(adopted);
+    await expect(
+      adoptPluginManagedAgentFromBoard(harness.db, {
+        companyId,
+        agentId,
+        actorUserId: "board-user",
+      }),
+    ).resolves.toEqual(adopted);
 
     const persistedTransitions = harness.calls
       .filter((call) => call.operation === "update" && call.method === "set")
@@ -404,7 +414,7 @@ describe("plugin-managed agents", () => {
       }),
       expect.objectContaining({ status: "adopted" }),
     ]);
-    expect(mocks.logActivity).toHaveBeenCalledWith(
+    expect(mocks.persistActivityLog).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         companyId,
@@ -413,6 +423,9 @@ describe("plugin-managed agents", () => {
         action: "plugin.managed_agent.adopted",
         entityId: agentId,
       }),
+    );
+    expect(mocks.publishCommittedActivity).toHaveBeenCalledExactlyOnceWith(
+      mocks.persistedActivity,
     );
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("update")).toBe(0);

@@ -21,7 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { RoutineHistoryDirtyFieldDescriptor } from "./RoutineHistoryTab";
+import type { DirtyFieldDescriptor } from "./RoutineHistoryTab";
 
 /**
  * Per-section sticky save bar (§1.4–§1.5). Hidden when clean; reveals on dirty.
@@ -37,7 +37,7 @@ export function RoutineSaveBar({
   onReload,
   disabled,
 }: {
-  dirtyFields: RoutineHistoryDirtyFieldDescriptor[];
+  dirtyFields: DirtyFieldDescriptor[];
   isSaving: boolean;
   saveConflict: boolean;
   onSave: () => void;
@@ -190,14 +190,5 @@ export function RoutineSaveBar({
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-/** Read-only strip for non-owners on editable sections (§1.6). */
-export function RoutineReadOnlyStrip() {
-  return (
-    <div className="-mx-8 mt-6 border-t border-border bg-muted/20 px-8 py-3 text-xs text-muted-foreground">
-      Read-only — you don't own this routine.
-    </div>
   );
 }

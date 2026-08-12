@@ -40,7 +40,7 @@ vi.mock("../services/runtime-task-action-port.js", async (importActual) => ({
 const companyId = "00000000-0000-4000-8000-000000000201";
 const ownerAgentId = "00000000-0000-4000-8000-000000000202";
 const revisionId = "00000000-0000-4000-8000-000000000203";
-const taskId = "00000000-0000-4000-8000-000000000204";
+const taskId = "458fef70-be95-597d-80a1-b3d6c0f2d1a0";
 const sessionId = "00000000-0000-4000-8000-000000000205";
 const authorityId = "00000000-0000-4000-8000-000000000206";
 const refId = "00000000-0000-4000-8000-000000000207";
@@ -115,16 +115,14 @@ function freshCreateDb(instruction: string | null = null) {
     select: [
       [],
       [company],
-      [{ value: 2 }],
       [{ instruction }],
       [{ companyId, ownerKind: "agent", ownerAgentId, ownershipEpoch: 1,
-        workMode: "parallel", harnessKind: null, originKind: "manual",
         executionPolicy: null }],
       [{ id: "00000000-0000-4000-8000-000000000209" }],
       [],
       [],
     ],
-    update: [[]],
+    update: [[{ taskNumber: 5, taskPrefix: "ORD" }]],
   });
 }
 
@@ -213,6 +211,8 @@ describe("ordinary task runtime ingress", () => {
         ownershipEpoch: 1,
         creatorKind: "user/board",
         creatorUserId: "board-user",
+        taskNumber: 5,
+        identifier: "ORD-5",
         originKind: "manual",
       },
       authority: {

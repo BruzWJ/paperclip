@@ -128,5 +128,3 @@ export function AgentCapsule({
     </div>
   );
 }
-
-export default AgentCapsule;

@@ -2,8 +2,20 @@
 
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { buildTaskReferenceHref, buildProjectMentionHref, buildRoutineMentionHref, buildSkillMentionHref } from "@paperclipai/shared";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from "vitest";
+import {
+  buildTaskReferenceHref,
+  buildProjectMentionHref,
+  buildRoutineMentionHref,
+} from "@paperclipai/shared";
 import {
   computeMentionMenuPosition,
   findClosestAutocompleteAnchor,
@@ -15,6 +27,9 @@ import {
   placeCaretAfterMentionAnchor,
   shouldAcceptAutocompleteKey,
 } from "./MarkdownEditor";
+
+const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
+const ROUTINE_ID = "abcdefac-cdef-4abc-8def-abcdefabcdef";
 
 const mdxEditorMockState = vi.hoisted(() => ({
   emitMountEmptyReset: false,
@@ -32,7 +47,10 @@ function containsHtmlLikeTag(markdown: string) {
 vi.mock("@mdxeditor/editor", async () => {
   const React = await import("react");
 
-  function setForwardedRef<T>(ref: React.ForwardedRef<T | null>, value: T | null) {
+  function setForwardedRef<T>(
+    ref: React.ForwardedRef<T | null>,
+    value: T | null,
+  ) {
     if (typeof ref === "function") {
       ref(value);
       return;
@@ -58,25 +76,34 @@ vi.mock("@mdxeditor/editor", async () => {
       suppressHtmlProcessing?: boolean;
       className?: string;
     },
-    forwardedRef: React.ForwardedRef<{ setMarkdown: (value: string) => void; focus: () => void } | null>,
+    forwardedRef: React.ForwardedRef<{
+      setMarkdown: (value: string) => void;
+      focus: () => void;
+    } | null>,
   ) {
     if (mdxEditorMockState.throwOnRender) {
       throw new Error("Rich editor render crashed");
     }
     mdxEditorMockState.markdownValues.push(markdown);
-    mdxEditorMockState.suppressHtmlProcessingValues.push(Boolean(suppressHtmlProcessing));
+    mdxEditorMockState.suppressHtmlProcessingValues.push(
+      Boolean(suppressHtmlProcessing),
+    );
     const [content, setContent] = React.useState(markdown);
     const editableRef = React.useRef<HTMLDivElement>(null);
-    const handle = React.useMemo(() => ({
-      setMarkdown: (value: string) => setContent(value),
-      focus: () => editableRef.current?.focus(),
-    }), []);
+    const handle = React.useMemo(
+      () => ({
+        setMarkdown: (value: string) => setContent(value),
+        focus: () => editableRef.current?.focus(),
+      }),
+      [],
+    );
 
     React.useEffect(() => {
       if (!suppressHtmlProcessing && containsHtmlLikeTag(markdown)) {
         setContent("");
         onError?.({
-          error: "Error parsing markdown: HTML-like formatting requires suppressHtmlProcessing",
+          error:
+            "Error parsing markdown: HTML-like formatting requires suppressHtmlProcessing",
           source: markdown,
         });
         return;
@@ -188,8 +215,6 @@ describe("taskMentionTitle", () => {
   it("strips the leading identifier from the mention name", () => {
     expect(
       taskMentionTitle({
-        id: "task:1",
-        kind: "task",
         name: "PAP-102 @task references",
         taskIdentifier: "PAP-102",
       }),
@@ -199,8 +224,6 @@ describe("taskMentionTitle", () => {
   it("returns the full name when there is no separate title", () => {
     expect(
       taskMentionTitle({
-        id: "task:1",
-        kind: "task",
         name: "PAP-7",
         taskIdentifier: "PAP-7",
       }),
@@ -208,9 +231,7 @@ describe("taskMentionTitle", () => {
   });
 
   it("falls back to the name when the identifier is missing", () => {
-    expect(
-      taskMentionTitle({ id: "task:1", kind: "task", name: "Some task" }),
-    ).toBe("Some task");
+    expect(taskMentionTitle({ name: "Some task" })).toBe("Some task");
   });
 });
 
@@ -334,9 +355,10 @@ describe("MarkdownEditor", () => {
       await flush();
       const editable = container.querySelector('[contenteditable="true"]');
       expect(editable).not.toBeNull();
-      const mentionObserverCountAfterInitialRender = MockMutationObserver.instances.filter(
-        (observer) => observer.observe.mock.calls.some(([target]) => target === editable),
-      ).length;
+      const mentionObserverCountAfterInitialRender =
+        MockMutationObserver.instances.filter((observer) =>
+          observer.observe.mock.calls.some(([target]) => target === editable),
+        ).length;
 
       await act(async () => {
         root.render(
@@ -354,8 +376,8 @@ describe("MarkdownEditor", () => {
       // controlled value changes. This assertion only covers the mention
       // decoration observer that attaches to the editable element itself.
       expect(
-        MockMutationObserver.instances.filter(
-          (observer) => observer.observe.mock.calls.some(([target]) => target === editable),
+        MockMutationObserver.instances.filter((observer) =>
+          observer.observe.mock.calls.some(([target]) => target === editable),
         ),
       ).toHaveLength(mentionObserverCountAfterInitialRender);
     } finally {
@@ -380,7 +402,9 @@ describe("MarkdownEditor", () => {
     });
 
     await flush();
-    expect(mdxEditorMockState.markdownValues.at(-1)).toContain("![image](https://example.com/test.png)");
+    expect(mdxEditorMockState.markdownValues.at(-1)).toContain(
+      "![image](https://example.com/test.png)",
+    );
     expect(mdxEditorMockState.markdownValues.at(-1)).not.toContain("<img");
     expect(mdxEditorMockState.suppressHtmlProcessingValues).toContain(true);
     expect(container.textContent).toContain("Before");
@@ -397,7 +421,9 @@ describe("MarkdownEditor", () => {
     await act(async () => {
       root.render(
         <MarkdownEditor
-          value={'<section data-source="paste">\n## My take\n\n<p>Benchmark notes</p>\n</section>'}
+          value={
+            '<section data-source="paste">\n## My take\n\n<p>Benchmark notes</p>\n</section>'
+          }
           onChange={() => {}}
           placeholder="Markdown body"
         />,
@@ -408,7 +434,9 @@ describe("MarkdownEditor", () => {
     expect(mdxEditorMockState.suppressHtmlProcessingValues).toContain(true);
     expect(container.querySelector("textarea")).toBeNull();
     expect(container.textContent).toContain("Benchmark notes");
-    expect(container.textContent).not.toContain("Rich editor unavailable for this markdown");
+    expect(container.textContent).not.toContain(
+      "Rich editor unavailable for this markdown",
+    );
 
     await act(async () => {
       root.unmount();
@@ -421,7 +449,9 @@ describe("MarkdownEditor", () => {
     await act(async () => {
       root.render(
         <MarkdownEditor
-          value={'<script>fetch("/api/secrets")</script>\n<iframe src="https://example.com"></iframe>\n<p onclick="steal()">Plain text</p>'}
+          value={
+            '<script>fetch("/api/secrets")</script>\n<iframe src="https://example.com"></iframe>\n<p onclick="steal()">Plain text</p>'
+          }
           onChange={() => {}}
           placeholder="Markdown body"
         />,
@@ -462,7 +492,9 @@ describe("MarkdownEditor", () => {
     const textarea = container.querySelector("textarea");
     expect(textarea).not.toBeNull();
     expect(textarea?.value).toBe("Affected versions: <= v0.3.1");
-    expect(container.textContent).toContain("Rich editor unavailable for this markdown");
+    expect(container.textContent).toContain(
+      "Rich editor unavailable for this markdown",
+    );
     expect(handleChange).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -472,7 +504,9 @@ describe("MarkdownEditor", () => {
 
   it("falls back to a raw textarea when the rich editor crashes during render", async () => {
     mdxEditorMockState.throwOnRender = true;
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     const handleChange = vi.fn();
     const root = createRoot(container);
 
@@ -491,8 +525,12 @@ describe("MarkdownEditor", () => {
     });
     const textarea = container.querySelector("textarea");
     expect(textarea).not.toBeNull();
-    expect(textarea?.value).toBe("5. python3 circleback/sync_insights.py --input <tmp> -- writes insights/<group>/*.md");
-    expect(container.textContent).toContain("Rich editor unavailable for this markdown");
+    expect(textarea?.value).toBe(
+      "5. python3 circleback/sync_insights.py --input <tmp> -- writes insights/<group>/*.md",
+    );
+    expect(container.textContent).toContain(
+      "Rich editor unavailable for this markdown",
+    );
     expect(consoleError).toHaveBeenCalledWith(
       "Markdown rich editor failed; falling back to raw textarea",
       expect.objectContaining({
@@ -530,7 +568,9 @@ describe("MarkdownEditor", () => {
     const textarea = container.querySelector("textarea");
     expect(textarea).not.toBeNull();
     expect(textarea?.value).toBe("Affected versions: <= v0.3.1");
-    expect(container.textContent).toContain("Rich editor unavailable for this markdown");
+    expect(container.textContent).toContain(
+      "Rich editor unavailable for this markdown",
+    );
     expect(handleChange).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -554,7 +594,8 @@ describe("MarkdownEditor", () => {
 
     await flush();
 
-    const scope = container.querySelector('[data-testid="mdx-editor"]')?.parentElement as HTMLDivElement | null;
+    const scope = container.querySelector('[data-testid="mdx-editor"]')
+      ?.parentElement as HTMLDivElement | null;
     expect(scope).not.toBeNull();
 
     await act(async () => {
@@ -594,7 +635,8 @@ describe("MarkdownEditor", () => {
 
     await flush();
 
-    const scope = container.querySelector('[data-testid="mdx-editor"]')?.parentElement as HTMLDivElement | null;
+    const scope = container.querySelector('[data-testid="mdx-editor"]')
+      ?.parentElement as HTMLDivElement | null;
     expect(scope).not.toBeNull();
 
     act(() => {
@@ -627,7 +669,9 @@ describe("MarkdownEditor", () => {
     await flush();
 
     expect(container.querySelector("textarea")).toBeNull();
-    expect(container.textContent).not.toContain("Rich editor unavailable for this markdown");
+    expect(container.textContent).not.toContain(
+      "Rich editor unavailable for this markdown",
+    );
 
     await act(async () => {
       root.unmount();
@@ -696,7 +740,9 @@ describe("MarkdownEditor", () => {
   });
 
   it("keeps mention queries active across spaces", () => {
-    expect(findMentionMatch("Ping @Paperclip App", "Ping @Paperclip App".length)).toEqual({
+    expect(
+      findMentionMatch("Ping @Paperclip App", "Ping @Paperclip App".length),
+    ).toEqual({
       trigger: "mention",
       marker: "@",
       query: "Paperclip App",
@@ -710,8 +756,13 @@ describe("MarkdownEditor", () => {
   });
 
   it("keeps routine slash queries active across spaces", () => {
-    expect(findMentionMatch("/routine:Weekly release review", "/routine:Weekly release review".length)).toEqual({
-      trigger: "skill",
+    expect(
+      findMentionMatch(
+        "/routine:Weekly release review",
+        "/routine:Weekly release review".length,
+      ),
+    ).toEqual({
+      trigger: "command",
       marker: "/",
       query: "routine:Weekly release review",
       atPos: 0,
@@ -719,108 +770,90 @@ describe("MarkdownEditor", () => {
     });
   });
 
-  it("does not treat Enter as skill autocomplete accept", () => {
-    expect(shouldAcceptAutocompleteKey("Enter", "skill")).toBe(false);
-    expect(shouldAcceptAutocompleteKey("Enter", "skill", true)).toBe(true);
+  it("does not treat Enter as command autocomplete accept until armed", () => {
+    expect(shouldAcceptAutocompleteKey("Enter", "command")).toBe(false);
+    expect(shouldAcceptAutocompleteKey("Enter", "command", true)).toBe(true);
     expect(shouldAcceptAutocompleteKey("Enter", "mention")).toBe(true);
-    expect(shouldAcceptAutocompleteKey("Tab", "skill")).toBe(true);
+    expect(shouldAcceptAutocompleteKey("Tab", "command")).toBe(true);
   });
 
   it("keeps the same autocomplete session active while the slash query is unchanged", () => {
-    const textNode = document.createTextNode("/agent");
-    expect(isSameAutocompleteSession(
-      {
-        trigger: "skill",
-        marker: "/",
-        query: "agent",
-        textNode,
-        atPos: 0,
-        endPos: 6,
-      },
-      {
-        trigger: "skill",
-        marker: "/",
-        query: "agent",
-        textNode,
-        atPos: 0,
-        endPos: 6,
-      },
-    )).toBe(true);
+    const textNode = document.createTextNode("/routine:Weekly");
+    expect(
+      isSameAutocompleteSession(
+        {
+          trigger: "command",
+          marker: "/",
+          query: "routine:Weekly",
+          textNode,
+          atPos: 0,
+          endPos: "/routine:Weekly".length,
+        },
+        {
+          trigger: "command",
+          marker: "/",
+          query: "routine:Weekly",
+          textNode,
+          atPos: 0,
+          endPos: "/routine:Weekly".length,
+        },
+      ),
+    ).toBe(true);
 
-    expect(isSameAutocompleteSession(
-      {
-        trigger: "skill",
-        marker: "/",
-        query: "agent",
-        textNode,
-        atPos: 0,
-        endPos: 6,
-      },
-      {
-        trigger: "skill",
-        marker: "/",
-        query: "agent-browser",
-        textNode,
-        atPos: 0,
-        endPos: 14,
-      },
-    )).toBe(false);
-  });
-
-  it("finds skill anchors by mention metadata instead of visible text", () => {
-    const editable = document.createElement("div");
-    const skillLink = document.createElement("a");
-    skillLink.setAttribute("href", buildSkillMentionHref("skill-123", "agent-browser"));
-    skillLink.textContent = "/agent-browser ";
-    editable.appendChild(skillLink);
-
-    const found = findClosestAutocompleteAnchor(editable, {
-      id: "skill:skill-123",
-      kind: "skill",
-      skillId: "skill-123",
-      key: "agent-browser",
-      name: "Agent Browser",
-      slug: "agent-browser",
-      description: null,
-      href: buildSkillMentionHref("skill-123", "agent-browser"),
-      aliases: ["agent-browser", "Agent Browser"],
-    });
-
-    expect(found).toBe(skillLink);
+    expect(
+      isSameAutocompleteSession(
+        {
+          trigger: "command",
+          marker: "/",
+          query: "routine:Weekly",
+          textNode,
+          atPos: 0,
+          endPos: "/routine:Weekly".length,
+        },
+        {
+          trigger: "command",
+          marker: "/",
+          query: "routine:Weekly release",
+          textNode,
+          atPos: 0,
+          endPos: "/routine:Weekly release".length,
+        },
+      ),
+    ).toBe(false);
   });
 
   it("finds routine anchors by mention metadata instead of visible text", () => {
     const editable = document.createElement("div");
     const routineLink = document.createElement("a");
-    routineLink.setAttribute("href", buildRoutineMentionHref("routine-123"));
+    routineLink.setAttribute("href", buildRoutineMentionHref(ROUTINE_ID));
     routineLink.textContent = "/routine:Weekly release review ";
     editable.appendChild(routineLink);
 
     const found = findClosestAutocompleteAnchor(editable, {
-      id: "routine:routine-123",
+      id: `routine:${ROUTINE_ID}`,
       kind: "routine",
-      routineId: "routine-123",
+      routineId: ROUTINE_ID,
       name: "Weekly release review",
       status: "active",
-      href: buildRoutineMentionHref("routine-123"),
+      href: buildRoutineMentionHref(ROUTINE_ID),
       aliases: ["routine:Weekly release review", "Weekly release review"],
     });
 
     expect(found).toBe(routineLink);
   });
 
-  it("places the caret after the mention's trailing space when present", () => {
+  it("places the caret after the command's trailing space when present", () => {
     const editable = document.createElement("div");
     editable.contentEditable = "true";
     document.body.appendChild(editable);
 
-    const skillLink = document.createElement("a");
-    skillLink.setAttribute("href", buildSkillMentionHref("skill-123", "agent-browser"));
-    skillLink.textContent = "/agent-browser";
+    const routineLink = document.createElement("a");
+    routineLink.setAttribute("href", buildRoutineMentionHref(ROUTINE_ID));
+    routineLink.textContent = "/routine:Weekly release review";
     const trailingSpace = document.createTextNode(" ");
-    editable.append(skillLink, trailingSpace);
+    editable.append(routineLink, trailingSpace);
 
-    expect(placeCaretAfterMentionAnchor(skillLink)).toBe(true);
+    expect(placeCaretAfterMentionAnchor(routineLink)).toBe(true);
 
     const selection = window.getSelection();
     expect(selection?.anchorNode).toBe(trailingSpace);
@@ -835,7 +868,9 @@ describe("MarkdownEditor", () => {
   ) {
     const event = new Event(type, { bubbles: true, cancelable: true });
     const list = touches as unknown as TouchList;
-    Object.defineProperty(event, "touches", { value: type === "touchend" ? [] : list });
+    Object.defineProperty(event, "touches", {
+      value: type === "touchend" ? [] : list,
+    });
     Object.defineProperty(event, "changedTouches", { value: list });
     return event;
   }
@@ -844,15 +879,19 @@ describe("MarkdownEditor", () => {
     handleChange: Mock<(value: string) => void>,
     mentions: MentionOption[] = [
       {
-        id: "project:project-123",
+        id: `project:${PROJECT_ID}`,
         kind: "project" as const,
         name: "Paperclip App",
-        projectId: "project-123",
+        projectId: PROJECT_ID,
         projectColor: "#336699",
       },
     ],
     matchText = "Paperclip App",
-  ): Promise<{ option: HTMLButtonElement; root: ReturnType<typeof createRoot>; menu: HTMLElement }> {
+  ): Promise<{
+    option: HTMLButtonElement;
+    root: ReturnType<typeof createRoot>;
+    menu: HTMLElement;
+  }> {
     const root = createRoot(container);
 
     await act(async () => {
@@ -884,10 +923,14 @@ describe("MarkdownEditor", () => {
     });
     await flush();
 
-    const option = Array.from(document.body.querySelectorAll('button[type="button"]'))
-      .find((node) => node.textContent?.includes(matchText)) as HTMLButtonElement | undefined;
+    const option = Array.from(
+      document.body.querySelectorAll('button[type="button"]'),
+    ).find((node) => node.textContent?.includes(matchText)) as
+      HTMLButtonElement | undefined;
     expect(option).toBeTruthy();
-    const menu = document.body.querySelector('[data-testid="mention-autocomplete-menu"]') as HTMLElement | null;
+    const menu = document.body.querySelector(
+      '[data-testid="mention-autocomplete-menu"]',
+    ) as HTMLElement | null;
     expect(menu).toBeTruthy();
     return { option: option!, root, menu: menu! };
   }
@@ -905,7 +948,7 @@ describe("MarkdownEditor", () => {
     });
 
     expect(handleChange).toHaveBeenCalledWith(
-      `[@Paperclip App](${buildProjectMentionHref("project-123", "#336699")}) `,
+      `[@Paperclip App](${buildProjectMentionHref(PROJECT_ID, "#336699")}) `,
     );
 
     await act(async () => {
@@ -919,10 +962,10 @@ describe("MarkdownEditor", () => {
       handleChange,
       [
         {
-          id: "task:task-1",
+          id: "task:123e4567-e89b-42d3-a456-426614174000",
           kind: "task" as const,
           name: "PAP-102 @task references",
-          taskId: "task-1",
+          taskId: "123e4567-e89b-42d3-a456-426614174000",
           taskIdentifier: "PAP-102",
         },
       ],
@@ -938,7 +981,7 @@ describe("MarkdownEditor", () => {
     });
 
     expect(handleChange).toHaveBeenCalledWith(
-      `[PAP-102](${buildTaskReferenceHref("PAP-102")}) `,
+      `[PAP-102](${buildTaskReferenceHref("123e4567-e89b-42d3-a456-426614174000")}) `,
     );
 
     await act(async () => {
@@ -952,10 +995,10 @@ describe("MarkdownEditor", () => {
       handleChange,
       [
         {
-          id: "task:task-1",
+          id: "task:123e4567-e89b-42d3-a456-426614174000",
           kind: "task" as const,
           name: "PAP-102 @task references",
-          taskId: "task-1",
+          taskId: "123e4567-e89b-42d3-a456-426614174000",
           taskIdentifier: "PAP-102",
         },
       ],
@@ -988,7 +1031,9 @@ describe("MarkdownEditor", () => {
     const handleChange = vi.fn();
     const { option, root } = await openMentionMenuFor(handleChange);
 
-    const touchstart = createTouchEvent("touchstart", [{ clientX: 100, clientY: 50 }]);
+    const touchstart = createTouchEvent("touchstart", [
+      { clientX: 100, clientY: 50 },
+    ]);
     act(() => {
       option.dispatchEvent(touchstart);
     });
@@ -1018,7 +1063,11 @@ describe("MarkdownEditor", () => {
     expect(menu.className).toContain("overflow-y-auto");
     expect(menu.style.touchAction).toBe("pan-y");
 
-    const wheel = new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 80 });
+    const wheel = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 80,
+    });
     act(() => {
       menu.dispatchEvent(wheel);
     });
@@ -1067,15 +1116,19 @@ describe("MarkdownEditor", () => {
     const { root } = await openMentionMenuFor(handleChange, mentions);
     scrollIntoView.mockClear();
 
-    const editorScope = container.querySelector('[data-testid="mdx-editor"]')?.parentElement;
+    const editorScope = container.querySelector(
+      '[data-testid="mdx-editor"]',
+    )?.parentElement;
     expect(editorScope).toBeTruthy();
 
     act(() => {
-      editorScope?.dispatchEvent(new KeyboardEvent("keydown", {
-        key: "ArrowDown",
-        bubbles: true,
-        cancelable: true,
-      }));
+      editorScope?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
     });
     await flush();
 
@@ -1090,7 +1143,8 @@ describe("MarkdownEditor", () => {
         value: originalScrollIntoView,
       });
     } else {
-      delete (HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+      delete (HTMLElement.prototype as unknown as { scrollIntoView?: unknown })
+        .scrollIntoView;
     }
   });
 

@@ -53,18 +53,9 @@ const ACP_CONFIGURATION: AgentAdapterAcpConfiguration = {
     { configId: "reasoning_effort", value: "high" },
   ],
   model: {
-    id: "gpt-5",
-    label: "GPT-5",
     value: "gpt-5",
-    limits: {
-      contextTokenLimit: 200_000,
-      outputTokenLimit: 16_000,
-    },
+    label: "GPT-5",
   },
-  workspaceSelector: {
-    kind: "task_execution_workspace",
-  },
-  companySkillPins: [],
 };
 
 const TARGET: AcpxLocalWorkspaceTarget = Object.freeze({
@@ -242,7 +233,6 @@ describe("adapter runtime readiness", () => {
     await expect(harness.service.inspect(IDENTITY)).resolves.toMatchObject({
       status: "incomplete",
       reason,
-      remediationCommand: null,
     });
     expect(harness.releases).toEqual([true]);
   });

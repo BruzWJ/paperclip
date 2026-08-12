@@ -1,22 +1,9 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { buildRoutineMentionHref, buildSkillMentionHref } from "@paperclipai/shared";
-import { companySkillsApi } from "../api/companySkills";
+import { buildRoutineMentionHref } from "@paperclipai/shared";
 import { routinesApi } from "../api/routines";
-import { useCompany } from "./CompanyContext";
+import { useOptionalCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { queryKeys } from "../lib/queryKeys";
-
-export interface SkillCommandOption {
-  id: string;
-  kind: "skill";
-  skillId: string;
-  key: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  href: string;
-  aliases: string[];
-}
 
 export interface RoutineCommandOption {
   id: string;
@@ -28,10 +15,8 @@ export interface RoutineCommandOption {
   aliases: string[];
 }
 
-export type SlashCommandOption = SkillCommandOption | RoutineCommandOption;
-
 interface EditorAutocompleteContextValue {
-  slashCommands: SlashCommandOption[];
+  slashCommands: RoutineCommandOption[];
 }
 
 const EditorAutocompleteContext = createContext<EditorAutocompleteContextValue>({
@@ -39,35 +24,17 @@ const EditorAutocompleteContext = createContext<EditorAutocompleteContextValue>(
 });
 
 export function EditorAutocompleteProvider({ children }: { children: ReactNode }) {
-  const { selectedCompanyId } = useCompany();
-  const { data: companySkills = [] } = useQuery({
-    queryKey: selectedCompanyId
-      ? queryKeys.companySkills.list(selectedCompanyId)
-      : ["company-skills", "__none__"],
-    queryFn: () => companySkillsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
-  });
+  const companyId = useOptionalCompanyRouteId();
   const { data: routines = [] } = useQuery({
-    queryKey: selectedCompanyId
-      ? queryKeys.routines.list(selectedCompanyId)
+    queryKey: companyId
+      ? queryKeys.routines.list(companyId)
       : ["routines", "__none__", "__all-projects__"],
-    queryFn: () => routinesApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
+    queryFn: () => routinesApi.list(companyId!),
+    enabled: Boolean(companyId),
   });
 
   const value = useMemo<EditorAutocompleteContextValue>(() => ({
     slashCommands: [
-      ...companySkills.map((skill) => ({
-        id: `skill:${skill.id}`,
-        kind: "skill" as const,
-        skillId: skill.id,
-        key: skill.key,
-        name: skill.name,
-        slug: skill.slug,
-        description: skill.description ?? null,
-        href: buildSkillMentionHref(skill.id, skill.slug),
-        aliases: [skill.slug, skill.name, skill.key],
-      })),
       ...routines
         .filter((routine) => routine.status !== "archived")
         .sort((left, right) => left.title.localeCompare(right.title))
@@ -81,7 +48,7 @@ export function EditorAutocompleteProvider({ children }: { children: ReactNode }
           aliases: [`routine:${routine.title}`, routine.title, routine.id],
         })),
     ],
-  }), [companySkills, routines]);
+  }), [routines]);
 
   return (
     <EditorAutocompleteContext.Provider value={value}>

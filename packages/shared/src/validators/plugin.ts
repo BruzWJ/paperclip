@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import { addValidationDetail } from "../validation-details.js";
 import {
   PLUGIN_STATUSES,
@@ -38,6 +39,7 @@ import type {
   PluginUiSlotDeclaration,
 } from "../types/plugin.js";
 import { routineVariableSchema } from "./routine.js";
+import { isCanonicalPluginNavigationTarget } from "../plugin-navigation.js";
 
 /** Exact npm package-name contract used by plugin installation and scaffolding. */
 export const pluginPackageNameSchema = z.string()
@@ -154,7 +156,7 @@ export const pluginLauncherRenderContextSnapshotSchema = z.object({
 
 /** Exact shared body for plugin UI data and action bridge calls. */
 export const pluginBridgeRequestSchema = z.object({
-  companyId: z.string().uuid().optional(),
+  companyId: canonicalUuidSchema.optional(),
   params: z.record(z.string(), z.unknown()).optional(),
   renderEnvironment: pluginLauncherRenderContextSnapshotSchema.nullable().optional(),
 }).strict();
@@ -339,11 +341,28 @@ export const pluginManagedProjectDeclarationSchema = z.object({
 
 const pluginManagedResourceRefSchema = z.object({
   pluginKey: z.string().min(1).max(100).optional(),
-  resourceKind: z.enum(["agent", "project", "routine", "skill"]),
+  resourceKind: z.enum(["agent", "project", "routine"]),
   resourceKey: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9._:-]*$/, {
     message: "resourceKey must start with a lowercase alphanumeric and contain only lowercase letters, digits, dots, colons, underscores, or hyphens",
   }),
 }).strict();
+
+/**
+ * Exact plugin-owned correlation key for tasks emitted by a managed routine.
+ * Values are persisted byte-for-byte: callers must not rely on trimming or
+ * invisible control/format characters to produce an equivalent key.
+ */
+export const pluginManagedRoutineOriginIdSchema = z.string()
+  .min(1, "originId must not be empty")
+  .max(255, "originId must not exceed 255 characters")
+  .refine(
+    (value) => value === value.trim(),
+    "originId must not contain surrounding whitespace",
+  )
+  .refine(
+    (value) => !/[\p{Cc}\p{Cf}]/u.test(value),
+    "originId must not contain control or format characters",
+  );
 
 export const pluginManagedRoutineDeclarationSchema = z.object({
   routineKey: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9._:-]*$/, {
@@ -353,7 +372,7 @@ export const pluginManagedRoutineDeclarationSchema = z.object({
   description: z.string().max(10_000).nullable().optional(),
   assigneeRef: pluginManagedResourceRefSchema.extend({ resourceKind: z.literal("agent") }).nullable().optional(),
   projectRef: pluginManagedResourceRefSchema.extend({ resourceKind: z.literal("project") }).nullable().optional(),
-  goalId: z.string().uuid().nullable().optional(),
+  goalId: canonicalUuidSchema.nullable().optional(),
   status: z.enum(ROUTINE_STATUSES).optional(),
   priority: z.enum(TASK_PRIORITIES).optional(),
   concurrencyPolicy: z.enum(ROUTINE_CONCURRENCY_POLICIES).optional(),
@@ -370,7 +389,7 @@ export const pluginManagedRoutineDeclarationSchema = z.object({
   }).strict()).min(1).max(20).optional(),
   taskTemplate: z.object({
     surfaceVisibility: z.enum(TASK_SURFACE_VISIBILITIES).optional(),
-    originId: z.string().trim().max(255).nullable().optional(),
+    originId: pluginManagedRoutineOriginIdSchema.nullable().optional(),
     billingCode: z.string().trim().max(200).nullable().optional(),
   }).strict().optional(),
 }).strict();
@@ -394,36 +413,6 @@ export const pluginLocalFolderDeclarationSchema = z.object({
   requiredDirectories: z.array(pluginLocalFolderRelativePathSchema).min(1).optional(),
   requiredFiles: z.array(pluginLocalFolderRelativePathSchema).min(1).optional(),
 }).strict();
-
-export const pluginManagedSkillFileDeclarationSchema = z.object({
-  path: pluginLocalFolderRelativePathSchema.refine(
-    (value) => value.toLowerCase() !== "skill.md",
-    { message: "managed skill files cannot replace SKILL.md; use markdown for the main skill file" },
-  ),
-  content: z.string().max(200_000),
-}).strict();
-
-export const pluginManagedSkillDeclarationSchema = z.object({
-  skillKey: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9._:-]*$/, {
-    message: "skillKey must start with a lowercase alphanumeric and contain only lowercase letters, digits, dots, colons, underscores, or hyphens",
-  }),
-  displayName: z.string().min(1).max(100),
-  slug: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9._:-]*$/, {
-    message: "slug must start with a lowercase alphanumeric and contain only lowercase letters, digits, dots, colons, underscores, or hyphens",
-  }).optional(),
-  description: z.string().max(2000).nullable().optional(),
-  markdown: z.string().max(200_000).optional(),
-  files: z.array(pluginManagedSkillFileDeclarationSchema).min(1).max(50).optional(),
-}).strict().superRefine((value, ctx) => {
-  const paths = (value.files ?? []).map((file) => file.path);
-  const duplicates = paths.filter((path, index) => paths.indexOf(path) !== index);
-  if (duplicates.length > 0) {
-    addValidationDetail(ctx, {
-      message: `Duplicate managed skill file paths: ${[...new Set(duplicates)].join(", ")}`,
-      path: ["files"],
-    });
-  }
-});
 
 /**
  * Validates a {@link PluginUiSlotDeclaration} — a UI extension slot the plugin
@@ -542,12 +531,9 @@ export const pluginLauncherActionDeclarationSchema = z.object({
     });
   }
 
-  if (
-    value.type === "navigate"
-    && (/^[a-z][a-z\d+.-]*:/i.test(value.target) || value.target.startsWith("//"))
-  ) {
+  if (value.type === "navigate" && !isCanonicalPluginNavigationTarget(value.target)) {
     addValidationDetail(ctx, {
-      message: "navigate launchers must target a Paperclip route, not an absolute URL",
+      message: "navigate launchers must target an absolute company-relative Paperclip path without a company UUID, empty segments, or dot segments",
       path: ["target"],
     });
   }
@@ -649,9 +635,25 @@ export const pluginApiRouteDeclarationSchema = z.object({
     message: "routeKey must be lowercase letters, digits, dots, colons, underscores, or hyphens",
   }),
   method: z.enum(PLUGIN_API_ROUTE_METHODS),
-  path: z.string().min(1).regex(/^\/[a-zA-Z0-9:_./-]*$/, {
-    message: "path must start with / and contain only path-safe literal or :param segments",
-  }).refine(
+  path: z.string().min(1).refine(
+    (value) => {
+      if (value === "/") return true;
+      if (!value.startsWith("/") || value.endsWith("/") || value.includes("//")) {
+        return false;
+      }
+      return value.slice(1).split("/").every((segment) =>
+        segment !== "."
+        && segment !== ".."
+        && (
+          /^[A-Za-z0-9._-]+$/.test(segment)
+          || /^:[A-Za-z_][A-Za-z0-9_]*$/.test(segment)
+        )
+      );
+    },
+    {
+      message: "path must be one canonical absolute plugin path made of literal or :param segments",
+    },
+  ).refine(
     (value) =>
       !value.includes("..") &&
       !value.includes("//") &&
@@ -680,6 +682,16 @@ export const pluginApiRouteDeclarationSchema = z.object({
     addValidationDetail(ctx, {
       message: "task companyResolution.param must name a path parameter declared by path",
       path: ["companyResolution", "param"],
+    });
+  }
+  const parameterNames = route.path
+    .split("/")
+    .filter((segment) => segment.startsWith(":"))
+    .map((segment) => segment.slice(1));
+  if (new Set(parameterNames).size !== parameterNames.length) {
+    addValidationDetail(ctx, {
+      message: "path parameter names must be unique",
+      path: ["path"],
     });
   }
 });
@@ -767,7 +779,6 @@ export const pluginManifestV1Schema = z.object({
   agents: z.array(pluginManagedAgentDeclarationSchema).min(1).optional(),
   projects: z.array(pluginManagedProjectDeclarationSchema).min(1).optional(),
   routines: z.array(pluginManagedRoutineDeclarationSchema).min(1).optional(),
-  skills: z.array(pluginManagedSkillDeclarationSchema).min(1).optional(),
   localFolders: z.array(pluginLocalFolderDeclarationSchema).min(1).optional(),
   ui: z.object({
     slots: z.array(pluginUiSlotDeclarationSchema).min(1).optional(),
@@ -872,15 +883,6 @@ export const pluginManifestV1Schema = z.object({
     if (!manifest.capabilities.includes("routines.managed")) {
       addValidationDetail(ctx, {
         message: "Capability 'routines.managed' is required when managed routines are declared",
-        path: ["capabilities"],
-      });
-    }
-  }
-
-  if (manifest.skills && manifest.skills.length > 0) {
-    if (!manifest.capabilities.includes("skills.managed")) {
-      addValidationDetail(ctx, {
-        message: "Capability 'skills.managed' is required when managed skills are declared",
         path: ["capabilities"],
       });
     }
@@ -1073,17 +1075,6 @@ export const pluginManifestV1Schema = z.object({
       addValidationDetail(ctx, {
         message: `Duplicate managed routine keys: ${[...new Set(duplicates)].join(", ")}`,
         path: ["routines"],
-      });
-    }
-  }
-
-  if (manifest.skills) {
-    const skillKeys = manifest.skills.map((skill) => skill.skillKey);
-    const duplicates = skillKeys.filter((key, i) => skillKeys.indexOf(key) !== i);
-    if (duplicates.length > 0) {
-      addValidationDetail(ctx, {
-        message: `Duplicate managed skill keys: ${[...new Set(duplicates)].join(", ")}`,
-        path: ["skills"],
       });
     }
   }

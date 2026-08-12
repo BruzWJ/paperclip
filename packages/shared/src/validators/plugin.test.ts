@@ -27,7 +27,6 @@ import {
   pluginLocalFolderDeclarationSchema,
   pluginManifestV1Schema,
   pluginManagedRoutineDeclarationSchema,
-  pluginManagedSkillDeclarationSchema,
   pluginPackageNameSchema,
   pluginToolDeclarationSchema,
   pluginUiSlotDeclarationSchema,
@@ -301,7 +300,6 @@ describe("plugin manifest validators", () => {
       "agents",
       "projects",
       "routines",
-      "skills",
       "localFolders",
     ] as const;
 
@@ -579,11 +577,6 @@ describe("plugin nested declaration lists", () => {
       displayName: "Workspace",
       requiredFiles: [],
     }).success).toBe(false);
-    expect(pluginManagedSkillDeclarationSchema.safeParse({
-      skillKey: "sync",
-      displayName: "Sync",
-      files: [],
-    }).success).toBe(false);
     expect(pluginUiSlotDeclarationSchema.safeParse({
       type: "page",
       id: "sync",
@@ -638,6 +631,29 @@ describe("plugin API route validators", () => {
     expect(pluginApiRouteDeclarationSchema.safeParse(route).success).toBe(true);
   });
 
+  it("accepts only canonical exact route paths", () => {
+    expect(pluginApiRouteDeclarationSchema.safeParse({
+      ...route,
+      path: "/",
+      companyResolution: { from: "query", key: "companyId" },
+    }).success).toBe(true);
+
+    for (const path of [
+      "tasks/:taskId/summary",
+      "/tasks/:taskId/summary/",
+      "/tasks//:taskId/summary",
+      "/tasks/./:taskId/summary",
+      "/tasks/:/summary",
+      "/tasks/:task-id/summary",
+      "/tasks/:taskId/:taskId",
+    ]) {
+      expect(pluginApiRouteDeclarationSchema.safeParse({
+        ...route,
+        path,
+      }).success).toBe(false);
+    }
+  });
+
   it("rejects body-based company resolution for GET routes", () => {
     expect(pluginApiRouteDeclarationSchema.safeParse({
       ...route,
@@ -652,6 +668,33 @@ describe("plugin API route validators", () => {
 });
 
 describe("plugin managed routine validators", () => {
+  it("keeps an exact task originId byte-for-byte", () => {
+    const parsed = pluginManagedRoutineDeclarationSchema.parse({
+      routineKey: "wiki.refresh",
+      title: "Refresh Wiki",
+      taskTemplate: { originId: "operation:wiki refresh" },
+    });
+
+    expect(parsed.taskTemplate?.originId).toBe("operation:wiki refresh");
+  });
+
+  it.each([
+    "",
+    " operation:wiki-refresh",
+    "operation:wiki-refresh ",
+    "operation:\u0000wiki-refresh",
+    "operation:\nwiki-refresh",
+    "operation:\u200Bwiki-refresh",
+  ])("rejects non-canonical task originId %j", (originId) => {
+    expect(
+      pluginManagedRoutineDeclarationSchema.safeParse({
+        routineKey: "wiki.refresh",
+        title: "Refresh Wiki",
+        taskTemplate: { originId },
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts core task surface visibility values in routine templates", () => {
     const parsed = pluginManagedRoutineDeclarationSchema.parse({
       routineKey: "wiki.refresh",
@@ -670,41 +713,6 @@ describe("plugin managed routine validators", () => {
     });
 
     expect(parsed.success).toBe(false);
-  });
-});
-
-describe("plugin managed skill validators", () => {
-  const baseManifest = {
-    id: "paperclip.test-managed-skills",
-    apiVersion: 1,
-    version: "0.1.0",
-    displayName: "Managed Skills",
-    description: "Managed skills test plugin.",
-    author: "Paperclip",
-    categories: ["automation"],
-    entrypoints: { worker: "./dist/worker.js" },
-  } as const;
-
-  it("requires skills.managed when managed skills are declared", () => {
-    const parsed = pluginManifestV1Schema.safeParse({
-      ...baseManifest,
-      capabilities: [],
-      skills: [{ skillKey: "wiki-maintainer", displayName: "Wiki Maintainer" }],
-    });
-
-    expect(parsed.success).toBe(false);
-    if (parsed.success) return;
-    expect(validationDetails(parsed.error).some((detail) => detail.message.includes("skills.managed"))).toBe(true);
-  });
-
-  it("accepts managed skills with the skills.managed capability", () => {
-    const parsed = pluginManifestV1Schema.parse({
-      ...baseManifest,
-      capabilities: ["skills.managed"],
-      skills: [{ skillKey: "wiki-maintainer", displayName: "Wiki Maintainer" }],
-    });
-
-    expect(parsed.skills?.[0]?.skillKey).toBe("wiki-maintainer");
   });
 });
 
@@ -741,26 +749,24 @@ describe("plugin UI slot validators", () => {
     ]);
     expect(PLUGIN_LAUNCHER_RENDER_ENVIRONMENTS).toEqual(["hostOverlay"]);
     expect(PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS).toEqual([
-      "dashboard",
-      "timeline",
-      "onboarding",
+      "activity",
+      "agents",
+      "approvals",
+      "artifacts",
       "companies",
       "company",
-      "skills",
-      "org",
-      "agents",
-      "projects",
-      "tasks",
-      "search",
-      "routines",
-      "artifacts",
-      "approvals",
       "costs",
-      "activity",
+      "dashboard",
+      "decisions",
+      "goals",
       "inbox",
+      "org",
+      "projects",
+      "routines",
+      "search",
+      "tasks",
+      "timeline",
       "u",
-      "design-guide",
-      "instance",
     ]);
     expect(PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS).toEqual([
       "members",
@@ -963,6 +969,24 @@ describe("plugin UI slot validators", () => {
       placementZone: "sidebar",
       action: { type: "navigate", target: "//example.com" },
     }).success).toBe(false);
+    for (const target of [
+      "canonical",
+      ".",
+      "./canonical",
+      "?tab=canonical",
+      "#canonical",
+      "/canonical/",
+      "/canonical//nested",
+      "/canonical/../nested",
+      "/11111111-1111-4111-8111-111111111111/canonical",
+    ]) {
+      expect(pluginLauncherDeclarationSchema.safeParse({
+        id: `invalid-navigation-${target}`,
+        displayName: "Invalid navigation",
+        placementZone: "sidebar",
+        action: { type: "navigate", target },
+      }).success).toBe(false);
+    }
   });
 
   it("accepts company settings page slots with a non-core settings route", () => {

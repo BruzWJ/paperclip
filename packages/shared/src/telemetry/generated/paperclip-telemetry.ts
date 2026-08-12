@@ -1,19 +1,17 @@
 // GENERATED — DO NOT EDIT.
 
-import type { AgentAdapterType } from "../../constants.js";
-
 export interface PaperclipAgentCreatedDimensions {
 agent_id: string
 }
 
 export interface PaperclipAgentTaskCompletedDimensions {
-adapter_type: AgentAdapterType
+adapter_type: string
 agent_id: string
 model?: string
 }
 
 export interface PaperclipCompanyImportedDimensions {
-source_type: ("local_path" | "github" | "url" | "catalog" | "skills_sh" | "unknown")
+source_type: ("local_path" | "github")
 source_ref?: string
 source_ref_hashed?: boolean
 }
@@ -23,11 +21,7 @@ error_code: string
 }
 
 export interface PaperclipGoalCreatedDimensions {
-goal_level: ("company" | "team" | "agent" | "task" | "other")
-}
-
-export interface PaperclipInstallCompletedDimensions {
-adapter_type: AgentAdapterType
+goal_level: ("company" | "team" | "agent" | "task")
 }
 
 export interface PaperclipInstallStartedDimensions {
@@ -43,13 +37,8 @@ export interface PaperclipRoutineCreatedDimensions {
 }
 
 export interface PaperclipRoutineRunDimensions {
-source: ("schedule" | "manual" | "api" | "webhook" | "other")
-status: ("received" | "coalesced" | "skipped" | "task_created" | "completed" | "failed" | "other")
-}
-
-export interface PaperclipSkillImportedDimensions {
-source_type: ("local_path" | "github" | "url" | "catalog" | "skills_sh" | "unknown")
-skill_ref?: string
+source: ("schedule" | "manual" | "api" | "webhook")
+status: ("received" | "coalesced" | "skipped" | "task_created" | "completed" | "failed")
 }
 
 export type PaperclipEventName =
@@ -58,12 +47,10 @@ export type PaperclipEventName =
   | "company.imported"
   | "error.handler_crash"
   | "goal.created"
-  | "install.completed"
   | "install.started"
   | "project.created"
   | "routine.created"
-  | "routine.run"
-  | "skill.imported";
+  | "routine.run";
 
 export interface EventDimensionsMap {
   "agent.created": PaperclipAgentCreatedDimensions;
@@ -71,12 +58,10 @@ export interface EventDimensionsMap {
   "company.imported": PaperclipCompanyImportedDimensions;
   "error.handler_crash": PaperclipErrorHandlerCrashDimensions;
   "goal.created": PaperclipGoalCreatedDimensions;
-  "install.completed": PaperclipInstallCompletedDimensions;
   "install.started": PaperclipInstallStartedDimensions;
   "project.created": PaperclipProjectCreatedDimensions;
   "routine.created": PaperclipRoutineCreatedDimensions;
   "routine.run": PaperclipRoutineRunDimensions;
-  "skill.imported": PaperclipSkillImportedDimensions;
 }
 
 export const PAPERCLIP_EVENTS = {
@@ -85,23 +70,17 @@ export const PAPERCLIP_EVENTS = {
   "company.imported": "company.imported",
   "error.handler_crash": "error.handler_crash",
   "goal.created": "goal.created",
-  "install.completed": "install.completed",
   "install.started": "install.started",
   "project.created": "project.created",
   "routine.created": "routine.created",
   "routine.run": "routine.run",
-  "skill.imported": "skill.imported",
 } as const;
 
 export const PAPERCLIP_ENUM_DESCRIPTIONS = {
   "company.imported": {
     "source_type": {
       "local_path": "Import source came from a filesystem path on the operator's machine.",
-      "github": "Import source came from a GitHub repository or GitHub-backed reference.",
-      "url": "Import source came from a direct URL.",
-      "catalog": "Import source came from a Paperclip catalog entry.",
-      "skills_sh": "Import source came from a Skills.sh-compatible source.",
-      "unknown": "Source type could not be classified."
+      "github": "Import source came from a GitHub repository or GitHub-backed reference."
     }
   },
   "goal.created": {
@@ -109,8 +88,7 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
       "company": "Goal applies at company scope.",
       "team": "Goal applies at team or group scope.",
       "agent": "Goal applies to a specific agent.",
-      "task": "Goal applies to task-level work.",
-      "other": "Fallback when the goal level is unknown or not represented by the tracked enum."
+      "task": "Goal applies to task-level work."
     }
   },
   "routine.run": {
@@ -118,8 +96,7 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
       "schedule": "Routine was triggered by a scheduled trigger.",
       "manual": "Routine was triggered manually by a user or agent action.",
       "api": "Routine was triggered through an API request.",
-      "webhook": "Routine was triggered by a webhook.",
-      "other": "Fallback when the source is unknown or not represented by the tracked enum."
+      "webhook": "Routine was triggered by a webhook."
     },
     "status": {
       "received": "Routine run was accepted for processing.",
@@ -127,18 +104,7 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
       "skipped": "A live execution already existed and concurrency policy skipped the run.",
       "task_created": "Routine dispatch created a new task-execution reference for runner dispatch.",
       "completed": "Routine run completed without needing a new task.",
-      "failed": "Routine dispatch failed and the run was finalized as failed.",
-      "other": "Fallback when the status is unknown or not represented by the tracked enum."
-    }
-  },
-  "skill.imported": {
-    "source_type": {
-      "local_path": "Import source came from a filesystem path on the operator's machine.",
-      "github": "Import source came from a GitHub repository or GitHub-backed reference.",
-      "url": "Import source came from a direct URL.",
-      "catalog": "Import source came from a Paperclip catalog entry.",
-      "skills_sh": "Import source came from a Skills.sh-compatible source.",
-      "unknown": "Source type could not be classified."
+      "failed": "Routine dispatch failed and the run was finalized as failed."
     }
   }
 } as const;

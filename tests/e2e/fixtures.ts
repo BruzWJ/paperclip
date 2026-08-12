@@ -6,6 +6,7 @@ import {
   type APIRequestContext,
   type APIResponse,
 } from "@playwright/test";
+import { LIVE_EVENT_SOCKET_PATH } from "../../packages/shared/src/constants.js";
 
 type JsonRecord = Record<string, any>;
 type MockResult = {
@@ -16,8 +17,13 @@ type MockResult = {
 
 const now = () => new Date().toISOString();
 const id = () => randomUUID();
-const paperclipLiveEventsWebSocketPattern =
-  /^wss?:\/\/[^/]+\/api\/companies\/[^/?#]+\/events\/ws(?:\?[^#]*)?$/;
+const paperclipLiveEventsSocketPattern = new RegExp(
+  `^wss?:\\/\\/[^/]+${LIVE_EVENT_SOCKET_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\?[^#]*)?$`,
+);
+const paperclipLiveEventsApiFixturePath = LIVE_EVENT_SOCKET_PATH.replace(
+  /^\/api/,
+  "",
+);
 
 class MockApiResponse {
   constructor(
@@ -27,21 +33,38 @@ class MockApiResponse {
     private readonly responseHeaders: Record<string, string> = {},
   ) {}
 
-  ok() { return this.statusCode >= 200 && this.statusCode < 300; }
-  status() { return this.statusCode; }
-  statusText() { return this.ok() ? "OK" : "Mock request failed"; }
-  url() { return this.requestUrl; }
-  headers() { return { "content-type": "application/json", ...this.responseHeaders }; }
-  headersArray() {
-    return Object.entries(this.headers()).map(([name, value]) => ({ name, value }));
+  ok() {
+    return this.statusCode >= 200 && this.statusCode < 300;
   }
-  async body() { return Buffer.from(await this.text()); }
+  status() {
+    return this.statusCode;
+  }
+  statusText() {
+    return this.ok() ? "OK" : "Mock request failed";
+  }
+  url() {
+    return this.requestUrl;
+  }
+  headers() {
+    return { "content-type": "application/json", ...this.responseHeaders };
+  }
+  headersArray() {
+    return Object.entries(this.headers()).map(([name, value]) => ({
+      name,
+      value,
+    }));
+  }
+  async body() {
+    return Buffer.from(await this.text());
+  }
   async text() {
     return typeof this.payload === "string"
       ? this.payload
       : JSON.stringify(this.payload ?? null);
   }
-  async json() { return this.payload; }
+  async json() {
+    return this.payload;
+  }
   async dispose() {}
 }
 
@@ -55,12 +78,22 @@ export class MockPaperclipApi {
   members: JsonRecord[] = [];
   invites: JsonRecord[] = [];
   private companyOrdinal = 0;
+  private authenticatedUser = {
+    id: "user-test",
+    name: "Test Operator",
+    email: "operator@paperclip.test",
+    image: null,
+  };
 
   private company(idValue: string) {
     return this.companies.find((row) => row.id === idValue);
   }
 
-  async dispatch(method: string, rawUrl: string, data?: unknown): Promise<MockResult> {
+  async dispatch(
+    method: string,
+    rawUrl: string,
+    data?: unknown,
+  ): Promise<MockResult> {
     const url = new URL(rawUrl, "http://paperclip.test");
     const path = url.pathname.replace(/^\/api/, "");
     const body = (data && typeof data === "object" ? data : {}) as JsonRecord;
@@ -82,48 +115,53 @@ export class MockPaperclipApi {
         body: {
           session: {
             id: "session-test",
-            userId: "user-test",
+            userId: this.authenticatedUser.id,
             expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
           },
-          user: {
-            id: "user-test",
-            name: "Test Operator",
-            email: "operator@paperclip.test",
-            image: null,
-          },
+          user: this.authenticatedUser,
         },
       };
     }
     if (path.startsWith("/auth/")) {
+      if (typeof body.email === "string") {
+        this.authenticatedUser = {
+          id: `user-${body.email}`,
+          name: body.name ?? "Test Operator",
+          email: body.email,
+          image: null,
+        };
+      }
       return {
         body: {
-          user: {
-            id: "user-test",
-            name: body.name ?? "Test Operator",
-            email: body.email ?? "operator@paperclip.test",
-            image: null,
-          },
+          user: this.authenticatedUser,
           session: { id: "session-test" },
         },
       };
     }
-    if (path === "/bootstrap/claim") return { body: { claimed: true, userId: "user-test" } };
-    if (path === "/cli-auth/me") {
+    if (path === "/bootstrap/claim")
+      return { body: { claimed: true, userId: "user-test" } };
+    const cliAuthUserMatch = path.match(/^\/cli-auth\/users\/([^/]+)$/);
+    if (cliAuthUserMatch) {
+      const userId = decodeURIComponent(cliAuthUserMatch[1]!);
+      const memberships = this.members.filter(
+        (member) =>
+          member.principalType === "user" &&
+          member.principalId === userId &&
+          member.status === "active",
+      );
+      const user =
+        memberships.find((member) => member.user)?.user ??
+        (userId === this.authenticatedUser.id ? this.authenticatedUser : null);
       return {
         body: {
-          user: {
-            id: "user-test",
-            name: "Test Operator",
-            email: "operator@paperclip.test",
-            image: null,
-          },
-          userId: "user-test",
+          user,
+          userId,
           isInstanceAdmin: true,
-          companyIds: this.companies.map((row) => row.id),
-          memberships: this.companies.map((row) => ({
-            companyId: row.id,
-            membershipRole: "owner",
-            status: "active",
+          companyIds: memberships.map((membership) => membership.companyId),
+          memberships: memberships.map((membership) => ({
+            companyId: membership.companyId,
+            membershipRole: membership.membershipRole,
+            status: membership.status,
           })),
           source: "better-auth",
           keyId: null,
@@ -160,16 +198,23 @@ export class MockPaperclipApi {
 
     if (path === "/companies/stats") {
       return {
-        body: Object.fromEntries(this.companies.map((company) => [
-          company.id,
-          {
-            agentCount: this.agents.filter((row) => row.companyId === company.id).length,
-            taskCount: this.tasks.filter((row) => row.companyId === company.id).length,
-          },
-        ])),
+        body: Object.fromEntries(
+          this.companies.map((company) => [
+            company.id,
+            {
+              agentCount: this.agents.filter(
+                (row) => row.companyId === company.id,
+              ).length,
+              taskCount: this.tasks.filter(
+                (row) => row.companyId === company.id,
+              ).length,
+            },
+          ]),
+        ),
       };
     }
-    if (path === "/companies" && method === "GET") return { body: this.companies };
+    if (path === "/companies" && method === "GET")
+      return { body: this.companies };
     if (path === "/companies" && method === "POST") {
       this.companyOrdinal += 1;
       const companyId = id();
@@ -180,8 +225,6 @@ export class MockPaperclipApi {
         description: body.description ?? null,
         status: "active",
         taskPrefix: prefix,
-        prefix,
-        urlKey: prefix,
         budgetCurrency: "USD",
         budgetMonthlyAmount: "0",
         attachmentMaxBytes: 10_000_000,
@@ -206,17 +249,12 @@ export class MockPaperclipApi {
         id: id(),
         companyId,
         principalType: "user",
-        principalId: "user-test",
+        principalId: this.authenticatedUser.id,
         status: "active",
         membershipRole: "owner",
         createdAt: now(),
         updatedAt: now(),
-        user: {
-          id: "user-test",
-          email: "operator@paperclip.test",
-          name: "Test Operator",
-          image: null,
-        },
+        user: this.authenticatedUser,
         grants: [],
         removal: { canArchive: false, reason: null },
       });
@@ -226,13 +264,15 @@ export class MockPaperclipApi {
     const companyMatch = path.match(/^\/companies\/([^/]+)$/);
     if (companyMatch) {
       const company = this.company(companyMatch[1]!);
-      if (!company) return { status: 404, body: { error: "Company not found" } };
+      if (!company)
+        return { status: 404, body: { error: "Company not found" } };
       if (method === "DELETE") {
         this.companies = this.companies.filter((row) => row.id !== company.id);
         this.goals = this.goals.filter((row) => row.companyId !== company.id);
         return { body: { ok: true } };
       }
-      if (method === "PATCH") Object.assign(company, body, { updatedAt: now() });
+      if (method === "PATCH")
+        Object.assign(company, body, { updatedAt: now() });
       return { body: company };
     }
 
@@ -241,7 +281,10 @@ export class MockPaperclipApi {
       const companyId = scoped[1]!;
       const resource = scoped[2]!;
       if (resource === "goals") {
-        if (method === "GET") return { body: this.goals.filter((row) => row.companyId === companyId) };
+        if (method === "GET")
+          return {
+            body: this.goals.filter((row) => row.companyId === companyId),
+          };
         const goal = {
           id: id(),
           companyId,
@@ -255,9 +298,13 @@ export class MockPaperclipApi {
         return { status: 201, body: goal };
       }
       if (resource === "agents" || resource === "runtime-agents") {
-        if (method === "GET") return { body: this.agents.filter((row) => row.companyId === companyId) };
+        if (method === "GET")
+          return {
+            body: this.agents.filter((row) => row.companyId === companyId),
+          };
         const input = body.agent ?? body;
-        const configuration = body.configuration ?? body.runtimeConfiguration ?? body;
+        const configuration =
+          body.configuration ?? body.runtimeConfiguration ?? body;
         const agent = {
           id: id(),
           companyId,
@@ -268,9 +315,10 @@ export class MockPaperclipApi {
           reportsTo: input.reportsTo ?? body.reportsTo ?? null,
           capabilities: input.capabilities ?? body.capabilities ?? null,
           adapterType: configuration.adapterType ?? body.adapterType ?? "codex",
-          adapterConfig: configuration.adapterConfig ?? body.adapterConfig ?? {
-            model: configuration.model ?? body.model ?? "gpt-5.6",
-          },
+          adapterConfig: configuration.adapterConfig ??
+            body.adapterConfig ?? {
+              model: configuration.model ?? body.model ?? "gpt-5.6",
+            },
           currentAdapterConfigRevisionId: id(),
           runtimeConfig: configuration.runtimeConfig ?? {},
           permissions: {},
@@ -295,17 +343,34 @@ export class MockPaperclipApi {
         }
         return { status: 201, body: agent };
       }
+      const taskNumberMatch = /^tasks\/([1-9]\d*)$/.exec(resource);
+      if (method === "GET" && taskNumberMatch) {
+        const taskNumber = Number(taskNumberMatch[1]);
+        const task = this.tasks.find(
+          (row) => row.companyId === companyId && row.taskNumber === taskNumber,
+        );
+        return task
+          ? { body: task }
+          : { status: 404, body: { error: "Task not found" } };
+      }
       if (resource === "tasks") {
-        if (method === "GET") return { body: this.tasks.filter((row) => row.companyId === companyId) };
+        if (method === "GET")
+          return {
+            body: this.tasks.filter((row) => row.companyId === companyId),
+          };
+        const taskNumber =
+          this.tasks.filter((row) => row.companyId === companyId).length + 1;
         const task = {
           id: id(),
           companyId,
-          identifier: `${this.company(companyId)?.taskPrefix ?? "TSK"}-${this.tasks.length + 1}`,
+          taskNumber,
+          identifier: `${this.company(companyId)?.taskPrefix ?? "TSK"}-${taskNumber}`,
           title: body.title ?? null,
           request: body.request ?? body.description ?? "",
           lifecycleStatus: body.lifecycleStatus ?? "open",
           boardPresentationStatus: body.boardPresentationStatus ?? "todo",
-          ownerAgentId: body.ownerAgentId ?? body.assigneeAgentId ?? body.agentId ?? null,
+          ownerAgentId:
+            body.ownerAgentId ?? body.assigneeAgentId ?? body.agentId ?? null,
           ownerUserId: body.ownerUserId ?? null,
           projectId: body.projectId ?? null,
           goalId: body.goalId ?? null,
@@ -331,13 +396,21 @@ export class MockPaperclipApi {
         const agentId = url.searchParams.get("agentId");
         return {
           body: {
-            items: this.runs.filter((row) => row.companyId === companyId
-              && (!agentId || row.agentId === agentId || row.targetAgentId === agentId)),
+            items: this.runs.filter(
+              (row) =>
+                row.companyId === companyId &&
+                (!agentId ||
+                  row.agentId === agentId ||
+                  row.targetAgentId === agentId),
+            ),
             nextCursor: null,
           },
         };
       }
-      if (resource === "projects") return { body: this.projects.filter((row) => row.companyId === companyId) };
+      if (resource === "projects")
+        return {
+          body: this.projects.filter((row) => row.companyId === companyId),
+        };
       if (resource === "members") {
         return {
           body: {
@@ -353,14 +426,25 @@ export class MockPaperclipApi {
       }
       const memberMatch = resource.match(/^members\/([^/]+)$/);
       if (memberMatch) {
-        const member = this.members.find((row) => row.companyId === companyId && row.id === memberMatch[1]);
-        if (!member) return { status: 404, body: { error: "Member not found" } };
-        if (method === "PATCH") Object.assign(member, body, { updatedAt: now() });
+        const member = this.members.find(
+          (row) => row.companyId === companyId && row.id === memberMatch[1],
+        );
+        if (!member)
+          return { status: 404, body: { error: "Member not found" } };
+        if (method === "PATCH")
+          Object.assign(member, body, { updatedAt: now() });
         return { body: member };
       }
       if (resource === "invites") {
         if (method === "GET") {
-          return { body: { invites: this.invites.filter((row) => row.companyId === companyId), nextOffset: null } };
+          return {
+            body: {
+              invites: this.invites.filter(
+                (row) => row.companyId === companyId,
+              ),
+              nextOffset: null,
+            },
+          };
         }
         const token = `pcp_mock_${id().replaceAll("-", "")}`;
         const invite = {
@@ -369,12 +453,10 @@ export class MockPaperclipApi {
           companyId,
           companyName: this.company(companyId)?.name ?? null,
           inviteType: "company_join",
-          allowedJoinTypes: body.allowedJoinTypes ?? "human",
-          humanRole: body.humanRole ?? "operator",
+          userRole: body.userRole ?? "operator",
           expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
           source: "board",
           inviteUrl: `http://127.0.0.1/invite/${token}`,
-          onboardingTextUrl: `http://127.0.0.1/invite/${token}`,
           state: "active",
           createdAt: now(),
           updatedAt: now(),
@@ -385,31 +467,40 @@ export class MockPaperclipApi {
       if (resource === "user-directory") {
         return {
           body: {
-            users: [{
-              principalId: "user-test",
-              status: "active",
-              user: {
-                id: "user-test",
-                email: "operator@paperclip.test",
-                name: "Test Operator",
-                image: null,
+            users: [
+              {
+                principalId: "user-test",
+                status: "active",
+                user: {
+                  id: "user-test",
+                  email: "operator@paperclip.test",
+                  name: "Test Operator",
+                  image: null,
+                },
               },
-            }],
+            ],
           },
         };
       }
       if (resource === "task-owner-catalog") {
         return {
-          body: this.agents.filter((row) => row.companyId === companyId).map((row) => ({
-            id: row.id,
-            name: row.name,
-            kind: "agent",
-            capabilities: row.capabilities,
-          })),
+          body: this.agents
+            .filter((row) => row.companyId === companyId)
+            .map((row) => ({
+              id: row.id,
+              name: row.name,
+              kind: "agent",
+              capabilities: row.capabilities,
+            })),
         };
       }
       if (resource === "org") return { body: [] };
-      if (resource === "labels" || resource === "routines" || resource === "approvals") return { body: [] };
+      if (
+        resource === "labels" ||
+        resource === "routines" ||
+        resource === "approvals"
+      )
+        return { body: [] };
     }
 
     const goalMatch = path.match(/^\/goals\/([^/]+)$/);
@@ -417,7 +508,8 @@ export class MockPaperclipApi {
       const goal = this.goals.find((row) => row.id === goalMatch[1]);
       if (!goal) return { status: 404, body: { error: "Goal not found" } };
       if (method === "PATCH") Object.assign(goal, body, { updatedAt: now() });
-      if (method === "DELETE") this.goals = this.goals.filter((row) => row.id !== goal.id);
+      if (method === "DELETE")
+        this.goals = this.goals.filter((row) => row.id !== goal.id);
       return { body: goal };
     }
 
@@ -431,40 +523,74 @@ export class MockPaperclipApi {
 
     const inviteMatch = path.match(/^\/invites\/([^/]+)(?:\/accept)?$/);
     if (inviteMatch) {
-      const invite = this.invites.find((row) => row.token === inviteMatch[1] || row.id === inviteMatch[1]);
+      const invite = this.invites.find(
+        (row) => row.token === inviteMatch[1] || row.id === inviteMatch[1],
+      );
       if (!invite) return { status: 404, body: { error: "Invite not found" } };
       if (method === "GET") return { body: invite };
+      if (Object.keys(body).length > 0) {
+        return {
+          status: 400,
+          body: { error: "Invalid invite acceptance body" },
+        };
+      }
       invite.state = "accepted";
+      const joinRequestId = id();
       const member = {
         id: id(),
         companyId: invite.companyId,
         principalType: "user",
-        principalId: body.userId ?? id(),
+        principalId: this.authenticatedUser.id,
         status: "active",
-        membershipRole: invite.humanRole ?? "operator",
+        membershipRole: invite.userRole ?? "operator",
         createdAt: now(),
         updatedAt: now(),
-        user: {
-          id: body.userId ?? id(),
-          email: body.email ?? "invitee@paperclip.test",
-          name: body.name ?? "Invited User",
-          image: null,
-        },
+        user: this.authenticatedUser,
         grants: [],
         removal: { canArchive: true, reason: null },
       };
       this.members.push(member);
-      return { body: { ...member, requestType: "human", status: "approved" } };
+      return {
+        status: 202,
+        body: {
+          id: joinRequestId,
+          inviteId: invite.id,
+          companyId: invite.companyId,
+          status: "approved",
+          requestIp: "127.0.0.1",
+          requestingUserId: this.authenticatedUser.id,
+          requestEmailSnapshot: this.authenticatedUser.email,
+          approvedByUserId: null,
+          approvedAt: now(),
+          rejectedByUserId: null,
+          rejectedAt: null,
+          createdAt: now(),
+          updatedAt: now(),
+        },
+      };
     }
 
-    if (path === "/sidebar-preferences/me" || path.endsWith("/sidebar-preferences/me")) {
-      return { body: { order: [], companyIds: [] } };
+    if (
+      path === "/users/user-test/sidebar-preferences" ||
+      path.endsWith("/users/user-test/sidebar-preferences")
+    ) {
+      return { body: { orderedIds: [], updatedAt: null } };
     }
     if (path.includes("/inbox-dismissals")) return { body: [] };
-    if (path.includes("/events/ws")) return { status: 426, body: { error: "WebSocket unavailable in UI fixture" } };
+    if (path === paperclipLiveEventsApiFixturePath) {
+      return {
+        status: 426,
+        body: { error: "Socket.IO unavailable in API fixture" },
+      };
+    }
 
     if (method === "GET") {
-      if (/\/(?:comments|attachments|approvals|documents|work-products|projects|routines|labels|agents|tasks|events)$/.test(path)) return { body: [] };
+      if (
+        /\/(?:comments|attachments|approvals|documents|work-products|projects|routines|labels|agents|tasks|events)$/.test(
+          path,
+        )
+      )
+        return { body: [] };
       if (/\/(?:count|counts)$/.test(path)) return { body: { count: 0 } };
       return { body: [] };
     }
@@ -472,8 +598,14 @@ export class MockPaperclipApi {
   }
 
   response(method: string, url: string, options: JsonRecord = {}) {
-    return this.dispatch(method, url, options.data).then(({ status = 200, body, headers }) =>
-      new MockApiResponse(url, status, body, headers) as unknown as APIResponse,
+    return this.dispatch(method, url, options.data).then(
+      ({ status = 200, body, headers }) =>
+        new MockApiResponse(
+          url,
+          status,
+          body,
+          headers,
+        ) as unknown as APIResponse,
     );
   }
 
@@ -487,7 +619,8 @@ export class MockPaperclipApi {
       patch: call("PATCH"),
       delete: call("DELETE"),
       head: call("HEAD"),
-      fetch: (url: string, options: JsonRecord = {}) => this.response(options.method ?? "GET", url, options),
+      fetch: (url: string, options: JsonRecord = {}) =>
+        this.response(options.method ?? "GET", url, options),
       dispose: async () => {},
       storageState: async () => ({ cookies: [], origins: [] }),
     } as unknown as APIRequestContext;
@@ -506,10 +639,26 @@ export const test = base.extend({
     await use(mockApi.requestContext());
   },
   page: async ({ page }, use) => {
-    await page.routeWebSocket(paperclipLiveEventsWebSocketPattern, (socket) => {
-      socket.onMessage(() => undefined);
+    await page.routeWebSocket(paperclipLiveEventsSocketPattern, (socket) => {
+      const sid = "paperclip-e2e-live-events";
+      socket.send(
+        `0${JSON.stringify({
+          sid,
+          upgrades: [],
+          pingInterval: 60_000,
+          pingTimeout: 20_000,
+          maxPayload: 1_000_000,
+        })}`,
+      );
+      socket.onMessage((message) => {
+        const packet =
+          typeof message === "string" ? message : message.toString();
+        if (packet.startsWith("40")) {
+          socket.send(`40${JSON.stringify({ sid })}`);
+        }
+      });
     });
-    await page.route("**/api/**", async (route) => {
+    await page.route(/^https?:\/\/[^/]+\/api(?:\/|$)/, async (route) => {
       const request = route.request();
       let data: unknown;
       try {
@@ -517,11 +666,18 @@ export const test = base.extend({
       } catch {
         data = request.postData() ?? undefined;
       }
-      const result = await mockApi.dispatch(request.method(), request.url(), data);
+      const result = await mockApi.dispatch(
+        request.method(),
+        request.url(),
+        data,
+      );
       await route.fulfill({
         status: result.status ?? 200,
         headers: { "content-type": "application/json", ...result.headers },
-        body: typeof result.body === "string" ? result.body : JSON.stringify(result.body ?? null),
+        body:
+          typeof result.body === "string"
+            ? result.body
+            : JSON.stringify(result.body ?? null),
       });
     });
     await use(page);

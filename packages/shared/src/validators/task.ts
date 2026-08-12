@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import { addValidationDetail } from "../validation-details.js";
 import {
   TASK_EXECUTION_DECISION_OUTCOMES,
@@ -24,6 +25,9 @@ import {
 } from "./trust-policy.js";
 import { multilineTextSchema } from "./text.js";
 import { decodeTaskDisposition } from "../task-runtime.js";
+import { isCanonicalUuid } from "../canonical-uuid.js";
+import { parseTaskIdentifier } from "../task-identifier.js";
+import { MAX_TASK_NUMBER } from "../task-number.js";
 
 export const taskBlockedInboxStateSchema = z.enum([
   "needs_attention",
@@ -41,12 +45,16 @@ export const taskBlockedInboxReasonSchema = z.enum([
 ]);
 
 export const taskBlockedInboxTaskRefSchema = z.object({
-  id: z.string().uuid(),
-  identifier: z.string().nullable(),
+  id: canonicalUuidSchema,
+  taskNumber: z.number().int().positive().max(MAX_TASK_NUMBER),
+  identifier: z.string().max(80).refine(
+    (value) => parseTaskIdentifier(value) !== null,
+    "identifier must use its exact display form",
+  ),
   title: z.string().nullable(),
   boardPresentationStatus: z.enum(TASK_STATUSES),
   priority: z.enum(TASK_PRIORITIES),
-  ownerAgentId: z.string().uuid().nullable(),
+  ownerAgentId: canonicalUuidSchema.nullable(),
   ownerUserId: z.string().nullable(),
 }).strict();
 
@@ -58,7 +66,7 @@ export const taskBlockedInboxAttentionSchema = z.object({
   stoppedSinceAt: z.string().datetime().nullable(),
   owner: z.object({
     type: z.enum(["agent", "user", "board", "external", "unknown"]),
-    agentId: z.string().uuid().nullable(),
+    agentId: canonicalUuidSchema.nullable(),
     userId: z.string().nullable(),
     label: z.string().nullable(),
   }).strict(),
@@ -68,7 +76,7 @@ export const taskBlockedInboxAttentionSchema = z.object({
   }).strict(),
   sourceTask: taskBlockedInboxTaskRefSchema.nullable(),
   leafTask: taskBlockedInboxTaskRefSchema.nullable(),
-  approvalId: z.string().uuid().nullable(),
+  approvalId: canonicalUuidSchema.nullable(),
   sampleTaskIdentifier: z.string().nullable(),
   redaction: z.object({
     externalDetailsRedacted: z.boolean(),
@@ -78,7 +86,7 @@ export const taskBlockedInboxAttentionSchema = z.object({
 
 const taskExecutionStagePrincipalBaseSchema = z.object({
   type: z.enum(["agent", "user"]),
-  agentId: z.string().uuid().optional().nullable(),
+  agentId: canonicalUuidSchema.optional().nullable(),
   userId: z.string().optional().nullable(),
 });
 
@@ -102,7 +110,7 @@ export const taskExecutionStagePrincipalSchema = taskExecutionStagePrincipalBase
   });
 
 export const taskExecutionStageParticipantSchema = taskExecutionStagePrincipalBaseSchema.extend({
-  id: z.string().uuid().optional(),
+  id: canonicalUuidSchema.optional(),
 }).superRefine((value, ctx) => {
   if (value.type === "agent") {
     if (!value.agentId) {
@@ -122,19 +130,26 @@ export const taskExecutionStageParticipantSchema = taskExecutionStagePrincipalBa
 });
 
 export const taskExecutionStageSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: canonicalUuidSchema.optional(),
   type: z.enum(TASK_EXECUTION_STAGE_TYPES),
   approvalsNeeded: z.literal(1).optional().default(1),
   participants: z.array(taskExecutionStageParticipantSchema).default([]),
 });
+
+function exactTaskMonitorIdentitySchema(maxLength: number) {
+  return z.string().min(1).max(maxLength).refine(
+    (value) => value.trim() === value,
+    "Task monitor identity must not contain surrounding whitespace",
+  );
+}
 
 export const taskExecutionMonitorPolicySchema = z.object({
   nextCheckAt: z.string().datetime(),
   notes: z.string().max(500).optional().nullable().default(null),
   scheduledBy: z.enum(TASK_MONITOR_SCHEDULED_BY).optional().default("owner"),
   kind: z.enum(TASK_EXECUTION_MONITOR_KINDS).optional().nullable().default(null),
-  serviceName: z.string().trim().min(1).max(120).optional().nullable().default(null),
-  externalRef: z.string().trim().min(1).max(500).optional().nullable().default(null),
+  serviceName: exactTaskMonitorIdentitySchema(120).optional().nullable().default(null),
+  externalRef: exactTaskMonitorIdentitySchema(500).optional().nullable().default(null),
   timeoutAt: z.string().datetime().optional().nullable().default(null),
   maxAttempts: z.number().int().positive().max(100).optional().nullable().default(null),
   recoveryPolicy: z.enum(TASK_EXECUTION_MONITOR_RECOVERY_POLICIES).optional().nullable().default(null),
@@ -147,6 +162,20 @@ export const taskExecutionPolicySchema = z.object({
   monitor: taskExecutionMonitorPolicySchema.optional().nullable(),
   reviewPreset: lowTrustReviewPresetPolicySchema.optional(),
   authorizationPolicy: trustAuthorizationPolicySchema.optional(),
+}).strict().superRefine((value, ctx) => {
+  const hasReviewPreset = value.reviewPreset !== undefined;
+  const hasTrustBoundary = value.authorizationPolicy?.trustBoundary !== undefined;
+  if (hasReviewPreset === hasTrustBoundary) return;
+
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: hasReviewPreset
+      ? "Low-trust reviewPreset requires authorizationPolicy.trustBoundary"
+      : "authorizationPolicy.trustBoundary requires the top-level low-trust reviewPreset",
+    path: hasReviewPreset
+      ? ["authorizationPolicy", "trustBoundary"]
+      : ["reviewPreset"],
+  });
 });
 
 export const updateTaskExecutionPolicySchema = z
@@ -163,8 +192,8 @@ export const taskExecutionMonitorStateSchema = z.object({
   notes: z.string().max(500).nullable(),
   scheduledBy: z.enum(TASK_MONITOR_SCHEDULED_BY).nullable(),
   kind: z.enum(TASK_EXECUTION_MONITOR_KINDS).nullable().optional().default(null),
-  serviceName: z.string().trim().min(1).max(120).nullable().optional().default(null),
-  externalRef: z.string().trim().min(1).max(500).nullable().optional().default(null),
+  serviceName: exactTaskMonitorIdentitySchema(120).nullable().optional().default(null),
+  externalRef: exactTaskMonitorIdentitySchema(500).nullable().optional().default(null),
   timeoutAt: z.string().datetime().nullable().optional().default(null),
   maxAttempts: z.number().int().positive().max(100).nullable().optional().default(null),
   recoveryPolicy: z.enum(TASK_EXECUTION_MONITOR_RECOVERY_POLICIES).nullable().optional().default(null),
@@ -181,7 +210,9 @@ export const decideTaskExecutionStageSchema = z
     outcome: z.enum(TASK_EXECUTION_DECISION_OUTCOMES),
     body: z.string().trim().min(1).max(20000),
     reviewRequest: taskReviewRequestSchema.optional().nullable(),
-    idempotencyKey: z.string().trim().min(1).max(255),
+    idempotencyKey: z.string().min(1).max(255).refine((value) => value.trim() === value, {
+      message: "Idempotency key must not contain surrounding whitespace",
+    }),
   })
   .strict();
 
@@ -195,14 +226,14 @@ export type DecideTaskExecutionStage = z.input<
 
 export const taskExecutionStateSchema = z.object({
   status: z.enum(TASK_EXECUTION_STATE_STATUSES),
-  currentStageId: z.string().uuid().nullable(),
+  currentStageId: canonicalUuidSchema.nullable(),
   currentStageIndex: z.number().int().nonnegative().nullable(),
   currentStageType: z.enum(TASK_EXECUTION_STAGE_TYPES).nullable(),
   currentParticipant: taskExecutionStagePrincipalSchema.nullable(),
   returnOwner: taskExecutionStagePrincipalSchema.nullable(),
   reviewRequest: taskReviewRequestSchema.nullable().optional().default(null),
-  completedStageIds: z.array(z.string().uuid()).default([]),
-  lastDecisionId: z.string().uuid().nullable(),
+  completedStageIds: z.array(canonicalUuidSchema).default([]),
+  lastDecisionId: canonicalUuidSchema.nullable(),
   lastDecisionOutcome: z.enum(TASK_EXECUTION_DECISION_OUTCOMES).nullable(),
   monitor: taskExecutionMonitorStateSchema.optional().nullable(),
 });
@@ -224,27 +255,25 @@ const immutableTaskRequestSchema = z
     message: "Request must contain non-whitespace text",
   });
 
-const canonicalTaskCreateBaseSchema = z
+export const createTaskSchema = z
   .object({
     request: immutableTaskRequestSchema,
-    ownerAgentId: z.string().uuid(),
-    idempotencyKey: z.string().trim().min(1).max(255),
+    ownerAgentId: canonicalUuidSchema,
+    idempotencyKey: z.string().min(1).max(255).refine((value) => value.trim() === value, {
+      message: "Idempotency key must not contain surrounding whitespace",
+    }),
     title: z.string().trim().min(1).max(240).nullable().optional(),
-    projectId: z.string().uuid().nullable().optional(),
-    projectWorkspaceId: z.string().uuid().nullable().optional(),
-    goalId: z.string().uuid().nullable().optional(),
-    parentId: z.string().uuid().nullable().optional(),
+    projectId: canonicalUuidSchema.nullable().optional(),
+    projectWorkspaceId: canonicalUuidSchema.nullable().optional(),
+    goalId: canonicalUuidSchema.nullable().optional(),
+    parentId: canonicalUuidSchema.nullable().optional(),
     priority: z.enum(TASK_PRIORITIES).optional(),
   })
   .strict();
 
-export const createTaskInputSchema = canonicalTaskCreateBaseSchema;
-
-export const createTaskSchema = canonicalTaskCreateBaseSchema;
-
 export type CreateTask = z.infer<typeof createTaskSchema>;
 
-export const createChildTaskSchema = canonicalTaskCreateBaseSchema.omit({
+export const createChildTaskSchema = createTaskSchema.omit({
   parentId: true,
 });
 
@@ -257,7 +286,10 @@ export const createTaskLabelSchema = z.object({
 
 export type CreateTaskLabel = z.infer<typeof createTaskLabelSchema>;
 
-const taskMutationIdempotencyKeySchema = z.string().trim().min(1).max(255);
+const taskMutationIdempotencyKeySchema = z.string().min(1).max(255).refine(
+  (value) => value.trim() === value,
+  { message: "Idempotency key must not contain surrounding whitespace" },
+);
 
 export const updateTaskTitleSchema = z.object({
   title: z.string().trim().min(1).max(240).nullable(),
@@ -266,7 +298,7 @@ export const updateTaskTitleSchema = z.object({
 export type UpdateTaskTitle = z.infer<typeof updateTaskTitleSchema>;
 
 export const reassignTaskSchema = z.object({
-  ownerAgentId: z.string().uuid(),
+  ownerAgentId: canonicalUuidSchema,
   idempotencyKey: taskMutationIdempotencyKeySchema,
 }).strict();
 
@@ -282,7 +314,7 @@ const taskFormMessageSchema = opaqueTaskMessageSchema
 /** Exact named-user creator route body. */
 export const commitTaskCreatorFormSchema = z
   .object({
-    taskId: z.string().uuid(),
+    taskId: canonicalUuidSchema,
     message: taskFormMessageSchema,
   })
   .strict();
@@ -293,7 +325,7 @@ export type CommitTaskCreatorForm = z.infer<
 
 export const commitTaskOwnerFormSchema = z
   .object({
-    taskId: z.string().uuid(),
+    taskId: canonicalUuidSchema,
     message: taskFormMessageSchema,
     status: z
       .enum(["open", "blocked", "done", "cancelled"])
@@ -375,40 +407,57 @@ const taskCommentMetadataKeyValueRowSchema = taskCommentMetadataBaseRowSchema.ex
   value: commentMetadataTextSchema,
 }).strict();
 
-const taskCommentMetadataTaskLinkRowSchema = taskCommentMetadataBaseRowSchema.extend({
+const taskCommentMetadataTaskLinkRowBaseSchema = taskCommentMetadataBaseRowSchema.extend({
   type: z.literal("task_link"),
-  taskId: z.string().uuid().nullable().optional(),
-  identifier: z.string().trim().min(1).max(80).nullable().optional(),
+  taskId: z.string().refine(isCanonicalUuid, "taskId must be an exact canonical UUID").nullable().optional(),
   title: z.string().trim().min(1).max(240).nullable().optional(),
 }).strict();
 
+const exactTaskCommentIdentifierSchema = z.string().max(80).refine(
+    (value) => parseTaskIdentifier(value) !== null,
+    "identifier must use its exact display form",
+  );
+
+const taskCommentMetadataAvailableTaskLinkRowSchema =
+  taskCommentMetadataTaskLinkRowBaseSchema.extend({
+    taskNumber: z.number().int().positive().max(MAX_TASK_NUMBER),
+    identifier: exactTaskCommentIdentifierSchema,
+  });
+
+const taskCommentMetadataUnavailableTaskLinkRowSchema =
+  taskCommentMetadataTaskLinkRowBaseSchema.extend({
+    taskNumber: z.null(),
+    identifier: exactTaskCommentIdentifierSchema.nullable().optional(),
+  }).superRefine((value, ctx) => {
+    if (!value.taskId && !value.identifier) {
+      addValidationDetail(ctx, {
+        message: "Unavailable task link rows require a preserved task reference",
+        path: ["taskId"],
+      });
+    }
+  });
+
 const taskCommentMetadataAgentLinkRowSchema = taskCommentMetadataBaseRowSchema.extend({
   type: z.literal("agent_link"),
-  agentId: z.string().uuid(),
+  agentId: canonicalUuidSchema,
   name: z.string().trim().min(1).max(160).nullable().optional(),
 }).strict();
 
 const taskCommentMetadataRunLinkRowSchema = taskCommentMetadataBaseRowSchema.extend({
   type: z.literal("run_link"),
-  runId: z.string().uuid(),
+  runId: canonicalUuidSchema,
   title: z.string().trim().min(1).max(160).nullable().optional(),
 }).strict();
 
-export const taskCommentMetadataRowSchema = z.discriminatedUnion("type", [
+export const taskCommentMetadataRowSchema = z.union([
   taskCommentMetadataTextRowSchema,
   taskCommentMetadataCodeRowSchema,
   taskCommentMetadataKeyValueRowSchema,
-  taskCommentMetadataTaskLinkRowSchema,
+  taskCommentMetadataAvailableTaskLinkRowSchema,
+  taskCommentMetadataUnavailableTaskLinkRowSchema,
   taskCommentMetadataAgentLinkRowSchema,
   taskCommentMetadataRunLinkRowSchema,
-]).superRefine((value, ctx) => {
-  if (value.type === "task_link" && !value.taskId && !value.identifier) {
-    addValidationDetail(ctx, {
-      message: "Task link rows require taskId or identifier",
-      path: ["taskId"],
-    });
-  }
-});
+]);
 
 export const taskCommentMetadataSectionSchema = z.object({
   title: z.string().trim().min(1).max(160).nullable().optional(),
@@ -417,7 +466,7 @@ export const taskCommentMetadataSectionSchema = z.object({
 
 export const taskCommentMetadataSchema = z.object({
   version: z.literal(1),
-  sourceRunId: z.string().uuid().nullable().optional(),
+  sourceRunId: canonicalUuidSchema.nullable().optional(),
   sections: z.array(taskCommentMetadataSectionSchema).min(1).max(20),
 }).strict();
 
@@ -426,7 +475,7 @@ export type TaskCommentMetadata = z.infer<typeof taskCommentMetadataSchema>;
 export const boardTaskCommentAuthorSchema = z.object({
   type: taskCommentAuthorTypeSchema,
   label: z.string().min(1).max(240),
-  agentId: z.string().uuid().nullable(),
+  agentId: canonicalUuidSchema.nullable(),
   userId: z.string().min(1).nullable(),
   pluginKey: z.string().min(1).nullable(),
 }).strict();
@@ -442,7 +491,7 @@ const boardTaskCommentTimestampSchema = z.union([
 ]);
 
 export const boardTaskCommentSchema = z.object({
-  id: z.string().uuid(),
+  id: canonicalUuidSchema,
   author: boardTaskCommentAuthorSchema,
   body: z.string(),
   presentation: taskCommentPresentationSchema.nullable(),
@@ -513,10 +562,10 @@ export const createTaskUserCommentSchema = z.object({
     }),
   idempotencyKey: taskMutationIdempotencyKeySchema,
   mention: z.object({
-    targetAgentId: z.string().uuid(),
+    targetAgentId: canonicalUuidSchema,
     ownershipEpoch: z.number().int().positive(),
   }).strict().nullable().optional(),
-  replyToCommentId: z.string().uuid().nullable().optional(),
+  replyToCommentId: canonicalUuidSchema.nullable().optional(),
 }).strict().superRefine((value, ctx) => {
   if (value.mention != null && value.replyToCommentId != null) {
     addValidationDetail(ctx, {
@@ -530,20 +579,19 @@ export type CreateTaskUserComment = z.infer<typeof createTaskUserCommentSchema>;
 
 export const taskDocumentKeySchema = z
   .string()
-  .trim()
   .min(1)
   .max(64)
   .regex(/^[a-z0-9][a-z0-9_-]*$/, "Document key must be lowercase letters, numbers, _ or -");
 
 
 export const linkTaskApprovalSchema = z.object({
-  approvalId: z.string().uuid(),
+  approvalId: canonicalUuidSchema,
 });
 
 export type LinkTaskApproval = z.infer<typeof linkTaskApprovalSchema>;
 
 export const createTaskAttachmentMetadataSchema = z.object({
-  taskCommentId: z.string().uuid().optional().nullable(),
+  taskCommentId: canonicalUuidSchema.optional().nullable(),
 });
 
 export type CreateTaskAttachmentMetadata = z.infer<typeof createTaskAttachmentMetadataSchema>;
@@ -557,7 +605,7 @@ export const upsertTaskDocumentSchema = z.object({
   format: taskDocumentFormatSchema,
   body: multilineTextSchema.pipe(z.string().max(524288)),
   changeSummary: z.string().trim().max(500).nullable().optional(),
-  baseRevisionId: z.string().uuid().nullable().optional(),
+  baseRevisionId: canonicalUuidSchema.nullable().optional(),
 });
 
 export const restoreTaskDocumentRevisionSchema = z.object({});

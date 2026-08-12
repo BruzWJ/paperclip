@@ -81,7 +81,7 @@ Relevant current behavior:
 | Attachments | Upload/list attachments on the assigned review task only | Read attachment bytes from unrelated tasks; browse company attachment inventory | Information disclosure risk |
 | Task status | Move assigned review task between `todo`, `in_progress`, `in_review`, `done`, `blocked` within preset rules | Change assignee, blockers, execution policy, approvals, recovery actions, or other tasks' status | Prevent authority expansion |
 | Agent identity | Read redacted self identity only: id, name, role, companyId | Raw `adapterConfig`, `runtimeConfig`, session info, instructions paths, env bindings, config revisions | `GET /agents/me` is a current must-block leak |
-| Other agents / org | Optional read-only labels needed for mention rendering | Agent configuration routes, session routes, skill sync, agent wake/invoke, pause/resume | Avoid lateral movement |
+| Other agents / org | Optional read-only labels needed for mention rendering | Agent configuration routes, session routes, agent wake/invoke, pause/resume | Avoid lateral movement |
 | Plugins | None in Phase 1 | Plugin tools, plugin bridge routes, plugin state, DB namespace, local folders, outbound HTTP, webhooks, jobs | Plugin capability model is too broad for low trust |
 | Secrets / env | None | Secret routes, provider health, direct secret-ref materialization, env/lease introspection | Secrets are outside review scope |
 | Host execution | None | Alter provider launch, inspect host execution state, or change run-directory handling | Prevent runtime pivot and SSRF |
@@ -177,17 +177,28 @@ Phase 1 should store the preset in `tasks.execution_policy` JSONB.
 
 ### Required constraint
 
-Do not store an open-ended policy blob. Extend the app-typed policy schema with a locked shape such as:
+Do not store an open-ended policy blob. The app-typed policy schema uses this
+single locked shape:
 
 ```ts
-reviewPreset: {
-  id: "low_trust_review";
-  version: 1;
-  rawOutputDisposition: "quarantine";
+executionPolicy: {
+  reviewPreset: {
+    id: "low_trust_review";
+    version: 1;
+    rawOutputDisposition: "quarantine";
+  };
+  authorizationPolicy: {
+    trustBoundary: {
+      mode: "low_trust_review";
+      // One or more company-local project/task scope fields.
+    };
+  };
 }
 ```
 
-and keep the actual allow/deny matrix in server code, not user-editable JSON.
+The preset selector is never named `trustPreset` or nested under
+`authorizationPolicy`. Keep the actual allow/deny matrix in server code, not
+user-editable JSON.
 
 ### Not recommended for Phase 1
 

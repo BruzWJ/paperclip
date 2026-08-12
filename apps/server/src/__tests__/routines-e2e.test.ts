@@ -5,6 +5,7 @@ import { errorHandler } from "../middleware/error-handler.js";
 import { routineRoutes } from "../routes/routines.js";
 import { createMockDb } from "./helpers/mock-db.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
+import { testSecretsRuntimeConfig } from "./helpers/secrets-runtime.js";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -48,12 +49,25 @@ function app() {
   const expressApp = express();
   expressApp.use(express.json());
   expressApp.use((req, _res, next) => {
-    req.actor = req.header("x-test-company") === "other"
-      ? testBoardSessionActor({ userId: "other-user", companyIds: [otherCompanyId] })
-      : testBoardSessionActor({ userId: "board-user", companyIds: [companyId] });
+    req.actor =
+      req.header("x-test-company") === "other"
+        ? testBoardSessionActor({
+            userId: "other-user",
+            companyIds: [otherCompanyId],
+          })
+        : testBoardSessionActor({
+            userId: "board-user",
+            companyIds: [companyId],
+          });
     next();
   });
-  expressApp.use("/api", routineRoutes(createMockDb().db, { ordinaryTasks: {} as never }));
+  expressApp.use(
+    "/api",
+    routineRoutes(createMockDb().db, {
+      ordinaryTasks: {} as never,
+      secretsRuntime: testSecretsRuntimeConfig(),
+    }),
+  );
   expressApp.use(errorHandler);
   return expressApp;
 }
@@ -77,7 +91,10 @@ function routine(overrides: Record<string, unknown> = {}) {
 describe("routine routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.accessDecide.mockResolvedValue({ allowed: true, explanation: "allowed" });
+    mocks.accessDecide.mockResolvedValue({
+      allowed: true,
+      explanation: "allowed",
+    });
     mocks.logActivity.mockResolvedValue(undefined);
   });
 
@@ -109,22 +126,31 @@ describe("routine routes", () => {
       })
       .expect(201, created);
 
-    expect(mocks.accessDecide).toHaveBeenCalledWith(expect.objectContaining({
-      action: "task:mutate",
-      resource: { type: "company", companyId },
-    }));
-    expect(mocks.create).toHaveBeenCalledWith(companyId, expect.objectContaining({
-      title: "Repository triage",
-      concurrencyPolicy: "coalesce_if_active",
-      catchUpPolicy: "skip_missed",
-    }), { type: "user", userId: "board-user" });
-    expect(mocks.logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    expect(mocks.accessDecide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "task:mutate",
+        resource: { type: "company", companyId },
+      }),
+    );
+    expect(mocks.create).toHaveBeenCalledWith(
       companyId,
-      actorType: "user",
-      actorId: "board-user",
-      action: "routine.created",
-      entityId: routineId,
-    }));
+      expect.objectContaining({
+        title: "Repository triage",
+        concurrencyPolicy: "coalesce_if_active",
+        catchUpPolicy: "skip_missed",
+      }),
+      { type: "user", userId: "board-user" },
+    );
+    expect(mocks.logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId,
+        actorType: "user",
+        actorId: "board-user",
+        action: "routine.created",
+        entityId: routineId,
+      }),
+    );
   });
 
   it("rejects malformed routine input before service work", async () => {
@@ -157,18 +183,28 @@ describe("routine routes", () => {
       })
       .expect(202);
 
-    expect(response.body).toMatchObject({ status: "task_created", linkedTaskId: "task-1" });
-    expect(mocks.runRoutine).toHaveBeenCalledWith(routineId, expect.objectContaining({
-      source: "manual",
-      variables: { repo: "paperclip" },
-      projectId,
-      assigneeAgentId: agentId,
-    }), { type: "user", userId: "board-user" });
-    expect(mocks.logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "routine.run_triggered",
-      entityType: "routine_run",
-      entityId: "run-1",
-    }));
+    expect(response.body).toMatchObject({
+      status: "task_created",
+      linkedTaskId: "task-1",
+    });
+    expect(mocks.runRoutine).toHaveBeenCalledWith(
+      routineId,
+      expect.objectContaining({
+        source: "manual",
+        variables: { repo: "paperclip" },
+        projectId,
+        assigneeAgentId: agentId,
+      }),
+      { type: "user", userId: "board-user" },
+    );
+    expect(mocks.logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "routine.run_triggered",
+        entityType: "routine_run",
+        entityId: "run-1",
+      }),
+    );
   });
 
   it("returns not found when a routine is outside the actor's company", async () => {
@@ -184,7 +220,10 @@ describe("routine routes", () => {
   });
 
   it("forwards the canonical signed-trigger envelope without board persistence", async () => {
-    mocks.firePublicTrigger.mockResolvedValue({ runId: "run-public", accepted: true });
+    mocks.firePublicTrigger.mockResolvedValue({
+      runId: "run-public",
+      accepted: true,
+    });
 
     await request(app())
       .post("/api/routine-triggers/public/public-trigger/fire")
@@ -195,12 +234,15 @@ describe("routine routes", () => {
       .send({ event: "push" })
       .expect(202, { runId: "run-public", accepted: true });
 
-    expect(mocks.firePublicTrigger).toHaveBeenCalledWith("public-trigger", expect.objectContaining({
-      authorizationHeader: "Bearer public-token",
-      signatureHeader: "signature",
-      timestampHeader: "1700000000",
-      idempotencyKey: "request-1",
-      payload: { event: "push" },
-    }));
+    expect(mocks.firePublicTrigger).toHaveBeenCalledWith(
+      "public-trigger",
+      expect.objectContaining({
+        authorizationHeader: "Bearer public-token",
+        signatureHeader: "signature",
+        timestampHeader: "1700000000",
+        idempotencyKey: "request-1",
+        payload: { event: "push" },
+      }),
+    );
   });
 });

@@ -8,19 +8,19 @@ Paperclip is a TypeScript monorepo built around a PostgreSQL control plane.
 ## Stack Overview
 
 ```text
-┌───────────────────────────────────────────┐
-│ React UI + CLI                            │
-│ Board control, task/session inspection  │
-├───────────────────────────────────────────┤
-│ Express API + runtime services            │
-│ Auth, task authority, dispatcher, run interface │
-├───────────────────────────────────────────┤
-│ PostgreSQL + Drizzle                      │
-│ Tasks, Sessions, refs, runs, audit       │
-├───────────────────────────────────────────┤
-│ ACPX public-runtime bounded prompt bridge │
-│ Dynamic local CLI discovery + execution  │
-└───────────────────────────────────────────┘
+┌────────────────────────────────────────────────────┐
+│ React + Vite board UI and CLI                      │
+│ TanStack Router file routes + TanStack Query       │
+├────────────────────────────────────────────────────┤
+│ Express REST API + Socket.IO live invalidation     │
+│ Auth, task authority, dispatcher, run interface    │
+├────────────────────────────────────────────────────┤
+│ PostgreSQL + Drizzle                               │
+│ Tasks, Sessions, refs, runs, audit                 │
+├────────────────────────────────────────────────────┤
+│ ACPX public-runtime bounded prompt bridge          │
+│ Dynamic local CLI discovery + execution           │
+└────────────────────────────────────────────────────┘
 ```
 
 ## Repository Structure
@@ -28,17 +28,14 @@ Paperclip is a TypeScript monorepo built around a PostgreSQL control plane.
 ```text
 paperclip/
 ├── apps/
-│   ├── server/                   # Express API and control-plane services
-│   ├── ui/                       # React + Vite board interface
+│   ├── server/                   # Express REST, Socket.IO, and control-plane services
+│   ├── ui/                       # React + Vite board with TanStack Router file routes
 │   └── docs/                     # This published Mintlify documentation site
 ├── packages/
 │   ├── cli/                      # Publishable board/control-plane CLI
 │   ├── db/                       # Drizzle schema and ordered migrations
 │   ├── shared/                   # Contracts, validators, and constants
 │   ├── adapter-utils/            # ACPX runtime/discovery bridge
-│   ├── adapters/                 # Adapter-authoring guidance
-│   ├── skills-catalog/           # Bundled skill catalog and manifest builder
-│   ├── *-mcp-server/             # MCP server packages and fixtures
 │   └── plugins/                  # Plugin SDK, tooling, plugins, and examples
 └── doc/                          # Internal product, engineering, and plan docs
 ```
@@ -48,6 +45,22 @@ published documentation application and contains `docs.json`; `doc/` contains
 repository-internal specifications, runbooks, design records, and plans.
 The orchestration smoke fixture under `packages/plugins/examples/` is
 intentionally standalone rather than a pnpm root workspace.
+
+## Board Navigation and Live Data
+
+The board is a client-rendered Vite SPA. Native TanStack Router file routes
+under `apps/ui/src/routes/` generate the checked-in route tree used for typed
+parameters, validated search state, guards, navigation, and route-level code
+splitting. Express serves the built SPA; the board has no server-rendering
+runtime. The tenant root is the canonical company UUID. Agent, project,
+routine, and approval routes use entity UUIDs; task detail uses the exact
+positive per-company counter at `/<company-uuid>/tasks/<task-number>`.
+
+TanStack Query reads and mutates canonical REST resources. Socket.IO shares the
+same Node HTTP server and uses the signed-in Better Auth browser session to join
+only an authorized selected company's room. Typed live notifications tell the
+UI which query state may be stale, after which the UI reconciles through REST.
+The live transport does not replace the REST source of record.
 
 ## Canonical Task-Execution Flow
 

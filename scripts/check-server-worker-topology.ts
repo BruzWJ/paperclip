@@ -14,7 +14,6 @@ const SOURCE_EXTENSIONS = new Set([
 const SOURCE_ROOTS = [
   "apps/server/src",
   "packages/adapter-utils/src",
-  "packages/adapters",
 ] as const;
 
 /** These owners prove that Paperclip has one server/worker execution path. */

@@ -14,7 +14,7 @@ A company has:
 
 - a goal and a hierarchy of projects and tasks that explain why work exists;
 - configured agent identities connected by reporting lines;
-- board users, budgets, approvals, and skills;
+- board users, budgets, and approvals;
 - an auditable task-session log and human-facing comment thread.
 
 ### Agents Are Configured Identities
@@ -100,19 +100,17 @@ exports a generic API credential or identity bridge into the provider process.
 The current public ACPX runtime is local-only, so remote target drivers are not
 advertised for ACPX agents.
 
-### Actions and Skills
-
-Paperclip actions and skills are separate:
+### Actions and Tool Injection
 
 - Paperclip actions are the exhaustive seven-action catalog dynamically compiled
   from the current execution's authority.
 - Plugin tools are a separate, administrator-installed runtime source. Every
   declared tool remains inside the canonical prompt-capability and audit
   boundary.
-- Company skills are explicitly selected run content. They grant no authority
-  and are not announced through synthesized prompt prose.
 
-No virtual search/run wrapper, static Paperclip operational skill, ambient MCP
+ACPX is the sole provider communication and execution contract. Paperclip does
+not maintain a parallel provider-instruction channel. Request-scoped MCP is the
+only tool-injection boundary; no virtual search/run wrapper, ambient MCP
 surface, or generic REST instruction bundle is injected into a run.
 
 ## Product Principles
@@ -136,8 +134,7 @@ surface, or generic REST instruction bundle is injected into a run.
 
 1. Create a company and state its goal.
 2. Configure one ordinary agent identity and an explicit provider target.
-3. Optionally add reporting relationships, selected skills, budgets, and
-   further agents.
+3. Optionally add reporting relationships, budgets, and further agents.
 4. Create a board task with an immutable request and an invokable agent owner.
 5. Observe its typed task execution, comments, work products, cost, and
    terminal disposition.

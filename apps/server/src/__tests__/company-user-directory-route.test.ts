@@ -24,7 +24,6 @@ vi.mock("../services/index.js", () => ({
   createAgentAdapterConfigurationService: () => ({}),
   createAgentOperationalConfigurationService: () => ({}),
   createJoinRequestApprovalService: () => ({ approve: vi.fn() }),
-  deduplicateAgentName: vi.fn(),
   logActivity: vi.fn(),
 }));
 

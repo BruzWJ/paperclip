@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import {
   executionWorkspaces,
   taskExecutionWorkspaceBindings,
+  tasks,
   type Db,
 } from "@paperclipai/db";
 import type { AcpxLocalWorkspaceTarget } from "@paperclipai/adapter-utils/acpx-runtime";
@@ -62,6 +63,17 @@ async function enforceManagedLocalWorkspaceSafeguards(
   input: ManagedLocalWorkspaceSafeguardInput,
 ): Promise<void> {
   try {
+    const sourceTask = await db
+      .select({ id: tasks.id, identifier: tasks.identifier })
+      .from(tasks)
+      .where(eq(tasks.id, input.taskId))
+      .then((rows) => rows[0] ?? null);
+    if (!sourceTask) {
+      throw new LocalExecutionTargetError(
+        "workspace_binding_unavailable",
+        "Provider execution task is unavailable.",
+      );
+    }
     const [{ instanceSettingsService }, { ensureGitWorktreeBranchCoherent }] =
       await Promise.all([
         import("./instance-settings.js"),
@@ -73,10 +85,7 @@ async function enforceManagedLocalWorkspaceSafeguards(
       repoRoot: input.workspace.cwd,
       worktreePath: input.workspace.cwd,
       expectedBranchName: input.workspace.branchName,
-      sourceTask: {
-        id: input.taskId,
-        identifier: null,
-      },
+      sourceTask,
       executionWorkspaceId: input.workspace.id,
       runId: input.runId,
       enableWorkspaceBranchReconcileForward:
@@ -209,10 +218,8 @@ export function localExecutionOrchestrator(
           taskId: released.lease.taskId,
           details: {
             executionWorkspaceId: released.lease.executionWorkspaceId,
-            taskId: released.lease.taskId,
             status: released.lease.status,
-            failureReason:
-              input.failureReason ?? released.lease.failureReason,
+            failureReason: input.failureReason ?? released.lease.failureReason,
           },
         });
       } catch {
@@ -276,7 +283,6 @@ export function localExecutionOrchestrator(
         taskId: input.taskId,
         details: {
           executionWorkspaceId: acquired.lease.executionWorkspaceId,
-          taskId: input.taskId,
         },
       });
 
@@ -296,9 +302,7 @@ export function localExecutionOrchestrator(
             companyId: input.companyId,
             agentId: input.agentId,
             status: failed ? "failed" : "released",
-            ...(failed
-              ? { failureReason: "provider execution failed" }
-              : {}),
+            ...(failed ? { failureReason: "provider execution failed" } : {}),
           });
           if (result.errors.length > 0) {
             throw new LocalExecutionTargetError(
@@ -317,8 +321,7 @@ export function localExecutionOrchestrator(
           companyId: input.companyId,
           agentId: input.agentId,
           status: "failed",
-          failureReason:
-            error instanceof Error ? error.message : String(error),
+          failureReason: error instanceof Error ? error.message : String(error),
         });
       }
       throw error;

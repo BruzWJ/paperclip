@@ -3,6 +3,8 @@ import type {
   TaskPriority,
   RoutineCatchUpPolicy,
   RoutineConcurrencyPolicy,
+  RoutineRunSource,
+  RoutineRunStatus,
   RoutineStatus,
   RoutineTriggerKind,
   RoutineTriggerSigningMode,
@@ -40,12 +42,12 @@ export interface RoutineAgentSummary {
   id: string;
   name: string;
   title: string | null;
-  urlKey?: string | null;
 }
 
 export interface RoutineTaskSummary {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: string;
   priority: string;
@@ -147,8 +149,6 @@ export interface RoutineRevisionSnapshotV1 {
   triggers: RoutineRevisionSnapshotTriggerV1[];
 }
 
-export type RoutineRevisionSnapshot = RoutineRevisionSnapshotV1;
-
 export interface RoutineRevision {
   id: string;
   companyId: string;
@@ -156,7 +156,7 @@ export interface RoutineRevision {
   revisionNumber: number;
   title: string;
   description: string | null;
-  snapshot: RoutineRevisionSnapshot;
+  snapshot: RoutineRevisionSnapshotV1;
   changeSummary: string | null;
   restoredFromRevisionId: string | null;
   createdByAgentId: string | null;
@@ -195,8 +195,8 @@ export interface RoutineRun {
   companyId: string;
   routineId: string;
   triggerId: string | null;
-  source: string;
-  status: string;
+  source: RoutineRunSource;
+  status: RoutineRunStatus;
   triggeredAt: Date;
   routineRevisionId?: string | null;
   idempotencyKey: string | null;
@@ -237,7 +237,18 @@ export interface RoutineExecutionTaskOrigin {
 }
 
 export interface RoutineListItem extends Routine {
-  triggers: Pick<RoutineTrigger, "id" | "kind" | "label" | "enabled" | "cronExpression" | "timezone" | "nextRunAt" | "lastFiredAt" | "lastResult">[];
+  triggers: Pick<
+    RoutineTrigger,
+    | "id"
+    | "kind"
+    | "label"
+    | "enabled"
+    | "cronExpression"
+    | "timezone"
+    | "nextRunAt"
+    | "lastFiredAt"
+    | "lastResult"
+  >[];
   lastRun: RoutineRunSummary | null;
   activeTask: RoutineTaskSummary | null;
 }

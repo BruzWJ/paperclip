@@ -45,8 +45,8 @@ raw HTTPS, terminal scraper, or provider-specific parser path. A candidate is
 selectable only after its ACPX session/configuration probe succeeds. Each
 actual prompt receives a fresh request-scoped MCP server set through ACPX; an
 ACPX setup or control operation that the frontend cannot complete fails closed.
-The current ACPX public runtime admits only local targets and `operator_native`
-skills.
+ACPX is the sole provider communication and execution contract, and
+request-scoped MCP is Paperclip's only tool-injection boundary.
 
 ## Declarative definitions
 

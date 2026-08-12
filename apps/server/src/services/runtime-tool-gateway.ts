@@ -130,7 +130,7 @@ function agentRunAuthority(input: {
 /**
  * ACPX ingress only: descriptor validation, idempotency/replay, plugin
  * dispatch, and atomic mention commitment. Every Paperclip-managed tool call
- * crosses the same router as Board MCP below this boundary.
+ * crosses the one request-scoped router below this boundary.
  */
 export function createRuntimeToolGateway(options: {
   managedTools: PaperclipManagedToolRouter;

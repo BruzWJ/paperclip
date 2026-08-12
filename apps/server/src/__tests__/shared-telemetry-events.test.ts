@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   trackAgentCreated,
   trackAgentTaskCompleted,
-  trackInstallCompleted,
 } from "@paperclipai/shared/telemetry";
 import type { TelemetryClient } from "@paperclipai/shared/telemetry";
 
@@ -39,19 +38,4 @@ describe("shared telemetry agent events", () => {
       adapter_type: "codex",
     });
   });
-
-  it("keeps non-agent event dimensions unchanged", () => {
-    const client = createClient();
-
-    trackInstallCompleted(client, { adapterType: "codex" });
-
-    expect(client.track).toHaveBeenCalledWith("install.completed", {
-      adapter_type: "codex",
-    });
-    expect(client.track).not.toHaveBeenCalledWith(
-      "install.completed",
-      expect.objectContaining({ agent_id: expect.any(String) }),
-    );
-  });
-
 });

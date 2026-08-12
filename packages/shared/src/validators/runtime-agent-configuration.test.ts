@@ -5,10 +5,7 @@ import {
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
 } from "../task-runtime.js";
-import {
-  adapterConfigSchema,
-  agentRuntimeConfigSchema,
-} from "./agent.js";
+import { adapterConfigSchema } from "./agent.js";
 import {
   agentAdapterConfigurationTestInputSchema,
   agentAdapterConfigurationTestResultSchema,
@@ -26,7 +23,6 @@ import {
 
 const AGENT_ID = "00000000-0000-4000-8000-000000000001";
 const OTHER_AGENT_ID = "00000000-0000-4000-8000-000000000003";
-const SKILL_VERSION_ID = "00000000-0000-4000-8000-000000000004";
 
 function falseMap<Key extends string>(
   keys: readonly Key[],
@@ -178,8 +174,6 @@ describe("adapter-revision control-plane validator", () => {
   const valid = {
     adapterType: "codex",
     adapterConfig: { model: "gpt-5.6" },
-    runtimeConfig: {},
-    companySkillPins: [],
   };
 
   it("accepts only adapter and execution-target configuration", () => {
@@ -196,69 +190,7 @@ describe("adapter-revision control-plane validator", () => {
     expect(
       agentAdapterRevisionConfigurationSchema.safeParse({
         ...valid,
-        adapterConfig: { env: "not-an-env-map" },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("accepts only an exact root company-skill pin block", () => {
-    const withPins = {
-      ...valid,
-      companySkillPins: [
-        {
-          key: "code-review",
-          versionId: SKILL_VERSION_ID,
-        },
-      ],
-    };
-    expect(
-      agentAdapterRevisionConfigurationSchema.parse(withPins),
-    ).toEqual(withPins);
-
-    for (const adapterConfig of [
-      {
-        paperclipSkillSync: {
-          desiredSkills: ["code-review"],
-        },
-      },
-      {
-        paperclipSkillSync: {
-          desiredSkills: [],
-          fallback: "latest",
-        },
-      },
-      {
-        nested: {
-          paperclipSkillSync: {
-            desiredSkills: [],
-          },
-        },
-      },
-    ]) {
-      expect(
-        agentAdapterRevisionConfigurationSchema.safeParse({
-          ...valid,
-          adapterConfig,
-        }).success,
-      ).toBe(false);
-    }
-    expect(
-      agentAdapterRevisionConfigurationSchema.safeParse({
-        ...valid,
-        runtimeConfig: {
-          paperclipSkillSync: { desiredSkills: [] },
-        },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("keeps company-skill control fields out of revision provider remainders", () => {
-    expect(
-      agentAdapterRevisionConfigurationSchema.safeParse({
-        ...valid,
-        adapterConfig: {
-          paperclipSkillSync: { desiredSkills: [] },
-        },
+        adapterConfig: { env: { key: "not-a-native-option-value" } },
       }).success,
     ).toBe(false);
   });
@@ -280,68 +212,13 @@ describe("adapter-revision control-plane validator", () => {
   });
 });
 
-describe("provider-only agent configuration", () => {
-  it("keeps explicit provider-native configuration opaque without a prefix ban", () => {
-    const adapterConfig = {
-      env: {
-        HOME: { type: "plain", value: "/operator/home" },
-        CODEX_HOME: { type: "plain", value: "/operator/codex" },
-        PAPERCLIP_CLOUD_PROD_PROVIDER_TOKEN: {
-          type: "plain",
-          value: "operator-selected",
-        },
-      },
-      providerNative: {
-        documentation: "https://provider.invalid/native/configuration",
-      },
-    };
-
-    expect(adapterConfigSchema.parse(adapterConfig)).toEqual(adapterConfig);
-  });
-
-  it("rejects exact control-plane environment keys", () => {
-    for (const key of [
-      "PAPERCLIP_API_KEY",
-      "paperclip_workspace_cwd",
-      "AGENT_HOME",
-      "BETTER_AUTH_SECRET",
-      "DATABASE_URL",
-    ]) {
-      expect(
-        adapterConfigSchema.safeParse({ env: { [key]: "forbidden" } })
-          .success,
-      ).toBe(false);
-    }
-  });
-
-  it("recursively rejects the reserved company-skill block", () => {
-    for (const adapterConfig of [
-      { paperclipSkillSync: { desiredSkills: [] } },
-      {
-        provider: {
-          paperclipSkillSync: { desiredSkills: [] },
-        },
-      },
-    ]) {
-      expect(adapterConfigSchema.safeParse(adapterConfig).success).toBe(false);
-    }
-    expect(
-      agentRuntimeConfigSchema.safeParse({
-        extension: {
-          paperclipSkillSync: { desiredSkills: [] },
-        },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects unknown runtime fields through the closed schema", () => {
-    expect(
-      agentRuntimeConfigSchema.safeParse({
-        extension: {
-          unsupportedRuntimeControl: { enabled: true },
-        },
-      }).success,
-    ).toBe(false);
+describe("ACPX option editor values", () => {
+  it("accepts only exact string and boolean session values", () => {
+    expect(adapterConfigSchema.parse({ model: "gpt-5.6", enabled: true })).toEqual({
+      model: "gpt-5.6",
+      enabled: true,
+    });
+    expect(adapterConfigSchema.safeParse({ nested: { value: "x" } }).success).toBe(false);
   });
 });
 

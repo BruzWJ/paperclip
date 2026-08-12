@@ -366,7 +366,6 @@ describe("canonical money owners and runtime aggregate", () => {
     expect(columns(agentRuntimeState)).toEqual([
       "agent_id",
       "company_id",
-      "adapter_type",
       "last_run_id",
       "last_run_status",
       "last_context_used_tokens",
@@ -380,6 +379,7 @@ describe("canonical money owners and runtime aggregate", () => {
     ]);
     expect(columns(agentRuntimeState)).not.toEqual(
       expect.arrayContaining([
+        "adapter_type",
         "session_id",
         "state_json",
         "total_input_tokens",

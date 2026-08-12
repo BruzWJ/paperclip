@@ -46,8 +46,7 @@ export async function admitTaskExecutionInTransaction(input: {
     input.transaction.select({
       companyId: tasks.companyId, ownerKind: tasks.ownerKind,
       ownerAgentId: tasks.ownerAgentId, ownershipEpoch: tasks.ownershipEpoch,
-      workMode: tasks.workMode, harnessKind: tasks.harnessKind,
-      originKind: tasks.originKind, executionPolicy: tasks.executionPolicy,
+      executionPolicy: tasks.executionPolicy,
     }).from(tasks).where(and(
       eq(tasks.companyId, work.companyId), eq(tasks.id, work.taskId),
       eq(tasks.ownershipEpoch, work.ownershipEpoch),

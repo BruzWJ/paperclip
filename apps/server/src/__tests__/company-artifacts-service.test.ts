@@ -11,6 +11,7 @@ function documentRow(overrides: Record<string, unknown> = {}) {
     artifactId: "document:document-1",
     documentId: "document-1",
     taskId,
+    taskNumber: 12,
     taskIdentifier: "PAP-12",
     taskTitle: "Ship the release",
     projectId,
@@ -26,6 +27,17 @@ function documentRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("companyArtifactsService", () => {
+  function artifactQuery(
+    overrides: Partial<Parameters<ReturnType<typeof companyArtifactsService>["list"]>[1]> = {},
+  ) {
+    return {
+      kind: "all" as const,
+      groupBy: "none" as const,
+      limit: 30,
+      ...overrides,
+    };
+  }
+
   it("projects agent-created task documents into the canonical artifact shape", async () => {
     const mock = createMockDb({
       select: [
@@ -34,10 +46,10 @@ describe("companyArtifactsService", () => {
       ],
     });
 
-    const result = await companyArtifactsService(mock.db).list("company-1", {
+    const result = await companyArtifactsService(mock.db).list("company-1", artifactQuery({
       kind: "document",
       limit: 30,
-    });
+    }));
 
     expect(result).toEqual({
       artifacts: [{
@@ -50,11 +62,11 @@ describe("companyArtifactsService", () => {
         contentPath: null,
         openPath: null,
         downloadPath: null,
-        task: { id: taskId, identifier: "PAP-12", title: "Ship the release" },
+        task: { id: taskId, taskNumber: 12, identifier: "PAP-12", title: "Ship the release" },
         project: { id: projectId, name: "Paperclip" },
         createdByAgent: { id: agentId, name: "Writer" },
         updatedAt: "2026-04-03T12:00:00.000Z",
-        href: "/PAP/tasks/PAP-12#document-release-notes",
+        taskFragment: "document-release-notes",
       }],
       nextCursor: null,
     });
@@ -79,10 +91,10 @@ describe("companyArtifactsService", () => {
       ],
     });
 
-    const firstPage = await companyArtifactsService(mock.db).list("company-1", {
+    const firstPage = await companyArtifactsService(mock.db).list("company-1", artifactQuery({
       kind: "document",
       limit: 1,
-    });
+    }));
 
     expect(firstPage.artifacts.map((artifact) => artifact.id)).toEqual(["document:newer"]);
     expect(firstPage.nextCursor).toEqual(expect.any(String));
@@ -109,6 +121,7 @@ describe("companyArtifactsService", () => {
         [{
           id: taskId,
           parentId: null,
+          taskNumber: 12,
           identifier: "PAP-12",
           title: "Ship the release",
           updatedAt: new Date("2026-04-03T12:00:00.000Z"),
@@ -116,18 +129,18 @@ describe("companyArtifactsService", () => {
       ],
     });
 
-    const result = await companyArtifactsService(mock.db).list("company-1", {
+    const result = await companyArtifactsService(mock.db).list("company-1", artifactQuery({
       kind: "document",
       groupBy: "task",
       limit: 10,
-    });
+    }));
 
     expect(result.artifacts).toEqual([]);
     expect(result.groups).toEqual([
       expect.objectContaining({
         id: `task:${taskId}`,
         groupBy: "task",
-        task: { id: taskId, identifier: "PAP-12", title: "Ship the release" },
+        task: { id: taskId, taskNumber: 12, identifier: "PAP-12", title: "Ship the release" },
         count: 4,
         mediaKinds: ["document"],
         previewArtifacts: expect.any(Array),
@@ -139,19 +152,19 @@ describe("companyArtifactsService", () => {
   it("rejects invalid cursors before touching persistence", async () => {
     const mock = createMockDb();
 
-    await expect(companyArtifactsService(mock.db).list("company-1", {
+    await expect(companyArtifactsService(mock.db).list("company-1", artifactQuery({
       kind: "document",
       cursor: "not-a-cursor",
-    })).rejects.toMatchObject({ status: 400 });
+    }))).rejects.toMatchObject({ status: 400 });
     expect(mock.calls).toEqual([]);
   });
 
   it("fails closed when the company does not exist", async () => {
     const mock = createMockDb({ select: [[]] });
 
-    await expect(companyArtifactsService(mock.db).list("missing-company", {
+    await expect(companyArtifactsService(mock.db).list("missing-company", artifactQuery({
       kind: "document",
-    })).rejects.toMatchObject({ status: 404 });
+    }))).rejects.toMatchObject({ status: 404 });
     expect(mock.remaining("select")).toBe(0);
   });
 });

@@ -23,18 +23,16 @@ const presentationPaths = [
   "apps/ui/src/components/ApprovalPayload.tsx",
   "apps/ui/src/components/BudgetIncidentCard.tsx",
   "apps/ui/src/components/BudgetPolicyCard.tsx",
-  "apps/ui/src/pages/AgentDetail.tsx",
-  "apps/ui/src/pages/Companies.tsx",
-  "apps/ui/src/pages/Costs.tsx",
-  "apps/ui/src/pages/Dashboard.tsx",
-  "apps/ui/src/pages/ProjectDetail.tsx",
-  "apps/ui/src/pages/UserProfile.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/agents/$agentId/index.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/companies/index.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/costs/index.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/dashboard/index.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/projects/$projectId/index.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/u/$userId/index.tsx",
 ] as const;
 
 function fixtureRoot(): string {
-  const root = mkdtempSync(
-    join(tmpdir(), "paperclip-ai-cost-currency-gate-"),
-  );
+  const root = mkdtempSync(join(tmpdir(), "paperclip-ai-cost-currency-gate-"));
   roots.add(root);
 
   write(
@@ -81,8 +79,16 @@ function fixtureRoot(): string {
     "packages/shared/src/validators/cost.ts",
     "export const updateCompanyBudgetSchema = z.object({ budgetMonthlyAmount: moneyAmountSchema }).strict();\n",
   );
-  write(root, "packages/shared/src/validators/agent.ts", "export const agentSchema = z.object({ name: z.string() });\n");
-  write(root, "packages/shared/src/validators/project.ts", "export const projectSchema = z.object({ name: z.string() });\n");
+  write(
+    root,
+    "packages/shared/src/validators/agent.ts",
+    "export const agentSchema = z.object({ name: z.string() });\n",
+  );
+  write(
+    root,
+    "packages/shared/src/validators/project.ts",
+    "export const projectSchema = z.object({ name: z.string() });\n",
+  );
   write(
     root,
     "packages/shared/src/validators/runtime-agent-configuration.ts",
@@ -98,7 +104,7 @@ function fixtureRoot(): string {
     root,
     "packages/db/schema/money.ts",
     [
-      "export function moneyAmountColumn(name: string) { return numeric(name, { mode: \"string\" }).$type<MoneyAmount>(); }",
+      'export function moneyAmountColumn(name: string) { return numeric(name, { mode: "string" }).$type<MoneyAmount>(); }',
       "export function budgetCurrencyColumn(name: string) { return text(name).$type<BudgetCurrency>(); }",
       "export function nonnegativeFiniteMoneyCheck() {}",
       "export function supportedBudgetCurrencyCheck() {}",
@@ -110,10 +116,10 @@ function fixtureRoot(): string {
     "packages/db/schema/companies.ts",
     [
       "export const companies = pgTable('companies', {",
-      "  budgetCurrency: budgetCurrencyColumn(\"budget_currency\").notNull(),",
-      "  budgetMonthlyAmount: moneyAmountColumn(\"budget_monthly_amount\").notNull(),",
-      "}, (table) => [unique(\"companies_id_budget_currency_uq\")]);",
-      "check(\"companies_budget_currency_check\", supportedBudgetCurrencyCheck(table.budgetCurrency));",
+      '  budgetCurrency: budgetCurrencyColumn("budget_currency").notNull(),',
+      '  budgetMonthlyAmount: moneyAmountColumn("budget_monthly_amount").notNull(),',
+      '}, (table) => [unique("companies_id_budget_currency_uq")]);',
+      'check("companies_budget_currency_check", supportedBudgetCurrencyCheck(table.budgetCurrency));',
       "",
     ].join("\n"),
   );
@@ -122,21 +128,25 @@ function fixtureRoot(): string {
     "packages/db/schema/agents.ts",
     [
       "export const agents = pgTable('agents', {",
-      "  budgetMonthlyAmount: moneyAmountColumn(\"budget_monthly_amount\").notNull(),",
+      '  budgetMonthlyAmount: moneyAmountColumn("budget_monthly_amount").notNull(),',
       "});",
-      "check(\"agents_budget_monthly_amount_check\", nonnegativeFiniteMoneyCheck(table.budgetMonthlyAmount));",
+      'check("agents_budget_monthly_amount_check", nonnegativeFiniteMoneyCheck(table.budgetMonthlyAmount));',
       "",
     ].join("\n"),
   );
-  write(root, "packages/db/schema/projects.ts", "export const projects = pgTable('projects', { id: uuid('id') });\n");
+  write(
+    root,
+    "packages/db/schema/projects.ts",
+    "export const projects = pgTable('projects', { id: uuid('id') });\n",
+  );
   write(
     root,
     "packages/db/schema/budget_policies.ts",
     [
       "export const budgetPolicies = pgTable('budget_policies', {",
-      "  limitAmount: moneyAmountColumn(\"limit_amount\").notNull(),",
+      '  limitAmount: moneyAmountColumn("limit_amount").notNull(),',
       "});",
-      "check(\"budget_policies_limit_amount_check\", nonnegativeFiniteMoneyCheck(table.limitAmount));",
+      'check("budget_policies_limit_amount_check", nonnegativeFiniteMoneyCheck(table.limitAmount));',
       "",
     ].join("\n"),
   );
@@ -145,10 +155,10 @@ function fixtureRoot(): string {
     "packages/db/schema/budget_incidents.ts",
     [
       "export const budgetIncidents = pgTable('budget_incidents', {",
-      "  limitAmount: moneyAmountColumn(\"limit_amount\").notNull(),",
-      "  observedAmount: moneyAmountColumn(\"observed_amount\").notNull(),",
+      '  limitAmount: moneyAmountColumn("limit_amount").notNull(),',
+      '  observedAmount: moneyAmountColumn("observed_amount").notNull(),',
       "});",
-      "check(\"budget_incidents_amounts_check\", nonnegativeFiniteMoneyCheck(table.limitAmount));",
+      'check("budget_incidents_amounts_check", nonnegativeFiniteMoneyCheck(table.limitAmount));',
       "",
     ].join("\n"),
   );
@@ -158,10 +168,10 @@ function fixtureRoot(): string {
     [
       "export const agentRuntimeState = pgTable('agent_runtime_state', {",
       "  aggregateKnownCostAmount: moneyAmountColumn(",
-      "    \"aggregate_known_cost_amount\",",
+      '    "aggregate_known_cost_amount",',
       "  ).notNull(),",
       "});",
-      "check(\"agent_runtime_state_aggregates_check\", nonnegativeFiniteMoneyCheck(table.aggregateKnownCostAmount));",
+      'check("agent_runtime_state_aggregates_check", nonnegativeFiniteMoneyCheck(table.aggregateKnownCostAmount));',
       "",
     ].join("\n"),
   );
@@ -170,10 +180,10 @@ function fixtureRoot(): string {
     "packages/db/schema/cost_events.ts",
     [
       "export const costEvents = pgTable('cost_events', {",
-      "  knownDeltaAmount: moneyAmountColumn(\"known_delta_amount\"),",
+      '  knownDeltaAmount: moneyAmountColumn("known_delta_amount"),',
       "});",
-      "check(\"cost_events_transition_check\", sql`${table.observedCurrency} = ${table.budgetCurrency}`);",
-      "foreignKey({ name: \"cost_events_company_budget_currency_fk\" });",
+      'check("cost_events_transition_check", sql`${table.observedCurrency} = ${table.budgetCurrency}`);',
+      'foreignKey({ name: "cost_events_company_budget_currency_fk" });',
       "",
     ].join("\n"),
   );
@@ -182,8 +192,8 @@ function fixtureRoot(): string {
     "packages/db/schema/finance_events.ts",
     [
       "export const financeEvents = pgTable('finance_events', {",
-      "  amount: moneyAmountColumn(\"amount\").notNull(),",
-      "  currency: text(\"currency\").notNull(),",
+      '  amount: moneyAmountColumn("amount").notNull(),',
+      '  currency: text("currency").notNull(),',
       "});",
       "",
     ].join("\n"),
@@ -199,10 +209,10 @@ function fixtureRoot(): string {
     "apps/server/src/services/budgets.ts",
     [
       "async function upsertPolicyInTransaction() {",
-      "  const budgetCurrency = parseBudgetCurrency(data.budgetCurrency ?? \"USD\");",
+      '  const budgetCurrency = parseBudgetCurrency(data.budgetCurrency ?? "USD");',
       "  companyCurrency(transaction, companyId, true);",
       "  resolveScopeRecord(transaction, scopeType, scopeId, true);",
-      "  query.for(\"update\");",
+      '  query.for("update");',
       "  db.update(budgetPolicies);",
       "  db.insert(budgetPolicies);",
       "  db.insert(budgetIncidents);",
@@ -211,7 +221,7 @@ function fixtureRoot(): string {
       "  db.update(agents).set({ budgetMonthlyAmount: limitAmount });",
       "}",
       "function knownSpendBy() {",
-      "  eq(costEvents.kind, \"known\");",
+      '  eq(costEvents.kind, "known");',
       "  return sql`sum(${costEvents.knownDeltaAmount}) filter (where ${costEvents.kind} = 'known')`;",
       "}",
       "",
@@ -223,7 +233,7 @@ function fixtureRoot(): string {
     [
       "const budgets = budgetService(db);",
       "budgets.createCompany(data, actorUserId);",
-      "type Locked = Omit<Row, \"budgetCurrency\" | \"budgetMonthlyAmount\">;",
+      'type Locked = Omit<Row, "budgetCurrency" | "budgetMonthlyAmount">;',
       "budgets.getCompanyMonthlyKnownSpend(companyIds);",
       "",
     ].join("\n"),
@@ -235,7 +245,7 @@ function fixtureRoot(): string {
       "budgetService(txDb, budgetHooks).setAgentMonthlyLimit(",
       "  companyId, agentId, configuration.budgetMonthlyAmount, actorUserId,",
       ");",
-      "const owned = \"budgetMonthlyAmount\";",
+      'const owned = "budgetMonthlyAmount";',
       "",
     ].join("\n"),
   );
@@ -267,20 +277,21 @@ function fixtureRoot(): string {
     ].join("\n"),
   );
   for (const path of presentationPaths) {
-    const source = path.endsWith("/Costs.tsx")
-      ? [
-          "formatMoneyAmount(summary.knownSpendAmount, summary.budgetCurrency);",
-          "formatMoneyAmount(summary.budgetMonthlyAmount, summary.budgetCurrency);",
-          "formatMoneyAmount(summary.remainingAmount, summary.budgetCurrency);",
-          "",
-        ].join("\n")
-      : path.endsWith("/BudgetPolicyCard.tsx")
+    const source =
+      path === "apps/ui/src/routes/_authenticated/$companyId/costs/index.tsx"
         ? [
-            "formatMoneyAmount(summary.observedAmount, summary.budgetCurrency);",
-            "formatMoneyAmount(summary.limitAmount, summary.budgetCurrency);",
+            "formatMoneyAmount(summary.knownSpendAmount, summary.budgetCurrency);",
+            "formatMoneyAmount(summary.budgetMonthlyAmount, summary.budgetCurrency);",
+            "formatMoneyAmount(summary.remainingAmount, summary.budgetCurrency);",
             "",
           ].join("\n")
-        : "const rendered = formatMoneyAmount(amount, currency);\n";
+        : path.endsWith("/BudgetPolicyCard.tsx")
+          ? [
+              "formatMoneyAmount(summary.observedAmount, summary.budgetCurrency);",
+              "formatMoneyAmount(summary.limitAmount, summary.budgetCurrency);",
+              "",
+            ].join("\n")
+          : "const rendered = formatMoneyAmount(amount, currency);\n";
     write(root, path, source);
   }
   write(
@@ -289,8 +300,8 @@ function fixtureRoot(): string {
     [
       "updateCompanyBudgetSchema.parse(payload);",
       "parseAgentBudgetPayload(payload);",
-      "const field = \"budgetMonthlyAmount\";",
-      "const path = \"/operational-configuration\";",
+      'const field = "budgetMonthlyAmount";',
+      'const path = "/operational-configuration";',
       "",
     ].join("\n"),
   );
@@ -432,7 +443,9 @@ test("rejects direct policy, incident, and retained-limit writers", () => {
   const violations = aiCostCurrencyCutoverViolations(root);
   assert.ok(violations.some((entry) => entry.includes("budgetPolicies")));
   assert.ok(violations.some((entry) => entry.includes("budgetIncidents")));
-  assert.ok(violations.some((entry) => entry.includes("monthly-limit projection")));
+  assert.ok(
+    violations.some((entry) => entry.includes("monthly-limit projection")),
+  );
 });
 
 test("rejects company currency mutation and database defaults", () => {
@@ -492,9 +505,7 @@ test("rejects raw or unfenced cost summation", () => {
   assert.ok(
     violations.some((entry) => entry.includes("instead of knownDeltaAmount")),
   );
-  assert.ok(
-    violations.some((entry) => entry.includes("not fenced to known")),
-  );
+  assert.ok(violations.some((entry) => entry.includes("not fenced to known")));
 });
 
 test("rejects a finance-ledger edge into AI budget accounting", () => {
@@ -528,7 +539,11 @@ test("rejects AI budget currency as a finance aggregation dependency", () => {
 
 test("rejects hard-coded AI currency presentation", () => {
   const root = fixtureRoot();
-  write(root, "apps/ui/src/pages/Costs.tsx", "const rendered = '$12.50';\n");
+  write(
+    root,
+    "apps/ui/src/routes/_authenticated/$companyId/costs/index.tsx",
+    "const rendered = '$12.50';\n",
+  );
   assert.ok(
     aiCostCurrencyCutoverViolations(root).some((entry) =>
       entry.includes("hard-coded AI money presentation"),
@@ -540,7 +555,7 @@ test("rejects a literal dollar prefix before a template interpolation", () => {
   const root = fixtureRoot();
   write(
     root,
-    "apps/ui/src/pages/Costs.tsx",
+    "apps/ui/src/routes/_authenticated/$companyId/costs/index.tsx",
     "const rendered = `$${amount}`;\n",
   );
   assert.ok(
@@ -603,9 +618,7 @@ test("rejects a non-uppercase catalog member and currency normalization", () => 
   assert.ok(
     violations.some((entry) => entry.includes("non-uppercase ISO-shaped")),
   );
-  assert.ok(
-    violations.some((entry) => entry.includes("normalizes, coerces")),
-  );
+  assert.ok(violations.some((entry) => entry.includes("normalizes, coerces")));
 });
 
 test("fails closed when the company-aware budget UI formatter is bypassed", () => {
@@ -620,9 +633,10 @@ test("fails closed when the company-aware budget UI formatter is bypassed", () =
     ),
   );
   assert.ok(
-    aiCostCurrencyCutoverViolations(root).some((entry) =>
-      entry.includes("BudgetPolicyCard.tsx") &&
-      entry.includes("formatMoneyAmount(summary.limitAmount"),
+    aiCostCurrencyCutoverViolations(root).some(
+      (entry) =>
+        entry.includes("BudgetPolicyCard.tsx") &&
+        entry.includes("formatMoneyAmount(summary.limitAmount"),
     ),
   );
 });
@@ -646,10 +660,11 @@ for (const token of [
     );
     const violations = aiCostCurrencyCutoverViolations(root);
     assert.ok(
-      violations.some((entry) =>
-        entry.includes("packages/shared/src/money.ts") &&
-        entry.includes("missing canonical ownership token") &&
-        entry.includes(token),
+      violations.some(
+        (entry) =>
+          entry.includes("packages/shared/src/money.ts") &&
+          entry.includes("missing canonical ownership token") &&
+          entry.includes(token),
       ),
     );
   });

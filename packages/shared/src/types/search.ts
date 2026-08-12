@@ -1,4 +1,5 @@
 import type { TaskPriority, TaskStatus } from "../constants.js";
+import type { CompanyBoardRouteTarget } from "./board-navigation.js";
 
 export const COMPANY_SEARCH_SCOPES = ["all", "tasks", "comments", "documents", "artifacts", "agents", "projects"] as const;
 export type CompanySearchScope = (typeof COMPANY_SEARCH_SCOPES)[number];
@@ -35,7 +36,8 @@ export interface CompanySearchSnippet {
 
 export interface CompanySearchTaskSummary {
   id: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: TaskStatus;
   priority: TaskPriority;
@@ -51,8 +53,11 @@ export interface CompanySearchArtifactSummary {
   source: "document" | "attachment" | "work_product";
   mediaKind: "image" | "video" | "text" | "document" | "file" | "empty";
   taskId: string;
+  taskNumber: number;
   taskIdentifier: string;
   taskTitle: string | null;
+  /** Hash fragment without the leading `#` for the canonical task route. */
+  taskFragment: string;
   projectId: string | null;
   projectName: string | null;
   updatedAt: string;
@@ -63,7 +68,7 @@ export interface CompanySearchResult {
   type: CompanySearchResultType;
   score: number;
   title: string;
-  href: string;
+  routeTarget: CompanyBoardRouteTarget | null;
   matchedFields: string[];
   sourceLabel: string | null;
   snippet: string | null;
@@ -132,7 +137,8 @@ export interface CompanySearchExtractMatch {
 
 export interface CompanySearchExtractTaskResult {
   taskId: string;
-  identifier: string | null;
+  taskNumber: number;
+  identifier: string;
   title: string | null;
   boardPresentationStatus: TaskStatus;
   request: string;

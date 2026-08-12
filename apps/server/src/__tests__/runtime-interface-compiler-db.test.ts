@@ -14,10 +14,7 @@ import {
 import { compileRuntimeInterface } from "../services/runtime-interface-compiler.ts";
 import type { InvokableTaskOwnerRevision } from "../services/agent-invokability.ts";
 
-function revision(
-  id: string,
-  agentId: string,
-): InvokableTaskOwnerRevision {
+function revision(id: string, agentId: string): InvokableTaskOwnerRevision {
   return {
     id,
     companyId: "company",
@@ -51,9 +48,6 @@ function snapshot(
       ownerKind: "agent",
       ownerAgentId: "owner",
       ownershipEpoch: 4,
-      workMode: "standard",
-      harnessKind: null,
-      originKind: "manual",
       executionPolicy: null,
     },
     agents: [
@@ -84,7 +78,7 @@ function snapshot(
         title: "Secret title",
         capabilities: "Build",
         reportsTo: "ancestor",
-        status: "running",
+        status: "idle",
         currentAdapterConfigRevisionId: "revision",
       },
       {
@@ -137,23 +131,15 @@ function snapshot(
       revision("paused-revision", "paused-child"),
       revision("peer-revision", "peer"),
     ],
-    contextGrantKeys: [
-      "read_task_comments",
-      "list_company_tasks",
+    contextGrantKeys: ["read_task_comments", "list_company_tasks"],
+    actionGrantKeys: ["task_create", "mention_agent", "agent_configure"],
+    mentionReachGrantKeys: ["mention_any_descendant", "mention_any_ancestor"],
+    configureGrants: [
+      {
+        permissionKey: "agents:configure",
+        scope: { targetAgentIds: ["peer"] },
+      },
     ],
-    actionGrantKeys: [
-      "task_create",
-      "mention_agent",
-      "agent_configure",
-    ],
-    mentionReachGrantKeys: [
-      "mention_any_descendant",
-      "mention_any_ancestor",
-    ],
-    configureGrants: [{
-      permissionKey: "agents:configure",
-      scope: { targetAgentIds: ["peer"] },
-    }],
     childTasks: [
       {
         id: "eligible-child",
@@ -204,32 +190,33 @@ function snapshot(
 
 describe("Postgres runtime-interface compile snapshot", () => {
   it("derives the bootstrap turn only from an exact ordered scope", async () => {
-    const ref = (overrides: Record<string, unknown> = {}) => ({
-      id: "instruction",
-      companyId: "company",
-      taskId: "task",
-      sessionId: "session",
-      ownershipEpoch: 1,
-      previousOwnershipEpoch: null,
-      executionScopeId: "scope",
-      executionLineageId: "lineage",
-      mode: "owner",
-      sourceKind: "system_nudge",
-      sourceRecordId: "task",
-      messageKind: "user",
-      targetAgentId: "owner",
-      laneOrdinal: 0,
-      taskExecutionAuthorityId: "authority",
-      consultExecutionId: null,
-      adapterConfigRevisionId: "revision",
-      contextEpoch: 0,
-      counterpartTaskId: null,
-      counterpartAuthorityId: null,
-      counterpartOwnershipEpoch: null,
-      consultCallerRefId: null,
-      consultChainToken: null,
-      ...overrides,
-    }) as typeof taskExecutionRefs.$inferSelect;
+    const ref = (overrides: Record<string, unknown> = {}) =>
+      ({
+        id: "instruction",
+        companyId: "company",
+        taskId: "task",
+        sessionId: "session",
+        ownershipEpoch: 1,
+        previousOwnershipEpoch: null,
+        executionScopeId: "scope",
+        executionLineageId: "lineage",
+        mode: "owner",
+        sourceKind: "system_nudge",
+        sourceRecordId: "task",
+        messageKind: "user",
+        targetAgentId: "owner",
+        laneOrdinal: 0,
+        taskExecutionAuthorityId: "authority",
+        consultExecutionId: null,
+        adapterConfigRevisionId: "revision",
+        contextEpoch: 0,
+        counterpartTaskId: null,
+        counterpartAuthorityId: null,
+        counterpartOwnershipEpoch: null,
+        consultCallerRefId: null,
+        consultChainToken: null,
+        ...overrides,
+      }) as typeof taskExecutionRefs.$inferSelect;
     const instruction = ref();
     const work = ref({ id: "work", messageKind: "user", laneOrdinal: 1 });
     const db = (responses: readonly (readonly unknown[])[]) => {
@@ -238,10 +225,18 @@ describe("Postgres runtime-interface compile snapshot", () => {
         select() {
           const rows = responses[read++] ?? [];
           const builder = {
-            from() { return builder; },
-            where() { return builder; },
-            orderBy() { return builder; },
-            limit() { return Promise.resolve(rows); },
+            from() {
+              return builder;
+            },
+            where() {
+              return builder;
+            },
+            orderBy() {
+              return builder;
+            },
+            limit() {
+              return Promise.resolve(rows);
+            },
           };
           return builder;
         },
@@ -282,43 +277,59 @@ describe("Postgres runtime-interface compile snapshot", () => {
       categories: ["connector"],
       capabilities: ["agent.tools.register"],
       entrypoints: { worker: "./dist/worker.js" },
-      tools: [{
-        name: "query",
-        displayName: "Query",
-        description: "Query an external index",
-        parametersSchema: { type: "object" },
-      }],
+      tools: [
+        {
+          name: "query",
+          displayName: "Query",
+          description: "Query an external index",
+          parametersSchema: { type: "object" },
+        },
+      ],
     };
-    expect(readyPluginTools([
-      { id: "installed", pluginKey: "acme.search", manifestJson: manifest },
-    ])).toEqual([{
-      installationId: "installed",
-      manifestIdentity: expect.stringMatching(/^[0-9a-f]{64}$/),
-      name: "acme.search__query",
-      toolName: "query",
-      title: "Query",
-      description: "Query an external index",
-      inputSchema: { type: "object" },
-      bootstrapEnabled: false,
-    }]);
+    expect(
+      readyPluginTools([
+        { id: "installed", pluginKey: "acme.search", manifestJson: manifest },
+      ]),
+    ).toEqual([
+      {
+        installationId: "installed",
+        manifestIdentity: expect.stringMatching(/^[0-9a-f]{64}$/),
+        name: "acme.search__query",
+        toolName: "query",
+        title: "Query",
+        description: "Query an external index",
+        inputSchema: { type: "object" },
+        bootstrapEnabled: false,
+      },
+    ]);
 
-    expect(() => readyPluginTools([{
-      id: "mismatched",
-      pluginKey: "acme.other",
-      manifestJson: manifest,
-    }])).toThrow("does not match installation key");
+    expect(() =>
+      readyPluginTools([
+        {
+          id: "mismatched",
+          pluginKey: "acme.other",
+          manifestJson: manifest,
+        },
+      ]),
+    ).toThrow("does not match installation key");
 
-    expect(() => readyPluginTools([{
-      id: "missing-capability",
-      pluginKey: "acme.search",
-      manifestJson: { ...manifest, capabilities: [] },
-    }])).toThrow("declares agent tools without agent.tools.register");
+    expect(() =>
+      readyPluginTools([
+        {
+          id: "missing-capability",
+          pluginKey: "acme.search",
+          manifestJson: { ...manifest, capabilities: [] },
+        },
+      ]),
+    ).toThrow("declares agent tools without agent.tools.register");
   });
 
   it("gives the current owner current and sub-task context while preserving company grants", () => {
-    const compiled = buildRuntimeInterfaceCompileInput(snapshot({
-      contextGrantKeys: ["list_company_tasks", "read_company_task_agent_run"],
-    }));
+    const compiled = buildRuntimeInterfaceCompileInput(
+      snapshot({
+        contextGrantKeys: ["list_company_tasks", "read_company_task_agent_run"],
+      }),
+    );
 
     expect(compiled.contextDial).toEqual({
       carry_context: true,
@@ -383,9 +394,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
     );
     expect(compiled.isCurrentOwner).toBe(false);
     expect(compiled.contextDial).toEqual(
-      Object.fromEntries(
-        AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
-      ),
+      Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false])),
     );
     expect(compiled.taskAssignTargets).toEqual([]);
     expect(compiled.creatorUpdateTargets).toEqual([]);
@@ -431,11 +440,10 @@ describe("Postgres runtime-interface compile snapshot", () => {
       },
       mentionReachGrantKeys: [],
     });
-    const withoutDynamicReach =
-      buildRuntimeInterfaceCompileInput(childless);
-    expect(
-      withoutDynamicReach.mentionTargets.map((agent) => agent.id),
-    ).toEqual([]);
+    const withoutDynamicReach = buildRuntimeInterfaceCompileInput(childless);
+    expect(withoutDynamicReach.mentionTargets.map((agent) => agent.id)).toEqual(
+      [],
+    );
     expect(
       compileRuntimeInterface(withoutDynamicReach).byName.has("mention_agent"),
     ).toBe(false);
@@ -481,9 +489,9 @@ describe("Postgres runtime-interface compile snapshot", () => {
         mentionReachGrantKeys: [...mentionReachGrantKeys],
       });
       expect(compileInput.mentionTargets.map((agent) => agent.id)).toEqual([]);
-      expect(compileInput.mentionTargets.map((agent) => agent.id)).not.toContain(
-        "owner",
-      );
+      expect(
+        compileInput.mentionTargets.map((agent) => agent.id),
+      ).not.toContain("owner");
       expect(
         compileRuntimeInterface(compileInput).byName.has("mention_agent"),
       ).toBe(false);
@@ -491,17 +499,16 @@ describe("Postgres runtime-interface compile snapshot", () => {
   });
 
   it("extends downward only to org descendants owning work in the active task tree", () => {
-    const withoutGrandchildOwnership =
-      buildRuntimeInterfaceCompileInput(
-        snapshot({
-          taskTree: snapshot().taskTree.map((task) =>
-            task.id === "descendant-task"
-              ? { ...task, ownerAgentId: "peer" }
-              : task,
-          ),
-          mentionReachGrantKeys: ["mention_any_descendant"],
-        }),
-      );
+    const withoutGrandchildOwnership = buildRuntimeInterfaceCompileInput(
+      snapshot({
+        taskTree: snapshot().taskTree.map((task) =>
+          task.id === "descendant-task"
+            ? { ...task, ownerAgentId: "peer" }
+            : task,
+        ),
+        mentionReachGrantKeys: ["mention_any_descendant"],
+      }),
+    );
 
     expect(
       withoutGrandchildOwnership.mentionTargets.map((agent) => agent.id),
@@ -571,12 +578,24 @@ describe("Postgres runtime-interface compile snapshot", () => {
     expect(crossAgent.taskCreateDirectChildren).toEqual([]);
   });
 
-  it("allows execution-mode policy to deny an otherwise eligible task owner", () => {
+  it("allows execution policy to deny an otherwise eligible task owner", () => {
     const compiled = buildRuntimeInterfaceCompileInput(
       snapshot({
         task: {
           ...snapshot().task,
-          workMode: "skill_test",
+          executionPolicy: {
+            reviewPreset: {
+              id: "low_trust_review",
+              version: 1,
+              rawOutputDisposition: "quarantine",
+            },
+            authorizationPolicy: {
+              trustBoundary: {
+                mode: "low_trust_review",
+                taskIds: ["task"],
+              },
+            },
+          },
         },
       }),
     );
@@ -587,16 +606,16 @@ describe("Postgres runtime-interface compile snapshot", () => {
   });
 
   it("does not give an owner-mode non-owner the task baseline", () => {
-    const compiled = buildRuntimeInterfaceCompileInput(snapshot({
-      capability: capability({ targetAgentId: "child" }),
-      contextGrantKeys: [],
-    }));
+    const compiled = buildRuntimeInterfaceCompileInput(
+      snapshot({
+        capability: capability({ targetAgentId: "child" }),
+        contextGrantKeys: [],
+      }),
+    );
 
     expect(compiled.isCurrentOwner).toBe(false);
     expect(compiled.contextDial).toEqual(
-      Object.fromEntries(
-        AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
-      ),
+      Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false])),
     );
   });
 });

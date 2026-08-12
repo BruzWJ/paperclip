@@ -36,7 +36,7 @@ function agentActor(id = actorId) {
 }
 
 describe("authorization service canonical boundaries", () => {
-  it("treats a persisted Board MCP user as full-control inside its active company", async () => {
+  it("treats an authenticated Board MCP user as full-control only in an active company", async () => {
     const boardUserId = "board-mcp-user";
     const { db } = createMockDb({
       select: [
@@ -51,10 +51,7 @@ describe("authorization service canonical boundaries", () => {
       action: "agent_config:update",
       resource: { type: "agent", companyId, agentId: targetId },
       scope: { requiresChangeGrant: true, targetAgentId: targetId },
-    })).resolves.toMatchObject({
-      allowed: true,
-      reason: "allow_board_mcp",
-    });
+    })).resolves.toMatchObject({ allowed: true, reason: "allow_board_mcp" });
   });
 
   it("preserves board reads while requiring non-viewer membership for board task mutation", async () => {

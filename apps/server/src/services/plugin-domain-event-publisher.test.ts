@@ -9,13 +9,16 @@ import { createPluginDomainEventPublisher } from "./plugin-domain-event-publishe
 import { createPluginEventBus } from "./plugin-event-bus.js";
 
 const event = {
-  eventId: "comment-1",
+  eventId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   eventType: "task.board.comment.created" as const,
   occurredAt: "2026-08-06T00:00:00.000Z",
-  companyId: "company-1",
-  entityId: "comment-1",
+  companyId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  entityId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   entityType: "task_comment",
-  payload: { taskId: "task-1", commentId: "comment-1" },
+  payload: {
+    taskId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    commentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  },
 };
 
 describe("plugin domain event publisher", () => {
@@ -54,7 +57,7 @@ describe("plugin domain event publisher", () => {
     expect(completed).toHaveBeenCalledOnce();
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
-        pluginId: "paperclip.failed",
+        pluginKey: "paperclip.failed",
         eventType: "task.board.comment.created",
       }),
       "plugin event handler failed",

@@ -1,4 +1,4 @@
-import { requireAdapterCatalogModel } from "./adapter-model.js";
+import { requireAdapterModel } from "./adapter-model.js";
 import { validateServerAdapterModule } from "./server-adapter-contract.js";
 import type {
   AcpAdapterRevisionConfiguration,
@@ -29,7 +29,7 @@ export function resolveAcpAdapterRevisionConfiguration(input: {
   const adapter = validateServerAdapterModule(input.adapter);
   const definition = adapter.definition;
   const expectedKeys = new Set(
-    definition.configOptions.map((option) => option.configKey),
+    definition.configOptions.map((option) => option.id),
   );
   const unknown = Object.keys(input.config).find((key) => !expectedKeys.has(key));
   if (unknown) {
@@ -40,17 +40,31 @@ export function resolveAcpAdapterRevisionConfiguration(input: {
 
   const selections = definition.configOptions
     .map((option) => {
-      const value = input.config[option.configKey];
+      const value = input.config[option.id];
       if (!exactConfigValue(value)) {
         throw new Error(
-          `Adapter ${adapter.type} requires exact ACP config value ${option.configKey}`,
+          `Adapter ${adapter.type} requires exact ACP config value ${option.id}`,
         );
       }
-      const legal = new Set(option.values.map((entry) => valueKey(entry.value)));
-      if (option.freeform !== true && !legal.has(valueKey(value))) {
+      if (option.type === "toggle" && typeof value !== "boolean") {
         throw new Error(
-          `Adapter ${adapter.type} ACP config value ${option.configKey} is not declared`,
+          `Adapter ${adapter.type} ACP config value ${option.id} must be a boolean`,
         );
+      }
+      if (option.type !== "toggle" && typeof value !== "string") {
+        throw new Error(
+          `Adapter ${adapter.type} ACP config value ${option.id} must be a string`,
+        );
+      }
+      if (option.type === "select") {
+        const legal = new Set(
+          option.values.map((entry) => valueKey(entry.value)),
+        );
+        if (!legal.has(valueKey(value))) {
+          throw new Error(
+            `Adapter ${adapter.type} ACP config value ${option.id} is not declared`,
+          );
+        }
       }
       return Object.freeze({ configId: option.id, value });
     })
@@ -72,12 +86,10 @@ export function resolveAcpAdapterRevisionConfiguration(input: {
           if (!modelOption) {
             throw new Error(`Adapter ${adapter.type} has no model config option`);
           }
-          const modelValue = input.config[modelOption.configKey];
-          return requireAdapterCatalogModel({
+          const modelValue = input.config[modelOption.id];
+          return requireAdapterModel({
             adapterType: adapter.type,
-            selection: definition.models.find(
-              (entry) => entry.value === modelValue,
-            )?.id,
+            selection: modelValue,
             models: definition.models,
           });
         })();
@@ -89,12 +101,6 @@ export function resolveAcpAdapterRevisionConfiguration(input: {
     model:
       model === null
         ? null
-        : Object.freeze({
-            ...model,
-            limits:
-              model.limits === null
-                ? null
-                : Object.freeze({ ...model.limits }),
-          }),
+        : Object.freeze({ ...model }),
   });
 }

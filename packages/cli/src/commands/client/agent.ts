@@ -87,8 +87,8 @@ export function registerAgentCommands(program: Command): void {
   addCommonClientOptions(
     agent
       .command("get")
-      .description("Get one agent")
-      .argument("<agentId>", "Agent ID")
+      .description("Get one agent by UUID")
+      .argument("<agentId>", "Agent UUID")
       .action(async (agentId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -146,7 +146,7 @@ export function registerAgentCommands(program: Command): void {
       .description(
         "Get an agent's runtime identity and grants",
       )
-      .argument("<agentId>", "Agent ID")
+      .argument("<agentId>", "Agent UUID")
       .action(async (agentId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -166,7 +166,7 @@ export function registerAgentCommands(program: Command): void {
       .description(
         "Update only an agent's runtime identity or grants",
       )
-      .argument("<agentId>", "Agent ID")
+      .argument("<agentId>", "Agent UUID")
       .requiredOption(
         "--payload-json <json>",
         "Nonempty RuntimeAgentUpdateConfiguration JSON payload",
@@ -206,10 +206,10 @@ export function registerAgentCommands(program: Command): void {
       .description(
         "Append an immutable adapter/provider configuration revision",
       )
-      .argument("<agentId>", "Agent ID")
+      .argument("<agentId>", "Agent UUID")
       .requiredOption(
         "--payload-json <json>",
-        "Adapter revision JSON with explicit adapterType, adapterConfig, runtimeConfig, and companySkillPins",
+        "Adapter revision JSON with exact adapterType and ACPX adapterConfig",
       )
       .action(async (agentId: string, opts: AgentJsonPayloadOptions) => {
         try {
@@ -232,7 +232,7 @@ export function registerAgentCommands(program: Command): void {
       .description(
         "List immutable adapter/provider configuration revisions",
       )
-      .argument("<agentId>", "Agent ID")
+      .argument("<agentId>", "Agent UUID")
       .action(async (agentId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -252,7 +252,7 @@ export function registerAgentCommands(program: Command): void {
       .description(
         "Get the current immutable adapter/provider configuration revision",
       )
-      .argument("<agentId>", "Agent ID")
+      .argument("<agentId>", "Agent UUID")
       .action(async (agentId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -272,7 +272,7 @@ export function registerAgentCommands(program: Command): void {
       .description(
         "Update only board-owned icon or monthly budget",
       )
-      .argument("<agentId>", "Agent ID")
+      .argument("<agentId>", "Agent UUID")
       .requiredOption(
         "--payload-json <json>",
         "Nonempty AgentOperationalConfigurationUpdate JSON payload",
@@ -313,7 +313,7 @@ export function registerAgentCommands(program: Command): void {
       agent
         .command(name)
         .description(description)
-        .argument("<agentId>", "Agent ID")
+        .argument("<agentId>", "Agent UUID")
         .action(async (agentId: string, opts: BaseClientOptions) => {
           try {
             const ctx = resolveCommandContext(opts);

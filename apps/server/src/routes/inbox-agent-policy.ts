@@ -7,14 +7,9 @@ import { accessService, inboxAgentPolicyService, logActivity } from "../services
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 
 export function inboxAgentPolicyRoutes(db: Db) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
   const access = accessService(db);
   const policies = inboxAgentPolicyService(db);
-
-  function selfUserId(req: Request) {
-    assertBoard(req);
-    return req.actor.userId;
-  }
 
   async function assertAdmin(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
@@ -30,6 +25,16 @@ export function inboxAgentPolicyRoutes(db: Db) {
     if (!membership || membership.status !== "active") {
       throw notFound("Active company user membership not found");
     }
+  }
+
+  async function assertPolicyAccess(req: Request, companyId: string, userId: string) {
+    assertBoard(req);
+    if (req.actor.userId === userId) {
+      assertCompanyAccess(req, companyId);
+      return;
+    }
+    await assertAdmin(req, companyId);
+    await assertActiveUserMembership(companyId, userId);
   }
 
   async function writePolicy(req: Request, companyId: string, userId: string) {
@@ -53,27 +58,10 @@ export function inboxAgentPolicyRoutes(db: Db) {
     return policy;
   }
 
-  router.get("/companies/:companyId/users/me/inbox-agent-policy", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    res.json(await policies.get(companyId, selfUserId(req)));
-  });
-
-  router.put(
-    "/companies/:companyId/users/me/inbox-agent-policy",
-    validate(updateInboxAgentPolicySchema),
-    async (req, res) => {
-      const companyId = req.params.companyId as string;
-      assertCompanyAccess(req, companyId);
-      res.json(await writePolicy(req, companyId, selfUserId(req)));
-    },
-  );
-
   router.get("/companies/:companyId/users/:userId/inbox-agent-policy", async (req, res) => {
     const companyId = req.params.companyId as string;
     const userId = req.params.userId as string;
-    await assertAdmin(req, companyId);
-    await assertActiveUserMembership(companyId, userId);
+    await assertPolicyAccess(req, companyId, userId);
     res.json(await policies.get(companyId, userId));
   });
 
@@ -83,8 +71,7 @@ export function inboxAgentPolicyRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const userId = req.params.userId as string;
-      await assertAdmin(req, companyId);
-      await assertActiveUserMembership(companyId, userId);
+      await assertPolicyAccess(req, companyId, userId);
       res.json(await writePolicy(req, companyId, userId));
     },
   );

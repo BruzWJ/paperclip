@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { NavLink, useLocation } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import {
   House,
   CircleDot,
@@ -7,7 +8,6 @@ import {
   Users,
   Inbox,
 } from "lucide-react";
-import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn } from "../lib/utils";
@@ -20,7 +20,14 @@ interface MobileBottomNavProps {
 
 interface MobileNavLinkItem {
   type: "link";
-  to: string;
+  linkOptions: {
+    to:
+      | "/$companyId/dashboard"
+      | "/$companyId/tasks"
+      | "/$companyId/agents"
+      | "/$companyId/inbox";
+    params: { companyId: string };
+  };
   label: string;
   icon: typeof House;
   badge?: number;
@@ -36,26 +43,40 @@ interface MobileNavActionItem {
 type MobileNavItem = MobileNavLinkItem | MobileNavActionItem;
 
 export function MobileBottomNav({ visible }: MobileBottomNavProps) {
-  const location = useLocation();
-  const { selectedCompanyId } = useCompany();
+  const companyId = useCompanyRouteId();
   const { openNewTask } = useDialogActions();
-  const inboxBadge = useInboxBadge(selectedCompanyId);
+  const inboxBadge = useInboxBadge(companyId);
 
   const items = useMemo<MobileNavItem[]>(
     () => [
-      { type: "link", to: "/dashboard", label: "Home", icon: House },
-      { type: "link", to: "/tasks", label: "Tasks", icon: CircleDot },
-      { type: "action", label: "Create", icon: SquarePen, onClick: () => openNewTask() },
-      { type: "link", to: "/agents/all", label: "Agents", icon: Users },
       {
         type: "link",
-        to: "/inbox",
+        linkOptions: { to: "/$companyId/dashboard", params: { companyId } },
+        label: "Home",
+        icon: House,
+      },
+      {
+        type: "link",
+        linkOptions: { to: "/$companyId/tasks", params: { companyId } },
+        label: "Tasks",
+        icon: CircleDot,
+      },
+      { type: "action", label: "Create", icon: SquarePen, onClick: () => openNewTask() },
+      {
+        type: "link",
+        linkOptions: { to: "/$companyId/agents", params: { companyId } },
+        label: "Agents",
+        icon: Users,
+      },
+      {
+        type: "link",
+        linkOptions: { to: "/$companyId/inbox", params: { companyId } },
         label: "Inbox",
         icon: Inbox,
         badge: inboxBadge.inbox,
       },
     ],
-    [openNewTask, inboxBadge.inbox],
+    [companyId, openNewTask, inboxBadge.inbox],
   );
 
   return (
@@ -70,7 +91,6 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
         {items.map((item) => {
           if (item.type === "action") {
             const Icon = item.icon;
-            const active = /\/tasks\/new(?:\/|$)/.test(location.pathname);
             return (
               <button
                 key={item.label}
@@ -78,9 +98,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
                 onClick={item.onClick}
                 className={cn(
                   "relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-colors",
-                  active
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
+                  "text-muted-foreground hover:text-foreground",
                 )}
               >
                 <Icon className="h-(--sz-18px) w-(--sz-18px)" />
@@ -91,18 +109,13 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
 
           const Icon = item.icon;
           return (
-            <NavLink
+            <Link
               key={item.label}
-              to={item.to}
+              {...item.linkOptions}
               state={SIDEBAR_SCROLL_RESET_STATE}
-              className={({ isActive }) =>
-                cn(
-                  "relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-colors",
-                  isActive
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )
-              }
+              className="relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-colors"
+              activeProps={{ className: "text-foreground" }}
+              inactiveProps={{ className: "text-muted-foreground hover:text-foreground" }}
             >
               {({ isActive }) => (
                 <>
@@ -117,7 +130,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
                   <span className="truncate">{item.label}</span>
                 </>
               )}
-            </NavLink>
+            </Link>
           );
         })}
       </div>

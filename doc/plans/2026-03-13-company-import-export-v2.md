@@ -15,8 +15,7 @@ The core shift is:
 
 - move from a Paperclip-specific JSON-first portability package toward a markdown-first package format
 - make GitHub repositories first-class package sources
-- treat the company package model as an extension of the existing Agent Skills ecosystem instead of inventing a separate skill format
-- support company, team, agent, and skill reuse without requiring a central registry
+- support company, team, and agent reuse without requiring a central registry
 
 The normative package format draft lives in:
 
@@ -39,14 +38,11 @@ The new direction is:
 1. markdown-first package authoring
 2. GitHub repo or local folder as the default source of truth
 3. a vendor-neutral base package spec for agent-company runtimes, not just Paperclip
-4. the company package model is explicitly an extension of Agent Skills
-5. no future dependency on `paperclip.manifest.json`
-6. implicit folder discovery by convention for the common case
-7. an always-emitted `.paperclip.yaml` sidecar for high-fidelity Paperclip-specific details
-8. package graph resolution at import time
-9. entity-level import UI with dependency-aware tree selection
-10. `skills.sh` compatibility is a V1 requirement for skill packages and skill installation flows
-11. adapter-aware skill sync surfaces so Paperclip can read, diff, enable, disable, and reconcile skills where the adapter supports it
+4. no future dependency on `paperclip.manifest.json`
+5. implicit folder discovery by convention for the common case
+6. an always-emitted `.paperclip.yaml` sidecar for high-fidelity Paperclip-specific details
+7. package graph resolution at import time
+8. entity-level import UI with dependency-aware tree selection
 
 ## 3. Product Goals
 
@@ -59,8 +55,6 @@ The new direction is:
   - org subtree / team definition
   - agent definitions
   - optional starter projects and tasks
-  - reusable skills
-- V1 skill support is compatible with the existing `skills.sh` / Agent Skills ecosystem.
 - A user can import into:
   - a new company
   - an existing company
@@ -98,11 +92,10 @@ Current implementation exists here:
 
 Current product limitations:
 
-1. Import/export UX still needs deeper tree-selection and skill/package management polish.
-2. Adapter-specific skill sync remains uneven across adapters and must degrade cleanly when unsupported.
-3. Projects and starter tasks should stay opt-in on export rather than default package content.
-4. Import/export still needs stronger coverage around attribution, pin verification, and executable-package warnings.
-5. The current markdown frontmatter parser is intentionally lightweight and should stay constrained to the documented shape.
+1. Import/export UX still needs deeper tree-selection and package-management polish.
+2. Projects and starter tasks should stay opt-in on export rather than default package content.
+3. Import/export still needs stronger coverage around attribution, pin verification, and executable-package warnings.
+4. The current markdown frontmatter parser is intentionally lightweight and should stay constrained to the documented shape.
 
 ## 5. Canonical Package Direction
 
@@ -115,40 +108,12 @@ The canonical authoring format becomes a markdown-first package rooted in one of
 - `AGENTS.md`
 - `PROJECT.md`
 - `TASK.md`
-- `SKILL.md`
 
 The normative draft is:
 
 - `apps/docs/companies/companies-spec.md`
 
-### 5.2 Relationship To Agent Skills
-
-Paperclip must not redefine `SKILL.md`.
-
-Rules:
-
-- `SKILL.md` stays Agent Skills compatible
-- the company package model is an extension of Agent Skills
-- the base package is vendor-neutral and intended for any agent-company runtime
-- Paperclip-specific fidelity lives in `.paperclip.yaml`
-- Paperclip may resolve and install `SKILL.md` packages, but it must not require a Paperclip-only skill format
-- `skills.sh` compatibility is a V1 requirement, not a future nice-to-have
-
-### 5.3 Agent-To-Skill Association
-
-`AGENTS.md` should associate skills by skill shortname or slug, not by verbose path in the common case.
-
-Preferred example:
-
-- `skills: [review, react-best-practices]`
-
-Resolution model:
-
-- `review` resolves to `skills/review/SKILL.md` by package convention
-- if the skill is external or referenced, the skill package owns that complexity
-- exporters should prefer shortname-based associations in `AGENTS.md`
-- importers should resolve the shortname against local package skills first, then referenced or installed company skills
-### 5.4 Base Package Vs Paperclip Extension
+### 5.2 Base Package Vs Paperclip Extension
 
 The repo format should have two layers:
 
@@ -161,7 +126,7 @@ The repo format should have two layers:
   - adapter/runtime/permissions/budget/workspace fidelity
   - emitted by Paperclip tools as a sidecar while the base package stays readable
 
-### 5.5 Relationship To Current V1 Manifest
+### 5.3 Relationship To Current V1 Manifest
 
 `paperclip.manifest.json` is not part of the future package direction.
 
@@ -182,7 +147,6 @@ Paperclip import/export should support these entity kinds:
 - agent
 - project
 - task
-- skill
 
 ### 6.2 Team Semantics
 
@@ -209,7 +173,7 @@ Import should operate on an entity graph, not raw file selection.
 
 Examples:
 
-- selecting an agent auto-selects its required docs and skill refs
+- selecting an agent auto-selects its required documents
 - selecting a team auto-selects its subtree
 - selecting a company auto-selects all included entities by default
 - selecting a project auto-selects its starter tasks
@@ -310,48 +274,6 @@ Every import preview should surface:
 - unsupported content types
 - trust/licensing warnings
 
-### 8.5 Adapter Skill Sync Surface
-
-People want skill management in the UI, but skills are adapter-dependent.
-
-That means portability and UI planning must include an adapter capability model for skills.
-
-Paperclip should define a new adapter surface area around skills:
-
-- list currently enabled skills for an agent
-- report how those skills are represented by the adapter
-- install or enable a skill
-- disable or remove a skill
-- report sync state between desired package config and actual adapter state
-
-Examples:
-
-- Claude Code / Codex style adapters may manage skills as local filesystem packages or adapter-owned skill directories
-- OpenClaw-style adapters may expose currently enabled skills through an API or a reflected config surface
-- some adapters may be read-only and only report what they have
-
-Planned adapter capability shape:
-
-- `supportsSkillRead`
-- `supportsSkillWrite`
-- `supportsSkillRemove`
-- `supportsSkillSync`
-- `skillStorageKind` such as `filesystem`, `remote_api`, `inline_config`, or `unknown`
-
-Baseline adapter interface:
-
-- `listSkills(agent)`
-- `applySkills(agent, desiredSkills)`
-- `removeSkill(agent, skillId)` optional
-- `getSkillSyncState(agent, desiredSkills)` optional
-
-Planned Paperclip behavior:
-
-- if an adapter supports read, Paperclip should show current skills in the UI
-- if an adapter supports write, Paperclip should let the user enable/disable imported skills
-- if an adapter supports sync, Paperclip should compute desired vs actual state and offer reconcile actions
-- if an adapter does not support these capabilities, the UI should still show the package-level desired skills but mark them unmanaged
-
 ## 9. Export Behavior
 
 ### 9.1 Default Export Target
@@ -364,8 +286,7 @@ Example:
 my-company/
 ├── COMPANY.md
 ├── agents/
-├── teams/
-└── skills/
+└── teams/
 ```
 
 ### 9.2 Export Rules
@@ -380,7 +301,6 @@ Exports should:
 - preserve references and attribution
 - emit `.paperclip.yaml` alongside the base package
 - express adapter env/secrets as portable env input declarations rather than exported secret binding ids
-- preserve compatible `SKILL.md` content as-is
 
 Projects and tasks should not be exported by default.
 
@@ -400,9 +320,8 @@ Initial export units:
 - team package
 - single agent package
 
-Later optional units:
+Later optional unit:
 
-- skill pack export
 - seed projects/tasks bundle
 
 ## 10. Storage Model Inside Paperclip
@@ -414,7 +333,6 @@ In the first phase, imported entities can continue mapping onto current runtime 
 - company -> companies
 - agent -> agents
 - team -> imported agent subtree attachment plus package provenance grouping
-- skill -> company-scoped reusable package metadata plus agent-scoped desired-skill attachment state where supported
 
 ### 10.2 Medium-Term
 
@@ -427,16 +345,12 @@ Needed capabilities:
 - distinguish local edits from upstream package state
 - preserve external refs and package-level metadata
 - preserve imported team grouping without requiring a runtime `teams` table immediately
-- preserve desired-skill state separately from adapter runtime state
-- support both company-scoped reusable skills and agent-scoped skill attachments
 
 Suggested future tables:
 
 - package_installs
 - package_install_entities
 - package_sources
-- agent_skill_desires
-- adapter_skill_snapshots
 
 This is not required for phase 1 UI, but it is required for a robust long-term system.
 
@@ -490,7 +404,6 @@ Planned additions:
 - `--strict-pins`
 - `--allow-unpinned`
 - `--materialize-references`
-- `--sync-skills`
 
 ## 13. UI Plan
 
@@ -528,24 +441,6 @@ If importing a team into an existing company:
 - preview manager/reporting updates before apply
 - preserve imported-team provenance so the UI can later say “these agents came from team package X”
 
-### 13.3 Skills UX
-
-See also:
-
-- `doc/plans/2026-03-14-skills-ui-product-plan.md`
-
-If importing skills:
-
-- show whether each skill is local, vendored, or referenced
-- show whether it contains scripts/assets
-- preserve Agent Skills compatibility in presentation and export
-- preserve `skills.sh` compatibility in both import and install flows
-- show agent skill attachments by shortname/slug rather than noisy file paths
-- treat agent skills as a dedicated agent tab, not just another subsection of configuration
-- show current adapter-reported skills when supported
-- show desired package skills separately from actual adapter state
-- offer reconcile actions when the adapter supports sync
-
 ## 14. Rollout Phases
 
 ### Phase 1: Stabilize Current V1 Portability
@@ -560,19 +455,13 @@ If importing skills:
 - support `COMPANY.md` / `TEAM.md` / `AGENTS.md` root detection
 - build internal graph from markdown-first packages
 - support local folder and GitHub repo inputs natively
-- support agent skill references by shortname/slug
-- resolve local `skills/<slug>/SKILL.md` packages by convention
-- support `skills.sh`-compatible skill repos as V1 package sources
 
-### Phase 3: Graph-Based Import UX And Skill Surfaces
+### Phase 3: Graph-Based Import UX
 
 - entity tree preview
 - checkbox selection
 - team subtree attach flow
 - licensing/trust/reference warnings
-- company skill library groundwork
-- dedicated agent `Skills` tab groundwork
-- adapter skill read/sync UI groundwork
 
 ### Phase 4: New Export Model
 
@@ -584,7 +473,6 @@ If importing skills:
 - support package-aware re-import and upgrades
 - improve collision matching beyond slug-only
 - add imported-team provenance grouping
-- add desired-vs-actual skill sync state
 
 ### Phase 6: Optional Seed Content
 
@@ -610,16 +498,12 @@ Docs to update later as implementation lands:
 
 ## 16. Open Questions
 
-1. Should imported skill packages be stored as managed package files in Paperclip storage, or only referenced at import time?
-   Decision: managed package files should support both company-scoped reuse and agent-scoped attachment.
-2. What is the minimum adapter skill interface needed to make the UI useful across Claude Code, Codex, OpenClaw, and future adapters?
-   Decision: use the baseline interface in section 8.5.
-3. Should Paperclip support direct local folder selection in the web UI, or keep that CLI-only initially?
-4. Do we want optional generated lock files in phase 2, or defer them until provenance work?
-5. How strict should pinning be by default for GitHub references:
+1. Should Paperclip support direct local folder selection in the web UI, or keep that CLI-only initially?
+2. Do we want optional generated lock files in phase 2, or defer them until provenance work?
+3. How strict should pinning be by default for GitHub references:
    - warn on unpinned
    - or block in normal mode
-6. Is package-provenance grouping enough for imported teams, or do we expect product requirements soon that would justify a first-class runtime `teams` table?
+4. Is package-provenance grouping enough for imported teams, or do we expect product requirements soon that would justify a first-class runtime `teams` table?
    Decision: provenance grouping is enough for the import/export product model for now.
 
 ## 17. Recommendation
@@ -636,5 +520,4 @@ Immediate next steps:
 This keeps Paperclip aligned with:
 
 - GitHub-native distribution
-- Agent Skills compatibility
 - a registry-optional ecosystem model

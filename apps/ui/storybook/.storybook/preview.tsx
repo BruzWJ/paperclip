@@ -1,8 +1,16 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Preview } from "@storybook/react-vite";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { WorkTimelineResult } from "@paperclipai/shared";
-import { MemoryRouter } from "@/lib/router";
+import { isCanonicalUuid, type WorkTimelineResult } from "@paperclipai/shared";
+import {
+  Outlet,
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  notFound,
+} from "@tanstack/react-router";
 import { BreadcrumbProvider } from "@/context/BreadcrumbContext";
 import { CompanyProvider } from "@/context/CompanyContext";
 import { DialogProvider } from "@/context/DialogContext";
@@ -19,7 +27,7 @@ import {
   storybookCompanies,
   storybookDashboardSummary,
   storybookTasks,
-  storybookLiveRuns,
+  storybookTaskRuns,
   storybookProjects,
   storybookSecretAccessEvents,
   storybookSecretBindings,
@@ -37,6 +45,87 @@ import "./styles.css";
 
 const STORYBOOK_USER_AVATAR =
   "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80";
+
+const StorybookRouteContentContext = createContext<ReactNode>(null);
+
+function StorybookRouteContent() {
+  return useContext(StorybookRouteContentContext);
+}
+
+const storybookRootRoute = createRootRoute({ component: Outlet });
+const storybookAuthenticatedRoute = createRoute({
+  getParentRoute: () => storybookRootRoute,
+  id: "_authenticated",
+  component: Outlet,
+});
+const storybookCompanyRoute = createRoute({
+  getParentRoute: () => storybookAuthenticatedRoute,
+  path: "$companyId",
+  loader: ({ params }) => {
+    if (!isCanonicalUuid(params.companyId)) throw notFound();
+  },
+  component: Outlet,
+});
+const storybookAgentRoute = createRoute({
+  getParentRoute: () => storybookCompanyRoute,
+  path: "agents/$agentId",
+  component: Outlet,
+});
+const storybookAgentIndexRoute = createRoute({
+  getParentRoute: () => storybookAgentRoute,
+  path: "/",
+  component: StorybookRouteContent,
+});
+const storybookAgentTabRoute = createRoute({
+  getParentRoute: () => storybookAgentRoute,
+  path: "$tab",
+  component: StorybookRouteContent,
+});
+const storybookSecretsRoute = createRoute({
+  getParentRoute: () => storybookCompanyRoute,
+  path: "company/settings/secrets",
+  component: StorybookRouteContent,
+});
+const storybookUserRoute = createRoute({
+  getParentRoute: () => storybookCompanyRoute,
+  path: "u/$userId",
+  component: StorybookRouteContent,
+});
+const storybookCompanyCatchallRoute = createRoute({
+  getParentRoute: () => storybookCompanyRoute,
+  path: "$",
+  component: StorybookRouteContent,
+});
+const storybookRouteTree = storybookRootRoute.addChildren([
+  storybookAuthenticatedRoute.addChildren([
+    storybookCompanyRoute.addChildren([
+      storybookAgentRoute.addChildren([
+        storybookAgentIndexRoute,
+        storybookAgentTabRoute,
+      ]),
+      storybookSecretsRoute,
+      storybookUserRoute,
+      storybookCompanyCatchallRoute,
+    ]),
+  ]),
+]);
+
+function StorybookMemoryRouter({ children }: { children: ReactNode }) {
+  const storybookRouter = useMemo(
+    () => createRouter({
+      routeTree: storybookRouteTree,
+      history: createMemoryHistory({
+        initialEntries: ["/11111111-1111-4111-8111-111111111111/storybook"],
+      }),
+    }),
+    [],
+  );
+  return (
+    <StorybookRouteContentContext.Provider value={children}>
+      <RouterProvider router={storybookRouter} />
+    </StorybookRouteContentContext.Provider>
+  );
+}
 
 function withStorybookTimelineDetails(data: WorkTimelineResult): WorkTimelineResult {
   return {
@@ -96,24 +185,24 @@ function installStorybookApiFixtures() {
       return Response.json(storybookCompanies);
     }
 
-    if (url.pathname === "/api/companies/company-storybook/user-directory") {
+    if (url.pathname === "/api/companies/11111111-1111-4111-8111-111111111111/user-directory") {
       return Response.json({
         users: [
           {
-            principalId: "user-board",
+            principalId: "a7000000-0000-4000-8000-000000000002",
             status: "active",
             user: {
-              id: "user-board",
+              id: "a7000000-0000-4000-8000-000000000002",
               email: "board@paperclip.local",
               name: "Board Operator",
               image: null,
             },
           },
           {
-            principalId: "user-product",
+            principalId: "a7000000-0000-4000-8000-000000000004",
             status: "active",
             user: {
-              id: "user-product",
+              id: "a7000000-0000-4000-8000-000000000004",
               email: "product@paperclip.local",
               name: "Product Lead",
               image: null,
@@ -126,54 +215,30 @@ function installStorybookApiFixtures() {
     if (url.pathname === "/api/adapters") {
       return Response.json([
         {
-          type: "process",
+          type: "claude-code",
           label: "Claude Code",
-          source: "builtin",
+          source: "acpx",
           modelsCount: 2,
           loaded: true,
-          disabled: false,
+          registryName: "claude-code",
+          configSchema: { fields: [] },
           capabilities: {
-            supportsSkills: true,
-            supportsLocalAgentJwt: true,
-            requiresMaterializedRuntimeSkills: false,
-            supportsModelProfiles: true,
+            contractVersion: "acpx-runtime/v1",
+            runtimeControls: ["session/status", "session/set_config_option"],
           },
         },
         {
-          type: "process",
+          type: "codex",
           label: "Codex",
-          source: "builtin",
+          source: "acpx",
           modelsCount: 3,
           loaded: true,
-          disabled: false,
+          registryName: "codex",
+          configSchema: { fields: [] },
           capabilities: {
-            supportsSkills: true,
-            supportsLocalAgentJwt: true,
-            requiresMaterializedRuntimeSkills: false,
-            supportsModelProfiles: true,
+            contractVersion: "acpx-runtime/v1",
+            runtimeControls: ["session/status", "session/set_config_option"],
           },
-        },
-      ]);
-    }
-
-    const adapterModelsMatch = url.pathname.match(
-      /^\/api\/companies\/[^/]+\/adapters\/([^/]+)\/(models|model-profiles)$/,
-    );
-    if (adapterModelsMatch) {
-      const [, , resource] = adapterModelsMatch;
-      if (resource === "models") {
-        return Response.json([
-          { id: "fixture-large", label: "Fixture Large" },
-          { id: "fixture-standard", label: "Fixture Standard" },
-          { id: "fixture-small", label: "Fixture Small" },
-        ]);
-      }
-      return Response.json([
-        {
-          key: "cheap",
-          label: "Cheap",
-          adapterConfig: { model: "fixture-standard" },
-          source: "adapter_default",
         },
       ]);
     }
@@ -195,7 +260,7 @@ function installStorybookApiFixtures() {
     const secretsListMatch = url.pathname.match(/^\/api\/companies\/([^/]+)\/secrets$/);
     if (secretsListMatch) {
       const [, companyId] = secretsListMatch;
-      return Response.json(companyId === "company-storybook" ? storybookSecrets : []);
+      return Response.json(companyId === "11111111-1111-4111-8111-111111111111" ? storybookSecrets : []);
     }
 
     const secretProvidersMatch = url.pathname.match(/^\/api\/companies\/([^/]+)\/secret-providers$/);
@@ -243,13 +308,13 @@ function installStorybookApiFixtures() {
     if (companyResourceMatch) {
       const [, companyId, resource] = companyResourceMatch;
       if (resource === "agents") {
-        return Response.json(companyId === "company-storybook" ? storybookAgents : []);
+        return Response.json(companyId === "11111111-1111-4111-8111-111111111111" ? storybookAgents : []);
       }
       if (resource === "projects") {
-        return Response.json(companyId === "company-storybook" ? storybookProjects : []);
+        return Response.json(companyId === "11111111-1111-4111-8111-111111111111" ? storybookProjects : []);
       }
       if (resource === "approvals") {
-        return Response.json(companyId === "company-storybook" ? storybookApprovals : []);
+        return Response.json(companyId === "11111111-1111-4111-8111-111111111111" ? storybookApprovals : []);
       }
       if (resource === "dashboard") {
         return Response.json({
@@ -259,7 +324,7 @@ function installStorybookApiFixtures() {
       }
       if (resource === "timeline") {
         return Response.json(
-          companyId === "company-storybook"
+          companyId === "11111111-1111-4111-8111-111111111111"
             ? storybookTimelineSample
             : {
                 actors: [],
@@ -275,18 +340,25 @@ function installStorybookApiFixtures() {
               },
         );
       }
-      if (resource === "heartbeat-runs") {
-        return Response.json([]);
-      }
-      if (resource === "live-runs") {
-        return Response.json(companyId === "company-storybook" ? storybookLiveRuns : []);
+      if (resource === "runs") {
+        const requestedStatuses = url.searchParams.getAll("status");
+        const requestedAgentId = url.searchParams.get("agentId");
+        const runs = companyId === "11111111-1111-4111-8111-111111111111" ? storybookTaskRuns : [];
+        return Response.json({
+          items: runs.filter(
+            (run) =>
+              (requestedStatuses.length === 0 || requestedStatuses.includes(run.status)) &&
+              (requestedAgentId === null || run.targetAgentId === requestedAgentId),
+          ),
+          nextCursor: null,
+        });
       }
       if (resource === "inbox-dismissals") {
         return Response.json([]);
       }
       if (resource === "sidebar-badges") {
         return Response.json(
-          companyId === "company-storybook"
+          companyId === "11111111-1111-4111-8111-111111111111"
             ? storybookSidebarBadges
             : { inbox: 0, approvals: 0, failedRuns: 0, joinRequests: 0 },
         );
@@ -296,7 +368,7 @@ function installStorybookApiFixtures() {
       }
       if (resource === "tasks") {
         const query = url.searchParams.get("q")?.trim().toLowerCase();
-        const tasks = companyId === "company-storybook" ? storybookTasks : [];
+        const tasks = companyId === "11111111-1111-4111-8111-111111111111" ? storybookTasks : [];
         return Response.json(
           query
             ? tasks.filter((task) =>
@@ -356,7 +428,7 @@ function StorybookProviders({
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <MemoryRouter initialEntries={["/PAP/storybook"]}>
+        <StorybookMemoryRouter>
           <CompanyProvider>
             <EditorAutocompleteProvider>
               <ToastProvider>
@@ -372,7 +444,7 @@ function StorybookProviders({
               </ToastProvider>
             </EditorAutocompleteProvider>
           </CompanyProvider>
-        </MemoryRouter>
+        </StorybookMemoryRouter>
       </ThemeProvider>
     </QueryClientProvider>
   );

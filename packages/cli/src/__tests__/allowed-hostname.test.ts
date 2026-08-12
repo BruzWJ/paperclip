@@ -6,7 +6,9 @@ import type { PaperclipConfig } from "../config/schema.js";
 import { addAllowedHostname } from "../commands/allowed-hostname.js";
 
 function createTempConfigPath() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-allowed-hostname-"));
+  const dir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "paperclip-allowed-hostname-"),
+  );
   return path.join(dir, "config.json");
 }
 
@@ -18,7 +20,8 @@ function writeBaseConfig(configPath: string) {
       source: "configure",
     },
     database: {
-      connectionString: "postgresql://operator:secret@database.example.com/paperclip"
+      connectionString:
+        "postgresql://operator:secret@database.example.com/paperclip",
     },
     logging: {
       mode: "file",
@@ -26,7 +29,7 @@ function writeBaseConfig(configPath: string) {
     },
     server: {
       exposure: "private",
-      host: "0.0.0.0",
+      bind: "lan",
       port: 3100,
       allowedHostnames: [],
       serveUi: true,
@@ -57,14 +60,22 @@ function writeBaseConfig(configPath: string) {
 }
 
 describe("allowed-hostname command", () => {
-  it("adds and normalizes hostnames", async () => {
+  it("adds only exact hostnames without URL or case aliases", async () => {
     const configPath = createTempConfigPath();
     writeBaseConfig(configPath);
 
-    await addAllowedHostname("https://Dotta-MacBook-Pro:3100", { config: configPath });
+    await addAllowedHostname("dotta-macbook-pro", { config: configPath });
     await addAllowedHostname("dotta-macbook-pro", { config: configPath });
 
-    const raw = JSON.parse(fs.readFileSync(configPath, "utf-8")) as PaperclipConfig;
+    const raw = JSON.parse(
+      fs.readFileSync(configPath, "utf-8"),
+    ) as PaperclipConfig;
     expect(raw.server.allowedHostnames).toEqual(["dotta-macbook-pro"]);
+
+    await expect(
+      addAllowedHostname("https://Dotta-MacBook-Pro:3100", {
+        config: configPath,
+      }),
+    ).rejects.toThrow(/exact lowercase hostname/);
   });
 });

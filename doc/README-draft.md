@@ -20,7 +20,7 @@ Paperclip is a node server & UI that orchestrates a team of agents to run busine
 
 Bring-your-own agents, assign goals, and track your agent's work and costs.
 
-It looks like a task manager but has specialized skills and agent coordination
+It looks like a task manager but has specialized agent coordination controls
 
 **It's high taste, and feels good to use**
 

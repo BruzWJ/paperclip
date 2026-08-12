@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { documents, taskComments, taskDocuments, tasks } from "@paperclipai/db";
@@ -205,6 +205,7 @@ export function companySearchExtractService(db: Db) {
       const candidateRows = await db
         .select({
           id: tasks.id,
+          taskNumber: tasks.taskNumber,
           identifier: tasks.identifier,
           title: tasks.title,
           request: tasks.request,
@@ -323,6 +324,7 @@ export function companySearchExtractService(db: Db) {
         const extracted = extractMatches(sourcesByTask.get(row.id) ?? [], query);
         return {
           taskId: row.id,
+          taskNumber: row.taskNumber,
           identifier: row.identifier,
           title: row.title,
           boardPresentationStatus:

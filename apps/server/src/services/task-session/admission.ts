@@ -1548,9 +1548,8 @@ async function assertCounterpart(
 async function assertDispatchScope(
   transaction: TaskSessionDbTransaction,
   input: DispatchExecutionScope,
-  executionScopeId: string,
 ): Promise<ValidatedDispatchScope> {
-  const { task, session } = await assertCanonicalScope(transaction, input, {
+  const { task } = await assertCanonicalScope(transaction, input, {
     allowTerminal: false,
     dispatching: true,
   });
@@ -2474,7 +2473,6 @@ export function createTaskSessionAdmissionService(
     const validated = await assertDispatchScope(
       transaction,
       input,
-      input.executionScopeId ?? ids.executionScopeId,
     );
     await hooks.assertImmutableSource?.(transaction, input);
     return messageKind === "user"

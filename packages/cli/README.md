@@ -141,10 +141,10 @@ Paperclip handles the hard orchestration details correctly.
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | **Atomic execution.**             | Persisted refs, views, leases, and budget enforcement serialize each exact task execution.                   |
 | **Task-scoped continuity.**      | Continuity can resume only within one task/epoch/agent/revision; nothing Paperclip-authored crosses tasks.  |
-| **Explicit capabilities.**        | Compiled prompt capabilities and genuine skills appear only when that agent and run are authorized for them.   |
+| **Explicit capabilities.**        | Compiled prompt capabilities appear only when that agent and run are authorized for them.                     |
 | **Governance with rollback.**     | Approval gates are enforced, config changes are revisioned, and bad changes can be rolled back safely.        |
 | **Goal-aware execution.**         | Tasks carry full goal ancestry so agents consistently see the "why," not just a title.                        |
-| **Portable company templates.**   | Export/import orgs, agents, and skills with secret scrubbing and collision handling.                          |
+| **Portable company templates.**   | Export/import orgs, agents, projects, and tasks with secret scrubbing and collision handling.                |
 | **True multi-company isolation.** | Every entity is company-scoped, so one deployment can run many companies with separate data and audit trails. |
 
 <br/>
@@ -194,7 +194,7 @@ task-execution refs. Every mutation is traced to a real authenticated actor.
 <td width="50%">
 
 **Org Chart & Agents** — Agents have display identity, direct reporting lines,
-explicit context/action grants, provider configuration, selected skills, and
+explicit context/action grants, provider configuration, selected tools, and
 budgets. Org position and title grant nothing.
 
 </td>
@@ -264,7 +264,7 @@ so operators can audit what happened and why.
 </td>
 <td>
 
-**Company Portability** — Export and import entire organizations — agents, skills, projects, routines, and tasks — with secret scrubbing and collision handling. One deployment, many companies, complete data isolation.
+**Company Portability** — Export and import entire organizations — agents, projects, routines, and tasks — with secret scrubbing and collision handling. One deployment, many companies, complete data isolation.
 
 </td>
 </tr>
@@ -379,8 +379,7 @@ See [doc/DEVELOPING.md](https://github.com/paperclipai/paperclip/blob/master/doc
 
 - ✅ Plugin system (e.g. add a knowledge base, custom tracing, queues, etc)
 - ✅ companies.sh - import and export entire organizations
-- ✅ Explicit per-agent grants, provider configuration, tools, and skills
-- ✅ Skills Manager
+- ✅ Explicit per-agent grants, provider configuration, and tools
 - ✅ Scheduled Routines
 - ✅ Better Budgeting
 - ✅ Agent Reviews and Approvals

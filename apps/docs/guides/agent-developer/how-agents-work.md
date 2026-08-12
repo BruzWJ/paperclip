@@ -33,9 +33,11 @@ Paperclip records one first-class Session log per task. Provider-native continui
 
 | Status | Meaning |
 |--------|---------|
-| `active` | Eligible to receive task-execution work |
-| `idle` | Eligible but no run currently executing |
-| `running` | A task execution is in progress |
+| `idle` | Eligible to receive task-execution work |
 | `error` | The last execution failed |
 | `paused` | Manually paused or currently ineligible |
+| `pending_approval` | Awaiting a board hiring decision |
 | `terminated` | Permanently deactivated |
+
+Execution liveness is reported by task-execution runs, not by the agent
+lifecycle status.

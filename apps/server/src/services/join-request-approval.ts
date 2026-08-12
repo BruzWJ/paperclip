@@ -1,31 +1,16 @@
 import { and, eq } from "drizzle-orm";
-import {
-  agents,
-  invites,
-  joinRequests,
-  type Db,
-} from "@paperclipai/db";
-import {
-  AGENT_CONTEXT_GRANT_KEYS,
-  AGENT_MENTION_REACH_GRANT_KEYS,
-  PAPERCLIP_ACTION_KEYS,
-} from "@paperclipai/shared";
-import { conflict, notFound, unprocessable } from "../errors.js";
+import { invites, joinRequests, type Db } from "@paperclipai/db";
+import { conflict, notFound } from "../errors.js";
 import { accessService } from "./access.js";
-import { createAgentAdapterConfigurationService } from "./agent-adapter-config-revisions.js";
-import { deduplicateAgentName } from "./agents.js";
-import { logActivity } from "./activity-log.js";
-import { resolveHumanInviteRole } from "./company-member-roles.js";
 import {
-  agentJoinGrantsFromDefaults,
-  humanJoinGrantsFromDefaults,
-} from "./invite-grants.js";
-import { createRuntimeAgentConfigurationService } from "./runtime-agent-configuration.js";
+  persistActivityLog,
+  publishCommittedActivity,
+} from "./activity-log.js";
+import { resolveUserInviteRole } from "./company-member-roles.js";
+import { userJoinGrantsFromDefaults } from "./invite-grants.js";
 import type { AuthorizationActor } from "./authorization.js";
 
-type JoinApprovalTransaction = Parameters<
-  Parameters<Db["transaction"]>[0]
->[0];
+type JoinApprovalTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export interface JoinRequestApprovalInput {
   companyId: string;
@@ -37,17 +22,8 @@ export interface JoinRequestApprovalInput {
   };
 }
 
-/**
- * The sole owner of board approval for an invite-backed join request.
- *
- * This deliberately composes the canonical runtime-agent, adapter-revision,
- * operational, membership, and grant owners inside one outer database
- * transaction. A partial agent cannot escape if an initial revision or a
- * downstream membership/grant write fails.
- */
-export function createJoinRequestApprovalService(
-  db: Db,
-) {
+/** Activates an invite-backed user membership and grants atomically. */
+export function createJoinRequestApprovalService(db: Db) {
   async function approveInTransaction(
     tx: JoinApprovalTransaction,
     input: JoinRequestApprovalInput,
@@ -65,15 +41,14 @@ export function createJoinRequestApprovalService(
       .for("update")
       .then((rows) => rows[0] ?? null);
     if (!joinRequest) throw notFound("Join request not found");
-
-    if (joinRequest.status === "approved") return joinRequest;
+    if (joinRequest.status === "approved") {
+      return { approved: joinRequest, activity: null };
+    }
     if (joinRequest.status !== "pending_approval") {
       throw conflict("Join request is not pending");
     }
-    if (joinRequest.createdAgentId) {
-      throw conflict(
-        "Pending agent join request already has a created agent and cannot be safely approved",
-      );
+    if (!joinRequest.requestingUserId) {
+      throw conflict("Join request missing user identity");
     }
 
     const invite = await tx
@@ -88,127 +63,24 @@ export function createJoinRequestApprovalService(
     }
 
     const access = accessService(txDb);
-    let createdAgentId: string | null = null;
-    let createdAgentAdapterConfigRevisionId: string | null = null;
-
-    if (joinRequest.requestType === "human") {
-      if (!joinRequest.requestingUserId) {
-        throw conflict("Join request missing user identity");
-      }
-      const membershipRole = resolveHumanInviteRole(
+    await access.ensureMembership(
+      input.companyId,
+      "user",
+      joinRequest.requestingUserId,
+      resolveUserInviteRole(
         invite.defaultsPayload as Record<string, unknown> | null,
-      );
-      await access.ensureMembership(
-        input.companyId,
-        "user",
-        joinRequest.requestingUserId,
-        membershipRole,
-        "active",
-      );
-      const grants = humanJoinGrantsFromDefaults(
+      ),
+      "active",
+    );
+    await access.setPrincipalGrants(
+      input.companyId,
+      "user",
+      joinRequest.requestingUserId,
+      userJoinGrantsFromDefaults(
         invite.defaultsPayload as Record<string, unknown> | null,
-        membershipRole,
-      );
-      await access.setPrincipalGrants(
-        input.companyId,
-        "user",
-        joinRequest.requestingUserId,
-        grants,
-        input.actor.userId,
-      );
-    } else {
-      if (
-        typeof joinRequest.adapterType !== "string" ||
-        joinRequest.adapterType.trim().length === 0
-      ) {
-        throw conflict(
-          "Agent join request is missing an explicit adapter type",
-        );
-      }
-      if (
-        !joinRequest.agentDefaultsPayload ||
-        typeof joinRequest.agentDefaultsPayload !== "object" ||
-        Array.isArray(joinRequest.agentDefaultsPayload)
-      ) {
-        throw conflict(
-          "Agent join request is missing explicit adapter configuration",
-        );
-      }
-      const companyAgents = await tx
-        .select({
-          id: agents.id,
-          name: agents.name,
-          status: agents.status,
-        })
-        .from(agents)
-        .where(eq(agents.companyId, input.companyId));
-      const agentName = deduplicateAgentName(
-        joinRequest.agentName ?? "New Agent",
-        companyAgents,
-      );
-
-      const runtime = createRuntimeAgentConfigurationService(txDb);
-      const runtimeResult = await runtime.createInTransaction({
-        transaction: tx,
-        companyId: input.companyId,
-        actor: {
-          kind: "board",
-          actorId: input.actor.actorId,
-          authorization: input.actor.authorization,
-        },
-        source: "board",
-        idempotencyKey: `join-request:${joinRequest.id}:runtime-agent`,
-        configuration: {
-          name: agentName,
-          title: null,
-          reportsTo: null,
-          capabilities: joinRequest.capabilities ?? null,
-          contextGrants: Object.fromEntries(
-            AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
-          ),
-          actionGrants: Object.fromEntries(
-            PAPERCLIP_ACTION_KEYS.map((key) => [key, false]),
-          ),
-          mentionReachGrants: Object.fromEntries(
-            AGENT_MENTION_REACH_GRANT_KEYS.map((key) => [key, false]),
-          ),
-        },
-      });
-      const adapterConfigurations =
-        createAgentAdapterConfigurationService(txDb);
-      const adapterResult = await adapterConfigurations.createRevision({
-        companyId: input.companyId,
-        agentId: runtimeResult.agentId,
-        configuration: {
-          adapterType: joinRequest.adapterType,
-          adapterConfig: joinRequest.agentDefaultsPayload,
-          runtimeConfig: {},
-          companySkillPins: [],
-        },
-        actor: {
-          type: "user",
-          userId: input.actor.actorId,
-        },
-      });
-      await access.ensureMembership(
-        input.companyId,
-        "agent",
-        runtimeResult.agentId,
-        "member",
-        "active",
-      );
-      await access.setPrincipalGrants(
-        input.companyId,
-        "agent",
-        runtimeResult.agentId,
-        agentJoinGrantsFromDefaults(
-          invite.defaultsPayload as Record<string, unknown> | null,
-        ),
-        input.actor.userId,
-      );
-      createdAgentId = runtimeResult.agentId;
-      createdAgentAdapterConfigRevisionId = adapterResult.revision.id;
-    }
+      ),
+      input.actor.userId,
+    );
 
     const now = new Date();
     const approved = await tx
@@ -217,8 +89,6 @@ export function createJoinRequestApprovalService(
         status: "approved",
         approvedByUserId: input.actor.userId,
         approvedAt: now,
-        createdAgentId,
-        createdAgentAdapterConfigRevisionId,
         updatedAt: now,
       })
       .where(
@@ -230,33 +100,27 @@ export function createJoinRequestApprovalService(
       )
       .returning()
       .then((rows) => rows[0] ?? null);
-    if (!approved) {
-      throw conflict("Join request was resolved concurrently");
-    }
+    if (!approved) throw conflict("Join request was resolved concurrently");
 
-    await logActivity(txDb, {
+    const activity = await persistActivityLog(txDb, {
       companyId: input.companyId,
       actorType: "user",
-      actorId: input.actor.userId ?? input.actor.actorId,
+      actorId: input.actor.userId,
       action: "join.approved",
       entityType: "join_request",
       entityId: joinRequest.id,
-      details: {
-        requestType: joinRequest.requestType,
-        createdAgentId,
-        createdAgentAdapterConfigRevisionId,
-      },
+      details: null,
     });
-    return approved;
+    return { approved, activity };
   }
 
   return {
-    approve(input: JoinRequestApprovalInput) {
-      return db.transaction((tx) => approveInTransaction(tx, input));
+    async approve(input: JoinRequestApprovalInput) {
+      const committed = await db.transaction((tx) =>
+        approveInTransaction(tx, input),
+      );
+      if (committed.activity) publishCommittedActivity(committed.activity);
+      return committed.approved;
     },
   };
 }
-
-export type JoinRequestApprovalService = ReturnType<
-  typeof createJoinRequestApprovalService
->;

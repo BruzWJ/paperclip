@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import { addValidationDetail } from "../validation-details.js";
 import {
   BUDGET_INCIDENT_RESOLUTION_ACTIONS,
@@ -10,7 +11,7 @@ import { moneyAmountSchema } from "../money.js";
 export const upsertBudgetPolicySchema = z
   .object({
     scopeType: z.enum(BUDGET_SCOPE_TYPES),
-    scopeId: z.string().uuid(),
+    scopeId: canonicalUuidSchema,
     windowKind: z.enum(BUDGET_WINDOW_KINDS).optional(),
     limitAmount: moneyAmountSchema,
     warnPercent: z.number().int().min(1).max(99).optional().default(80),

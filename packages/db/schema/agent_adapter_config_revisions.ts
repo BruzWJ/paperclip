@@ -15,10 +15,7 @@ import { sql } from "drizzle-orm";
 import { agents } from "./agents.js";
 import { authUsers } from "./auth.js";
 import { companies } from "./companies.js";
-import type {
-  AdapterImplementationIdentity,
-  AgentAdapterAcpConfiguration,
-} from "@paperclipai/shared";
+import type { AgentAdapterAcpConfiguration } from "@paperclipai/shared";
 
 export const agentAdapterConfigRevisions = pgTable(
   "agent_adapter_config_revisions",
@@ -31,18 +28,6 @@ export const agentAdapterConfigRevisions = pgTable(
       .notNull()
       .references((): AnyPgColumn => agents.id, { onDelete: "cascade" }),
     revisionNumber: integer("revision_number").notNull(),
-    adapterType: text("adapter_type").notNull(),
-    implementationIdentity: jsonb("implementation_identity")
-      .$type<AdapterImplementationIdentity>()
-      .notNull(),
-    adapterConfigSchemaVersion: text("adapter_config_schema_version").notNull(),
-    normalizedConfig: jsonb("normalized_config")
-      .$type<Record<string, unknown>>()
-      .notNull(),
-    runtimeConfig: jsonb("runtime_config")
-      .$type<Record<string, unknown>>()
-      .notNull()
-      .default({}),
     acpConfiguration: jsonb("acp_configuration")
       .$type<AgentAdapterAcpConfiguration>()
       .notNull(),
@@ -88,17 +73,13 @@ export const agentAdapterConfigRevisions = pgTable(
           'contractVersion',
           'launchProfile',
           'sessionConfigSelections',
-          'model',
-          'workspaceSelector',
-          'companySkillPins'
+          'model'
         ]::text[]
         and ${table.acpConfiguration} - array[
           'contractVersion',
           'launchProfile',
           'sessionConfigSelections',
-          'model',
-          'workspaceSelector',
-          'companySkillPins'
+          'model'
         ]::text[] = '{}'::jsonb
         and ${table.acpConfiguration} ->> 'contractVersion' = 'acpx-runtime/v1'
         and jsonb_typeof(${table.acpConfiguration} -> 'launchProfile') = 'object'
@@ -117,51 +98,19 @@ export const agentAdapterConfigRevisions = pgTable(
           or (
             jsonb_typeof(${table.acpConfiguration} -> 'model') = 'object'
             and (${table.acpConfiguration} -> 'model') ?& array[
-              'id', 'label', 'value', 'limits'
+              'value', 'label'
             ]::text[]
             and (${table.acpConfiguration} -> 'model') - array[
-              'id', 'label', 'value', 'limits'
+              'value', 'label'
             ]::text[] = '{}'::jsonb
-            and jsonb_typeof(${table.acpConfiguration} #> '{model,id}') = 'string'
             and jsonb_typeof(${table.acpConfiguration} #> '{model,label}') = 'string'
             and jsonb_typeof(${table.acpConfiguration} #> '{model,value}') = 'string'
-            and ${table.acpConfiguration} #>> '{model,id}' = btrim(${table.acpConfiguration} #>> '{model,id}')
-            and ${table.acpConfiguration} #>> '{model,id}' <> ''
             and ${table.acpConfiguration} #>> '{model,label}' = btrim(${table.acpConfiguration} #>> '{model,label}')
             and ${table.acpConfiguration} #>> '{model,label}' <> ''
             and ${table.acpConfiguration} #>> '{model,value}' = btrim(${table.acpConfiguration} #>> '{model,value}')
             and ${table.acpConfiguration} #>> '{model,value}' <> ''
-            and (
-              jsonb_typeof(${table.acpConfiguration} #> '{model,limits}') = 'null'
-              or (
-                jsonb_typeof(${table.acpConfiguration} #> '{model,limits}') = 'object'
-                and (${table.acpConfiguration} #> '{model,limits}') ?& array[
-                  'contextTokenLimit', 'outputTokenLimit'
-                ]::text[]
-                and (${table.acpConfiguration} #> '{model,limits}') - array[
-                  'contextTokenLimit', 'inputTokenLimit', 'outputTokenLimit'
-                ]::text[] = '{}'::jsonb
-                and jsonb_typeof(${table.acpConfiguration} #> '{model,limits,contextTokenLimit}') = 'number'
-                and jsonb_typeof(${table.acpConfiguration} #> '{model,limits,outputTokenLimit}') = 'number'
-                and ${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}' ~ '^[1-9][0-9]*$'
-                and ${table.acpConfiguration} #>> '{model,limits,outputTokenLimit}' ~ '^[1-9][0-9]*$'
-                and (${table.acpConfiguration} #>> '{model,limits,outputTokenLimit}')::numeric <= (${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}')::numeric
-                and (
-                  not (${table.acpConfiguration} #> '{model,limits}') ? 'inputTokenLimit'
-                  or (
-                    jsonb_typeof(${table.acpConfiguration} #> '{model,limits,inputTokenLimit}') = 'number'
-                    and ${table.acpConfiguration} #>> '{model,limits,inputTokenLimit}' ~ '^[1-9][0-9]*$'
-                    and (${table.acpConfiguration} #>> '{model,limits,inputTokenLimit}')::numeric <= (${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}')::numeric
-                  )
-                )
-              )
-            )
           )
         )
-        and jsonb_typeof(${table.acpConfiguration} -> 'workspaceSelector') = 'object'
-        and (${table.acpConfiguration} -> 'workspaceSelector') - 'kind' = '{}'::jsonb
-        and ${table.acpConfiguration} #>> '{workspaceSelector,kind}' = 'task_execution_workspace'
-        and jsonb_typeof(${table.acpConfiguration} -> 'companySkillPins') = 'array'
       `,
     ),
   ],

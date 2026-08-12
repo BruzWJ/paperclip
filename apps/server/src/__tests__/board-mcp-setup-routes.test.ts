@@ -39,4 +39,16 @@ describe("Board MCP setup route", () => {
       .expect(404)
       .expect(({ text }) => expect(text).toContain("Unknown MCP installer command"));
   });
+
+  it.each([
+    "/MCP/setup/codex",
+    "/mcp/Setup/codex",
+    "/mcp/%73etup/codex",
+    "/mcp/setup/Codex",
+    "/mcp/setup/%63odex",
+    "/mcp/setup/%20codex",
+    "/mcp/%6Cogin",
+  ])("rejects non-canonical command and target aliases at %s", async (path) => {
+    await request(createApp()).get(path).expect(404);
+  });
 });

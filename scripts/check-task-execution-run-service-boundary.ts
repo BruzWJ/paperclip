@@ -699,10 +699,23 @@ export function assertMissingCarryStartsFresh(
   const validationSource = validationStart >= 0 && validationEnd >= 0
     ? attemptExecutorSource.slice(validationStart, validationEnd)
     : "";
+  const newOperationStart = validationSource.indexOf(
+    '(operation === "new"',
+  );
+  const newOperationEnd = validationSource.indexOf(
+    '(operation === "resume"',
+    newOperationStart + 1,
+  );
+  const newOperationSource =
+    newOperationStart >= 0
+      ? validationSource.slice(
+          newOperationStart,
+          newOperationEnd >= 0 ? newOperationEnd : validationSource.length,
+        )
+      : "";
   if (
-    !/\(operation\s*===\s*["']new["']\s*&&\s*prompt\.storedCorrelation\s*===\s*null\)/.test(
-      validationSource,
-    ) || validationSource.includes("!prompt.carryContext")
+    !newOperationSource.includes("prompt.storedCorrelation === null") ||
+    newOperationSource.includes("prompt.carryContext")
   ) {
     throw new Error(
       `${ATTEMPT_EXECUTOR_PATH} must allow session/new without a stored correlation regardless of carry_context`,

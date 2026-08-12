@@ -142,7 +142,6 @@ describe("Task Session durable publication boundary", () => {
           cache: { read: 2, write: 3 },
         },
         maxOutputTokens: 1_000,
-        outputTokenMax: 900,
         accessToken: "must-not-survive",
         password: 1234,
       }),
@@ -154,7 +153,6 @@ describe("Task Session durable publication boundary", () => {
         cache: { read: 2, write: 3 },
       },
       maxOutputTokens: 1_000,
-      outputTokenMax: 900,
       accessToken: "***REDACTED***",
       password: "***REDACTED***",
     });

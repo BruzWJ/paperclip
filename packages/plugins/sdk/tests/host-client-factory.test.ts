@@ -13,6 +13,12 @@ import {
 } from "../src/protocol.js";
 
 describe("createHostClientHandlers invocation company scope", () => {
+  it("types authorization audit decisions as the exact protocol enum", () => {
+    expectTypeOf<
+      WorkerToHostMethods["authorization.audit.search"][0]["decision"]
+    >().toEqualTypeOf<"allow" | "deny" | undefined>();
+  });
+
   it("allows instance config reads without a company scope", async () => {
     const configGet = vi.fn(async () => ({ apiKey: "configured" }));
     const services = {
@@ -20,7 +26,7 @@ describe("createHostClientHandlers invocation company scope", () => {
     } as unknown as HostServices;
 
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: [],
       services,
     });
@@ -36,7 +42,7 @@ describe("createHostClientHandlers invocation company scope", () => {
     } as unknown as HostServices;
 
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: [],
       services,
     });
@@ -58,7 +64,7 @@ describe("createHostClientHandlers invocation company scope", () => {
     } as unknown as HostServices;
 
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["projects.read"],
       services,
     });
@@ -91,7 +97,7 @@ describe("createHostClientHandlers invocation company scope", () => {
     } as unknown as HostServices;
 
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["companies.read"],
       services,
     });
@@ -113,7 +119,7 @@ describe("createHostClientHandlers invocation company scope", () => {
     } as unknown as HostServices;
 
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["plugin.state.read"],
       services,
     });
@@ -173,7 +179,7 @@ describe("createHostClientHandlers invocation company scope", () => {
         },
       } as unknown as HostServices;
       const handlers = createHostClientHandlers({
-        pluginId: "paperclip.test",
+        pluginKey: "paperclip.test",
         capabilities: [],
         services,
       });
@@ -199,7 +205,7 @@ describe("createHostClientHandlers invocation company scope", () => {
       },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["authorization.audit.read"],
       services,
     });
@@ -223,7 +229,7 @@ describe("createHostClientHandlers invocation company scope", () => {
       tasks: { withdraw },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["tasks.withdraw"],
       services,
     });
@@ -255,8 +261,26 @@ describe("createHostClientHandlers invocation company scope", () => {
       invocationScope: { companyId: "company-a" },
     })).rejects.toThrow("Host-assigned RPC operation identity is required");
 
+    await expect(handlers["tasks.withdraw"]({
+      companyId: " company-a ",
+      taskId: "task-1",
+      message: "Aliased company identity",
+    }, {
+      invocationScope: { companyId: "company-a" },
+      rpcOperationId: "host-op-1",
+    })).rejects.toBeInstanceOf(InvocationScopeDeniedError);
+
+    await expect(handlers["tasks.withdraw"]({
+      companyId: "company-a",
+      taskId: "task-1",
+      message: "Aliased operation identity",
+    }, {
+      invocationScope: { companyId: "company-a" },
+      rpcOperationId: " host-op-1 ",
+    })).rejects.toThrow("Host-assigned RPC operation identity is required");
+
     const denied = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: [],
       services,
     });
@@ -333,7 +357,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
         withdraw: vi.fn(async () => ({ task: { id: "task-a" } })),
       };
       const handlers = createHostClientHandlers({
-        pluginId: "paperclip.test",
+        pluginKey: "paperclip.test",
         capabilities: [capability],
         services: {
           tasks: ordinaryTaskServices,
@@ -378,7 +402,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       runTasks: { listCompanyTasks },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["tasks.read"],
       services,
     });
@@ -430,14 +454,14 @@ describe("createHostClientHandlers plugin run-context scope", () => {
     } as unknown as HostServices;
 
     await expect(createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: [],
       services,
     })["run.context.resolve"](params, context)).rejects.toBeInstanceOf(
       CapabilityDeniedError,
     );
     await expect(createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["runtime.context.read"],
       services,
     })["run.context.resolve"](params, context)).resolves.toBe(resolved);
@@ -457,7 +481,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       runtimeRecords: { readTaskComments, readSession },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["runtime.records.read"],
       services,
     });
@@ -509,7 +533,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
     expect(readSession).toHaveBeenCalledOnce();
 
     await expect(createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: [],
       services,
     })["runtime.records.readSession"](sessionInput)).rejects.toBeInstanceOf(
@@ -554,7 +578,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       runTasks: { readTaskAgentRun },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["tasks.read"],
       services,
     });
@@ -599,7 +623,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       runTasks: { readTaskComments },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["tasks.read"],
       services,
     });
@@ -621,7 +645,7 @@ describe("createHostClientHandlers plugin run-context scope", () => {
       routines: { managedGet },
     } as unknown as HostServices;
     const handlers = createHostClientHandlers({
-      pluginId: "paperclip.test",
+      pluginKey: "paperclip.test",
       capabilities: ["tasks.read", "routines.managed"],
       services,
     });

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
-  resolvePaperclipConfigPathForInstance,
+  resolvePaperclipInstanceConfigPath,
   resolvePaperclipEnvPathForConfig,
 } from "@paperclipai/shared/home-paths";
 
@@ -24,9 +24,7 @@ type PartialConfig = {
 };
 
 export type ExternalDatabaseTargetSource =
-  | "DATABASE_URL"
-  | "paperclip-env"
-  | "config.database.connectionString";
+  "DATABASE_URL" | "paperclip-env" | "config.database.connectionString";
 
 export type ResolvedDatabaseTarget = {
   connectionString: string;
@@ -65,10 +63,19 @@ function findConfigFileFromAncestors(startDir: string): string | null {
 }
 
 function resolvePaperclipConfigPath(): string {
-  if (process.env.PAPERCLIP_CONFIG?.trim()) {
-    return path.resolve(process.env.PAPERCLIP_CONFIG.trim());
+  if (process.env.PAPERCLIP_CONFIG !== undefined) {
+    if (
+      process.env.PAPERCLIP_CONFIG.length === 0 ||
+      process.env.PAPERCLIP_CONFIG.trim() !== process.env.PAPERCLIP_CONFIG
+    ) {
+      throw new Error("PAPERCLIP_CONFIG must be exact and non-empty");
+    }
+    return path.resolve(process.env.PAPERCLIP_CONFIG);
   }
-  return findConfigFileFromAncestors(process.cwd()) ?? resolvePaperclipConfigPathForInstance();
+  return (
+    findConfigFileFromAncestors(process.cwd()) ??
+    resolvePaperclipInstanceConfigPath()
+  );
 }
 
 function resolvePaperclipEnvPath(configPath: string): string {
@@ -82,7 +89,9 @@ function parseEnvFile(contents: string): Record<string, string> {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
 
-    const match = rawLine.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+    const match = rawLine.match(
+      /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/,
+    );
     if (!match) continue;
 
     const [, key, rawValue] = match;
@@ -93,7 +102,7 @@ function parseEnvFile(contents: string): Record<string, string> {
     }
 
     if (
-      (value.startsWith("\"") && value.endsWith("\"")) ||
+      (value.startsWith('"') && value.endsWith('"')) ||
       (value.startsWith("'") && value.endsWith("'"))
     ) {
       entries[key] = value.slice(1, -1);
@@ -133,7 +142,9 @@ function readConfig(configPath: string): PartialConfig | null {
 
   if (parsed.database === undefined) return {};
   if (!isRecord(parsed.database)) {
-    throw new Error(`Invalid config at ${configPath}: database must be a JSON object`);
+    throw new Error(
+      `Invalid config at ${configPath}: database must be a JSON object`,
+    );
   }
 
   for (const field of RETIRED_DATABASE_FIELDS) {
@@ -146,7 +157,9 @@ function readConfig(configPath: string): PartialConfig | null {
 
   const connectionString = parsed.database.connectionString;
   if (connectionString !== undefined && typeof connectionString !== "string") {
-    throw new Error(`Invalid config at ${configPath}: database.connectionString must be a string`);
+    throw new Error(
+      `Invalid config at ${configPath}: database.connectionString must be a string`,
+    );
   }
 
   return {
@@ -156,26 +169,32 @@ function readConfig(configPath: string): PartialConfig | null {
 
 /**
  * Validates the only database transport Paperclip supports. Callers receive
- * the original URL (trimmed) so credentials are never rewritten or invented.
+ * the original URL bytes so credentials are never rewritten or invented.
  */
-export function validateExternalPostgresConnectionString(value: string, source: string): string {
-  const connectionString = value.trim();
-  if (!connectionString) {
-    throw new Error(`${source} must be a non-empty PostgreSQL connection URL`);
+export function validateExternalPostgresConnectionString(
+  value: string,
+  source: string,
+): string {
+  if (value.length === 0 || value.trim() !== value) {
+    throw new Error(
+      `${source} must be an exact non-empty PostgreSQL connection URL`,
+    );
   }
 
   let parsed: URL;
   try {
-    parsed = new URL(connectionString);
+    parsed = new URL(value);
   } catch {
     throw new Error(`${source} must be a valid PostgreSQL connection URL`);
   }
 
   if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
-    throw new Error(`${source} must use the postgres:// or postgresql:// protocol`);
+    throw new Error(
+      `${source} must use the postgres:// or postgresql:// protocol`,
+    );
   }
 
-  return connectionString;
+  return value;
 }
 
 /**
@@ -187,10 +206,8 @@ export function resolveOptionalExternalPostgresConnectionString(
   value: string | null | undefined,
   source: string,
 ): string | undefined {
-  const connectionString = value?.trim();
-  return connectionString
-    ? validateExternalPostgresConnectionString(connectionString, source)
-    : undefined;
+  if (value === null || value === undefined) return undefined;
+  return validateExternalPostgresConnectionString(value, source);
 }
 
 /**
@@ -202,7 +219,10 @@ export function parseExternalPostgresDatabaseTarget(
   value: string,
   source = "Database target",
 ): ParsedExternalPostgresDatabaseTarget {
-  const connectionString = validateExternalPostgresConnectionString(value, source);
+  const connectionString = validateExternalPostgresConnectionString(
+    value,
+    source,
+  );
   const parsed = new URL(connectionString);
   const pathSegments = parsed.pathname
     .split("/")
@@ -230,9 +250,14 @@ export function parseExternalPostgresDatabaseTarget(
  * beside validation so operator-facing callers cannot parse a second URL
  * dialect or accidentally log credentials.
  */
-export function redactExternalPostgresConnectionString(connectionString: string): string {
+export function redactExternalPostgresConnectionString(
+  connectionString: string,
+): string {
   const parsed = new URL(
-    validateExternalPostgresConnectionString(connectionString, "Database target"),
+    validateExternalPostgresConnectionString(
+      connectionString,
+      "Database target",
+    ),
   );
   if (parsed.username) parsed.username = "***";
   if (parsed.password) parsed.password = "***";
@@ -247,9 +272,18 @@ export function redactExternalPostgresConnectionString(connectionString: string)
 export function resolveDatabaseTarget(
   options: ResolveDatabaseTargetOptions = {},
 ): ResolvedDatabaseTarget {
-  const configPath = options.configPath?.trim()
-    ? path.resolve(options.configPath)
-    : resolvePaperclipConfigPath();
+  const configPath =
+    options.configPath === undefined
+      ? resolvePaperclipConfigPath()
+      : (() => {
+          if (
+            options.configPath.length === 0 ||
+            options.configPath.trim() !== options.configPath
+          ) {
+            throw new Error("configPath must be exact and non-empty");
+          }
+          return path.resolve(options.configPath);
+        })();
   const envPath = resolvePaperclipEnvPath(configPath);
   const config = readConfig(configPath);
   const envEntries = readEnvEntries(envPath);

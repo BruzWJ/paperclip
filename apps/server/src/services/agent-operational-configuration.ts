@@ -8,10 +8,7 @@ import {
   type BudgetIncidentResolutionInput,
 } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
-import {
-  budgetService,
-  type BudgetServiceHooks,
-} from "./budgets.js";
+import { budgetService, type BudgetServiceHooks } from "./budgets.js";
 
 export interface AgentOperationalConfigurationResult {
   agent: typeof agents.$inferSelect;
@@ -35,18 +32,14 @@ export function createAgentOperationalConfigurationService(
       configuration: AgentOperationalConfigurationUpdateInput | unknown;
       actorUserId: string | null;
     }): Promise<AgentOperationalConfigurationResult> {
-      const parsed =
-        agentOperationalConfigurationUpdateSchema.safeParse(
-          input.configuration,
-        );
+      const parsed = agentOperationalConfigurationUpdateSchema.safeParse(
+        input.configuration,
+      );
       if (!parsed.success) {
-        throw unprocessable(
-          "Invalid agent operational configuration",
-          {
-            code: "invalid_agent_operational_configuration",
-            diagnostics: validationDetails(parsed.error),
-          },
-        );
+        throw unprocessable("Invalid agent operational configuration", {
+          code: "invalid_agent_operational_configuration",
+          diagnostics: validationDetails(parsed.error),
+        });
       }
 
       return db.transaction(async (tx) => {
@@ -145,7 +138,3 @@ export function createAgentOperationalConfigurationService(
     },
   };
 }
-
-export type AgentOperationalConfigurationService = ReturnType<
-  typeof createAgentOperationalConfigurationService
->;

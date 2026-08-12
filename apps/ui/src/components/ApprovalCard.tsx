@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { CheckCircle2, XCircle, Clock } from "lucide-react";
-import { Link } from "@/lib/router";
+import { CheckCircle2, XCircle, Clock, ShieldCheck } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Identity } from "./Identity";
 import {
   approvalSubject,
   typeIcon,
-  defaultTypeIcon,
   ApprovalPayloadRenderer,
   typeLabel,
 } from "./ApprovalPayload";
@@ -40,7 +40,7 @@ export function ApprovalCard({
   onApprove,
   onReject,
   onOpen,
-  detailLink,
+  linkToDetails,
   isPending = false,
   pendingAction = null,
 }: {
@@ -49,20 +49,21 @@ export function ApprovalCard({
   onApprove?: () => void;
   onReject?: () => void;
   onOpen?: () => void;
-  detailLink?: string;
+  linkToDetails?: boolean;
   isPending?: boolean;
   pendingAction?: "approve" | "reject" | null;
 }) {
+  const companyId = useCompanyRouteId();
   const [rejectConfirmationOpen, setRejectConfirmationOpen] = useState(false);
   const payload = approval.payload as Record<string, unknown> | null;
-  const Icon = typeIcon[approval.type] ?? defaultTypeIcon;
+  const Icon = typeIcon[approval.type] ?? ShieldCheck;
   const kindLabel = typeLabel[approval.type] ?? approval.type;
   const subject = approvalSubject(payload);
   const showResolutionButtons =
     Boolean(onApprove && onReject) &&
     approval.type !== "budget_override_required" &&
     (approval.status === "pending" || approval.status === "revision_requested");
-  const hasFooter = showResolutionButtons || Boolean(detailLink || onOpen);
+  const hasFooter = showResolutionButtons || Boolean(linkToDetails || onOpen);
 
   return (
     <Card className="block border-border/70 p-4" aria-busy={isPending}>
@@ -154,10 +155,11 @@ export function ApprovalCard({
               </>
             )}
           </div>
-          {(detailLink || onOpen) ? (
-            detailLink ? (
+          {(linkToDetails || onOpen) ? (
+            linkToDetails ? (
               <Link
-                to={detailLink}
+                to="/$companyId/approvals/$approvalId"
+                params={{ companyId, approvalId: approval.id }}
                 className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-auto px-2 text-xs text-muted-foreground")}
               >
                 View details

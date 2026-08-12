@@ -3,19 +3,19 @@
 // OTEL_EXPORTER_OTLP_ENDPOINT is set). startServer() awaits
 // instrumentationReady before opening DB connections or constructing the
 // HTTP server, so trace coverage does not depend on incidental timing.
-import { instrumentationReady, shutdownInstrumentation } from "./instrumentation.js";
+import {
+  instrumentationReady,
+  shutdownInstrumentation,
+} from "./instrumentation.js";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Request as ExpressRequest, RequestHandler } from "express";
-import {
-  createDb,
-} from "@paperclipai/db";
-import detectPort from "detect-port";
+import { createDb } from "@paperclipai/db";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
-import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
+import { setupLiveEventsSocketServer } from "./realtime/live-events-socket.js";
 import {
   composeAgentRunManagedActionPort,
   createOrdinaryTaskRuntime,
@@ -43,6 +43,7 @@ import { maybePersistWorktreeServerPort } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
 import { loadRuntimeEnvironmentFiles } from "./runtime-environment.js";
 import { deriveInstancePrivateSecret } from "./secrets/local-encrypted-provider.js";
+import type { SecretsRuntimeConfig } from "./secrets/types.js";
 import {
   resolvePaperclipInstanceId,
   resolvePaperclipInstanceRoot,
@@ -86,8 +87,7 @@ type BetterAuthSessionResult = {
 
 type CausalRuntimeStartupAssembly = Pick<
   PostgresRuntimeTaskActionServiceOptions,
-  | "dispatchPersistedRef"
-  | "taskExecutionCancellation"
+  "dispatchPersistedRef" | "taskExecutionCancellation"
 >;
 
 /**
@@ -104,9 +104,11 @@ function createStartupAssembly<T>() {
 }
 
 async function closeDatabaseClient(database: unknown): Promise<void> {
-  const client = (database as {
-    $client?: { end?: (options?: { timeout?: number }) => Promise<void> };
-  }).$client;
+  const client = (
+    database as {
+      $client?: { end?: (options?: { timeout?: number }) => Promise<void> };
+    }
+  ).$client;
   if (client?.end) {
     await client.end({ timeout: 5 });
   }
@@ -131,16 +133,12 @@ export async function startServer(): Promise<StartedServer> {
     "plugins",
   );
   initTelemetry({ enabled: config.telemetryEnabled });
-  if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
-    process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;
-  }
-  if (process.env.PAPERCLIP_SECRETS_STRICT_MODE === undefined) {
-    process.env.PAPERCLIP_SECRETS_STRICT_MODE = config.secretsStrictMode ? "true" : "false";
-  }
-  if (process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE === undefined) {
-    process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = config.secretsMasterKeyFilePath;
-  }
-  
+  const secretsRuntime = {
+    defaultProvider: config.secretsProvider,
+    strictMode: config.secretsStrictMode,
+    masterKeyFilePath: config.secretsMasterKeyFilePath,
+  } satisfies SecretsRuntimeConfig;
+
   const activeDatabaseConnectionString = config.databaseUrl;
   const db = createDb(activeDatabaseConnectionString);
   const pluginMigrationDb = config.databaseMigrationUrl
@@ -154,12 +152,14 @@ export async function startServer(): Promise<StartedServer> {
   );
 
   if (config.deploymentExposure === "public" && !config.authPublicBaseUrl) {
-    throw new Error("public exposure requires PAPERCLIP_PUBLIC_URL or persisted auth.publicBaseUrl");
+    throw new Error(
+      "public exposure requires PAPERCLIP_PUBLIC_URL or persisted auth.publicBaseUrl",
+    );
   }
 
   const requestedListenPort = config.port;
-  const listenPort = await detectPort(requestedListenPort);
-  
+  const listenPort = requestedListenPort;
+
   const {
     createBetterAuthHandler,
     createBetterAuthInstance,
@@ -170,19 +170,26 @@ export async function startServer(): Promise<StartedServer> {
   const betterAuthHandler: RequestHandler = createBetterAuthHandler(auth);
   const resolveSession = (
     req: ExpressRequest,
-  ): Promise<BetterAuthSessionResult | null> => resolveBetterAuthSession(auth, req);
+  ): Promise<BetterAuthSessionResult | null> =>
+    resolveBetterAuthSession(auth, req);
   const resolveSessionFromHeaders = (
     headers: Headers,
-  ): Promise<BetterAuthSessionResult | null> => resolveBetterAuthSessionFromHeaders(auth, headers);
+  ): Promise<BetterAuthSessionResult | null> =>
+    resolveBetterAuthSessionFromHeaders(auth, headers);
   const authReady = true;
   const taskSessionStore = createTaskSessionStore(db as any, {
     cursorSecret: deriveInstancePrivateSecret(
       "task-session-read-cursor",
+      secretsRuntime,
     ).toString("base64url"),
   });
 
   maybePersistWorktreeServerPort({ serverPort: listenPort });
-  const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
+  const uiMode = config.uiDevMiddleware
+    ? "vite-dev"
+    : config.serveUi
+      ? "static"
+      : "none";
   const storageService = createStorageServiceFromConfig(config);
   const pluginWorkerManager = createPluginWorkerManager();
   const pluginEventBus = createPluginEventBus();
@@ -202,8 +209,7 @@ export async function startServer(): Promise<StartedServer> {
   process.env.PAPERCLIP_LISTEN_PORT = String(listenPort);
   process.env.PAPERCLIP_RUNTIME_API_URL = runtimeApiUrl;
 
-  const workerId =
-    `paperclip-server:${process.pid}:${Date.now()}`;
+  const workerId = `paperclip-server:${process.pid}:${Date.now()}`;
   const causalRuntimeStartup =
     createStartupAssembly<CausalRuntimeStartupAssembly>();
   const taskExecutionSteeringResults =
@@ -217,13 +223,16 @@ export async function startServer(): Promise<StartedServer> {
       taskExecutionCancellation: {
         async requestScopeCancellationsInTransaction(transaction, input) {
           const runtime = await causalRuntimeStartup.ready;
-          return runtime.taskExecutionCancellation
-            .requestScopeCancellationsInTransaction(transaction, input);
+          return runtime.taskExecutionCancellation.requestScopeCancellationsInTransaction(
+            transaction,
+            input,
+          );
         },
         async reconcileRequestedCancellations(requested) {
           const runtime = await causalRuntimeStartup.ready;
-          return runtime.taskExecutionCancellation
-            .reconcileRequestedCancellations(requested);
+          return runtime.taskExecutionCancellation.reconcileRequestedCancellations(
+            requested,
+          );
         },
       },
     }),
@@ -235,35 +244,24 @@ export async function startServer(): Promise<StartedServer> {
         transaction,
         { capability, targetAgentId, displayedDiff },
       ) {
-        await consumeAcceptedChangeConsentInTransaction(
-          transaction,
-          {
-            companyId: capability.companyId,
-            actorAgentId: capability.targetAgentId,
-            actorRunId: capability.runId,
-            targetKeys: [
-              agentProfileChangeTargetKey(targetAgentId),
-            ],
-            displayedDiff,
-          },
-        );
+        await consumeAcceptedChangeConsentInTransaction(transaction, {
+          companyId: capability.companyId,
+          actorAgentId: capability.targetAgentId,
+          actorRunId: capability.runId,
+          targetKeys: [agentProfileChangeTargetKey(targetAgentId)],
+          displayedDiff,
+        });
       },
     }),
     {
-      async requestChangeConsent({
-        capability,
-        targetAgentId,
-        displayedDiff,
-      }) {
+      async requestChangeConsent({ capability, targetAgentId, displayedDiff }) {
         await changeConsents.request({
           companyId: capability.companyId,
           requestedByAgentId: capability.targetAgentId,
           sourceRunId: capability.runId,
           targetKey: agentProfileChangeTargetKey(targetAgentId),
           displayedDiff,
-          expiresAt: new Date(
-            Date.now() + CHANGE_CONSENT_DEFAULT_TTL_MS,
-          ),
+          expiresAt: new Date(Date.now() + CHANGE_CONSENT_DEFAULT_TTL_MS),
         });
       },
     },
@@ -272,9 +270,8 @@ export async function startServer(): Promise<StartedServer> {
     taskActions,
     agentActions,
   );
-  // One app-owned managed-tool surface is assembled before ACPX and completed
-  // with the runtime-owned readers/producers below. Both ACPX and Board MCP
-  // retain this exact instance; neither constructs a Board-only executor.
+  // One canonical managed-tool router serves two explicit authorities:
+  // request-scoped ACPX runs and authenticated Board MCP users.
   let ordinaryTasksForManagedTools: ReturnType<
     typeof createOrdinaryTaskRuntime
   > | null = null;
@@ -296,9 +293,8 @@ export async function startServer(): Promise<StartedServer> {
     },
     pluginDomainEvents,
   });
-  const promptCapabilityPluginTools = createRuntimePluginToolPort(
-    pluginWorkerManager,
-  );
+  const promptCapabilityPluginTools =
+    createRuntimePluginToolPort(pluginWorkerManager);
   // Warm the ACPX catalog without making server availability depend on every
   // locally configured provider CLI completing a probe. All selectable paths
   // (catalog reads, configuration, approval, and execution readiness) refresh
@@ -311,38 +307,36 @@ export async function startServer(): Promise<StartedServer> {
         "initial ACPX adapter catalog refresh failed; it will retry on demand",
       );
     });
-  const composition =
-    createPostgresTaskSessionCompositionRuntime(db as any, {
+  const composition = createPostgresTaskSessionCompositionRuntime(db as any, {
+    workerId,
+  });
+  const taskExecutionLocalOrchestrator = localExecutionOrchestrator(db as any);
+  const refDispatcher: { dispatch: ((refId: string) => Promise<void>) | null } =
+    { dispatch: null };
+  const taskExecution = createPostgresTaskExecutionProductionRuntime(
+    db as any,
+    {
       workerId,
-    });
-  const taskExecutionLocalOrchestrator =
-    localExecutionOrchestrator(db as any);
-  const refDispatcher: { dispatch: ((refId: string) => Promise<void>) | null } = { dispatch: null };
-  const taskExecution =
-    createPostgresTaskExecutionProductionRuntime(
-      db as any,
-      {
-        workerId,
-        targetSessionProtectionSecret:
-          deriveInstancePrivateSecret(
-            "task-execution-target-session",
-          ),
-        taskSessionStore,
-        localExecutionOrchestrator:
-          taskExecutionLocalOrchestrator,
-        capabilityEndpoint:
-          `${runtimeApiUrl.replace(/\/+$/, "")}/api/run-tools`,
-        capabilityCursorSecret: deriveInstancePrivateSecret(
-          "prompt-capability-retrieval-cursor",
-        ).toString("base64url"),
-        managedTools: paperclipManagedTools,
-        pluginTools: promptCapabilityPluginTools,
-        pluginDomainEvents,
-        beforePrompt: pluginBeforePrompt,
-        steeringResults: taskExecutionSteeringResults,
-        dispatchRef: (refId) => refDispatcher.dispatch?.(refId) ?? Promise.resolve(),
-      },
-    );
+      targetSessionProtectionSecret: deriveInstancePrivateSecret(
+        "task-execution-target-session",
+        secretsRuntime,
+      ),
+      taskSessionStore,
+      localExecutionOrchestrator: taskExecutionLocalOrchestrator,
+      capabilityEndpoint: `${runtimeApiUrl.replace(/\/+$/, "")}/api/run-tools`,
+      capabilityCursorSecret: deriveInstancePrivateSecret(
+        "prompt-capability-retrieval-cursor",
+        secretsRuntime,
+      ).toString("base64url"),
+      managedTools: paperclipManagedTools,
+      pluginTools: promptCapabilityPluginTools,
+      pluginDomainEvents,
+      beforePrompt: pluginBeforePrompt,
+      steeringResults: taskExecutionSteeringResults,
+      dispatchRef: (refId) =>
+        refDispatcher.dispatch?.(refId) ?? Promise.resolve(),
+    },
+  );
   const dispatchPersistedRef = async (refId: string) => {
     await composition.prepareAndNotifyPersistedRef(
       refId,
@@ -350,12 +344,9 @@ export async function startServer(): Promise<StartedServer> {
     );
   };
   refDispatcher.dispatch = dispatchPersistedRef;
-  const systemEscalations = createPostgresSystemEscalationService(
-    db as any,
-    {
-      dispatchRef: dispatchPersistedRef,
-    },
-  );
+  const systemEscalations = createPostgresSystemEscalationService(db as any, {
+    dispatchRef: dispatchPersistedRef,
+  });
   causalRuntimeStartup.complete({
     dispatchPersistedRef,
     taskExecutionCancellation: taskExecution.cancellation,
@@ -365,12 +356,13 @@ export async function startServer(): Promise<StartedServer> {
     taskExecutionCancellation: taskExecution.cancellation,
     dispatchRef: dispatchPersistedRef,
   });
-  retrievalForManagedTools = taskExecution.promptCapabilities.retrieval;
   ordinaryTasksForManagedTools = ordinaryTasks;
+  retrievalForManagedTools = taskExecution.promptCapabilities.retrieval;
   const app = await createApp(db as any, {
     uiMode,
     serverPort: listenPort,
     storageService,
+    secretsRuntime,
     deploymentExposure: config.deploymentExposure,
     canonicalPublicUrl: config.authPublicBaseUrl,
     allowedHostnames: config.allowedHostnames,
@@ -386,8 +378,7 @@ export async function startServer(): Promise<StartedServer> {
     pluginWorkerManager,
     pluginEventBus,
     pluginDomainEvents,
-    promptCapabilityGateway:
-      taskExecution.promptCapabilities.gateway,
+    promptCapabilityGateway: taskExecution.promptCapabilities.gateway,
     paperclipManagedTools,
     pluginRunTaskContextReader:
       taskExecution.promptCapabilities.pluginRunTaskContextReader,
@@ -397,39 +388,42 @@ export async function startServer(): Promise<StartedServer> {
     ordinaryTaskRuntime: ordinaryTasks,
     taskExecutionRunService: taskExecution.runService,
     taskExecutionCancellation: taskExecution.cancellation,
-    adapterReadinessLocalExecutionOrchestrator:
-      taskExecutionLocalOrchestrator,
+    adapterReadinessLocalExecutionOrchestrator: taskExecutionLocalOrchestrator,
   });
   const requestAuthorityBoundary = (
-    app.locals as { paperclipRequestAuthorityBoundary?: RequestAuthorityBoundary }
+    app.locals as {
+      paperclipRequestAuthorityBoundary?: RequestAuthorityBoundary;
+    }
   ).paperclipRequestAuthorityBoundary;
   if (!requestAuthorityBoundary) {
     throw new Error("Request authority boundary was not assembled");
   }
-  const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
+  const server = createServer(
+    app as unknown as Parameters<typeof createServer>[0],
+  );
 
   // Increase keep-alive timeouts to safely outlive default idle timeouts
   // of common reverse proxies and load balancers (like AWS ALB, Nginx, or Traefik).
   // This prevents intermittent 502/ECONNRESET errors caused by Node's 5s default.
   server.keepAliveTimeout = 185000;
   server.headersTimeout = 186000;
-  
-  if (listenPort !== requestedListenPort) {
-    logger.warn(`Requested port is busy; using next free port (requestedPort=${requestedListenPort}, selectedPort=${listenPort})`);
-  }
-  
-  setupLiveEventsWebSocketServer(server, db as any, {
+
+  const liveEventsSocket = setupLiveEventsSocketServer(server, db, {
     resolveSessionFromHeaders,
     requestAuthorityBoundary,
   });
 
   let taskExecutionSchedulerStopped = false;
-  let taskExecutionSchedulerInterval: ReturnType<typeof setInterval> | null = null;
+  let taskExecutionSchedulerInterval: ReturnType<typeof setInterval> | null =
+    null;
   const taskExecutionSchedulerInFlight = new Set<Promise<void>>();
   const trackTaskExecutionSchedulerWork = (work: Promise<unknown>) => {
     let tracked: Promise<void>;
     tracked = Promise.resolve(work)
-      .then(() => undefined, () => undefined)
+      .then(
+        () => undefined,
+        () => undefined,
+      )
       .finally(() => {
         taskExecutionSchedulerInFlight.delete(tracked);
       });
@@ -441,13 +435,15 @@ export async function startServer(): Promise<StartedServer> {
       await Promise.allSettled([...taskExecutionSchedulerInFlight]);
     }
   };
-  const routines = routineService(db as any, { ordinaryTasks });
+  const routines = routineService(db as any, {
+    ordinaryTasks,
+    secretsRuntime,
+  });
 
   const reconcilePersistedTaskExecutions = async () => {
     // Durable exact stops are reconciled before any path may recover or
     // dispatch persisted execution work.
-    const cancellations =
-      await taskExecution.cancellation.reconcilePending();
+    const cancellations = await taskExecution.cancellation.reconcilePending();
     const escalations = await systemEscalations.reconcile();
     const prepared = await composition.reconcilePersistedRefs(
       taskExecution.dispatcher,
@@ -457,8 +453,7 @@ export async function startServer(): Promise<StartedServer> {
     // Expired-attempt recovery above establishes the attempt/lease settlement
     // fence. Feed only then-recoverable durable steering sources back through
     // their one canonical continuation path.
-    const steering =
-      await taskExecution.runService.reconcilePendingSteering();
+    const steering = await taskExecution.runService.reconcilePendingSteering();
     if (
       cancellations.length > 0 ||
       escalations.terminalized > 0 ||
@@ -480,13 +475,11 @@ export async function startServer(): Promise<StartedServer> {
     }
   };
 
-  const startupTaskExecutionRecovery =
-    reconcilePersistedTaskExecutions().catch((err) => {
-      logger.error(
-        { err },
-        "startup persisted task-execution recovery failed",
-      );
-    });
+  const startupTaskExecutionRecovery = reconcilePersistedTaskExecutions().catch(
+    (err) => {
+      logger.error({ err }, "startup persisted task-execution recovery failed");
+    },
+  );
   trackTaskExecutionSchedulerWork(startupTaskExecutionRecovery);
   await startupTaskExecutionRecovery;
 
@@ -502,10 +495,14 @@ export async function startServer(): Promise<StartedServer> {
         }),
       );
       trackTaskExecutionSchedulerWork(
-        routines.tickScheduledTriggers(new Date())
+        routines
+          .tickScheduledTriggers(new Date())
           .then((result) => {
             if (result.triggered > 0) {
-              logger.info({ ...result }, "routine scheduler created ordinary tasks");
+              logger.info(
+                { ...result },
+                "routine scheduler created ordinary tasks",
+              );
             }
           })
           .catch((err) => {
@@ -524,8 +521,11 @@ export async function startServer(): Promise<StartedServer> {
     server.listen(listenPort, config.host, () => {
       server.off("error", onError);
       logger.info(`Server listening on ${config.host}:${listenPort}`);
-      if (process.env.PAPERCLIP_OPEN_ON_LISTEN === "true") {
-        const openHost = config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
+      if (config.openOnListen) {
+        const openHost =
+          config.host === "0.0.0.0" || config.host === "::"
+            ? "127.0.0.1"
+            : config.host;
         const url = `http://${openHost}:${listenPort}`;
         void import("open")
           .then((mod) => mod.default(url))
@@ -536,17 +536,18 @@ export async function startServer(): Promise<StartedServer> {
             logger.warn({ err, url }, "Failed to open browser on startup");
           });
       }
-        printStartupBanner({
-          bind: config.bind,
-          host: config.host,
-          deploymentExposure: config.deploymentExposure,
+      printStartupBanner({
+        bind: config.bind,
+        host: config.host,
+        deploymentExposure: config.deploymentExposure,
         authReady,
         requestedPort: requestedListenPort,
         listenPort,
         uiMode,
         db: startupDbInfo,
         taskExecutionSchedulerEnabled: config.taskExecutionSchedulerEnabled,
-        taskExecutionSchedulerIntervalMs: config.taskExecutionSchedulerIntervalMs,
+        taskExecutionSchedulerIntervalMs:
+          config.taskExecutionSchedulerIntervalMs,
       });
 
       resolveListen();
@@ -563,6 +564,7 @@ export async function startServer(): Promise<StartedServer> {
         clearInterval(taskExecutionSchedulerInterval);
         taskExecutionSchedulerInterval = null;
       }
+
       await waitForTaskExecutionSchedulerIdle();
 
       const telemetryClient = getTelemetryClient();
@@ -576,15 +578,9 @@ export async function startServer(): Promise<StartedServer> {
           taskExecution.dispatcher.shutdown(),
           taskExecution.cancellation.drainRunningRunsForShutdown(signal),
         ]);
-        logger.info(
-          { signal },
-          "graceful task-execution drain complete",
-        );
+        logger.info({ signal }, "graceful task-execution drain complete");
       } catch (err) {
-        logger.error(
-          { err, signal },
-          "graceful task-execution drain failed",
-        );
+        logger.error({ err, signal }, "graceful task-execution drain failed");
       }
 
       const appShutdown = (
@@ -593,12 +589,28 @@ export async function startServer(): Promise<StartedServer> {
       try {
         await appShutdown?.();
       } catch (err) {
-        logger.error({ err }, "Failed to shut down application services cleanly");
+        logger.error(
+          { err },
+          "Failed to shut down application services cleanly",
+        );
+      }
+
+      // Keep the live subscriber open until every producer has drained so the
+      // final committed activity invalidations reach connected operators.
+      try {
+        await liveEventsSocket.close();
+      } catch (err) {
+        logger.error(
+          { err },
+          "Failed to close live Socket.IO transport cleanly",
+        );
       }
 
       try {
         await Promise.all(
-          Array.from(new Set([db, pluginMigrationDb]), (database) => closeDatabaseClient(database)),
+          Array.from(new Set([db, pluginMigrationDb]), (database) =>
+            closeDatabaseClient(database),
+          ),
         );
       } catch (err) {
         logger.error({ err }, "Failed to close PostgreSQL client cleanly");

@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 import { addValidationDetail } from "../validation-details.js";
 
 export const inboxAgentPolicyModeSchema = z.enum(["open", "allowlist", "disabled"]);
 
 export const updateInboxAgentPolicySchema = z.object({
   mode: inboxAgentPolicyModeSchema,
-  allowedAgentIds: z.array(z.string().uuid()).max(100).default([]),
+  allowedAgentIds: z.array(canonicalUuidSchema).max(100).default([]),
 }).strict().superRefine((value, ctx) => {
   if (value.mode !== "allowlist" && value.allowedAgentIds.length > 0) {
     addValidationDetail(ctx, {

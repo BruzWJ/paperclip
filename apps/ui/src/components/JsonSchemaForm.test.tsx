@@ -101,7 +101,7 @@ describe("JsonSchemaForm secret-ref rendering", () => {
     });
   });
 
-  it("renders the picker and hides the raw input when the value is a UUID secret ref", async () => {
+  it("treats a UUID-shaped string as a raw value, never as a secret binding", async () => {
     const root = createRoot(container);
 
     await act(async () => {
@@ -125,8 +125,7 @@ describe("JsonSchemaForm secret-ref rendering", () => {
     expect(
       container.querySelector('[data-testid="secret-binding-picker"]'),
     ).not.toBeNull();
-    // No raw input or textarea is visible while a secret is bound.
-    expect(container.querySelector('input[type="password"]')).toBeNull();
+    expect(container.querySelector('input[type="password"]')).not.toBeNull();
     expect(container.querySelector("textarea")).toBeNull();
 
     await act(async () => {

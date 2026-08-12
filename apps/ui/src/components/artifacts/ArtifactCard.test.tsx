@@ -6,21 +6,27 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/router", () => ({
-  Link: ({
-    to,
-    children,
-    disableTaskQuicklook,
-    ...props
-  }: {
+vi.mock("@/hooks/useCompanyRouteId", () => ({
+  useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ to, params, hash, children, ...props }: {
     to: string;
-    children: ReactNode;
-    disableTaskQuicklook?: boolean;
-  }) => (
-    <a href={to} data-disable-task-quicklook={disableTaskQuicklook ? "true" : undefined} {...props}>
+    params?: Record<string, string>;
+    hash?: string;
+    children?: ReactNode;
+  }) => {
+    const pathname = Object.entries(params ?? {}).reduce(
+      (path, [key, value]) => path.replace(`$${key}`, value),
+      to,
+    );
+    return (
+    <a href={`${pathname}${hash ? `#${hash}` : ""}`} {...props}>
       {children}
     </a>
-  ),
+    );
+  },
 }));
 
 import { ArtifactCard } from "./ArtifactCard";
@@ -37,11 +43,11 @@ function makeArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifact
     contentPath: "/files/art-1.png",
     openPath: "/files/art-1.png",
     downloadPath: "/files/art-1.png?download=1",
-    task: { id: "task-1", identifier: "PAP-10306", title: "Landing visuals" },
+    task: { id: "task-1", taskNumber: 10306, identifier: "PAP-10306", title: "Landing visuals" },
     project: { id: "proj-1", name: "Paperclip App" },
     createdByAgent: { id: "agent-1", name: "ClaudeCoder" },
     updatedAt: "2026-06-01T12:00:00.000Z",
-    href: "/tasks/PAP-10306#attachment-art-1",
+    taskFragment: "attachment-art-1",
     ...overrides,
   };
 }
@@ -49,8 +55,9 @@ function makeArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifact
 describe("ArtifactCard", () => {
   it("renders an image preview with cover image and links to the task anchor", () => {
     const markup = renderToStaticMarkup(<ArtifactCard artifact={makeArtifact()} />);
-    expect(markup).toContain('href="/tasks/PAP-10306#attachment-art-1"');
-    expect(markup).toContain('data-disable-task-quicklook="true"');
+    expect(markup).toContain(
+      'href="/11111111-1111-4111-8111-111111111111/tasks/10306#attachment-art-1"',
+    );
     expect(markup).toContain('data-media-kind="image"');
     expect(markup).toContain("rounded-lg");
     expect(markup).toContain('src="/files/art-1.png"');
@@ -68,7 +75,7 @@ describe("ArtifactCard", () => {
       <ArtifactCard
         artifact={makeArtifact({
           title: "Social launch clip",
-          task: { id: "task-2", identifier: "PAP-10370", title: "Make artifact page look like this" },
+          task: { id: "task-2", taskNumber: 10370, identifier: "PAP-10370", title: "Make artifact page look like this" },
           updatedAt: "2025-10-08T12:00:00.000Z",
           createdByAgent: null,
         })}
@@ -241,5 +248,18 @@ describe("ArtifactCard", () => {
     expect(markup).toContain("Last edited Jun 1, 2026");
     expect(markup).not.toContain('aria-label="Download file"');
     expect(markup).not.toContain('aria-label="Open file in new tab"');
+  });
+
+  it("keeps file actions as siblings of the task link", () => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    flushSync(() => root.render(<ArtifactCard artifact={makeArtifact()} />));
+
+    const card = container.querySelector('[data-testid="artifact-card"]');
+    expect(card?.tagName).toBe("DIV");
+    expect(card?.querySelectorAll("a a")).toHaveLength(0);
+    expect(card?.querySelectorAll("a")).toHaveLength(3);
+
+    flushSync(() => root.unmount());
   });
 });

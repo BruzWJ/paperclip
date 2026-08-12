@@ -1,7 +1,8 @@
 import { type SyntheticEvent, useEffect, useRef, useState } from "react";
 import { Download, ExternalLink, Paperclip, Play } from "lucide-react";
 import type { CompanyArtifact } from "@/api/artifacts";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { cn, formatDate } from "@/lib/utils";
 
 interface ArtifactCardProps {
@@ -191,15 +192,20 @@ function SecondaryAction({
 }
 
 export function ArtifactCard({ artifact }: ArtifactCardProps) {
+  const companyId = useCompanyRouteId();
   return (
-    <Link
-      // design-allow(card-pattern): navigation <Link> card; Card renders a div and would break anchor semantics (C5a Run 3)
-      to={artifact.href}
-      disableTaskQuicklook
+    <div
       data-testid="artifact-card"
       data-media-kind={artifact.mediaKind}
-      className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card cursor-pointer transition-colors hover:border-foreground/20 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group relative flex flex-col overflow-hidden rounded-lg border border-border bg-card cursor-pointer transition-colors hover:border-foreground/20 hover:shadow-md"
     >
+      <Link
+        to="/$companyId/tasks/$taskNumber"
+        params={{ companyId, taskNumber: String(artifact.task.taskNumber) }}
+        hash={artifact.taskFragment}
+        aria-label={`Open ${artifact.title} in ${artifact.task.identifier}`}
+        className="absolute inset-0 z-10 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
       <ArtifactPreview artifact={artifact} />
 
       <div className="flex flex-1 flex-col gap-1 p-3">
@@ -210,7 +216,7 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
           >
             {artifact.title}
           </h3>
-          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <div className="relative z-20 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             {artifact.openPath ? (
               <SecondaryAction href={artifact.openPath} title="Open file in new tab">
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -234,6 +240,6 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
           ) : null}
         </div>
       </div>
-    </Link>
+    </div>
   );
 }

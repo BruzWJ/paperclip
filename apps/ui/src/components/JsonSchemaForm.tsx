@@ -7,7 +7,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { isUuidLike, type EnvSecretRefBinding } from "@paperclipai/shared";
+import type { EnvSecretRefBinding } from "@paperclipai/shared";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -559,9 +559,8 @@ EnumField.displayName = "EnumField";
 
 /**
  * Specialized field for secret-ref values. Renders a picker for existing
- * company secrets plus a raw-value fallback. A UUID-shaped value is treated
- * as a bound secret reference; anything else is a raw value that the server
- * converts to a stored secret on save.
+ * company secrets plus explicit raw-value entry. Bound secrets use only the
+ * structured `secret_ref` contract; plain strings are always new raw values.
  */
 const SecretField = React.memo(({
   value,
@@ -590,9 +589,7 @@ const SecretField = React.memo(({
 
   const secretRefValue = isSecretRefBinding(value) ? value : null;
   const stringValue = typeof value === "string" ? value : "";
-  const trimmed = stringValue.trim();
-  const legacySecretId = trimmed.length > 0 && isUuidLike(trimmed) ? trimmed : null;
-  const isBoundToSecret = secretRefValue !== null || legacySecretId !== null;
+  const isBoundToSecret = secretRefValue !== null;
   const hasRawValue = stringValue.length > 0 && !isBoundToSecret;
 
   const [showRawInput, setShowRawInput] = useState(hasRawValue);
@@ -607,9 +604,7 @@ const SecretField = React.memo(({
 
   const bindingValue: SecretBindingValue | null = secretRefValue
     ? { secretId: secretRefValue.secretId, version: secretRefValue.version }
-    : legacySecretId
-      ? { secretId: legacySecretId }
-      : null;
+    : null;
 
   const handlePickerChange = useCallback(
     (next: SecretBindingValue | null) => {

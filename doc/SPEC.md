@@ -14,8 +14,7 @@ projection. Providers remain operator-chosen runtimes.
 3. Names, titles, creation order, and organization presentation grant no
    authority.
 4. Provider executions receive no general Paperclip REST credential, caller
-   profile, eager context payload, managed instructions, or operational
-   Paperclip skill.
+   profile, eager context payload, or managed provider instructions.
 5. The canonical conversation is one task-scoped Paperclip Session log.
    Provider-native state stays opaque and may be correlated only within one
    exact task ownership epoch.
@@ -40,7 +39,7 @@ Every product entity is company-scoped. An agent stores:
 - verbatim capabilities
 - lifecycle status and budgets
 - adapter binding and immutable adapter-configuration revisions
-- independently stored context, action, mention, and company-skill selections
+- independently stored context, action, and mention selections
 
 There is no persisted role or privileged default identity. Every new grant is
 false or absent until a human explicitly configures it. Provider-native
@@ -163,7 +162,7 @@ mentions require the ancestor grant. A missing configurable grant means false.
 The provider receives a `paperclip.run-tools/v1` endpoint/bearer bound to the
 run, task, epoch, agent, adapter revision, reference, and lease. It is accepted
 only by the compiled endpoint and becomes invalid on lease loss or authority
-change. General task, comment, activity, agent-profile, company, skill, and
+change. General task, comment, activity, agent-profile, company, and
 tool-selector REST routes reject provider credentials.
 
 ## Communication, admission, and recovery
@@ -226,11 +225,12 @@ callback or alternate remote transport.
 
 Paperclip does not inject an ambient caller profile, working-directory metadata,
 a general REST credential, provider instructions, or another task's cwd/home
-into a provider child. A canonical source created by an agent-reaching managed
+into a provider child. ACPX is the sole provider communication and execution
+contract, and request-scoped MCP is Paperclip's only tool-injection boundary.
+A canonical source created by an agent-reaching managed
 tool may identify that tool's locked source agent, target task, and lifecycle
 state in its own persisted message envelope. The only Paperclip capability is
-still the compiled run interface. Explicitly selected genuine company skills may
-be materialized for a run but grant no authority.
+still the compiled run interface.
 
 ## Plugins and routines
 

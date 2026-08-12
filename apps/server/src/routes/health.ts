@@ -53,7 +53,7 @@ export function healthRoutes(
     companyDeletionEnabled: true,
   },
 ) {
-  const router = Router();
+  const router = Router({ caseSensitive: true, strict: true });
 
   router.post("/dev-server/restart", async (req, res) => {
     assertBoard(req);

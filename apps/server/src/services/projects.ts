@@ -11,10 +11,9 @@ import {
   projectWorkspaces,
 } from "@paperclipai/db";
 import {
-  deriveProjectUrlKey,
-  hasNonAsciiContent,
-  isUuidLike,
-  normalizeProjectUrlKey,
+  isAbsoluteProjectFolder,
+  isCanonicalUuid,
+  isCanonicalProjectRepositoryUrl,
   canonicalizeMoneyAmount,
   compareMoneyAmounts,
   parseMoneyAmount,
@@ -52,14 +51,11 @@ export interface InternalProjectWorkspace {
   updatedAt: Date;
 }
 
-export type InternalProjectCodebase = ProjectCodebase;
-
 /** Complete server-side project aggregate, including runtime-only workspace data. */
 export interface InternalProject extends ProjectRow {
-  urlKey: string;
   goalIds: string[];
   goals: ProjectGoalRef[];
-  codebase: InternalProjectCodebase;
+  codebase: ProjectCodebase;
   workspaces: InternalProjectWorkspace[];
   primaryWorkspace: InternalProjectWorkspace | null;
   managedByPlugin: ProjectManagedByPlugin | null;
@@ -79,7 +75,10 @@ type InternalProjectRuntimeFields = {
 };
 
 /** Public-safe project projection for HTTP and plugin-host reads. */
-export type PublicProject = Omit<InternalProject, keyof InternalProjectRuntimeFields>;
+export type PublicProject = Omit<
+  InternalProject,
+  keyof InternalProjectRuntimeFields
+>;
 
 export function toPublicProject(project: InternalProject): PublicProject;
 export function toPublicProject<T extends object>(
@@ -95,17 +94,11 @@ export function toPublicProject<T extends object>(project: T) {
   return publicProject as Omit<T, keyof InternalProjectRuntimeFields>;
 }
 
-interface ProjectShortnameRow {
-  id: string;
-  name: string;
-}
-
-interface ResolveProjectNameOptions {
-  excludeProjectId?: string | null;
-}
-
 /** Batch-load goal refs for a set of projects. */
-async function attachGoals(db: Db, rows: ProjectRow[]): Promise<InternalProjectWithGoals[]> {
+async function attachGoals(
+  db: Db,
+  rows: ProjectRow[],
+): Promise<InternalProjectWithGoals[]> {
   if (rows.length === 0) return [];
 
   const projectIds = rows.map((r) => r.id);
@@ -135,7 +128,6 @@ async function attachGoals(db: Db, rows: ProjectRow[]): Promise<InternalProjectW
     const g = map.get(r.id) ?? [];
     return {
       ...r,
-      urlKey: deriveProjectUrlKey(r.name, r.id),
       goalIds: g.map((x) => x.id),
       goals: g,
     };
@@ -147,7 +139,7 @@ function toWorkspace(row: ProjectWorkspaceRow): InternalProjectWorkspace {
     id: row.id,
     companyId: row.companyId,
     projectId: row.projectId,
-    cwd: normalizeWorkspaceCwd(row.cwd),
+    cwd: row.cwd ?? null,
     repoUrl: row.repoUrl ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -157,8 +149,9 @@ function toWorkspace(row: ProjectWorkspaceRow): InternalProjectWorkspace {
 function deriveProjectCodebase(input: {
   primaryWorkspace: InternalProjectWorkspace | null;
   fallbackWorkspaces: InternalProjectWorkspace[];
-}): InternalProjectCodebase {
-  const primaryWorkspace = input.primaryWorkspace ?? input.fallbackWorkspaces[0] ?? null;
+}): ProjectCodebase {
+  const primaryWorkspace =
+    input.primaryWorkspace ?? input.fallbackWorkspaces[0] ?? null;
 
   return {
     workspaceId: primaryWorkspace?.id ?? null,
@@ -167,13 +160,18 @@ function deriveProjectCodebase(input: {
   };
 }
 
-function pickPrimaryWorkspace(rows: ProjectWorkspaceRow[]): InternalProjectWorkspace | null {
+function pickPrimaryWorkspace(
+  rows: ProjectWorkspaceRow[],
+): InternalProjectWorkspace | null {
   if (rows.length === 0) return null;
   return toWorkspace(rows[0]!);
 }
 
 /** Batch-load workspace refs for a set of projects. */
-async function attachWorkspaces(db: Db, rows: InternalProjectWithGoals[]): Promise<InternalProject[]> {
+async function attachWorkspaces(
+  db: Db,
+  rows: InternalProjectWithGoals[],
+): Promise<InternalProject[]> {
   if (rows.length === 0) return [];
 
   const projectIds = rows.map((r) => r.id);
@@ -207,10 +205,12 @@ async function attachWorkspaces(db: Db, rows: InternalProjectWithGoals[]): Promi
     })
     .from(pluginManagedResources)
     .innerJoin(plugins, eq(pluginManagedResources.pluginId, plugins.id))
-    .where(and(
-      eq(pluginManagedResources.resourceKind, "project"),
-      inArray(pluginManagedResources.resourceId, projectIds),
-    ));
+    .where(
+      and(
+        eq(pluginManagedResources.resourceKind, "project"),
+        inArray(pluginManagedResources.resourceId, projectIds),
+      ),
+    );
   const managedByProjectId = new Map<string, ProjectManagedByPlugin>();
   for (const row of managedRows) {
     managedByProjectId.set(row.resourceId, {
@@ -255,10 +255,14 @@ type ProjectBudgetRow = {
  * rows. Pure (no DB) so the merge logic can be unit-tested in isolation.
  * Only active policies with a positive canonical limit surface as a budget.
  */
-export function buildProjectListMetricMaps(taskCountRows: TaskCountRow[], budgetRows: ProjectBudgetRow[]) {
+export function buildProjectListMetricMaps(
+  taskCountRows: TaskCountRow[],
+  budgetRows: ProjectBudgetRow[],
+) {
   const taskCountByProjectId = new Map<string, number>();
   for (const row of taskCountRows) {
-    if (row.projectId) taskCountByProjectId.set(row.projectId, Number(row.count) || 0);
+    if (row.projectId)
+      taskCountByProjectId.set(row.projectId, Number(row.count) || 0);
   }
 
   const budgetByProjectId = new Map<string, ProjectBudgetSummary>();
@@ -296,7 +300,12 @@ async function attachListMetrics(
         count: sql<number>`count(*)::int`,
       })
       .from(tasks)
-      .where(and(eq(tasks.companyId, companyId), inArray(tasks.projectId, projectIds)))
+      .where(
+        and(
+          eq(tasks.companyId, companyId),
+          inArray(tasks.projectId, projectIds),
+        ),
+      )
       .groupBy(tasks.projectId),
     db
       .select({
@@ -315,10 +324,8 @@ async function attachListMetrics(
       ),
   ]);
 
-  const { taskCountByProjectId, budgetByProjectId } = buildProjectListMetricMaps(
-    taskCountRows,
-    budgetRows,
-  );
+  const { taskCountByProjectId, budgetByProjectId } =
+    buildProjectListMetricMaps(taskCountRows, budgetRows);
 
   return rows.map((row) => ({
     ...row,
@@ -328,30 +335,26 @@ async function attachListMetrics(
 }
 
 /** Sync the project_goals join table for a single project. */
-async function syncGoalLinks(db: Db, projectId: string, companyId: string, goalIds: string[]) {
+async function syncGoalLinks(
+  db: Db,
+  projectId: string,
+  companyId: string,
+  goalIds: string[],
+) {
   // Delete existing links
   await db.delete(projectGoals).where(eq(projectGoals.projectId, projectId));
 
   // Insert new links
   if (goalIds.length > 0) {
-    await db.insert(projectGoals).values(
-      goalIds.map((goalId) => ({ projectId, goalId, companyId })),
-    );
+    await db
+      .insert(projectGoals)
+      .values(goalIds.map((goalId) => ({ projectId, goalId, companyId })));
   }
 }
 
-function readNonEmptyString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeWorkspaceCwd(value: unknown): string | null {
-  const cwd = readNonEmptyString(value);
-  return cwd;
-}
-
-function buildManagedProjectDefaults(declaration: PluginManagedProjectDeclaration) {
+function buildManagedProjectDefaults(
+  declaration: PluginManagedProjectDeclaration,
+) {
   return {
     projectKey: declaration.projectKey,
     displayName: declaration.displayName,
@@ -362,51 +365,17 @@ function buildManagedProjectDefaults(declaration: PluginManagedProjectDeclaratio
   };
 }
 
-export function resolveProjectNameForUniqueShortname(
-  requestedName: string,
-  existingProjects: ProjectShortnameRow[],
-  options?: ResolveProjectNameOptions,
-): string {
-  const requestedShortname = normalizeProjectUrlKey(requestedName);
-  if (!requestedShortname) return requestedName;
-  // Non-ASCII names get a UUID suffix in deriveProjectUrlKey, making slugs inherently unique.
-  if (hasNonAsciiContent(requestedName)) return requestedName;
-
-  const usedShortnames = new Set(
-    existingProjects
-      .filter((project) => !(options?.excludeProjectId && project.id === options.excludeProjectId))
-      .map((project) => normalizeProjectUrlKey(project.name))
-      .filter((value): value is string => value !== null),
-  );
-  if (!usedShortnames.has(requestedShortname)) return requestedName;
-
-  for (let suffix = 2; suffix < 10_000; suffix += 1) {
-    const candidateName = `${requestedName} ${suffix}`;
-    const candidateShortname = normalizeProjectUrlKey(candidateName);
-    if (candidateShortname && !usedShortnames.has(candidateShortname)) {
-      return candidateName;
-    }
-  }
-
-  // Fallback guard for pathological naming collisions.
-  return `${requestedName} ${Date.now()}`;
-}
-
 export function projectService(db: Db) {
   const createProject = async (
     companyId: string,
-    data: Omit<typeof projects.$inferInsert, "companyId"> & { goalIds?: string[] },
+    data: Omit<typeof projects.$inferInsert, "companyId"> & {
+      goalIds?: string[];
+    },
   ): Promise<InternalProject> => {
     const { goalIds: inputGoalIds, ...projectData } = data;
 
     // Note: color is intentionally NOT auto-assigned. New projects default to
     // `color = null` (neutral gray) unless an explicit color is supplied. See PAP-68.
-
-    const existingProjects = await db
-      .select({ id: projects.id, name: projects.name })
-      .from(projects)
-      .where(eq(projects.companyId, companyId));
-    projectData.name = resolveProjectNameForUniqueShortname(projectData.name, existingProjects);
 
     const row = await db
       .insert(projects)
@@ -423,7 +392,10 @@ export function projectService(db: Db) {
     return enriched!;
   };
 
-  const getProjectById = async (id: string): Promise<InternalProject | null> => {
+  const getProjectById = async (
+    id: string,
+  ): Promise<InternalProject | null> => {
+    if (!isCanonicalUuid(id)) return null;
     const row = await db
       .select()
       .from(projects)
@@ -438,23 +410,38 @@ export function projectService(db: Db) {
 
   return {
     list: async (companyId: string): Promise<InternalProject[]> => {
-      const rows = await db.select().from(projects).where(eq(projects.companyId, companyId));
+      const rows = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.companyId, companyId));
       const withGoals = await attachGoals(db, rows);
       const withWorkspaces = await attachWorkspaces(db, withGoals);
       return attachListMetrics(db, companyId, withWorkspaces);
     },
 
-    listByIds: async (companyId: string, ids: string[]): Promise<InternalProject[]> => {
+    listByIds: async (
+      companyId: string,
+      ids: string[],
+    ): Promise<InternalProject[]> => {
       const dedupedIds = [...new Set(ids)];
       if (dedupedIds.length === 0) return [];
       const rows = await db
         .select()
         .from(projects)
-        .where(and(eq(projects.companyId, companyId), inArray(projects.id, dedupedIds)));
+        .where(
+          and(
+            eq(projects.companyId, companyId),
+            inArray(projects.id, dedupedIds),
+          ),
+        );
       const withGoals = await attachGoals(db, rows);
       const withWorkspaces = await attachWorkspaces(db, withGoals);
-      const byId = new Map(withWorkspaces.map((project) => [project.id, project]));
-      return dedupedIds.map((id) => byId.get(id)).filter((project): project is InternalProject => Boolean(project));
+      const byId = new Map(
+        withWorkspaces.map((project) => [project.id, project]),
+      );
+      return dedupedIds
+        .map((id) => byId.get(id))
+        .filter((project): project is InternalProject => Boolean(project));
     },
 
     getById: getProjectById,
@@ -493,7 +480,9 @@ export function projectService(db: Db) {
         };
       }
 
-      const declaration = plugin.manifestJson.projects?.find((project) => project.projectKey === input.projectKey);
+      const declaration = plugin.manifestJson.projects?.find(
+        (project) => project.projectKey === input.projectKey,
+      );
       if (!declaration) {
         return {
           pluginKey: input.pluginKey,
@@ -510,19 +499,26 @@ export function projectService(db: Db) {
       const existingBinding = await db
         .select()
         .from(pluginManagedResources)
-        .where(and(
-          eq(pluginManagedResources.companyId, input.companyId),
-          eq(pluginManagedResources.pluginId, input.pluginId),
-          eq(pluginManagedResources.resourceKind, "project"),
-          eq(pluginManagedResources.resourceKey, input.projectKey),
-        ))
+        .where(
+          and(
+            eq(pluginManagedResources.companyId, input.companyId),
+            eq(pluginManagedResources.pluginId, input.pluginId),
+            eq(pluginManagedResources.resourceKind, "project"),
+            eq(pluginManagedResources.resourceKey, input.projectKey),
+          ),
+        )
         .then((rows) => rows[0] ?? null);
 
       if (existingBinding) {
         const existingProject = await db
           .select({ id: projects.id })
           .from(projects)
-          .where(and(eq(projects.companyId, input.companyId), eq(projects.id, existingBinding.resourceId)))
+          .where(
+            and(
+              eq(projects.companyId, input.companyId),
+              eq(projects.id, existingBinding.resourceId),
+            ),
+          )
           .then((rows) => rows[0] ?? null);
         if (existingProject) {
           if (input.reset) {
@@ -535,7 +531,12 @@ export function projectService(db: Db) {
                 color: declaration.color ?? null,
                 updatedAt: new Date(),
               })
-              .where(and(eq(projects.companyId, input.companyId), eq(projects.id, existingBinding.resourceId)));
+              .where(
+                and(
+                  eq(projects.companyId, input.companyId),
+                  eq(projects.id, existingBinding.resourceId),
+                ),
+              );
           }
           if (input.createIfMissing !== false) {
             await db
@@ -575,7 +576,11 @@ export function projectService(db: Db) {
         });
         await db
           .update(pluginManagedResources)
-          .set({ resourceId: project.id, defaultsJson: defaults, updatedAt: new Date() })
+          .set({
+            resourceId: project.id,
+            defaultsJson: defaults,
+            updatedAt: new Date(),
+          })
           .where(eq(pluginManagedResources.id, existingBinding.id));
         const hydrated = await getProjectById(project.id);
         return {
@@ -635,26 +640,6 @@ export function projectService(db: Db) {
       data: Partial<typeof projects.$inferInsert> & { goalIds?: string[] },
     ): Promise<InternalProject | null> => {
       const { goalIds: inputGoalIds, ...projectData } = data;
-      const existingProject = await db
-        .select({ id: projects.id, companyId: projects.companyId, name: projects.name })
-        .from(projects)
-        .where(eq(projects.id, id))
-        .then((rows) => rows[0] ?? null);
-      if (!existingProject) return null;
-
-      if (projectData.name !== undefined) {
-        const existingShortname = normalizeProjectUrlKey(existingProject.name);
-        const nextShortname = normalizeProjectUrlKey(projectData.name);
-        if (existingShortname !== nextShortname) {
-          const existingProjects = await db
-            .select({ id: projects.id, name: projects.name })
-            .from(projects)
-            .where(eq(projects.companyId, existingProject.companyId));
-          projectData.name = resolveProjectNameForUniqueShortname(projectData.name, existingProjects, {
-            excludeProjectId: id,
-          });
-        }
-      }
 
       const updates: Partial<typeof projects.$inferInsert> = {
         ...projectData,
@@ -674,7 +659,9 @@ export function projectService(db: Db) {
       }
 
       const [withGoals] = await attachGoals(db, [row]);
-      const [enriched] = withGoals ? await attachWorkspaces(db, [withGoals]) : [];
+      const [enriched] = withGoals
+        ? await attachWorkspaces(db, [withGoals])
+        : [];
       return enriched ?? null;
     },
 
@@ -686,10 +673,12 @@ export function projectService(db: Db) {
         .then((rows) => {
           const row = rows[0] ?? null;
           if (!row) return null;
-          return { ...row, urlKey: deriveProjectUrlKey(row.name, row.id) };
+          return row;
         }),
 
-    listWorkspaces: async (projectId: string): Promise<InternalProjectWorkspace[]> => {
+    listWorkspaces: async (
+      projectId: string,
+    ): Promise<InternalProjectWorkspace[]> => {
       const rows = await db
         .select()
         .from(projectWorkspaces)
@@ -708,8 +697,14 @@ export function projectService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!project) return null;
 
-      const cwd = normalizeWorkspaceCwd(data.cwd);
-      const repoUrl = readNonEmptyString(data.repoUrl);
+      if (
+        (data.cwd != null && !isAbsoluteProjectFolder(data.cwd)) ||
+        (data.repoUrl != null && !isCanonicalProjectRepositoryUrl(data.repoUrl))
+      ) {
+        return null;
+      }
+      const cwd = data.cwd ?? null;
+      const repoUrl = data.repoUrl ?? null;
       if (!cwd && !repoUrl) return null;
 
       const existing = await db
@@ -750,14 +745,15 @@ export function projectService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!existing) return null;
 
-      const nextCwd =
-        data.cwd !== undefined
-          ? normalizeWorkspaceCwd(data.cwd)
-          : normalizeWorkspaceCwd(existing.cwd);
+      if (
+        (data.cwd != null && !isAbsoluteProjectFolder(data.cwd)) ||
+        (data.repoUrl != null && !isCanonicalProjectRepositoryUrl(data.repoUrl))
+      ) {
+        return null;
+      }
+      const nextCwd = data.cwd !== undefined ? data.cwd : existing.cwd;
       const nextRepoUrl =
-        data.repoUrl !== undefined
-          ? readNonEmptyString(data.repoUrl)
-          : readNonEmptyString(existing.repoUrl);
+        data.repoUrl !== undefined ? data.repoUrl : existing.repoUrl;
       if (!nextCwd && !nextRepoUrl) return null;
 
       const patch: Partial<typeof projectWorkspaces.$inferInsert> = {
@@ -781,47 +777,5 @@ export function projectService(db: Db) {
         .delete(projectWorkspaces)
         .where(eq(projectWorkspaces.projectId, projectId))
         .returning({ id: projectWorkspaces.id }),
-
-    resolveByReference: async (companyId: string, reference: string) => {
-      const raw = reference.trim();
-      if (raw.length === 0) {
-        return { project: null, ambiguous: false } as const;
-      }
-
-      if (isUuidLike(raw)) {
-        const row = await db
-          .select({ id: projects.id, companyId: projects.companyId, name: projects.name })
-          .from(projects)
-          .where(and(eq(projects.id, raw), eq(projects.companyId, companyId)))
-          .then((rows) => rows[0] ?? null);
-        if (!row) return { project: null, ambiguous: false } as const;
-        return {
-          project: { id: row.id, companyId: row.companyId, urlKey: deriveProjectUrlKey(row.name, row.id) },
-          ambiguous: false,
-        } as const;
-      }
-
-      const urlKey = normalizeProjectUrlKey(raw);
-      if (!urlKey) {
-        return { project: null, ambiguous: false } as const;
-      }
-
-      const rows = await db
-        .select({ id: projects.id, companyId: projects.companyId, name: projects.name })
-        .from(projects)
-        .where(eq(projects.companyId, companyId));
-      const matches = rows.filter((row) => deriveProjectUrlKey(row.name, row.id) === urlKey);
-      if (matches.length === 1) {
-        const match = matches[0]!;
-        return {
-          project: { id: match.id, companyId: match.companyId, urlKey: deriveProjectUrlKey(match.name, match.id) },
-          ambiguous: false,
-        } as const;
-      }
-      if (matches.length > 1) {
-        return { project: null, ambiguous: true } as const;
-      }
-      return { project: null, ambiguous: false } as const;
-    },
   };
 }

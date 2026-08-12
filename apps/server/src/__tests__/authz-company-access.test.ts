@@ -140,22 +140,6 @@ describe("assertCompanyAccess", () => {
     );
   });
 
-  it("rejects exact runtime-agent actors at the generic company boundary", () => {
-    const req = makeReq({
-      method: "GET",
-      actor: {
-        type: "agent",
-        agentId: "agent-1",
-        companyId: "company-1",
-        runId: "run-1",
-        source: "internal",
-      },
-    });
-
-    expect(() => assertCompanyAccess(req, "company-1")).toThrow(
-      "Board access required",
-    );
-  });
 });
 
 describe("getAccessibleResource", () => {
@@ -361,22 +345,4 @@ describe("authorizeHumanTaskSteering", () => {
     )).rejects.toThrow("Human steering requires active comment permission");
   });
 
-  it("rejects runtime agents before consulting persistence", async () => {
-    const req = makeReq({
-      method: "POST",
-      actor: {
-        type: "agent",
-        source: "internal",
-        agentId: "agent-1",
-        companyId: "company-1",
-        runId: "run-1",
-      },
-    });
-
-    await expect(authorizeHumanTaskSteering(
-      steeringDb([]),
-      req,
-      "company-1",
-    )).rejects.toThrow("Board access required");
-  });
 });

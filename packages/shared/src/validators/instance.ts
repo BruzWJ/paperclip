@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalUuidSchema } from "./canonical-uuid.js";
 
 export const instanceGeneralSettingsSchema = z.object({
   censorUsernameInLogs: z.boolean().default(false),
@@ -23,7 +24,7 @@ export type InstanceGeneralSettings = z.infer<typeof instanceGeneralSettingsSche
 export type PatchInstanceGeneralSettings = z.infer<typeof patchInstanceGeneralSettingsSchema>;
 
 export const instanceSettingsSchema = z.object({
-  id: z.string().uuid(),
+  id: canonicalUuidSchema,
   general: instanceGeneralSettingsSchema,
   createdAt: z.union([z.date(), z.string().datetime()]),
   updatedAt: z.union([z.date(), z.string().datetime()]),

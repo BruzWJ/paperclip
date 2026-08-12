@@ -32,7 +32,7 @@ Open-source orchestration for teams of AI agents.
 
 **If an AI agent is an _employee_, Paperclip is the _company_.**
 
-Paperclip is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track work and costs from one dashboard.
+Paperclip is a Node.js server and client-rendered React UI that orchestrates a team of AI agents to run a business. The board uses native TanStack Router file routes, canonical REST data through TanStack Query, and company-scoped Socket.IO invalidation updates. Bring your own agents, assign goals, and track work and costs from one dashboard.
 
 It looks like a task manager. Under the hood: org charts, budgets, governance, goal alignment, and agent coordination.
 
@@ -86,7 +86,7 @@ Four things have to work for an organization of AI agents to actually produce: t
 | --- | --- | --- |
 | **Agentic Task Manager** — Declare intent. Agents work. You verify the output. | Everyone, daily | Tasks, approvals & review gates · proactive agent coworkers · auditable routines & workflows · verify from diffs, screenshots & tests |
 | **Org Chart for Agents** — Reporting structure, permissions & boundaries for humans and agents. | Managers | Mixed human + agent org chart · responsibilities, delegation, specialization · independent grants: who can do what · scoped secrets & company boundaries |
-| **Agent Employee Training** — Design, train & evaluate your AI employees. | Enablers | Skill Studio & shared org-wide skills · evals & saved test runs · active learning loops & quality metrics · performance reviews for agents |
+| **Agent Employee Training** — Design, train & evaluate your AI employees. | Enablers | Agent configuration · evals & saved test runs · active learning loops & quality metrics · performance reviews for agents |
 | **Agentic OS** — The infrastructure that makes the work run. | IT & platform | Cross-provider runtime: any model, any local ACPX agent · integrations & MCP servers · SSO, GRC, RBAC & cost controls · data privacy, internal trace collection, compounding data value |
 
 <br/>
@@ -164,7 +164,7 @@ Paperclip handles the hard orchestration details correctly.
 | **Compiled run tools.**           | Each run discovers only its explicitly granted task actions, context reads, and ready plugin tools.          |
 | **Governance with rollback.**     | Approval gates are enforced, config changes are revisioned, and bad changes can be rolled back safely.        |
 | **Explicit context control.**     | A nine-cell dial governs current-task, sub-task, and company task visibility without implicit prompt prose. |
-| **Portable company templates.**   | Export/import orgs, agents, and skills with secret scrubbing and collision handling.                          |
+| **Portable company templates.**   | Export/import orgs, agents, projects, and tasks with secret scrubbing and collision handling.                |
 | **True multi-company isolation.** | Every entity is company-scoped, so one deployment can run many companies with separate data and audit trails. |
 
 <br/>
@@ -210,7 +210,7 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 </td>
 <td width="50%">
 
-**Org Chart & Agents** — Agents have names, optional display titles, reporting lines, explicit context/action grants, selected tools and skills, and budgets. Reporting position is organizational metadata, never implicit authority.
+**Org Chart & Agents** — Agents have names, optional display titles, reporting lines, explicit context/action grants, selected tools, and budgets. Reporting position is organizational metadata, never implicit authority.
 
 </td>
 </tr>
@@ -270,7 +270,7 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 </td>
 <td>
 
-**Company Portability** — Export and import entire organizations — agents, skills, projects, routines, and tasks — with secret scrubbing and collision handling. One deployment, many companies, complete data isolation.
+**Company Portability** — Export and import entire organizations — agents, projects, routines, and tasks — with secret scrubbing and collision handling. One deployment, many companies, complete data isolation.
 
 </td>
 </tr>
@@ -395,17 +395,14 @@ packages:
 
 ```text
 apps/
-  server/        # Express API and orchestration services
-  ui/            # React + Vite board UI
+  server/        # Express REST API, Socket.IO live invalidation, and orchestration services
+  ui/            # React + Vite board UI with client-only TanStack Router file routes
   docs/           # Published Mintlify documentation site
 packages/
   cli/            # Publishable Paperclip CLI
   db/             # Drizzle schema, migrations, and database clients
   shared/         # Shared contracts, validators, and constants
   adapter-utils/  # ACPX runtime discovery and execution bridge
-  adapters/       # Adapter-authoring guidance
-  skills-catalog/ # Bundled skill catalog and manifest builder
-  *-mcp-server/   # MCP server packages and fixtures
   plugins/        # Plugin SDK, tooling, plugins, and examples
 doc/              # Internal product, engineering, operations, and plan docs
 ```
@@ -422,7 +419,6 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 - ✅ Plugin system (e.g. add a knowledge base, custom tracing, queues, etc)
 - ✅ companies.sh - import and export entire organizations
 - ✅ Easy AGENTS.md configurations
-- ✅ Skills Manager, Skill Studio & Skills Store
 - ✅ Scheduled Routines
 - ✅ Better Budgeting
 - ✅ Agent Reviews and Approvals

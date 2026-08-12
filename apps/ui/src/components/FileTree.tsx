@@ -25,7 +25,8 @@ export type FileTreeNode = {
   action?: string | null;
 };
 
-export type FileTreeBadgeVariant = "ok" | "warning" | "error" | "info" | "pending";
+export type FileTreeBadgeVariant =
+  "ok" | "warning" | "error" | "info" | "pending";
 
 export type FileTreeBadge = {
   label: string;
@@ -126,6 +127,42 @@ export function collectAllPaths(
   return paths;
 }
 
+function findFileTreeNode(
+  nodes: FileTreeNode[],
+  path: string,
+): FileTreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    const match = findFileTreeNode(node.children, path);
+    if (match) return match;
+  }
+  return null;
+}
+
+export function toggleFileTreeCheckedFiles(
+  nodes: FileTreeNode[],
+  checkedFiles: Set<string>,
+  path: string,
+  kind: "file" | "dir",
+): Set<string> {
+  const next = new Set(checkedFiles);
+  if (kind === "file") {
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    return next;
+  }
+
+  const directory = findFileTreeNode(nodes, path);
+  if (!directory) return next;
+  const childFiles = collectAllPaths(directory.children, "file");
+  const allChecked = [...childFiles].every((childPath) => next.has(childPath));
+  for (const childPath of childFiles) {
+    if (allChecked) next.delete(childPath);
+    else next.add(childPath);
+  }
+  return next;
+}
+
 function fileIcon(name: string) {
   if (name.endsWith(".yaml") || name.endsWith(".yml")) return FileCode2;
   return FileText;
@@ -140,7 +177,9 @@ function flattenVisibleNodes(
   for (const node of nodes) {
     flattened.push({ node, depth });
     if (node.kind === "dir" && expandedDirs.has(node.path)) {
-      flattened.push(...flattenVisibleNodes(node.children, expandedDirs, depth + 1));
+      flattened.push(
+        ...flattenVisibleNodes(node.children, expandedDirs, depth + 1),
+      );
     }
   }
   return flattened;
@@ -156,23 +195,24 @@ function checkboxState(node: FileTreeNode, checkedFiles: Set<string>) {
 
   const childFiles = collectAllPaths(node.children, "file");
   const childFilePaths = [...childFiles];
-  const allChecked = childFilePaths.length > 0 && childFilePaths.every((p) => checkedFiles.has(p));
+  const allChecked =
+    childFilePaths.length > 0 &&
+    childFilePaths.every((p) => checkedFiles.has(p));
   const someChecked = childFilePaths.some((p) => checkedFiles.has(p));
   return { allChecked, someChecked: someChecked && !allChecked };
 }
 
-// -- Frontmatter helpers -----------------------------------------------------
+type FrontmatterData = Record<string, string | string[]>;
 
-export type FrontmatterData = Record<string, string | string[]>;
-
-export function parseFrontmatter(content: string): { data: FrontmatterData; body: string } | null {
+export function parseFrontmatter(
+  content: string,
+): { data: FrontmatterData; body: string } | null {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!match) return null;
 
   const data: FrontmatterData = {};
   const rawYaml = match[1];
   const body = match[2];
-
   let currentKey: string | null = null;
   let currentList: string[] | null = null;
 
@@ -182,7 +222,12 @@ export function parseFrontmatter(content: string): { data: FrontmatterData; body
 
     if (trimmed.startsWith("- ") && currentKey) {
       if (!currentList) currentList = [];
-      currentList.push(trimmed.slice(2).trim().replace(/^["']|["']$/g, ""));
+      currentList.push(
+        trimmed
+          .slice(2)
+          .trim()
+          .replace(/^["']|["']$/g, ""),
+      );
       continue;
     }
 
@@ -195,13 +240,11 @@ export function parseFrontmatter(content: string): { data: FrontmatterData; body
     const kvMatch = trimmed.match(/^([a-zA-Z_][\w-]*)\s*:\s*(.*)$/);
     if (kvMatch) {
       const key = kvMatch[1];
-      const val = kvMatch[2].trim().replace(/^["']|["']$/g, "");
-      if (val === "null") {
+      const value = kvMatch[2].trim().replace(/^["']|["']$/g, "");
+      if (value === "null") {
         currentKey = null;
-        continue;
-      }
-      if (val) {
-        data[key] = val;
+      } else if (value) {
+        data[key] = value;
         currentKey = null;
       } else {
         currentKey = key;
@@ -209,27 +252,9 @@ export function parseFrontmatter(content: string): { data: FrontmatterData; body
     }
   }
 
-  if (currentKey && currentList) {
-    data[currentKey] = currentList;
-  }
-
+  if (currentKey && currentList) data[currentKey] = currentList;
   return Object.keys(data).length > 0 ? { data, body } : null;
 }
-
-export const FRONTMATTER_FIELD_LABELS: Record<string, string> = {
-  name: "Name",
-  title: "Title",
-  kind: "Kind",
-  reportsTo: "Reports to",
-  skills: "Skills",
-  status: "Status",
-  description: "Description",
-  priority: "Priority",
-  assignee: "Responsible",
-  project: "Project",
-  recurring: "Recurring",
-  targetDate: "Target date",
-};
 
 // -- File tree component -----------------------------------------------------
 
@@ -294,7 +319,11 @@ export function FileTree({
     else onSelectFile(node.path);
   }
 
-  function handleRowKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number, node: FileTreeNode) {
+  function handleRowKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+    node: FileTreeNode,
+  ) {
     switch (event.key) {
       case "ArrowDown": {
         event.preventDefault();
@@ -339,7 +368,13 @@ export function FileTree({
     return (
       <div aria-busy="true" aria-label={ariaLabel} role="tree" className="py-1">
         {[0, 1, 2, 3].map((row) => (
-          <div key={row} className={cn("flex items-center gap-2 px-4", TREE_ROW_HEIGHT_CLASS)}>
+          <div
+            key={row}
+            className={cn(
+              "flex items-center gap-2 px-4",
+              TREE_ROW_HEIGHT_CLASS,
+            )}
+          >
             <Skeleton className="h-4 w-4 shrink-0 rounded-sm" />
             <Skeleton className={cn("h-3.5", row === 1 ? "w-3/5" : "w-4/5")} />
           </div>
@@ -357,18 +392,21 @@ export function FileTree({
           className="flex min-h-9 items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm"
         >
           <div className="flex min-w-0 items-center gap-2">
-            <Badge variant="ghost"
-              className={cn(
-                "px-2.5",
-                statusBadge.error ?? statusBadgeDefault,
-              )}
+            <Badge
+              variant="ghost"
+              className={cn("px-2.5", statusBadge.error ?? statusBadgeDefault)}
             >
               error
             </Badge>
             <span className="min-w-0 text-destructive">{error.message}</span>
           </div>
           {error.retry && (
-            <Button type="button" size="xs" variant="outline" onClick={error.retry}>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={error.retry}
+            >
               Retry
             </Button>
           )}
@@ -381,9 +419,12 @@ export function FileTree({
     return (
       <div aria-label={ariaLabel} role="tree" className="p-3">
         <div className="rounded-md border border-dashed border-border px-4 py-8 text-center">
-          <div className="text-sm font-medium">{empty?.title ?? "No files"}</div>
+          <div className="text-sm font-medium">
+            {empty?.title ?? "No files"}
+          </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {empty?.description ?? "Files will appear here when they are available."}
+            {empty?.description ??
+              "Files will appear here when they are available."}
           </div>
         </div>
       </div>
@@ -394,7 +435,10 @@ export function FileTree({
     <div aria-label={ariaLabel} role="tree">
       {visibleNodes.map(({ node, depth }, index) => {
         const expanded = node.kind === "dir" && expandedDirs.has(node.path);
-        const { allChecked, someChecked } = checkboxState(node, effectiveCheckedFiles);
+        const { allChecked, someChecked } = checkboxState(
+          node,
+          effectiveCheckedFiles,
+        );
         const badge = fileBadges?.[node.path];
         const tone = fileTones?.[node.path] ?? "default";
         const FileIcon = node.kind === "file" ? fileIcon(node.name) : null;
@@ -443,8 +487,18 @@ export function FileTree({
               aria-level={depth + 1}
               aria-expanded={node.kind === "dir" ? expanded : undefined}
               aria-selected={node.kind === "file" ? isSelected : undefined}
-              aria-checked={showCheckboxes ? (someChecked ? "mixed" : allChecked) : undefined}
-              tabIndex={(focusedPath ?? visibleNodes[0]?.node.path) === node.path ? 0 : -1}
+              aria-checked={
+                showCheckboxes
+                  ? someChecked
+                    ? "mixed"
+                    : allChecked
+                  : undefined
+              }
+              tabIndex={
+                (focusedPath ?? visibleNodes[0]?.node.path) === node.path
+                  ? 0
+                  : -1
+              }
               className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
               onFocus={() => setFocusedPath(node.path)}
               onClick={() => toggleNode(node)}
@@ -462,12 +516,18 @@ export function FileTree({
                   <FileIcon className="h-3.5 w-3.5" />
                 ) : null}
               </span>
-              <span className={cn("min-w-0", wrapLabels ? "break-all leading-4" : "truncate")}>
+              <span
+                className={cn(
+                  "min-w-0",
+                  wrapLabels ? "break-all leading-4" : "truncate",
+                )}
+              >
                 {node.name}
               </span>
             </button>
             {badge && (
-              <Badge variant="ghost"
+              <Badge
+                variant="ghost"
                 className={cn(
                   "ml-3 text-(length:--text-nano) uppercase tracking-wide",
                   statusBadge[badge.status] ?? statusBadgeDefault,

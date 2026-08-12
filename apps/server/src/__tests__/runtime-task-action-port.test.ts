@@ -141,7 +141,7 @@ describe("runtime task action port", () => {
         toolName: "task_update",
         arguments: { message: "Progress" },
         context: {
-          task: { id: "task" },
+          task: { id: "task", identifier: "PAP-1" },
           from: { id: "agent", name: "Agent" },
           sourceRole: "task owner",
           previousStatus: "open",
@@ -154,7 +154,7 @@ describe("runtime task action port", () => {
       expect.objectContaining({
         exactText: [
           "[Paperclip task update]",
-          "Task: task",
+          "Task: PAP-1 (task)",
           "From: task owner, Agent (agent)",
           "Status: open",
           "",
@@ -167,13 +167,15 @@ describe("runtime task action port", () => {
 
   it("lowers an already-normalized create command without reparsing it", async () => {
     const { service, port } = setup();
-    await port.taskCreate(runtimeInvocation({
-      name: "task_create",
-      companyId: ownerCapability.companyId,
-      parentId: ownerCapability.taskId,
-      request: "Do exactly this",
-      ownerAgentId: "child",
-    }));
+    await port.taskCreate(
+      runtimeInvocation({
+        name: "task_create",
+        companyId: ownerCapability.companyId,
+        parentId: ownerCapability.taskId,
+        request: "Do exactly this",
+        ownerAgentId: "child",
+      }),
+    );
 
     expect(service.create).toHaveBeenCalledWith({
       capability: ownerCapability,
@@ -187,46 +189,72 @@ describe("runtime task action port", () => {
 
   it("derives self ownership only from the canonical ownerAgentId", async () => {
     const { service, port } = setup();
-    await port.taskCreate(runtimeInvocation({
-      name: "task_create",
-      companyId: ownerCapability.companyId,
-      parentId: ownerCapability.taskId,
-      request: "Keep ownership",
-      ownerAgentId: ownerCapability.targetAgentId,
-    }, ownerCapability, "self-owner"));
+    await port.taskCreate(
+      runtimeInvocation(
+        {
+          name: "task_create",
+          companyId: ownerCapability.companyId,
+          parentId: ownerCapability.taskId,
+          request: "Keep ownership",
+          ownerAgentId: ownerCapability.targetAgentId,
+        },
+        ownerCapability,
+        "self-owner",
+      ),
+    );
 
-    expect(service.create).toHaveBeenCalledWith(expect.objectContaining({
-      invocationId: "self-owner",
-      owner: { kind: "self" },
-    }));
+    expect(service.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invocationId: "self-owner",
+        owner: { kind: "self" },
+      }),
+    );
   });
 
   it("routes active-owner and explicit-creator update intent from canonical commands", async () => {
     const { service, port } = setup();
-    await port.taskUpdate(runtimeInvocation({
-      name: "task_update",
-      companyId: ownerCapability.companyId,
-      taskId: ownerCapability.taskId,
-      taskTarget: "active",
-      message: "Progress update",
-    }, ownerCapability, "owner-message"));
-    await port.taskUpdate(runtimeInvocation({
-      name: "task_update",
-      companyId: ownerCapability.companyId,
-      taskId: ownerCapability.taskId,
-      taskTarget: "active",
-      status: "done",
-      message: "Complete",
-      structuredResult: null,
-    }, ownerCapability, "owner-terminal"));
-    await port.taskUpdate(runtimeInvocation({
-      name: "task_update",
-      companyId: ownerCapability.companyId,
-      taskId: "child-task",
-      taskTarget: "explicit",
-      status: "blocked",
-      message: "Please adjust",
-    }, ownerCapability, "creator-update"));
+    await port.taskUpdate(
+      runtimeInvocation(
+        {
+          name: "task_update",
+          companyId: ownerCapability.companyId,
+          taskId: ownerCapability.taskId,
+          taskTarget: "active",
+          message: "Progress update",
+        },
+        ownerCapability,
+        "owner-message",
+      ),
+    );
+    await port.taskUpdate(
+      runtimeInvocation(
+        {
+          name: "task_update",
+          companyId: ownerCapability.companyId,
+          taskId: ownerCapability.taskId,
+          taskTarget: "active",
+          status: "done",
+          message: "Complete",
+          structuredResult: null,
+        },
+        ownerCapability,
+        "owner-terminal",
+      ),
+    );
+    await port.taskUpdate(
+      runtimeInvocation(
+        {
+          name: "task_update",
+          companyId: ownerCapability.companyId,
+          taskId: "child-task",
+          taskTarget: "explicit",
+          status: "blocked",
+          message: "Please adjust",
+        },
+        ownerCapability,
+        "creator-update",
+      ),
+    );
 
     expect(service.update).toHaveBeenNthCalledWith(1, {
       capability: ownerCapability,
@@ -272,32 +300,52 @@ describe("runtime task action port", () => {
       taskExecutionAuthorityId: null,
       consultExecutionId: "consult-authority",
     };
-    await expect(port.taskAssign(runtimeInvocation({
-      name: "task_assign",
-      companyId: consultCapability.companyId,
-      taskId: "child",
-      ownerAgentId: consultCapability.targetAgentId,
-    }, consultCapability))).rejects.toBeInstanceOf(RuntimeTaskActionDenied);
-    await expect(port.taskUpdate(runtimeInvocation({
-      name: "task_update",
-      companyId: consultCapability.companyId,
-      taskId: consultCapability.taskId,
-      taskTarget: "active",
-      message: "Forged progress",
-    }, consultCapability))).rejects.toBeInstanceOf(RuntimeTaskActionDenied);
+    await expect(
+      port.taskAssign(
+        runtimeInvocation(
+          {
+            name: "task_assign",
+            companyId: consultCapability.companyId,
+            taskId: "child",
+            ownerAgentId: consultCapability.targetAgentId,
+          },
+          consultCapability,
+        ),
+      ),
+    ).rejects.toBeInstanceOf(RuntimeTaskActionDenied);
+    await expect(
+      port.taskUpdate(
+        runtimeInvocation(
+          {
+            name: "task_update",
+            companyId: consultCapability.companyId,
+            taskId: consultCapability.taskId,
+            taskTarget: "active",
+            message: "Forged progress",
+          },
+          consultCapability,
+        ),
+      ),
+    ).rejects.toBeInstanceOf(RuntimeTaskActionDenied);
     expect(service.assign).not.toHaveBeenCalled();
     expect(service.update).not.toHaveBeenCalled();
   });
 
   it("passes canonical agent and Board mentions with their immutable invocation identity", async () => {
     const { service, port } = setup();
-    await port.mentionAgent(runtimeInvocation({
-      name: "mention_agent",
-      companyId: ownerCapability.companyId,
-      taskId: ownerCapability.taskId,
-      agentId: "agent-2",
-      message: "Use this exact added context",
-    }, ownerCapability, "mention-agent"));
+    await port.mentionAgent(
+      runtimeInvocation(
+        {
+          name: "mention_agent",
+          companyId: ownerCapability.companyId,
+          taskId: ownerCapability.taskId,
+          agentId: "agent-2",
+          message: "Use this exact added context",
+        },
+        ownerCapability,
+        "mention-agent",
+      ),
+    );
     expect(service.mention).toHaveBeenCalledWith({
       capability: ownerCapability,
       invocationId: "mention-agent",
@@ -315,12 +363,18 @@ describe("runtime task action port", () => {
       taskExecutionAuthorityId: null,
       consultExecutionId: "consult-authority",
     };
-    await port.mentionBoard(runtimeInvocation({
-      name: "mention_board",
-      companyId: consultCapability.companyId,
-      taskId: consultCapability.taskId,
-      message: "Please decide",
-    }, consultCapability, "mention-board"));
+    await port.mentionBoard(
+      runtimeInvocation(
+        {
+          name: "mention_board",
+          companyId: consultCapability.companyId,
+          taskId: consultCapability.taskId,
+          message: "Please decide",
+        },
+        consultCapability,
+        "mention-board",
+      ),
+    );
     expect(service.mentionBoard).toHaveBeenCalledWith({
       capability: consultCapability,
       invocationId: "mention-board",
@@ -333,16 +387,28 @@ describe("runtime task action port", () => {
 
   it("passes canonical agent reader commands directly to the service", async () => {
     const { service, port } = setup();
-    await port.listAgents(runtimeInvocation({
-      name: "list_agents",
-      companyId: ownerCapability.companyId,
-      agentId: "agent-2",
-    }, ownerCapability, "list-agents"));
-    await port.agentRead(runtimeInvocation({
-      name: "agent_read",
-      companyId: ownerCapability.companyId,
-      agentId: "agent-2",
-    }, ownerCapability, "read-agent"));
+    await port.listAgents(
+      runtimeInvocation(
+        {
+          name: "list_agents",
+          companyId: ownerCapability.companyId,
+          agentId: "agent-2",
+        },
+        ownerCapability,
+        "list-agents",
+      ),
+    );
+    await port.agentRead(
+      runtimeInvocation(
+        {
+          name: "agent_read",
+          companyId: ownerCapability.companyId,
+          agentId: "agent-2",
+        },
+        ownerCapability,
+        "read-agent",
+      ),
+    );
 
     expect(service.listAgents).toHaveBeenCalledWith({
       capability: ownerCapability,

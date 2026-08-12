@@ -20,14 +20,12 @@ import type {
   PluginManagedAgentResolution,
   PluginManagedProjectResolution,
   PluginManagedRoutineResolution,
-  PluginManagedSkillResolution,
   Routine,
   RoutineRun,
   RoutineStatus,
   Agent,
   Goal,
-  HumanCompanyMembershipRole,
-  InviteJoinType,
+  UserCompanyMembershipRole,
   InviteSource,
   MembershipStatus,
   PermissionKey,
@@ -57,10 +55,6 @@ export type {
   PluginManagedProjectResolution,
   PluginManagedRoutineDeclaration,
   PluginManagedRoutineResolution,
-  PluginManagedSkillDeclaration,
-  PluginManagedSkillFileDeclaration,
-  PluginManagedSkillResolution,
-  CompanySkill,
   Routine,
   RoutineRun,
   PluginLocalFolderDeclaration,
@@ -101,8 +95,7 @@ export type {
   TaskSurfaceVisibility,
   Agent,
   Goal,
-  HumanCompanyMembershipRole,
-  InviteJoinType,
+  UserCompanyMembershipRole,
   InviteSource,
   MembershipStatus,
   PermissionKey,
@@ -231,9 +224,7 @@ export interface PluginBeforePromptInput {
 }
 
 /** Optional contribution from one blocking before-prompt hook. */
-export type PluginBeforePromptResult =
-  | null
-  | { readonly prependText: string };
+export type PluginBeforePromptResult = null | { readonly prependText: string };
 
 // ---------------------------------------------------------------------------
 // Job context
@@ -274,8 +265,7 @@ export type PluginRunContextHandle = string;
  * tool invocation. It is intentionally separate from `ctx.tasks`,
  * which remains the installation control plane.
  */
-export type PluginRunTaskProjection =
-  ProviderSafeTaskProjection;
+export type PluginRunTaskProjection = ProviderSafeTaskProjection;
 
 export interface PluginRunTaskCommentProjection {
   id: string;
@@ -357,7 +347,9 @@ export interface PluginToolRunContext {
  *
  * @see PLUGIN_SPEC.md §13.10 — `executeTool`
  */
-export type PluginToolStructuredData = Readonly<Record<string, PluginJsonValue>>;
+export type PluginToolStructuredData = Readonly<
+  Record<string, PluginJsonValue>
+>;
 
 export type ToolResult =
   | {
@@ -441,11 +433,12 @@ type PluginEntityQueryFilters = {
   offset?: number;
 };
 
-export type PluginEntityQuery = PluginEntityQueryFilters & (
-  | { scopeKind?: undefined; scopeId?: never }
-  | { scopeKind: "instance"; scopeId?: never }
-  | { scopeKind: Exclude<PluginStateScopeKind, "instance">; scopeId: string }
-);
+export type PluginEntityQuery = PluginEntityQueryFilters &
+  (
+    | { scopeKind?: undefined; scopeId?: never }
+    | { scopeKind: "instance"; scopeId?: never }
+    | { scopeKind: Exclude<PluginStateScopeKind, "instance">; scopeId: string }
+  );
 
 // ---------------------------------------------------------------------------
 // Host API surfaces exposed via PluginContext
@@ -496,13 +489,26 @@ export interface PluginLocalFolderListing {
 
 export interface PluginLocalFoldersClient {
   /** Persist a company-scoped local folder path after validating it. */
-  configure(input: PluginLocalFolderConfigureInput): Promise<PluginLocalFolderStatus>;
+  configure(
+    input: PluginLocalFolderConfigureInput,
+  ): Promise<PluginLocalFolderStatus>;
   /** Check the stored folder readiness for a company and folder key. */
-  status(companyId: string, folderKey: string): Promise<PluginLocalFolderStatus>;
+  status(
+    companyId: string,
+    folderKey: string,
+  ): Promise<PluginLocalFolderStatus>;
   /** List entries below a configured folder after containment checks. */
-  list(companyId: string, folderKey: string, options?: PluginLocalFolderListOptions): Promise<PluginLocalFolderListing>;
+  list(
+    companyId: string,
+    folderKey: string,
+    options?: PluginLocalFolderListOptions,
+  ): Promise<PluginLocalFolderListing>;
   /** Read a UTF-8 text file below a configured folder after containment checks. */
-  readText(companyId: string, folderKey: string, relativePath: string): Promise<string>;
+  readText(
+    companyId: string,
+    folderKey: string,
+    relativePath: string,
+  ): Promise<string>;
   /** Write a UTF-8 text file below a configured folder using atomic rename. */
   writeTextAtomic(
     companyId: string,
@@ -511,7 +517,11 @@ export interface PluginLocalFoldersClient {
     contents: string,
   ): Promise<PluginLocalFolderStatus>;
   /** Delete a file below a configured folder after containment checks. Missing files are treated as already deleted. */
-  deleteFile(companyId: string, folderKey: string, relativePath: string): Promise<PluginLocalFolderStatus>;
+  deleteFile(
+    companyId: string,
+    folderKey: string,
+    relativePath: string,
+  ): Promise<PluginLocalFolderStatus>;
 }
 
 /**
@@ -529,7 +539,10 @@ export interface PluginEventsClient {
    * @param name - Event type, e.g. `"task.board.comment.created"` or `"plugin.@acme/linear.sync-done"`
    * @param fn - Async event handler
    */
-  on(name: PluginEventPattern, fn: (event: PluginEvent) => Promise<void>): () => void;
+  on(
+    name: PluginEventPattern,
+    fn: (event: PluginEvent) => Promise<void>,
+  ): () => void;
 
   /**
    * Subscribe to an event with an optional server-side filter.
@@ -539,15 +552,19 @@ export interface PluginEventsClient {
    * @param fn - Async event handler
    * @returns An unsubscribe function that removes the handler
    */
-  on(name: PluginEventPattern, filter: EventFilter, fn: (event: PluginEvent) => Promise<void>): () => void;
+  on(
+    name: PluginEventPattern,
+    filter: EventFilter,
+    fn: (event: PluginEvent) => Promise<void>,
+  ): () => void;
 
   /**
    * Emit a plugin-namespaced event. Other plugins with `events.subscribe` can
-   * subscribe to it using `"plugin.<pluginId>.<eventName>"`.
+   * subscribe to it using `"plugin.<pluginKey>.<eventName>"`.
    *
    * Requires the `events.emit` capability.
    *
-   * Plugin-emitted events are automatically namespaced: if the plugin ID is
+   * Plugin-emitted events are automatically namespaced: if the plugin key is
    * `"acme.linear"` and the event name is `"sync-done"`, the full event type
    * becomes `"plugin.acme.linear.sync-done"`.
    *
@@ -586,7 +603,10 @@ export interface PluginDatabaseClient {
   namespace: string;
 
   /** Run a restricted SELECT against the plugin namespace and whitelisted core tables. */
-  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+  query<T = Record<string, unknown>>(
+    sql: string,
+    params?: unknown[],
+  ): Promise<T[]>;
 
   /** Run a restricted INSERT, UPDATE, or DELETE against the plugin namespace. */
   execute(sql: string, params?: unknown[]): Promise<{ rowCount: number }>;
@@ -889,6 +909,18 @@ export interface PluginEntitiesClient {
 }
 
 /**
+ * Canonical offset window accepted by bounded plugin host list APIs.
+ *
+ * Both values are exact JSON numbers. The host rejects strings, fractional
+ * values, non-finite values, limits outside `1..100`, and offsets outside the
+ * non-negative safe-integer range.
+ */
+export interface PluginListWindow {
+  limit?: number;
+  offset?: number;
+}
+
+/**
  * `ctx.projects` — read project metadata.
  *
  * Requires `projects.read` capability.
@@ -899,7 +931,7 @@ export interface PluginProjectsClient {
    *
    * Requires the `projects.read` capability.
    */
-  list(input: { companyId: string; limit?: number; offset?: number }): Promise<Project[]>;
+  list(input: { companyId: string } & PluginListWindow): Promise<Project[]>;
 
   /**
    * Get a single project by ID.
@@ -910,9 +942,18 @@ export interface PluginProjectsClient {
 
   /** Resolve and reconcile manifest-declared plugin-managed projects by stable key. Requires `projects.managed`. */
   managed: {
-    get(projectKey: string, companyId: string): Promise<PluginManagedProjectResolution>;
-    reconcile(projectKey: string, companyId: string): Promise<PluginManagedProjectResolution>;
-    reset(projectKey: string, companyId: string): Promise<PluginManagedProjectResolution>;
+    get(
+      projectKey: string,
+      companyId: string,
+    ): Promise<PluginManagedProjectResolution>;
+    reconcile(
+      projectKey: string,
+      companyId: string,
+    ): Promise<PluginManagedProjectResolution>;
+    reset(
+      projectKey: string,
+      companyId: string,
+    ): Promise<PluginManagedProjectResolution>;
   };
 }
 
@@ -923,16 +964,25 @@ export interface PluginProjectsClient {
  */
 export interface PluginRoutinesClient {
   managed: {
-    get(routineKey: string, companyId: string): Promise<PluginManagedRoutineResolution>;
+    get(
+      routineKey: string,
+      companyId: string,
+    ): Promise<PluginManagedRoutineResolution>;
     reconcile(
       routineKey: string,
       companyId: string,
-      overrides?: { assigneeAgentId?: string | null; projectId?: string | null },
+      overrides?: {
+        assigneeAgentId?: string | null;
+        projectId?: string | null;
+      },
     ): Promise<PluginManagedRoutineResolution>;
     reset(
       routineKey: string,
       companyId: string,
-      overrides?: { assigneeAgentId?: string | null; projectId?: string | null },
+      overrides?: {
+        assigneeAgentId?: string | null;
+        projectId?: string | null;
+      },
     ): Promise<PluginManagedRoutineResolution>;
     update(
       routineKey: string,
@@ -942,21 +992,11 @@ export interface PluginRoutinesClient {
     run(
       routineKey: string,
       companyId: string,
-      overrides?: { assigneeAgentId?: string | null; projectId?: string | null },
+      overrides?: {
+        assigneeAgentId?: string | null;
+        projectId?: string | null;
+      },
     ): Promise<RoutineRun>;
-  };
-}
-
-/**
- * `ctx.skills` — resolve and reconcile plugin-managed company skills.
- *
- * Requires `skills.managed` capability.
- */
-export interface PluginSkillsClient {
-  managed: {
-    get(skillKey: string, companyId: string): Promise<PluginManagedSkillResolution>;
-    reconcile(skillKey: string, companyId: string): Promise<PluginManagedSkillResolution>;
-    reset(skillKey: string, companyId: string): Promise<PluginManagedSkillResolution>;
   };
 }
 
@@ -977,7 +1017,10 @@ export interface PluginDataClient {
    * @param key - Stable string identifier for this data type (e.g. `"sync-health"`)
    * @param handler - Async function that receives request params and returns JSON-serializable data
    */
-  register(key: string, handler: (params: Record<string, unknown>) => Promise<unknown>): void;
+  register(
+    key: string,
+    handler: (params: Record<string, unknown>) => Promise<unknown>,
+  ): void;
 }
 
 /**
@@ -996,7 +1039,10 @@ export interface PluginActionsClient {
    */
   register(
     key: string,
-    handler: (params: Record<string, unknown>, context: PluginPerformActionContext) => Promise<unknown>,
+    handler: (
+      params: Record<string, unknown>,
+      context: PluginPerformActionContext,
+    ) => Promise<unknown>,
   ): void;
 }
 
@@ -1067,7 +1113,11 @@ export interface PluginMetricsClient {
    * @param value - Numeric value
    * @param tags - Optional key-value tags for filtering
    */
-  write(name: string, value: number, tags?: Record<string, string>): Promise<void>;
+  write(
+    name: string,
+    value: number,
+    tags?: Record<string, string>,
+  ): Promise<void>;
 }
 
 /**
@@ -1080,7 +1130,7 @@ export interface PluginTelemetryClient {
   /**
    * Track a plugin telemetry event.
    *
-   * The host prefixes the final event name as `plugin.<pluginId>.<eventName>`
+   * The host prefixes the final event name as `plugin.<pluginKey>.<eventName>`
    * before forwarding it to the shared telemetry client.
    *
    * @param eventName - Bare plugin event slug (for example `"sync_completed"`)
@@ -1101,7 +1151,7 @@ export interface PluginCompaniesClient {
   /**
    * List companies visible to this plugin.
    */
-  list(input?: { limit?: number; offset?: number }): Promise<Company[]>;
+  list(input?: PluginListWindow): Promise<Company[]>;
 
   /**
    * Get one company by ID.
@@ -1215,7 +1265,12 @@ export interface PluginTasksClient {
  * lifecycle operations. Provider invocation is task-only.
  */
 export interface PluginAgentsClient {
-  list(input: { companyId: string; status?: Agent["status"]; limit?: number; offset?: number }): Promise<Agent[]>;
+  list(
+    input: {
+      companyId: string;
+      status?: Agent["status"];
+    } & PluginListWindow,
+  ): Promise<Agent[]>;
   get(agentId: string, companyId: string): Promise<Agent | null>;
   /** Pause an agent. Throws if agent is terminated or not found. Requires `agents.pause`. */
   pause(agentId: string, companyId: string): Promise<Agent>;
@@ -1223,9 +1278,18 @@ export interface PluginAgentsClient {
   resume(agentId: string, companyId: string): Promise<Agent>;
   /** Resolve and reconcile manifest-declared plugin-managed agents by stable key. Requires `agents.managed`. */
   managed: {
-    get(agentKey: string, companyId: string): Promise<PluginManagedAgentResolution>;
-    reconcile(agentKey: string, companyId: string): Promise<PluginManagedAgentResolution>;
-    reset(agentKey: string, companyId: string): Promise<PluginManagedAgentResolution>;
+    get(
+      agentKey: string,
+      companyId: string,
+    ): Promise<PluginManagedAgentResolution>;
+    reconcile(
+      agentKey: string,
+      companyId: string,
+    ): Promise<PluginManagedAgentResolution>;
+    reset(
+      agentKey: string,
+      companyId: string,
+    ): Promise<PluginManagedAgentResolution>;
   };
 }
 
@@ -1238,13 +1302,13 @@ export interface PluginAgentsClient {
  * - `goals.update` for update
  */
 export interface PluginGoalsClient {
-  list(input: {
-    companyId: string;
-    level?: Goal["level"];
-    status?: Goal["status"];
-    limit?: number;
-    offset?: number;
-  }): Promise<Goal[]>;
+  list(
+    input: {
+      companyId: string;
+      level?: Goal["level"];
+      status?: Goal["status"];
+    } & PluginListWindow,
+  ): Promise<Goal[]>;
   get(goalId: string, companyId: string): Promise<Goal | null>;
   create(input: {
     companyId: string;
@@ -1257,10 +1321,17 @@ export interface PluginGoalsClient {
   }): Promise<Goal>;
   update(
     goalId: string,
-    patch: Partial<Pick<
-      Goal,
-      "title" | "description" | "level" | "status" | "parentId" | "ownerAgentId"
-    >>,
+    patch: Partial<
+      Pick<
+        Goal,
+        | "title"
+        | "description"
+        | "level"
+        | "status"
+        | "parentId"
+        | "ownerAgentId"
+      >
+    >,
     companyId: string,
   ): Promise<Goal>;
 }
@@ -1275,7 +1346,7 @@ export interface PluginAccessMember {
   principalType: PrincipalType;
   principalId: string;
   status: MembershipStatus;
-  membershipRole: string | null;
+  membershipRole: UserCompanyMembershipRole | "member";
   grants: PrincipalPermissionGrant[];
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -1283,12 +1354,11 @@ export interface PluginAccessMember {
 
 export interface PluginAccessInvite {
   id: string;
-  companyId: string | null;
-  inviteType: string;
-  allowedJoinTypes: InviteJoinType;
-  defaultsPayload: Record<string, unknown> | null;
+  companyId: string;
+  inviteType: "company_join";
+  userRole: UserCompanyMembershipRole;
   expiresAt: Date | string;
-  source: InviteSource;
+  source: Exclude<InviteSource, "bootstrap_admin_cli">;
   invitedByUserId: string | null;
   revokedAt: Date | string | null;
   acceptedAt: Date | string | null;
@@ -1298,12 +1368,15 @@ export interface PluginAccessInvite {
 }
 
 export interface PluginAccessMembersClient {
-  list(input: { companyId: string; includeArchived?: boolean }): Promise<PluginAccessMember[]>;
+  list(input: {
+    companyId: string;
+    includeArchived?: boolean;
+  }): Promise<PluginAccessMember[]>;
   get(memberId: string, companyId: string): Promise<PluginAccessMember | null>;
   update(
     memberId: string,
     patch: {
-      membershipRole?: HumanCompanyMembershipRole | null;
+      membershipRole?: UserCompanyMembershipRole;
       status?: Extract<MembershipStatus, "pending" | "active" | "suspended">;
     },
     companyId: string,
@@ -1311,18 +1384,15 @@ export interface PluginAccessMembersClient {
 }
 
 export interface PluginAccessInvitesClient {
-  list(input: {
-    companyId: string;
-    state?: PluginAccessInvite["state"];
-    limit?: number;
-    offset?: number;
-  }): Promise<{ invites: PluginAccessInvite[]; nextOffset: number | null }>;
+  list(
+    input: {
+      companyId: string;
+      state?: PluginAccessInvite["state"];
+    } & PluginListWindow,
+  ): Promise<{ invites: PluginAccessInvite[]; nextOffset: number | null }>;
   create(input: {
     companyId: string;
-    allowedJoinTypes?: InviteJoinType;
-    humanRole?: HumanCompanyMembershipRole | null;
-    defaultsPayload?: Record<string, unknown> | null;
-    agentMessage?: string | null;
+    userRole?: UserCompanyMembershipRole | null;
   }): Promise<PluginAccessInvite & { token: string }>;
   revoke(inviteId: string, companyId: string): Promise<PluginAccessInvite>;
 }
@@ -1354,8 +1424,7 @@ export interface PluginAuthorizationPolicyRecord {
 export interface PluginAssignmentPreviewInput {
   companyId: string;
   subject:
-    | { type: "user"; userId: string }
-    | { type: "agent"; agentId: string };
+    { type: "user"; userId: string } | { type: "agent"; agentId: string };
   targetAgentId: string;
 }
 
@@ -1384,40 +1453,56 @@ export interface PluginAuthorizationAuditEntry {
   createdAt: Date | string;
 }
 
+/** Exact authorization outcome accepted by audit search. */
+export type PluginAuthorizationAuditDecision = "allow" | "deny";
+
 export interface PluginAuthorizationClient {
   grants: {
-    list(input: { companyId: string; principalType?: PrincipalType; principalId?: string }): Promise<PrincipalPermissionGrant[]>;
+    list(input: {
+      companyId: string;
+      principalType?: PrincipalType;
+      principalId?: string;
+    }): Promise<PrincipalPermissionGrant[]>;
     set(input: {
       companyId: string;
       principalType: PrincipalType;
       principalId: string;
-      grants: Array<{ permissionKey: PermissionKey; scope?: Record<string, unknown> | null }>;
+      grants: Array<{
+        permissionKey: PermissionKey;
+        scope?: Record<string, unknown> | null;
+      }>;
       grantedByUserId?: string | null;
     }): Promise<PrincipalPermissionGrant[]>;
   };
   policies: {
     summary(companyId: string): Promise<PluginAuthorizationPolicySummary>;
-    get(input: { companyId: string; resourceType: PluginAuthorizationPolicyRecord["resourceType"]; resourceId: string }): Promise<PluginAuthorizationPolicyRecord | null>;
+    get(input: {
+      companyId: string;
+      resourceType: PluginAuthorizationPolicyRecord["resourceType"];
+      resourceId: string;
+    }): Promise<PluginAuthorizationPolicyRecord | null>;
     update(input: {
       companyId: string;
       resourceType: "task";
       resourceId: string;
       policy: Record<string, unknown> | null;
     }): Promise<PluginAuthorizationPolicyRecord>;
-    previewAssignment(input: PluginAssignmentPreviewInput): Promise<PluginAuthorizationDecisionResult>;
+    previewAssignment(
+      input: PluginAssignmentPreviewInput,
+    ): Promise<PluginAuthorizationDecisionResult>;
   };
   audit: {
-    search(input: {
-      companyId: string;
-      action?: string;
-      actorType?: string;
-      actorId?: string;
-      entityType?: string;
-      entityId?: string;
-      decision?: string;
-      limit?: number;
-      offset?: number;
-    }): Promise<PluginAuthorizationAuditEntry[]>;
+    search(
+      input: {
+        companyId: string;
+        action?: string;
+        actorType?: string;
+        actorId?: string;
+        entityType?: string;
+        entityId?: string;
+        decision?: PluginAuthorizationAuditDecision;
+      } & PluginListWindow,
+    ): Promise<PluginAuthorizationAuditEntry[]>;
   };
 }
 
@@ -1491,9 +1576,6 @@ export interface PluginContext {
 
   /** Resolve and reconcile plugin-managed routines. Requires `routines.managed`. */
   routines: PluginRoutinesClient;
-
-  /** Resolve and reconcile plugin-managed company skills. Requires `skills.managed`. */
-  skills: PluginSkillsClient;
 
   /** Read company metadata. Requires `companies.read`. */
   companies: PluginCompaniesClient;

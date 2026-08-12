@@ -21,12 +21,6 @@ export function registerOrganizationCommands(program: Command): void {
   addCompanyGet(org, "get", "Get org chart data", "org");
   addBinaryCompanyGet(org, "svg", "Download org chart SVG", "org.svg");
   addBinaryCompanyGet(org, "png", "Download org chart PNG", "org.png");
-  addCompanyGet(
-    program.command("agent-config").description("Agent configuration summaries"),
-    "list",
-    "List agent configurations",
-    "agent-configurations",
-  );
 }
 
 function addCompanyGet(parent: Command, name: string, description: string, path: string): void {

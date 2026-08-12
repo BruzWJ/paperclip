@@ -380,7 +380,7 @@ function setup(
   };
   const registerTerminalInvalid = vi.fn(async () => undefined);
   const execute = vi.fn(async (
-    input: Parameters<PromptCapabilityToolExecutor["execute"]>[0],
+    _input: Parameters<PromptCapabilityToolExecutor["execute"]>[0],
   ) => ({ source: "paperclip" as const, value: { accepted: true } }));
   return {
     authenticateBearerHash,

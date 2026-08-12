@@ -29,7 +29,6 @@ function writeBaseConfig(configPath: string) {
     server: {
       exposure: "private",
       bind: "loopback",
-      host: "127.0.0.1",
       port: 3100,
       allowedHostnames: [],
       serveUi: true,
@@ -70,7 +69,7 @@ describe("configure command", () => {
     fs.writeFileSync(configPath, JSON.stringify(candidate, null, 2));
 
     try {
-      expect(() => readConfig(configPath)).toThrow(/Invalid config.*server:.*deploymentMode/);
+      expect(() => readConfig(configPath)).toThrow(/Invalid config.*server:.*deploymentMode/); // paperclip:canonical-human-auth-removal-proof
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

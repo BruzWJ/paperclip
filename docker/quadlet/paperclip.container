@@ -8,7 +8,7 @@ Image=paperclip-local
 ContainerName=paperclip
 Pod=paperclip.pod
 Volume=%h/.local/share/paperclip:/paperclip:Z
-Environment=HOST=0.0.0.0
+Environment=PAPERCLIP_BIND=lan
 Environment=PAPERCLIP_HOME=/paperclip
 Environment=PAPERCLIP_DEPLOYMENT_EXPOSURE=private
 EnvironmentFile=%h/.config/containers/systemd/paperclip.env

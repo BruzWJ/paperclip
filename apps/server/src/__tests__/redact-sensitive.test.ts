@@ -43,10 +43,10 @@ describe("redactSensitive", () => {
 
   it("strips secret-bearing query and fragment values from source URLs", () => {
     const out = redactSensitive({
-      source: "https://github.com/acme/private-skill?token=secret#token=secret",
+      source: "https://github.com/acme/private-repo?token=secret#token=secret",
     }) as Record<string, unknown>;
 
-    expect(out.source).toBe("https://github.com/acme/private-skill");
+    expect(out.source).toBe("https://github.com/acme/private-repo");
   });
 
   it("recurses into nested objects and arrays", () => {

@@ -1,8 +1,8 @@
 import type { UIAdapterModule } from "./types";
 import {
-  SchemaConfigFields,
-  buildSchemaAdapterConfig,
-} from "./schema-config-fields";
+  AcpxConfigOptions,
+  buildAcpxAdapterConfig,
+} from "./acpx-config-options";
 
 const adaptersByType = new Map<string, UIAdapterModule>();
 
@@ -45,8 +45,8 @@ export function syncServerAdapters(
     next.set(adapter.type, Object.freeze({
       type: adapter.type,
       label: adapter.label,
-      ConfigFields: SchemaConfigFields,
-      buildAdapterConfig: buildSchemaAdapterConfig,
+      ConfigFields: AcpxConfigOptions,
+      buildAdapterConfig: buildAcpxAdapterConfig,
     }));
   }
 

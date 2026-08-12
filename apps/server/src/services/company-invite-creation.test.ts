@@ -12,7 +12,6 @@ function inviteRow(source: "board_api" | "plugin_host") {
     companyId,
     inviteType: "company_join",
     tokenHash: "stored-hash",
-    allowedJoinTypes: "both",
     defaultsPayload: null,
     expiresAt: new Date("2026-08-09T00:00:00.000Z"),
     source,
@@ -25,61 +24,55 @@ function inviteRow(source: "board_api" | "plugin_host") {
 }
 
 describe("createCompanyInvite", () => {
-  it("applies one defaults and token policy while preserving explicit board provenance", async () => {
+  it("applies one user-role and token policy while preserving explicit board provenance", async () => {
     const row = inviteRow("board_api");
     const harness = createMockDb({ insert: [[row]] });
 
     const result = await createCompanyInvite(harness.db, {
       companyId,
       provenance: { source: "board_api", invitedByUserId },
-      allowedJoinTypes: "both",
-      humanRole: "viewer",
-      defaultsPayload: { human: { label: "Reviewer" }, custom: true },
-      agentMessage: "  Review the onboarding notes.  ",
+      userRole: "viewer",
     });
 
     expect(result.invite).toEqual(row);
-    expect(result.normalizedAgentMessage).toBe("Review the onboarding notes.");
     expect(result.token).toMatch(/^pcp_invite_[A-Za-z0-9_-]{22,}$/);
-    expect(harness.calls.find((call) =>
-      call.operation === "insert" && call.method === "values"
-    )?.args[0]).toMatchObject({
+    expect(
+      harness.calls.find(
+        (call) => call.operation === "insert" && call.method === "values",
+      )?.args[0],
+    ).toMatchObject({
       companyId,
       source: "board_api",
       invitedByUserId,
-      allowedJoinTypes: "both",
       defaultsPayload: {
-        human: {
-          label: "Reviewer",
+        user: {
           role: "viewer",
           grants: expect.any(Array),
         },
-        custom: true,
-        agentMessage: "Review the onboarding notes.",
       },
       tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
   });
 
-  it("uses the same creation policy with plugin-host provenance and no human inviter", async () => {
+  it("uses the same creation policy with plugin-host provenance and no user inviter", async () => {
     const row = inviteRow("plugin_host");
     const harness = createMockDb({ insert: [[row]] });
 
     await createCompanyInvite(harness.db, {
       companyId,
       provenance: { source: "plugin_host" },
-      allowedJoinTypes: "human",
     });
 
-    expect(harness.calls.find((call) =>
-      call.operation === "insert" && call.method === "values"
-    )?.args[0]).toMatchObject({
+    expect(
+      harness.calls.find(
+        (call) => call.operation === "insert" && call.method === "values",
+      )?.args[0],
+    ).toMatchObject({
       companyId,
       source: "plugin_host",
       invitedByUserId: null,
-      allowedJoinTypes: "human",
       defaultsPayload: {
-        human: {
+        user: {
           role: "operator",
           grants: expect.any(Array),
         },
@@ -95,23 +88,36 @@ describe("createCompanyInvite", () => {
     const row = inviteRow("plugin_host");
     const harness = createMockDb({ insert: [collision, [row]] });
 
-    await expect(createCompanyInvite(harness.db, {
-      companyId,
-      provenance: { source: "plugin_host" },
-    })).resolves.toMatchObject({ invite: row });
-    expect(harness.calls.filter((call) => call.operation === "insert" && call.method === "insert"))
-      .toHaveLength(2);
+    await expect(
+      createCompanyInvite(harness.db, {
+        companyId,
+        provenance: { source: "plugin_host" },
+      }),
+    ).resolves.toMatchObject({ invite: row });
+    expect(
+      harness.calls.filter(
+        (call) => call.operation === "insert" && call.method === "insert",
+      ),
+    ).toHaveLength(2);
 
-    const otherConstraint = Object.assign(new Error("duplicate company record"), {
-      code: "23505",
-      constraint: "other_unique_idx",
-    });
+    const otherConstraint = Object.assign(
+      new Error("duplicate company record"),
+      {
+        code: "23505",
+        constraint: "other_unique_idx",
+      },
+    );
     const failedHarness = createMockDb({ insert: [otherConstraint] });
-    await expect(createCompanyInvite(failedHarness.db, {
-      companyId,
-      provenance: { source: "plugin_host" },
-    })).rejects.toBe(otherConstraint);
-    expect(failedHarness.calls.filter((call) => call.operation === "insert" && call.method === "insert"))
-      .toHaveLength(1);
+    await expect(
+      createCompanyInvite(failedHarness.db, {
+        companyId,
+        provenance: { source: "plugin_host" },
+      }),
+    ).rejects.toBe(otherConstraint);
+    expect(
+      failedHarness.calls.filter(
+        (call) => call.operation === "insert" && call.method === "insert",
+      ),
+    ).toHaveLength(1);
   });
 });

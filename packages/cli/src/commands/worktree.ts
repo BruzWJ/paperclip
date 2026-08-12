@@ -20,7 +20,6 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import {
   assertDistinctDatabaseIdentities,
-  databaseIdentitiesEqual,
   probeDatabaseIdentity,
   redactExternalPostgresConnectionString,
   resolveDatabaseTarget,
@@ -147,9 +146,7 @@ function resolveWorktreeMakeName(value: string): string {
   if (trimmed.includes("/") || trimmed.includes("\\")) {
     throw new Error("Worktree name must be a single directory name.");
   }
-  return trimmed.startsWith("paperclip-")
-    ? trimmed
-    : `paperclip-${trimmed}`;
+  return trimmed.startsWith("paperclip-") ? trimmed : `paperclip-${trimmed}`;
 }
 
 function resolveWorktreeHome(explicit?: string): string {
@@ -205,15 +202,11 @@ export function resolveGitWorktreeAddArgs(input: {
 }
 
 function parseGitWorktreeList(cwd: string): GitWorktreeListEntry[] {
-  const raw = execFileSync(
-    "git",
-    ["worktree", "list", "--porcelain"],
-    {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  const raw = execFileSync("git", ["worktree", "list", "--porcelain"], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   const entries: GitWorktreeListEntry[] = [];
   let current: Partial<GitWorktreeListEntry> = {};
   const flush = () => {
@@ -245,9 +238,7 @@ function parseGitWorktreeList(cwd: string): GitWorktreeListEntry[] {
 }
 
 function primaryGitWorktreeRoot(cwd: string): string {
-  const primary = parseGitWorktreeList(cwd).find(
-    (entry) => !entry.bare,
-  );
+  const primary = parseGitWorktreeList(cwd).find((entry) => !entry.bare);
   if (!primary) {
     throw new Error(
       "Cannot resolve the primary git worktree for parent-instance verification.",
@@ -260,18 +251,13 @@ export function resolveParentWorktreeConfigPath(
   cwd: string,
   explicit?: string,
 ): string {
-  const configured = nonEmpty(explicit) ?? nonEmpty(process.env.PAPERCLIP_CONFIG);
+  const configured =
+    nonEmpty(explicit) ?? nonEmpty(process.env.PAPERCLIP_CONFIG);
   if (configured) return path.resolve(configured);
-  return path.resolve(
-    primaryGitWorktreeRoot(cwd),
-    ".paperclip",
-    "config.json",
-  );
+  return path.resolve(primaryGitWorktreeRoot(cwd), ".paperclip", "config.json");
 }
 
-function readPersistedParent(input: {
-  parentConfigPath: string;
-}): {
+function readPersistedParent(input: { parentConfigPath: string }): {
   connectionString: string;
   betterAuthSecret: string;
 } {
@@ -362,8 +348,7 @@ export async function provisionWorktreeInstance(
     serverPort: number;
     branding: { name: string; color: string };
   },
-  dependencies: WorktreeProvisioningDependencies =
-    productionProvisioningDependencies,
+  dependencies: WorktreeProvisioningDependencies = productionProvisioningDependencies,
 ): Promise<{
   paths: WorktreeLocalPaths;
   marker: WorktreeCreationMarker;
@@ -396,10 +381,7 @@ export async function provisionWorktreeInstance(
   );
 
   const betterAuthSecret = dependencies.generateSecret();
-  if (
-    !betterAuthSecret ||
-    betterAuthSecret === parent.betterAuthSecret
-  ) {
+  if (!betterAuthSecret || betterAuthSecret === parent.betterAuthSecret) {
     throw new Error(
       "Generated worktree authentication secret must be nonempty and distinct from the parent.",
     );
@@ -423,23 +405,18 @@ export async function provisionWorktreeInstance(
     createdAt: now.toISOString(),
     branding: input.branding,
     target: {
-      locator:
-        redactExternalPostgresConnectionString(targetDatabaseUrl),
+      locator: redactExternalPostgresConnectionString(targetDatabaseUrl),
       identity: targetIdentity,
     },
     parent: {
       configPath: path.resolve(input.parentConfigPath),
-      locator: redactExternalPostgresConnectionString(
-        parent.connectionString,
-      ),
+      locator: redactExternalPostgresConnectionString(parent.connectionString),
       identity: parentIdentity,
     },
     fingerprints: {
       targetDatabaseUrlSha256: sha256(targetDatabaseUrl),
       betterAuthSecretSha256: sha256(betterAuthSecret),
-      parentBetterAuthSecretSha256: sha256(
-        parent.betterAuthSecret,
-      ),
+      parentBetterAuthSecretSha256: sha256(parent.betterAuthSecret),
     },
   };
   const config = buildWorktreeConfig({
@@ -450,10 +427,7 @@ export async function provisionWorktreeInstance(
 
   mkdirSync(path.dirname(paths.instanceRoot), { recursive: true });
   mkdirSync(paths.instanceRoot, { recursive: false });
-  atomicWriteMode0600(
-    paths.configPath,
-    `${JSON.stringify(config, null, 2)}\n`,
-  );
+  atomicWriteMode0600(paths.configPath, `${JSON.stringify(config, null, 2)}\n`);
   atomicWriteMode0600(
     paths.envPath,
     renderPinnedWorktreeEnv({
@@ -461,10 +435,7 @@ export async function provisionWorktreeInstance(
       betterAuthSecret,
     }),
   );
-  atomicWriteMode0600(
-    paths.markerPath,
-    `${JSON.stringify(marker, null, 2)}\n`,
-  );
+  atomicWriteMode0600(paths.markerPath, `${JSON.stringify(marker, null, 2)}\n`);
   assertMode0600(paths.configPath);
   assertMode0600(paths.envPath);
   assertMode0600(paths.markerPath);
@@ -473,9 +444,7 @@ export async function provisionWorktreeInstance(
   return { paths, marker };
 }
 
-async function runWorktreeInit(
-  options: WorktreeInitOptions,
-): Promise<void> {
+async function runWorktreeInit(options: WorktreeInitOptions): Promise<void> {
   const targetDatabaseUrl = nonEmpty(options.databaseUrl);
   if (!targetDatabaseUrl) {
     throw new Error(
@@ -506,9 +475,7 @@ async function runWorktreeInit(
   p.log.message(pc.dim(`Config: ${result.paths.configPath}`));
   p.log.message(pc.dim(`Pinned env: ${result.paths.envPath}`));
   p.log.message(pc.dim(`Creation marker: ${result.paths.markerPath}`));
-  p.log.message(
-    pc.dim(`Database: ${result.marker.target.locator}`),
-  );
+  p.log.message(pc.dim(`Database: ${result.marker.target.locator}`));
   p.outro(
     pc.green(
       "Worktree created with its own external database target and Better Auth secret.",
@@ -589,10 +556,7 @@ export async function worktreeMakeCommand(
   }
 }
 
-function branchHasUniqueCommits(
-  cwd: string,
-  branchName: string,
-): boolean {
+function branchHasUniqueCommits(cwd: string, branchName: string): boolean {
   try {
     return (
       execFileSync(
@@ -655,8 +619,8 @@ function readCleanupWorktreeInstanceId(
     typeof parsed === "object" &&
     parsed !== null &&
     !Array.isArray(parsed) &&
-    typeof (parsed as { worktreeInstanceId?: unknown })
-      .worktreeInstanceId === "string"
+    typeof (parsed as { worktreeInstanceId?: unknown }).worktreeInstanceId ===
+      "string"
       ? (parsed as { worktreeInstanceId: string }).worktreeInstanceId
       : null;
   if (
@@ -684,9 +648,7 @@ export async function worktreeCleanupCommand(
       path.resolve(entry.worktree) === targetPath ||
       entry.branch === `refs/heads/${name}`,
   );
-  const expectedBaseId = sanitizeWorktreeInstanceId(
-    options.instance ?? name,
-  );
+  const expectedBaseId = sanitizeWorktreeInstanceId(options.instance ?? name);
   const createdInstanceId = readCleanupWorktreeInstanceId(
     worktree?.worktree ?? targetPath,
     expectedBaseId,
@@ -719,11 +681,10 @@ export async function worktreeCleanupCommand(
     rmSync(targetPath, { recursive: true, force: true });
   }
   if (localBranchExists(sourceCwd, name)) {
-    execFileSync(
-      "git",
-      ["branch", options.force ? "-D" : "-d", name],
-      { cwd: sourceCwd, stdio: "ignore" },
-    );
+    execFileSync("git", ["branch", options.force ? "-D" : "-d", name], {
+      cwd: sourceCwd,
+      stdio: "ignore",
+    });
   }
   if (createdInstanceId) {
     const instanceRoot = path.resolve(
@@ -753,14 +714,9 @@ export async function worktreeListCommand(
       entry.branch?.replace(/^refs\/heads\//, "") ??
       (entry.detached ? "(detached)" : null),
     current: path.resolve(entry.worktree) === current,
-    paperclipCreated:
-      existsSync(
-        path.resolve(
-          entry.worktree,
-          ".paperclip",
-          "worktree-instance.json",
-        ),
-      ),
+    paperclipCreated: existsSync(
+      path.resolve(entry.worktree, ".paperclip", "worktree-instance.json"),
+    ),
   }));
   if (options.json) {
     process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
@@ -832,20 +788,6 @@ export function registerWorktreeCommands(program: Command): void {
       "--home <path>",
       `Worktree instance root (default: ${DEFAULT_WORKTREE_HOME})`,
     )
-    .option(
-      "--force",
-      "Bypass git checkout safety checks",
-      false,
-    )
+    .option("--force", "Bypass git checkout safety checks", false)
     .action(worktreeCleanupCommand);
-}
-
-export function worktreeMarkersReferToSameTarget(
-  left: WorktreeCreationMarker,
-  right: WorktreeCreationMarker,
-): boolean {
-  return databaseIdentitiesEqual(
-    left.target.identity,
-    right.target.identity,
-  );
 }

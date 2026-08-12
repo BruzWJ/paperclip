@@ -1,4 +1,5 @@
 import type { TelemetryBackoffConfig, TelemetryConfig } from "./types.js";
+import { parseOptionalExactNonEmptyEnvironmentValue } from "../environment.js";
 
 const CI_ENV_VARS = ["CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GITHUB_ACTIONS", "GITLAB_CI"];
 
@@ -81,6 +82,9 @@ export function resolveTelemetryConfig(
     return { enabled: false, ...caps };
   }
 
-  const endpoint = process.env.PAPERCLIP_TELEMETRY_ENDPOINT || undefined;
+  const endpoint = parseOptionalExactNonEmptyEnvironmentValue(
+    process.env.PAPERCLIP_TELEMETRY_ENDPOINT,
+    "PAPERCLIP_TELEMETRY_ENDPOINT",
+  );
   return { enabled: true, endpoint, ...caps };
 }

@@ -1,18 +1,26 @@
 import { useState } from "react";
-import { Link } from "@/lib/router";
+import { Link } from "@tanstack/react-router";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Project } from "@paperclipai/shared";
+import {
+  isAbsoluteProjectFolder,
+  isCanonicalProjectRepositoryUrl,
+  type Project,
+} from "@paperclipai/shared";
 import { StatusBadge } from "./StatusBadge";
 import { cn, formatDate } from "../lib/utils";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
 import { secretsApi } from "../api/secrets";
-import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,12 +45,7 @@ import { DraftInput } from "./agent-config-primitives";
 import { InlineEditor } from "./InlineEditor";
 import { EnvironmentVariablesEditor } from "./environment-variables-editor";
 import { ChoosePathButton } from "./PathInstructionsModal";
-import {
-  formatProjectRepositoryUrl,
-  isAbsoluteProjectFolder,
-  isSafeProjectRepositoryUrl,
-  isValidProjectRepositoryUrl,
-} from "../lib/project-codebase";
+import { formatProjectRepositoryUrl } from "../lib/project-codebase";
 
 const PROJECT_STATUSES = [
   { value: "backlog", label: "Backlog" },
@@ -55,7 +58,10 @@ const PROJECT_STATUSES = [
 interface ProjectPropertiesProps {
   project: Project;
   onUpdate?: (data: Record<string, unknown>) => void;
-  onFieldUpdate?: (field: ProjectConfigFieldKey, data: Record<string, unknown>) => void;
+  onFieldUpdate?: (
+    field: ProjectConfigFieldKey,
+    data: Record<string, unknown>,
+  ) => void;
   getFieldSaveState?: (field: ProjectConfigFieldKey) => ProjectFieldSaveState;
   onArchive?: (archived: boolean) => void;
   archivePending?: boolean;
@@ -63,11 +69,7 @@ interface ProjectPropertiesProps {
 
 export type ProjectFieldSaveState = "idle" | "saving" | "saved" | "error";
 export type ProjectConfigFieldKey =
-  | "name"
-  | "description"
-  | "status"
-  | "goals"
-  | "env";
+  "name" | "description" | "status" | "goals" | "env";
 
 function SaveIndicator({ state }: { state: ProjectFieldSaveState }) {
   if (state === "saving") {
@@ -126,14 +128,26 @@ function PropertyRow({
   return (
     <div className={cn("flex gap-3 py-1.5 items-start")}>
       <div className="shrink-0 w-20 mt-0.5">{label}</div>
-      <div className={cn("min-w-0 flex-1", alignStart ? "pt-0.5" : "flex items-center gap-1.5 flex-wrap", valueClassName)}>
+      <div
+        className={cn(
+          "min-w-0 flex-1",
+          alignStart ? "pt-0.5" : "flex items-center gap-1.5 flex-wrap",
+          valueClassName,
+        )}
+      >
         {children}
       </div>
     </div>
   );
 }
 
-function ProjectStatusPicker({ status, onChange }: { status: string; onChange: (status: string) => void }) {
+function ProjectStatusPicker({
+  status,
+  onChange,
+}: {
+  status: string;
+  onChange: (status: string) => void;
+}) {
   const colorClass = statusBadge[status] ?? statusBadgeDefault;
 
   return (
@@ -151,7 +165,11 @@ function ProjectStatusPicker({ status, onChange }: { status: string; onChange: (
       <DropdownMenuContent align="start">
         <DropdownMenuRadioGroup value={status} onValueChange={onChange}>
           {PROJECT_STATUSES.map((s) => (
-            <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
+            <DropdownMenuRadioItem
+              key={s.value}
+              value={s.value}
+              className="text-xs"
+            >
               {s.label}
             </DropdownMenuRadioItem>
           ))}
@@ -216,9 +234,15 @@ function ArchiveDangerZone({
           onClick={() => setConfirming(true)}
         >
           {isArchive ? (
-            <><Archive className="h-3 w-3 mr-1" />{action} project</>
+            <>
+              <Archive className="h-3 w-3 mr-1" />
+              {action} project
+            </>
           ) : (
-            <><ArchiveRestore className="h-3 w-3 mr-1" />{action} project</>
+            <>
+              <ArchiveRestore className="h-3 w-3 mr-1" />
+              {action} project
+            </>
           )}
         </Button>
       )}
@@ -226,56 +250,66 @@ function ArchiveDangerZone({
   );
 }
 
-export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSaveState, onArchive, archivePending }: ProjectPropertiesProps) {
-  const { selectedCompanyId } = useCompany();
+export function ProjectProperties({
+  project,
+  onUpdate,
+  onFieldUpdate,
+  getFieldSaveState,
+  onArchive,
+  archivePending,
+}: ProjectPropertiesProps) {
+  const companyId = useCompanyRouteId();
   const queryClient = useQueryClient();
-  const [codebaseEditor, setCodebaseEditor] = useState<"local" | "repo" | null>(null);
+  const [codebaseEditor, setCodebaseEditor] = useState<"local" | "repo" | null>(
+    null,
+  );
   const [localFolderDraft, setLocalFolderDraft] = useState("");
   const [repoUrlDraft, setRepoUrlDraft] = useState("");
-  const [codebaseValidationError, setCodebaseValidationError] = useState<string | null>(null);
+  const [codebaseValidationError, setCodebaseValidationError] = useState<
+    string | null
+  >(null);
 
-  const commitField = (field: ProjectConfigFieldKey, data: Record<string, unknown>) => {
+  const commitField = (
+    field: ProjectConfigFieldKey,
+    data: Record<string, unknown>,
+  ) => {
     if (onFieldUpdate) {
       onFieldUpdate(field, data);
       return;
     }
     onUpdate?.(data);
   };
-  const fieldState = (field: ProjectConfigFieldKey): ProjectFieldSaveState => getFieldSaveState?.(field) ?? "idle";
+  const fieldState = (field: ProjectConfigFieldKey): ProjectFieldSaveState =>
+    getFieldSaveState?.(field) ?? "idle";
 
   const { data: allGoals } = useQuery({
-    queryKey: queryKeys.goals.list(selectedCompanyId!),
-    queryFn: () => goalsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.goals.list(companyId),
+    queryFn: () => goalsApi.list(companyId),
   });
 
   const { data: availableSecrets = [] } = useQuery({
-    queryKey: selectedCompanyId ? queryKeys.secrets.list(selectedCompanyId) : ["secrets", "none"],
-    queryFn: () => secretsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
+    queryKey: queryKeys.secrets.list(companyId),
+    queryFn: () => secretsApi.list(companyId),
   });
   const { data: userSecretDefinitions = [] } = useQuery({
-    queryKey: selectedCompanyId
-      ? queryKeys.secrets.userDefinitions(selectedCompanyId)
-      : ["user-secret-definitions", "none"],
-    queryFn: () => secretsApi.listUserSecretDefinitions(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
+    queryKey: queryKeys.secrets.userDefinitions(companyId),
+    queryFn: () => secretsApi.listUserSecretDefinitions(companyId),
     retry: false,
   });
   const createSecret = useMutation({
     mutationFn: (input: { name: string; value: string }) => {
-      if (!selectedCompanyId) throw new Error("Select a company to create secrets");
-      return secretsApi.create(selectedCompanyId, input);
+      return secretsApi.create(companyId, input);
     },
     onSuccess: () => {
-      if (!selectedCompanyId) return;
-      queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(selectedCompanyId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.secrets.list(companyId),
+      });
     },
   });
 
   const codebaseQuery = useQuery({
     queryKey: queryKeys.projects.codebase(project.id),
-    queryFn: () => projectsApi.getCodebase(project.id, project.companyId),
+    queryFn: () => projectsApi.getCodebase(project.id),
   });
 
   const resetCodebaseEditor = () => {
@@ -286,39 +320,48 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   };
 
   const updateCodebase = useMutation({
-    mutationFn: (data: { localFolder?: string | null; repoUrl?: string | null }) =>
-      projectsApi.updateCodebase(project.id, data, project.companyId),
+    mutationFn: (data: {
+      localFolder?: string | null;
+      repoUrl?: string | null;
+    }) => projectsApi.updateCodebase(project.id, data),
     onSuccess: (codebase) => {
-      queryClient.setQueryData(queryKeys.projects.codebase(project.id), codebase);
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.id) });
-      if (project.urlKey !== project.id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.urlKey) });
-      }
-      if (selectedCompanyId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId) });
-      }
+      queryClient.setQueryData(
+        queryKeys.projects.codebase(project.id),
+        codebase,
+      );
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.detail(project.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.list(companyId),
+      });
       resetCodebaseEditor();
     },
   });
 
   const linkedGoalIds = project.goalIds;
 
-  const linkedGoals = project.goals.length > 0
-    ? project.goals
-    : linkedGoalIds.map((id) => ({
-        id,
-        title: allGoals?.find((g) => g.id === id)?.title ?? id.slice(0, 8),
-      }));
+  const linkedGoals =
+    project.goals.length > 0
+      ? project.goals
+      : linkedGoalIds.map((id) => ({
+          id,
+          title: allGoals?.find((g) => g.id === id)?.title ?? id.slice(0, 8),
+        }));
 
-  const availableGoals = (allGoals ?? []).filter((g) => !linkedGoalIds.includes(g.id));
+  const availableGoals = (allGoals ?? []).filter(
+    (g) => !linkedGoalIds.includes(g.id),
+  );
 
   const removeGoal = (goalId: string) => {
     if (!onUpdate && !onFieldUpdate) return;
-    commitField("goals", { goalIds: linkedGoalIds.filter((id) => id !== goalId) });
+    commitField("goals", {
+      goalIds: linkedGoalIds.filter((id) => id !== goalId),
+    });
   };
 
   const submitLocalFolder = () => {
-    const localFolder = localFolderDraft.trim();
+    const localFolder = localFolderDraft;
     if (localFolder && !isAbsoluteProjectFolder(localFolder)) {
       setCodebaseValidationError("Local folder must be a full absolute path.");
       return;
@@ -328,9 +371,11 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   };
 
   const submitRepoUrl = () => {
-    const repoUrl = repoUrlDraft.trim();
-    if (repoUrl && !isValidProjectRepositoryUrl(repoUrl)) {
-      setCodebaseValidationError("Repo must use a valid HTTPS repository URL.");
+    const repoUrl = repoUrlDraft;
+    if (repoUrl && !isCanonicalProjectRepositoryUrl(repoUrl)) {
+      setCodebaseValidationError(
+        "Repo must use its exact canonical HTTPS URL.",
+      );
       return;
     }
     setCodebaseValidationError(null);
@@ -350,7 +395,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   return (
     <div>
       <div className="space-y-1 pb-4">
-        <PropertyRow label={<FieldLabel label="Name" state={fieldState("name")} />}>
+        <PropertyRow
+          label={<FieldLabel label="Name" state={fieldState("name")} />}
+        >
           {onUpdate || onFieldUpdate ? (
             <DraftInput
               value={project.name}
@@ -364,14 +411,18 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           )}
         </PropertyRow>
         <PropertyRow
-          label={<FieldLabel label="Description" state={fieldState("description")} />}
+          label={
+            <FieldLabel label="Description" state={fieldState("description")} />
+          }
           alignStart
           valueClassName="space-y-0.5"
         >
           {onUpdate || onFieldUpdate ? (
             <InlineEditor
               value={project.description ?? ""}
-              onSave={(description) => commitField("description", { description })}
+              onSave={(description) =>
+                commitField("description", { description })
+              }
               nullable
               as="p"
               className="text-sm text-muted-foreground"
@@ -384,7 +435,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
             </p>
           )}
         </PropertyRow>
-        <PropertyRow label={<FieldLabel label="Status" state={fieldState("status")} />}>
+        <PropertyRow
+          label={<FieldLabel label="Status" state={fieldState("status")} />}
+        >
           {onUpdate || onFieldUpdate ? (
             <ProjectStatusPicker
               status={project.status}
@@ -406,7 +459,11 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                   key={goal.id}
                   className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs"
                 >
-                  <Link to={`/goals/${goal.id}`} className="hover:underline break-words min-w-0">
+                  <Link
+                    to="/$companyId/goals/$goalId"
+                    params={{ companyId, goalId: goal.id }}
+                    className="hover:underline break-words min-w-0"
+                  >
                     {goal.title}
                   </Link>
                   {(onUpdate || onFieldUpdate) && (
@@ -429,7 +486,10 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                 <Button
                   variant="outline"
                   size="xs"
-                  className={cn("h-6 w-fit px-2", linkedGoals.length > 0 && "ml-1")}
+                  className={cn(
+                    "h-6 w-fit px-2",
+                    linkedGoals.length > 0 && "ml-1",
+                  )}
                   disabled={availableGoals.length === 0}
                 >
                   <Plus data-icon="inline-start" className="h-3 w-3 mr-1" />
@@ -438,7 +498,10 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="start">
                 {availableGoals.length === 0 ? (
-                  <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                  <DropdownMenuItem
+                    disabled
+                    className="text-xs text-muted-foreground"
+                  >
                     All goals linked.
                   </DropdownMenuItem>
                 ) : (
@@ -448,7 +511,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                       className="text-xs"
                       onClick={() => {
                         if (linkedGoalIds.includes(goal.id)) return;
-                        commitField("goals", { goalIds: [...linkedGoalIds, goal.id] });
+                        commitField("goals", {
+                          goalIds: [...linkedGoalIds, goal.id],
+                        });
                       }}
                     >
                       {goal.title}
@@ -461,7 +526,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
         </PropertyRow>
         {project.leadAgentId && (
           <PropertyRow label="Lead">
-            <span className="text-sm font-mono">{project.leadAgentId.slice(0, 8)}</span>
+            <span className="text-sm font-mono">
+              {project.leadAgentId.slice(0, 8)}
+            </span>
           </PropertyRow>
         )}
         <PropertyRow
@@ -481,7 +548,8 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               onChange={(env) => commitField("env", { env: env ?? null })}
             />
             <p className="text-(length:--text-micro) text-muted-foreground">
-              Applied to all runs for tasks in this project. Project values override agent env on key conflicts.
+              Applied to all runs for tasks in this project. Project values
+              override agent env on key conflicts.
             </p>
           </div>
         </PropertyRow>
@@ -514,15 +582,20 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">
-              The local folder is the working directory for agents on this project. The repo URL records source provenance.
+              The local folder is the working directory for agents on this
+              project. The repo URL records source provenance.
             </TooltipContent>
           </Tooltip>
         </div>
 
         {codebaseQuery.isLoading ? (
-          <p className="text-xs text-muted-foreground" role="status">Loading codebase…</p>
+          <p className="text-xs text-muted-foreground" role="status">
+            Loading codebase…
+          </p>
         ) : codebaseQuery.isError || !codebaseQuery.data ? (
-          <p className="text-xs text-destructive" role="alert">Failed to load project codebase.</p>
+          <p className="text-xs text-destructive" role="alert">
+            Failed to load project codebase.
+          </p>
         ) : (
           <div className="space-y-3 rounded-md border border-border/70 p-3">
             <div className="space-y-1">
@@ -531,7 +604,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               </div>
               <div className="flex items-center justify-between gap-2">
                 {codebaseQuery.data.repoUrl ? (
-                  isSafeProjectRepositoryUrl(codebaseQuery.data.repoUrl) ? (
+                  isCanonicalProjectRepositoryUrl(
+                    codebaseQuery.data.repoUrl,
+                  ) ? (
                     <a
                       href={codebaseQuery.data.repoUrl}
                       target="_blank"
@@ -550,7 +625,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     </span>
                   )
                 ) : (
-                  <span className="text-xs text-muted-foreground">Not set.</span>
+                  <span className="text-xs text-muted-foreground">
+                    Not set.
+                  </span>
                 )}
                 <div className="flex shrink-0 items-center gap-1">
                   <Button
@@ -609,7 +686,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                       setCodebaseValidationError(null);
                     }}
                   >
-                    {codebaseQuery.data.localFolder ? "Change local folder" : "Set local folder"}
+                    {codebaseQuery.data.localFolder
+                      ? "Change local folder"
+                      : "Set local folder"}
                   </Button>
                   {codebaseQuery.data.localFolder ? (
                     <Button
@@ -653,7 +732,12 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               >
                 Save
               </Button>
-              <Button variant="ghost" size="xs" className="h-6 px-2" onClick={resetCodebaseEditor}>
+              <Button
+                variant="ghost"
+                size="xs"
+                className="h-6 px-2"
+                onClick={resetCodebaseEditor}
+              >
                 Cancel
               </Button>
             </div>
@@ -682,7 +766,12 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               >
                 Save
               </Button>
-              <Button variant="ghost" size="xs" className="h-6 px-2" onClick={resetCodebaseEditor}>
+              <Button
+                variant="ghost"
+                size="xs"
+                className="h-6 px-2"
+                onClick={resetCodebaseEditor}
+              >
                 Cancel
               </Button>
             </div>
@@ -690,13 +779,19 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
         ) : null}
 
         {updateCodebase.isPending ? (
-          <p className="text-xs text-muted-foreground" role="status">Saving codebase…</p>
+          <p className="text-xs text-muted-foreground" role="status">
+            Saving codebase…
+          </p>
         ) : null}
         {codebaseValidationError ? (
-          <p className="text-xs text-destructive" role="alert">{codebaseValidationError}</p>
+          <p className="text-xs text-destructive" role="alert">
+            {codebaseValidationError}
+          </p>
         ) : null}
         {updateCodebase.isError ? (
-          <p className="text-xs text-destructive" role="alert">Failed to save project codebase.</p>
+          <p className="text-xs text-destructive" role="alert">
+            Failed to save project codebase.
+          </p>
         ) : null}
       </div>
 

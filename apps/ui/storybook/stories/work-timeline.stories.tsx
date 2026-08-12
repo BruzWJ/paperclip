@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { WorkTimelineResult } from "@paperclipai/shared";
 import { Minus, Plus, RotateCcw } from "lucide-react";
-import { Timeline } from "@/pages/Timeline";
+import { Timeline } from "@/routes/_authenticated/$companyId/timeline";
 import {
   WorkTimelineChart,
   clampZoomScale,
@@ -11,11 +11,9 @@ import {
   zoomScaleForLevel,
 } from "@/components/timeline/WorkTimelineChart";
 import { Button } from "@/components/ui/button";
-import { useCompany } from "@/context/CompanyContext";
 import sampleJson from "../fixtures/workTimeline.sample.json";
 import humanSampleJson from "../fixtures/workTimeline.human.sample.json";
 
-const COMPANY_ID = "company-storybook";
 const STORYBOOK_USER_AVATAR =
   "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80";
 
@@ -39,19 +37,6 @@ const humanSample = withStorybookTimelineDetails(humanSampleJson as unknown as W
 const NOW = new Date("2026-07-02T15:45:00.000Z").getTime();
 
 function FullPageTimelineHarness() {
-  const { selectedCompanyId, setSelectedCompanyId } = useCompany();
-
-  useEffect(() => {
-    window.localStorage.setItem("paperclip.selectedCompanyId", COMPANY_ID);
-    if (selectedCompanyId !== COMPANY_ID) {
-      setSelectedCompanyId(COMPANY_ID);
-    }
-  }, [selectedCompanyId, setSelectedCompanyId]);
-
-  if (selectedCompanyId !== COMPANY_ID) {
-    return null;
-  }
-
   return (
     <div className="min-h-screen bg-background p-6 text-foreground">
       <Timeline />

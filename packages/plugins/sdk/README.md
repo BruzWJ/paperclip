@@ -91,7 +91,7 @@ runWorker(plugin, import.meta.url);
 | `onWebhook?(input)` | Present exactly when `manifest.webhooks` declares endpoints. Handle `POST /api/plugins/:pluginId/webhooks/:endpointKey`. |
 | `onApiRequest?(input)` | Present exactly when `manifest.apiRoutes` declares routes. Handle scoped plugin JSON API requests. |
 
-**Context (`ctx`) in setup:** `config`, `localFolders`, `events`, `jobs`, `db`, `http`, `runtime`, `activity`, `state`, `entities`, `projects`, `skills`, `routines`, `companies`, `tasks`, `agents`, `goals`, `access`, `authorization`, `data`, `actions`, `tools`, `metrics`, `telemetry`, `logger`, `manifest`. Worker-side host APIs are capability-gated; declare capabilities in the manifest.
+**Context (`ctx`) in setup:** `config`, `localFolders`, `events`, `jobs`, `db`, `http`, `runtime`, `activity`, `state`, `entities`, `projects`, `routines`, `companies`, `tasks`, `agents`, `goals`, `access`, `authorization`, `data`, `actions`, `tools`, `metrics`, `telemetry`, `logger`, `manifest`. Worker-side host APIs are capability-gated; declare capabilities in the manifest.
 
 `instanceConfigSchema` produces one instance-admin configuration for the
 installed plugin. Read it with `await ctx.config.get()`; configuration is not
@@ -174,7 +174,7 @@ Subscribe in `setup` with `ctx.events.on(name, handler)` or `ctx.events.on(name,
 comment. Session-projected agent comments do not emit it; terminal run events
 are the corresponding post-run warming signal.
 
-**Plugin-to-plugin:** Subscribe to `plugin.<pluginId>.<eventName>` (e.g. `plugin.acme.linear.sync-done`). Emit with `ctx.events.emit("sync-done", companyId, payload)`; the host namespaces it automatically.
+**Plugin-to-plugin:** Subscribe to `plugin.<pluginKey>.<eventName>` (e.g. `plugin.acme.linear.sync-done`). Emit with `ctx.events.emit("sync-done", companyId, payload)`; the host namespaces it automatically.
 
 **Filter (optional):** Pass a second argument to `on()`: `{ companyId?, agentId? }` so the host only delivers matching events. `agentId` applies to terminal run events.
 Pairing `agentId` with `task.board.comment.created` is rejected at
@@ -290,7 +290,7 @@ The host rejects `entityTypes` that do not have a production mount for the selec
 
 #### `page`
 
-A full-page extension mounted at `/:companyPrefix/:routePath/*`. The required manifest `routePath` is the page's only route identity; plugin keys and installation UUIDs are not route aliases. Use this for rich, standalone plugin experiences such as dashboards or multi-step workflows. Receives `PluginHostContextProps` with `context.companyId` set to the active company. Requires the `ui.page.register` capability.
+A full-page extension mounted at `/:companyId/:routePath/*`. The required manifest `routePath` is the page's only route identity; plugin keys and installation UUIDs are not route aliases. Use this for rich, standalone plugin experiences such as dashboards or multi-step workflows. Receives `PluginHostContextProps` with `context.companyId` set to the active company. Requires the `ui.page.register` capability.
 
 #### `sidebar`
 
@@ -298,7 +298,7 @@ Adds a navigation-style entry to the main company sidebar navigation area, rende
 
 #### `routeSidebar`
 
-A contextual sidebar shown while the current route is a plugin page route with the same `routePath`. Use this for full-page plugin workspaces that need their own local navigation. It does **not** replace the app sidebar: the host collapses the main `<Sidebar/>` to its 64px icon rail (still hover/peek-able) and renders your `routeSidebar` in a secondary pane beside it, producing `[ app rail ][ your sidebar ][ content ]`. Receives `PluginHostContextProps` with `context.companyId` and `context.companyPrefix` set to the active company. Requires the `ui.sidebar.register` capability.
+A contextual sidebar shown while the current route is a plugin page route with the same `routePath`. Use this for full-page plugin workspaces that need their own local navigation. It does **not** replace the app sidebar: the host collapses the main `<Sidebar/>` to its 64px icon rail (still hover/peek-able) and renders your `routeSidebar` in a secondary pane beside it, producing `[ app rail ][ your sidebar ][ content ]`. Receives `PluginHostContextProps` with `context.companyId` set to the active company. Requires the `ui.sidebar.register` capability.
 
 Do **not** mount `RequestCollapsedSidebar` (or otherwise try to collapse the app sidebar) from a `routeSidebar` plugin — the host drives the collapse automatically while your route is active and restores the user's preference when they navigate away. The collapse is a hard invariant: a secondary sidebar always forces the app rail collapsed (hiding its expand toggle), overriding any user pin, but it never mutates the user's saved expanded/collapsed preference — that is restored as soon as they leave your route.
 
@@ -312,7 +312,7 @@ Replaces the auto-generated JSON Schema settings form with a custom React compon
 
 #### `companySettingsPage`
 
-A company-scoped settings page mounted at `/:companyPrefix/company/settings/:routePath`. The required `routePath` also creates its Company Settings sidebar entry. Receives the active `companyId` and `companyPrefix`. Requires the `instance.settings.register` capability.
+A company-scoped settings page mounted at `/:companyId/company/settings/:routePath`. The required `routePath` also creates its Company Settings sidebar entry. Receives the active `companyId`. Requires the `instance.settings.register` capability.
 
 #### `dashboardWidget`
 
@@ -328,11 +328,11 @@ A specialized slot rendered in the context of a task detail view. Similar to `de
 
 #### `projectSidebarItem`
 
-A link or small component rendered **once per project** under that project's row in the sidebar Projects list. Use this to add project-scoped navigation entries (e.g. "Files", "Linear Sync") that deep-link into a plugin detail tab: `/:company/projects/:projectRef?tab=plugin:<key>:<slotId>`. Receives `PluginProjectSidebarItemProps` with `context.companyId` set to the active company, `context.entityId` set to the project id, and `context.entityType` set to `"project"`. Use the optional `order` field in the manifest slot to control sort position. Requires the `ui.sidebar.register` capability.
+A link or small component rendered **once per project** under that project's row in the sidebar Projects list. Use this to add project-scoped navigation entries (e.g. "Files", "Linear Sync") that deep-link into a plugin detail tab: `/:companyId/projects/:projectId?tab=plugin:<key>:<slotId>`. Receives `PluginProjectSidebarItemProps` with `context.companyId` set to the active company, `context.entityId` set to the project id, and `context.entityType` set to `"project"`. Use the optional `order` field in the manifest slot to control sort position. Requires the `ui.sidebar.register` capability.
 
 #### `globalToolbarButton`
 
-A button rendered in the global top bar (breadcrumb bar) that appears on every page. Use this for company-wide actions that are not scoped to a specific entity — for example, a universal search trigger, a global sync status indicator, or a floating action that applies across the whole workspace. Receives only `context.companyId` and `context.companyPrefix`; no entity context is available. Requires the `ui.action.register` capability.
+A button rendered in the global top bar (breadcrumb bar) that appears on every page. Use this for company-wide actions that are not scoped to a specific entity — for example, a universal search trigger, a global sync status indicator, or a floating action that applies across the whole workspace. Receives only `context.companyId`; no entity context is available. Requires the `ui.action.register` capability.
 
 #### `toolbarButton`
 
@@ -360,6 +360,11 @@ the named `action.target` UI export. `navigate`, `deepLink`, and
 `action.params`. This keeps the manifest limited to behavior the host actually
 executes.
 
+`navigate` targets use the same exact company-relative path grammar as
+`useHostNavigation`: they start with `/`, contain a concrete path, and may add
+a query and fragment. Bare or dot-relative targets, trailing or doubled
+slashes, external URLs, and paths prefixed by a company UUID are invalid.
+
 ### Capabilities
 
 Declare in `manifest.capabilities`. Grouped by scope:
@@ -384,7 +389,6 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `tasks.withdraw` |
 | | `projects.managed` |
 | | `routines.managed` |
-| | `skills.managed` |
 | | `agents.pause` |
 | | `agents.resume` |
 | | `agents.managed` |
@@ -492,6 +496,9 @@ both be absent. The host
 performs auth, company access, capability, and route matching before dispatch.
 Every route declares `companyResolution`; task resolution names an exact
 `:param` in the route path, and GET routes cannot resolve from a request body.
+`path` is canonical and exact: `/` is the only root spelling, non-root paths
+have neither a trailing slash nor empty/dot segments, and requests are not
+slash-normalized during matching.
 The worker receives route params, query, parsed JSON body,
 sanitized headers, actor context, and `companyId`; responses are JSON `{ status?,
 headers?, body? }`.
@@ -684,7 +691,7 @@ export function WikiSidebarLink() {
 }
 ```
 
-`linkProps("/wiki")` resolves against the active company prefix, so in company `PAP` it renders `href="/PAP/wiki"`. Already-prefixed paths such as `/PAP/wiki` are not prefixed again. For button-style commands, call `hostNavigation.navigate("/tasks/PAP-123")`.
+`linkProps("/wiki")` resolves against the active company UUID, so for company `123e4567-e89b-42d3-a456-426614174000` it renders `href="/123e4567-e89b-42d3-a456-426614174000/wiki"`. Targets must start with `/` and remain company-relative. Bare or dot-relative targets, query/hash-only targets, trailing or doubled slashes, external URLs, and paths already prefixed by a company UUID are rejected. For button-style commands, call `hostNavigation.navigate("/tasks/123")`.
 
 Avoid raw same-origin `href`s or `window.location.assign()` for Paperclip-internal navigation from plugin UI. Those bypass the host router and can reload the whole app. External links should keep normal anchors with `target="_blank"` and `rel="noopener noreferrer"` as appropriate.
 
@@ -924,9 +931,8 @@ import {
 export function FilesLink({ context }: PluginProjectSidebarItemProps) {
   const hostNavigation = useHostNavigation();
   const projectId = context.entityId;
-  const projectRef = projectId; // or resolve from host; entityId is project id
   return (
-    <a {...hostNavigation.linkProps(`/projects/${projectRef}?tab=plugin:your-plugin:files`)}>
+    <a {...hostNavigation.linkProps(`/projects/${projectId}?tab=plugin:your-plugin:files`)}>
       Files
     </a>
   );

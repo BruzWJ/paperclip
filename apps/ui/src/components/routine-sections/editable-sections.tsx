@@ -73,7 +73,7 @@ const signingModes = ["bearer", "hmac_sha256", "github_hmac", "none"];
 const signingModeDescriptions: Record<string, string> = {
   bearer: "Expect a shared bearer token in the Authorization header.",
   hmac_sha256: "Expect an HMAC SHA-256 signature over the request using the shared secret.",
-  github_hmac: "Accept GitHub-style X-Hub-Signature-256 header (HMAC over raw body, no timestamp).",
+  github_hmac: "Accept X-Paperclip-Signature: sha256=<hex> (HMAC over raw body, no timestamp).",
   none: "No authentication — the webhook URL itself acts as a shared secret.",
 };
 const SIGNING_MODES_WITHOUT_REPLAY_WINDOW = new Set(["github_hmac", "none"]);
@@ -227,8 +227,6 @@ export function OverviewSection({
         <div className="flex items-center justify-end">
           {routine.descriptionDocument ? (
             <DocumentAnnotationsCountChip
-              taskId={routine.id}
-              docKey="description"
               target={{ kind: "routine", routineId: routine.id, documentKey: "description" }}
               panelOpen={descriptionAnnotationsOpen}
               onToggle={() => setDescriptionAnnotationsOpen((open) => !open)}
@@ -243,7 +241,6 @@ export function OverviewSection({
         >
         {routine.descriptionDocument ? (
           <TaskDocumentAnnotations
-            taskId={routine.id}
             doc={routine.descriptionDocument}
             target={{ kind: "routine", routineId: routine.id, documentKey: "description" }}
             bodyMarkdown={editDraft.description}

@@ -2,18 +2,11 @@ import { useEffect, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import { COMPANY_SEARCH_SORTS, type CompanySearchSort } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import {
-  applyOwnerToken,
-  ownerToken,
+  applyOwnerSelectionId,
+  ownerSelectionId,
   countActiveFilters,
   SORT_LABELS,
   type SearchFilters,
@@ -110,15 +103,13 @@ export function SearchFilterSheet({
 
   function toggleMulti(dimension: "status" | "priority", value: string) {
     const current = (draft[dimension] ?? []) as string[];
-    const next = current.includes(value)
-      ? current.filter((entry) => entry !== value)
-      : [...current, value];
+    const next = current.includes(value) ? current.filter((entry) => entry !== value) : [...current, value];
     update({ ...draft, [dimension]: next });
   }
 
   function toggleOwner(token: string) {
-    const current = ownerToken(draft, data.currentUserId);
-    update(applyOwnerToken(draft, current === token ? undefined : token, data.currentUserId));
+    const current = ownerSelectionId(draft);
+    update(applyOwnerSelectionId(draft, current === token ? undefined : token, data.currentUserId));
   }
 
   function toggleSingle(dimension: "projectId" | "labelId" | "updatedWithin", value: string) {
@@ -127,15 +118,17 @@ export function SearchFilterSheet({
   }
 
   const activeCount = countActiveFilters(draft);
-  const selectedOwner = ownerToken(draft, data.currentUserId);
+  const selectedOwner = ownerSelectionId(draft);
   const applyLabel =
-    previewTotal === null
-      ? "Show results"
-      : `Show ${previewTotal} ${previewTotal === 1 ? "result" : "results"}`;
+    previewTotal === null ? "Show results" : `Show ${previewTotal} ${previewTotal === 1 ? "result" : "results"}`;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-(--sz-85vh) gap-0 rounded-t-xl p-0" data-testid="search-filter-sheet">
+      <SheetContent
+        side="bottom"
+        className="max-h-(--sz-85vh) gap-0 rounded-t-xl p-0"
+        data-testid="search-filter-sheet"
+      >
         <SheetHeader className="flex-row items-center justify-between border-b border-border">
           <SheetTitle className="text-base">Filters</SheetTitle>
           <button
@@ -228,13 +221,7 @@ export function SearchFilterSheet({
 }
 
 /** The compact "Filters · n" trigger button shown on mobile. */
-export function SearchFilterSheetTrigger({
-  activeCount,
-  onClick,
-}: {
-  activeCount: number;
-  onClick: () => void;
-}) {
+export function SearchFilterSheetTrigger({ activeCount, onClick }: { activeCount: number; onClick: () => void }) {
   return (
     <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-normal" onClick={onClick}>
       <SlidersHorizontal className="h-3.5 w-3.5" />

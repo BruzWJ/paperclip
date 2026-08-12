@@ -30,6 +30,14 @@ function lowTrustBoundary(input: Partial<Omit<LowTrustBoundary, "mode">>): LowTr
   };
 }
 
+function lowTrustReviewPreset() {
+  return {
+    id: LOW_TRUST_REVIEW_PRESET,
+    version: 1 as const,
+    rawOutputDisposition: LOW_TRUST_REVIEW_RAW_OUTPUT_DISPOSITION,
+  };
+}
+
 describe("resolveCoreTrustPreset", () => {
   it("defaults to standard with no task or run policy", () => {
     expect(resolveCoreTrustPreset({ companyId })).toMatchObject({
@@ -45,7 +53,7 @@ describe("resolveCoreTrustPreset", () => {
       task: {
         companyId,
         executionPolicy: {
-          trustPreset: LOW_TRUST_REVIEW_PRESET,
+          reviewPreset: lowTrustReviewPreset(),
           authorizationPolicy: {
             managedBy: "core-trust-preset",
             trustBoundary: lowTrustBoundary({
@@ -61,6 +69,7 @@ describe("resolveCoreTrustPreset", () => {
       run: {
         companyId,
         executionPolicy: {
+          reviewPreset: lowTrustReviewPreset(),
           authorizationPolicy: {
             trustBoundary: lowTrustBoundary({
               taskIds: [taskB],
@@ -86,12 +95,12 @@ describe("resolveCoreTrustPreset", () => {
     expect(isTaskWithinLowTrustBoundary(result.boundary, { companyId, id: taskC, projectId: projectC })).toBe(false);
   });
 
-  it("fails closed for unknown task presets", () => {
+  it("rejects the retired top-level trustPreset alias", () => {
     const result = resolveCoreTrustPreset({
       companyId,
       task: {
         companyId,
-        executionPolicy: { trustPreset: "trusted_but_weird" },
+        executionPolicy: { trustPreset: LOW_TRUST_REVIEW_PRESET },
       },
     });
 
@@ -108,7 +117,7 @@ describe("resolveCoreTrustPreset", () => {
       task: {
         companyId,
         executionPolicy: {
-          trustPreset: LOW_TRUST_REVIEW_PRESET,
+          reviewPreset: lowTrustReviewPreset(),
           authorizationPolicy: {
             trustBoundary: lowTrustBoundary({ allowedToolClasses: ["git.read"] }),
           },
@@ -128,6 +137,7 @@ describe("resolveCoreTrustPreset", () => {
       task: {
         companyId,
         executionPolicy: {
+          reviewPreset: lowTrustReviewPreset(),
           authorizationPolicy: {
             trustBoundary: {
               mode: LOW_TRUST_REVIEW_PRESET,
@@ -145,13 +155,40 @@ describe("resolveCoreTrustPreset", () => {
     });
   });
 
+  it("rejects nested preset aliases and boundary-only policies", () => {
+    for (const executionPolicy of [
+      {
+        authorizationPolicy: {
+          trustPreset: LOW_TRUST_REVIEW_PRESET,
+          trustBoundary: lowTrustBoundary({ rootTaskId }),
+        },
+      },
+      {
+        authorizationPolicy: {
+          reviewPreset: lowTrustReviewPreset(),
+          trustBoundary: lowTrustBoundary({ rootTaskId }),
+        },
+      },
+      {
+        authorizationPolicy: {
+          trustBoundary: lowTrustBoundary({ rootTaskId }),
+        },
+      },
+    ]) {
+      expect(resolveCoreTrustPreset({
+        companyId,
+        task: { companyId, executionPolicy },
+      })).toMatchObject({
+        kind: "denied",
+        reason: "invalid_authorization_policy",
+        source: "task",
+      });
+    }
+  });
+
   it("normalizes and preserves task trust policy JSON", () => {
     const executionPolicy = normalizeTaskExecutionPolicy({
-      reviewPreset: {
-        id: LOW_TRUST_REVIEW_PRESET,
-        version: 1,
-        rawOutputDisposition: LOW_TRUST_REVIEW_RAW_OUTPUT_DISPOSITION,
-      },
+      reviewPreset: lowTrustReviewPreset(),
       authorizationPolicy: {
         managedBy: "core-trust-preset",
         customEeField: { mode: "visualized" },

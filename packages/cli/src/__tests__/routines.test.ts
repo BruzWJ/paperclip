@@ -64,7 +64,7 @@ function writeTestConfig(configPath: string, tempRoot: string) {
     },
     server: {
       exposure: "private" as const,
-      host: "127.0.0.1",
+      bind: "loopback" as const,
       port: 3100,
       allowedHostnames: [],
       serveUi: false,
@@ -164,5 +164,15 @@ describe("disableAllRoutinesInConfig", () => {
       values: [ACTIVE_ROUTINE_ID],
     });
     expect(databaseMocks.end).toHaveBeenCalledWith({ timeout: 5 });
+  });
+
+  it("rejects a non-canonical company ID without falling back to the environment", async () => {
+    process.env.PAPERCLIP_BOARD_COMPANY_ID = COMPANY_ID;
+
+    await expect(disableAllRoutinesInConfig({
+      config: configPath,
+      companyId: ` ${COMPANY_ID}`,
+    })).rejects.toThrow(/--company-id must be an exact canonical company UUID/);
+    expect(databaseMocks.createDb).not.toHaveBeenCalled();
   });
 });
