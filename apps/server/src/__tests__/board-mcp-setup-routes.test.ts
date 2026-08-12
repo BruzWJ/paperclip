@@ -17,6 +17,10 @@ function createApp() {
     next();
   });
   app.use(boardMcpSetupRoutes());
+  app.get("/@vite/client", (_req, res) => res.status(204).end());
+  app.get("/node_modules/.vite/deps/@tanstack_react-router.js", (_req, res) =>
+    res.status(204).end(),
+  );
   return app;
 }
 
@@ -37,7 +41,9 @@ describe("Board MCP setup route", () => {
     await request(createApp())
       .get("/mcp/setup/not-a-client")
       .expect(404)
-      .expect(({ text }) => expect(text).toContain("Unknown MCP installer command"));
+      .expect(({ text }) =>
+        expect(text).toContain("Unknown MCP installer command"),
+      );
   });
 
   it.each([
@@ -50,5 +56,12 @@ describe("Board MCP setup route", () => {
     "/mcp/%6Cogin",
   ])("rejects non-canonical command and target aliases at %s", async (path) => {
     await request(createApp()).get(path).expect(404);
+  });
+
+  it.each([
+    "/@vite/client",
+    "/node_modules/.vite/deps/@tanstack_react-router.js?v=abc123",
+  ])("does not intercept Vite infrastructure at %s", async (path) => {
+    await request(createApp()).get(path).expect(204);
   });
 });

@@ -10,7 +10,9 @@ import { canonicalRequestTarget } from "../middleware/canonical-pathname.js";
 
 const SETUP_TARGETS = new Set<string>([...MCP_SETUP_AGENTS, "all"]);
 
-function parseInstallOptions(command: string[]): McpInstallScriptOptions | null {
+function parseInstallOptions(
+  command: string[],
+): McpInstallScriptOptions | null {
   if (command.length === 0) return { command: "setup" };
   if (command.length === 1 && command[0] === "login") {
     return { command: "login" };
@@ -67,7 +69,11 @@ function sendInstaller(command: string[], req: Request, res: Response) {
  */
 export function boardMcpSetupRoutes() {
   const router = Router({ caseSensitive: true, strict: true });
-  router.use(canonicalRequestTarget());
+  // This router is mounted at the application root so its public `/mcp`
+  // installer can win over the SPA fallback. Scope the canonical target fence
+  // to that namespace; a router-wide fence would also intercept Vite's
+  // `/@vite`, `/@react-refresh`, and scoped dependency asset paths.
+  router.use("/mcp", canonicalRequestTarget());
   router.get("/mcp", (req, res) => sendInstaller([], req, res));
   router.get("/mcp/:command", (req, res) =>
     sendInstaller([req.params.command as string], req, res),
