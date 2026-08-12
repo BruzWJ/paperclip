@@ -4,9 +4,12 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { InviteLandingPage } from ".";
+import { Route } from ".";
 import { queryKeys } from "@/lib/queryKeys";
 import { TestRouter } from "@/test/TestRouter";
+import { getRouteComponent } from "@/test/route-component";
+
+const InviteLandingPage = getRouteComponent(Route);
 
 const getInviteMock = vi.hoisted(() => vi.fn());
 const acceptInviteMock = vi.hoisted(() => vi.fn());

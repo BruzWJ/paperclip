@@ -3,8 +3,11 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Dashboard } from ".";
+import { Route } from ".";
 import { TestRouter } from "@/test/TestRouter";
+import { getRouteComponent } from "@/test/route-component";
+
+const Dashboard = getRouteComponent(Route);
 
 const mocks = vi.hoisted(() => ({
   openNewAgent: vi.fn(),

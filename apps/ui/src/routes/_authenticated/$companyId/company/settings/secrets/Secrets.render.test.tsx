@@ -3,6 +3,7 @@
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { TestRouter } from "@/test/TestRouter";
+import { getRouteComponent } from "@/test/route-component";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   CompanySecret,
@@ -14,8 +15,10 @@ import type {
   UserSecretDefinition,
 } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ProviderVaultsTab, Secrets } from ".";
+import { ProviderVaultsTab, Route } from ".";
 import { ApiError } from "@/api/client";
+
+const Secrets = getRouteComponent(Route);
 
 const mockSecretsApi = vi.hoisted(() => ({
   list: vi.fn(),

@@ -26,7 +26,7 @@ const route = getRouteApi(
   "/_authenticated/$companyId/company/settings/$settingsRoutePath/",
 );
 
-export function CompanySettingsPluginPage() {
+function CompanySettingsPluginPage() {
   const { companyId: routeCompanyId, settingsRoutePath } = route.useParams();
   const { companies } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();

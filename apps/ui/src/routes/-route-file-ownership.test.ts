@@ -63,4 +63,32 @@ describe("TanStack Router source ownership", () => {
 
     expect(invalidIndexRoutes).toEqual([]);
   });
+
+  it("keeps route components private so TanStack Router can code-split them", () => {
+    const routesRoot = path.join(sourceRoot, "routes");
+    const exportedRouteComponents = sourceFiles(routesRoot).flatMap((file) => {
+      const source = readFileSync(file, "utf8");
+      const componentNames = Array.from(
+        source.matchAll(/\bcomponent\s*:\s*([A-Za-z_$][\w$]*)/g),
+        (match) => match[1],
+      );
+
+      return componentNames
+        .filter((componentName) => {
+          const escapedName = componentName.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&",
+          );
+          return new RegExp(
+            `\\bexport\\s+(?:async\\s+)?(?:function|const|class)\\s+${escapedName}\\b|\\bexport\\s*\\{[^}]*\\b${escapedName}\\b`,
+          ).test(source);
+        })
+        .map(
+          (componentName) =>
+            `${path.relative(sourceRoot, file)}:${componentName}`,
+        );
+    });
+
+    expect(exportedRouteComponents).toEqual([]);
+  });
 });

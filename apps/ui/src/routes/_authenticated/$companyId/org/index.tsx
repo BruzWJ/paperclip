@@ -190,7 +190,7 @@ const defaultDotColor = "var(--hex-a3a3a3)";
 
 // ── Main component ──────────────────────────────────────────────────────
 
-export function OrgChart() {
+function OrgChart() {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();

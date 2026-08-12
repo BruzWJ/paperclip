@@ -30,7 +30,7 @@ export const Route = createFileRoute("/cli-auth/$id/")({
   component: CliAuthPage,
 });
 
-export function CliAuthPage() {
+function CliAuthPage() {
   const queryClient = useQueryClient();
   const route = getRouteApi("/cli-auth/$id/");
   const params = route.useParams();

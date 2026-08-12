@@ -35,7 +35,7 @@ export const Route = createFileRoute(
 
 type EditableMemberStatus = "pending" | "active" | "suspended";
 
-export function CompanyAccess() {
+function CompanyAccess() {
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();

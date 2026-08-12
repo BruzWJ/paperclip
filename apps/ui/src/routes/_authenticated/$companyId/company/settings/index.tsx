@@ -29,7 +29,7 @@ const DEFAULT_COMPANY_ATTACHMENT_MAX_MIB =
 const MAX_COMPANY_ATTACHMENT_MAX_MIB =
   MAX_COMPANY_ATTACHMENT_MAX_BYTES / BYTES_PER_MIB;
 
-export function CompanySettings() {
+function CompanySettings() {
   const companyId = useCompanyRouteId();
   const { companies, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();

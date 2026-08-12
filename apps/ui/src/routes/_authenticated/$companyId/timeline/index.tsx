@@ -266,7 +266,7 @@ function TimelineSummaryStats({
   );
 }
 
-export function Timeline() {
+function Timeline() {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [zoom, setZoom] = useState<ZoomLevel>("day");

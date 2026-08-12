@@ -765,7 +765,7 @@ export function getAwsManagedPathPreview(input: {
   return `${prefix}/${deploymentId}/${input.companyId}/${secretKey}`;
 }
 
-export function Secrets() {
+function Secrets() {
   const currentUserId = useCurrentUserId();
   const queryClient = useQueryClient();
   const navigate = secretsRoute.useNavigate();

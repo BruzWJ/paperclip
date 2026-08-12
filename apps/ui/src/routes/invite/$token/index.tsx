@@ -186,7 +186,7 @@ function AwaitingJoinApprovalPanel({
   );
 }
 
-export function InviteLandingPage() {
+function InviteLandingPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const params = useParams({ from: "/invite/$token/" });

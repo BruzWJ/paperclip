@@ -9,16 +9,27 @@ import type {
   UserSecretCoverageSummary,
   UserSecretDefinition,
 } from "@paperclipai/shared";
-import { Secrets } from "@/routes/_authenticated/$companyId/company/settings/secrets";
-import { SecretBindingPicker, type SecretBindingValue } from "@/components/SecretBindingPicker";
+import { Route as SecretsRoute } from "@/routes/_authenticated/$companyId/company/settings/secrets";
+import { getRouteComponent } from "@/test/route-component";
+import {
+  SecretBindingPicker,
+  type SecretBindingValue,
+} from "@/components/SecretBindingPicker";
 import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { queryKeys } from "@/lib/queryKeys";
 import { storybookSecrets } from "../fixtures/paperclipData";
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const USER_ID = "storybook-user";
+const Secrets = getRouteComponent(SecretsRoute);
 
 const storybookUserSecretDefinitions: UserSecretDefinition[] = [
   {
@@ -83,27 +94,42 @@ function StorybookSecretsFixtures({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   // Seed query caches synchronously so children hydrate from cache on first render.
-  queryClient.setQueryData(queryKeys.secrets.list(COMPANY_ID), storybookSecrets);
+  queryClient.setQueryData(
+    queryKeys.secrets.list(COMPANY_ID),
+    storybookSecrets,
+  );
   queryClient.setQueryData(
     queryKeys.secrets.userDefinitions(COMPANY_ID),
     storybookUserSecretDefinitions,
   );
   queryClient.setQueryData(
     queryKeys.secrets.userSecrets(COMPANY_ID, USER_ID),
-    storybookUserSecretDefinitions.map((definition) => ({ definition, secret: null })),
+    storybookUserSecretDefinitions.map((definition) => ({
+      definition,
+      secret: null,
+    })),
   );
   queryClient.setQueryData(queryKeys.auth.session, {
     session: { id: "storybook-session", userId: USER_ID },
-    user: { id: USER_ID, name: "Storybook User", email: "storybook@example.com", image: null },
+    user: {
+      id: USER_ID,
+      name: "Storybook User",
+      email: "storybook@example.com",
+      image: null,
+    },
   });
-  for (const [definitionId, summary] of Object.entries(storybookUserSecretCoverage)) {
+  for (const [definitionId, summary] of Object.entries(
+    storybookUserSecretCoverage,
+  )) {
     queryClient.setQueryData(
       queryKeys.secrets.userDefinitionCoverage(COMPANY_ID, definitionId),
       summary,
     );
   }
 
-  const onSecretsRoute = location.pathname === "/11111111-1111-4111-8111-111111111111/company/settings/secrets";
+  const onSecretsRoute =
+    location.pathname ===
+    "/11111111-1111-4111-8111-111111111111/company/settings/secrets";
   useEffect(() => {
     if (!onSecretsRoute) {
       void navigate({
@@ -137,11 +163,21 @@ export default meta;
 
 type Story = StoryObj;
 
-function Section({ eyebrow, title, children }: { eyebrow: string; title: string; children: ReactNode }) {
+function Section({
+  eyebrow,
+  title,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <section className="border-b border-border pb-8 last:border-b-0">
       <header className="mb-3 px-6 pt-6">
-        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{eyebrow}</p>
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          {eyebrow}
+        </p>
         <h2 className="text-lg font-semibold text-foreground">{title}</h2>
       </header>
       <div className="px-6">{children}</div>
@@ -172,7 +208,8 @@ function BindingPickerSurface({
       <CardHeader>
         <CardTitle className="text-sm">{label}</CardTitle>
         <CardDescription className="text-xs">
-          Picker can be reused across agent, project, environment, and plugin config surfaces.
+          Picker can be reused across agent, project, environment, and plugin
+          config surfaces.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -200,7 +237,10 @@ export const BindingPicker: Story = {
             label="Bound but disabled"
           />
           <BindingPickerSurface
-            initial={{ secretId: "a3000000-0000-4000-8000-00000000000c", version: "latest" }}
+            initial={{
+              secretId: "a3000000-0000-4000-8000-00000000000c",
+              version: "latest",
+            }}
             label="Bound to missing secret"
           />
         </div>
@@ -211,7 +251,13 @@ export const BindingPicker: Story = {
 
 export const EnvEditorWithSecrets: Story = {
   render: () => {
-    function EditorDemo({ initial, label }: { initial: Record<string, EnvBinding>; label: string }) {
+    function EditorDemo({
+      initial,
+      label,
+    }: {
+      initial: Record<string, EnvBinding>;
+      label: string;
+    }) {
       const [env, setEnv] = useState<Record<string, EnvBinding>>(initial);
       return (
         <Card className="w-full max-w-2xl">
@@ -243,16 +289,32 @@ export const EnvEditorWithSecrets: Story = {
         <EditorDemo
           label="Healthy bindings"
           initial={{
-            OPENAI_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000004", version: "latest" },
+            OPENAI_API_KEY: {
+              type: "secret_ref",
+              secretId: "a3000000-0000-4000-8000-000000000004",
+              version: "latest",
+            },
             STAGE: { type: "plain", value: "production" },
           }}
         />
         <EditorDemo
           label="Mixed bindings (some need attention)"
           initial={{
-            OPENAI_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000004", version: 2 },
-            GITHUB_APP_PEM: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000003", version: "latest" },
-            ABANDONED: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-00000000000c", version: "latest" },
+            OPENAI_API_KEY: {
+              type: "secret_ref",
+              secretId: "a3000000-0000-4000-8000-000000000004",
+              version: 2,
+            },
+            GITHUB_APP_PEM: {
+              type: "secret_ref",
+              secretId: "a3000000-0000-4000-8000-000000000003",
+              version: "latest",
+            },
+            ABANDONED: {
+              type: "secret_ref",
+              secretId: "a3000000-0000-4000-8000-00000000000c",
+              version: "latest",
+            },
           }}
         />
       </div>
@@ -263,24 +325,34 @@ export const EnvEditorWithSecrets: Story = {
 export const RunFailureCopy: Story = {
   render: () => (
     <div className="space-y-4 p-6">
-      <Section eyebrow="Run failure" title="Missing or disabled secret blocks the run">
+      <Section
+        eyebrow="Run failure"
+        title="Missing or disabled secret blocks the run"
+      >
         <Card className="border-destructive/40 bg-destructive/5">
           <CardHeader className="space-y-1">
             <div className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4 text-destructive" />
-              <Badge variant="outline" className="border-destructive/40 text-destructive">
+              <Badge
+                variant="outline"
+                className="border-destructive/40 text-destructive"
+              >
                 Run failed
               </Badge>
-              <span className="text-xs font-mono text-muted-foreground">PAP-2350 · 90000000-0000-4000-8000-000000000001</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                PAP-2350 · 90000000-0000-4000-8000-000000000001
+              </span>
             </div>
             <CardTitle className="text-sm">
               Secret <span className="font-mono">OPENAI_API_KEY</span> is{" "}
               <span className="font-medium text-destructive">disabled</span>
             </CardTitle>
             <CardDescription className="text-xs">
-              The agent tried to resolve <span className="font-mono">env.OPENAI_API_KEY</span> for{" "}
-              <span className="font-mono">agent:CodexCoder</span> but the secret is currently disabled. No value was
-              loaded, no run logs were emitted that contained secret material.
+              The agent tried to resolve{" "}
+              <span className="font-mono">env.OPENAI_API_KEY</span> for{" "}
+              <span className="font-mono">agent:CodexCoder</span> but the secret
+              is currently disabled. No value was loaded, no run logs were
+              emitted that contained secret material.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-xs">
@@ -291,20 +363,29 @@ export const RunFailureCopy: Story = {
                   Re-enable the secret on{" "}
                   <Link
                     to="/$companyId/company/settings/secrets"
-                    params={{ companyId: "11111111-1111-4111-8111-111111111111" }}
+                    params={{
+                      companyId: "11111111-1111-4111-8111-111111111111",
+                    }}
                     className="text-primary underline"
                   >
                     Company settings &gt; Secrets
                   </Link>
                 </li>
-                <li>Or, rotate to a new value and pin v3 explicitly for this agent.</li>
-                <li>Or, swap the binding to a different secret with the binding picker.</li>
+                <li>
+                  Or, rotate to a new value and pin v3 explicitly for this
+                  agent.
+                </li>
+                <li>
+                  Or, swap the binding to a different secret with the binding
+                  picker.
+                </li>
               </ul>
             </div>
             <div>
               <p className="text-muted-foreground">Audit</p>
               <p className="font-mono text-[11px]">
-                secret_access_events.outcome=failure error=secret_disabled consumer=agent:CodexCoder
+                secret_access_events.outcome=failure error=secret_disabled
+                consumer=agent:CodexCoder
               </p>
             </div>
           </CardContent>

@@ -5,8 +5,11 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "@/lib/queryKeys";
-import { AuthPage } from ".";
+import { Route } from ".";
 import { TestRouter } from "@/test/TestRouter";
+import { getRouteComponent } from "@/test/route-component";
+
+const AuthPage = getRouteComponent(Route);
 
 const getSessionMock = vi.hoisted(() => vi.fn());
 const signInEmailMock = vi.hoisted(() => vi.fn());

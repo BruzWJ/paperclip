@@ -70,7 +70,7 @@ function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
   );
 }
 
-export function AdapterManager() {
+function AdapterManager() {
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();

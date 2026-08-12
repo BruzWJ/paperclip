@@ -336,7 +336,7 @@ function shapeError(error: unknown): { message: string; status?: number } {
   return { message: String(error) };
 }
 
-export function Search() {
+function Search() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { openNewTask } = useDialogActions();
   const route = getRouteApi("/_authenticated/$companyId/search/");

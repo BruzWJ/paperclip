@@ -12,7 +12,7 @@ export const Route = createFileRoute(
 
 const DASHBOARD_LIVE_RUN_LIMIT = 50;
 
-export function DashboardLive() {
+function DashboardLive() {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
 

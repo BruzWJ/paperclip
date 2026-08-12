@@ -40,7 +40,7 @@ export const Route = createFileRoute("/_authenticated/$companyId/companies/")({
 
 const ZERO_AMOUNT = parseMoneyAmount("0");
 
-export function Companies() {
+function Companies() {
   const { companies, loading, error } = useCompany();
   const companyId = useCompanyRouteId();
   const navigate = useNavigate();

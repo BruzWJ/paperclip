@@ -5,7 +5,10 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestRouter } from "@/test/TestRouter";
-import { PluginPage } from ".";
+import { getRouteComponent } from "@/test/route-component";
+import { Route } from ".";
+
+const PluginPage = getRouteComponent(Route);
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const PLUGIN_ID = "22222222-2222-4222-8222-222222222222";

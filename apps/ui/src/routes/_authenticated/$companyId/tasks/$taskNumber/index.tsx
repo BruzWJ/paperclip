@@ -1220,7 +1220,7 @@ function TaskDetailSourceLink({
   );
 }
 
-export function TaskDetail() {
+function TaskDetail() {
   const taskDetailRoute = getRouteApi(
     "/_authenticated/$companyId/tasks/$taskNumber/",
   );

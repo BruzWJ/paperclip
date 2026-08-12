@@ -6,7 +6,10 @@ import type { PluginRecordDto } from "@paperclipai/shared";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestRouter } from "@/test/TestRouter";
-import { PluginManager } from ".";
+import { getRouteComponent } from "@/test/route-component";
+import { Route } from ".";
+
+const PluginManager = getRouteComponent(Route);
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const PLUGINS_PATH = `/${COMPANY_ID}/company/settings/instance/plugins`;

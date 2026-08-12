@@ -111,7 +111,7 @@ export function artifactGroupByLabel(value: ArtifactGroupBy): string {
   );
 }
 
-export function Artifacts() {
+function Artifacts() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const route = getRouteApi("/_authenticated/$companyId/artifacts/");
   const { companyId } = route.useParams();

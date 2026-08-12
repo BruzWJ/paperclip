@@ -576,7 +576,7 @@ async function readLocalPackageZip(file: File): Promise<{
 
 // ── Main page ─────────────────────────────────────────────────────────
 
-export function CompanyImport() {
+function CompanyImport() {
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();

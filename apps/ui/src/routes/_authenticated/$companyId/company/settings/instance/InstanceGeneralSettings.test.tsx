@@ -5,7 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { InstanceGeneralSettings } from ".";
+import { Route } from ".";
+import { getRouteComponent } from "@/test/route-component";
+
+const InstanceGeneralSettings = getRouteComponent(Route);
 
 const mockAuthApi = vi.hoisted(() => ({ signOut: vi.fn() }));
 const mockHealthApi = vi.hoisted(() => ({ get: vi.fn() }));

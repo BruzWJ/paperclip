@@ -25,7 +25,7 @@ export const Route = createFileRoute(
   "/_authenticated/$companyId/inbox/requests/",
 )({ component: JoinRequestQueue });
 
-export function JoinRequestQueue() {
+function JoinRequestQueue() {
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();

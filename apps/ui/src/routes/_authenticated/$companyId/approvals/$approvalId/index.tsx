@@ -68,7 +68,7 @@ function completeBooleanGrantMap<Key extends string>(
   ) as Record<Key, boolean>;
 }
 
-export function ApprovalDetail() {
+function ApprovalDetail() {
   const route = getRouteApi(
     "/_authenticated/$companyId/approvals/$approvalId/",
   );

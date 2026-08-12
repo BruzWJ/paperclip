@@ -53,7 +53,7 @@ function activityEntityTitle(event: ActivityEvent) {
   return null;
 }
 
-export function Activity() {
+function Activity() {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [filter, setFilter] = useState("all");

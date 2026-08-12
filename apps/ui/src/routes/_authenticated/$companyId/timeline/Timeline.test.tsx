@@ -6,7 +6,10 @@ import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { WorkTimelineResult } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Timeline, timelineSummary } from ".";
+import { Route, timelineSummary } from ".";
+import { getRouteComponent } from "@/test/route-component";
+
+const Timeline = getRouteComponent(Route);
 
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
 const mockWorkTimelineApi = vi.hoisted(() => ({

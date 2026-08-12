@@ -36,7 +36,7 @@ export const Route = createFileRoute(
  * @see doc/plugins/PLUGIN_SPEC.md §19.2 — Company-Context Routes
  * @see doc/plugins/PLUGIN_SPEC.md §24.3 — Company-Context Plugin Page
  */
-export function PluginPage() {
+function PluginPage() {
   const params = getRouteApi(
     "/_authenticated/$companyId/$pluginRoutePath/$/",
   ).useParams();

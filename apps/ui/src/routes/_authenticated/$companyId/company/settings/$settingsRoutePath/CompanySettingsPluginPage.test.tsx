@@ -5,7 +5,10 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestRouter } from "@/test/TestRouter";
-import { CompanySettingsPluginPage } from ".";
+import { getRouteComponent } from "@/test/route-component";
+import { Route } from ".";
+
+const CompanySettingsPluginPage = getRouteComponent(Route);
 
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
 const mockUsePluginSlots = vi.hoisted(() => vi.fn());

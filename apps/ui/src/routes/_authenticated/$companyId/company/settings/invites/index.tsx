@@ -62,7 +62,7 @@ function isInviteHistoryRow(
   return "id" in value && "state" in value && "createdAt" in value;
 }
 
-export function CompanyInvites() {
+function CompanyInvites() {
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();

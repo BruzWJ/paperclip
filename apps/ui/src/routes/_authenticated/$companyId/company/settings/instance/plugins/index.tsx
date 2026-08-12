@@ -83,7 +83,7 @@ function getCatalogKindLabel(kind: PluginCatalogEntryDto["kind"]): string {
  * @see PluginSettings — linked from the Settings icon on each plugin row.
  * @see doc/plugins/PLUGIN_SPEC.md §3 — Plugin Lifecycle for status semantics.
  */
-export function PluginManager() {
+function PluginManager() {
   const currentUserId = useCurrentUserId();
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();

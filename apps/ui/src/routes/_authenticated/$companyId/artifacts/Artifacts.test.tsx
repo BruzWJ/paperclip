@@ -4,9 +4,12 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Artifacts } from ".";
+import { Route } from ".";
 import type { CompanyArtifact, CompanyArtifactGroup } from "@/api/artifacts";
 import { TestRouter } from "@/test/TestRouter";
+import { getRouteComponent } from "@/test/route-component";
+
+const Artifacts = getRouteComponent(Route);
 
 const TASK_ID = "44444444-4444-4444-8444-444444444444";
 

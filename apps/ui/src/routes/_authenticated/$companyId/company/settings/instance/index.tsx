@@ -64,7 +64,7 @@ function formatActivationTimestamp(iso: string): string {
   });
 }
 
-export function InstanceGeneralSettings() {
+function InstanceGeneralSettings() {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();

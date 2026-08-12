@@ -6,8 +6,11 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AnyRouter } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Search, buildSearchState } from ".";
+import { Route, buildSearchState } from ".";
 import { TestRouter } from "@/test/TestRouter";
+import { getRouteComponent } from "@/test/route-component";
+
+const Search = getRouteComponent(Route);
 
 const breadcrumbState = vi.hoisted(() => ({
   setBreadcrumbs: vi.fn(),

@@ -59,7 +59,7 @@ function getRecentTasks(tasks: Task[]): Task[] {
   );
 }
 
-export function Dashboard() {
+function Dashboard() {
   const companyId = useCompanyRouteId();
   const { openNewAgent } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();

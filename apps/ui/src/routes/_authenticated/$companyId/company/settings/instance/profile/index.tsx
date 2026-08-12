@@ -32,7 +32,7 @@ function deriveInitials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
-export function ProfileSettings() {
+function ProfileSettings() {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { selectedCompany } = useCompany();

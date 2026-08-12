@@ -360,7 +360,7 @@ function RoutineSectionHeader({
   );
 }
 
-export function Routines() {
+function Routines() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const route = getRouteApi("/_authenticated/$companyId/routines/");

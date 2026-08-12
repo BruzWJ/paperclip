@@ -95,7 +95,7 @@ export function mergeTaskPagesStable<T extends { id: string }>(
   return merged;
 }
 
-export function Tasks() {
+function Tasks() {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const route = getRouteApi("/_authenticated/$companyId/tasks/");

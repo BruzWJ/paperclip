@@ -4,9 +4,12 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CompanyInvites } from ".";
+import { Route } from ".";
 import { queryKeys } from "@/lib/queryKeys";
 import { TestRouter } from "@/test/TestRouter";
+import { getRouteComponent } from "@/test/route-component";
+
+const CompanyInvites = getRouteComponent(Route);
 
 const listInvitesMock = vi.hoisted(() => vi.fn());
 const createCompanyInviteMock = vi.hoisted(() => vi.fn());

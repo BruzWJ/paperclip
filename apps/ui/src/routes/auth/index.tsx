@@ -28,7 +28,7 @@ export const Route = createFileRoute("/auth/")({
 
 type AuthMode = "sign_in" | "sign_up";
 
-export function AuthPage() {
+function AuthPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { next } = getRouteApi("/auth/").useSearch();

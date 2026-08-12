@@ -4,7 +4,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ProfileSettings } from ".";
+import { Route } from ".";
+import { getRouteComponent } from "@/test/route-component";
+
+const ProfileSettings = getRouteComponent(Route);
 
 const mockAuthApi = vi.hoisted(() => ({
   getSession: vi.fn(),

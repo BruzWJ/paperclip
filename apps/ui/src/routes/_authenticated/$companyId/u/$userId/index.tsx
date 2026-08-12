@@ -280,7 +280,7 @@ function UsageList({
   );
 }
 
-export function UserProfile() {
+function UserProfile() {
   const { companyId, userId } = route.useParams();
   const { setBreadcrumbs } = useBreadcrumbs();
 

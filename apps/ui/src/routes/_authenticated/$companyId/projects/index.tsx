@@ -109,7 +109,7 @@ function sortProjects(
   });
 }
 
-export function Projects() {
+function Projects() {
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { openNewProject } = useDialogActions();

@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AdapterManager } from ".";
+import { Route } from ".";
+import { getRouteComponent } from "@/test/route-component";
+
+const AdapterManager = getRouteComponent(Route);
 
 const mockAdaptersApi = vi.hoisted(() => ({
   list: vi.fn(),

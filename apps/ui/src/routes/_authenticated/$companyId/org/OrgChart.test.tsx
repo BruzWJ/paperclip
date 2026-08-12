@@ -7,7 +7,10 @@ import type { AnyRouter } from "@tanstack/react-router";
 import { canonicalizeMoneyAmount } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestRouter } from "@/test/TestRouter";
-import { OrgChart } from ".";
+import { getRouteComponent } from "@/test/route-component";
+import { Route } from ".";
+
+const OrgChart = getRouteComponent(Route);
 
 const orgMock = vi.fn();
 const listMock = vi.fn();

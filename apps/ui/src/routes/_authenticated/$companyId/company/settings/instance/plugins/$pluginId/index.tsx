@@ -83,7 +83,7 @@ export const Route = createFileRoute(
  * @see doc/plugins/PLUGIN_SPEC.md §13 — Plugin Health Checks.
  * @see doc/plugins/PLUGIN_SPEC.md §19.8 — Plugin Settings UI.
  */
-export function PluginSettings() {
+function PluginSettings() {
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { companyId, pluginId } = getRouteApi(

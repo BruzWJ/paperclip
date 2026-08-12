@@ -16,7 +16,7 @@ export const Route = createFileRoute("/_authenticated/$companyId/goals/")({
   component: Goals,
 });
 
-export function Goals() {
+function Goals() {
   const companyId = useCompanyRouteId();
   const { openNewGoal } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();

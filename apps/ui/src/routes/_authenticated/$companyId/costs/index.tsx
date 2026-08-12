@@ -177,7 +177,7 @@ function FinanceCurrencyCard({ row }: { row: FinanceSummaryRow }) {
   );
 }
 
-export function Costs() {
+function Costs() {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();

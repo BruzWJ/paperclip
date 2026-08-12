@@ -63,7 +63,7 @@ export function GoalPropertiesToggleButton({
   );
 }
 
-export function GoalDetail() {
+function GoalDetail() {
   const { companyId, goalId } = route.useParams();
   const { openNewGoal } = useDialogActions();
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();

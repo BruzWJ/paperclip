@@ -18,7 +18,7 @@ export const Route = createFileRoute(
   "/_authenticated/$companyId/company/settings/instance/access/",
 )({ component: InstanceAccess });
 
-export function InstanceAccess() {
+function InstanceAccess() {
   const companyId = useCompanyRouteId();
   const { companies } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();

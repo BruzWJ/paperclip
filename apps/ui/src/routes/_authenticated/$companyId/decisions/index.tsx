@@ -110,7 +110,7 @@ function findScrollContainer(element: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
-export function WhatNeedsMe() {
+function WhatNeedsMe() {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [expandedId, setExpandedId] = useState<string | null>(null);
