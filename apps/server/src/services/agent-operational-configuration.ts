@@ -42,7 +42,7 @@ export function createAgentOperationalConfigurationService(
         });
       }
 
-      return db.transaction(async (tx) => {
+      const committed = await db.transaction(async (tx) => {
         const txDb = tx as unknown as Db;
         const locked = await tx
           .select()
@@ -82,19 +82,17 @@ export function createAgentOperationalConfigurationService(
             );
         }
 
-        if (
-          Object.prototype.hasOwnProperty.call(
-            parsed.data,
-            "budgetMonthlyAmount",
-          )
-        ) {
-          await budgetService(txDb, budgetHooks).setAgentMonthlyLimit(
-            input.companyId,
-            input.agentId,
-            parsed.data.budgetMonthlyAmount!,
-            input.actorUserId,
-          );
-        }
+        const committedBudgetPolicy = Object.prototype.hasOwnProperty.call(
+          parsed.data,
+          "budgetMonthlyAmount",
+        )
+          ? await budgetService(txDb).setAgentMonthlyLimitInTransaction(
+              input.companyId,
+              input.agentId,
+              parsed.data.budgetMonthlyAmount!,
+              input.actorUserId,
+            )
+          : null;
 
         const agent = await tx
           .select()
@@ -107,8 +105,14 @@ export function createAgentOperationalConfigurationService(
           )
           .then((rows) => rows[0] ?? null);
         if (!agent) throw notFound("Agent not found");
-        return { agent };
+        return { agent, committedBudgetPolicy };
       });
+      if (committed.committedBudgetPolicy) {
+        await budgetService(db, budgetHooks).applyCommittedPolicyUpsert(
+          committed.committedBudgetPolicy,
+        );
+      }
+      return { agent: committed.agent };
     },
 
     async resolveBudgetIncident(input: {

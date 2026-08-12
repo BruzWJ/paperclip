@@ -5,10 +5,21 @@ import { agentService } from "../services/agents.js";
 import { budgetService } from "../services/budgets.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
-const mockLogActivity = vi.hoisted(() => vi.fn());
+const activityMocks = vi.hoisted(() => ({
+  logActivity: vi.fn(),
+  persistActivityLog: vi.fn(),
+  publishCommittedActivity: vi.fn(),
+}));
+
+const persistedBudgetActivity = {
+  row: { id: "persisted-budget-activity" },
+  taskId: null,
+};
 
 vi.mock("../services/activity-log.js", () => ({
-  logActivity: mockLogActivity,
+  logActivity: activityMocks.logActivity,
+  persistActivityLog: activityMocks.persistActivityLog,
+  publishCommittedActivity: activityMocks.publishCommittedActivity,
 }));
 
 function companyRow(input: {
@@ -88,7 +99,8 @@ function policyRow(input: {
 describe("canonical budget service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLogActivity.mockResolvedValue(undefined);
+    activityMocks.logActivity.mockResolvedValue(undefined);
+    activityMocks.persistActivityLog.mockResolvedValue(persistedBudgetActivity);
   });
 
   it("creates one immutable company currency and exact decimal-string policy", async () => {
@@ -110,18 +122,31 @@ describe("canonical budget service", () => {
       insert: [[company], [policy]],
       select: [
         [{ budgetCurrency: "EUR" }],
-        [{ companyId, name: company.name, status: "active", pauseReason: null, pausedAt: null }],
+        [
+          {
+            companyId,
+            name: company.name,
+            status: "active",
+            pauseReason: null,
+            pausedAt: null,
+          },
+        ],
         [],
         [{ total: "0" }],
       ],
       update: [[], []],
     });
 
-    await expect(budgetService(db).createCompany({
-      name: company.name,
-      budgetCurrency: "EUR",
-      budgetMonthlyAmount: amount,
-    }, "board-user")).resolves.toMatchObject({
+    await expect(
+      budgetService(db).createCompany(
+        {
+          name: company.name,
+          budgetCurrency: "EUR",
+          budgetMonthlyAmount: amount,
+        },
+        "board-user",
+      ),
+    ).resolves.toMatchObject({
       budgetCurrency: "EUR",
       budgetMonthlyAmount: amount,
     });
@@ -129,7 +154,9 @@ describe("canonical budget service", () => {
     const policyValues = calls
       .filter((call) => call.method === "values")
       .map((call) => call.args[0])
-      .find((value) => (value as { scopeType?: string }).scopeType === "company");
+      .find(
+        (value) => (value as { scopeType?: string }).scopeType === "company",
+      );
     expect(policyValues).toMatchObject({
       companyId,
       scopeType: "company",
@@ -157,7 +184,15 @@ describe("canonical budget service", () => {
       insert: [[company], [policy]],
       select: [
         [{ budgetCurrency: "USD" }],
-        [{ companyId, name: company.name, status: "active", pauseReason: null, pausedAt: null }],
+        [
+          {
+            companyId,
+            name: company.name,
+            status: "active",
+            pauseReason: null,
+            pausedAt: null,
+          },
+        ],
         [],
         [],
       ],
@@ -165,18 +200,30 @@ describe("canonical budget service", () => {
     });
     const service = budgetService(db);
 
-    await expect(service.createCompany({ name: company.name }, "board-user")).resolves.toMatchObject({
+    await expect(
+      service.createCompany({ name: company.name }, "board-user"),
+    ).resolves.toMatchObject({
       budgetCurrency: "USD",
       budgetMonthlyAmount: "0",
     });
-    await expect(service.createCompany({
-      name: "Exponent Budget Company",
-      budgetMonthlyAmount: "1e3",
-    }, "board-user")).rejects.toThrow("non-exponent decimal string");
-    await expect(service.createCompany({
-      name: "Numeric Budget Company",
-      budgetMonthlyAmount: 100 as never,
-    }, "board-user")).rejects.toThrow("canonical decimal string");
+    await expect(
+      service.createCompany(
+        {
+          name: "Exponent Budget Company",
+          budgetMonthlyAmount: "1e3",
+        },
+        "board-user",
+      ),
+    ).rejects.toThrow("non-exponent decimal string");
+    await expect(
+      service.createCompany(
+        {
+          name: "Numeric Budget Company",
+          budgetMonthlyAmount: 100 as never,
+        },
+        "board-user",
+      ),
+    ).rejects.toThrow("canonical decimal string");
   });
 
   it("rejects noncanonical budget incident UUID aliases before database access", async () => {
@@ -205,7 +252,9 @@ describe("canonical budget service", () => {
     });
 
     expect(calls).toEqual([]);
-    expect(mockLogActivity).not.toHaveBeenCalled();
+    expect(activityMocks.logActivity).not.toHaveBeenCalled();
+    expect(activityMocks.persistActivityLog).not.toHaveBeenCalled();
+    expect(activityMocks.publishCommittedActivity).not.toHaveBeenCalled();
   });
 
   it("writes agent limits only through the operational budget owner", async () => {
@@ -218,7 +267,11 @@ describe("canonical budget service", () => {
       scopeId: agentId,
       limitAmount: "10.5",
     });
-    const updated = { ...existing, limitAmount: "20.125", updatedAt: new Date() };
+    const updated = {
+      ...existing,
+      limitAmount: "20.125",
+      updatedAt: new Date(),
+    };
     const { db, calls } = createMockDb({
       select: [
         [{ budgetCurrency: "USD" }],
@@ -231,12 +284,14 @@ describe("canonical budget service", () => {
       update: [[updated], [], []],
     });
 
-    await expect(budgetService(db).setAgentMonthlyLimit(
-      companyId,
-      agentId,
-      parseMoneyAmount("20.125"),
-      "board-user",
-    )).resolves.toMatchObject({
+    await expect(
+      budgetService(db).setAgentMonthlyLimit(
+        companyId,
+        agentId,
+        parseMoneyAmount("20.125"),
+        "board-user",
+      ),
+    ).resolves.toMatchObject({
       companyId,
       scopeType: "agent",
       scopeId: agentId,
@@ -246,13 +301,36 @@ describe("canonical budget service", () => {
     const sets = calls
       .filter((call) => call.method === "set")
       .map((call) => call.args[0]);
-    expect(sets).toContainEqual(expect.objectContaining({
-      limitAmount: "20.125",
-      isActive: true,
-    }));
-    expect(sets).toContainEqual(expect.objectContaining({
-      budgetMonthlyAmount: "20.125",
-    }));
+    expect(sets).toContainEqual(
+      expect.objectContaining({
+        limitAmount: "20.125",
+        isActive: true,
+      }),
+    );
+    expect(sets).toContainEqual(
+      expect.objectContaining({
+        budgetMonthlyAmount: "20.125",
+      }),
+    );
+    expect(activityMocks.persistActivityLog).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        companyId,
+        actorId: "board-user",
+        action: "budget.policy_upserted",
+        entityType: "budget_policy",
+        entityId: existing.id,
+      }),
+    );
+    expect(
+      activityMocks.publishCommittedActivity,
+    ).toHaveBeenCalledExactlyOnceWith(persistedBudgetActivity);
+    expect(activityMocks.logActivity).not.toHaveBeenCalled();
+    expect(
+      activityMocks.persistActivityLog.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      activityMocks.publishCommittedActivity.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("separates ledger evaluation from post-commit scope suspension", async () => {
@@ -260,10 +338,12 @@ describe("canonical budget service", () => {
     const { db } = createMockDb();
     const service = budgetService(db, { suspendWorkForScope });
 
-    expect(await service.evaluateCostEventInTransaction({
-      kind: "unavailable",
-      knownDeltaAmount: null,
-    } as never)).toEqual([]);
+    expect(
+      await service.evaluateCostEventInTransaction({
+        kind: "unavailable",
+        knownDeltaAmount: null,
+      } as never),
+    ).toEqual([]);
     expect(suspendWorkForScope).not.toHaveBeenCalled();
 
     const scope = {
@@ -340,25 +420,43 @@ describe("canonical budget service", () => {
         [{ budgetCurrency: "USD" }],
         [incident],
         [policy],
-        [{ companyId, name: pausedAgent.name, status: "paused", pauseReason: "budget" }],
+        [
+          {
+            companyId,
+            name: pausedAgent.name,
+            status: "paused",
+            pauseReason: "budget",
+          },
+        ],
         [{ total: "10" }],
         [resolved],
-        [{ companyId, name: pausedAgent.name, status: "idle", pauseReason: null }],
+        [
+          {
+            companyId,
+            name: pausedAgent.name,
+            status: "idle",
+            pauseReason: null,
+          },
+        ],
       ],
       update: [[], [], [], []],
     });
     const resumeWorkForScope = vi.fn().mockResolvedValue(undefined);
 
-    await expect(budgetService(resolutionHarness.db, { resumeWorkForScope }).resolveIncident(
-      companyId,
-      incidentId,
-      {
-        action: "raise_budget_and_resume",
-        limitAmount: parseMoneyAmount("20"),
-      },
-      "board-user",
-      "agent_operational_configuration",
-    )).resolves.toMatchObject({
+    await expect(
+      budgetService(resolutionHarness.db, {
+        resumeWorkForScope,
+      }).resolveIncident(
+        companyId,
+        incidentId,
+        {
+          action: "raise_budget_and_resume",
+          limitAmount: parseMoneyAmount("20"),
+        },
+        "board-user",
+        "agent_operational_configuration",
+      ),
+    ).resolves.toMatchObject({
       id: incidentId,
       status: "resolved",
       scopeType: "agent",

@@ -5,16 +5,17 @@ import { parseMoneyAmount } from "@paperclipai/shared";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const budgetMocks = vi.hoisted(() => ({
-  setAgentMonthlyLimit: vi.fn(),
+  setAgentMonthlyLimitInTransaction: vi.fn(),
+  applyCommittedPolicyUpsert: vi.fn(),
 }));
+
+const committedBudgetPolicy = { kind: "committed-budget-policy" };
 
 vi.mock("../services/budgets.js", () => ({
   budgetService: vi.fn(() => budgetMocks),
 }));
 
-import {
-  createAgentOperationalConfigurationService,
-} from "../services/agent-operational-configuration.js";
+import { createAgentOperationalConfigurationService } from "../services/agent-operational-configuration.js";
 
 type AgentRow = typeof agents.$inferSelect;
 
@@ -42,8 +43,12 @@ function agentRow(status = "idle"): AgentRow {
 
 describe("agent operational configuration", () => {
   beforeEach(() => {
-    budgetMocks.setAgentMonthlyLimit.mockReset();
-    budgetMocks.setAgentMonthlyLimit.mockResolvedValue(undefined);
+    budgetMocks.setAgentMonthlyLimitInTransaction.mockReset();
+    budgetMocks.setAgentMonthlyLimitInTransaction.mockResolvedValue(
+      committedBudgetPolicy,
+    );
+    budgetMocks.applyCommittedPolicyUpsert.mockReset();
+    budgetMocks.applyCommittedPolicyUpsert.mockResolvedValue(undefined);
   });
 
   it("atomically synchronizes the agent projection and monthly policy", async () => {
@@ -76,15 +81,22 @@ describe("agent operational configuration", () => {
     });
     expect(db.transaction).toHaveBeenCalledOnce();
     expect(
-      calls.find(
-        (call) => call.operation === "update" && call.method === "set",
-      )?.args[0],
+      calls.find((call) => call.operation === "update" && call.method === "set")
+        ?.args[0],
     ).toMatchObject({ icon: "bot" });
-    expect(budgetMocks.setAgentMonthlyLimit).toHaveBeenCalledWith(
+    expect(budgetMocks.setAgentMonthlyLimitInTransaction).toHaveBeenCalledWith(
       agent.companyId,
       agent.id,
       parseMoneyAmount("25"),
       "board-user",
+    );
+    expect(
+      budgetMocks.applyCommittedPolicyUpsert,
+    ).toHaveBeenCalledExactlyOnceWith(committedBudgetPolicy);
+    expect(
+      budgetMocks.setAgentMonthlyLimitInTransaction.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      budgetMocks.applyCommittedPolicyUpsert.mock.invocationCallOrder[0]!,
     );
     expect(remaining("select")).toBe(0);
     expect(remaining("update")).toBe(0);
@@ -111,7 +123,10 @@ describe("agent operational configuration", () => {
 
     expect(db.transaction).not.toHaveBeenCalled();
     expect(calls).toHaveLength(0);
-    expect(budgetMocks.setAgentMonthlyLimit).not.toHaveBeenCalled();
+    expect(
+      budgetMocks.setAgentMonthlyLimitInTransaction,
+    ).not.toHaveBeenCalled();
+    expect(budgetMocks.applyCommittedPolicyUpsert).not.toHaveBeenCalled();
   });
 
   it("updates a role instruction without changing the monthly budget policy", async () => {
@@ -135,11 +150,13 @@ describe("agent operational configuration", () => {
 
     expect(result.agent.instruction).toBe(updatedAgent.instruction);
     expect(
-      calls.find(
-        (call) => call.operation === "update" && call.method === "set",
-      )?.args[0],
+      calls.find((call) => call.operation === "update" && call.method === "set")
+        ?.args[0],
     ).toMatchObject({ instruction: updatedAgent.instruction });
-    expect(budgetMocks.setAgentMonthlyLimit).not.toHaveBeenCalled();
+    expect(
+      budgetMocks.setAgentMonthlyLimitInTransaction,
+    ).not.toHaveBeenCalled();
+    expect(budgetMocks.applyCommittedPolicyUpsert).not.toHaveBeenCalled();
     expect(remaining("select")).toBe(0);
     expect(remaining("update")).toBe(0);
   });
@@ -168,7 +185,10 @@ describe("agent operational configuration", () => {
         (call) => call.operation === "update" || call.operation === "insert",
       ),
     ).toHaveLength(0);
-    expect(budgetMocks.setAgentMonthlyLimit).not.toHaveBeenCalled();
+    expect(
+      budgetMocks.setAgentMonthlyLimitInTransaction,
+    ).not.toHaveBeenCalled();
+    expect(budgetMocks.applyCommittedPolicyUpsert).not.toHaveBeenCalled();
     expect(remaining("select")).toBe(0);
   });
 });
