@@ -6,8 +6,10 @@ import {
   readAgentOrder,
   sortAgentsByStoredOrder,
   writeAgentOrder,
+  type AgentOrderUpdatedDetail,
   type AgentSidebarOrderOptions,
 } from "../lib/agent-order";
+import { completeOrderedIds, orderedIdsEqual } from "../lib/ordered-ids";
 
 type UseAgentOrderParams = {
   agents: Agent[];
@@ -15,28 +17,12 @@ type UseAgentOrderParams = {
   userId: string | null | undefined;
 };
 
-type AgentOrderUpdatedDetail = {
-  storageKey: string;
-  orderedIds: string[];
-};
-
-function areEqual(a: string[], b: string[]) {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
-
 function buildOrderIds(agents: Agent[], orderedIds: string[], options: AgentSidebarOrderOptions) {
   return sortAgentsByStoredOrder(agents, orderedIds, options).map((agent) => agent.id);
 }
 
 export function useAgentOrder({ agents, companyId, userId }: UseAgentOrderParams) {
-  const sortOptions = useMemo<AgentSidebarOrderOptions>(
-    () => ({ leadershipFirst: true }),
-    [],
-  );
+  const sortOptions = useMemo<AgentSidebarOrderOptions>(() => ({ leadershipFirst: true }), []);
   const storageKey = useMemo(() => {
     if (!companyId) return null;
     return getAgentOrderStorageKey(companyId, userId);
@@ -51,7 +37,7 @@ export function useAgentOrder({ agents, companyId, userId }: UseAgentOrderParams
     const nextIds = storageKey
       ? buildOrderIds(agents, readAgentOrder(storageKey), sortOptions)
       : agents.map((agent) => agent.id);
-    setOrderedIds((current) => (areEqual(current, nextIds) ? current : nextIds));
+    setOrderedIds((current) => (orderedIdsEqual(current, nextIds) ? current : nextIds));
   }, [agents, storageKey, sortOptions]);
 
   useEffect(() => {
@@ -59,7 +45,7 @@ export function useAgentOrder({ agents, companyId, userId }: UseAgentOrderParams
 
     const syncFromIds = (ids: string[]) => {
       const nextIds = buildOrderIds(agents, ids, sortOptions);
-      setOrderedIds((current) => (areEqual(current, nextIds) ? current : nextIds));
+      setOrderedIds((current) => (orderedIdsEqual(current, nextIds) ? current : nextIds));
     };
 
     const onStorage = (event: StorageEvent) => {
@@ -87,13 +73,9 @@ export function useAgentOrder({ agents, companyId, userId }: UseAgentOrderParams
 
   const persistOrder = useCallback(
     (ids: string[]) => {
-      const idSet = new Set(agents.map((agent) => agent.id));
-      const filtered = ids.filter((id) => idSet.has(id));
-      for (const agent of sortAgentsByStoredOrder(agents, [], sortOptions)) {
-        if (!filtered.includes(agent.id)) filtered.push(agent.id);
-      }
+      const filtered = completeOrderedIds(agents, ids, sortAgentsByStoredOrder(agents, [], sortOptions));
 
-      setOrderedIds((current) => (areEqual(current, filtered) ? current : filtered));
+      setOrderedIds((current) => (orderedIdsEqual(current, filtered) ? current : filtered));
       if (storageKey) {
         writeAgentOrder(storageKey, filtered);
       }

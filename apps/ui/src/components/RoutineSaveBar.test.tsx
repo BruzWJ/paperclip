@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type React from "react";
+import { act as reactAct, type ComponentProps } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +31,7 @@ const DIRTY: DirtyFieldDescriptor[] = [
   { key: "description", label: "the description" },
 ];
 
-function renderBar(props: Partial<React.ComponentProps<typeof RoutineSaveBar>>) {
+function renderBar(props: Partial<ComponentProps<typeof RoutineSaveBar>>) {
   const handlers = {
     onSave: vi.fn(),
     onDiscard: vi.fn(),
@@ -91,5 +91,28 @@ describe("RoutineSaveBar", () => {
       reload!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(handlers.onReload).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires confirmation before discarding changes", async () => {
+    const handlers = renderBar({ dirtyFields: DIRTY });
+    const discard = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Discard",
+    );
+
+    act(() => discard?.click());
+
+    expect(handlers.onDiscard).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Discard changes?");
+
+    const confirm = Array.from(document.body.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Discard changes",
+    );
+    await reactAct(async () => {
+      confirm?.click();
+      await Promise.resolve();
+    });
+
+    expect(handlers.onDiscard).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-slot="alert-dialog-content"]')).toBeNull();
   });
 });

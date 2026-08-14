@@ -1,7 +1,8 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { AlertTriangle, Info, X } from "lucide-react";
@@ -41,7 +42,9 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
       <Alert>
         <AlertDescription>
           {ready} secrets ready to import
-          {blocked > 0 && <Badge variant="destructive">{blocked} need attention before import</Badge>}
+          {blocked > 0 && (
+            <DomainStatus status="blocked">{blocked} need attention before import</DomainStatus>
+          )}
         </AlertDescription>
       </Alert>
       <ItemGroup data-testid="review-list">
@@ -60,8 +63,7 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
                   {middleTruncate(draft.candidate.externalRef, 60)}
                 </ItemDescription>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  <Field>
-                    <FieldLabel>Paperclip name</FieldLabel>
+                  <LabeledFormField label="Paperclip name">
                     <Input
                       value={draft.name}
                       onChange={(e) =>
@@ -75,9 +77,8 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
                       disabled={importing}
                       data-testid={`review-name-${draft.candidate.externalRef}`}
                     />
-                  </Field>
-                  <Field>
-                    <FieldLabel>Key</FieldLabel>
+                  </LabeledFormField>
+                  <LabeledFormField label="Key">
                     <Input
                       value={draft.key}
                       onChange={(e) =>
@@ -96,9 +97,8 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
                       disabled={importing}
                       data-testid={`review-key-${draft.candidate.externalRef}`}
                     />
-                  </Field>
-                  <Field>
-                    <FieldLabel>Description (optional)</FieldLabel>
+                  </LabeledFormField>
+                  <LabeledFormField label="Description (optional)">
                     <Input
                       value={draft.description}
                       onChange={(e) =>
@@ -110,7 +110,7 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
                       disabled={importing}
                       data-testid={`review-description-${draft.candidate.externalRef}`}
                     />
-                  </Field>
+                  </LabeledFormField>
                 </div>
                 {error && (
                   <FieldError id={errorId} data-testid={`review-error-${draft.candidate.externalRef}`}>

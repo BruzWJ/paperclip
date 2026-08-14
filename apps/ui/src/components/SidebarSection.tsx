@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import type { LabeledValue, OpenStateProps } from "@/lib/presentation-contracts";
 import { useSidebarNavExpanded } from "./SidebarNavItem";
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel } from "@/components/ui/sidebar";
 
@@ -28,15 +29,10 @@ export type SidebarSectionMenuAction =
     }
   | { type: "separator" };
 
-export type SidebarSectionRadioChoice = {
-  label: string;
-  value: string;
-};
-
 type SidebarSectionMenu = {
   actions?: SidebarSectionMenuAction[];
   ariaLabel?: string;
-  radioChoices?: SidebarSectionRadioChoice[];
+  radioChoices?: LabeledValue[];
   radioLabel?: string;
   radioValue?: string;
   onRadioValueChange?: (value: string) => void;
@@ -51,10 +47,7 @@ type SidebarSectionHeaderAction = {
 interface SidebarSectionProps {
   label: string;
   children: ReactNode;
-  collapsible?: {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-  };
+  collapsible?: OpenStateProps;
   menu?: SidebarSectionMenu;
   headerAction?: SidebarSectionHeaderAction;
 }

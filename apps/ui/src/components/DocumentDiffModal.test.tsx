@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { ReactNode } from "react";
+import { act, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -37,6 +37,16 @@ async function flush() {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   flushSync(() => {});
+}
+
+async function waitForDiff(container: HTMLElement) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (container.querySelector(".shiki")) return;
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10));
+    });
+  }
+  throw new Error("Kibo code highlighting did not finish");
 }
 
 function createRevision(overrides: Partial<DocumentRevision> = {}): DocumentRevision {
@@ -117,5 +127,22 @@ describe("DocumentDiffModal", () => {
       "A second revision is needed to compare changes.",
     );
     expect(container.textContent).toContain("Save another revision");
+  });
+
+  it("renders a saved revision comparison through Kibo's diff notation", async () => {
+    const { container } = await render([
+      createRevision({
+        id: "revision-2",
+        revisionNumber: 2,
+        body: "same\nnew",
+      }),
+      createRevision({ body: "same\nold" }),
+    ]);
+    await waitForDiff(container);
+
+    expect(container.querySelector("[data-slot='diff-code-block']")).not.toBeNull();
+    expect(container.querySelector(".line.diff.remove")?.textContent).toBe("- old");
+    expect(container.querySelector(".line.diff.add")?.textContent).toBe("+ new");
+    expect(container.textContent).not.toContain("[!code");
   });
 });

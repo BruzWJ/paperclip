@@ -1,4 +1,4 @@
-import { type SecretPathFolder } from "@/components/secrets/secret-path";
+import type { SecretPathBreadcrumb, SecretPathFolder } from "@/components/secrets/secret-path";
 import { Button } from "@/components/ui/button";
 import {
   Breadcrumb,
@@ -17,7 +17,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
-import { TableCell, TableRow } from "@/components/ui/table";
 import { Link } from "@tanstack/react-router";
 import {
   Archive,
@@ -177,29 +176,7 @@ export function SecretsRowActions({ row }: { row: UnifiedSecretRow }) {
   );
 }
 
-export function SecretsFolderTableRow({ folder }: { folder: SecretPathFolder }) {
-  const { folderSearch } = useSecretsPage();
-  return (
-    <TableRow>
-      <TableCell>
-        <Link to="." search={folderSearch(folder.path)} activeOptions={{ exact: true, includeSearch: true }}>
-          <Folder /> {folder.name}
-          <span>{formatSecretPathCounts(folder.secretCount, folder.folderCount)}</span>
-        </Link>
-      </TableCell>
-      <TableCell colSpan={3} />
-      <TableCell>
-        <Button asChild variant="ghost" size="icon-sm">
-          <Link to="." search={folderSearch(folder.path)} aria-label={`Open ${folder.name}`}>
-            <ChevronRight />
-          </Link>
-        </Button>
-      </TableCell>
-    </TableRow>
-  );
-}
-
-export function SecretsFolderCard({ folder }: { folder: SecretPathFolder }) {
+export function SecretsFolderItem({ folder }: { folder: SecretPathFolder }) {
   const { folderSearch } = useSecretsPage();
   return (
     <Item asChild variant="outline">
@@ -219,7 +196,7 @@ export function SecretsFolderCard({ folder }: { folder: SecretPathFolder }) {
   );
 }
 
-export function SecretsUpRow({ variant }: { variant: "table" | "card" }) {
+export function SecretsUpItem() {
   const { folderSearch, parentFolderPath } = useSecretsPage();
   const parentLabel = parentFolderPath ? parentFolderPath.split("/").pop()! : "All secrets";
   const target = (
@@ -227,17 +204,6 @@ export function SecretsUpRow({ variant }: { variant: "table" | "card" }) {
       <CornerLeftUp /> Up to {parentLabel}
     </Link>
   );
-  if (variant === "table") {
-    return (
-      <TableRow>
-        <TableCell colSpan={5}>
-          <Button asChild variant="ghost">
-            {target}
-          </Button>
-        </TableCell>
-      </TableRow>
-    );
-  }
   return (
     <Item asChild variant="outline">
       {target}
@@ -247,7 +213,7 @@ export function SecretsUpRow({ variant }: { variant: "table" | "card" }) {
 
 export function SecretsBreadcrumb() {
   const { breadcrumbs, folderSearch } = useSecretsPage();
-  const fullTrail: { name: string; path: string }[] = [{ name: "All secrets", path: "" }, ...breadcrumbs];
+  const fullTrail: SecretPathBreadcrumb[] = [{ name: "All secrets", path: "" }, ...breadcrumbs];
   // Middle-truncate deep paths: root · … · last two.
   const collapsed =
     fullTrail.length > 4 ? [fullTrail[0], { name: "…", path: "" }, ...fullTrail.slice(-2)] : fullTrail;

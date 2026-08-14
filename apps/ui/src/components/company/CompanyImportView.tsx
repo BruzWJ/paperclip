@@ -6,24 +6,25 @@ import {
 } from "@/components/company/CompanyImportControls";
 import { CompanyPortabilityFilePreview } from "@/components/CompanyPortabilityFilePreview";
 import { FileTree } from "@/components/FileTree";
+import {
+  Choicebox,
+  ChoiceboxIndicator,
+  ChoiceboxItem,
+  ChoiceboxItemHeader,
+  ChoiceboxItemTitle,
+} from "@/components/kibo-ui/choicebox";
+import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import * as AttachmentUI from "@/components/ui/attachment";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import * as ItemUI from "@/components/ui/item";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { CompanyImportController } from "@/routes/_authenticated/$companyId/company/import/-useCompanyImportController";
 import type { CompanyPortabilityCollisionStrategy } from "@paperclipai/shared";
 import { Download, Github, Upload } from "lucide-react";
+import { toast } from "sonner";
 
 interface CompanyImportViewProps {
   controller: CompanyImportController;
@@ -56,10 +57,10 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
     importPreview,
     importUrl,
     localPackage,
+    localPackageFile,
     localZipHelpText,
     nameOverrides,
     newCompanyName,
-    packageInputRef,
     previewContent,
     previewMutation,
     renameMap,
@@ -93,10 +94,8 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
           </p>
         </div>
 
-        <ToggleGroup
-          type="single"
+        <Choicebox
           value={sourceMode}
-          variant="outline"
           className="grid gap-2 md:grid-cols-2"
           onValueChange={(value) => {
             if (!value) return;
@@ -110,60 +109,44 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
               { key: "local", icon: Upload, label: "Local zip" },
             ] as const
           ).map(({ key, icon: Icon, label }) => (
-            <ToggleGroupItem key={key} value={key} className="justify-start">
+            <ChoiceboxItem key={key} id={`company-import-source-${key}`} value={key}>
               <Icon />
-              {label}
-            </ToggleGroupItem>
+              <ChoiceboxItemHeader>
+                <ChoiceboxItemTitle>{label}</ChoiceboxItemTitle>
+              </ChoiceboxItemHeader>
+              <ChoiceboxIndicator id={`company-import-source-${key}`} />
+            </ChoiceboxItem>
           ))}
-        </ToggleGroup>
+        </Choicebox>
 
         {sourceMode === "local" ? (
-          <div>
-            <Input
-              ref={packageInputRef}
-              type="file"
-              aria-label="Choose company package ZIP file"
-              accept=".zip,application/zip"
-              className="hidden"
-              onChange={handleChooseLocalPackage}
+          <LabeledFormField
+            label="Company package"
+            description={
+              localPackage
+                ? `${Object.keys(localPackage.files).length} file${
+                    Object.keys(localPackage.files).length === 1 ? "" : "s"
+                  } found in ${localPackage.name}.`
+                : localZipHelpText
+            }
+          >
+            <AccessibleDropzone
+              accept={{ "application/zip": [".zip"] }}
+              ariaLabel="Upload company package"
+              maxFiles={1}
+              src={localPackageFile ? [localPackageFile] : undefined}
+              onDrop={(files) => {
+                const file = files[0];
+                if (file) void handleChooseLocalPackage(file);
+              }}
+              onError={(error) => toast.error("Package rejected", { description: error.message })}
             />
-            <AttachmentUI.Attachment
-              state={localPackage ? "done" : "idle"}
-              className="w-full flex-nowrap"
-            >
-              <AttachmentUI.AttachmentMedia>
-                <Upload />
-              </AttachmentUI.AttachmentMedia>
-              <AttachmentUI.AttachmentContent>
-                <AttachmentUI.AttachmentTitle>
-                  {localPackage?.name ?? "Company package"}
-                </AttachmentUI.AttachmentTitle>
-                <AttachmentUI.AttachmentDescription>
-                  {localPackage
-                    ? `${Object.keys(localPackage.files).length} file${
-                        Object.keys(localPackage.files).length === 1 ? "" : "s"
-                      }`
-                    : localZipHelpText}
-                </AttachmentUI.AttachmentDescription>
-              </AttachmentUI.AttachmentContent>
-              <AttachmentUI.AttachmentActions>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => packageInputRef.current?.click()}
-                >
-                  Choose zip
-                </Button>
-              </AttachmentUI.AttachmentActions>
-            </AttachmentUI.Attachment>
-          </div>
+          </LabeledFormField>
         ) : (
-          <Field>
-            <FieldLabel>GitHub URL</FieldLabel>
-            <FieldDescription>
-              Exact HTTPS repository URL with required ref and optional package
-              path.
-            </FieldDescription>
+          <LabeledFormField
+            label="GitHub URL"
+            description="Exact HTTPS repository URL with required ref and optional package path."
+          >
             <Input
               aria-label="GitHub repository URL"
               type="text"
@@ -174,14 +157,10 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
                 setImportPreview(null);
               }}
             />
-          </Field>
+          </LabeledFormField>
         )}
 
-        <Field>
-          <FieldLabel>Target</FieldLabel>
-          <FieldDescription>
-            Import into this company or create a new one.
-          </FieldDescription>
+        <LabeledFormField label="Target" description="Import into this company or create a new one.">
           <Select
             value={targetMode}
             onValueChange={(v) => {
@@ -197,19 +176,16 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="new">Create new company</SelectItem>
-              <SelectItem value="existing">
-                Existing company: {selectedCompany?.name}
-              </SelectItem>
+              <SelectItem value="existing">Existing company: {selectedCompany?.name}</SelectItem>
             </SelectContent>
           </Select>
-        </Field>
+        </LabeledFormField>
 
         {targetMode === "new" && (
-          <Field>
-            <FieldLabel>New company name</FieldLabel>
-            <FieldDescription>
-              Optional override. Leave blank to use the package name.
-            </FieldDescription>
+          <LabeledFormField
+            label="New company name"
+            description="Optional override. Leave blank to use the package name."
+          >
             <Input
               aria-label="New company name"
               type="text"
@@ -217,14 +193,13 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
               onChange={(e) => setNewCompanyName(e.target.value)}
               placeholder="Imported Company"
             />
-          </Field>
+          </LabeledFormField>
         )}
 
-        <Field>
-          <FieldLabel>Collision strategy</FieldLabel>
-          <FieldDescription>
-            Board imports can rename, skip, or replace matching company content.
-          </FieldDescription>
+        <LabeledFormField
+          label="Collision strategy"
+          description="Board imports can rename, skip, or replace matching company content."
+        >
           <Select
             value={collisionStrategy}
             onValueChange={(v) => {
@@ -244,7 +219,7 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
               <SelectItem value="replace">Replace existing</SelectItem>
             </SelectContent>
           </Select>
-        </Field>
+        </LabeledFormField>
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -315,9 +290,7 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
             <Button
               size="sm"
               onClick={() => importMutation.mutate()}
-              disabled={
-                importMutation.isPending || hasErrors || selectedCount === 0
-              }
+              disabled={importMutation.isPending || hasErrors || selectedCount === 0}
             >
               <Download className="mr-1.5 h-3.5 w-3.5" />
               {importMutation.isPending
@@ -363,9 +336,7 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
                   onToggleDir={handleToggleDir}
                   onSelectFile={setSelectedFile}
                   onToggleCheck={handleToggleCheck}
-                  renderFileExtra={(node, checked) =>
-                    renderImportFileExtra(node, checked, renameMap)
-                  }
+                  renderFileExtra={(node, checked) => renderImportFileExtra(node, checked, renameMap)}
                   fileTones={fileTones}
                   wrapLabels={false}
                 />
@@ -380,9 +351,7 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
                   selectedFile ? (
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-mono text-sm">
-                          {selectedFile}
-                        </span>
+                        <span className="truncate font-mono text-sm">{selectedFile}</span>
                         {selectedRenamedTo ? (
                           <span className="shrink-0 font-mono text-sm text-muted-foreground">
                             &rarr; {selectedRenamedTo}
@@ -390,11 +359,7 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
                         ) : null}
                       </div>
                       {selectedAction ? (
-                        <Badge
-                          variant={importActionBadgeVariant(selectedAction)}
-                        >
-                          {selectedAction}
-                        </Badge>
+                        <Badge variant={importActionBadgeVariant(selectedAction)}>{selectedAction}</Badge>
                       ) : null}
                     </div>
                   ) : undefined

@@ -146,6 +146,7 @@ describe("TaskMonitorBanner / TaskMonitorComposerStrip rendering", () => {
 
     expect(container.textContent).toContain("Monitor reminder — due in 2h");
     expect(container.textContent).toContain("Watching: vercel-deploy");
+    expect(container.textContent).toContain("Scheduled");
 
     expect(container.textContent).not.toContain("Check now");
 

@@ -222,3 +222,5 @@ export function useResourceMembershipMutation(companyId: string | null | undefin
     [mutate, pendingRequests],
   );
 }
+
+export type ResourceMembershipMutation = ReturnType<typeof useResourceMembershipMutation>;

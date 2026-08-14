@@ -2,22 +2,14 @@ import { accessApi } from "@/api/access";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldError } from "@/components/ui/field";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatDate } from "@/lib/utils";
-import type {
-  AuthFeedback,
-  AuthMode,
-} from "@/routes/invite/$token/-invite-auth";
+import type { AuthFeedback, AuthMode } from "@/routes/invite/$token/-invite-auth";
 import type { Dispatch, SetStateAction } from "react";
 
 type Invite = Awaited<ReturnType<typeof accessApi.getInvite>>;
@@ -87,18 +79,11 @@ export function InviteLandingForm({
           <Card>
             <CardHeader className="flex-row items-start gap-4">
               <Avatar size="lg">
-                <AvatarImage
-                  src={companyLogoUrl ?? undefined}
-                  alt={`${companyDisplayName} logo`}
-                />
-                <AvatarFallback>
-                  {companyDisplayName.trim().charAt(0).toUpperCase() || "?"}
-                </AvatarFallback>
+                <AvatarImage src={companyLogoUrl ?? undefined} alt={`${companyDisplayName} logo`} />
+                <AvatarFallback>{companyDisplayName.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
               </Avatar>
               <div className="min-w-0 space-y-2">
-                <CardDescription>
-                  You&apos;ve been invited to join Paperclip
-                </CardDescription>
+                <CardDescription>You&apos;ve been invited to join Paperclip</CardDescription>
                 <CardTitle className="text-2xl">
                   {invite.inviteType === "bootstrap_admin"
                     ? "Set up Paperclip"
@@ -144,9 +129,7 @@ export function InviteLandingForm({
                 <div className="space-y-5">
                   <div>
                     <h2 className="text-lg font-semibold">
-                      {authMode === "sign_up"
-                        ? "Create your account"
-                        : "Sign in to continue"}
+                      {authMode === "sign_up" ? "Create your account" : "Sign in to continue"}
                     </h2>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {authMode === "sign_up"
@@ -177,11 +160,7 @@ export function InviteLandingForm({
                   <form
                     className="space-y-4"
                     method="post"
-                    action={
-                      authMode === "sign_up"
-                        ? "/api/auth/sign-up/email"
-                        : "/api/auth/sign-in/email"
-                    }
+                    action={authMode === "sign_up" ? "/api/auth/sign-up/email" : "/api/auth/sign-in/email"}
                     onSubmit={(event) => {
                       event.preventDefault();
                       if (authPending) return;
@@ -197,8 +176,7 @@ export function InviteLandingForm({
                     data-testid="invite-inline-auth"
                   >
                     {authMode === "sign_up" ? (
-                      <Field>
-                        <FieldLabel htmlFor="invite-name">Name</FieldLabel>
+                      <LabeledFormField label="Name" labelFor="invite-name">
                         <Input
                           id="invite-name"
                           name="name"
@@ -210,18 +188,13 @@ export function InviteLandingForm({
                           autoComplete="name"
                           required
                           aria-required="true"
-                          aria-invalid={
-                            authFeedback?.tone === "error" ? true : undefined
-                          }
-                          aria-describedby={
-                            authFeedback ? authErrorId : undefined
-                          }
+                          aria-invalid={authFeedback?.tone === "error" ? true : undefined}
+                          aria-describedby={authFeedback ? authErrorId : undefined}
                           autoFocus
                         />
-                      </Field>
+                      </LabeledFormField>
                     ) : null}
-                    <Field>
-                      <FieldLabel htmlFor="invite-email">Email</FieldLabel>
+                    <LabeledFormField label="Email" labelFor="invite-email">
                       <Input
                         id="invite-email"
                         name="email"
@@ -234,19 +207,12 @@ export function InviteLandingForm({
                         autoComplete="email"
                         required
                         aria-required="true"
-                        aria-invalid={
-                          authFeedback?.tone === "error" ? true : undefined
-                        }
-                        aria-describedby={
-                          authFeedback ? authErrorId : undefined
-                        }
+                        aria-invalid={authFeedback?.tone === "error" ? true : undefined}
+                        aria-describedby={authFeedback ? authErrorId : undefined}
                         autoFocus={authMode === "sign_in"}
                       />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="invite-password">
-                        Password
-                      </FieldLabel>
+                    </LabeledFormField>
+                    <LabeledFormField label="Password" labelFor="invite-password">
                       <Input
                         id="invite-password"
                         name="password"
@@ -256,26 +222,14 @@ export function InviteLandingForm({
                           setPassword(event.target.value);
                           setAuthFeedback(null);
                         }}
-                        autoComplete={
-                          authMode === "sign_in"
-                            ? "current-password"
-                            : "new-password"
-                        }
+                        autoComplete={authMode === "sign_in" ? "current-password" : "new-password"}
                         required
                         aria-required="true"
-                        aria-invalid={
-                          authFeedback?.tone === "error" ? true : undefined
-                        }
-                        aria-describedby={
-                          authFeedback ? authErrorId : undefined
-                        }
+                        aria-invalid={authFeedback?.tone === "error" ? true : undefined}
+                        aria-describedby={authFeedback ? authErrorId : undefined}
                       />
-                    </Field>
-                    {authFeedback ? (
-                      <FieldError id={authErrorId}>
-                        {authFeedback.message}
-                      </FieldError>
-                    ) : null}
+                    </LabeledFormField>
+                    {authFeedback ? <FieldError id={authErrorId}>{authFeedback.message}</FieldError> : null}
                     <Button
                       type="submit"
                       className="w-full"
@@ -329,16 +283,10 @@ export function InviteLandingForm({
                   {shouldAutoAcceptUserInvite ? (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       {acceptPending ? <Spinner /> : null}
-                      {acceptPending
-                        ? "Submitting request..."
-                        : "Finishing sign-in..."}
+                      {acceptPending ? "Submitting request..." : "Finishing sign-in..."}
                     </div>
                   ) : (
-                    <Button
-                      className="w-full"
-                      disabled={acceptPending}
-                      onClick={onAccept}
-                    >
+                    <Button className="w-full" disabled={acceptPending} onClick={onAccept}>
                       {acceptPending ? "Working..." : joinButtonLabel}
                     </Button>
                   )}

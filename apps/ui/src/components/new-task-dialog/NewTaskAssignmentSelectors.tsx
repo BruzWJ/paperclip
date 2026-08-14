@@ -1,18 +1,18 @@
 import type { KeyboardEvent } from "react";
-import { Check, ChevronsUpDown, Eye, MoreHorizontal, ShieldCheck } from "lucide-react";
+import { Eye, MoreHorizontal, ShieldCheck } from "lucide-react";
 
+import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { Button } from "@/components/ui/button";
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ENTITY_NONE_VALUE, entityOptionMatchesSearch, useEntitySelectorState } from "@/lib/entity-selector";
 import { trackRecentAssignee } from "@/lib/recent-assignees";
+import type { EntityOption } from "@/lib/entity-selector";
 import { cn } from "@/lib/utils";
+import type { Agent } from "@paperclipai/shared";
 import { AgentIcon } from "../AgentIconPicker";
 import { useNewTaskDialogViewModel } from "./context";
 import { participantAgentId } from "./model";
@@ -23,12 +23,74 @@ function stopSelectorKeyPropagation(event: KeyboardEvent) {
   if (SELECTOR_KEYS.has(event.key)) event.stopPropagation();
 }
 
-const selectorPopoverContentProps = {
-  align: "start" as const,
-  collisionPadding: 16,
-  className: "w-72 max-w-(--sz-calc-23) p-0",
-  onKeyDown: stopSelectorKeyPropagation,
-};
+function ParticipantAssignmentSelector({
+  agents,
+  icon: Icon,
+  label,
+  onValueChange,
+  options,
+  recentOptionIds,
+  type,
+  value,
+}: {
+  agents: Agent[];
+  icon: typeof Eye;
+  label: "Reviewer" | "Approver";
+  onValueChange: (value: string) => void;
+  options: EntityOption[];
+  recentOptionIds: string[];
+  type: "reviewer" | "approver";
+  value: string;
+}) {
+  const selectedAgentId = participantAgentId(value);
+  const selectedAgent = selectedAgentId ? agents.find((agent) => agent.id === selectedAgentId) : null;
+  const labelLower = label.toLowerCase();
+
+  return (
+    <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+      <span className="flex w-6 shrink-0 items-center justify-center">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <EntityCombobox
+        value={value}
+        options={options}
+        type={type}
+        ariaLabel={label}
+        placeholder={label}
+        noneLabel={`No ${labelLower}`}
+        recentOptionIds={recentOptionIds}
+        onValueChange={onValueChange}
+        searchPlaceholder={`Search ${labelLower}s...`}
+        emptyMessage={`No ${labelLower}s found.`}
+        onContentKeyDown={stopSelectorKeyPropagation}
+        renderValue={(option) =>
+          option ? (
+            <>
+              {selectedAgent ? (
+                <AgentIcon icon={selectedAgent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              ) : null}
+              <span className="truncate">{option.label}</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">{label}</span>
+          )
+        }
+        renderOption={(option) => {
+          const optionAgentId = participantAgentId(option.id);
+          const optionAgent = optionAgentId ? agents.find((agent) => agent.id === optionAgentId) : null;
+          return (
+            <>
+              {optionAgent ? (
+                <AgentIcon icon={optionAgent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              ) : null}
+              <span className="truncate">{option.label}</span>
+            </>
+          );
+        }}
+      />
+    </div>
+  );
+}
 
 export function NewTaskAssignmentSelectors() {
   const model = useNewTaskDialogViewModel();
@@ -55,217 +117,107 @@ export function NewTaskAssignmentSelectors() {
   const { currentProject, currentOwner } = model.derived;
   const { handleProjectChange } = model.actions;
 
-  const ownerSelector = useEntitySelectorState({
-    value: ownerAgentId,
-    options: ownerOptions,
-    noneLabel: "Choose owner",
-    recentOptionIds: recentOwnerOptionIds,
-    onChange: (value) => {
-      if (value) trackRecentAssignee(value);
-      setOwnerAgentId(value);
-      if (value && status === "backlog") setStatus("todo");
-    },
-    onConfirm: () => {
-      if (projectId) requestEditorRef.current?.focus();
-      else projectSelectorRef.current?.focus();
-    },
-  });
-  const projectSelector = useEntitySelectorState({
-    value: projectId,
-    options: projectOptions,
-    noneLabel: "No project",
-    recentOptionIds: recentProjectIds,
-    onChange: handleProjectChange,
-    onConfirm: () => requestEditorRef.current?.focus(),
-  });
   const participantRecentOptionIds = recentOwnerOptionIds.map((id) => `agent:${id}`);
-  const reviewerSelector = useEntitySelectorState({
-    value: reviewerValue,
-    options: participantOptions,
-    noneLabel: "No reviewer",
-    recentOptionIds: participantRecentOptionIds,
-    onChange: setReviewerValue,
-  });
-  const approverSelector = useEntitySelectorState({
-    value: approverValue,
-    options: participantOptions,
-    noneLabel: "No approver",
-    recentOptionIds: participantRecentOptionIds,
-    onChange: setApproverValue,
-  });
-  const reviewerId = participantAgentId(reviewerSelector.currentOption?.id ?? "");
-  const reviewer = reviewerId ? (agents ?? []).find((agent) => agent.id === reviewerId) : null;
-  const approverId = participantAgentId(approverSelector.currentOption?.id ?? "");
-  const approver = approverId ? (agents ?? []).find((agent) => agent.id === approverId) : null;
 
   return (
     <div className="px-4 pb-2">
       <div className="overflow-x-auto overscroll-x-contain">
         <div className="inline-flex flex-wrap items-center gap-2 text-sm text-muted-foreground sm:min-w-max sm:flex-nowrap">
           <span className="w-6 shrink-0 text-center">For</span>
-          <Popover open={ownerSelector.open} onOpenChange={ownerSelector.setOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                ref={ownerSelectorRef}
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={ownerSelector.open}
-                aria-label="Owner"
-                className="w-full justify-between overflow-hidden"
-                onPointerDown={() => {
-                  ownerSelector.pointerFocusRef.current = true;
-                }}
-                onFocus={() => {
-                  if (ownerSelector.pointerFocusRef.current) ownerSelector.pointerFocusRef.current = false;
-                  else ownerSelector.setOpen(true);
-                }}
-              >
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-left",
-                    !ownerSelector.currentOption && "text-muted-foreground",
-                  )}
-                >
-                  {ownerSelector.currentOption ? (
-                    currentOwner ? (
-                      <>
-                        <AgentIcon
-                          icon={currentOwner.icon}
-                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                        />
-                        <span className="truncate">{ownerSelector.currentOption.label}</span>
-                      </>
-                    ) : (
-                      <span className="truncate">{ownerSelector.currentOption.label}</span>
-                    )
-                  ) : (
-                    <span className="text-muted-foreground">Owner</span>
-                  )}
-                </span>
-                <ChevronsUpDown className="ml-2 size-4 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent {...selectorPopoverContentProps}>
-              <Command
-                filter={(optionValue, search) =>
-                  entityOptionMatchesSearch(
-                    ownerSelector.orderedOptions.find(
-                      (option) => (option.id || ENTITY_NONE_VALUE) === optionValue,
-                    ),
-                    search,
-                  )
-                }
-              >
-                <CommandInput autoFocus placeholder="Search owners..." />
-                <CommandList>
-                  <CommandEmpty>No available agents found.</CommandEmpty>
-                  {ownerSelector.orderedOptions.map((option) => {
-                    const owner = option.id ? (agents ?? []).find((agent) => agent.id === option.id) : null;
-                    const selected = option.id === ownerAgentId;
-                    return (
-                      <CommandItem
-                        key={option.id || ENTITY_NONE_VALUE}
-                        value={option.id || ENTITY_NONE_VALUE}
-                        keywords={[option.label, option.searchText ?? ""]}
-                        onSelect={() => ownerSelector.select(option)}
-                      >
-                        {owner ? (
-                          <AgentIcon
-                            icon={owner.icon}
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                          />
-                        ) : null}
-                        <span className="truncate">{option.label}</span>
-                        <Check className={cn("ml-auto size-4", selected ? "opacity-100" : "opacity-0")} />
-                      </CommandItem>
-                    );
-                  })}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+          <EntityCombobox
+            ref={ownerSelectorRef}
+            value={ownerAgentId}
+            options={ownerOptions}
+            type="owner"
+            ariaLabel="Owner"
+            placeholder="Owner"
+            noneLabel="Choose owner"
+            recentOptionIds={recentOwnerOptionIds}
+            onValueChange={(value) => {
+              if (value) trackRecentAssignee(value);
+              setOwnerAgentId(value);
+              if (value && status === "backlog") setStatus("todo");
+            }}
+            onConfirm={() => {
+              if (projectId) requestEditorRef.current?.focus();
+              else projectSelectorRef.current?.focus();
+            }}
+            searchPlaceholder="Search owners..."
+            emptyMessage="No available agents found."
+            onContentKeyDown={stopSelectorKeyPropagation}
+            renderValue={(option) =>
+              option ? (
+                currentOwner ? (
+                  <>
+                    <AgentIcon
+                      icon={currentOwner.icon}
+                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                    />
+                    <span className="truncate">{option.label}</span>
+                  </>
+                ) : (
+                  <span className="truncate">{option.label}</span>
+                )
+              ) : (
+                <span className="text-muted-foreground">Owner</span>
+              )
+            }
+            renderOption={(option) => {
+              const owner = option.id ? (agents ?? []).find((agent) => agent.id === option.id) : null;
+              return (
+                <>
+                  {owner ? (
+                    <AgentIcon icon={owner.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  ) : null}
+                  <span className="truncate">{option.label}</span>
+                </>
+              );
+            }}
+          />
 
           <span>in</span>
-          <Popover open={projectSelector.open} onOpenChange={projectSelector.setOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                ref={projectSelectorRef}
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={projectSelector.open}
-                aria-label="Project"
-                className="w-full justify-between overflow-hidden"
-                onPointerDown={() => {
-                  projectSelector.pointerFocusRef.current = true;
-                }}
-                onFocus={() => {
-                  if (projectSelector.pointerFocusRef.current)
-                    projectSelector.pointerFocusRef.current = false;
-                  else projectSelector.setOpen(true);
-                }}
-              >
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-left",
-                    !projectSelector.currentOption && "text-muted-foreground",
-                  )}
-                >
-                  {projectSelector.currentOption && currentProject ? (
-                    <>
-                      <span
-                        className="h-3.5 w-3.5 shrink-0 rounded-sm"
-                        style={{ backgroundColor: currentProject.color ?? "var(--project-seed)" }}
-                      />
-                      <span className="truncate">{projectSelector.currentOption.label}</span>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">Project</span>
-                  )}
-                </span>
-                <ChevronsUpDown className="ml-2 size-4 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent {...selectorPopoverContentProps}>
-              <Command
-                filter={(optionValue, search) =>
-                  entityOptionMatchesSearch(
-                    projectSelector.orderedOptions.find(
-                      (option) => (option.id || ENTITY_NONE_VALUE) === optionValue,
-                    ),
-                    search,
-                  )
-                }
-              >
-                <CommandInput autoFocus placeholder="Search projects..." />
-                <CommandList>
-                  <CommandEmpty>No projects found.</CommandEmpty>
-                  {projectSelector.orderedOptions.map((option) => {
-                    const project = option.id ? orderedProjects.find((item) => item.id === option.id) : null;
-                    const selected = option.id === projectId;
-                    return (
-                      <CommandItem
-                        key={option.id || ENTITY_NONE_VALUE}
-                        value={option.id || ENTITY_NONE_VALUE}
-                        keywords={[option.label, option.searchText ?? ""]}
-                        onSelect={() => projectSelector.select(option)}
-                      >
-                        {option.id ? (
-                          <span
-                            className="h-3.5 w-3.5 shrink-0 rounded-sm"
-                            style={{ backgroundColor: project?.color ?? "var(--project-seed)" }}
-                          />
-                        ) : null}
-                        <span className="truncate">{option.label}</span>
-                        <Check className={cn("ml-auto size-4", selected ? "opacity-100" : "opacity-0")} />
-                      </CommandItem>
-                    );
-                  })}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+          <EntityCombobox
+            ref={projectSelectorRef}
+            value={projectId}
+            options={projectOptions}
+            type="project"
+            ariaLabel="Project"
+            placeholder="Project"
+            noneLabel="No project"
+            recentOptionIds={recentProjectIds}
+            onValueChange={handleProjectChange}
+            onConfirm={() => requestEditorRef.current?.focus()}
+            searchPlaceholder="Search projects..."
+            emptyMessage="No projects found."
+            onContentKeyDown={stopSelectorKeyPropagation}
+            renderValue={(option) =>
+              option && currentProject ? (
+                <>
+                  <span
+                    className="h-3.5 w-3.5 shrink-0 rounded-sm"
+                    style={{ backgroundColor: currentProject.color ?? "var(--project-seed)" }}
+                  />
+                  <span className="truncate">{option.label}</span>
+                </>
+              ) : (
+                <span className="text-muted-foreground">Project</span>
+              )
+            }
+            renderOption={(option) => {
+              const project = option.id ? orderedProjects.find((item) => item.id === option.id) : null;
+              return (
+                <>
+                  {option.id ? (
+                    <span
+                      className="h-3.5 w-3.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: project?.color ?? "var(--project-seed)" }}
+                    />
+                  ) : null}
+                  <span className="truncate">{option.label}</span>
+                </>
+              );
+            }}
+          />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -280,7 +232,6 @@ export function NewTaskAssignmentSelectors() {
                   setShowReviewerRow((visible) => !visible);
                   if (showReviewerRow) {
                     setReviewerValue("");
-                    reviewerSelector.setOpen(false);
                   }
                 }}
               >
@@ -293,7 +244,6 @@ export function NewTaskAssignmentSelectors() {
                   setShowApproverRow((visible) => !visible);
                   if (showApproverRow) {
                     setApproverValue("");
-                    approverSelector.setOpen(false);
                   }
                 }}
               >
@@ -306,185 +256,29 @@ export function NewTaskAssignmentSelectors() {
       </div>
 
       {showReviewerRow ? (
-        <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-          <span className="flex w-6 shrink-0 items-center justify-center">
-            <Eye className="h-3.5 w-3.5" />
-          </span>
-          <Popover open={reviewerSelector.open} onOpenChange={reviewerSelector.setOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={reviewerSelector.open}
-                aria-label="Reviewer"
-                className="w-full justify-between overflow-hidden"
-                onPointerDown={() => {
-                  reviewerSelector.pointerFocusRef.current = true;
-                }}
-                onFocus={() => {
-                  if (reviewerSelector.pointerFocusRef.current)
-                    reviewerSelector.pointerFocusRef.current = false;
-                  else reviewerSelector.setOpen(true);
-                }}
-              >
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-left",
-                    !reviewerSelector.currentOption && "text-muted-foreground",
-                  )}
-                >
-                  {reviewerSelector.currentOption ? (
-                    <>
-                      {reviewer ? (
-                        <AgentIcon
-                          icon={reviewer.icon}
-                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                        />
-                      ) : null}
-                      <span className="truncate">{reviewerSelector.currentOption.label}</span>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">Reviewer</span>
-                  )}
-                </span>
-                <ChevronsUpDown className="ml-2 size-4 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent {...selectorPopoverContentProps}>
-              <Command
-                filter={(optionValue, search) =>
-                  entityOptionMatchesSearch(
-                    reviewerSelector.orderedOptions.find(
-                      (option) => (option.id || ENTITY_NONE_VALUE) === optionValue,
-                    ),
-                    search,
-                  )
-                }
-              >
-                <CommandInput autoFocus placeholder="Search reviewers..." />
-                <CommandList>
-                  <CommandEmpty>No reviewers found.</CommandEmpty>
-                  {reviewerSelector.orderedOptions.map((option) => {
-                    const reviewerOptionId = participantAgentId(option.id);
-                    const reviewerOption = reviewerOptionId
-                      ? (agents ?? []).find((agent) => agent.id === reviewerOptionId)
-                      : null;
-                    const selected = option.id === reviewerValue;
-                    return (
-                      <CommandItem
-                        key={option.id || ENTITY_NONE_VALUE}
-                        value={option.id || ENTITY_NONE_VALUE}
-                        keywords={[option.label, option.searchText ?? ""]}
-                        onSelect={() => reviewerSelector.select(option)}
-                      >
-                        {reviewerOption ? (
-                          <AgentIcon
-                            icon={reviewerOption.icon}
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                          />
-                        ) : null}
-                        <span className="truncate">{option.label}</span>
-                        <Check className={cn("ml-auto size-4", selected ? "opacity-100" : "opacity-0")} />
-                      </CommandItem>
-                    );
-                  })}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-        </div>
+        <ParticipantAssignmentSelector
+          agents={agents ?? []}
+          icon={Eye}
+          label="Reviewer"
+          onValueChange={setReviewerValue}
+          options={participantOptions}
+          recentOptionIds={participantRecentOptionIds}
+          type="reviewer"
+          value={reviewerValue}
+        />
       ) : null}
 
       {showApproverRow ? (
-        <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-          <span className="flex w-6 shrink-0 items-center justify-center">
-            <ShieldCheck className="h-3.5 w-3.5" />
-          </span>
-          <Popover open={approverSelector.open} onOpenChange={approverSelector.setOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={approverSelector.open}
-                aria-label="Approver"
-                className="w-full justify-between overflow-hidden"
-                onPointerDown={() => {
-                  approverSelector.pointerFocusRef.current = true;
-                }}
-                onFocus={() => {
-                  if (approverSelector.pointerFocusRef.current)
-                    approverSelector.pointerFocusRef.current = false;
-                  else approverSelector.setOpen(true);
-                }}
-              >
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-left",
-                    !approverSelector.currentOption && "text-muted-foreground",
-                  )}
-                >
-                  {approverSelector.currentOption ? (
-                    <>
-                      {approver ? (
-                        <AgentIcon
-                          icon={approver.icon}
-                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                        />
-                      ) : null}
-                      <span className="truncate">{approverSelector.currentOption.label}</span>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">Approver</span>
-                  )}
-                </span>
-                <ChevronsUpDown className="ml-2 size-4 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent {...selectorPopoverContentProps}>
-              <Command
-                filter={(optionValue, search) =>
-                  entityOptionMatchesSearch(
-                    approverSelector.orderedOptions.find(
-                      (option) => (option.id || ENTITY_NONE_VALUE) === optionValue,
-                    ),
-                    search,
-                  )
-                }
-              >
-                <CommandInput autoFocus placeholder="Search approvers..." />
-                <CommandList>
-                  <CommandEmpty>No approvers found.</CommandEmpty>
-                  {approverSelector.orderedOptions.map((option) => {
-                    const approverOptionId = participantAgentId(option.id);
-                    const approverOption = approverOptionId
-                      ? (agents ?? []).find((agent) => agent.id === approverOptionId)
-                      : null;
-                    const selected = option.id === approverValue;
-                    return (
-                      <CommandItem
-                        key={option.id || ENTITY_NONE_VALUE}
-                        value={option.id || ENTITY_NONE_VALUE}
-                        keywords={[option.label, option.searchText ?? ""]}
-                        onSelect={() => approverSelector.select(option)}
-                      >
-                        {approverOption ? (
-                          <AgentIcon
-                            icon={approverOption.icon}
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                          />
-                        ) : null}
-                        <span className="truncate">{option.label}</span>
-                        <Check className={cn("ml-auto size-4", selected ? "opacity-100" : "opacity-0")} />
-                      </CommandItem>
-                    );
-                  })}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-        </div>
+        <ParticipantAssignmentSelector
+          agents={agents ?? []}
+          icon={ShieldCheck}
+          label="Approver"
+          onValueChange={setApproverValue}
+          options={participantOptions}
+          recentOptionIds={participantRecentOptionIds}
+          type="approver"
+          value={approverValue}
+        />
       ) : null}
     </div>
   );

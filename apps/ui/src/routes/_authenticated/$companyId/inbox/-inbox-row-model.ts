@@ -3,13 +3,6 @@ import { parseMoneyAmount } from "@paperclipai/shared";
 
 export const ZERO_AMOUNT = parseMoneyAmount("0");
 
-export type CreatorOption = {
-  id: string;
-  label: string;
-  kind: "agent" | "user";
-  searchText?: string;
-};
-
 export function runFailureMessage(run: TaskExecutionRunEnvelopeRecord): string {
   return run.terminalReasonCode?.replace(/_/g, " ") ?? "Run exited with an error.";
 }

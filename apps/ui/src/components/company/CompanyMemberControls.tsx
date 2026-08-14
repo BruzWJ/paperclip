@@ -1,38 +1,9 @@
 import type { CompanyMember } from "@/api/access";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
+import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemTitle,
-} from "@/components/ui/item";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { USER_COMPANY_MEMBERSHIP_ROLE_LABELS } from "@paperclipai/shared";
 
 export type EditableMemberStatus = "pending" | "active" | "suspended";
@@ -57,59 +28,54 @@ export function CompanyMemberEditDialog({
   onSave: () => void;
 }) {
   return (
-    <Dialog open={!!member} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Edit member</DialogTitle>
-          <DialogDescription>
-            Update company role and membership status for{" "}
-            {memberDisplayName(member)}.
-          </DialogDescription>
-        </DialogHeader>
-        {member && (
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field>
-              <FieldLabel>Company role</FieldLabel>
-              <Select value={role} onValueChange={onRoleChange}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(USER_COMPANY_MEMBERSHIP_ROLE_LABELS).map(
-                    ([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ),
-                  )}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel>Membership status</FieldLabel>
-              <Select value={status} onValueChange={onStatusChange}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="suspended">Suspended</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-        )}
-        <DialogFooter>
+    <FormDialog
+      open={!!member}
+      onOpenChange={(open) => !open && onClose()}
+      contentClassName="max-w-2xl"
+      title="Edit member"
+      description={`Update company role and membership status for ${memberDisplayName(member)}.`}
+      footer={
+        <>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button onClick={onSave} disabled={isSaving || !member}>
             {isSaving ? "Saving…" : "Save member"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      {member && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <LabeledFormField label="Company role" labelFor="member-company-role">
+            <Select value={role} onValueChange={onRoleChange}>
+              <SelectTrigger id="member-company-role" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(USER_COMPANY_MEMBERSHIP_ROLE_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </LabeledFormField>
+          <LabeledFormField label="Membership status" labelFor="member-membership-status">
+            <Select value={status} onValueChange={onStatusChange}>
+              <SelectTrigger id="member-membership-status" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="suspended">Suspended</SelectItem>
+              </SelectContent>
+            </Select>
+          </LabeledFormField>
+        </div>
+      )}
+    </FormDialog>
   );
 }
 
@@ -125,41 +91,27 @@ export function CompanyMemberRemovalDialog({
   onRemove: () => void;
 }) {
   return (
-    <AlertDialog
+    <ConfirmActionDialog
       open={Boolean(member)}
       onOpenChange={(open) => !open && onClose()}
+      title="Remove member?"
+      description={<>Archive {memberDisplayName(member)} and revoke their company access.</>}
+      confirmLabel="Remove member"
+      pendingLabel="Removing..."
+      variant="destructive"
+      disabled={!member}
+      pending={isRemoving}
+      onConfirm={onRemove}
     >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Remove member?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Archive {memberDisplayName(member)} and revoke their company access.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {member ? (
-          <Item variant="outline">
-            <ItemContent>
-              <ItemTitle>{memberDisplayName(member)}</ItemTitle>
-              <ItemDescription>
-                {member.user?.email || member.principalId}
-              </ItemDescription>
-            </ItemContent>
-          </Item>
-        ) : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isRemoving || !member}>
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={isRemoving || !member}
-            onClick={onRemove}
-          >
-            {isRemoving ? "Removing..." : "Remove member"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      {member ? (
+        <Item variant="outline">
+          <ItemContent>
+            <ItemTitle>{memberDisplayName(member)}</ItemTitle>
+            <ItemDescription>{member.user?.email || member.principalId}</ItemDescription>
+          </ItemContent>
+        </Item>
+      ) : null}
+    </ConfirmActionDialog>
   );
 }
 
@@ -193,12 +145,7 @@ export function PendingJoinRequestCard({
         <ItemDescription>{detail}</ItemDescription>
       </ItemContent>
       <ItemActions>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onReject}
-          disabled={disabled}
-        >
+        <Button type="button" variant="outline" onClick={onReject} disabled={disabled}>
           {rejectLabel}
         </Button>
         <Button type="button" onClick={onApprove} disabled={disabled}>

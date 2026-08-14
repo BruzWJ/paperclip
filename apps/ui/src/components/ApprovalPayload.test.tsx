@@ -85,4 +85,18 @@ describe("ApprovalPayloadRenderer", () => {
       root.unmount();
     });
   });
+
+  it("renders strategy text through the shared Kibo code-block pattern", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<ApprovalPayloadRenderer type="ceo_strategy" payload={{ plan: "Grow the agent team." }} />);
+    });
+
+    expect(container.textContent).toContain("strategy.txt");
+    expect(container.textContent).toContain("Grow the agent team.");
+    expect(container.querySelector('button[aria-label="Copy strategy.txt"]')).not.toBeNull();
+
+    act(() => root.unmount());
+  });
 });

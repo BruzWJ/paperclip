@@ -4,8 +4,11 @@ import { orderItemsBySelectedAndRecent } from "@/lib/recent-selections";
 
 export interface EntityOption {
   id: string;
+  /** Unique command item value when the same entity appears in more than one group. */
+  commandValue?: string;
   label: string;
   searchText?: string;
+  disabled?: boolean;
 }
 
 export const ENTITY_NONE_VALUE = "__entity_none__";

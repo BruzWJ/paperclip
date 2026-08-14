@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import {
@@ -25,6 +26,7 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { SecretDetailsTab, SecretEventsTab, SecretUsageTab } from "./-CompanySecretDetails";
 import {
   CoverageInline,
@@ -34,6 +36,58 @@ import {
 } from "./-UserSecretDetails";
 import { modeLabel, providerLabel, statusLabel } from "./-secrets-model";
 import { useSecretsPage } from "./-SecretsPageContext";
+
+function SecretKeyRow({ onCopy, value }: { onCopy: () => void; value: string }) {
+  return (
+    <Item variant="muted" size="sm" className="min-w-0 flex-nowrap py-1.5">
+      <ItemContent>
+        <code className="min-w-0 truncate font-mono text-xs text-foreground">{value}</code>
+      </ItemContent>
+      <ItemActions>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-xs"
+          onClick={onCopy}
+        >
+          <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" /> Copy
+        </Button>
+      </ItemActions>
+    </Item>
+  );
+}
+
+function SecretDetailTabs<T extends string>({
+  children,
+  onValueChange,
+  tabs,
+  value,
+}: {
+  children: ReactNode;
+  onValueChange: (value: T) => void;
+  tabs: Array<{ label: ReactNode; value: T }>;
+  value: T;
+}) {
+  return (
+    <Tabs
+      value={value}
+      onValueChange={(nextValue) => onValueChange(nextValue as T)}
+      className="flex min-h-0 flex-1 flex-col"
+    >
+      <div className="border-b border-border px-4">
+        <TabsList variant="line" className="justify-start">
+          {tabs.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{children}</div>
+    </Tabs>
+  );
+}
 
 export function SecretDetailsSheet() {
   const {
@@ -76,30 +130,15 @@ export function SecretDetailsSheet() {
                 <KeyRound className="h-4 w-4 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{selectedSecret.name}</span>
                 <span className="shrink-0">
-                  <Badge variant="outline">{statusLabel(selectedSecret.status)}</Badge>
+                  <DomainStatus status={selectedSecret.status}>
+                    {statusLabel(selectedSecret.status)}
+                  </DomainStatus>
                 </span>
               </SheetTitle>
               <SheetDescription className="sr-only">
                 {providerLabel(providers, selectedSecret.provider)} secret {selectedSecret.key}
               </SheetDescription>
-              <Item variant="muted" size="sm" className="min-w-0 flex-nowrap py-1.5">
-                <ItemContent>
-                  <code className="min-w-0 truncate font-mono text-xs text-foreground">
-                    {selectedSecret.key}
-                  </code>
-                </ItemContent>
-                <ItemActions>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 shrink-0 px-2 text-xs"
-                    onClick={() => copySecretKey(selectedSecret.key)}
-                  >
-                    <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" /> Copy
-                  </Button>
-                </ItemActions>
-              </Item>
+              <SecretKeyRow value={selectedSecret.key} onCopy={() => copySecretKey(selectedSecret.key)} />
               <div className="flex flex-wrap gap-1.5">
                 <Badge variant="secondary">
                   <ShieldCheck className="h-3 w-3" /> Company
@@ -160,43 +199,39 @@ export function SecretDetailsSheet() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            <Tabs
+            <SecretDetailTabs
               value={secretDetailTab}
               onValueChange={setSecretDetailTab}
-              className="flex-1 min-h-0 flex flex-col"
+              tabs={[
+                { value: "details", label: "Details" },
+                {
+                  value: "usage",
+                  label: usageQuery.data ? `Usage (${usageQuery.data.bindings.length})` : "Usage",
+                },
+                { value: "events", label: "Access events" },
+              ]}
             >
-              <div className="border-b border-border px-4">
-                <TabsList variant="line" className="justify-start">
-                  <TabsTrigger value="details">Details</TabsTrigger>
-                  <TabsTrigger value="usage">
-                    {usageQuery.data ? `Usage (${usageQuery.data.bindings.length})` : "Usage"}
-                  </TabsTrigger>
-                  <TabsTrigger value="events">Access events</TabsTrigger>
-                </TabsList>
-              </div>
-              <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
-                <TabsContent value="details">
-                  <div className="space-y-3">
-                    <SecretDetailsTab
-                      secret={selectedSecret}
-                      providers={providers}
-                      providerConfigs={providerConfigs}
-                      onViewUsage={() => setSecretDetailTab("usage")}
-                    />
-                  </div>
-                </TabsContent>
-                <TabsContent value="usage">
-                  <SecretUsageTab loading={usageQuery.isPending} bindings={usageQuery.data?.bindings ?? []} />
-                </TabsContent>
-                <TabsContent value="events">
-                  <SecretEventsTab
-                    loading={eventsQuery.isPending}
-                    events={eventsQuery.data ?? []}
-                    companyId={companyId}
+              <TabsContent value="details">
+                <div className="space-y-3">
+                  <SecretDetailsTab
+                    secret={selectedSecret}
+                    providers={providers}
+                    providerConfigs={providerConfigs}
+                    onViewUsage={() => setSecretDetailTab("usage")}
                   />
-                </TabsContent>
-              </div>
-            </Tabs>
+                </div>
+              </TabsContent>
+              <TabsContent value="usage">
+                <SecretUsageTab loading={usageQuery.isPending} bindings={usageQuery.data?.bindings ?? []} />
+              </TabsContent>
+              <TabsContent value="events">
+                <SecretEventsTab
+                  loading={eventsQuery.isPending}
+                  events={eventsQuery.data ?? []}
+                  companyId={companyId}
+                />
+              </TabsContent>
+            </SecretDetailTabs>
           </>
         ) : selectedDefinition ? (
           <>
@@ -205,30 +240,18 @@ export function SecretDetailsSheet() {
                 <UserRound className="h-4 w-4 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{selectedDefinition.name}</span>
                 <span className="shrink-0">
-                  <Badge variant="outline">{statusLabel(selectedDefinition.status)}</Badge>
+                  <DomainStatus status={selectedDefinition.status}>
+                    {statusLabel(selectedDefinition.status)}
+                  </DomainStatus>
                 </span>
               </SheetTitle>
               <SheetDescription className="sr-only">
                 Each user secret definition {selectedDefinition.key}
               </SheetDescription>
-              <Item variant="muted" size="sm" className="min-w-0 flex-nowrap py-1.5">
-                <ItemContent>
-                  <code className="min-w-0 truncate font-mono text-xs text-foreground">
-                    {selectedDefinition.key}
-                  </code>
-                </ItemContent>
-                <ItemActions>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 shrink-0 px-2 text-xs"
-                    onClick={() => copySecretKey(selectedDefinition.key)}
-                  >
-                    <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" /> Copy
-                  </Button>
-                </ItemActions>
-              </Item>
+              <SecretKeyRow
+                value={selectedDefinition.key}
+                onCopy={() => copySecretKey(selectedDefinition.key)}
+              />
               <div className="flex flex-wrap gap-1.5">
                 <Badge variant="secondary">
                   <UserRound /> Each user
@@ -311,45 +334,40 @@ export function SecretDetailsSheet() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            <Tabs
+            <SecretDetailTabs
               value={secretDetailTab}
               onValueChange={setSecretDetailTab}
-              className="flex-1 min-h-0 flex flex-col"
+              tabs={[
+                { value: "details", label: "Details" },
+                { value: "coverage", label: "Coverage" },
+                { value: "usage", label: "Usage" },
+                { value: "events", label: "Access events" },
+              ]}
             >
-              <div className="border-b border-border px-4">
-                <TabsList variant="line" className="justify-start">
-                  <TabsTrigger value="details">Details</TabsTrigger>
-                  <TabsTrigger value="coverage">Coverage</TabsTrigger>
-                  <TabsTrigger value="usage">Usage</TabsTrigger>
-                  <TabsTrigger value="events">Access events</TabsTrigger>
-                </TabsList>
-              </div>
-              <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
-                <TabsContent value="details">
-                  <div className="space-y-3">
-                    <UserSecretDetailsTab
-                      companyId={companyId}
-                      definition={selectedDefinition}
-                      onViewCoverage={() => setSecretDetailTab("coverage")}
-                    />
-                  </div>
-                </TabsContent>
-                <TabsContent value="coverage">
-                  <UserSecretCoverageTab companyId={companyId} definitionId={selectedDefinition.id} />
-                </TabsContent>
-                <TabsContent value="usage">
-                  <UserSecretUsageTab definition={selectedDefinition} />
-                </TabsContent>
-                <TabsContent value="events">
-                  <Empty className="py-6">
-                    <EmptyDescription>
-                      Access events are recorded on each member&apos;s stored value when runtime resolution
-                      occurs.
-                    </EmptyDescription>
-                  </Empty>
-                </TabsContent>
-              </div>
-            </Tabs>
+              <TabsContent value="details">
+                <div className="space-y-3">
+                  <UserSecretDetailsTab
+                    companyId={companyId}
+                    definition={selectedDefinition}
+                    onViewCoverage={() => setSecretDetailTab("coverage")}
+                  />
+                </div>
+              </TabsContent>
+              <TabsContent value="coverage">
+                <UserSecretCoverageTab companyId={companyId} definitionId={selectedDefinition.id} />
+              </TabsContent>
+              <TabsContent value="usage">
+                <UserSecretUsageTab definition={selectedDefinition} />
+              </TabsContent>
+              <TabsContent value="events">
+                <Empty className="py-6">
+                  <EmptyDescription>
+                    Access events are recorded on each member&apos;s stored value when runtime resolution
+                    occurs.
+                  </EmptyDescription>
+                </Empty>
+              </TabsContent>
+            </SecretDetailTabs>
           </>
         ) : null}
       </SheetContent>

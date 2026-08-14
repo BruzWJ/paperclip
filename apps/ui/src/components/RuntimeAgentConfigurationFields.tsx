@@ -6,9 +6,8 @@ import {
   type AgentMentionReachGrantKey,
   type PaperclipActionKey,
 } from "@paperclipai/shared";
-import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldContent, FieldDescription, FieldTitle } from "@/components/ui/field";
+import { SettingsSwitchField } from "@/components/patterns/FormPatterns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ContextAccessMatrix } from "./ContextAccessMatrix";
 
@@ -20,7 +19,12 @@ export type RuntimeAgentConfigurationValues = {
 
 type ContextAccessPreset = "heads_down" | "focused" | "supervisor" | "investigator" | "situational";
 
-const ACTION_LABELS: Record<PaperclipActionKey, { label: string; description: string }> = {
+interface ConfigurationOptionCopy {
+  label: string;
+  description: string;
+}
+
+const ACTION_LABELS: Record<PaperclipActionKey, ConfigurationOptionCopy> = {
   task_create: {
     label: "Create and assign tasks",
     description: "Create direct child tasks and reassign eligible direct children created by this execution.",
@@ -49,7 +53,7 @@ const ACTION_LABELS: Record<PaperclipActionKey, { label: string; description: st
   },
 };
 
-const MENTION_LABELS: Record<AgentMentionReachGrantKey, { label: string; description: string }> = {
+const MENTION_LABELS: Record<AgentMentionReachGrantKey, ConfigurationOptionCopy> = {
   mention_any_descendant: {
     label: "Mention any descendant",
     description: "Add eligible descendants that own work in the current task tree.",
@@ -210,22 +214,20 @@ export function RuntimeAgentConfigurationFields({
           {PAPERCLIP_ACTION_KEYS.map((key) => {
             const presentation = ACTION_LABELS[key];
             return (
-              <Field key={key} orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>{presentation.label}</FieldTitle>
-                  <FieldDescription>{presentation.description}</FieldDescription>
-                </FieldContent>
-                <Switch
-                  checked={value.actionGrants[key]}
-                  disabled={disabled}
-                  onCheckedChange={(checked) =>
-                    onChange({
-                      ...value,
-                      actionGrants: { ...value.actionGrants, [key]: checked },
-                    })
-                  }
-                />
-              </Field>
+              <SettingsSwitchField
+                key={key}
+                id={`runtime-action-${key}`}
+                label={presentation.label}
+                description={presentation.description}
+                checked={value.actionGrants[key]}
+                disabled={disabled}
+                onCheckedChange={(checked) =>
+                  onChange({
+                    ...value,
+                    actionGrants: { ...value.actionGrants, [key]: checked },
+                  })
+                }
+              />
             );
           })}
         </CardContent>
@@ -239,25 +241,23 @@ export function RuntimeAgentConfigurationFields({
           {AGENT_MENTION_REACH_GRANT_KEYS.map((key) => {
             const presentation = MENTION_LABELS[key];
             return (
-              <Field key={key} orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>{presentation.label}</FieldTitle>
-                  <FieldDescription>{presentation.description}</FieldDescription>
-                </FieldContent>
-                <Switch
-                  checked={value.mentionReachGrants[key]}
-                  disabled={disabled}
-                  onCheckedChange={(checked) =>
-                    onChange({
-                      ...value,
-                      mentionReachGrants: {
-                        ...value.mentionReachGrants,
-                        [key]: checked,
-                      },
-                    })
-                  }
-                />
-              </Field>
+              <SettingsSwitchField
+                key={key}
+                id={`runtime-mention-${key}`}
+                label={presentation.label}
+                description={presentation.description}
+                checked={value.mentionReachGrants[key]}
+                disabled={disabled}
+                onCheckedChange={(checked) =>
+                  onChange({
+                    ...value,
+                    mentionReachGrants: {
+                      ...value.mentionReachGrants,
+                      [key]: checked,
+                    },
+                  })
+                }
+              />
             );
           })}
         </CardContent>

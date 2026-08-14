@@ -6,16 +6,7 @@ import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useDialogActions } from "@/context/DialogContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { companiesApi } from "@/api/companies";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn, formatMoneyAmount, relativeTime } from "@/lib/utils";
 import { compareMoneyAmounts, parseMoneyAmount } from "@paperclipai/shared";
@@ -29,7 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -201,7 +192,7 @@ function Companies() {
                   ) : (
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-base">{company.name}</h3>
-                      <Badge variant="secondary">{company.status}</Badge>
+                      <DomainStatus status={company.status} />
                       <Button
                         variant="ghost"
                         size="icon-xs"
@@ -280,34 +271,19 @@ function Companies() {
                 </div>
               </div>
 
-              <AlertDialog
+              <ConfirmActionDialog
                 open={isConfirmingDelete}
                 onOpenChange={(open) => {
                   if (!open) setConfirmDeleteId(null);
                 }}
-              >
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete {company.name}?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This deletes the company and all of its data. This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      variant="destructive"
-                      disabled={deleteMutation.isPending}
-                      onClick={(event) => {
-                        if (deleteMutation.isPending) event.preventDefault();
-                        deleteMutation.mutate(company.id);
-                      }}
-                    >
-                      {deleteMutation.isPending ? "Deleting…" : "Delete"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                title={<>Delete {company.name}?</>}
+                description="This deletes the company and all of its data. This action cannot be undone."
+                confirmLabel="Delete"
+                pendingLabel="Deleting…"
+                variant="destructive"
+                pending={deleteMutation.isPending}
+                onConfirm={() => deleteMutation.mutate(company.id)}
+              />
             </Item>
           );
         })}

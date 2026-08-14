@@ -53,7 +53,6 @@ export function NewTaskDialog() {
   const [workMode, setWorkMode] = useState<TaskWorkMode>("standard");
   const [expanded, setExpanded] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<StagedTaskFile[]>([]);
-  const [isFileDragOver, setIsFileDragOver] = useState(false);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initializationKeyRef = useRef<string | null>(null);
   const createIdempotencyKeyRef = useRef<string | null>(null);
@@ -64,7 +63,6 @@ export function NewTaskDialog() {
     (newTaskDefaults.parentId ? newTaskDefaults.parentId.slice(0, 8) : "");
 
   const requestEditorRef = useRef<MarkdownEditorRef>(null);
-  const stageFileInputRef = useRef<HTMLInputElement | null>(null);
   const ownerSelectorRef = useRef<HTMLButtonElement | null>(null);
   const projectSelectorRef = useRef<HTMLButtonElement | null>(null);
 
@@ -290,7 +288,6 @@ export function NewTaskDialog() {
     setWorkMode("standard");
     setExpanded(false);
     setStagedFiles([]);
-    setIsFileDragOver(false);
     initializationKeyRef.current = null;
     createIdempotencyKeyRef.current = null;
   }
@@ -333,17 +330,8 @@ export function NewTaskDialog() {
     }
   }
 
-  const {
-    handleStageFilesPicked,
-    handleFileDragEnter,
-    handleFileDragOver,
-    handleFileDragLeave,
-    handleFileDrop,
-    removeStagedFile,
-  } = useStagedTaskFiles({
+  const { stageFiles, removeStagedFile } = useStagedTaskFiles({
     setStagedFiles,
-    setIsFileDragOver,
-    stageFileInputRef,
   });
 
   const hasDraft = draftHasText || stagedFiles.length > 0;
@@ -401,7 +389,6 @@ export function NewTaskDialog() {
       workMode,
       expanded,
       stagedFiles,
-      isFileDragOver,
     },
     setters: {
       setStatus,
@@ -414,7 +401,7 @@ export function NewTaskDialog() {
       setWorkMode,
       setExpanded,
     },
-    refs: { requestEditorRef, stageFileInputRef, ownerSelectorRef, projectSelectorRef },
+    refs: { requestEditorRef, ownerSelectorRef, projectSelectorRef },
     options: {
       statuses,
       workModeOptions,
@@ -444,11 +431,7 @@ export function NewTaskDialog() {
       handleTitleChange,
       handleRequestChange,
       handleProjectChange,
-      handleStageFilesPicked,
-      handleFileDragEnter,
-      handleFileDragOver,
-      handleFileDragLeave,
-      handleFileDrop,
+      stageFiles,
       removeStagedFile,
       discardDraft,
       handleSubmit,

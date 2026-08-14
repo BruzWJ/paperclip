@@ -7,9 +7,10 @@ import {
 } from "@paperclipai/shared";
 import { formatMoneyAmount } from "../lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Card, CardContent } from "@/components/ui/card";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Kbd } from "@/components/ui/kbd";
+import { CodeBlockPanel } from "@/components/patterns/CodeBlockPanel";
+import { JsonCodeBlock } from "@/components/patterns/JsonCodeBlock";
 
 export const typeLabel: Record<string, string> = {
   hire_agent: "Hire Agent",
@@ -46,6 +47,19 @@ export const typeIcon: Record<string, typeof UserPlus> = {
   request_board_approval: ShieldCheck,
 };
 
+function ApprovalDetailItems({ details }: { details: unknown[][] }) {
+  return details.map(([label, value]) =>
+    value ? (
+      <Item key={String(label)} size="sm">
+        <ItemContent>
+          <ItemDescription>{String(label)}</ItemDescription>
+          <ItemTitle>{String(value)}</ItemTitle>
+        </ItemContent>
+      </Item>
+    ) : null,
+  );
+}
+
 export function HireAgentPayload({ payload }: { payload: Record<string, unknown> }) {
   const details = [
     ["Name", payload.name ?? "—"],
@@ -55,16 +69,7 @@ export function HireAgentPayload({ payload }: { payload: Record<string, unknown>
   ];
   return (
     <ItemGroup className="mt-3">
-      {details.map(([label, value]) =>
-        value ? (
-          <Item key={String(label)} size="sm">
-            <ItemContent>
-              <ItemDescription>{String(label)}</ItemDescription>
-              <ItemTitle>{String(value)}</ItemTitle>
-            </ItemContent>
-          </Item>
-        ) : null,
-      )}
+      <ApprovalDetailItems details={details} />
       {!!payload.adapterType && (
         <Item size="sm">
           <ItemContent>
@@ -92,18 +97,16 @@ export function CeoStrategyPayload({ payload }: { payload: Record<string, unknow
         </Item>
       ) : null}
       {!!plan && (
-        <Card className="mt-2 gap-0 py-0">
-          <CardContent className="max-h-48 overflow-y-auto whitespace-pre-wrap p-3 font-mono text-xs text-muted-foreground">
-            {String(plan)}
-          </CardContent>
-        </Card>
+        <CodeBlockPanel
+          bodyClassName="max-h-48"
+          className="mt-2"
+          code={String(plan)}
+          filename="strategy.txt"
+          syntaxHighlighting={false}
+        />
       )}
       {!plan && (
-        <Card className="mt-2 gap-0 py-0">
-          <CardContent className="max-h-48 overflow-auto p-3">
-            <pre className="font-mono text-xs text-muted-foreground">{JSON.stringify(payload, null, 2)}</pre>
-          </CardContent>
-        </Card>
+        <JsonCodeBlock bodyClassName="max-h-48" className="mt-2" filename="approval.json" value={payload} />
       )}
     </div>
   );
@@ -127,16 +130,7 @@ export function BudgetOverridePayload({ payload }: { payload: Record<string, unk
   ];
   return (
     <div className="mt-3 space-y-1.5 text-sm">
-      {details.map(([label, value]) =>
-        value ? (
-          <Item key={String(label)} size="sm">
-            <ItemContent>
-              <ItemDescription>{String(label)}</ItemDescription>
-              <ItemTitle>{String(value)}</ItemTitle>
-            </ItemContent>
-          </Item>
-        ) : null,
-      )}
+      <ApprovalDetailItems details={details} />
       {budgetCurrency && limitAmount && observedAmount ? (
         <Alert>
           <AlertDescription>
@@ -229,13 +223,12 @@ function BoardApprovalPayloadContent({ payload }: { payload: Record<string, unkn
           <p className="text-(length:--text-micro) font-medium uppercase tracking-(--tracking-label) text-muted-foreground">
             Proposed comment
           </p>
-          <Card className="gap-0 py-0">
-            <CardContent className="max-h-48 overflow-auto p-3">
-              <pre className="whitespace-pre-wrap font-mono text-xs text-muted-foreground">
-                {proposedComment}
-              </pre>
-            </CardContent>
-          </Card>
+          <CodeBlockPanel
+            bodyClassName="max-h-48"
+            code={proposedComment}
+            filename="proposed-comment.txt"
+            syntaxHighlighting={false}
+          />
         </div>
       )}
     </div>

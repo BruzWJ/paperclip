@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -16,15 +17,11 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Item, ItemActions } from "@/components/ui/item";
 import { cn } from "@/lib/utils";
+import type { NamedAgentSummary } from "@/lib/presentation-contracts";
 
 export type RoutineListProjectSummary = {
   name: string;
   color?: string | null;
-};
-
-export type RoutineListAgentSummary = {
-  name: string;
-  icon?: string | null;
 };
 
 export type RoutineListRowItem = {
@@ -107,7 +104,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
 }: {
   routine: TRoutine;
   projectById: Map<string, RoutineListProjectSummary>;
-  agentById: Map<string, RoutineListAgentSummary>;
+  agentById: Map<string, NamedAgentSummary>;
   runningRoutineId: string | null;
   statusMutationRoutineId: string | null;
   /** Canonical routine route id. `null` links to the routines index; omitted uses `routine.id`. */
@@ -156,7 +153,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium">{routine.title}</span>
           {isArchived || routine.status === "paused" || isDraft ? (
-            <Badge variant="secondary">{isArchived ? "archived" : isDraft ? "draft" : "paused"}</Badge>
+            <DomainStatus status={isArchived ? "archived" : isDraft ? "draft" : "paused"} />
           ) : null}
           {managedByLabel ? <Badge variant="outline">{managedByLabel}</Badge> : null}
         </div>

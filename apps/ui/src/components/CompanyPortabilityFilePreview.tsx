@@ -6,11 +6,11 @@ import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Card, CardContent } from "./ui/card";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
-import { Table, TableBody, TableCell, TableRow } from "./ui/table";
-import { parseFrontmatter } from "./FileTree";
+import { parseFrontmatter, type FrontmatterData } from "./FileTree";
 import { MarkdownBody } from "./MarkdownBody";
-
-type FrontmatterData = Record<string, string | string[]>;
+import { CodeBlockPanel } from "./patterns/CodeBlockPanel";
+import { DataTable, type ColumnDef } from "./patterns/DataTable";
+import { ZoomableImage } from "./patterns/ZoomableImage";
 
 const FRONTMATTER_FIELD_LABELS: Record<string, string> = {
   name: "Name",
@@ -26,34 +26,50 @@ const FRONTMATTER_FIELD_LABELS: Record<string, string> = {
   targetDate: "Target date",
 };
 
+type FrontmatterRow = {
+  field: string;
+  value: string | string[];
+};
+
+const FRONTMATTER_COLUMNS: ColumnDef<FrontmatterRow>[] = [
+  {
+    accessorKey: "field",
+    header: "Field",
+    enableSorting: false,
+    cell: ({ row }) => FRONTMATTER_FIELD_LABELS[row.original.field] ?? row.original.field,
+  },
+  {
+    accessorKey: "value",
+    header: "Value",
+    enableSorting: false,
+    cell: ({ row }) =>
+      Array.isArray(row.original.value) ? (
+        <div className="flex flex-wrap gap-1.5">
+          {row.original.value.map((item) => (
+            <Badge key={item} variant="outline">
+              {item}
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <span>{row.original.value}</span>
+      ),
+  },
+];
+
 function FrontmatterCard({ data }: { data: FrontmatterData }) {
   return (
     <Card className="mb-4 gap-0 py-0">
       <CardContent className="p-0">
-        <Table>
-          <TableBody>
-            {Object.entries(data).map(([key, value]) => (
-              <TableRow key={key}>
-                <TableCell className="w-min text-muted-foreground">
-                  {FRONTMATTER_FIELD_LABELS[key] ?? key}
-                </TableCell>
-                <TableCell className="whitespace-normal">
-                  {Array.isArray(value) ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {value.map((item) => (
-                        <Badge key={item} variant="outline">
-                          {item}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : (
-                    <span>{value}</span>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <DataTable
+          caption="File metadata"
+          columns={FRONTMATTER_COLUMNS}
+          data={Object.entries(data).map(([field, value]) => ({ field, value }))}
+          showHeader={false}
+          getCellClassName={(_row, columnId) =>
+            columnId === "field" ? "w-min text-muted-foreground" : "whitespace-normal"
+          }
+        />
       </CardContent>
     </Card>
   );
@@ -123,12 +139,14 @@ export function CompanyPortabilityFilePreview({
           </MarkdownBody>
         ) : imageSrc ? (
           <Card className="min-h-(--sz-520px) items-center justify-center p-6">
-            <img src={imageSrc} alt={selectedFile} className="max-h-(--sz-480px) max-w-full object-contain" />
+            <ZoomableImage
+              src={imageSrc}
+              alt={selectedFile}
+              className="max-h-(--sz-480px) max-w-full object-contain"
+            />
           </Card>
         ) : textContent !== null ? (
-          <pre className="overflow-x-auto whitespace-pre-wrap break-words border-0 bg-transparent p-0 font-mono text-sm text-foreground">
-            <code>{textContent}</code>
-          </pre>
+          <CodeBlockPanel code={textContent} filename={selectedFile} syntaxHighlighting={false} />
         ) : (
           <Alert>
             <AlertDescription>Binary asset preview is not available for this file type.</AlertDescription>

@@ -57,7 +57,7 @@ describe("ApprovalCard", () => {
     document.body.innerHTML = "";
   });
 
-  it("requires confirmation before rejecting an approval", () => {
+  it("requires confirmation before rejecting an approval", async () => {
     const onReject = vi.fn();
     const root = createRoot(container);
 
@@ -74,13 +74,15 @@ describe("ApprovalCard", () => {
     expect(onReject).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("Reject this approval?");
 
-    act(() => {
+    await act(async () => {
       findButton("Reject approval")?.dispatchEvent(
         new MouseEvent("click", { bubbles: true, cancelable: true }),
       );
+      await Promise.resolve();
     });
 
     expect(onReject).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-slot="alert-dialog-content"]')).toBeNull();
 
     act(() => root.unmount());
   });

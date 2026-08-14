@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { Task } from "@paperclipai/shared";
 import { ArrowUpRight, Check, Plus } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { taskDisplayTitle } from "../../lib/task-display";
@@ -170,9 +170,10 @@ export function useTaskRelationProperties({
               setParentOpen(false);
             }}
           >
-            <Badge variant="outline" className="px-1 py-0 text-(length:--text-nano)">
-              {candidate.boardPresentationStatus}
-            </Badge>
+            <DomainStatus
+              status={candidate.boardPresentationStatus}
+              className="px-1 py-0 text-(length:--text-nano)"
+            />
             <span className="truncate">
               {candidate.identifier ? `${candidate.identifier} ` : ""}
               {candidate.title}
@@ -238,9 +239,10 @@ export function useTaskRelationProperties({
               className="w-full justify-start text-xs"
               onClick={() => toggleBlockedBy(candidate.id)}
             >
-              <Badge variant="outline" className="px-1 py-0 text-(length:--text-nano)">
-                {candidate.boardPresentationStatus}
-              </Badge>
+              <DomainStatus
+                status={candidate.boardPresentationStatus}
+                className="px-1 py-0 text-(length:--text-nano)"
+              />
               <span className="truncate">
                 {candidate.identifier ? `${candidate.identifier} ` : ""}
                 {candidate.title}

@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, Circle, Flag } from "lucide-react";
 import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 import { isAssignedBacklogBlocker, taskValueLabel } from "../lib/task-blockers";
 import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
@@ -39,12 +39,14 @@ function BlockerChip({ blocker, running = false }: { blocker: TaskRelationTaskSu
       taskNumber={blocker.taskNumber}
       className="inline-flex max-w-full items-center gap-1 hover:underline"
     >
-      <Badge variant="secondary">{taskValueLabel(blocker.boardPresentationStatus)}</Badge>
+      <DomainStatus status={blocker.boardPresentationStatus}>
+        {taskValueLabel(blocker.boardPresentationStatus)}
+      </DomainStatus>
       <span>{blocker.identifier}</span>
       <span className="max-w-(--sz-18rem) truncate font-sans text-(length:--text-micro) text-muted-foreground">
         {blocker.title}
       </span>
-      {running ? <Badge variant="secondary">running</Badge> : null}
+      {running ? <DomainStatus status="running" /> : null}
     </TaskLinkQuicklook>
   );
 }

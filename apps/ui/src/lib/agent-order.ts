@@ -8,7 +8,7 @@ const ANONYMOUS_USER_ID = "anonymous";
 
 export type AgentSidebarSortMode = "top" | "alphabetical" | "recent";
 
-type AgentOrderUpdatedDetail = {
+export type AgentOrderUpdatedDetail = {
   storageKey: string;
   orderedIds: string[];
 };

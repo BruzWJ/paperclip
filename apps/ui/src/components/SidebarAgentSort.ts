@@ -1,8 +1,8 @@
 import type { Agent } from "@paperclipai/shared";
 import { type AgentSidebarSortMode, type AgentSortModeUpdatedDetail } from "../lib/agent-order";
-import { type SidebarSectionRadioChoice } from "./SidebarSection";
+import type { LabeledValue } from "@/lib/presentation-contracts";
 
-export const AGENT_SORT_CHOICES: SidebarSectionRadioChoice[] = [
+export const AGENT_SORT_CHOICES: LabeledValue[] = [
   { value: "top", label: "Top" },
   { value: "alphabetical", label: "Alphabetical" },
   { value: "recent", label: "Recent" },

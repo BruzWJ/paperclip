@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import * as TabsUI from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import type { OpenStateProps } from "@/lib/presentation-contracts";
 
 type Platform = "mac" | "windows" | "linux";
 
@@ -49,12 +50,7 @@ function detectPlatform(): Platform {
   return "linux";
 }
 
-interface PathInstructionsModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
-export function PathInstructionsModal({ open, onOpenChange }: PathInstructionsModalProps) {
+export function PathInstructionsModal({ open, onOpenChange }: OpenStateProps) {
   const [platform, setPlatform] = useState<Platform>(detectPlatform);
 
   const current = instructions[platform];

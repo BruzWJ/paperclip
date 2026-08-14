@@ -1,8 +1,9 @@
 import { sidebarPreferencesApi } from "@/api/sidebarPreferences";
 import { getAgentOrderStorageKey, writeAgentOrder } from "@/lib/agent-order";
 import { readZipArchive } from "@/lib/zip";
-import type { CompanyPortabilityFileEntry, CompanyPortabilityPreviewResult } from "@paperclipai/shared";
+import type { CompanyPortabilityPreviewResult } from "@paperclipai/shared";
 import { parseCanonicalGithubImportSourceUrl } from "@paperclipai/shared/company-portability-source";
+import type { LocalCompanyImportPackage } from "./-company-import-controller-helpers";
 
 export function buildActionMap(preview: CompanyPortabilityPreviewResult): Map<string, string> {
   const map = new Map<string, string>();
@@ -123,12 +124,21 @@ export function prefixedName(prefix: string | null, originalName: string): strin
   return `${prefix}-${originalName}`;
 }
 
+interface ImportedEntityReference {
+  slug: string;
+  id: string | null;
+}
+
+interface ImportedEntityWithId extends ImportedEntityReference {
+  id: string;
+}
+
 export async function applyImportedSidebarOrder(
   preview: CompanyPortabilityPreviewResult | null,
   result: {
     company: { id: string };
-    agents: Array<{ slug: string; id: string | null }>;
-    projects: Array<{ slug: string; id: string | null }>;
+    agents: ImportedEntityReference[];
+    projects: ImportedEntityReference[];
   },
   userId: string | null | undefined,
 ) {
@@ -138,16 +148,13 @@ export async function applyImportedSidebarOrder(
 
   const agentIdBySlug = new Map(
     result.agents
-      .filter(
-        (agent): agent is { slug: string; id: string } => typeof agent.id === "string" && agent.id.length > 0,
-      )
+      .filter((agent): agent is ImportedEntityWithId => typeof agent.id === "string" && agent.id.length > 0)
       .map((agent) => [agent.slug, agent.id]),
   );
   const projectIdBySlug = new Map(
     result.projects
       .filter(
-        (project): project is { slug: string; id: string } =>
-          typeof project.id === "string" && project.id.length > 0,
+        (project): project is ImportedEntityWithId => typeof project.id === "string" && project.id.length > 0,
       )
       .map((project) => [project.slug, project.id]),
   );
@@ -169,11 +176,7 @@ export async function applyImportedSidebarOrder(
   }
 }
 
-export async function readLocalPackageZip(file: File): Promise<{
-  name: string;
-  rootPath: string | null;
-  files: Record<string, CompanyPortabilityFileEntry>;
-}> {
+export async function readLocalPackageZip(file: File): Promise<LocalCompanyImportPackage> {
   if (!/\.zip$/i.test(file.name)) {
     throw new Error("Select a .zip company package.");
   }

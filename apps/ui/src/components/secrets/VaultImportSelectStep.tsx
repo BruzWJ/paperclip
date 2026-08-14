@@ -4,9 +4,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, DataTableColumnHeader, type ColumnDef } from "@/components/patterns/DataTable";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { EntityCombobox } from "@/components/patterns/EntityCombobox";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { FieldLabel } from "@/components/ui/field";
 import {
   Empty,
   EmptyContent,
@@ -15,24 +17,13 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, relativeTime as formatRelativeShort } from "@/lib/utils";
 import type { CompanySecretProviderConfig, RemoteSecretImportCandidate } from "@paperclipai/shared";
-import {
-  AlertTriangle,
-  AlertCircle,
-  CheckCircle2,
-  Cloud,
-  Database,
-  ExternalLink,
-  Link2,
-  RefreshCw,
-  Search,
-} from "lucide-react";
+import { useMemo } from "react";
+import { AlertCircle, Cloud, Database, ExternalLink, RefreshCw, Search } from "lucide-react";
 
 import {
   type DraftSelection,
-  formatRelativeShort,
   isPermissionError,
   isThrottlingError,
   isAwsSelectable,
@@ -42,6 +33,10 @@ import {
 import { statusBadgeLabel } from "./VaultImportUtils";
 
 const PAGE_SIZE = 50;
+
+function candidateCellClassName(candidate: RemoteSecretImportCandidate, className?: string) {
+  return cn("-m-2 p-2", candidate.importable ? "cursor-pointer" : "cursor-not-allowed", className);
+}
 
 interface SelectStepProps {
   awsVaults: CompanySecretProviderConfig[];
@@ -105,6 +100,116 @@ export function SelectStep(props: SelectStepProps) {
     : previewError && isThrottlingError(previewError)
       ? "AWS throttled the listing request"
       : "Could not load remote secrets";
+  const columns = useMemo<ColumnDef<RemoteSecretImportCandidate>[]>(
+    () => [
+      {
+        id: "selection",
+        enableSorting: false,
+        header: () => (
+          <Checkbox
+            checked={headerCheckboxState}
+            onCheckedChange={() => toggleAllLoaded()}
+            aria-label={`Select all loaded (${selectableInLoaded.length})`}
+            disabled={selectableInLoaded.length === 0}
+          />
+        ),
+        cell: ({ row }) => {
+          const candidate = row.original;
+          const isSelected = selection.has(candidate.externalRef);
+          return (
+            <div
+              className="-m-2 p-2"
+              data-testid={`vault-row-${candidate.externalRef}`}
+              data-row-state={candidate.status}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (event.target === event.currentTarget) toggleRow(candidate);
+              }}
+            >
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={() => toggleRow(candidate)}
+                disabled={!candidate.importable}
+                aria-label={`Select ${candidate.remoteName}`}
+              />
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "remoteName",
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Remote name" />,
+        cell: ({ row }) => (
+          <div className={candidateCellClassName(row.original)} onClick={() => toggleRow(row.original)}>
+            <div className="text-sm font-medium leading-tight">{row.original.remoteName}</div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "externalRef",
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Reference" />,
+        cell: ({ row }) => (
+          <div className={candidateCellClassName(row.original)} onClick={() => toggleRow(row.original)}>
+            <span className="font-mono text-muted-foreground" title={row.original.externalRef}>
+              {middleTruncate(row.original.externalRef, 50)}
+            </span>
+          </div>
+        ),
+      },
+      {
+        id: "lastChanged",
+        accessorFn: (candidate) => {
+          const meta = (candidate.providerMetadata ?? {}) as Record<string, unknown>;
+          return typeof meta.lastChangedAt === "string"
+            ? meta.lastChangedAt
+            : typeof meta.lastChangedDate === "string"
+              ? meta.lastChangedDate
+              : "";
+        },
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Last changed" />,
+        cell: ({ row, getValue }) => (
+          <div className={candidateCellClassName(row.original)} onClick={() => toggleRow(row.original)}>
+            {formatRelativeShort(getValue<string>() || null)}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "key",
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Suggested name" />,
+        cell: ({ row }) => (
+          <div
+            className={candidateCellClassName(row.original, "font-mono")}
+            onClick={() => toggleRow(row.original)}
+          >
+            {row.original.key}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: ({ column }) => <DataTableColumnHeader column={column} title="State" />,
+        cell: ({ row }) => {
+          const candidate = row.original;
+          return (
+            <div className={candidateCellClassName(candidate)} onClick={() => toggleRow(candidate)}>
+              <div className="flex items-center gap-1.5">
+                <DomainStatus status={candidate.status}>{statusBadgeLabel(candidate.status)}</DomainStatus>
+                {candidate.status === "duplicate" &&
+                  candidate.conflicts.find((conflict) => conflict.type === "exact_reference")
+                    ?.existingSecretId && (
+                    <span className="text-(length:--text-micro) text-muted-foreground">Already imported</span>
+                  )}
+              </div>
+              {candidate.status === "conflict" && candidate.conflicts.length > 0 && (
+                <div className="text-destructive">{candidate.conflicts[0].message}</div>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    [headerCheckboxState, selectableInLoaded.length, selection, toggleAllLoaded, toggleRow],
+  );
 
   if (noEligibleVaults) {
     return (
@@ -127,46 +232,59 @@ export function SelectStep(props: SelectStepProps) {
   }
 
   const showSearchSpinner = previewLoading && Boolean(debouncedQuery);
+  const vaultById = new Map(awsVaults.map((vault) => [vault.id, vault]));
+  const vaultOptions = awsVaults.map((vault) => ({
+    id: vault.id,
+    label: vault.displayName,
+    searchText: `${vault.displayName} ${vault.status}`,
+    disabled: !isAwsSelectable(vault),
+  }));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-5 py-3">
-        <FieldLabel htmlFor="vault-import-source">Vault</FieldLabel>
-        {awsVaults.length === 1 && eligible.length === 1 ? (
-          <span className="text-xs font-medium" data-testid="vault-static-label">
-            {eligible[0].displayName}
-          </span>
-        ) : (
-          <Select value={vaultId ?? undefined} onValueChange={onVaultChange}>
-            <SelectTrigger
-              id="vault-import-source"
-              size="sm"
-              className="text-xs"
-              aria-label="Select AWS vault"
-            >
-              <SelectValue placeholder="Select an AWS vault" />
-            </SelectTrigger>
-            <SelectContent>
-              {awsVaults.map((vault) => {
+        <LabeledFormField
+          orientation="horizontal"
+          className="w-auto gap-2"
+          label="Vault"
+          labelFor="vault-import-source"
+        >
+          {awsVaults.length === 1 && eligible.length === 1 ? (
+            <span className="text-xs font-medium" data-testid="vault-static-label">
+              {eligible[0].displayName}
+            </span>
+          ) : (
+            <EntityCombobox
+              value={vaultId ?? ""}
+              options={vaultOptions}
+              onValueChange={onVaultChange}
+              type="AWS vault"
+              ariaLabel="Select AWS vault"
+              placeholder="Select an AWS vault"
+              noneLabel="Select an AWS vault"
+              includeNone={false}
+              triggerClassName="h-8 w-auto text-xs"
+              triggerProps={{ id: "vault-import-source", size: "sm" }}
+              renderOption={(option) => {
+                const vault = vaultById.get(option.id);
+                if (!vault) return option.label;
                 const blocked = !isAwsSelectable(vault);
                 return (
-                  <SelectItem key={vault.id} value={vault.id} disabled={blocked} aria-disabled={blocked}>
-                    <span className="flex items-center gap-2">
-                      <span>{vault.displayName}</span>
-                      {vault.isDefault && <Badge>default</Badge>}
-                      {vault.status === "warning" && <Badge variant="secondary">warning</Badge>}
-                      {blocked && (
-                        <Badge variant="outline">
-                          {vault.status === "coming_soon" ? "coming soon" : vault.status}
-                        </Badge>
-                      )}
-                    </span>
-                  </SelectItem>
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="truncate">{vault.displayName}</span>
+                    {vault.isDefault ? <Badge>default</Badge> : null}
+                    {vault.status === "warning" ? <DomainStatus status="warning" /> : null}
+                    {blocked ? (
+                      <DomainStatus status={vault.status}>
+                        {vault.status === "coming_soon" ? "coming soon" : vault.status}
+                      </DomainStatus>
+                    ) : null}
+                  </span>
                 );
-              })}
-            </SelectContent>
-          </Select>
-        )}
+              }}
+            />
+          )}
+        </LabeledFormField>
 
         <InputGroup className="ml-auto w-64">
           <InputGroupAddon>
@@ -261,107 +379,39 @@ export function SelectStep(props: SelectStepProps) {
             </EmptyHeader>
           </Empty>
         ) : (
-          <Table className="text-sm">
-            <TableHeader className="sticky top-0 z-10 bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-              <TableRow>
-                <TableHead className="px-3 py-2 text-left">
-                  <Checkbox
-                    checked={headerCheckboxState}
-                    onCheckedChange={() => toggleAllLoaded()}
-                    aria-label={`Select all loaded (${selectableInLoaded.length})`}
-                    disabled={selectableInLoaded.length === 0}
-                  />
-                </TableHead>
-                <TableHead className="px-2 py-2 text-left font-medium">Remote name</TableHead>
-                <TableHead className="px-2 py-2 text-left font-medium">Reference</TableHead>
-                <TableHead className="px-2 py-2 text-left font-medium">Last changed</TableHead>
-                <TableHead className="px-2 py-2 text-left font-medium">Suggested name</TableHead>
-                <TableHead className="px-2 py-2 text-left font-medium">State</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody data-testid="vault-table-body">
-              {visibleCandidates.map((candidate) => {
-                const isSelected = selection.has(candidate.externalRef);
-                const meta = (candidate.providerMetadata ?? {}) as Record<string, unknown>;
-                const lastChanged =
-                  typeof meta.lastChangedAt === "string"
-                    ? meta.lastChangedAt
-                    : typeof meta.lastChangedDate === "string"
-                      ? meta.lastChangedDate
-                      : null;
-                return (
-                  <TableRow
-                    key={candidate.externalRef}
-                    className={cn(
-                      "border-b border-border/60 transition-colors",
-                      candidate.importable
-                        ? "cursor-pointer hover:bg-accent/40"
-                        : "cursor-not-allowed text-muted-foreground",
-                      isSelected && "bg-accent/60",
-                    )}
-                    onClick={() => toggleRow(candidate)}
-                    data-testid={`vault-row-${candidate.externalRef}`}
-                    data-row-state={candidate.status}
-                  >
-                    <TableCell className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={() => toggleRow(candidate)}
-                        disabled={!candidate.importable}
-                        aria-label={`Select ${candidate.remoteName}`}
-                      />
-                    </TableCell>
-                    <TableCell className="px-2 py-2.5">
-                      <div className="text-sm font-medium leading-tight">{candidate.remoteName}</div>
-                    </TableCell>
-                    <TableCell className="px-2 py-2.5 text-xs">
-                      <span className="font-mono text-muted-foreground" title={candidate.externalRef}>
-                        {middleTruncate(candidate.externalRef, 50)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="px-2 py-2.5 text-xs text-muted-foreground">
-                      {formatRelativeShort(lastChanged)}
-                    </TableCell>
-                    <TableCell className="px-2 py-2.5 text-xs font-mono">{candidate.key}</TableCell>
-                    <TableCell className="px-2 py-2.5 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant={candidate.status === "conflict" ? "destructive" : "outline"}>
-                          {candidate.status === "conflict" ? (
-                            <AlertTriangle />
-                          ) : candidate.status === "duplicate" ? (
-                            <Link2 />
-                          ) : (
-                            <CheckCircle2 />
-                          )}
-                          {statusBadgeLabel(candidate.status)}
-                        </Badge>
-                        {candidate.status === "duplicate" &&
-                          candidate.conflicts.find((c) => c.type === "exact_reference")?.existingSecretId && (
-                            <span className="text-(length:--text-micro) text-muted-foreground">
-                              Already imported
-                            </span>
-                          )}
-                      </div>
-                      {candidate.status === "conflict" && candidate.conflicts.length > 0 && (
-                        <div className="text-destructive">{candidate.conflicts[0].message}</div>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {pageLoading && (
-                <TableRow>
-                  <TableCell colSpan={6} className="p-0">
-                    <div className="flex flex-col gap-1.5 p-3">
-                      {Array.from({ length: 4 }).map((_, index) => (
-                        <Skeleton key={index} className="h-8 w-full" />
-                      ))}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <div data-testid="vault-table-body">
+            <DataTable
+              caption="Remote secrets"
+              columns={columns}
+              data={visibleCandidates}
+              className="text-sm"
+              headerClassName="sticky top-0 z-10 bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground"
+              rowClassName={(candidate) =>
+                cn(
+                  "border-b border-border/60 transition-colors",
+                  candidate.importable ? "hover:bg-accent/40" : "text-muted-foreground",
+                  selection.has(candidate.externalRef) && "bg-accent/60",
+                )
+              }
+              getHeadClassName={(columnId) =>
+                columnId === "selection" ? "px-3 py-2 text-left" : "px-2 py-2 text-left font-medium"
+              }
+              getCellClassName={(_candidate, columnId) =>
+                columnId === "selection"
+                  ? "px-3 py-2.5"
+                  : columnId === "remoteName"
+                    ? "px-2 py-2.5"
+                    : "px-2 py-2.5 text-xs"
+              }
+            />
+            {pageLoading ? (
+              <div className="flex flex-col gap-1.5 p-3">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <Skeleton key={index} className="h-8 w-full" />
+                ))}
+              </div>
+            ) : null}
+          </div>
         )}
 
         {hasNextPage && !previewError && (

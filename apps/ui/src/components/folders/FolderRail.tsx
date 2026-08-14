@@ -1,5 +1,4 @@
-import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Banner, BannerAction, BannerClose, BannerIcon, BannerTitle } from "@/components/kibo-ui/banner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +22,7 @@ import {
   SidebarMenuSkeleton,
 } from "@/components/ui/sidebar";
 import type { FolderListItem, FolderListResult } from "@paperclipai/shared";
-import { Folder as FolderIcon, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
+import { Folder as FolderIcon, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { FolderSwatch, type FolderSelection } from "./folder-primitives";
@@ -268,19 +267,11 @@ export function AllUnfiledBanner({
   }
 
   return (
-    <Alert className="mb-3">
-      <FolderIcon />
-      <AlertDescription className="flex items-center">
-        <span className="min-w-0 flex-1">
-          Group these {itemLabelPlural} into folders to keep things tidy.
-        </span>
-        <Button size="sm" variant="outline" onClick={onCreateFolder}>
-          Create your first folder
-        </Button>
-        <Button size="icon-sm" variant="ghost" aria-label="Dismiss folder suggestion" onClick={dismiss}>
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      </AlertDescription>
-    </Alert>
+    <Banner className="mb-3" visible inset onClose={dismiss}>
+      <BannerIcon icon={FolderIcon} />
+      <BannerTitle>Group these {itemLabelPlural} into folders to keep things tidy.</BannerTitle>
+      <BannerAction onClick={onCreateFolder}>Create your first folder</BannerAction>
+      <BannerClose aria-label="Dismiss folder suggestion" />
+    </Banner>
   );
 }

@@ -329,6 +329,46 @@ describe("RoutineHistoryTab", () => {
     expect(container.textContent).toContain("Env GH_TOKEN secret");
     expect(container.textContent).not.toContain("Env GH_TOKEN binding kind");
   });
+  it("keeps plain environment values masked in the Kibo-backed comparison", async () => {
+    const current = createRevision({
+      id: "revision-2",
+      revisionNumber: 2,
+      snapshot: snapshotV1({
+        env: {
+          API_TOKEN: { type: "plain", value: "current-sensitive-value" },
+        },
+      }),
+    });
+    const old = createRevision({
+      id: "revision-1",
+      revisionNumber: 1,
+      snapshot: snapshotV1({
+        env: {
+          API_TOKEN: { type: "plain", value: "historical-sensitive-value" },
+        },
+      }),
+    });
+    mockRoutinesApi.listRevisions.mockResolvedValue([current, old]);
+    await render();
+    const oldRow = container.querySelector("[data-testid='revision-row-1']") as HTMLButtonElement | null;
+    await act(async () => {
+      oldRow?.click();
+    });
+    await flush();
+    const compareButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Compare with current",
+    );
+    await act(async () => {
+      compareButton?.click();
+    });
+    await flush();
+
+    expect(container.textContent).toContain("Env API_TOKEN value");
+    expect(container.textContent).toContain("plain (set)");
+    expect(container.textContent).toContain("plain (changed)");
+    expect(container.textContent).not.toContain("historical-sensitive-value");
+    expect(container.textContent).not.toContain("current-sensitive-value");
+  });
   it("invokes onRestored with the restore response so the editor can rehydrate (PAP-3588)", async () => {
     const current = createRevision({ id: "revision-2", revisionNumber: 2 });
     const old = createRevision({

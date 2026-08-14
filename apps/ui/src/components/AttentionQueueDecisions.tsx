@@ -11,16 +11,7 @@ import { Button } from "./ui/button";
 import { ButtonGroup } from "./ui/button-group";
 import { Textarea } from "./ui/textarea";
 import { FieldLegend, FieldSet } from "./ui/field";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "./ui/alert-dialog";
+import { ConfirmActionDialog } from "./patterns/ConfirmActionDialog";
 
 // Decision-action buttons: a comfortable tap target when the row is narrow
 // (h-9 / text-sm), shrinking back to the dense pill (h-6 / text-xs) once the
@@ -29,6 +20,11 @@ import {
 const ACTION_BTN = "h-9 gap-1.5 px-3 text-sm @xl:h-6 @xl:gap-1 @xl:px-2 @xl:text-xs";
 
 type CompactDecisionAction = "approve" | "reject" | "request_revision";
+
+interface AttentionDecisionProps {
+  item: AttentionItem;
+  companyId: string;
+}
 
 export function compactDecisionAction(item: AttentionItem, verbId: string): CompactDecisionAction | null {
   if (
@@ -53,7 +49,7 @@ export function collectCompactActions(
   });
 }
 
-export function CompactDecisionActions({ item, companyId }: { item: AttentionItem; companyId: string }) {
+export function CompactDecisionActions({ item, companyId }: AttentionDecisionProps) {
   const queryClient = useQueryClient();
   const actions = collectCompactActions(item);
 
@@ -145,7 +141,7 @@ export function decisionVerbVariant(
   return "outline";
 }
 
-export function InlineResolver({ item, companyId }: { item: AttentionItem; companyId: string }) {
+export function InlineResolver({ item, companyId }: AttentionDecisionProps) {
   if (item.sourceKind === "approval") {
     return <ApprovalResolver item={item} companyId={companyId} />;
   }
@@ -157,7 +153,7 @@ export function InlineResolver({ item, companyId }: { item: AttentionItem; compa
   return null;
 }
 
-export function ApprovalResolver({ item, companyId }: { item: AttentionItem; companyId: string }) {
+export function ApprovalResolver({ item, companyId }: AttentionDecisionProps) {
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
   const [rejectConfirmationOpen, setRejectConfirmationOpen] = useState(false);
@@ -218,27 +214,22 @@ export function ApprovalResolver({ item, companyId }: { item: AttentionItem; com
               : "Rejecting request…"}
         </p>
       ) : null}
-      <AlertDialog open={rejectConfirmationOpen} onOpenChange={setRejectConfirmationOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reject this approval?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This records a rejection for this request. Review the approval details before continuing.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={pending} onClick={() => reject.mutate()}>
-              {reject.isPending ? "Rejecting…" : "Reject approval"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmActionDialog
+        open={rejectConfirmationOpen}
+        onOpenChange={setRejectConfirmationOpen}
+        title="Reject this approval?"
+        description="This records a rejection for this request. Review the approval details before continuing."
+        confirmLabel="Reject approval"
+        pendingLabel={reject.isPending ? "Rejecting…" : "Reject approval"}
+        variant="destructive"
+        pending={pending}
+        onConfirm={() => reject.mutate()}
+      />
     </div>
   );
 }
 
-export function JoinRequestResolver({ item, companyId }: { item: AttentionItem; companyId: string }) {
+export function JoinRequestResolver({ item, companyId }: AttentionDecisionProps) {
   const queryClient = useQueryClient();
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });

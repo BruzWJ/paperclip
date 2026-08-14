@@ -4,7 +4,7 @@ import type { TaskSiblingNavigation as TaskSiblingNavigationState } from "@/lib/
 import { withTaskDetailHeaderSeed } from "@/lib/taskDetailBreadcrumb";
 import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 
@@ -72,12 +72,12 @@ function SiblingLink({
             direction === "next" && "sm:justify-end",
           )}
         >
-          <Badge
-            variant="secondary"
+          <DomainStatus
+            status={task.boardPresentationStatus}
             aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, task.blockerAttention)}
           >
             {taskValueLabel(task.boardPresentationStatus)}
-          </Badge>
+          </DomainStatus>
           <span className="shrink-0">{identifier}</span>
         </ItemDescription>
         <ItemTitle className={cn("truncate", direction === "next" && "sm:ml-auto")}>{task.title}</ItemTitle>

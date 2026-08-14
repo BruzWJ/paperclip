@@ -1,15 +1,7 @@
 import { AGENT_CONTEXT_GRANT_KEYS, type AgentContextGrantKey } from "@paperclipai/shared";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FieldLabel } from "@/components/ui/field";
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable, type ColumnDef } from "@/components/patterns/DataTable";
 import { cn } from "@/lib/utils";
 
 const TIER_LABELS = ["Current task", "Sub-tasks", "Company tasks"] as const;
@@ -54,50 +46,52 @@ export function ContextAccessMatrix({
   className?: string;
   testId: string;
 }) {
+  const columns: ColumnDef<(typeof MATRIX_ROWS)[number]>[] = [
+    {
+      accessorKey: "tier",
+      header: "Context access",
+      enableSorting: false,
+    },
+    ...DEPTH_LABELS.map((depth, depthIndex) => ({
+      id: depth,
+      header: depth,
+      enableSorting: false,
+      cell: ({ row }: { row: { original: (typeof MATRIX_ROWS)[number] } }) => {
+        const { tier, cells } = row.original;
+        const cell = cells[depthIndex]!;
+        const enabled = value[cell.key];
+        const label = `${tier} ${cell.depth}: ${enabled ? enabledLabel : disabledLabel}`;
+        return (
+          <FieldLabel
+            className={cn(
+              "flex min-h-9 w-full items-center justify-center p-2",
+              !disabled && "cursor-pointer",
+            )}
+            title={`${label}. ${CELL_DESCRIPTIONS[cell.key]}`}
+          >
+            <Checkbox
+              checked={enabled}
+              disabled={disabled}
+              aria-label={label}
+              onCheckedChange={(checked) => onCellChange?.(cell.key, checked === true)}
+            />
+          </FieldLabel>
+        );
+      },
+    })),
+  ];
+
   return (
     <div className={cn("space-y-2", className)} data-testid={testId}>
-      <Table className="table-fixed">
-        <TableCaption className="text-left text-xs">{description}</TableCaption>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Context access</TableHead>
-            {DEPTH_LABELS.map((depth) => (
-              <TableHead key={depth} className="text-center">
-                {depth}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {MATRIX_ROWS.map(({ tier, cells }) => (
-            <TableRow key={tier}>
-              <TableCell className="font-medium">{tier}</TableCell>
-              {cells.map(({ depth, key }) => {
-                const enabled = value[key];
-                const label = `${tier} ${depth}: ${enabled ? enabledLabel : disabledLabel}`;
-                return (
-                  <TableCell key={key} className="p-0 text-center">
-                    <FieldLabel
-                      className={cn(
-                        "flex min-h-9 w-full items-center justify-center p-2",
-                        !disabled && "cursor-pointer",
-                      )}
-                      title={`${label}. ${CELL_DESCRIPTIONS[key]}`}
-                    >
-                      <Checkbox
-                        checked={enabled}
-                        disabled={disabled}
-                        aria-label={label}
-                        onCheckedChange={(checked) => onCellChange?.(key, checked === true)}
-                      />
-                    </FieldLabel>
-                  </TableCell>
-                );
-              })}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <DataTable
+        caption="Context access"
+        columns={columns}
+        data={MATRIX_ROWS}
+        className="table-fixed"
+        getHeadClassName={(columnId) => (columnId === "tier" ? undefined : "text-center")}
+        getCellClassName={(_row, columnId) => (columnId === "tier" ? "font-medium" : "p-0 text-center")}
+      />
+      <p className="text-xs text-muted-foreground">{description}</p>
     </div>
   );
 }

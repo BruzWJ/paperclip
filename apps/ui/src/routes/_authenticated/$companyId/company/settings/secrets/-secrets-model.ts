@@ -118,23 +118,6 @@ export function providerVaultFormFromConfig(config: CompanySecretProviderConfig)
   };
 }
 
-export function formatRelative(value: Date | string | null | undefined): string {
-  if (!value) return "—";
-  const date = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) return "—";
-  const diff = Date.now() - date.getTime();
-  if (diff < 0) return date.toLocaleString();
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return date.toLocaleDateString();
-}
-
 export function providerLabel(providers: SecretProviderDescriptor[] | undefined, id: SecretProvider) {
   return providers?.find((p) => p.id === id)?.label ?? id.replaceAll("_", " ");
 }

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { ActivityEvent, Agent } from "@paperclipai/shared";
+import type { ActivityEvent } from "@paperclipai/shared";
 import { activityApi } from "@/api/activity";
 import { accessApi } from "@/api/access";
 import { agentsApi } from "@/api/agents";
@@ -16,6 +16,7 @@ import { History } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { indexEntitiesById } from "@/lib/presentation-contracts";
 
 export const Route = createFileRoute("/_authenticated/$companyId/activity/")({
   component: Activity,
@@ -73,11 +74,7 @@ function Activity() {
     [companyMembers?.users],
   );
 
-  const agentMap = useMemo(() => {
-    const map = new Map<string, Agent>();
-    for (const a of agents ?? []) map.set(a.id, a);
-    return map;
-  }, [agents]);
+  const agentMap = useMemo(() => indexEntitiesById(agents), [agents]);
 
   const entityNameMap = useMemo(() => {
     const map = new Map<string, string>();

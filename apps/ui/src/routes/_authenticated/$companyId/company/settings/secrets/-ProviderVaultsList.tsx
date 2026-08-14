@@ -1,6 +1,7 @@
 import { Spinner } from "@/components/ui/spinner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -42,8 +43,9 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
+import { relativeTime as formatRelative } from "@/lib/utils";
 
-import { formatRelative, getProviderConfigBlockReason, PROVIDER_ORDER } from "./-secrets-model";
+import { getProviderConfigBlockReason, PROVIDER_ORDER } from "./-secrets-model";
 
 function providerFamilyIcon(provider: SecretProvider) {
   switch (provider) {
@@ -159,9 +161,9 @@ export function ProviderVaultsTab({
               <Icon className="h-4 w-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold">{provider?.label ?? id.replaceAll("_", " ")}</h2>
               {isComingSoonFamily ? (
-                <Badge variant="secondary" className="ml-auto">
+                <DomainStatus status="coming_soon" className="ml-auto">
                   Coming soon
-                </Badge>
+                </DomainStatus>
               ) : (
                 <Button variant="outline" size="sm" className="ml-auto" onClick={() => onCreate(id)}>
                   <Plus data-icon="inline-start" className="h-3.5 w-3.5 mr-1" />
@@ -196,12 +198,14 @@ export function ProviderVaultsTab({
                           ) : null}
                         </CardTitle>
                         <CardDescription>
-                          <Badge variant="outline">{config.status.replace("_", " ")}</Badge>
+                          <DomainStatus status={config.status}>
+                            {config.status.replace("_", " ")}
+                          </DomainStatus>
                           {config.healthStatus ? (
-                            <span>
+                            <DomainStatus status={config.healthStatus}>
                               Health {config.healthStatus.replace("_", " ")} ·{" "}
                               {formatRelative(config.healthCheckedAt)}
-                            </span>
+                            </DomainStatus>
                           ) : (
                             <span>Health not checked</span>
                           )}

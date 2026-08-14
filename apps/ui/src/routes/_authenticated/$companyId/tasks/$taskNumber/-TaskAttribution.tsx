@@ -1,4 +1,5 @@
-import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
+import { AvatarStack } from "@/components/kibo-ui/avatar-stack";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatUserLabel } from "@/lib/task-owners";
@@ -154,13 +155,9 @@ export function TaskAttributionByline({
   if (!owner && !originator) return null;
 
   return (
-    <AvatarGroup
-      className="-space-x-1.5"
-      aria-label="Task people"
-      data-testid="task-attribution-avatar-stack"
-    >
+    <AvatarStack aria-label="Task people" data-testid="task-attribution-avatar-stack">
       {owner ? <AttributionAvatar label="Owner" actor={owner} /> : null}
       {originator ? <AttributionAvatar label="Originating" actor={originator} via={originatorVia} /> : null}
-    </AvatarGroup>
+    </AvatarStack>
   );
 }

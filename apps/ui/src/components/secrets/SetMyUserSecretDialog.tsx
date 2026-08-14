@@ -1,19 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CompanySecret, UserSecretDefinition } from "@paperclipai/shared";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { secretsApi } from "@/api/secrets";
 import { ApiError } from "@/api/client";
@@ -98,89 +91,89 @@ export function SetMyUserSecretDialog({
   const canSave = isExternal ? externalRef.length > 0 : value.length > 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        {save.isPending ? (
-          <p className="sr-only" role="status">
-            Saving your secret value.
-          </p>
-        ) : null}
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {existingSecret ? "Update your value" : "Set your value"}
-            <Badge variant="secondary">
-              <UserRound />
-              User secret
-            </Badge>
-          </DialogTitle>
-          <DialogDescription>
-            {definition ? (
-              <>
-                This value is yours only. It is used when you are the user responsible for a run that needs{" "}
-                <span className="font-mono">{definition.key}</span>.
-              </>
-            ) : null}
-          </DialogDescription>
-        </DialogHeader>
-
-        {definition ? (
-          <div className="space-y-3">
-            <Item variant="outline">
-              <ItemContent>
-                <ItemTitle>{definition.name}</ItemTitle>
-                {definition.description ? <ItemDescription>{definition.description}</ItemDescription> : null}
-                {definition.usageGuidance ? (
-                  <ItemDescription>{definition.usageGuidance}</ItemDescription>
-                ) : null}
-              </ItemContent>
-            </Item>
-
-            {isExternal ? (
-              <Field>
-                <FieldLabel>External reference</FieldLabel>
-                <Input
-                  aria-label="External secret reference"
-                  value={externalRef}
-                  onChange={(event) => setExternalRef(event.target.value)}
-                  placeholder="provider reference or ARN"
-                  className="font-mono text-sm"
-                  autoFocus
-                />
-                <FieldDescription>
-                  Points at your own credential in the configured provider. Paperclip stores the reference,
-                  not the value.
-                </FieldDescription>
-              </Field>
-            ) : (
-              <Field>
-                <FieldLabel>Your value</FieldLabel>
-                <Textarea
-                  aria-label="Secret value"
-                  value={value}
-                  onChange={(event) => setValue(event.target.value)}
-                  placeholder="Paste your token or credential"
-                  className="font-mono text-sm min-h-(--sz-80px)"
-                  autoFocus
-                />
-                <FieldDescription>
-                  Stored encrypted. Never shown back to anyone, including admins.
-                </FieldDescription>
-              </Field>
-            )}
-
-            {error ? <FieldError>{error}</FieldError> : null}
-          </div>
-        ) : null}
-
-        <DialogFooter>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={
+        <>
+          {existingSecret ? "Update your value" : "Set your value"}
+          <Badge variant="secondary">
+            <UserRound />
+            User secret
+          </Badge>
+        </>
+      }
+      titleClassName="flex items-center gap-2"
+      description={
+        definition ? (
+          <>
+            This value is yours only. It is used when you are the user responsible for a run that needs{" "}
+            <span className="font-mono">{definition.key}</span>.
+          </>
+        ) : null
+      }
+      footer={
+        <>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={save.isPending}>
             Cancel
           </Button>
           <Button onClick={() => save.mutate()} disabled={!canSave || save.isPending}>
             {save.isPending ? "Saving…" : existingSecret ? "Update value" : "Save value"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      {save.isPending ? (
+        <p className="sr-only" role="status">
+          Saving your secret value.
+        </p>
+      ) : null}
+
+      {definition ? (
+        <div className="space-y-3">
+          <Item variant="outline">
+            <ItemContent>
+              <ItemTitle>{definition.name}</ItemTitle>
+              {definition.description ? <ItemDescription>{definition.description}</ItemDescription> : null}
+              {definition.usageGuidance ? (
+                <ItemDescription>{definition.usageGuidance}</ItemDescription>
+              ) : null}
+            </ItemContent>
+          </Item>
+
+          {isExternal ? (
+            <LabeledFormField
+              label="External reference"
+              description="Points at your own credential in the configured provider. Paperclip stores the reference, not the value."
+            >
+              <Input
+                aria-label="External secret reference"
+                value={externalRef}
+                onChange={(event) => setExternalRef(event.target.value)}
+                placeholder="provider reference or ARN"
+                className="font-mono text-sm"
+                autoFocus
+              />
+            </LabeledFormField>
+          ) : (
+            <LabeledFormField
+              label="Your value"
+              description="Stored encrypted. Never shown back to anyone, including admins."
+            >
+              <Textarea
+                aria-label="Secret value"
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+                placeholder="Paste your token or credential"
+                className="font-mono text-sm min-h-(--sz-80px)"
+                autoFocus
+              />
+            </LabeledFormField>
+          )}
+
+          {error ? <FieldError>{error}</FieldError> : null}
+        </div>
+      ) : null}
+    </FormDialog>
   );
 }

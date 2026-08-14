@@ -5,13 +5,14 @@ import {
   type BudgetPolicySummary,
   type MoneyAmount,
 } from "@paperclipai/shared";
-import { AlertTriangle, PauseCircle, ShieldAlert, Wallet } from "lucide-react";
+import { PauseCircle } from "lucide-react";
 import { cn, formatMoneyAmount } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
@@ -28,6 +29,13 @@ function parseBudgetInput(value: string): MoneyAmount | null {
 
 function windowLabel(windowKind: BudgetPolicySummary["windowKind"]) {
   return windowKind === "lifetime" ? "Lifetime budget" : "Monthly UTC budget";
+}
+
+function budgetStatusLabel(summary: BudgetPolicySummary) {
+  if (summary.paused) return "Paused";
+  if (summary.status === "warning") return "Warning";
+  if (summary.status === "hard_stop") return "Hard stop";
+  return "Healthy";
 }
 
 export function BudgetPolicyCard({
@@ -54,8 +62,6 @@ export function BudgetPolicyCard({
   const canSave =
     parsedDraft !== null && compareMoneyAmounts(parsedDraft, summary.limitAmount) !== 0 && Boolean(onSave);
   const progress = hasLimit ? Math.min(100, summary.utilizationPercent) : 0;
-  const StatusIcon =
-    summary.status === "hard_stop" ? ShieldAlert : summary.status === "warning" ? AlertTriangle : Wallet;
   const isPlain = variant === "plain";
   const budgetInputId = useId();
 
@@ -112,8 +118,11 @@ export function BudgetPolicyCard({
 
   const saveSection = onSave ? (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-      <Field className="min-w-0 flex-1">
-        <FieldLabel htmlFor={budgetInputId}>Budget ({summary.budgetCurrency})</FieldLabel>
+      <LabeledFormField
+        className="min-w-0 flex-1"
+        label={`Budget (${summary.budgetCurrency})`}
+        labelFor={budgetInputId}
+      >
         <Input
           id={budgetInputId}
           value={draftBudget}
@@ -121,7 +130,7 @@ export function BudgetPolicyCard({
           inputMode="decimal"
           placeholder="0.00"
         />
-      </Field>
+      </LabeledFormField>
       <Button
         onClick={() => {
           if (parsedDraft && onSave) onSave(parsedDraft);
@@ -144,16 +153,9 @@ export function BudgetPolicyCard({
             <div className="mt-2 text-xl font-semibold">{summary.scopeName}</div>
             <div className="mt-2 text-sm text-muted-foreground">{windowLabel(summary.windowKind)}</div>
           </div>
-          <Badge variant={summary.status === "hard_stop" ? "destructive" : "secondary"}>
-            <StatusIcon className="h-3.5 w-3.5" />
-            {summary.paused
-              ? "Paused"
-              : summary.status === "warning"
-                ? "Warning"
-                : summary.status === "hard_stop"
-                  ? "Hard stop"
-                  : "Healthy"}
-          </Badge>
+          <DomainStatus status={summary.paused ? "paused" : summary.status}>
+            {budgetStatusLabel(summary)}
+          </DomainStatus>
         </div>
 
         {observedBudgetGrid}
@@ -178,16 +180,9 @@ export function BudgetPolicyCard({
             <CardTitle className="mt-1 text-base">{summary.scopeName}</CardTitle>
             <CardDescription className="mt-1">{windowLabel(summary.windowKind)}</CardDescription>
           </div>
-          <Badge variant={summary.status === "hard_stop" ? "destructive" : "secondary"}>
-            <StatusIcon className="h-3.5 w-3.5" />
-            {summary.paused
-              ? "Paused"
-              : summary.status === "warning"
-                ? "Warning"
-                : summary.status === "hard_stop"
-                  ? "Hard stop"
-                  : "Healthy"}
-          </Badge>
+          <DomainStatus status={summary.paused ? "paused" : summary.status}>
+            {budgetStatusLabel(summary)}
+          </DomainStatus>
         </div>
       </CardHeader>
       <CardContent className={cn("space-y-4", compact ? "px-4 pb-4 pt-0" : "px-5 pb-5 pt-0")}>

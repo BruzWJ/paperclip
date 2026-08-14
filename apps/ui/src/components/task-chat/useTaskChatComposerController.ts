@@ -1,14 +1,7 @@
 import { useAui } from "@assistant-ui/react";
 import type { TaskWorkMode } from "@paperclipai/shared";
 import { buildAgentMentionHref } from "@paperclipai/shared";
-import {
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-  type ForwardedRef,
-} from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ForwardedRef } from "react";
 import { restoreSubmittedCommentDraft } from "../../lib/comment-submit-draft";
 import {
   computeComposerOwnerPreview,
@@ -16,18 +9,12 @@ import {
   findPlainAgentNameCandidate,
   type OwnerAgentMention,
 } from "../../lib/owner-transition";
-import {
-  captureComposerViewportSnapshot,
-  restoreComposerViewportSnapshot,
-} from "../../lib/task-chat-scroll";
+import { captureComposerViewportSnapshot, restoreComposerViewportSnapshot } from "../../lib/task-chat-scroll";
 import { formatOwnerUserLabel } from "../../lib/task-owners";
 import type { MarkdownEditorRef, MentionOption } from "../MarkdownEditor";
 import type { OwnerChipResolvers } from "../owner-transition/OwnerTransitionViews";
 
-import type {
-  TaskChatComposerHandle,
-  TaskChatComposerProps,
-} from "./TaskChatShared";
+import type { TaskChatComposerHandle, TaskChatComposerProps } from "./TaskChatShared";
 
 import {
   COMPOSER_FOCUS_SCROLL_PADDING_PX,
@@ -74,9 +61,7 @@ export function useTaskChatComposerController(
 
   const [ownerTarget, setOwnerTarget] = useState(effectiveSuggestedOwnerValue);
 
-  const [dismissedCoachToken, setDismissedCoachToken] = useState<string | null>(
-    null,
-  );
+  const [dismissedCoachToken, setDismissedCoachToken] = useState<string | null>(null);
 
   const resolvedTaskWorkMode: TaskWorkMode = taskWorkMode ?? "standard";
 
@@ -93,24 +78,10 @@ export function useTaskChatComposerController(
     onAttachImage,
     setBody,
   });
-  const {
-    attaching,
-    isDragOver,
-    composerAttachments,
-    setComposerAttachments,
-    attachInputRef,
-    attachInputId,
-    canAcceptFiles,
-    handleAttachFile,
-    handleFileDragEnter,
-    handleFileDragOver,
-    handleFileDragLeave,
-    handleFileDrop,
-  } = attachments;
+  const { attaching, composerAttachments, setComposerAttachments, canAcceptFiles, handleDroppedFiles } =
+    attachments;
 
-  function queueViewportRestore(
-    snapshot: ReturnType<typeof captureComposerViewportSnapshot>,
-  ) {
+  function queueViewportRestore(snapshot: ReturnType<typeof captureComposerViewportSnapshot>) {
     if (!snapshot) return;
     requestAnimationFrame(() => {
       restoreComposerViewportSnapshot(snapshot, composerContainerRef.current);
@@ -188,20 +159,15 @@ export function useTaskChatComposerController(
   async function submitComment() {
     if (!body.trim() || isSubmitting) return;
 
-    const hasOwnerChange =
-      enableOwnerChange && ownerTarget !== currentOwnerValue;
-    const ownerChange = hasOwnerChange
-      ? (parseOwnerChange(ownerTarget) ?? undefined)
-      : undefined;
+    const hasOwnerChange = enableOwnerChange && ownerTarget !== currentOwnerValue;
+    const ownerChange = hasOwnerChange ? (parseOwnerChange(ownerTarget) ?? undefined) : undefined;
     const mentionAgentId = replyTarget
       ? undefined
       : mentionedAgentIds.length === 1
         ? mentionedAgentIds[0]
         : undefined;
     const submittedBody = body;
-    const viewportSnapshot = captureComposerViewportSnapshot(
-      composerContainerRef.current,
-    );
+    const viewportSnapshot = captureComposerViewportSnapshot(composerContainerRef.current);
 
     setIsSubmitting(true);
     onReplyPendingChange?.(true);
@@ -257,8 +223,7 @@ export function useTaskChatComposerController(
     () => ({
       agentMap,
       currentUserId,
-      resolveUserLabel: (userId: string) =>
-        formatOwnerUserLabel(userId, null, userLabelMap),
+      resolveUserLabel: (userId: string) => formatOwnerUserLabel(userId, null, userLabelMap),
     }),
     [agentMap, currentUserId, userLabelMap],
   );
@@ -266,10 +231,7 @@ export function useTaskChatComposerController(
   const mentionedAgentIds = useMemo(() => extractAgentMentionIds(body), [body]);
 
   const plainNameCandidate = useMemo(
-    () =>
-      mentionedAgentIds.length > 0
-        ? null
-        : findPlainAgentNameCandidate(body, agentMentionOptions),
+    () => (mentionedAgentIds.length > 0 ? null : findPlainAgentNameCandidate(body, agentMentionOptions)),
     [body, mentionedAgentIds, agentMentionOptions],
   );
 
@@ -283,31 +245,20 @@ export function useTaskChatComposerController(
         mentionedAgentId: mentionedAgentIds[0] ?? null,
         plainNameCandidate,
       }),
-    [
-      ownerTarget,
-      currentOwnerValue,
-      hasActiveRun,
-      mentionedAgentIds,
-      plainNameCandidate,
-    ],
+    [ownerTarget, currentOwnerValue, hasActiveRun, mentionedAgentIds, plainNameCandidate],
   );
 
-  const coachVisible = Boolean(
-    plainNameCandidate &&
-    plainNameCandidate.matchedText !== dismissedCoachToken,
-  );
+  const coachVisible = Boolean(plainNameCandidate && plainNameCandidate.matchedText !== dismissedCoachToken);
 
   const coachAgentName = plainNameCandidate
-    ? (agentMap?.get(plainNameCandidate.agentId)?.name ??
-      plainNameCandidate.matchedText)
+    ? (agentMap?.get(plainNameCandidate.agentId)?.name ?? plainNameCandidate.matchedText)
     : "";
 
   function insertCoachMention() {
     if (!plainNameCandidate) return;
     const option = mentions.find(
       (mention): mention is Extract<MentionOption, { kind: "agent" }> =>
-        mention.kind === "agent" &&
-        mention.agentId === plainNameCandidate.agentId,
+        mention.kind === "agent" && mention.agentId === plainNameCandidate.agentId,
     );
     const agentId = plainNameCandidate.agentId;
     const name = option?.name ?? plainNameCandidate.matchedText;
@@ -318,8 +269,7 @@ export function useTaskChatComposerController(
       "i",
     );
     setBody((current) => {
-      if (tokenRe.test(current))
-        return current.replace(tokenRe, markdown.trimEnd());
+      if (tokenRe.test(current)) return current.replace(tokenRe, markdown.trimEnd());
       return current ? `${current} ${markdown}` : markdown;
     });
     setDismissedCoachToken(plainNameCandidate.matchedText);
@@ -340,24 +290,17 @@ export function useTaskChatComposerController(
     setBody,
     isSubmitting,
     attaching,
-    isDragOver,
     composerAttachments,
     ownerTarget,
     setOwnerTarget,
     setDismissedCoachToken,
     resolvedTaskWorkMode,
-    attachInputRef,
-    attachInputId,
     ownerTriggerRef,
     editorRef,
     composerContainerRef,
     canAcceptFiles,
     handleSubmit,
-    handleAttachFile,
-    handleFileDragEnter,
-    handleFileDragOver,
-    handleFileDragLeave,
-    handleFileDrop,
+    handleDroppedFiles,
     ownerResolvers,
     plainNameCandidate,
     ownerPreview,

@@ -25,17 +25,9 @@ import {
 } from "./RoutineRevisionDiff";
 
 import { RoutineRevisionDiffModal } from "./RoutineRevisionDiffModal";
+import type { KeyedLabel, NamedEntityLookup, SecretLookup } from "@/lib/presentation-contracts";
 
-type AgentLookup = Map<string, { id: string; name: string }>;
-
-type ProjectLookup = Map<string, { id: string; name: string }>;
-
-type SecretLookup = Map<string, CompanySecret>;
-
-export type DirtyFieldDescriptor = {
-  key: string;
-  label: string;
-};
+export type DirtyFieldDescriptor = KeyedLabel;
 
 type Props = {
   routine: Routine;
@@ -43,8 +35,8 @@ type Props = {
   dirtyFields: DirtyFieldDescriptor[];
   onDiscardEdits: () => void;
   onSaveEdits: () => void;
-  agents: AgentLookup;
-  projects: ProjectLookup;
+  agents: NamedEntityLookup;
+  projects: NamedEntityLookup;
   secrets?: CompanySecret[];
   onRestoreSecretMaterials: (response: RestoreRoutineRevisionResponse) => void;
   onRestored?: (response: RestoreRoutineRevisionResponse) => void;
@@ -168,9 +160,9 @@ export function RoutineHistoryTab({
     setConfirmOpen(true);
   };
 
-  const confirmRestore = () => {
+  const confirmRestore = async () => {
     if (!selectedRevision) return;
-    restoreMutation.mutate({
+    await restoreMutation.mutateAsync({
       revisionId: selectedRevision.id,
       changeSummary: restoreSummary,
     });

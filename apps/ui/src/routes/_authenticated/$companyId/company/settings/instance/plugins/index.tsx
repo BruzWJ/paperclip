@@ -2,41 +2,23 @@ import { accessApi } from "@/api/access";
 import { pluginsApi } from "@/api/plugins";
 import { InstalledPluginsSection } from "@/components/plugins/InstalledPluginsSection";
 import { PluginCatalogSection } from "@/components/plugins/PluginCatalogSection";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { CodeBlockPanel } from "@/components/patterns/CodeBlockPanel";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
+import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Field, FieldLabel } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
-import { useCompany } from "@/context/CompanyContext";
+import { useSettingsBreadcrumbs } from "@/hooks/useSettingsBreadcrumbs";
 import { toast } from "sonner";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useCurrentUserId } from "@/hooks/useCurrentUserId";
 import { queryKeys } from "@/lib/queryKeys";
 import type { PluginInstallRequest, PluginRecordDto } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, Plus, Puzzle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/$companyId/company/settings/instance/plugins/")({
   component: PluginManager,
@@ -55,8 +37,6 @@ function getPluginErrorSummary(plugin: PluginRecordDto): string {
 function PluginManager() {
   const currentUserId = useCurrentUserId();
   const companyId = useCompanyRouteId();
-  const { selectedCompany } = useCompany();
-  const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
 
   const [installPackage, setInstallPackage] = useState("");
@@ -65,35 +45,11 @@ function PluginManager() {
   const [uninstallPluginName, setUninstallPluginName] = useState<string>("");
   const [errorDetailsPlugin, setErrorDetailsPlugin] = useState<PluginRecordDto | null>(null);
 
-  useEffect(() => {
-    setBreadcrumbs([
-      {
-        label: selectedCompany?.name ?? "Company",
-        renderLink: (content) => (
-          <Link to="/$companyId/dashboard" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Instance settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings/instance" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      { label: "Plugins" },
-    ]);
-  }, [companyId, selectedCompany?.name, setBreadcrumbs]);
+  useSettingsBreadcrumbs({
+    companyId,
+    instance: true,
+    page: "Plugins",
+  });
 
   const boardAccessQuery = useQuery({
     queryKey: currentUserId
@@ -234,32 +190,20 @@ function PluginManager() {
         </div>
 
         {isInstanceAdmin ? (
-          <Dialog open={installDialogOpen} onOpenChange={setInstallDialogOpen}>
-            <DialogTrigger asChild>
+          <FormDialog
+            open={installDialogOpen}
+            onOpenChange={setInstallDialogOpen}
+            title="Install Plugin"
+            description="Enter the npm package name of the plugin you wish to install."
+            triggerAsChild
+            trigger={
               <Button size="sm" className="gap-2">
                 <Plus data-icon="inline-start" className="h-4 w-4" />
                 Install Plugin
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Install Plugin</DialogTitle>
-                <DialogDescription>
-                  Enter the npm package name of the plugin you wish to install.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="py-4">
-                <Field>
-                  <FieldLabel htmlFor="packageName">npm Package Name</FieldLabel>
-                  <Input
-                    id="packageName"
-                    placeholder="@paperclipai/plugin-example"
-                    value={installPackage}
-                    onChange={(e) => setInstallPackage(e.target.value)}
-                  />
-                </Field>
-              </div>
-              <DialogFooter>
+            }
+            footer={
+              <>
                 <Button variant="outline" onClick={() => setInstallDialogOpen(false)}>
                   Cancel
                 </Button>
@@ -274,9 +218,20 @@ function PluginManager() {
                 >
                   {installMutation.isPending ? "Installing..." : "Install"}
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </>
+            }
+          >
+            <div className="py-4">
+              <LabeledFormField label="npm Package Name" labelFor="packageName">
+                <Input
+                  id="packageName"
+                  placeholder="@paperclipai/plugin-example"
+                  value={installPackage}
+                  onChange={(e) => setInstallPackage(e.target.value)}
+                />
+              </LabeledFormField>
+            </div>
+          </FormDialog>
         ) : null}
       </div>
 
@@ -338,75 +293,64 @@ function PluginManager() {
       />
 
       {isInstanceAdmin ? (
-        <AlertDialog
+        <ConfirmActionDialog
           open={uninstallPluginId !== null}
           onOpenChange={(open) => {
             if (!open) setUninstallPluginId(null);
           }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Uninstall Plugin</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to uninstall <strong>{uninstallPluginName}</strong>? This action cannot
-                be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={uninstallMutation.isPending}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={uninstallMutation.isPending}
-                onClick={() => {
-                  if (uninstallPluginId) {
-                    uninstallMutation.mutate(uninstallPluginId, {
-                      onSettled: () => setUninstallPluginId(null),
-                    });
-                  }
-                }}
-              >
-                {uninstallMutation.isPending ? "Uninstalling..." : "Uninstall"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          title="Uninstall Plugin"
+          description={
+            <>
+              Are you sure you want to uninstall <strong>{uninstallPluginName}</strong>? This action cannot be
+              undone.
+            </>
+          }
+          confirmLabel="Uninstall"
+          pendingLabel="Uninstalling..."
+          variant="destructive"
+          disabled={!uninstallPluginId}
+          pending={uninstallMutation.isPending}
+          onConfirm={() => {
+            if (uninstallPluginId) {
+              uninstallMutation.mutate(uninstallPluginId, {
+                onSettled: () => setUninstallPluginId(null),
+              });
+            }
+          }}
+        />
       ) : null}
 
-      <Dialog
+      <FormDialog
         open={errorDetailsPlugin !== null}
         onOpenChange={(open) => !open && setErrorDetailsPlugin(null)}
+        contentClassName="sm:max-w-2xl"
+        title="Error Details"
+        description={`${errorDetailsPlugin?.manifestJson.displayName ?? "Plugin"} hit an error state.`}
+        footer={
+          <Button variant="outline" onClick={() => setErrorDetailsPlugin(null)}>
+            Close
+          </Button>
+        }
       >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Error Details</DialogTitle>
-            <DialogDescription>
-              {errorDetailsPlugin?.manifestJson.displayName ?? "Plugin"} hit an error state.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Alert variant="destructive">
-              <AlertTriangle />
-              <AlertTitle>What errored</AlertTitle>
-              <AlertDescription className="break-words">
-                {errorDetailsPlugin
-                  ? getPluginErrorSummary(errorDetailsPlugin)
-                  : "No error summary available."}
-              </AlertDescription>
-            </Alert>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Full error output</p>
-              <pre className="max-h-(--sz-50vh) overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/40 p-3 text-xs leading-5">
-                {errorDetailsPlugin?.lastError ?? "No stored error message."}
-              </pre>
-            </div>
+        <div className="space-y-4">
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>What errored</AlertTitle>
+            <AlertDescription className="break-words">
+              {errorDetailsPlugin ? getPluginErrorSummary(errorDetailsPlugin) : "No error summary available."}
+            </AlertDescription>
+          </Alert>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Full error output</p>
+            <CodeBlockPanel
+              bodyClassName="max-h-(--sz-50vh)"
+              code={errorDetailsPlugin?.lastError ?? "No stored error message."}
+              filename="plugin-error.txt"
+              syntaxHighlighting={false}
+            />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setErrorDetailsPlugin(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </FormDialog>
     </div>
   );
 }

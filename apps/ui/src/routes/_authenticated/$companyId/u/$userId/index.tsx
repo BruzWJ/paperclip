@@ -19,10 +19,9 @@ import {
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { formatDate, formatMoneyAmount, formatNumber, formatShortDate, relativeTime } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/$companyId/u/$userId/")({
@@ -333,9 +332,7 @@ function UserProfile() {
                           <ItemDescription className="font-mono">{task.identifier}</ItemDescription>
                         </ItemContent>
                         <ItemActions>
-                          <Badge variant={statusBadgeVariant(task.boardPresentationStatus)}>
-                            {task.boardPresentationStatus.replace(/[_-]/g, " ")}
-                          </Badge>
+                          <DomainStatus status={task.boardPresentationStatus} />
                           <span className="text-xs tabular-nums text-muted-foreground">
                             {relativeTime(task.updatedAt)}
                           </span>

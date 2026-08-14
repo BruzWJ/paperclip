@@ -10,10 +10,9 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { tasksApi } from "@/api/tasks";
 import { agentsApi } from "@/api/agents";
 import { projectsApi } from "@/api/projects";
-import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
-import { collectLiveTaskIds } from "@/lib/liveTaskIds";
+import { useCompanyLiveTaskIds } from "@/hooks/useCompanyLiveTaskIds";
 import { queryKeys } from "@/lib/queryKeys";
 import { createTaskDetailLocationState } from "@/lib/taskDetailBreadcrumb";
 import { TasksList } from "@/components/TasksList";
@@ -25,37 +24,19 @@ export function validateTasksSearch(search: Record<string, unknown>): {
   ownerAgentId?: string;
   ownerUserId?: string;
 } {
-  assertOnlySearchKeys(search, [
-    "q",
-    "participantAgentId",
-    "ownerAgentId",
-    "ownerUserId",
-  ]);
+  assertOnlySearchKeys(search, ["q", "participantAgentId", "ownerAgentId", "ownerUserId"]);
   const q = optionalExactSearchString(search.q, "q");
   if (q !== undefined && q.toLowerCase() !== q) {
-    throw new Error(
-      'Invalid search parameter "q": must use canonical lowercase',
-    );
+    throw new Error('Invalid search parameter "q": must use canonical lowercase');
   }
-  const ownerAgentId = optionalCanonicalUuidSearch(
-    search.ownerAgentId,
-    "ownerAgentId",
-  );
-  const ownerUserId = optionalExactSearchString(
-    search.ownerUserId,
-    "ownerUserId",
-  );
+  const ownerAgentId = optionalCanonicalUuidSearch(search.ownerAgentId, "ownerAgentId");
+  const ownerUserId = optionalExactSearchString(search.ownerUserId, "ownerUserId");
   if (ownerAgentId !== undefined && ownerUserId !== undefined) {
-    throw new Error(
-      'Invalid search parameters: "ownerAgentId" and "ownerUserId" are mutually exclusive',
-    );
+    throw new Error('Invalid search parameters: "ownerAgentId" and "ownerUserId" are mutually exclusive');
   }
   return {
     q,
-    participantAgentId: optionalCanonicalUuidSearch(
-      search.participantAgentId,
-      "participantAgentId",
-    ),
+    participantAgentId: optionalCanonicalUuidSearch(search.participantAgentId, "participantAgentId"),
     ownerAgentId,
     ownerUserId,
   };
@@ -78,9 +59,7 @@ export function getNextTasksPageOffset(
   return loadedPageSize >= pageSize ? currentOffset + pageSize : undefined;
 }
 
-export function mergeTaskPagesStable<T extends { id: string }>(
-  pages: T[][],
-): T[] {
+export function mergeTaskPagesStable<T extends { id: string }>(pages: T[][]): T[] {
   const seenTaskIds = new Set<string>();
   const merged: T[] = [];
 
@@ -132,22 +111,7 @@ function Tasks() {
     queryFn: () => projectsApi.list(companyId),
   });
 
-  const activeRunsQueryKey = queryKeys.runs(companyId, {
-    status: ACTIVE_TASK_EXECUTION_RUN_STATUSES,
-  });
-  const { data: activeRunPage } = useQuery({
-    queryKey: activeRunsQueryKey,
-    queryFn: () =>
-      runsApi.listForCompany(companyId, {
-        status: ACTIVE_TASK_EXECUTION_RUN_STATUSES,
-        limit: 200,
-      }),
-  });
-
-  const liveTaskIds = useMemo(
-    () => collectLiveTaskIds(activeRunPage?.items),
-    [activeRunPage],
-  );
+  const liveTaskIds = useCompanyLiveTaskIds(companyId);
 
   const taskLinkState = TASK_DETAIL_LOCATION_STATE;
 
@@ -198,15 +162,10 @@ function Tasks() {
     placeholderData: (previousData) => previousData,
   });
 
-  const tasks = useMemo(
-    () => mergeTaskPagesStable(taskPages?.pages ?? []) as Task[],
-    [taskPages],
-  );
-  const hasMoreServerTasks =
-    syncedSearch.trim().length === 0 && hasNextPage === true;
+  const tasks = useMemo(() => mergeTaskPagesStable(taskPages?.pages ?? []) as Task[], [taskPages]);
+  const hasMoreServerTasks = syncedSearch.trim().length === 0 && hasNextPage === true;
   const loadMoreServerTasks = useCallback(() => {
-    if (!hasNextPage || isFetchingNextPage || fetchNextPageInFlightRef.current)
-      return;
+    if (!hasNextPage || isFetchingNextPage || fetchNextPageInFlightRef.current) return;
     fetchNextPageInFlightRef.current = true;
     void fetchNextPage({ cancelRefetch: false }).finally(() => {
       fetchNextPageInFlightRef.current = false;

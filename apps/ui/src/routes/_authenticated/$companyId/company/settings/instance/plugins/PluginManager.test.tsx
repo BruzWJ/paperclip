@@ -193,6 +193,52 @@ describe("PluginManager", () => {
     expect(installButton!.disabled).toBe(true);
   });
 
+  it("installs an npm package through the shared form dialog", async () => {
+    mockAccessApi.getCurrentBoardAccess.mockResolvedValue({
+      userId: "admin-1",
+      isInstanceAdmin: true,
+      companyIds: [],
+    });
+
+    await renderPage();
+    let openDialog: HTMLButtonElement | undefined;
+    await vi.waitFor(() => {
+      openDialog = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.trim() === "Install Plugin",
+      );
+      expect(openDialog).not.toBeUndefined();
+    });
+    await act(async () => openDialog?.click());
+    await flushReact();
+
+    let packageInput: HTMLInputElement | null = null;
+    await vi.waitFor(() => {
+      packageInput = document.querySelector<HTMLInputElement>("#packageName");
+      expect(packageInput).not.toBeNull();
+    });
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        packageInput,
+        "@example/plugin",
+      );
+      packageInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await flushReact();
+
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+    const submit = [...(dialog?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+      (button) => button.textContent?.trim() === "Install",
+    );
+    expect(submit?.disabled).toBe(false);
+    await act(async () => submit?.click());
+    await vi.waitFor(() => {
+      expect(mockPluginsApi.install).toHaveBeenCalledWith({
+        source: "npm",
+        packageName: "@example/plugin",
+      });
+    });
+  });
+
   it("keeps non-admin plugin management read-only and never fetches the catalog", async () => {
     mockAccessApi.getCurrentBoardAccess.mockResolvedValue({
       userId: "member-1",

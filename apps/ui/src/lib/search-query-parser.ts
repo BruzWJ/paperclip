@@ -6,6 +6,7 @@ import {
   type TaskStatus,
 } from "@paperclipai/shared";
 import type { CompanySearchParams } from "@/api/search";
+import type { NamedEntity } from "@/lib/presentation-contracts";
 
 const OPEN_STATUSES: TaskStatus[] = ["backlog", "todo", "in_progress", "in_review", "blocked"];
 const CLOSED_STATUSES: TaskStatus[] = ["done", "cancelled"];
@@ -50,9 +51,9 @@ export const SEARCH_OPERATOR_SUGGESTIONS: SearchOperatorSuggestion[] = [
 ];
 
 export interface SearchQueryParserContext {
-  agents?: readonly { id: string; name: string }[];
-  projects?: readonly { id: string; name: string }[];
-  labels?: readonly { id: string; name: string }[];
+  agents?: readonly NamedEntity[];
+  projects?: readonly NamedEntity[];
+  labels?: readonly NamedEntity[];
 }
 
 export interface ParsedSearchQuery {
@@ -129,7 +130,9 @@ export function searchOperatorSuggestions(input: string, limit = 5): SearchOpera
   const normalized = token.toLowerCase();
   const candidates =
     normalized.length > 0
-      ? SEARCH_OPERATOR_SUGGESTIONS.filter((suggestion) => suggestion.token.toLowerCase().startsWith(normalized))
+      ? SEARCH_OPERATOR_SUGGESTIONS.filter((suggestion) =>
+          suggestion.token.toLowerCase().startsWith(normalized),
+        )
       : SEARCH_OPERATOR_SUGGESTIONS;
   return candidates.slice(0, limit);
 }
@@ -312,7 +315,7 @@ export function hasSearchFilters(filters: ParsedSearchQuery["filters"]) {
   );
 }
 
-function nameForId<T extends { id: string; name: string }>(entries: readonly T[] | undefined, id: string) {
+function nameForId<T extends NamedEntity>(entries: readonly T[] | undefined, id: string) {
   return entries?.find((entry) => entry.id === id)?.name ?? id.slice(0, 8);
 }
 

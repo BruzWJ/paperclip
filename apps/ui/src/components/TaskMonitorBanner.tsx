@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { Clock } from "lucide-react";
 import type { Task } from "@paperclipai/shared";
 
+import { Banner, BannerIcon, BannerTitle } from "@/components/kibo-ui/banner";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   deriveMonitorState,
@@ -9,11 +11,9 @@ import {
   formatMonitorEta,
   useMonitorCountdown,
   type DerivedMonitorState,
+  type MonitorDate,
   type MonitorDisplayState,
 } from "@/lib/task-monitor";
-
-/** Matches the `Date | string` inputs accepted by the task-monitor helpers. */
-type MonitorDate = Date | string;
 
 /**
  * States in which the waiting-monitor surfaces (top banner + composer strip)
@@ -124,11 +124,14 @@ export function TaskMonitorBanner({ task }: TaskMonitorSurfaceProps) {
   if (!copy) return null;
 
   return (
-    <Alert role="note" className="my-3">
-      <Clock aria-hidden="true" />
-      <AlertTitle>{copy.bannerTitle}</AlertTitle>
-      <AlertDescription>{copy.bannerMeta.join("  ·  ")}</AlertDescription>
-    </Alert>
+    <Banner role="note" className="my-3" inset>
+      <BannerIcon icon={Clock} />
+      <BannerTitle>
+        <span className="block font-medium">{copy.bannerTitle}</span>
+        <span className="block text-xs opacity-80">{copy.bannerMeta.join("  ·  ")}</span>
+      </BannerTitle>
+      <DomainStatus status={copy.tone}>{copy.tone === "warning" ? "Overdue" : "Scheduled"}</DomainStatus>
+    </Banner>
   );
 }
 

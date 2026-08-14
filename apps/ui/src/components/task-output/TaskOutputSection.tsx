@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
 import * as CardUI from "@/components/ui/card";
+import { MediaVideoPlayer } from "@/components/MediaVideoPlayer";
 import {
   formatBytes,
   getOutputFileGlyph,
@@ -20,6 +21,15 @@ import { relativeTime } from "@/lib/utils";
 interface TaskOutputSectionProps {
   workProducts: TaskWorkProduct[] | null | undefined;
   resolveCreatorName?: (item: TaskOutputItem) => string | null;
+  onMediaClick?: (item: TaskOutputItem) => void;
+}
+
+interface TaskOutputItemProps {
+  item: TaskOutputItem;
+  creatorName?: string | null;
+}
+
+interface InteractiveTaskOutputItemProps extends TaskOutputItemProps {
   onMediaClick?: (item: TaskOutputItem) => void;
 }
 
@@ -38,15 +48,7 @@ function outputMeta(item: TaskOutputItem, creatorName?: string | null) {
   return values.join(" · ");
 }
 
-function MediaThumbnail({
-  item,
-  creatorName,
-  onMediaClick,
-}: {
-  item: TaskOutputItem;
-  creatorName?: string | null;
-  onMediaClick?: (item: TaskOutputItem) => void;
-}) {
+function MediaThumbnail({ item, creatorName, onMediaClick }: InteractiveTaskOutputItemProps) {
   const meta = item.metadata;
   if (!meta) return null;
   const filename = outputFilename(item);
@@ -87,15 +89,7 @@ function MediaThumbnail({
   );
 }
 
-function PrimaryOutput({
-  item,
-  creatorName,
-  onMediaClick,
-}: {
-  item: TaskOutputItem;
-  creatorName?: string | null;
-  onMediaClick?: (item: TaskOutputItem) => void;
-}) {
+function PrimaryOutput({ item, creatorName, onMediaClick }: InteractiveTaskOutputItemProps) {
   const meta = item.metadata;
   const filename = outputFilename(item);
   const video = Boolean(meta && isVideoLikeOutput(meta.contentType, meta.originalFilename));
@@ -106,13 +100,11 @@ function PrimaryOutput({
     <CardUI.Card className="gap-0 overflow-hidden py-0">
       {video && meta ? (
         <AspectRatio ratio={16 / 9} className="overflow-hidden bg-black">
-          <video
+          <MediaVideoPlayer
             src={meta.contentPath}
-            controls
             preload="metadata"
             playsInline
             aria-label={`Video output: ${filename}`}
-            className="size-full"
           />
         </AspectRatio>
       ) : image && meta ? (
@@ -180,7 +172,7 @@ function PrimaryOutput({
   );
 }
 
-function OutputRow({ item, creatorName }: { item: TaskOutputItem; creatorName?: string | null }) {
+function OutputRow({ item, creatorName }: TaskOutputItemProps) {
   const filename = outputFilename(item);
   const meta = item.metadata;
   return (

@@ -1,26 +1,22 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, LogOut, Megaphone, Moon, Sun, UserRound, UserRoundPen } from "lucide-react";
+import { BookOpen, LogOut, Megaphone, UserRound, UserRoundPen } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSidebar } from "../context/SidebarContext";
-import { useTheme } from "../context/ThemeContext";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { SidebarServerInfo } from "./SidebarServerInfo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ThemeSelector } from "@/components/patterns/ThemeSelector";
+import type { ControlledOpenStateProps } from "@/lib/presentation-contracts";
 
 const DOCS_URL = "https://docs.paperclip.ing/";
 const FEEDBACK_URL = "https://paperclip.ing/feedback";
-
-interface SidebarAccountMenuProps {
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-}
 
 function deriveInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -30,12 +26,11 @@ function deriveInitials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
-export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: SidebarAccountMenuProps) {
+export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: ControlledOpenStateProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const queryClient = useQueryClient();
   const companyId = useCompanyRouteId();
   const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
-  const { theme, toggleTheme } = useTheme();
   const rail = collapsed && !peeking;
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
@@ -189,20 +184,10 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Sideb
                   </span>
                 </a>
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-auto w-full justify-start whitespace-normal text-left"
-                onClick={() => {
-                  toggleTheme();
-                  setOpen(false);
-                }}
-                aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-                aria-keyshortcuts="Meta+Shift+D Control+Shift+D"
-              >
-                {theme === "dark" ? <Sun /> : <Moon />}
-                <span>{theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}</span>
-              </Button>
+              <div className="flex items-center justify-between gap-3 px-3 py-2">
+                <span className="text-sm font-medium">Theme</span>
+                <ThemeSelector onChange={() => setOpen(false)} />
+              </div>
               <Button
                 type="button"
                 variant="ghost"

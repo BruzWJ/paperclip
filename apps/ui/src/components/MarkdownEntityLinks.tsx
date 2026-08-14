@@ -5,7 +5,7 @@ import { getTaskDetailQueryOptions } from "../lib/taskDetailCache";
 import { taskValueLabel } from "../lib/task-blockers";
 import { cn } from "../lib/utils";
 import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 
 export function MarkdownTaskLink({ taskId, children }: { taskId: string; children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -31,7 +31,7 @@ export function MarkdownTaskLink({ taskId, children }: { taskId: string; childre
       title={title}
       aria-label={taskLabel}
     >
-      {status ? <Badge variant="secondary">{taskValueLabel(status)}</Badge> : null}
+      {status ? <DomainStatus status={status}>{taskValueLabel(status)}</DomainStatus> : null}
       {children}
     </TaskLinkQuicklook>
   );

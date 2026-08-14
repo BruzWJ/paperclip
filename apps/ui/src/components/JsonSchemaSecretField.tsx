@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import {
   InputGroup,
   InputGroupAddon,
@@ -80,6 +80,16 @@ export const SecretField = React.memo(
       },
       [onChange],
     );
+    const visibilityButton = (
+      <InputGroupButton
+        size="icon-sm"
+        onClick={() => setIsVisible(!isVisible)}
+        disabled={disabled}
+        aria-label={isVisible ? "Hide secret" : "Show secret"}
+      >
+        {isVisible ? <EyeOff /> : <Eye />}
+      </InputGroupButton>
+    );
 
     const rawInput = isTextArea ? (
       <InputGroup>
@@ -115,14 +125,7 @@ export const SecretField = React.memo(
           />
         )}
         <InputGroupAddon align="inline-end" className="self-start">
-          <InputGroupButton
-            size="icon-sm"
-            onClick={() => setIsVisible(!isVisible)}
-            disabled={disabled}
-            aria-label={isVisible ? "Hide secret" : "Show secret"}
-          >
-            {isVisible ? <EyeOff /> : <Eye />}
-          </InputGroupButton>
+          {visibilityButton}
         </InputGroupAddon>
       </InputGroup>
     ) : (
@@ -137,27 +140,22 @@ export const SecretField = React.memo(
           aria-invalid={!!error}
           aria-describedby={error ? errorId : undefined}
         />
-        <InputGroupAddon align="inline-end">
-          <InputGroupButton
-            size="icon-sm"
-            onClick={() => setIsVisible(!isVisible)}
-            disabled={disabled}
-            aria-label={isVisible ? "Hide secret" : "Show secret"}
-          >
-            {isVisible ? <EyeOff /> : <Eye />}
-          </InputGroupButton>
-        </InputGroupAddon>
+        <InputGroupAddon align="inline-end">{visibilityButton}</InputGroupAddon>
       </InputGroup>
     );
 
     return (
-      <Field data-disabled={disabled || undefined}>
-        {label ? (
-          <FieldLabel>
-            {label}
-            {isRequired ? <span aria-hidden="true">*</span> : null}
-          </FieldLabel>
-        ) : null}
+      <LabeledFormField
+        data-disabled={disabled || undefined}
+        label={label || undefined}
+        requiredIndicator={isRequired}
+        description={
+          description ||
+          "Pick an existing company secret, or paste a raw value (Paperclip will store it as a secret on save)."
+        }
+        error={error}
+        errorId={errorId}
+      >
         <div className="space-y-2">
           <SecretBindingPicker
             value={bindingValue}
@@ -200,12 +198,7 @@ export const SecretField = React.memo(
             )
           ) : null}
         </div>
-        <FieldDescription>
-          {description ||
-            "Pick an existing company secret, or paste a raw value (Paperclip will store it as a secret on save)."}
-        </FieldDescription>
-        <FieldError id={errorId}>{error}</FieldError>
-      </Field>
+      </LabeledFormField>
     );
   },
 );

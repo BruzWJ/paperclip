@@ -1,26 +1,16 @@
 import { BudgetPolicyCard } from "@/components/BudgetPolicyCard";
 import { InlineEditor } from "@/components/InlineEditor";
 import { MembershipAction } from "@/components/MembershipAction";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProjectProperties } from "@/components/ProjectProperties";
 import { Spinner } from "@/components/ui/spinner";
 import { Toggle } from "@/components/ui/toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSidebar } from "@/context/SidebarContext";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
@@ -46,9 +36,7 @@ export function ProjectDetailScreen(props: ProjectDetailProps) {
       <Empty className="border">
         <EmptyHeader>
           <EmptyTitle>Project not found</EmptyTitle>
-          <EmptyDescription>
-            This project does not exist or is unavailable.
-          </EmptyDescription>
+          <EmptyDescription>This project does not exist or is unavailable.</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
@@ -68,17 +56,13 @@ export function ProjectDetailScreen(props: ProjectDetailProps) {
 function ProjectDetailView({
   model,
 }: {
-  model: Extract<
-    ReturnType<typeof useProjectDetailController>,
-    { state: "ready" }
-  >;
+  model: Extract<ReturnType<typeof useProjectDetailController>, { state: "ready" }>;
 }) {
   const { isMobile } = useSidebar();
   const {
     companyId,
     project,
     showLeftProjectNotice,
-    projectJoinLeavePending,
     membershipMutation,
     setDismissedLeftProjectIds,
     updateProject,
@@ -98,9 +82,7 @@ function ProjectDetailView({
   const tabItems = [
     { value: "list", label: "Tasks" },
     { value: "overview", label: "Overview" },
-    ...(project.managedByPlugin
-      ? [{ value: "plugin-operations", label: "Plugin operations" }]
-      : []),
+    ...(project.managedByPlugin ? [{ value: "plugin-operations", label: "Plugin operations" }] : []),
     { value: "configuration", label: "Configuration" },
     { value: "budget", label: "Budget" },
     ...pluginTabItems.map((item) => ({
@@ -119,40 +101,17 @@ function ProjectDetailView({
             <MembershipAction
               compact
               state="left"
-              pending={projectJoinLeavePending}
-              pendingState={
-                projectJoinLeavePending
-                  ? membershipMutation.variables?.state
-                  : null
-              }
+              mutation={membershipMutation}
+              resourceId={project.id}
               resourceName={project.name}
-              onJoin={() =>
-                membershipMutation.mutate({
-                  resourceType: "project",
-                  resourceId: project.id,
-                  resourceName: project.name,
-                  state: "joined",
-                })
-              }
-              onLeave={() =>
-                membershipMutation.mutate({
-                  resourceType: "project",
-                  resourceId: project.id,
-                  resourceName: project.name,
-                  state: "left",
-                })
-              }
+              resourceType="project"
             />
             <Button
               type="button"
               variant="ghost"
               size="icon-xs"
               aria-label="Dismiss project membership notice"
-              onClick={() =>
-                setDismissedLeftProjectIds((current) =>
-                  new Set(current).add(project.id),
-                )
-              }
+              onClick={() => setDismissedLeftProjectIds((current) => new Set(current).add(project.id))}
             >
               <X />
             </Button>
@@ -176,12 +135,10 @@ function ProjectDetailView({
             className="text-xl font-bold"
           />
           {project.pauseReason === "budget" ? (
-            <Badge variant="destructive">Paused by budget hard stop</Badge>
+            <DomainStatus status="hard_stop">Paused by budget hard stop</DomainStatus>
           ) : null}
           {project.managedByPlugin ? (
-            <Badge variant="secondary">
-              Managed by {project.managedByPlugin.pluginDisplayName}
-            </Badge>
+            <Badge variant="secondary">Managed by {project.managedByPlugin.pluginDisplayName}</Badge>
           ) : null}
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -231,15 +188,9 @@ function ProjectDetailView({
         itemClassName="inline-flex"
       />
 
-      <Tabs
-        value={activeTab ?? "list"}
-        onValueChange={(value) => handleTabChange(value as ProjectTab)}
-      >
+      <Tabs value={activeTab ?? "list"} onValueChange={(value) => handleTabChange(value as ProjectTab)}>
         {isMobile ? (
-          <Select
-            value={activeTab ?? "list"}
-            onValueChange={(value) => handleTabChange(value as ProjectTab)}
-          >
+          <Select value={activeTab ?? "list"} onValueChange={(value) => handleTabChange(value as ProjectTab)}>
             <SelectTrigger className="h-9" aria-label="Page section">
               <SelectValue />
             </SelectTrigger>
@@ -277,15 +228,13 @@ function ProjectDetailView({
         <ProjectTasksList projectId={project.id} companyId={companyId} />
       )}
 
-      {activeTab === "plugin-operations" &&
-        project?.id &&
-        project.managedByPlugin && (
-          <ProjectPluginOperationsList
-            projectId={project.id}
-            companyId={companyId}
-            pluginKey={project.managedByPlugin.pluginKey}
-          />
-        )}
+      {activeTab === "plugin-operations" && project?.id && project.managedByPlugin && (
+        <ProjectPluginOperationsList
+          projectId={project.id}
+          companyId={companyId}
+          pluginKey={project.managedByPlugin.pluginKey}
+        />
+      )}
 
       {activeTab === "configuration" && (
         <div className="max-w-4xl">
@@ -310,9 +259,7 @@ function ProjectDetailView({
               onSave={(amount) => budgetMutation.mutate(amount)}
             />
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Budget data is unavailable.
-            </p>
+            <p className="text-sm text-muted-foreground">Budget data is unavailable.</p>
           )}
         </div>
       ) : null}

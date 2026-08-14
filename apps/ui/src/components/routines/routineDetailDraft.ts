@@ -1,20 +1,17 @@
-import { accessApi } from "@/api/access";
-import { agentsApi } from "@/api/agents";
-import { projectsApi } from "@/api/projects";
 import { routinesApi } from "@/api/routines";
 import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
 import { secretsApi } from "@/api/secrets";
 import type { DirtyFieldDescriptor } from "@/components/RoutineHistoryTab";
+import type { RoutineScope } from "@/lib/presentation-contracts";
 import type { RoutineEditDraft } from "@/components/routine-sections/context";
 import { queryKeys } from "@/lib/queryKeys";
 import type { RoutineDetail } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { useRoutineDirectoryData } from "./useRoutinePresentationData";
 
 /** Converts a persisted routine into the editable form model used by sections. */
-export function buildRoutineEditDraft(
-  routine: RoutineDetail,
-): RoutineEditDraft {
+export function buildRoutineEditDraft(routine: RoutineDetail): RoutineEditDraft {
   return {
     title: routine.title,
     description: routine.description ?? "",
@@ -35,16 +32,13 @@ export function getRoutineDirtyFields(
 ): DirtyFieldDescriptor[] {
   if (!defaults) return [];
   const result: DirtyFieldDescriptor[] = [];
-  if (editDraft.title !== defaults.title)
-    result.push({ key: "title", label: "the title" });
+  if (editDraft.title !== defaults.title) result.push({ key: "title", label: "the title" });
   if (editDraft.description !== defaults.description)
     result.push({ key: "description", label: "the description" });
-  if (editDraft.projectId !== defaults.projectId)
-    result.push({ key: "projectId", label: "the project" });
+  if (editDraft.projectId !== defaults.projectId) result.push({ key: "projectId", label: "the project" });
   if (editDraft.assigneeAgentId !== defaults.assigneeAgentId)
     result.push({ key: "assigneeAgentId", label: "the default agent" });
-  if (editDraft.priority !== defaults.priority)
-    result.push({ key: "priority", label: "the priority" });
+  if (editDraft.priority !== defaults.priority) result.push({ key: "priority", label: "the priority" });
   if (editDraft.concurrencyPolicy !== defaults.concurrencyPolicy) {
     result.push({
       key: "concurrencyPolicy",
@@ -53,14 +47,9 @@ export function getRoutineDirtyFields(
   }
   if (editDraft.catchUpPolicy !== defaults.catchUpPolicy)
     result.push({ key: "catchUpPolicy", label: "the catch-up policy" });
-  if (
-    JSON.stringify(editDraft.variables) !== JSON.stringify(defaults.variables)
-  )
+  if (JSON.stringify(editDraft.variables) !== JSON.stringify(defaults.variables))
     result.push({ key: "variables", label: "the variables" });
-  if (
-    JSON.stringify(editDraft.env ?? null) !==
-    JSON.stringify(defaults.env ?? null)
-  )
+  if (JSON.stringify(editDraft.env ?? null) !== JSON.stringify(defaults.env ?? null))
     result.push({ key: "env", label: "the secrets" });
   return result;
 }
@@ -83,15 +72,9 @@ export function buildRoutineMutationPayload(input: RoutineEditDraft) {
   };
 }
 
-export interface UseRoutineDetailQueriesOptions {
-  companyId: string;
-  routineId: string;
-}
+export type UseRoutineDetailQueriesOptions = RoutineScope;
 
-export function useRoutineDetailQueries({
-  companyId,
-  routineId,
-}: UseRoutineDetailQueriesOptions) {
+export function useRoutineDetailQueries({ companyId, routineId }: UseRoutineDetailQueriesOptions) {
   const routineQuery = useQuery({
     queryKey: queryKeys.routines.detail(routineId),
     queryFn: () => routinesApi.get(routineId),
@@ -100,10 +83,7 @@ export function useRoutineDetailQueries({
   const routine = routineQuery.data;
   const activeTaskId = routine?.activeTask?.id;
   const { data: activeRunPage } = useQuery({
-    queryKey: queryKeys.tasks.runs(
-      activeTaskId!,
-      ACTIVE_TASK_EXECUTION_RUN_STATUSES,
-    ),
+    queryKey: queryKeys.tasks.runs(activeTaskId!, ACTIVE_TASK_EXECUTION_RUN_STATUSES),
     queryFn: () =>
       runsApi.listForTask(activeTaskId!, {
         status: ACTIVE_TASK_EXECUTION_RUN_STATUSES,
@@ -129,22 +109,10 @@ export function useRoutineDetailQueries({
       relatedActivityIds.triggerIds.join(","),
       relatedActivityIds.runIds.join(","),
     ],
-    queryFn: () =>
-      routinesApi.activity(companyId, routineId, relatedActivityIds),
+    queryFn: () => routinesApi.activity(companyId, routineId, relatedActivityIds),
     enabled: Boolean(routine),
   });
-  const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(companyId),
-    queryFn: () => agentsApi.list(companyId),
-  });
-  const { data: projects } = useQuery({
-    queryKey: queryKeys.projects.list(companyId),
-    queryFn: () => projectsApi.list(companyId),
-  });
-  const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyUserDirectory(companyId),
-    queryFn: () => accessApi.listUserDirectory(companyId),
-  });
+  const { agents, projects, companyMembers } = useRoutineDirectoryData(companyId);
   const { data: availableSecrets = [] } = useQuery({
     queryKey: queryKeys.secrets.list(companyId),
     queryFn: () => secretsApi.list(companyId),

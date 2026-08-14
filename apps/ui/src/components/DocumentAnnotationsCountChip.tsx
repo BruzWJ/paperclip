@@ -1,10 +1,9 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
 
-import { documentAnnotationsApi, type DocumentAnnotationTarget } from "@/api/document-annotations";
+import type { DocumentAnnotationTarget } from "@/api/document-annotations";
 import { Button } from "@/components/ui/button";
-import { queryKeys } from "@/lib/queryKeys";
+import { useDocumentAnnotations } from "@/hooks/useDocumentAnnotations";
 
 export function DocumentAnnotationsCountChip({
   target,
@@ -15,18 +14,7 @@ export function DocumentAnnotationsCountChip({
   panelOpen: boolean;
   onToggle: () => void;
 }) {
-  const annotationsQuery = useQuery({
-    queryKey:
-      target.kind === "routine"
-        ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
-        : queryKeys.tasks.documentAnnotations(target.taskId, target.documentKey, "all"),
-    queryFn: () =>
-      documentAnnotationsApi.list(target, {
-        status: "all",
-        includeComments: true,
-      }),
-    staleTime: 30_000,
-  });
+  const annotationsQuery = useDocumentAnnotations(target);
   const openCount = useMemo(
     () =>
       (annotationsQuery.data ?? []).filter(

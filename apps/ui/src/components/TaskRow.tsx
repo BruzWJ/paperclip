@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import type { Task } from "@paperclipai/shared";
 import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
-import { Archive, Flag } from "lucide-react";
+import { Archive } from "lucide-react";
 import { withTaskDetailHeaderSeed } from "../lib/taskDetailBreadcrumb";
 import { cn } from "../lib/utils";
 import { hasAssignedBacklogBlocker, taskStatusAccessibleLabel, taskValueLabel } from "../lib/task-blockers";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Item } from "@/components/ui/item";
 
@@ -107,14 +107,13 @@ export function TaskRow({
     </span>
   ) : null;
   const parkedBlockerIndicator = hasAssignedBacklogBlocker(task.blockedBy) ? (
-    <Badge
-      variant="destructive"
+    <DomainStatus
+      status="blocked"
       data-testid="task-row-parked-blocker"
       title="Blocked by parked work — at least one owned blocker is in backlog and will not dispatch its owner."
     >
-      <Flag className="h-2.5 w-2.5" aria-hidden />
       Blocked by parked work
-    </Badge>
+    </DomainStatus>
   ) : null;
 
   return (
@@ -152,12 +151,12 @@ export function TaskRow({
       />
       <span className="relative z-20 flex shrink-0 items-center gap-1 pt-px sm:hidden">
         {mobileLeading ?? (
-          <Badge
-            variant="secondary"
+          <DomainStatus
+            status={task.boardPresentationStatus}
             aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, task.blockerAttention)}
           >
             {taskValueLabel(task.boardPresentationStatus)}
-          </Badge>
+          </DomainStatus>
         )}
         {parkedBlockerIndicator}
       </span>
@@ -233,12 +232,12 @@ export function TaskRow({
           {desktopMetaLeading ?? (
             <>
               <span className="hidden shrink-0 items-center gap-1 sm:inline-flex">
-                <Badge
-                  variant="secondary"
+                <DomainStatus
+                  status={task.boardPresentationStatus}
                   aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, task.blockerAttention)}
                 >
                   {taskValueLabel(task.boardPresentationStatus)}
-                </Badge>
+                </DomainStatus>
               </span>
               {checklistStep}
               <span className="shrink-0 font-mono text-xs text-muted-foreground">{identifier}</span>

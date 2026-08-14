@@ -14,8 +14,7 @@ import { GoalProperties } from "@/components/GoalProperties";
 import { GoalTree } from "@/components/GoalTree";
 import { InlineEditor } from "@/components/InlineEditor";
 import { Skeleton } from "@/components/ui/skeleton";
-import { statusBadgeVariant } from "@/lib/status-variant";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
@@ -137,7 +136,7 @@ function GoalDetail() {
       <div className="space-y-3" aria-busy={isPending}>
         <div className="flex items-center gap-2">
           <span className="text-xs uppercase text-muted-foreground">{goal.level}</span>
-          <Badge variant={statusBadgeVariant(goal.status)}>{goal.status.replace(/[_-]/g, " ")}</Badge>
+          <DomainStatus status={goal.status} />
           <div className="ml-auto">
             <Button
               variant="ghost"
@@ -221,9 +220,7 @@ function GoalDetail() {
                       {project.description ? <ItemDescription>{project.description}</ItemDescription> : null}
                     </ItemContent>
                     <ItemActions>
-                      <Badge variant={statusBadgeVariant(project.status)}>
-                        {project.status.replace(/[_-]/g, " ")}
-                      </Badge>
+                      <DomainStatus status={project.status} />
                     </ItemActions>
                   </Link>
                 </Item>

@@ -21,11 +21,10 @@
 
 @theme inline {
   --font-sans:
-    "InterVariable", "Inter", ui-sans-serif, system-ui, -apple-system,
-    BlinkMacSystemFont, "Segoe UI", sans-serif;
+    "InterVariable", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
   --font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -125,14 +124,6 @@
   --paperclip-doc-annotation-highlight-stale: #fef08a;
   --paperclip-doc-annotation-highlight-resolved: #fef9c3;
 
-  --folder-color-indigo: #6366f1;
-  --folder-color-violet: #8b5cf6;
-  --folder-color-emerald: #10b981;
-  --folder-color-cyan: #06b6d4;
-  --folder-color-amber: #f59e0b;
-  --folder-color-slate: #64748b;
-  --gtc-folder-row: 1rem minmax(0, 1fr) auto;
-  --gtc-folder-row-actions: 1rem minmax(0, 1fr) auto auto;
   --sz-folder-rail: 13.25rem;
   --sz-folder-sheet-max: 80dvh;
 }
@@ -216,11 +207,7 @@
   }
   html {
     height: 100%;
-    -webkit-tap-highlight-color: color-mix(
-      in oklab,
-      var(--foreground) 20%,
-      transparent
-    );
+    -webkit-tap-highlight-color: color-mix(in oklab, var(--foreground) 20%, transparent);
     @apply font-sans;
   }
   body {
@@ -243,11 +230,6 @@
   textarea,
   label {
     touch-action: manipulation;
-  }
-  /* Let font-mono (utilities layer) override for monospace editors */
-  .paperclip-mdxeditor [class*="_placeholder_"],
-  .paperclip-mdxeditor-content {
-    font-family: inherit;
   }
 }
 
@@ -511,362 +493,17 @@
   }
 }
 
-/* MDXEditor theme integration */
-.paperclip-mdxeditor-scope,
-.paperclip-mdxeditor {
-  --baseBase: var(--background);
-  --baseBg: transparent;
-  --baseBgSubtle: color-mix(in oklab, var(--accent) 35%, transparent);
-  --baseLine: var(--border);
-  --baseSolid: var(--muted-foreground);
-  --baseSolidHover: var(--foreground);
-  --baseText: var(--muted-foreground);
-  --baseBorderColor: var(--border);
-  --baseBorder: var(--border);
-  --baseBorderHover: var(--ring);
-  --baseTextContrast: var(--foreground);
-  --baseTextContrastMuted: var(--muted-foreground);
-  --baseTextEmphasis: var(--foreground);
-  --basePageBg: var(--background);
-  --baseRadius: var(--radius);
-  --baseLineHeight: 1.5;
-  --accentBorder: color-mix(in oklab, var(--primary) 35%, var(--border));
-  --accentSolid: var(--primary);
-  --accentSolidHover: var(--primary);
-  --accentLine: color-mix(in oklab, var(--primary) 20%, transparent);
-  --accentBg: var(--accent);
-  --accentBgHover: color-mix(in oklab, var(--accent) 80%, var(--background));
-  --accentBgActive: color-mix(in oklab, var(--accent) 72%, var(--background));
-  --accentText: var(--accent-foreground);
-  font-family: inherit;
-  font-size: 1rem;
-  line-height: 1.5;
-  color: var(--foreground);
-}
-
-@media (min-width: 768px) {
-  .paperclip-mdxeditor-scope,
-  .paperclip-mdxeditor {
-    font-size: 0.875rem;
-  }
-}
-
-.paperclip-mdxeditor-scope [class*="_iconButton_"],
-.paperclip-mdxeditor [class*="_iconButton_"] {
-  color: var(--baseText);
-}
-
-.paperclip-mdxeditor-scope [class*="_iconButton_"]:hover,
-.paperclip-mdxeditor [class*="_iconButton_"]:hover {
-  color: var(--baseTextContrast);
-}
-
-.paperclip-mdxeditor .mdxeditor-root-contenteditable {
-  min-height: 2.5rem;
-  padding: 0;
-  line-height: 1.5;
-}
-
-.paperclip-mdxeditor [class*="_contentEditable_"] {
-  padding: 0.375rem 0.625rem !important;
-}
-
-.paperclip-mdxeditor--borderless [class*="_contentEditable_"] {
-  padding: 0 !important;
-}
-
-.paperclip-mdxeditor [class*="_placeholder_"] {
-  font-size: inherit;
-  line-height: 1.5;
-  color: var(--muted-foreground);
-}
-
-.paperclip-mdxeditor-content {
-  font-size: inherit;
-  line-height: inherit;
-  color: inherit;
-}
-
 .paperclip-edit-in-place-content {
   font-size: 0.9375rem;
   line-height: 1.75rem;
 }
 
-.paperclip-mdxeditor-content > *:first-child {
-  margin-top: 0;
-}
-
-.paperclip-mdxeditor-content > *:last-child {
-  margin-bottom: 0;
-}
-
-.paperclip-mdxeditor-content p {
-  margin: 0;
-  line-height: inherit;
-}
-
-.paperclip-mdxeditor-content p + p {
-  margin-top: 1.1em;
-}
-
-.paperclip-mdxeditor-content
-  a:not(.paperclip-mention-chip):not(.paperclip-project-mention-chip) {
-  color: color-mix(in oklab, var(--foreground) 76%, #0969da 24%);
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
-  cursor: pointer;
-}
-
-.dark
-  .paperclip-mdxeditor-content
-  a:not(.paperclip-mention-chip):not(.paperclip-project-mention-chip) {
-  color: color-mix(in oklab, var(--foreground) 80%, #58a6ff 20%);
-}
-
-.paperclip-mdxeditor-content a.paperclip-mention-chip,
-.paperclip-mdxeditor-content a.paperclip-project-mention-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin: 0 0.1rem;
-  padding: 0 0.625rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 0.75rem;
-  line-height: 1.25;
-  text-decoration: none;
-  vertical-align: middle;
-  position: relative;
-  top: -1px;
-  white-space: nowrap;
-  user-select: none;
-}
-
-/* Strip the MDXEditor's default inline-code styling from the text inside chips
-   (the link label otherwise picks up a monospace font + gray tint). */
-.paperclip-mdxeditor-content a.paperclip-mention-chip code,
-.paperclip-mdxeditor-content a.paperclip-project-mention-chip code {
-  font-family: inherit;
-  background: none;
-  color: inherit;
-  padding: 0;
-}
-
-.paperclip-mdxeditor-content a.paperclip-mention-chip::before,
-a.paperclip-mention-chip::before {
-  content: "";
-  flex: none;
-}
-
-.paperclip-mdxeditor-content
-  a.paperclip-mention-chip[data-mention-kind="project"]::before,
-a.paperclip-mention-chip[data-mention-kind="project"]::before {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 999px;
-  background-color: var(--paperclip-mention-project-color, currentColor);
-}
-
-.paperclip-mdxeditor-content
-  a.paperclip-mention-chip[data-mention-kind="agent"]::before,
-a.paperclip-mention-chip[data-mention-kind="agent"]::before {
-  width: 0.75rem;
-  height: 0.75rem;
-  background-color: currentColor;
-  -webkit-mask-image: var(--paperclip-mention-icon-mask);
-  mask-image: var(--paperclip-mention-icon-mask);
-  -webkit-mask-position: center;
-  mask-position: center;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: contain;
-  mask-size: contain;
-}
-
-.paperclip-mdxeditor-content ul,
-.paperclip-mdxeditor-content ol {
-  margin: 1.1em 0;
-  padding-left: 1.6em;
-}
-
-.paperclip-mdxeditor-content ul {
-  list-style: disc;
-}
-
-.paperclip-mdxeditor-content ol {
-  list-style: decimal;
-}
-
-.paperclip-mdxeditor-content li {
-  display: list-item;
-  margin: 0.3em 0;
-  line-height: inherit;
-}
-
-.paperclip-mdxeditor-content li::marker {
-  color: var(--muted-foreground);
-}
-
-.paperclip-mdxeditor-content h1 {
-  margin: 1.4em 0 0.9em;
-  font-size: 1.75em;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.paperclip-mdxeditor-content h2 {
-  margin: 1.3em 0 0.85em;
-  font-size: 1.35em;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.paperclip-mdxeditor-content h3 {
-  margin: 1.2em 0 0.8em;
-  font-size: 1.15em;
-  font-weight: 600;
-  line-height: 1.35;
-}
-
-.paperclip-mdxeditor-content img {
-  max-height: 18rem;
-  border-radius: calc(var(--radius) - 2px);
-}
-
-.paperclip-mdxeditor-content blockquote {
-  margin: 1.2em 0;
-  padding-left: 1em;
-  border-left: 3px solid var(--border);
-  color: var(--muted-foreground);
-  line-height: inherit;
-}
-
-.paperclip-mdxeditor-content code {
-  font-family: var(--font-mono);
-  font-size: 1em;
-}
-
-.paperclip-mdxeditor-content pre {
-  margin: 0.4rem 0;
-  padding: 0;
-  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
-  border-radius: calc(var(--radius) - 3px);
-  background: #1e1e2e;
-  color: #cdd6f4;
-  overflow-x: auto;
-}
-
-/* Dark theme for CodeMirror code blocks inside the MDXEditor.
-   Overrides the default cm6-theme-basic-light that MDXEditor bundles. */
-.paperclip-mdxeditor .cm-editor {
-  background-color: #1e1e2e !important;
-  color: #cdd6f4 !important;
-  font-size: 1em;
-}
-
-.paperclip-mdxeditor .cm-gutters {
-  background-color: #181825 !important;
-  color: #585b70 !important;
-  border-right: 1px solid #313244 !important;
-}
-
-.paperclip-mdxeditor .cm-activeLineGutter {
-  background-color: #1e1e2e !important;
-}
-
-.paperclip-mdxeditor .cm-activeLine {
-  background-color: color-mix(in oklab, #cdd6f4 5%, transparent) !important;
-}
-
-.paperclip-mdxeditor .cm-cursor,
-.paperclip-mdxeditor .cm-dropCursor {
-  border-left-color: #cdd6f4 !important;
-}
-
-.paperclip-mdxeditor .cm-selectionBackground {
-  background-color: color-mix(in oklab, #89b4fa 25%, transparent) !important;
-}
-
-.paperclip-mdxeditor .cm-focused .cm-selectionBackground {
-  background-color: color-mix(in oklab, #89b4fa 30%, transparent) !important;
-}
-
-.paperclip-mdxeditor .cm-content {
-  caret-color: #cdd6f4;
-}
-
-/* MDXEditor code block language selector – show on hover only */
-.paperclip-mdxeditor-content [class*="_codeMirrorWrapper_"] {
-  position: relative;
-}
-
-.paperclip-mdxeditor-content [class*="_codeMirrorToolbar_"],
-.paperclip-mdxeditor-content [class*="_codeBlockToolbar_"] {
-  position: absolute;
-  top: 0.25rem;
-  right: 0.25rem;
-  z-index: 2;
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
-
-.paperclip-mdxeditor-content [class*="_codeMirrorToolbar_"] select,
-.paperclip-mdxeditor-content [class*="_codeBlockToolbar_"] select {
-  background-color: #313244;
-  color: #cdd6f4;
-  border-color: #45475a;
-}
-
-.paperclip-mdxeditor-content
-  [class*="_codeMirrorWrapper_"]:hover
-  [class*="_codeMirrorToolbar_"],
-.paperclip-mdxeditor-content
-  [class*="_codeMirrorWrapper_"]:hover
-  [class*="_codeBlockToolbar_"],
-.paperclip-mdxeditor-content
-  [class*="_codeMirrorWrapper_"]:focus-within
-  [class*="_codeMirrorToolbar_"],
-.paperclip-mdxeditor-content
-  [class*="_codeMirrorWrapper_"]:focus-within
-  [class*="_codeBlockToolbar_"] {
-  opacity: 1;
-}
-
-/* Rendered markdown code blocks & inline code (prose/MarkdownBody context).
-   Dark theme code blocks with compact sizing.
-   Override prose CSS variables so prose-invert can't revert to defaults. */
-.paperclip-markdown {
-  --tw-prose-pre-bg: #1e1e2e;
-  --tw-prose-pre-code: #cdd6f4;
-  --tw-prose-invert-pre-bg: #1e1e2e;
-  --tw-prose-invert-pre-code: #cdd6f4;
-}
-
-.paperclip-markdown pre {
-  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent) !important;
-  border-radius: calc(var(--radius) - 3px) !important;
-  background-color: #1e1e2e !important;
-  color: #cdd6f4 !important;
-  padding: 0.5rem 0.65rem !important;
-  margin: 0.4rem 0 !important;
-  font-size: 1em !important;
-  overflow-x: auto;
-  white-space: pre;
-}
-
-.paperclip-markdown code {
-  font-family: var(--font-mono);
-  font-size: 1em;
-}
-
-.paperclip-markdown pre code {
-  font-size: inherit;
-  color: inherit;
-  background: none;
-}
-
-.paperclip-markdown-codeblock {
-  position: relative;
+.paperclip-markdown-codeblock[data-wrap-lines="true"] pre,
+.paperclip-markdown-codeblock[data-wrap-lines="true"] code {
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Remove backtick pseudo-elements from inline code (prose default adds them) */
@@ -923,27 +560,11 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   --tw-prose-invert-bullets: currentColor;
   --tw-prose-invert-hr: color-mix(in oklab, currentColor 24%, transparent);
   --tw-prose-invert-quotes: currentColor;
-  --tw-prose-invert-quote-borders: color-mix(
-    in oklab,
-    currentColor 56%,
-    transparent
-  );
-  --tw-prose-invert-captions: color-mix(
-    in oklab,
-    currentColor 84%,
-    transparent
-  );
+  --tw-prose-invert-quote-borders: color-mix(in oklab, currentColor 56%, transparent);
+  --tw-prose-invert-captions: color-mix(in oklab, currentColor 84%, transparent);
   --tw-prose-invert-code: currentColor;
-  --tw-prose-invert-th-borders: color-mix(
-    in oklab,
-    currentColor 34%,
-    transparent
-  );
-  --tw-prose-invert-td-borders: color-mix(
-    in oklab,
-    currentColor 22%,
-    transparent
-  );
+  --tw-prose-invert-th-borders: color-mix(in oklab, currentColor 34%, transparent);
+  --tw-prose-invert-td-borders: color-mix(in oklab, currentColor 22%, transparent);
 }
 
 .paperclip-markdown > :first-child {
@@ -954,8 +575,7 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   margin-bottom: 0;
 }
 
-.paperclip-markdown
-  :where(p, ul, ol, blockquote, pre, [data-slot="table-container"]) {
+.paperclip-markdown :where(p, ul, ol, blockquote, pre, [data-slot="table-container"]) {
   margin-top: 0.7rem;
   margin-bottom: 0.7rem;
 }
@@ -1021,8 +641,7 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   font-size: 0.95rem;
 }
 
-.paperclip-markdown.paperclip-markdown-on-accent
-  :where(h1, h2, h3, h4, strong, b) {
+.paperclip-markdown.paperclip-markdown-on-accent :where(h1, h2, h3, h4, strong, b) {
   color: currentColor;
 }
 
@@ -1043,8 +662,7 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   text-decoration-color: color-mix(in oklab, currentColor 72%, transparent);
 }
 
-.paperclip-markdown.paperclip-markdown-on-accent
-  :where(a:hover, a:focus-visible) {
+.paperclip-markdown.paperclip-markdown-on-accent :where(a:hover, a:focus-visible) {
   color: currentColor;
   text-decoration-color: currentColor;
 }
@@ -1076,8 +694,7 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
 .paperclip-markdown blockquote {
   margin-left: 0;
   padding-left: 0.95rem;
-  border-left: 0.24rem solid
-    color-mix(in oklab, var(--border) 84%, var(--muted-foreground) 16%);
+  border-left: 0.24rem solid color-mix(in oklab, var(--border) 84%, var(--muted-foreground) 16%);
   color: var(--muted-foreground);
 }
 
@@ -1100,8 +717,7 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
 
 .paperclip-markdown img {
   border-radius: calc(var(--radius) + 2px);
-  box-shadow: inset 0 0 0 1px
-    color-mix(in oklab, var(--foreground) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--foreground) 10%, transparent);
 }
 
 .paperclip-markdown th {
@@ -1151,6 +767,32 @@ span.paperclip-project-mention-chip {
   white-space: nowrap;
 }
 
+:is(a, span).paperclip-mention-chip::before {
+  content: "";
+  flex: none;
+}
+
+:is(a, span).paperclip-mention-chip[data-mention-kind="project"]::before {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background-color: var(--paperclip-mention-project-color, currentColor);
+}
+
+:is(a, span).paperclip-mention-chip[data-mention-kind="agent"]::before {
+  width: 0.75rem;
+  height: 0.75rem;
+  background-color: currentColor;
+  -webkit-mask-image: var(--paperclip-mention-icon-mask);
+  mask-image: var(--paperclip-mention-icon-mask);
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
 /* Touch target floor: WCAG 2.5.5 expects ≥24px on coarse pointers. The base
    chip is 22px; bump it on touch viewports without disturbing inline metrics. */
 @media (pointer: coarse) {
@@ -1175,25 +817,6 @@ span.paperclip-project-mention-chip {
   font-size: inherit;
 }
 
-/* Keep MDXEditor popups above app dialogs, even when they portal to <body>. */
-[class*="_popupContainer_"] {
-  z-index: 81 !important;
-}
-
-[class*="_dialogOverlay_"] {
-  z-index: 80;
-}
-
-[class*="_dialogContent_"],
-[class*="_largeDialogContent_"],
-[class*="_popoverContent_"],
-[class*="_linkDialogPopoverContent_"],
-[class*="_tableColumnEditorPopoverContent_"],
-[class*="_toolbarButtonDropdownContainer_"],
-[class*="_toolbarNodeKindSelectContainer_"] {
-  z-index: 81 !important;
-}
-
 /* ── Extracted verbatim tokens (Phase 2, design/token-extraction) ── */
 /* Batch 1/4: color literals only. Reused-from-existing-token sites (see
    TOKEN-AUDIT.md section 1.1) are NOT duplicated here — they reference
@@ -1202,51 +825,12 @@ span.paperclip-project-mention-chip {
    Allowlist (sites intentionally left as hardcoded / functional literals,
    NOT converted to tokens — each also carries an inline
    `token-extraction: allowlisted` comment at the site):
-   - routes/_authenticated/$companyId/company/settings/index.tsx — <input type="color"> value; functional form control, not a rendered value.
-   - components/task-properties/TaskProperties.tsx (newLabelColor) — color-picker seed persisted into label-create payload.
+   - components/task-properties/useTaskPropertiesState.ts (newLabelColor) — color-picker seed persisted into label-create payload.
    - components/TaskColumns.tsx (accentColor fallback) — also feeds pickTextColorForPillBg() contrast math.
-   - components/CompanyPatternIcon.tsx — canvas fillStyle computed at runtime from numeric props, not a static literal.
 */
 :root {
-  --hex-1d1d1d: #1d1d1d; /* OnboardingWizard.tsx dark decorative panel background, singleton. */
-  --hex-facc15: #facc15; /* OrgChart.tsx agent status dot — 'paused' / 'idle' (shared value). */
-  --hex-f87171: #f87171; /* OrgChart.tsx agent status dot — 'error'. */
-  --hex-a3a3a3: #a3a3a3; /* OrgChart.tsx agent status dot — 'terminated' + defaultDotColor fallback. */
-  --hex-ef4444: #ef4444; /* ActivityCharts.tsx — priority 'critical'; also the <0.5 success-rate bar tint and the run-activity 'failed' segment. (Chart STATUS hues re-pointed at --status-task-* in DECISION-SHEET.md B5; priority/success series stay independent.) */
-  --hex-f97316: #f97316; /* ActivityCharts.tsx — priority 'high'. */
-  --hex-eab308: #eab308; /* ActivityCharts.tsx — priority 'medium'; also the 0.5-0.8 success-rate bar tint. */
-  --hex-6b7280: #6b7280; /* ActivityCharts.tsx — priority 'low' + unknown-status statusColors fallback. */
-  --hex-10b981: #10b981; /* ActivityCharts.tsx — >=0.8 success-rate bar tint; also the run-activity 'succeeded' segment. */
-  --hex-737373: #737373; /* ActivityCharts.tsx — run activity 'other' segment tint. */
   --project-none: #64748b; /* Semantic rename of --hex-64748b (DECISION-SHEET.md A3, value unchanged). 'No project assigned' muted-slate fallback (TOKEN-AUDIT.md 1.3) across Routines/MarkdownEditor/RoutineRunVariablesDialog/RoutineList/TaskColumns/editable-sections; also ActivityCharts.tsx status 'backlog'. */
   --project-seed: #6366f1; /* Semantic rename of --hex-6366f1 (DECISION-SHEET.md A3, value unchanged). Project-color fallback indigo seed for project pickers. */
-  --liveness-blue: #2563eb; /* DECISION-SHEET.md A6: TaskChatThread.tsx human-message 'liveness blue' bubble (PAP-95 rev 5). Same value as --status-task-in_progress by coincidence, decoupled on purpose so a future status-hue change doesn't drag the chat bubble along. */
-  --gradient-extract-1: linear-gradient(
-    180deg,
-    rgba(255, 80, 80, 0.12),
-    rgba(255, 255, 255, 0.02)
-  ); /* Dashboard.tsx budget-alert card gradient. */
-  --gradient-extract-2: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.05),
-    rgba(255, 255, 255, 0.02)
-  ); /* Costs.tsx subtle white card gradient. */
-  --gradient-extract-4: linear-gradient(
-    180deg,
-    rgba(255, 70, 70, 0.1),
-    rgba(255, 255, 255, 0.02)
-  ); /* BudgetIncidentCard.tsx incident-card gradient. */
-  --gradient-extract-7:
-    radial-gradient(
-      circle at top right,
-      rgba(255, 255, 255, 0.22),
-      transparent 34%
-    ),
-    radial-gradient(
-      circle at bottom left,
-      rgba(255, 255, 255, 0.08),
-      transparent 36%
-    ); /* ProfileSettings.tsx:162 decorative overlay. */
 }
 
 /* ── Extracted verbatim TYPE tokens (Phase 2 Batch 2, design/token-extraction) ── */
@@ -1304,16 +888,6 @@ span.paperclip-project-mention-chip {
      for the full site list).
 */
 :root {
-  --sz-320px: 320px; /* Extracted from apps/ui/src/components/ActiveAgentsPanel.tsx (h-[320px]). */
-  --sz-3px: 3px; /* Extracted from apps/ui/src/components/ActivityCharts.tsx (gap-[3px]). */
-  --sz-8rem: 8rem; /* Shared menu minimum width. */
-  --sz-calc-27: calc(100% - 1px); /* Tabs trigger height. */
-  --sz-neg-5px: -5px; /* Tabs line-indicator offset. */
-  --sz-calc-28: calc(-50% - 2px); /* Tooltip arrow offset. */
-  --sz-switch-height: 1.15rem; /* Default switch track height. */
-  --sz-switch-thumb-checked: calc(
-    100% - 2px
-  ); /* Checked switch thumb offset. */
   --sz-18px: 18px; /* Shared compact icon size. */
   --sz-44px: 44px; /* Extracted from apps/ui/src/components/AgentConfigForm.tsx (min-h-[44px]). */
   --sz-88px: 88px; /* Extracted from apps/ui/src/components/AgentConfigForm.tsx (min-h-[88px]). */
@@ -1360,38 +934,21 @@ span.paperclip-project-mention-chip {
   --sz-calc-14: calc(
     5rem + env(safe-area-inset-bottom)
   ); /* Extracted from apps/ui/src/components/Layout.tsx (pb-[calc(5rem+env(safe-area-inset-bottom))]). */
-  --sz-208px: 208px; /* Extracted from apps/ui/src/components/MarkdownEditor.test.tsx (max-h-[208px]). */
-  --sz-180px: 180px; /* Extracted from apps/ui/src/components/MarkdownEditor.tsx (min-w-[180px]). */
-  --sz-calc-15: calc(
-    100vw - 16px
-  ); /* Extracted from apps/ui/src/components/MarkdownEditor.tsx (max-w-[calc(100vw-16px)]). */
   --sz-66px: 66px; /* Extracted from apps/ui/src/components/MembershipAction.tsx (w-[66px]). */
   --sz-safe-bottom: env(
     safe-area-inset-bottom
   ); /* Extracted from apps/ui/src/components/MobileBottomNav.tsx (pb-[env(safe-area-inset-bottom)]). */
-  --sz-calc-16: min(
-    calc(100dvh - 2rem),
-    46rem
-  ); /* Extracted from apps/ui/src/components/NewAgentDialog.tsx (max-h-[min(calc(100dvh-2rem),46rem)]). */
   --sz-24rem: 24rem; /* Extracted from apps/ui/src/components/NewAgentDialog.tsx (h-[24rem]). */
   --sz-50vh: 50vh; /* Extracted from apps/ui/src/components/NewGoalDialog.tsx (max-h-[50vh]). */
   --sz-8_5rem: 8.5rem; /* Extracted from apps/ui/src/components/NewTaskDialog.tsx (min-w-[8.5rem]). */
   --sz-160px: 160px; /* Extracted from apps/ui/src/components/NewProjectDialog.tsx (max-w-[160px]). */
   --sz-80px: 80px; /* Extracted from apps/ui/src/components/OnboardingWizard.tsx (min-h-[80px]). */
   --sz-calc-18: calc(100dvh - 2rem); /* Used by full-height dialogs. */
-  --sz-calc-19: calc(
-    1rem + env(safe-area-inset-bottom)
-  ); /* Used by RoutineRunVariablesDialog. */
+  --sz-calc-19: calc(1rem + env(safe-area-inset-bottom)); /* Used by RoutineRunVariablesDialog. */
   --sz-calc-20: min(
     calc(100dvh - 2rem),
     42rem
   ); /* Extracted from apps/ui/src/components/RoutineRunVariablesDialog.tsx (max-h-[min(calc(100dvh-2rem),42rem)]). */
-  --sz-calc-21: calc(
-    1.5rem + 5rem + env(safe-area-inset-bottom)
-  ); /* Extracted from apps/ui/src/components/ScrollToBottom.tsx (bottom-[calc(1.5rem+5rem+env(safe-area-inset-bottom))]). */
-  --sz-calc-22: calc(
-    320px + 1.5rem
-  ); /* Extracted from apps/ui/src/components/ScrollToBottom.tsx (right-[calc(320px+1.5rem)]). */
   --sz-calc-23: min(
     32rem,
     calc(100vw - 2rem)
@@ -1405,7 +962,6 @@ span.paperclip-project-mention-chip {
   --sz-34px: 34px; /* Extracted from apps/ui/src/components/environment-variables-editor/SecretPicker.tsx (h-[34px]). */
   --sz-11rem: 11rem; /* Extracted from apps/ui/src/components/task-properties/TaskProperties.tsx (min-w-[11rem]). */
   --sz-32rem: 32rem; /* Extracted from apps/ui/src/components/task-properties/TaskProperties.tsx (w-[32rem]). */
-  --sz-280px: 280px; /* Extracted from apps/ui/src/components/timeline/WorkTimelineChart.tsx (max-w-[280px]). */
   --sz-420px: 420px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/agents/$agentId/index.tsx (min-h-[420px]). */
   --sz-7rem: 7rem; /* Used by agent and company-import labels. */
   --sz-560px: 560px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/export/index.tsx (min-h-[560px]). */
@@ -1417,7 +973,6 @@ span.paperclip-project-mention-chip {
   --sz-calc-31: calc(
     100vh - 16rem
   ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/import/index.tsx (h-[calc(100vh-16rem)]). */
-  --sz-170px: 170px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/inbox/index.tsx (w-[170px]). */
   --sz-calc-37: min(
     100%,
     22rem
@@ -1438,28 +993,13 @@ span.paperclip-project-mention-chip {
   ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/secrets/index.tsx (max-h-[min(80vh,34rem)]). */
   --rad-3: 3px; /* Shared focus-ring width. */
   --rad-4: 4px; /* Extracted from apps/ui/src/components/TaskChatThread.tsx (rounded-br-[4px]). */
-  --rad-2: 2px; /* Extracted from apps/ui/src/components/SidebarCompanyMenu.tsx (ring-[2px]). */
-  --rad-14: 14px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/index.tsx (rounded-[14px]). */
-  --rad-28: 28px; /* Used by ProfileSettings cards. */
-  --rad-24: 24px; /* Used by ProfileSettings content. */
   --pct-90: 90%; /* Extracted from apps/ui/src/components/DocumentDiffModal.tsx (max-w-[90%]). */
-  --pct-50: 50%; /* Extracted from apps/ui/src/components/ImageGalleryModal.tsx (max-w-[50%]). */
   --pct-85: 85%; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (max-w-[85%]). */
   --pct-72: 72%; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx (w-[72%]). */
-  --shadow-extract-1: 0 16px 40px rgba(37, 99, 235, 0.08); /* ActiveAgentsPanel.tsx live-box glow. Gallery feedback r2: liveness glow recolored cyan->status blue (value edit, site unchanged; originally extracted as rgba(6,182,212,0.08)). */
-  --shadow-extract-2: 0 20px 80px -40px rgba(0, 0, 0, 0.55); /* Extracted from apps/ui/src/components/BudgetPolicyCard.tsx (shadow-[0_20px_80px_-40px_rgba(0,0,0,0.55)]). */
   --shadow-extract-4: 0 -12px 28px rgba(15, 23, 42, 0.08);
   --shadow-extract-5: 0 -12px 28px rgba(0, 0, 0, 0.28);
   --shadow-extract-6: 0 0 0 1px var(--color-background); /* Extracted from apps/ui/src/components/DocumentAnnotationLayer.tsx (shadow-[0_0_0_1px_var(--color-background)]). */
-  --shadow-extract-7:
-    0 -12px 28px rgba(15, 23, 42, 0.08), 0 0 0 1px hsl(var(--primary) / 0.16); /* Extracted from apps/ui/src/components/TaskChatThread.tsx (shadow-[0_-12px_28px_rgba(15,23,42,0.08),0_0_0_1px_hsl(var(--primary)/0.16)]). */
-  --shadow-extract-8: 0 1px 0 rgba(15, 23, 42, 0.02); /* Shared inset card shadow. */
   --shadow-extract-10: 0 1px 0 1px hsl(var(--border)); /* Extracted from apps/ui/src/components/KeyboardShortcutsCheatsheet.tsx (shadow-[0_1px_0_1px_hsl(var(--border))]). */
-  --shadow-extract-11: 0 18px 50px rgba(37, 99, 235, 0.08); /* LiveRunWidget.tsx glow. Gallery feedback r2: liveness glow recolored cyan->status blue (value edit, site unchanged; originally extracted as rgba(6,182,212,0.08)). */
-  --shadow-extract-12: 0 0 0 2px hsl(var(--background)); /* Extracted from apps/ui/src/components/SidebarNavItem.tsx (shadow-[0_0_0_2px_hsl(var(--background))]). */
-  --shadow-extract-13: 0 0 0 3px rgba(245, 158, 11, 0.18); /* Extracted from apps/ui/src/components/environment-variables-editor/index.tsx (shadow-[0_0_0_3px_rgba(245,158,11,0.18)]). */
-  --shadow-extract-14: 0 0 12px rgba(37, 99, 235, 0.08); /* AgentDetail.tsx live-card glow. Gallery feedback r2: liveness glow recolored cyan->status blue (value edit, site unchanged; originally extracted as rgba(6,182,212,0.08)). */
-  --shadow-extract-18: 0 18px 44px -28px rgba(0, 0, 0, 0.45); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/instance/profile/index.tsx (shadow-[0_18px_44px_-28px_rgba(0,0,0,0.45)]). */
 }
 
 /* ── Extracted verbatim MISC tokens (Phase 2 Batch 4, design/token-extraction) ── */
@@ -1499,72 +1039,25 @@ span.paperclip-project-mention-chip {
    allow apps/ui/src/components/ui/alert-dialog.tsx — same tw-animate-css dead-class situation as dialog.tsx
 */
 :root {
-  --gtc-1: 56px 56px 24px minmax(0, 1fr); /* Extracted from apps/ui/src/components/DocumentDiffModal.tsx (grid-cols-[56px_56px_24px_minmax(0,1fr)]). */
-  --gtc-2: auto minmax(0, 1fr) 2.25rem; /* Extracted from apps/ui/src/components/FileTree.tsx (grid-cols-[auto_minmax(0,1fr)_2.25rem]). */
-  --gtc-3: minmax(0, 1fr) 2.25rem; /* Extracted from apps/ui/src/components/FileTree.tsx (grid-cols-[minmax(0,1fr)_2.25rem]). */
-  --gtc-4: minmax(
-    0,
-    1fr
-  ); /* Extracted from apps/ui/src/components/FileTree.tsx (grid-cols-[minmax(0,1fr)]). */
-  --gtc-5: auto minmax(0, 1fr); /* Shared metadata grid. */
   --gtc-8: 7.5rem 1fr; /* Shared metadata grid. */
   --gtc-9: 300px minmax(0, 1fr); /* Extracted from apps/ui/src/components/RoutineHistoryTab.tsx (grid-cols-[300px_minmax(0,1fr)]). */
   --gtc-13: minmax(0, 1fr) auto; /* Extracted from apps/ui/src/components/environment-variables-editor/Row.tsx (grid-cols-[minmax(0,1fr)_auto]). */
   --gtc-14: minmax(160px, 2fr) minmax(240px, 3fr) 32px; /* Extracted from apps/ui/src/components/environment-variables-editor/Row.tsx (grid-cols-[minmax(160px,2fr)_minmax(240px,3fr)_32px]). */
-  --gtc-17: 1fr auto; /* Extracted from apps/ui/src/components/ui/card.tsx (grid-cols-[1fr_auto]). */
-  --gtc-24: minmax(0, 1.5fr) 120px 120px 180px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/members/index.tsx (grid-cols-[minmax(0,1.5fr)_120px_120px_180px]). */
   --gtc-25: 19rem minmax(0, 1fr); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/export/index.tsx (grid-cols-[19rem_minmax(0,1fr)]). */
   --gtc-34: 320px minmax(0, 1fr); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/instance/access/index.tsx (grid-cols-[320px_minmax(0,1fr)]). */
   --gtc-36: minmax(0, 1.15fr) minmax(360px, 0.85fr); /* Extracted from apps/ui/src/routes/invite/$token/index.tsx (grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]). */
   --gtc-39: minmax(0, 1.2fr) 320px; /* Used by PluginSettings. */
   --gtc-52: minmax(0, 1.4fr) minmax(220px, 0.8fr); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/index.tsx (grid-cols-[minmax(0,1.4fr)_minmax(220px,0.8fr)]). */
-  --gtc-54: minmax(12rem, 2.4fr) minmax(5.25rem, 0.75fr) minmax(7rem, 1fr)
-    minmax(5rem, 0.7fr) 2.75rem; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/secrets/index.tsx (grid-cols-[minmax(12rem,2.4fr)_minmax(5.25rem,0.75fr)_minmax(7rem,1fr)_minmax(5rem,0.7fr)_2.75rem]). */
-  --gtc-55: 8rem minmax(0, 1fr); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/secrets/index.tsx (grid-cols-[8rem_minmax(0,1fr)]). */
-  --gtc-57: repeat(
-    14,
-    minmax(0, 1fr)
-  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/u/$userId/index.tsx (grid-cols-[repeat(14,minmax(0,1fr))]). */
-  --gtc-58: auto 1fr auto; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/u/$userId/index.tsx (grid-cols-[auto_1fr_auto]). */
-  --tp-width-background-color:
-    width, background-color; /* Extracted from apps/ui/src/components/BudgetPolicyCard.tsx (transition-[width,background-color]). */
   --tp-width: width; /* Used by OnboardingWizard. */
-  --tp-background-color-color-opacity:
-    background-color, color, opacity; /* Extracted from apps/ui/src/components/FileTree.tsx (transition-[background-color,color,opacity]). */
   --tp-max-height: max-height; /* Extracted from apps/ui/src/components/FoldCurtain.tsx (transition-[max-height]). */
   --tp-border-color-background-color-box-shadow:
     border-color, background-color, box-shadow; /* Extracted from apps/ui/src/components/TaskChatThread.tsx (transition-[border-color,background-color,box-shadow]). */
-  --tp-width-opacity:
-    width, opacity; /* Extracted from apps/ui/src/components/OnboardingWizard.tsx (transition-[width,opacity]). */
-  --tp-background-color-right:
-    background-color, right; /* Extracted from apps/ui/src/components/ScrollToBottom.tsx (transition-[background-color,right]). */
-  --tp-background-color-border-color-color:
-    background-color, border-color, color; /* Extracted from apps/ui/src/components/SystemNotice.tsx (transition-[background-color,border-color,color]). */
-  --tp-border-color-background-color:
-    border-color, background-color; /* Extracted from apps/ui/src/components/ui/radio-card.tsx (transition-[border-color,background-color]). */
-  --tp-color-background-color-border-color-box-shadow:
-    color, background-color, border-color, box-shadow; /* Extracted from apps/ui/src/components/ui/tabs.tsx (transition-[color,background-color,border-color,box-shadow]). */
-  --tp-box-shadow-border-color:
-    box-shadow, border-color; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/org/index.tsx (transition-[box-shadow,border-color]). */
-  --tp-box-shadow: box-shadow; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/projects/$projectId/index.tsx (transition-[box-shadow]). */
-  --tp-transform-box-shadow:
-    transform, box-shadow; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/projects/$projectId/index.tsx (transition-[transform,box-shadow]). */
   --z-2: 2; /* Extracted from apps/ui/src/components/DocumentAnnotationLayer.tsx (z-[2]). */
   --z-60: 60; /* Extracted from apps/ui/src/components/DocumentAnnotationPanel.tsx (z-[60]). */
   --z-1: 1; /* Extracted from apps/ui/src/components/TaskDocumentAnnotations.tsx (z-[1]). */
   --z-200: 200; /* Extracted from apps/ui/src/components/Layout.tsx (z-[200]). */
-  --z-9999: 9999; /* Extracted from apps/ui/src/components/MarkdownEditor.tsx (z-[9999]). */
   --s-0_98: 0.98; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/inbox/index.tsx (scale-[0.98]). */
   --va-0_125em: -0.125em; /* Shared inline-icon alignment. */
-  --sw-2_3: 2.3; /* Extracted from apps/ui/src/components/MobileBottomNav.tsx (stroke-[2.3]). */
-  --blur-2px: 2px; /* Extracted from apps/ui/src/components/TaskChatThread.tsx (backdrop-blur-[2px]). */
-  --drop-shadow-extract-1: 0 1px 2px rgba(0, 0, 0, 0.65); /* Extracted from apps/ui/src/components/CompanyPatternIcon.tsx (drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]). */
-  --gradient-extract-26: linear-gradient(
-    135deg,
-    hsl(var(--primary)) 0%,
-    hsl(var(--accent)) 58%,
-    color-mix(in oklab, hsl(var(--background)) 76%, white 24%) 100%
-  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/instance/profile/index.tsx (bg-[linear-gradient(135deg,hsl(var(--primary))_0%,hsl(var(--accent))_58%,color-mix(in_oklab,hsl(var(--background))_76%,white_24%)_100%)]). */
 }
 
 /* ── ALLOWLIST (Phase 2, design/token-extraction) ──────────────────────────
@@ -1592,14 +1085,11 @@ span.paperclip-project-mention-chip {
    A path may appear more than once if it has more than one distinct
    allowlisted concern. Paths are matched by the gate script as a substring
    of the file being checked (repo-relative, POSIX-style).
-   * allow apps/ui/src/routes/_authenticated/$companyId/company/settings/index.tsx — <input type="color"> value; the DOM color-picker control requires a real hex string
-   * allow apps/ui/src/components/task-properties/TaskProperties.tsx — newLabelColor color-picker seed state persisted into the label-create payload sent to the backend; a var() string would corrupt that payload
    * allow apps/ui/src/components/task-properties/useTaskPropertiesState.ts — extracted home of the same newLabelColor color-picker seed state; the persisted API payload still requires a real hex string
    * allow apps/ui/src/components/TaskColumns.tsx — accentColor fallback also feeds pickTextColorForPillBg() contrast math (lib/color-contrast.ts), which needs a real hex string to compute luminance
    * allow apps/ui/src/components/ui/scroll-area.tsx — rounded-[inherit] is a CSS keyword, not a literal value; nothing to extract
    * allow apps/ui/src/components/ui/dialog.tsx — tw-animate-css plugin utilities (zoom-in-[0.97], zoom-out-[0.97], slide-in-from-top-[1%], slide-out-to-top-[1%], animate-in, animate-out, fade-in-0, fade-out-0) are dead/no-op classes today (the tw-animate-css plugin is not installed and no matching @utility exists in this file; confirmed via grep of the built storybook-static CSS — none of these class names emit any rule); nothing to tokenize without visually changing a currently-inert class
    * allow apps/ui/src/components/ui/alert-dialog.tsx — same tw-animate-css dead-class situation as dialog.tsx (zoom-out-[0.97], zoom-in-[0.97])
-   * allow apps/ui/src/components/FileTree.tsx — max-[480px]: arbitrary breakpoint variant (x2), same reasoning as min-[420px] above
 
    Test-fixture hex-literal policy (Batch 4, resolving TOKEN-AUDIT.md section
    8 item 10 "Needs human decision" for these specific sites): the following
@@ -1616,11 +1106,6 @@ span.paperclip-project-mention-chip {
    * allow apps/ui/src/components/TaskFiltersPopover.test.tsx — mock label color prop
    * allow apps/ui/src/components/TaskProperties.test.tsx — mock label/project color fixtures
    * allow apps/ui/src/components/MarkdownBody.test.tsx — mock project color fed through a mention-href builder
-   * allow apps/ui/src/components/MarkdownEditor.test.tsx — mock projectColor mention fixture
-   * allow apps/ui/src/components/MarkdownEditor.dropzone-and-menu-position.test.tsx — focused split of MarkdownEditor.test.tsx retaining the same mock projectColor mention fixture
-   * allow apps/ui/src/components/MarkdownEditor.markdown-editor-02.test.tsx — focused split of MarkdownEditor.test.tsx retaining the same mock projectColor mention fixture
-   * allow apps/ui/src/components/MarkdownEditor.test-support.tsx — shared support for the focused MarkdownEditor splits retaining the same mock projectColor mention fixture
-   * allow apps/ui/src/components/MarkdownEditor.value-sync-and-fallbacks.test.tsx — focused split of MarkdownEditor.test.tsx retaining the same mock projectColor mention fixture
    * allow apps/ui/src/components/NewTaskDialog.test.tsx — mock brandColor/label color fixtures
    * allow apps/ui/src/components/ProjectTile.test.tsx — mock project color prop
    * allow apps/ui/src/components/RoutineRunVariablesDialog.test.tsx — mock label color fixture

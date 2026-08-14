@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { AlertCircle } from "lucide-react";
+import { CodeBlockPanel } from "@/components/patterns/CodeBlockPanel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -61,9 +62,7 @@ export function MermaidDiagramBlock({ source, darkMode }: { source: string; dark
       <AlertTitle>{error ? "Unable to render Mermaid diagram" : "Rendering diagram"}</AlertTitle>
       <AlertDescription>
         {error ? <p>{error}</p> : null}
-        <pre className="overflow-x-auto whitespace-pre-wrap text-xs">
-          <code className="language-mermaid">{source}</code>
-        </pre>
+        <CodeBlockPanel code={source} filename="diagram.mmd" language="mermaid" bodyClassName="max-h-64" />
       </AlertDescription>
     </Alert>
   );

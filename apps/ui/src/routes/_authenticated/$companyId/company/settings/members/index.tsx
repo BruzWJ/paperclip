@@ -8,6 +8,7 @@ import {
 } from "@/components/company/CompanyMemberControls";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -20,7 +21,7 @@ import {
   ItemGroup,
   ItemTitle,
 } from "@/components/ui/item";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
+import { useSettingsBreadcrumbs } from "@/hooks/useSettingsBreadcrumbs";
 import { useCompany } from "@/context/CompanyContext";
 import { toast } from "sonner";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
@@ -28,7 +29,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { Spinner } from "@/components/ui/spinner";
 import { USER_COMPANY_MEMBERSHIP_ROLE_LABELS } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { ShieldCheck, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -39,34 +40,16 @@ export const Route = createFileRoute("/_authenticated/$companyId/company/setting
 function CompanyAccess() {
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
-  const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [draftRole, setDraftRole] = useState<CompanyMember["membershipRole"]>("operator");
   const [draftStatus, setDraftStatus] = useState<EditableMemberStatus>("active");
 
-  useEffect(() => {
-    setBreadcrumbs([
-      {
-        label: selectedCompany?.name ?? "Company",
-        renderLink: (content) => (
-          <Link to="/$companyId/dashboard" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      { label: "Members" },
-    ]);
-  }, [companyId, selectedCompany?.name, setBreadcrumbs]);
+  useSettingsBreadcrumbs({
+    companyId,
+    page: "Members",
+  });
 
   const membersQuery = useQuery({
     queryKey: queryKeys.access.companyMembers(companyId),
@@ -329,17 +312,7 @@ function CompanyAccess() {
                         </ItemTitle>
                         <ItemDescription>{member.user?.email || member.principalId}</ItemDescription>
                       </ItemContent>
-                      <Badge
-                        variant={
-                          member.status === "active"
-                            ? "secondary"
-                            : member.status === "suspended"
-                              ? "destructive"
-                              : "outline"
-                        }
-                      >
-                        {member.status.replace("_", " ")}
-                      </Badge>
+                      <DomainStatus status={member.status}>{member.status.replace("_", " ")}</DomainStatus>
                       <ItemActions>
                         <Button size="sm" variant="outline" onClick={() => setEditingMemberId(member.id)}>
                           Edit

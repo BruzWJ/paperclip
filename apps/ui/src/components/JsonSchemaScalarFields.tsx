@@ -3,6 +3,7 @@ import { Field, FieldContent, FieldDescription, FieldError, FieldLabel } from "@
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import React, { useId } from "react";
 import { schemaFieldId } from "./JsonSchemaUtils";
 
@@ -97,13 +98,13 @@ export const EnumField = React.memo(
     };
 
     return (
-      <Field data-disabled={disabled || undefined}>
-        {label ? (
-          <FieldLabel>
-            {label}
-            {isRequired ? <span aria-hidden="true">*</span> : null}
-          </FieldLabel>
-        ) : null}
+      <LabeledFormField
+        data-disabled={disabled || undefined}
+        label={label || undefined}
+        requiredIndicator={isRequired}
+        description={description}
+        error={error}
+      >
         <Select value={selectValue} onValueChange={handleChange} disabled={disabled}>
           <SelectTrigger className="w-full" aria-label={label}>
             <SelectValue placeholder="Select an option" />
@@ -121,9 +122,7 @@ export const EnumField = React.memo(
             ))}
           </SelectContent>
         </Select>
-        <FieldDescription>{description}</FieldDescription>
-        <FieldError>{error}</FieldError>
-      </Field>
+      </LabeledFormField>
     );
   },
 );
@@ -167,13 +166,15 @@ export const NumberField = React.memo(
     // Sanitize the path-based id so it is a valid CSS/HTML identifier (paths can contain "/").
     const listId = hasSuggestions ? `${id.replace(/[^a-zA-Z0-9_-]/g, "-")}-suggestions` : undefined;
     return (
-      <Field data-disabled={disabled || undefined}>
-        {label ? (
-          <FieldLabel htmlFor={fieldId}>
-            {label}
-            {isRequired ? <span aria-hidden="true">*</span> : null}
-          </FieldLabel>
-        ) : null}
+      <LabeledFormField
+        data-disabled={disabled || undefined}
+        label={label || undefined}
+        labelFor={fieldId}
+        requiredIndicator={isRequired}
+        description={description}
+        error={error}
+        errorId={errorId}
+      >
         <Input
           id={fieldId}
           type="number"
@@ -200,9 +201,7 @@ export const NumberField = React.memo(
             ))}
           </datalist>
         ) : null}
-        <FieldDescription>{description}</FieldDescription>
-        <FieldError id={errorId}>{error}</FieldError>
-      </Field>
+      </LabeledFormField>
     );
   },
 );
@@ -240,13 +239,15 @@ export const StringField = React.memo(
     const fieldId = schemaFieldId(id);
     const isTextArea = format === "textarea" || (maxLength && maxLength > TEXTAREA_THRESHOLD);
     return (
-      <Field data-disabled={disabled || undefined}>
-        {label ? (
-          <FieldLabel htmlFor={fieldId}>
-            {label}
-            {isRequired ? <span aria-hidden="true">*</span> : null}
-          </FieldLabel>
-        ) : null}
+      <LabeledFormField
+        data-disabled={disabled || undefined}
+        label={label || undefined}
+        labelFor={fieldId}
+        requiredIndicator={isRequired}
+        description={description}
+        error={error}
+        errorId={errorId}
+      >
         {isTextArea ? (
           <Textarea
             id={fieldId}
@@ -272,9 +273,7 @@ export const StringField = React.memo(
             aria-describedby={error ? errorId : undefined}
           />
         )}
-        <FieldDescription>{description}</FieldDescription>
-        <FieldError id={errorId}>{error}</FieldError>
-      </Field>
+      </LabeledFormField>
     );
   },
 );

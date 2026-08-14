@@ -56,6 +56,8 @@ describe("RouteErrorBoundary", () => {
 
     expect(container.textContent).toContain("This page hit an error");
     expect(container.textContent).toContain("Maximum update depth exceeded");
+    expect(container.textContent).toContain("render-error.txt");
+    expect(container.querySelector('button[aria-label="Copy render-error.txt"]')).not.toBeNull();
     expect(container.querySelector("pre")).not.toBeNull();
 
     act(() => {

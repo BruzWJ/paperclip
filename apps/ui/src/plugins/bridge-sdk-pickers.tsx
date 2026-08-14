@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { OwnerPickerProps, ProjectPickerProps } from "@paperclipai/plugin-sdk/ui";
 
@@ -7,19 +6,11 @@ import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
 import { projectsApi } from "@/api/projects";
 import { AgentIcon } from "@/components/AgentIconPicker";
-import { Button } from "@/components/ui/button";
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { useProjectOrder } from "@/hooks/useProjectOrder";
-import {
-  ENTITY_NONE_VALUE,
-  entityOptionMatchesSearch,
-  type EntityOption,
-  useEntitySelectorState,
-} from "@/lib/entity-selector";
+import { type EntityOption } from "@/lib/entity-selector";
 import { queryKeys } from "@/lib/queryKeys";
 import { getRecentProjectIds, trackRecentProject } from "@/lib/recent-projects";
-import { cn } from "@/lib/utils";
 import { useHostContext } from "./bridge";
 
 export function PluginSdkOwnerPicker({
@@ -58,72 +49,37 @@ export function PluginSdkOwnerPicker({
     [eligibleAgents],
   );
   const selectedAgent = eligibleAgents.find((agent) => agent.id === value) ?? null;
-  const selector = useEntitySelectorState({
-    value,
-    options,
-    noneLabel,
-    onChange: (nextValue) => onChange(nextValue, { ownerAgentId: nextValue || null }),
-    onConfirm,
-  });
 
   return (
-    <Popover open={selector.open} onOpenChange={selector.setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={selector.open}
-          aria-label={placeholder}
-          className={cn("w-full justify-between overflow-hidden", className)}
-          onPointerDown={() => {
-            selector.pointerFocusRef.current = true;
-          }}
-          onFocus={() => {
-            if (selector.pointerFocusRef.current) selector.pointerFocusRef.current = false;
-            else selector.setOpen(true);
-          }}
-        >
-          <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-left">
-            {selectedAgent ? <AgentIcon icon={selectedAgent.icon} className="size-3.5 shrink-0" /> : null}
-            {selector.currentOption?.label ?? <span className="text-muted-foreground">{placeholder}</span>}
-          </span>
-          <ChevronsUpDown className="size-4 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" collisionPadding={16} className="w-72 max-w-(--sz-calc-23) p-0">
-        <Command
-          filter={(optionValue, search) =>
-            entityOptionMatchesSearch(
-              selector.orderedOptions.find((option) => (option.id || ENTITY_NONE_VALUE) === optionValue),
-              search,
-            )
-          }
-        >
-          <CommandInput autoFocus placeholder={searchPlaceholder} />
-          <CommandList>
-            <CommandEmpty>{emptyMessage}</CommandEmpty>
-            {selector.orderedOptions.map((option) => {
-              const agent = eligibleAgents.find((entry) => entry.id === option.id) ?? null;
-              return (
-                <CommandItem
-                  key={option.id || ENTITY_NONE_VALUE}
-                  value={option.id || ENTITY_NONE_VALUE}
-                  keywords={[option.label, option.searchText ?? ""]}
-                  onSelect={() => selector.select(option)}
-                >
-                  {agent ? <AgentIcon icon={agent.icon} className="size-3.5 shrink-0" /> : null}
-                  <span className="truncate">{option.label}</span>
-                  <Check
-                    className={cn("ml-auto size-4", option.id === value ? "opacity-100" : "opacity-0")}
-                  />
-                </CommandItem>
-              );
-            })}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <EntityCombobox
+      value={value}
+      options={options}
+      type="owner"
+      ariaLabel={placeholder}
+      placeholder={placeholder}
+      noneLabel={noneLabel}
+      onValueChange={(nextValue) => onChange(nextValue, { ownerAgentId: nextValue || null })}
+      onConfirm={onConfirm}
+      searchPlaceholder={searchPlaceholder}
+      emptyMessage={emptyMessage}
+      triggerClassName={className}
+      contentClassName="!w-72 max-w-(--sz-calc-23)"
+      renderValue={(option) => (
+        <>
+          {selectedAgent ? <AgentIcon icon={selectedAgent.icon} className="size-3.5 shrink-0" /> : null}
+          {option?.label ?? <span className="text-muted-foreground">{placeholder}</span>}
+        </>
+      )}
+      renderOption={(option) => {
+        const agent = eligibleAgents.find((entry) => entry.id === option.id) ?? null;
+        return (
+          <>
+            {agent ? <AgentIcon icon={agent.icon} className="size-3.5 shrink-0" /> : null}
+            <span className="truncate">{option.label}</span>
+          </>
+        );
+      }}
+    />
   );
 }
 
@@ -171,85 +127,50 @@ export function PluginSdkProjectPicker({
     [orderedProjects],
   );
   const selectedProject = orderedProjects.find((project) => project.id === value) ?? null;
-  const selector = useEntitySelectorState({
-    value,
-    options,
-    noneLabel,
-    recentOptionIds: recentProjectIds,
-    onChange: (nextProjectId) => {
-      if (nextProjectId) trackRecentProject(nextProjectId);
-      onChange(nextProjectId);
-    },
-    onConfirm,
-  });
 
   return (
-    <Popover open={selector.open} onOpenChange={selector.setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={selector.open}
-          aria-label={placeholder}
-          className={cn("w-full justify-between overflow-hidden", className)}
-          onPointerDown={() => {
-            selector.pointerFocusRef.current = true;
-          }}
-          onFocus={() => {
-            if (selector.pointerFocusRef.current) selector.pointerFocusRef.current = false;
-            else selector.setOpen(true);
-          }}
-        >
-          <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-left">
-            {selectedProject ? (
+    <EntityCombobox
+      value={value}
+      options={options}
+      type="project"
+      ariaLabel={placeholder}
+      placeholder={placeholder}
+      noneLabel={noneLabel}
+      recentOptionIds={recentProjectIds}
+      onValueChange={(nextProjectId) => {
+        if (nextProjectId) trackRecentProject(nextProjectId);
+        onChange(nextProjectId);
+      }}
+      onConfirm={onConfirm}
+      searchPlaceholder={searchPlaceholder}
+      emptyMessage={emptyMessage}
+      triggerClassName={className}
+      contentClassName="!w-72 max-w-(--sz-calc-23)"
+      renderValue={(option) => (
+        <>
+          {selectedProject ? (
+            <span
+              className="size-3.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: selectedProject.color ?? "var(--project-none)" }}
+            />
+          ) : null}
+          {option?.label ?? <span className="text-muted-foreground">{placeholder}</span>}
+        </>
+      )}
+      renderOption={(option) => {
+        const project = orderedProjects.find((entry) => entry.id === option.id);
+        return (
+          <>
+            {option.id ? (
               <span
                 className="size-3.5 shrink-0 rounded-sm"
-                style={{ backgroundColor: selectedProject.color ?? "var(--project-none)" }}
+                style={{ backgroundColor: project?.color ?? "var(--project-none)" }}
               />
             ) : null}
-            {selector.currentOption?.label ?? <span className="text-muted-foreground">{placeholder}</span>}
-          </span>
-          <ChevronsUpDown className="size-4 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" collisionPadding={16} className="w-72 max-w-(--sz-calc-23) p-0">
-        <Command
-          filter={(optionValue, search) =>
-            entityOptionMatchesSearch(
-              selector.orderedOptions.find((option) => (option.id || ENTITY_NONE_VALUE) === optionValue),
-              search,
-            )
-          }
-        >
-          <CommandInput autoFocus placeholder={searchPlaceholder} />
-          <CommandList>
-            <CommandEmpty>{emptyMessage}</CommandEmpty>
-            {selector.orderedOptions.map((option) => {
-              const project = orderedProjects.find((entry) => entry.id === option.id);
-              return (
-                <CommandItem
-                  key={option.id || ENTITY_NONE_VALUE}
-                  value={option.id || ENTITY_NONE_VALUE}
-                  keywords={[option.label, option.searchText ?? ""]}
-                  onSelect={() => selector.select(option)}
-                >
-                  {option.id ? (
-                    <span
-                      className="size-3.5 shrink-0 rounded-sm"
-                      style={{ backgroundColor: project?.color ?? "var(--project-none)" }}
-                    />
-                  ) : null}
-                  <span className="truncate">{option.label}</span>
-                  <Check
-                    className={cn("ml-auto size-4", option.id === value ? "opacity-100" : "opacity-0")}
-                  />
-                </CommandItem>
-              );
-            })}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+            <span className="truncate">{option.label}</span>
+          </>
+        );
+      }}
+    />
   );
 }

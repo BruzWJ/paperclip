@@ -6,13 +6,13 @@ import {
 } from "@paperclipai/shared";
 import { redactUrlSecrets } from "@/lib/redact-url-secrets";
 
-type AuthErrorBody =
-  | {
-    code?: string;
-    message?: string;
-    error?: string | { code?: string; message?: string };
-  }
-  | null;
+export type AuthMode = "sign_in" | "sign_up";
+
+type AuthErrorBody = {
+  code?: string;
+  message?: string;
+  error?: string | { code?: string; message?: string };
+} | null;
 
 export class AuthApiError extends Error {
   status: number;
@@ -29,16 +29,9 @@ export class AuthApiError extends Error {
 }
 
 function extractAuthError(payload: AuthErrorBody, status: number) {
-  const nested =
-    payload?.error && typeof payload.error === "object"
-      ? payload.error
-      : null;
+  const nested = payload?.error && typeof payload.error === "object" ? payload.error : null;
   const code =
-    typeof nested?.code === "string"
-      ? nested.code
-      : typeof payload?.code === "string"
-        ? payload.code
-        : null;
+    typeof nested?.code === "string" ? nested.code : typeof payload?.code === "string" ? payload.code : null;
   const message =
     typeof nested?.message === "string" && nested.message.trim().length > 0
       ? nested.message
@@ -125,11 +118,7 @@ async function fetchSession(): Promise<AuthSession | null> {
   const payload = await res.json().catch(() => null);
   if (res.status === 401 || payload === null) return null;
   if (!res.ok) {
-    throw new AuthApiError(
-      `Failed to load session (${res.status})`,
-      res.status,
-      payload,
-    );
+    throw new AuthApiError(`Failed to load session (${res.status})`, res.status, payload);
   }
 
   const parsed = authSessionSchema.safeParse(payload);

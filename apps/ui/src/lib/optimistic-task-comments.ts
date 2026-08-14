@@ -10,6 +10,7 @@ import type {
   TaskCommentPresentation,
   SourceTrustMetadata,
 } from "@paperclipai/shared";
+import type { TaskScope, TimestampedEntity } from "./presentation-contracts";
 
 /** UI-only comment shape built exclusively from the board-safe read DTO. */
 export interface ClientTaskComment {
@@ -75,9 +76,7 @@ function createOptimisticCommentId() {
   return `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function sortTaskComments<
-  T extends { createdAt: Date | string; id: string },
->(comments: T[]) {
+export function sortTaskComments<T extends TimestampedEntity>(comments: T[]) {
   return [...comments].sort((a, b) => {
     const createdAtDiff = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
     if (createdAtDiff !== 0) return createdAtDiff;
@@ -123,8 +122,7 @@ export function applyLocalQueuedTaskCommentState<T extends ClientTaskComment>(
 ): T | LocallyQueuedTaskComment<T> {
   const queuedTargetRunId = params.queuedTargetRunId ?? null;
   if (!queuedTargetRunId || !params.targetRunIsLive) return comment;
-  if (params.runningRunId && params.runningRunId !== queuedTargetRunId)
-    return comment;
+  if (params.runningRunId && params.runningRunId !== queuedTargetRunId) return comment;
 
   return {
     ...comment,
@@ -156,7 +154,7 @@ export function mergeTaskComments(
 
 function boardCommentToClient(
   comment: BoardTaskComment,
-  scope: { companyId: string; taskId: string },
+  scope: TaskScope,
   placement: {
     rootId: string;
     isRoot: boolean;
@@ -189,7 +187,7 @@ function boardCommentToClient(
 
 function boardRunSegmentToClient(
   segment: BoardTaskRunSegmentEntry,
-  scope: { companyId: string; taskId: string },
+  scope: TaskScope,
   placement: { rootId: string; order: number },
 ): ClientTaskComment {
   const body = segment.parts
@@ -228,7 +226,7 @@ function boardRunSegmentToClient(
  */
 export function flattenBoardTaskCommentGroupPages(
   pages: readonly BoardTaskCommentGroupPage[] | undefined,
-  scope: { companyId: string; taskId: string },
+  scope: TaskScope,
   continuations?: ReadonlyMap<string, BoardTaskCommentGroupContinuation>,
 ): ClientTaskComment[] {
   const orderedGroups = (pages ?? [])
@@ -254,12 +252,9 @@ export function flattenBoardTaskCommentGroupPages(
     const expectedEntryCount = group.replyCount + group.runSegmentCount;
     const collapsed =
       group.entriesNextCursor !== null &&
-      (continuation?.expanded !== true ||
-        entriesByIdentity.size < expectedEntryCount);
+      (continuation?.expanded !== true || entriesByIdentity.size < expectedEntryCount);
     const entries = (collapsed ? [] : [...entriesByIdentity.values()]).sort(
-      (left, right) =>
-        left.canonicalSequence - right.canonicalSequence ||
-        left.id.localeCompare(right.id),
+      (left, right) => left.canonicalSequence - right.canonicalSequence || left.id.localeCompare(right.id),
     );
     for (const entry of entries) {
       groupComments.push(
@@ -275,18 +270,12 @@ export function flattenBoardTaskCommentGroupPages(
             }),
       );
     }
-    const nextCursor =
-      continuation?.nextCursor ?? (collapsed ? group.entriesNextCursor : null);
+    const nextCursor = continuation?.nextCursor ?? (collapsed ? group.entriesNextCursor : null);
     const continuationTarget = groupComments.at(-1);
-    if (
-      continuationTarget &&
-      (nextCursor || continuation?.loading || continuation?.error)
-    ) {
+    if (continuationTarget && (nextCursor || continuation?.loading || continuation?.error)) {
       continuationTarget.boardGroupHasMore = Boolean(nextCursor);
-      continuationTarget.boardGroupContinuationLoading =
-        continuation?.loading === true;
-      continuationTarget.boardGroupContinuationError =
-        continuation?.error ?? null;
+      continuationTarget.boardGroupContinuationLoading = continuation?.loading === true;
+      continuationTarget.boardGroupContinuationError = continuation?.error ?? null;
     }
     comments.push(...groupComments);
   }
@@ -308,18 +297,14 @@ export function shouldAutoloadOlderTaskComments(params: {
   return params.loadedCommentCount < params.autoLoadLimit;
 }
 
-export function applyOptimisticTaskFieldUpdate(
-  task: Task | undefined,
-  data: Record<string, unknown>,
-) {
+export function applyOptimisticTaskFieldUpdate(task: Task | undefined, data: Record<string, unknown>) {
   if (!task) return task;
 
   const nextTask: Task = {
     ...task,
     updatedAt: new Date(),
   };
-  const hasOwn = (key: string) =>
-    Object.prototype.hasOwnProperty.call(data, key);
+  const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(data, key);
   const assign = <K extends keyof Task>(key: K) => {
     if (hasOwn(key)) {
       nextTask[key] = data[key] as Task[K];
@@ -338,35 +323,22 @@ export function applyOptimisticTaskFieldUpdate(
   assign("hiddenAt");
 
   if (hasOwn("labelIds") && Array.isArray(data.labelIds)) {
-    const nextLabelIds = data.labelIds.filter(
-      (value): value is string => typeof value === "string",
-    );
+    const nextLabelIds = data.labelIds.filter((value): value is string => typeof value === "string");
     nextTask.labelIds = nextLabelIds;
     if (task.labels) {
-      nextTask.labels = task.labels.filter((label) =>
-        nextLabelIds.includes(label.id),
-      );
+      nextTask.labels = task.labels.filter((label) => nextLabelIds.includes(label.id));
     }
   }
 
-  if (
-    hasOwn("blockedByTaskIds") &&
-    Array.isArray(data.blockedByTaskIds) &&
-    task.blockedBy
-  ) {
+  if (hasOwn("blockedByTaskIds") && Array.isArray(data.blockedByTaskIds) && task.blockedBy) {
     const nextBlockedByIds = new Set(
-      data.blockedByTaskIds.filter(
-        (value): value is string => typeof value === "string",
-      ),
+      data.blockedByTaskIds.filter((value): value is string => typeof value === "string"),
     );
-    nextTask.blockedBy = task.blockedBy.filter((relation) =>
-      nextBlockedByIds.has(relation.id),
-    );
+    nextTask.blockedBy = task.blockedBy.filter((relation) => nextBlockedByIds.has(relation.id));
   }
 
   if (hasOwn("projectId")) {
-    nextTask.project =
-      task.project?.id === nextTask.projectId ? task.project : null;
+    nextTask.project = task.project?.id === nextTask.projectId ? task.project : null;
   }
 
   if (hasOwn("parentId")) {

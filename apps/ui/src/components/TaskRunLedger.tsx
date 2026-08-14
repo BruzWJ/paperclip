@@ -14,8 +14,8 @@ import { runsApi, type TaskExecutionRunJoinedDetail } from "../api/runs";
 import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
 import { cn, relativeTime } from "../lib/utils";
+import { DomainStatus } from "./patterns/DomainStatus";
 import { Alert, AlertDescription } from "./ui/alert";
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Empty, EmptyDescription } from "./ui/empty";
@@ -232,14 +232,10 @@ export function TaskRunLedgerContent({
           <span className="font-medium text-foreground">Run</span>
           <span className="font-mono text-foreground">{run.id.slice(0, 8)}</span>
           <span>by {runAgentName(run, agentMap)}</span>
-          <Badge variant="outline" className="capitalize">
+          <DomainStatus status={run.status} className="capitalize">
             {statusLabel(run.status)}
-          </Badge>
-          {liveness ? (
-            <Badge variant={liveness === "failed" ? "destructive" : "secondary"}>
-              {LIVENESS_LABEL[liveness]}
-            </Badge>
-          ) : null}
+          </DomainStatus>
+          {liveness ? <DomainStatus status={liveness}>{LIVENESS_LABEL[liveness]}</DomainStatus> : null}
           <span className="ml-auto">{relativeTime(runTimestamp(run))}</span>
         </Button>
         <div className="grid gap-2 sm:grid-cols-3">

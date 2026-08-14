@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Archive } from "lucide-react";
 import { cn } from "../lib/utils";
+import type { Point2D } from "../lib/presentation-contracts";
 
 interface SwipeToArchiveProps {
   children: ReactNode;
@@ -22,7 +23,7 @@ export function SwipeToArchive({
   className,
 }: SwipeToArchiveProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const startPointRef = useRef<{ x: number; y: number } | null>(null);
+  const startPointRef = useRef<Point2D | null>(null);
   const widthRef = useRef(0);
   const archiveTimeoutRef = useRef<number | null>(null);
   const suppressClickTimeoutRef = useRef<number | null>(null);

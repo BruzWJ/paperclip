@@ -20,6 +20,66 @@ import {
   type SearchFilters,
 } from "@/lib/search-filters";
 import { buildSearchFilterOptions, type SearchFilterDataProps } from "./SearchFilterBar";
+import type { FilterMenuOption } from "./SearchFilterMenu";
+
+function SearchFilterToggleGroup({
+  label,
+  options,
+  value,
+  onValueChange,
+  multiple = false,
+}: {
+  label: string;
+  options: FilterMenuOption[];
+  value: string | string[];
+  onValueChange: (value: string | string[]) => void;
+  multiple?: boolean;
+}) {
+  if (options.length === 0) return null;
+
+  const items = options.map((option) => (
+    <ToggleGroupItem key={option.value} value={option.value}>
+      {option.swatch ? (
+        <span className="size-2 rounded-full" style={{ backgroundColor: option.swatch }} aria-hidden />
+      ) : null}
+      <span>{option.label}</span>
+      {typeof option.count === "number" ? (
+        <Badge variant="secondary" className="ml-1 tabular-nums">
+          {option.count}
+        </Badge>
+      ) : null}
+    </ToggleGroupItem>
+  ));
+
+  return (
+    <FieldSet className="gap-2">
+      <FieldLegend variant="label">{label}</FieldLegend>
+      {multiple ? (
+        <ToggleGroup
+          type="multiple"
+          variant="outline"
+          spacing={1}
+          value={value as string[]}
+          onValueChange={onValueChange}
+          className="flex flex-wrap"
+        >
+          {items}
+        </ToggleGroup>
+      ) : (
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          spacing={1}
+          value={value as string}
+          onValueChange={onValueChange}
+          className="flex flex-wrap"
+        >
+          {items}
+        </ToggleGroup>
+      )}
+    </FieldSet>
+  );
+}
 
 export function SearchFilterSheet({
   open,
@@ -87,187 +147,63 @@ export function SearchFilterSheet({
         </DrawerHeader>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          {options.status.length > 0 ? (
-            <FieldSet className="gap-2">
-              <FieldLegend variant="label">Status</FieldLegend>
-              <ToggleGroup
-                type="multiple"
-                variant="outline"
-                spacing={1}
-                value={draft.status ?? []}
-                onValueChange={(status) =>
-                  update({ ...draft, status: status as NonNullable<SearchFilters["status"]> })
-                }
-                className="flex flex-wrap"
-              >
-                {options.status.map((option) => (
-                  <ToggleGroupItem key={option.value} value={option.value}>
-                    <span>{option.label}</span>
-                    {typeof option.count === "number" ? (
-                      <Badge variant="secondary" className="ml-1 tabular-nums">
-                        {option.count}
-                      </Badge>
-                    ) : null}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </FieldSet>
-          ) : null}
-          {options.priority.length > 0 ? (
-            <FieldSet className="gap-2">
-              <FieldLegend variant="label">Priority</FieldLegend>
-              <ToggleGroup
-                type="multiple"
-                variant="outline"
-                spacing={1}
-                value={draft.priority ?? []}
-                onValueChange={(priority) =>
-                  update({ ...draft, priority: priority as NonNullable<SearchFilters["priority"]> })
-                }
-                className="flex flex-wrap"
-              >
-                {options.priority.map((option) => (
-                  <ToggleGroupItem key={option.value} value={option.value}>
-                    <span>{option.label}</span>
-                    {typeof option.count === "number" ? (
-                      <Badge variant="secondary" className="ml-1 tabular-nums">
-                        {option.count}
-                      </Badge>
-                    ) : null}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </FieldSet>
-          ) : null}
-          {options.owner.length > 0 ? (
-            <FieldSet className="gap-2">
-              <FieldLegend variant="label">Owner</FieldLegend>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                spacing={1}
-                value={selectedOwner ?? ""}
-                onValueChange={(owner) =>
-                  update(applyOwnerSelectionId(draft, owner || undefined, data.currentUserId))
-                }
-                className="flex flex-wrap"
-              >
-                {options.owner.map((option) => (
-                  <ToggleGroupItem key={option.value} value={option.value}>
-                    <span>{option.label}</span>
-                    {typeof option.count === "number" ? (
-                      <Badge variant="secondary" className="ml-1 tabular-nums">
-                        {option.count}
-                      </Badge>
-                    ) : null}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </FieldSet>
-          ) : null}
-          {options.project.length > 0 ? (
-            <FieldSet className="gap-2">
-              <FieldLegend variant="label">Project</FieldLegend>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                spacing={1}
-                value={draft.projectId ?? ""}
-                onValueChange={(projectId) => update({ ...draft, projectId: projectId || undefined })}
-                className="flex flex-wrap"
-              >
-                {options.project.map((option) => (
-                  <ToggleGroupItem key={option.value} value={option.value}>
-                    <span>{option.label}</span>
-                    {typeof option.count === "number" ? (
-                      <Badge variant="secondary" className="ml-1 tabular-nums">
-                        {option.count}
-                      </Badge>
-                    ) : null}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </FieldSet>
-          ) : null}
-          {options.label.length > 0 ? (
-            <FieldSet className="gap-2">
-              <FieldLegend variant="label">Label</FieldLegend>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                spacing={1}
-                value={draft.labelId ?? ""}
-                onValueChange={(labelId) => update({ ...draft, labelId: labelId || undefined })}
-                className="flex flex-wrap"
-              >
-                {options.label.map((option) => (
-                  <ToggleGroupItem key={option.value} value={option.value}>
-                    {option.swatch ? (
-                      <span
-                        className="size-2 rounded-full"
-                        style={{ backgroundColor: option.swatch }}
-                        aria-hidden
-                      />
-                    ) : null}
-                    <span>{option.label}</span>
-                    {typeof option.count === "number" ? (
-                      <Badge variant="secondary" className="ml-1 tabular-nums">
-                        {option.count}
-                      </Badge>
-                    ) : null}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </FieldSet>
-          ) : null}
-          {options.updated.length > 0 ? (
-            <FieldSet className="gap-2">
-              <FieldLegend variant="label">Updated</FieldLegend>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                spacing={1}
-                value={draft.updatedWithin ?? ""}
-                onValueChange={(updatedWithin) =>
-                  update({
-                    ...draft,
-                    updatedWithin: (updatedWithin || undefined) as SearchFilters["updatedWithin"],
-                  })
-                }
-                className="flex flex-wrap"
-              >
-                {options.updated.map((option) => (
-                  <ToggleGroupItem key={option.value} value={option.value}>
-                    <span>{option.label}</span>
-                    {typeof option.count === "number" ? (
-                      <Badge variant="secondary" className="ml-1 tabular-nums">
-                        {option.count}
-                      </Badge>
-                    ) : null}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </FieldSet>
-          ) : null}
-          <FieldSet className="gap-2">
-            <FieldLegend variant="label">Sort by</FieldLegend>
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              spacing={1}
-              value={sort}
-              onValueChange={(value) => {
-                if (value) onSortChange(value as CompanySearchSort);
-              }}
-              className="flex flex-wrap"
-            >
-              {COMPANY_SEARCH_SORTS.map((value) => (
-                <ToggleGroupItem key={value} value={value}>
-                  {SORT_LABELS[value]}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </FieldSet>
+          <SearchFilterToggleGroup
+            label="Status"
+            options={options.status}
+            multiple
+            value={draft.status ?? []}
+            onValueChange={(status) =>
+              update({ ...draft, status: status as NonNullable<SearchFilters["status"]> })
+            }
+          />
+          <SearchFilterToggleGroup
+            label="Priority"
+            options={options.priority}
+            multiple
+            value={draft.priority ?? []}
+            onValueChange={(priority) =>
+              update({ ...draft, priority: priority as NonNullable<SearchFilters["priority"]> })
+            }
+          />
+          <SearchFilterToggleGroup
+            label="Owner"
+            options={options.owner}
+            value={selectedOwner ?? ""}
+            onValueChange={(owner) =>
+              update(applyOwnerSelectionId(draft, (owner as string) || undefined, data.currentUserId))
+            }
+          />
+          <SearchFilterToggleGroup
+            label="Project"
+            options={options.project}
+            value={draft.projectId ?? ""}
+            onValueChange={(projectId) => update({ ...draft, projectId: (projectId as string) || undefined })}
+          />
+          <SearchFilterToggleGroup
+            label="Label"
+            options={options.label}
+            value={draft.labelId ?? ""}
+            onValueChange={(labelId) => update({ ...draft, labelId: (labelId as string) || undefined })}
+          />
+          <SearchFilterToggleGroup
+            label="Updated"
+            options={options.updated}
+            value={draft.updatedWithin ?? ""}
+            onValueChange={(updatedWithin) =>
+              update({
+                ...draft,
+                updatedWithin: ((updatedWithin as string) || undefined) as SearchFilters["updatedWithin"],
+              })
+            }
+          />
+          <SearchFilterToggleGroup
+            label="Sort by"
+            options={COMPANY_SEARCH_SORTS.map((value) => ({ value, label: SORT_LABELS[value] }))}
+            value={sort}
+            onValueChange={(value) => {
+              if (value) onSortChange(value as CompanySearchSort);
+            }}
+          />
         </div>
 
         <DrawerFooter className="flex-row gap-2 border-t border-border">

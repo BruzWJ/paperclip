@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 
 const variableTypes: RoutineVariable["type"][] = ["text", "textarea", "number", "boolean", "select", "date"];
 
@@ -100,8 +101,7 @@ export function RoutineVariablesEditor({
                 <FieldDescription>Prompt the user for this value before each manual run.</FieldDescription>
 
                 <FieldGroup className="grid gap-3 md:grid-cols-2">
-                  <Field>
-                    <FieldLabel>Label</FieldLabel>
+                  <LabeledFormField label="Label">
                     <Input
                       aria-label={`${variable.label ?? variable.name} label`}
                       value={variable.label ?? ""}
@@ -115,10 +115,9 @@ export function RoutineVariablesEditor({
                       }
                       placeholder={variable.name.replaceAll("_", " ")}
                     />
-                  </Field>
+                  </LabeledFormField>
 
-                  <Field>
-                    <FieldLabel>Type</FieldLabel>
+                  <LabeledFormField label="Type">
                     <Select
                       value={variable.type}
                       onValueChange={(type) =>
@@ -146,11 +145,12 @@ export function RoutineVariablesEditor({
                         ))}
                       </SelectContent>
                     </Select>
-                  </Field>
+                  </LabeledFormField>
 
-                  <Field className="md:col-span-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <FieldLabel>Default value</FieldLabel>
+                  <LabeledFormField
+                    className="md:col-span-2"
+                    label="Default value"
+                    labelActions={
                       <Field orientation="horizontal" className="w-auto">
                         <Checkbox
                           id={`routine-variable-${variable.name}-required`}
@@ -168,8 +168,8 @@ export function RoutineVariablesEditor({
                           Required
                         </FieldLabel>
                       </Field>
-                    </div>
-
+                    }
+                  >
                     {variable.type === "textarea" ? (
                       <Textarea
                         aria-label={`${variable.label ?? variable.name} default value`}
@@ -213,8 +213,7 @@ export function RoutineVariablesEditor({
                       </Select>
                     ) : variable.type === "select" ? (
                       <FieldGroup className="grid gap-3 md:grid-cols-2">
-                        <Field>
-                          <FieldLabel>Options</FieldLabel>
+                        <LabeledFormField label="Options">
                           <Input
                             aria-label={`${variable.label ?? variable.name} options`}
                             value={variable.options.join(", ")}
@@ -234,9 +233,8 @@ export function RoutineVariablesEditor({
                             }}
                             placeholder="high, medium, low"
                           />
-                        </Field>
-                        <Field>
-                          <FieldLabel>Default option</FieldLabel>
+                        </LabeledFormField>
+                        <LabeledFormField label="Default option">
                           <Select
                             value={
                               typeof variable.defaultValue === "string" ? variable.defaultValue : "__unset__"
@@ -262,7 +260,7 @@ export function RoutineVariablesEditor({
                               ))}
                             </SelectContent>
                           </Select>
-                        </Field>
+                        </LabeledFormField>
                       </FieldGroup>
                     ) : variable.type === "date" ? (
                       <Input
@@ -294,7 +292,7 @@ export function RoutineVariablesEditor({
                         placeholder={variable.type === "number" ? "42" : "Default value"}
                       />
                     )}
-                  </Field>
+                  </LabeledFormField>
                 </FieldGroup>
               </FieldSet>
             ))}

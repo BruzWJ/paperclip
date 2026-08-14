@@ -3,14 +3,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Item } from "@/components/ui/item";
-import { ChevronRight, CircleSlash2, Plus } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import { deriveOriginatingActor, type Task } from "@paperclipai/shared";
 import { buildTaskTree, countDescendants } from "@/lib/task-tree";
 import { cn } from "@/lib/utils";
 import { formatOwnerUserLabel } from "@/lib/task-owners";
 import { deriveInitials } from "@/lib/identity";
 import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { InboxTaskMetaLeading, InboxTaskTrailingColumns } from "../TaskColumns";
 import { TaskRow } from "../TaskRow";
 import { useTasksListViewModel } from "./context";
@@ -178,15 +178,15 @@ export function TaskListRows() {
                       </Button>
                     ) : null;
                   const status = (
-                    <Badge
-                      variant={statusBadgeVariant(task.boardPresentationStatus)}
+                    <DomainStatus
+                      status={task.boardPresentationStatus}
                       aria-label={taskStatusAccessibleLabel(
                         task.boardPresentationStatus,
                         task.blockerAttention,
                       )}
                     >
                       {taskValueLabel(task.boardPresentationStatus)}
-                    </Badge>
+                    </DomainStatus>
                   );
                   return (
                     <div
@@ -230,15 +230,14 @@ export function TaskListRows() {
                               </span>
                             ) : null}
                             {taskBadge === "Paused" ? (
-                              <Badge
-                                variant="secondary"
+                              <DomainStatus
+                                status="paused"
                                 className="ml-1.5 px-1.5 text-(length:--text-nano)"
                                 aria-label="Paused"
                                 title="Paused"
                               >
-                                <CircleSlash2 className="h-3 w-3" />
                                 Paused
-                              </Badge>
+                              </DomainStatus>
                             ) : taskBadge ? (
                               <Badge variant="outline" className="ml-1.5 px-1.5 text-(length:--text-nano)">
                                 {taskBadge}

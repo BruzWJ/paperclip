@@ -8,18 +8,11 @@ import { publicRuntimeMessage } from "../lib/public-runtime-message";
 import { DraftInput } from "../components/agent-config-primitives";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "../components/ui/field";
+import { FieldError, FieldGroup } from "../components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Spinner } from "../components/ui/spinner";
-import { Switch } from "../components/ui/switch";
 import { fetchAdapterCatalog } from "./use-adapter-catalog";
+import { LabeledFormField, SettingsSwitchField } from "../components/patterns/FormPatterns";
 
 function optionsFromCatalog(
   catalog: readonly AdapterInfo[] | undefined,
@@ -229,27 +222,30 @@ export function AcpxConfigOptions({
         const message = errors.get(option.id);
         if (option.type === "toggle") {
           return (
-            <Field key={option.id} orientation="horizontal" data-invalid={message ? true : undefined}>
-              <FieldContent>
-                <FieldLabel htmlFor={fieldId}>{option.label}</FieldLabel>
-                {option.description ? <FieldDescription>{option.description}</FieldDescription> : null}
-                <FieldError id={errorId}>{message}</FieldError>
-              </FieldContent>
-              <Switch
-                id={fieldId}
-                checked={readValue(option) === true}
-                onCheckedChange={(value) => writeValue(option, value)}
-                aria-invalid={Boolean(message) || undefined}
-                aria-describedby={message ? errorId : undefined}
-              />
-            </Field>
+            <SettingsSwitchField
+              key={option.id}
+              id={fieldId}
+              label={option.label}
+              description={option.description}
+              error={message}
+              errorId={errorId}
+              invalid={Boolean(message)}
+              checked={readValue(option) === true}
+              onCheckedChange={(value) => writeValue(option, value)}
+              aria-invalid={Boolean(message) || undefined}
+              aria-describedby={message ? errorId : undefined}
+            />
           );
         }
         if (option.type === "select") {
           return (
-            <Field key={option.id} data-invalid={message ? true : undefined}>
-              <FieldLabel htmlFor={fieldId}>{option.label}</FieldLabel>
-              {option.description ? <FieldDescription>{option.description}</FieldDescription> : null}
+            <LabeledFormField
+              key={option.id}
+              data-invalid={message ? true : undefined}
+              label={option.label}
+              labelFor={fieldId}
+              description={option.description}
+            >
               <Select
                 value={typeof readValue(option) === "string" ? String(readValue(option)) : ""}
                 onValueChange={(value) => writeValue(option, value)}
@@ -272,13 +268,17 @@ export function AcpxConfigOptions({
                 </SelectContent>
               </Select>
               <FieldError id={errorId}>{message}</FieldError>
-            </Field>
+            </LabeledFormField>
           );
         }
         return (
-          <Field key={option.id} data-invalid={message ? true : undefined}>
-            <FieldLabel htmlFor={fieldId}>{option.label}</FieldLabel>
-            {option.description ? <FieldDescription>{option.description}</FieldDescription> : null}
+          <LabeledFormField
+            key={option.id}
+            data-invalid={message ? true : undefined}
+            label={option.label}
+            labelFor={fieldId}
+            description={option.description}
+          >
             <DraftInput
               id={fieldId}
               aria-invalid={Boolean(message) || undefined}
@@ -289,7 +289,7 @@ export function AcpxConfigOptions({
               className="font-mono"
             />
             <FieldError id={errorId}>{message}</FieldError>
-          </Field>
+          </LabeledFormField>
         );
       })}
     </FieldGroup>

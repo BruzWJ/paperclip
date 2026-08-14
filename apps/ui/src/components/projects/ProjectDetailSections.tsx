@@ -1,32 +1,28 @@
 import { agentsApi } from "@/api/agents";
 import { projectsApi } from "@/api/projects";
-import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
 import { tasksApi } from "@/api/tasks";
 import { InlineEditor } from "@/components/InlineEditor";
 import { TasksList } from "@/components/TasksList";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/components/kibo-ui/combobox";
 import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import { Item, ItemContent, ItemGroup, ItemTitle } from "@/components/ui/item";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { HexColorPicker } from "@/components/patterns/BrandColorPicker";
 import { Separator } from "@/components/ui/separator";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { collectLiveTaskIds } from "@/lib/liveTaskIds";
+import { useCompanyLiveTaskIds } from "@/hooks/useCompanyLiveTaskIds";
 import { getProjectIcon, PROJECT_ICONS } from "@/lib/project-icons";
 import { queryKeys } from "@/lib/queryKeys";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import type { ProjectScope } from "@/lib/presentation-contracts";
 import { PROJECT_COLORS, PROJECT_ICON_NAMES } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -62,9 +58,7 @@ export function ProjectOverviewContent({
         <Item size="sm" variant="outline">
           <ItemContent>
             <ItemTitle>Status</ItemTitle>
-            <Badge variant={statusBadgeVariant(project.status)}>
-              {project.status.replace(/[_-]/g, " ")}
-            </Badge>
+            <DomainStatus status={project.status} />
           </ItemContent>
         </Item>
         {project.targetDate && (
@@ -99,132 +93,74 @@ export function ProjectTilePicker({
   const [search, setSearch] = useState("");
 
   const filteredIcons = useMemo(() => {
-    const entries = PROJECT_ICON_NAMES.map(
-      (name) => [name, PROJECT_ICONS[name]] as const,
-    );
+    const entries = PROJECT_ICON_NAMES.map((name) => [name, PROJECT_ICONS[name]] as const);
     if (!search) return entries;
     const q = search.toLowerCase();
     return entries.filter(([name]) => name.includes(q));
   }, [search]);
   const SelectedProjectIcon = getProjectIcon(icon);
-  const DefaultProjectIcon = getProjectIcon(null);
 
   // Keep the popover open across selections so the user can pick both an icon
   // and a color in one pass; reset the search when it closes.
   return (
-    <Popover
+    <Combobox
+      data={PROJECT_ICON_NAMES.map((name) => ({ label: name, value: name }))}
+      type="icon"
+      value={icon ?? DEFAULT_PROJECT_ICON}
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setSearch("");
       }}
     >
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Change project icon and color"
-        >
-          <Avatar
-            style={{ backgroundColor: color ?? undefined }}
-            aria-hidden="true"
-          >
-            <AvatarFallback className={color ? "bg-transparent" : undefined}>
-              <SelectedProjectIcon />
-            </AvatarFallback>
-          </Avatar>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-72 p-0" align="start">
-        <Command shouldFilter={false}>
-          <CommandInput
-            aria-label="Search project icons"
-            placeholder="Search icons..."
-            value={search}
-            onValueChange={setSearch}
-            autoFocus
-          />
-          <CommandList className="max-h-40">
-            <CommandEmpty>No icons match.</CommandEmpty>
-            <CommandGroup heading="Icon">
-              {filteredIcons.map(([name, Icon]) => (
-                <CommandItem
-                  key={name}
-                  value={name}
-                  onSelect={() => onSelectIcon(name)}
-                >
-                  <Icon />
-                  <span className="flex-1 capitalize">{name}</span>
-                  {(icon ?? DEFAULT_PROJECT_ICON) === name ? <Check /> : null}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
+      <ComboboxTrigger type="button" variant="ghost" size="icon" aria-label="Change project icon and color">
+        <Avatar style={{ backgroundColor: color ?? undefined }} aria-hidden="true">
+          <AvatarFallback className={color ? "bg-transparent" : undefined}>
+            <SelectedProjectIcon />
+          </AvatarFallback>
+        </Avatar>
+      </ComboboxTrigger>
+      <ComboboxContent shouldFilter={false} popoverOptions={{ className: "!w-72 p-0", align: "start" }}>
+        <ComboboxInput
+          aria-label="Search project icons"
+          placeholder="Search icons..."
+          value={search}
+          onValueChange={setSearch}
+          autoFocus
+        />
+        <ComboboxList className="max-h-40">
+          <ComboboxEmpty>No icons match.</ComboboxEmpty>
+          <ComboboxGroup heading="Icon">
+            {filteredIcons.map(([name, Icon]) => (
+              <ComboboxItem key={name} value={name} onSelect={() => onSelectIcon(name)}>
+                <Icon />
+                <span className="flex-1 capitalize">{name}</span>
+                {(icon ?? DEFAULT_PROJECT_ICON) === name ? <Check /> : null}
+              </ComboboxItem>
+            ))}
+          </ComboboxGroup>
+        </ComboboxList>
         <Separator />
         <div className="space-y-2 p-3">
           <p className="text-sm font-medium">Color</p>
-          <ToggleGroup
-            type="single"
-            value={color ?? "none"}
-            variant="outline"
-            size="sm"
-            spacing={1}
-            onValueChange={(value) => {
-              if (value) onSelectColor(value === "none" ? null : value);
-            }}
-          >
-            <ToggleGroupItem value="none" aria-label="Reset to neutral gray">
-              <Avatar size="sm" aria-hidden="true">
-                <AvatarFallback>
-                  <DefaultProjectIcon />
-                </AvatarFallback>
-              </Avatar>
-            </ToggleGroupItem>
-            {PROJECT_COLORS.map((swatch) => (
-              <ToggleGroupItem
-                key={swatch}
-                value={swatch}
-                aria-label={`Select color ${swatch}`}
-              >
-                <span
-                  className="size-4 rounded-sm"
-                  style={{ backgroundColor: swatch }}
-                />
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          <HexColorPicker
+            value={color ?? PROJECT_COLORS[0]}
+            onChange={onSelectColor}
+            ariaLabel="Project color"
+          />
+          <Button type="button" size="sm" variant="ghost" onClick={() => onSelectColor(null)}>
+            Reset to neutral
+          </Button>
         </div>
-      </PopoverContent>
-    </Popover>
+      </ComboboxContent>
+    </Combobox>
   );
 }
 
 /* ── List (tasks) tab content ── */
 
-export function ProjectTasksList({
-  projectId,
-  companyId,
-}: {
-  projectId: string;
-  companyId: string;
-}) {
-  const { agents, projects, liveTaskIds, tasks, isLoading, error } =
-    useProjectTaskListData({ companyId, projectId });
-
-  return (
-    <TasksList
-      tasks={tasks ?? []}
-      isLoading={isLoading}
-      error={error as Error | null}
-      agents={agents}
-      projects={projects}
-      liveTaskIds={liveTaskIds}
-      projectId={projectId}
-      viewStateKey="paperclip:project-tasks-view"
-    />
-  );
+export function ProjectTasksList({ projectId, companyId }: ProjectScope) {
+  return <ProjectScopedTasks companyId={companyId} projectId={projectId} />;
 }
 
 export function ProjectPluginOperationsList({
@@ -237,8 +173,27 @@ export function ProjectPluginOperationsList({
   pluginKey: string;
 }) {
   const originKind = `plugin:${pluginKey}:operation`;
-  const { agents, projects, liveTaskIds, tasks, isLoading, error } =
-    useProjectTaskListData({ companyId, projectId, originKind });
+  return (
+    <ProjectScopedTasks
+      companyId={companyId}
+      projectId={projectId}
+      originKind={originKind}
+      viewStateKey={`paperclip:project-plugin-operations-view:${pluginKey}`}
+    />
+  );
+}
+
+function ProjectScopedTasks({
+  companyId,
+  originKind,
+  projectId,
+  viewStateKey = "paperclip:project-tasks-view",
+}: ProjectScope & { originKind?: string; viewStateKey?: string }) {
+  const { agents, projects, liveTaskIds, tasks, isLoading, error } = useProjectTaskListData({
+    companyId,
+    projectId,
+    originKind,
+  });
 
   return (
     <TasksList
@@ -249,7 +204,7 @@ export function ProjectPluginOperationsList({
       projects={projects}
       liveTaskIds={liveTaskIds}
       projectId={projectId}
-      viewStateKey={`paperclip:project-plugin-operations-view:${pluginKey}`}
+      viewStateKey={viewStateKey}
     />
   );
 }
@@ -273,22 +228,7 @@ function useProjectTaskListData({
     queryFn: () => projectsApi.list(companyId),
     enabled: !!companyId,
   });
-  const activeRunsQueryKey = queryKeys.runs(companyId, {
-    status: ACTIVE_TASK_EXECUTION_RUN_STATUSES,
-  });
-  const { data: activeRunPage } = useQuery({
-    queryKey: activeRunsQueryKey,
-    queryFn: () =>
-      runsApi.listForCompany(companyId, {
-        status: ACTIVE_TASK_EXECUTION_RUN_STATUSES,
-        limit: 200,
-      }),
-    enabled: !!companyId,
-  });
-  const liveTaskIds = useMemo(
-    () => collectLiveTaskIds(activeRunPage?.items),
-    [activeRunPage],
-  );
+  const liveTaskIds = useCompanyLiveTaskIds(companyId, Boolean(companyId));
 
   const {
     data: tasks,
@@ -296,11 +236,7 @@ function useProjectTaskListData({
     error,
   } = useQuery({
     queryKey: originKind
-      ? queryKeys.tasks.listPluginOperationsByProject(
-          companyId,
-          projectId,
-          originKind,
-        )
+      ? queryKeys.tasks.listPluginOperationsByProject(companyId, projectId, originKind)
       : queryKeys.tasks.listByProject(companyId, projectId),
     queryFn: () =>
       tasksApi.list(companyId, {

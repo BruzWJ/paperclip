@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
-import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
 import {
-  Carousel,
-  type CarouselApi,
-  CarouselContent,
-  CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
-} from "@/components/ui/carousel";
+  Reel,
+  ReelContent,
+  ReelControls,
+  ReelItem,
+  ReelNextButton,
+  ReelPreviousButton,
+  type ReelItem as KiboReelItem,
+} from "@/components/kibo-ui/reel";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { MediaVideoPlayer } from "@/components/MediaVideoPlayer";
+import { ZoomableImage } from "@/components/patterns/ZoomableImage";
 import { attachmentDownloadPath, attachmentFilename } from "@/lib/task-attachments";
 import { isVideoLikeOutput } from "@/lib/task-output";
 
@@ -31,37 +33,23 @@ interface ImageGalleryModalProps {
 }
 
 export function ImageGalleryModal({ items, initialIndex, open, onOpenChange }: ImageGalleryModalProps) {
-  const [api, setApi] = useState<CarouselApi>();
   const [currentIndex, setCurrentIndex] = useState(0);
   const startIndex = useMemo(() => {
     if (items.length === 0) return 0;
     return Math.min(Math.max(initialIndex, 0), items.length - 1);
   }, [initialIndex, items.length]);
-  const selectIndex = useCallback(
-    (index: number) => {
-      if (items.length === 0) return;
-      const nextIndex = (index + items.length) % items.length;
-      api?.scrollTo(nextIndex);
-      setCurrentIndex(nextIndex);
-    },
-    [api, items.length],
+  const reelItems = useMemo<KiboReelItem[]>(
+    () =>
+      items.map((item) => ({
+        id: item.id,
+        type: isVideoLikeOutput(item.contentType, item.originalFilename) ? "video" : "image",
+        src: item.contentPath,
+        duration: 3600,
+        alt: attachmentFilename(item),
+        title: attachmentFilename(item),
+      })),
+    [items],
   );
-
-  useEffect(() => {
-    if (!api) return;
-    const updateSelection = () => {
-      // Embla cannot calculate snaps without layout. The explicit state update
-      // in `selectIndex` remains authoritative in jsdom and while a dialog is
-      // being laid out; once measurable, Embla selection events take over.
-      if (api.rootNode().clientWidth === 0) return;
-      setCurrentIndex(api.selectedScrollSnap());
-    };
-    updateSelection();
-    api.on("select", updateSelection);
-    return () => {
-      api.off("select", updateSelection);
-    };
-  }, [api]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,20 +57,15 @@ export function ImageGalleryModal({ items, initialIndex, open, onOpenChange }: I
   }, [open, startIndex]);
 
   useEffect(() => {
-    if (!api || !open) return;
-    api.scrollTo(startIndex, true);
-  }, [api, open, startIndex]);
-
-  useEffect(() => {
     if (!open || items.length < 2) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
-      if (event.key === "ArrowRight") selectIndex(currentIndex + 1);
-      if (event.key === "ArrowLeft") selectIndex(currentIndex - 1);
+      if (event.key === "ArrowRight") setCurrentIndex((currentIndex + 1) % items.length);
+      if (event.key === "ArrowLeft") setCurrentIndex((currentIndex - 1 + items.length) % items.length);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [api, currentIndex, items.length, open, selectIndex]);
+  }, [currentIndex, items.length, open]);
 
   const current = items[currentIndex];
   if (!current) return null;
@@ -97,41 +80,42 @@ export function ImageGalleryModal({ items, initialIndex, open, onOpenChange }: I
             {currentIndex + 1} / {items.length}
           </DialogDescription>
         </DialogHeader>
-        <Carousel className="mx-12" opts={{ loop: items.length > 1, startIndex }} setApi={setApi}>
-          <CarouselContent>
-            {items.map((item, index) => {
+        <Reel
+          data={reelItems}
+          index={currentIndex}
+          onIndexChange={setCurrentIndex}
+          autoPlay={false}
+          className="aspect-video h-auto w-full"
+          aria-label="Attachment gallery"
+        >
+          <ReelContent>
+            {(_reelItem, index) => {
+              const item = items[index];
               const itemFilename = attachmentFilename(item);
               return (
-                <CarouselItem key={item.id} aria-label={`${index + 1} of ${items.length}`}>
-                  <AspectRatio ratio={16 / 9}>
-                    {isVideoLikeOutput(item.contentType, item.originalFilename) ? (
-                      <video
-                        src={item.contentPath}
-                        className="size-full object-contain"
-                        controls
-                        playsInline
-                        aria-label={itemFilename}
-                      />
-                    ) : (
-                      <img
-                        src={item.contentPath}
-                        alt={itemFilename}
-                        className="size-full object-contain"
-                        draggable={false}
-                      />
-                    )}
-                  </AspectRatio>
-                </CarouselItem>
+                <ReelItem aria-label={`${index + 1} of ${items.length}`}>
+                  {isVideoLikeOutput(item.contentType, item.originalFilename) ? (
+                    <MediaVideoPlayer src={item.contentPath} playsInline aria-label={itemFilename} />
+                  ) : (
+                    <ZoomableImage
+                      src={item.contentPath}
+                      alt={itemFilename}
+                      className="size-full object-contain"
+                      draggable={false}
+                      zoomClassName="size-full"
+                    />
+                  )}
+                </ReelItem>
               );
-            })}
-          </CarouselContent>
+            }}
+          </ReelContent>
           {items.length > 1 ? (
-            <>
-              <CarouselPrevious onClick={() => selectIndex(currentIndex - 1)} />
-              <CarouselNext onClick={() => selectIndex(currentIndex + 1)} />
-            </>
+            <ReelControls className="pointer-events-none top-1/2 bottom-auto -translate-y-1/2 bg-none p-2">
+              <ReelPreviousButton className="pointer-events-auto" />
+              <ReelNextButton className="pointer-events-auto" />
+            </ReelControls>
           ) : null}
-        </Carousel>
+        </Reel>
         <Button variant="outline" asChild>
           <a href={attachmentDownloadPath(current)} download={filename} aria-label={`Download ${filename}`}>
             <Download />

@@ -7,7 +7,7 @@ import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
 import { tasksApi } from "@/api/tasks";
 import { useProjectOrder } from "@/hooks/useProjectOrder";
 import type { MentionOption } from "@/components/MarkdownEditor";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import {
   buildCompanyUserLabelMap,
   buildCompanyUserProfileMap,
@@ -25,6 +25,7 @@ import { buildTaskSiblingNavigation, shouldRenderRichSubTasksSection } from "@/l
 import { buildTaskPropertiesPanelKey } from "@/lib/task-properties-panel-key";
 import { filterTaskDescendants } from "@/lib/task-tree";
 import { keepPreviousDataForSameQueryTail } from "@/lib/query-placeholder-data";
+import { indexEntitiesById } from "@/lib/presentation-contracts";
 import { queryKeys } from "@/lib/queryKeys";
 import { usePluginSlots } from "@/plugins/slots";
 import type {
@@ -304,11 +305,7 @@ export function useTaskDetailDerivedData({
   optimisticComments,
   openNewTask,
 }: TaskDetailDerivedDataOptions) {
-  const agentMap = useMemo(() => {
-    const map = new Map<string, Agent>();
-    for (const agent of agents ?? []) map.set(agent.id, agent);
-    return map;
-  }, [agents]);
+  const agentMap = useMemo(() => indexEntitiesById(agents), [agents]);
   const userProfileMap = useMemo(
     () => buildCompanyUserProfileMap(companyMembers?.users),
     [companyMembers?.users],
@@ -395,12 +392,12 @@ export function useTaskDetailDerivedData({
   const breadcrumbStatusLeading = useMemo(
     () =>
       breadcrumbStatus ? (
-        <Badge
-          variant="secondary"
+        <DomainStatus
+          status={breadcrumbStatus}
           aria-label={taskStatusAccessibleLabel(breadcrumbStatus, breadcrumbBlockerAttention)}
         >
           {taskValueLabel(breadcrumbStatus)}
-        </Badge>
+        </DomainStatus>
       ) : undefined,
     // The key is a complete signature of the presentation inputs.
     // eslint-disable-next-line react-hooks/exhaustive-deps

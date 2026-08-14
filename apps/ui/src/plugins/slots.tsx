@@ -17,6 +17,7 @@ import {
   resetPluginModuleLoader,
   usePluginModuleLoader,
 } from "./plugin-module-loader";
+import type { ResolvedPluginIdentity } from "./plugin-launcher-types";
 
 export {
   resolveRegisteredPluginComponent,
@@ -29,12 +30,7 @@ export {
   rewriteBareSpecifiers,
 } from "./plugin-module-loader";
 
-export type ResolvedPluginSlot = PluginUiSlotDeclaration & {
-  pluginId: string;
-  pluginUpdatedAt: string;
-  pluginKey: string;
-  pluginDisplayName: string;
-};
+export type ResolvedPluginSlot = PluginUiSlotDeclaration & ResolvedPluginIdentity;
 
 export function resolveRouteSidebarSlot(
   slots: ResolvedPluginSlot[],

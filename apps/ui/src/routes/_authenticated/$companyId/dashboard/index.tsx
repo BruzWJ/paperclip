@@ -14,7 +14,7 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { ActivityRow } from "@/components/ActivityRow";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { deriveInitials } from "@/lib/identity";
 import { taskValueLabel } from "@/lib/task-blockers";
 import { timeAgo } from "@/lib/timeAgo";
@@ -33,9 +33,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
-import { compareMoneyAmounts, parseMoneyAmount, type Agent, type Task } from "@paperclipai/shared";
+import { compareMoneyAmounts, parseMoneyAmount, type Task } from "@paperclipai/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { indexEntitiesById } from "@/lib/presentation-contracts";
 
 export const Route = createFileRoute("/_authenticated/$companyId/dashboard/")({
   component: Dashboard,
@@ -157,11 +158,7 @@ function Dashboard() {
     };
   }, []);
 
-  const agentMap = useMemo(() => {
-    const map = new Map<string, Agent>();
-    for (const a of agents ?? []) map.set(a.id, a);
-    return map;
-  }, [agents]);
+  const agentMap = useMemo(() => indexEntitiesById(agents), [agents]);
 
   const entityNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -376,7 +373,9 @@ function Dashboard() {
                       <div className="flex items-start gap-2 sm:items-center sm:gap-3">
                         {/* Status icon - left column on mobile */}
                         <span className="shrink-0 sm:hidden">
-                          <Badge variant="secondary">{taskValueLabel(task.boardPresentationStatus)}</Badge>
+                          <DomainStatus status={task.boardPresentationStatus}>
+                            {taskValueLabel(task.boardPresentationStatus)}
+                          </DomainStatus>
                         </span>
 
                         {/* Right column on mobile: title + metadata stacked */}
@@ -386,9 +385,9 @@ function Dashboard() {
                           </span>
                           <span className="flex items-center gap-2 sm:order-1 sm:shrink-0">
                             <span className="hidden sm:inline-flex">
-                              <Badge variant="secondary">
+                              <DomainStatus status={task.boardPresentationStatus}>
                                 {taskValueLabel(task.boardPresentationStatus)}
-                              </Badge>
+                              </DomainStatus>
                             </span>
                             <span className="text-xs font-mono text-muted-foreground">{task.identifier}</span>
                             {task.ownerAgentId &&

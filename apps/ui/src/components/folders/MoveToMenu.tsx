@@ -17,6 +17,13 @@ import { useMemo, useState } from "react";
 
 import { FolderSwatch } from "./folder-primitives";
 
+interface MoveToMenuProps {
+  folders: FolderListItem[];
+  currentFolderId: string | null | undefined;
+  onMove: (folderId: string | null) => void;
+  onCreateAndMove: () => void;
+}
+
 export function BulkBar({
   selectedCount,
   folders,
@@ -61,17 +68,7 @@ export function BulkBar({
   );
 }
 
-export function MoveToMenu({
-  folders,
-  currentFolderId,
-  onMove,
-  onCreateAndMove,
-}: {
-  folders: FolderListItem[];
-  currentFolderId: string | null | undefined;
-  onMove: (folderId: string | null) => void;
-  onCreateAndMove: () => void;
-}) {
+export function MoveToMenu({ folders, currentFolderId, onMove, onCreateAndMove }: MoveToMenuProps) {
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>Move to...</DropdownMenuSubTrigger>
@@ -87,17 +84,7 @@ export function MoveToMenu({
   );
 }
 
-export function MoveToMenuItems({
-  folders,
-  currentFolderId,
-  onMove,
-  onCreateAndMove,
-}: {
-  folders: FolderListItem[];
-  currentFolderId: string | null | undefined;
-  onMove: (folderId: string | null) => void;
-  onCreateAndMove: () => void;
-}) {
+export function MoveToMenuItems({ folders, currentFolderId, onMove, onCreateAndMove }: MoveToMenuProps) {
   const [query, setQuery] = useState("");
   const visibleFolders = useMemo(() => {
     const lowered = query.trim().toLowerCase();

@@ -16,6 +16,7 @@ import { buildInboxCreatorOptions, filterInboxWorkItems } from "./-inbox-work-it
 import { useInboxGrouping } from "./-useInboxGrouping";
 import type { useInboxQueries } from "./-useInboxQueries";
 import type { InboxState } from "./-useInboxState";
+import type { NamedColor } from "@/lib/presentation-contracts";
 
 type InboxQueries = ReturnType<typeof useInboxQueries>;
 
@@ -103,7 +104,7 @@ export function useInboxWorkItems({ tab, isMobile, queries, state }: UseInboxWor
   const agentById = useMemo(() => new Map((agents ?? []).map((agent) => [agent.id, agent.name])), [agents]);
   const taskById = useMemo(() => new Map((tasks ?? []).map((task) => [task.id, task])), [tasks]);
   const projectById = useMemo(() => {
-    const map = new Map<string, { name: string; color: string | null }>();
+    const map = new Map<string, NamedColor>();
     for (const project of projects ?? []) map.set(project.id, { name: project.name, color: project.color });
     return map;
   }, [projects]);

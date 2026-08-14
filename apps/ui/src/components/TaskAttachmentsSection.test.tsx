@@ -5,7 +5,7 @@ import type { TaskAttachment } from "@paperclipai/shared";
 import type { ComponentProps, ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskAttachmentsSection } from "./TaskAttachmentsSection";
 
 vi.mock("./MarkdownBody", () => ({
@@ -39,6 +39,51 @@ vi.mock("@/components/ui/button", () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
+const textTracksDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "textTracks");
+const audioTracksDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "audioTracks");
+const textTrackLists = new WeakMap<HTMLMediaElement, EventTarget & { length: number }>();
+const audioTrackLists = new WeakMap<HTMLMediaElement, EventTarget & { length: number }>();
+
+beforeAll(() => {
+  Object.defineProperty(HTMLMediaElement.prototype, "textTracks", {
+    configurable: true,
+    get(this: HTMLMediaElement) {
+      let tracks = textTrackLists.get(this);
+      if (!tracks) {
+        tracks = Object.assign(new EventTarget(), {
+          length: 0,
+          [Symbol.iterator]: () => [][Symbol.iterator](),
+        });
+        textTrackLists.set(this, tracks);
+      }
+      return tracks;
+    },
+  });
+  Object.defineProperty(HTMLMediaElement.prototype, "audioTracks", {
+    configurable: true,
+    get(this: HTMLMediaElement) {
+      let tracks = audioTrackLists.get(this);
+      if (!tracks) {
+        tracks = Object.assign(new EventTarget(), {
+          length: 0,
+          [Symbol.iterator]: () => [][Symbol.iterator](),
+        });
+        audioTrackLists.set(this, tracks);
+      }
+      return tracks;
+    },
+  });
+});
+
+afterAll(() => {
+  if (textTracksDescriptor) {
+    Object.defineProperty(HTMLMediaElement.prototype, "textTracks", textTracksDescriptor);
+  }
+  if (audioTracksDescriptor) {
+    Object.defineProperty(HTMLMediaElement.prototype, "audioTracks", audioTracksDescriptor);
+  }
+});
 
 async function act(callback: () => void | Promise<void>) {
   let result: void | Promise<void> = undefined;
@@ -180,7 +225,7 @@ describe("TaskAttachmentsSection", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("renders video attachments through the same player used for artifact outputs", async () => {
+  it("renders video attachments with the shared Kibo media player", async () => {
     const attachment = makeAttachment({
       id: "video-attachment",
       originalFilename: "demo.webm",
@@ -199,7 +244,11 @@ describe("TaskAttachmentsSection", () => {
 
     const video = container.querySelector("video");
     expect(video?.getAttribute("src")).toBe("/api/attachments/video-attachment/content");
-    expect(video?.getAttribute("controls")).not.toBeNull();
+    expect(video?.getAttribute("controls")).toBeNull();
+    expect(container.querySelector('[data-slot="media-video-player"]')).toBeTruthy();
+    expect(container.querySelector('[data-slot="media-video-player-controls"]')).toBeTruthy();
+    expect(container.querySelector("media-play-button")).toBeTruthy();
+    expect(container.querySelector("media-fullscreen-button")).toBeTruthy();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

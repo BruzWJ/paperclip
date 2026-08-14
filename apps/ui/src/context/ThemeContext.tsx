@@ -3,6 +3,7 @@ import { ThemeProvider as NextThemesProvider, useTheme as useNextTheme } from "n
 import { hasBlockingShortcutDialog, isKeyboardShortcutTextInputTarget } from "@/lib/keyboardShortcuts";
 
 type Theme = "light" | "dark";
+export type ThemePreference = Theme | "system";
 
 const THEME_STORAGE_KEY = "paperclip.theme";
 const DARK_THEME_COLOR = "#18181b";
@@ -83,8 +84,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 export function useTheme() {
   const nextTheme = useNextTheme();
   const theme = resolvedTheme(nextTheme.resolvedTheme);
-  const setTheme = useCallback((value: Theme) => nextTheme.setTheme(value), [nextTheme.setTheme]);
+  const preference: ThemePreference =
+    nextTheme.theme === "light" || nextTheme.theme === "dark" ? nextTheme.theme : "system";
+  const setTheme = useCallback((value: ThemePreference) => nextTheme.setTheme(value), [nextTheme.setTheme]);
   const toggleTheme = useCallback(() => setTheme(theme === "dark" ? "light" : "dark"), [setTheme, theme]);
 
-  return useMemo(() => ({ theme, setTheme, toggleTheme }), [setTheme, theme, toggleTheme]);
+  return useMemo(
+    () => ({ theme, preference, setTheme, toggleTheme }),
+    [preference, setTheme, theme, toggleTheme],
+  );
 }

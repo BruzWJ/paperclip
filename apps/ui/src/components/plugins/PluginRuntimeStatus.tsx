@@ -1,12 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyTitle } from "@/components/ui/empty";
 import {
   Item,
@@ -19,11 +14,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import type {
-  PluginDashboardData,
-  PluginDetailDto,
-  PluginLogDto,
-} from "@paperclipai/shared";
+import type { PluginDashboardData, PluginDetailDto, PluginLogDto } from "@paperclipai/shared";
 import {
   ActivitySquare,
   CalendarClock,
@@ -55,9 +46,7 @@ function formatDuration(ms: number): string {
 }
 
 function formatRelativeTime(isoString: string): string {
-  const seconds = Math.floor(
-    (Date.now() - new Date(isoString).getTime()) / 1000,
-  );
+  const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
   if (seconds < 0) return "just now";
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.floor(seconds / 60);
@@ -73,7 +62,6 @@ interface PluginRuntimeStatusProps {
   dashboardLoading: boolean;
   recentLogs?: PluginLogDto[];
   plugin: PluginDetailDto;
-  statusVariant: "default" | "destructive" | "secondary";
   displayStatus: string;
   pluginCapabilities: PluginDetailDto["manifestJson"]["capabilities"];
 }
@@ -83,7 +71,6 @@ export function PluginRuntimeStatus({
   dashboardLoading,
   recentLogs,
   plugin,
-  statusVariant,
   displayStatus,
   pluginCapabilities,
 }: PluginRuntimeStatusProps) {
@@ -96,13 +83,7 @@ export function PluginRuntimeStatus({
     ? [
         {
           label: "Status",
-          value: (
-            <Badge
-              variant={worker.status === "running" ? "default" : "secondary"}
-            >
-              {worker.status}
-            </Badge>
-          ),
+          value: <DomainStatus status={worker.status}>{worker.status}</DomainStatus>,
         },
         { label: "PID", value: worker.pid ?? "—" },
         { label: "Uptime", value: formatUptime(worker.uptime) },
@@ -142,9 +123,7 @@ export function PluginRuntimeStatus({
               <Cpu className="h-4 w-4" />
               Runtime Dashboard
             </CardTitle>
-            <CardDescription>
-              Worker process, scheduled jobs, and webhook deliveries
-            </CardDescription>
+            <CardDescription>Worker process, scheduled jobs, and webhook deliveries</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {dashboardData ? (
@@ -172,9 +151,7 @@ export function PluginRuntimeStatus({
                     </ItemGroup>
                   ) : (
                     <Empty className="border py-6">
-                      <EmptyTitle className="text-base">
-                        No worker process registered
-                      </EmptyTitle>
+                      <EmptyTitle className="text-base">No worker process registered</EmptyTitle>
                     </Empty>
                   )}
                 </div>
@@ -191,45 +168,24 @@ export function PluginRuntimeStatus({
                       {dashboardData.recentJobRuns.map((run) => (
                         <Item key={run.id} variant="muted" size="sm">
                           <ItemMedia>
-                            <Badge
-                              variant={
-                                ["success", "succeeded"].includes(run.status)
-                                  ? "default"
-                                  : run.status === "failed"
-                                    ? "destructive"
-                                    : run.status === "cancelled"
-                                      ? "outline"
-                                      : "secondary"
-                              }
-                            >
-                              {run.status}
-                            </Badge>
+                            <DomainStatus status={run.status}>{run.status}</DomainStatus>
                           </ItemMedia>
                           <ItemContent>
-                            <ItemTitle
-                              className="truncate font-mono text-xs"
-                              title={run.jobKey}
-                            >
+                            <ItemTitle className="truncate font-mono text-xs" title={run.jobKey}>
                               {run.jobKey}
                             </ItemTitle>
                           </ItemContent>
                           <Badge variant="outline">{run.trigger}</Badge>
                           <ItemActions className="text-xs text-muted-foreground">
-                            {run.durationMs != null ? (
-                              <span>{formatDuration(run.durationMs)}</span>
-                            ) : null}
-                            <span title={run.createdAt}>
-                              {formatRelativeTime(run.createdAt)}
-                            </span>
+                            {run.durationMs != null ? <span>{formatDuration(run.durationMs)}</span> : null}
+                            <span title={run.createdAt}>{formatRelativeTime(run.createdAt)}</span>
                           </ItemActions>
                         </Item>
                       ))}
                     </ItemGroup>
                   ) : (
                     <Empty className="border py-6">
-                      <EmptyTitle className="text-base">
-                        No job runs recorded yet
-                      </EmptyTitle>
+                      <EmptyTitle className="text-base">No job runs recorded yet</EmptyTitle>
                     </Empty>
                   )}
                 </div>
@@ -246,25 +202,10 @@ export function PluginRuntimeStatus({
                       {dashboardData.recentWebhookDeliveries.map((delivery) => (
                         <Item key={delivery.id} variant="muted" size="sm">
                           <ItemMedia>
-                            <Badge
-                              variant={
-                                ["processed", "success"].includes(
-                                  delivery.status,
-                                )
-                                  ? "default"
-                                  : delivery.status === "failed"
-                                    ? "destructive"
-                                    : "secondary"
-                              }
-                            >
-                              {delivery.status}
-                            </Badge>
+                            <DomainStatus status={delivery.status}>{delivery.status}</DomainStatus>
                           </ItemMedia>
                           <ItemContent>
-                            <ItemTitle
-                              className="truncate font-mono text-xs"
-                              title={delivery.webhookKey}
-                            >
+                            <ItemTitle className="truncate font-mono text-xs" title={delivery.webhookKey}>
                               {delivery.webhookKey}
                             </ItemTitle>
                           </ItemContent>
@@ -272,33 +213,26 @@ export function PluginRuntimeStatus({
                             {delivery.durationMs != null ? (
                               <span>{formatDuration(delivery.durationMs)}</span>
                             ) : null}
-                            <span title={delivery.createdAt}>
-                              {formatRelativeTime(delivery.createdAt)}
-                            </span>
+                            <span title={delivery.createdAt}>{formatRelativeTime(delivery.createdAt)}</span>
                           </ItemActions>
                         </Item>
                       ))}
                     </ItemGroup>
                   ) : (
                     <Empty className="border py-6">
-                      <EmptyTitle className="text-base">
-                        No webhook deliveries recorded yet
-                      </EmptyTitle>
+                      <EmptyTitle className="text-base">No webhook deliveries recorded yet</EmptyTitle>
                     </Empty>
                   )}
                 </div>
 
                 <div className="flex items-center gap-1.5 border-t border-border/50 pt-2 text-xs text-muted-foreground">
                   <Clock className="h-3 w-3" />
-                  Last checked:{" "}
-                  {new Date(dashboardData.checkedAt).toLocaleTimeString()}
+                  Last checked: {new Date(dashboardData.checkedAt).toLocaleTimeString()}
                 </div>
               </>
             ) : (
               <Empty className="border py-6">
-                <EmptyTitle className="text-base">
-                  Runtime diagnostics unavailable
-                </EmptyTitle>
+                <EmptyTitle className="text-base">Runtime diagnostics unavailable</EmptyTitle>
               </Empty>
             )}
           </CardContent>
@@ -311,30 +245,17 @@ export function PluginRuntimeStatus({
                 <ActivitySquare className="h-4 w-4" />
                 Recent Logs
               </CardTitle>
-              <CardDescription>
-                Last {recentLogs.length} log entries
-              </CardDescription>
+              <CardDescription>Last {recentLogs.length} log entries</CardDescription>
             </CardHeader>
             <CardContent>
               <ItemGroup className="max-h-64 gap-1 overflow-y-auto font-mono">
                 {recentLogs.map((entry) => (
                   <Item key={entry.id} variant="muted" size="sm">
-                    <Badge
-                      variant={
-                        entry.level === "error"
-                          ? "destructive"
-                          : entry.level === "warn"
-                            ? "secondary"
-                            : "outline"
-                      }
-                    >
+                    <DomainStatus status={entry.level === "warn" ? "warning" : entry.level}>
                       {entry.level}
-                    </Badge>
+                    </DomainStatus>
                     <ItemContent>
-                      <ItemTitle
-                        className="truncate font-mono text-xs"
-                        title={entry.message}
-                      >
+                      <ItemTitle className="truncate font-mono text-xs" title={entry.message}>
                         {entry.message}
                       </ItemTitle>
                       <ItemDescription className="font-mono text-xs">
@@ -359,10 +280,7 @@ export function PluginRuntimeStatus({
           </CardHeader>
           <CardContent>
             {dashboardLoading ? (
-              <p
-                className="flex items-center gap-2 text-sm text-muted-foreground"
-                role="status"
-              >
+              <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
                 <Spinner />
                 Checking health...
               </p>
@@ -373,13 +291,9 @@ export function PluginRuntimeStatus({
                     <ItemDescription>Overall</ItemDescription>
                   </ItemContent>
                   <ItemActions>
-                    <Badge
-                      variant={
-                        dashboardData.health.healthy ? "default" : "destructive"
-                      }
-                    >
+                    <DomainStatus status={dashboardData.health.healthy ? "healthy" : "unhealthy"}>
                       {dashboardData.health.status}
-                    </Badge>
+                    </DomainStatus>
                   </ItemActions>
                 </Item>
 
@@ -388,21 +302,13 @@ export function PluginRuntimeStatus({
                     {dashboardData.health.checks.map((check, i) => (
                       <Item key={`${check.name}:${i}`} size="sm">
                         <ItemContent>
-                          <ItemDescription title={check.name}>
-                            {check.name}
-                          </ItemDescription>
+                          <ItemDescription title={check.name}>{check.name}</ItemDescription>
                         </ItemContent>
                         <ItemActions>
                           {check.passed ? (
-                            <CheckCircle
-                              className="size-4"
-                              aria-label="Passed"
-                            />
+                            <CheckCircle className="size-4" aria-label="Passed" />
                           ) : (
-                            <XCircle
-                              className="size-4 text-destructive"
-                              aria-label="Failed"
-                            />
+                            <XCircle className="size-4 text-destructive" aria-label="Failed" />
                           )}
                         </ItemActions>
                       </Item>
@@ -426,16 +332,14 @@ export function PluginRuntimeStatus({
                     <ItemDescription>Lifecycle</ItemDescription>
                   </ItemContent>
                   <ItemActions>
-                    <Badge variant={statusVariant}>{displayStatus}</Badge>
+                    <DomainStatus status={displayStatus} />
                   </ItemActions>
                 </Item>
                 <p>Health checks run once the plugin is ready.</p>
                 {plugin.lastError ? (
                   <Alert variant="destructive">
                     <AlertTitle>Plugin error</AlertTitle>
-                    <AlertDescription className="break-words">
-                      {plugin.lastError}
-                    </AlertDescription>
+                    <AlertDescription className="break-words">{plugin.lastError}</AlertDescription>
                   </Alert>
                 ) : null}
               </div>
@@ -481,9 +385,7 @@ export function PluginRuntimeStatus({
               </ItemGroup>
             ) : (
               <Empty className="border py-6">
-                <EmptyTitle className="text-base">
-                  No special permissions requested
-                </EmptyTitle>
+                <EmptyTitle className="text-base">No special permissions requested</EmptyTitle>
               </Empty>
             )}
           </CardContent>

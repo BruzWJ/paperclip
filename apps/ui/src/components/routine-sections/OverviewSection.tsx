@@ -1,17 +1,14 @@
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { FieldSet } from "@/components/ui/field";
 import { Item, ItemGroup } from "@/components/ui/item";
-import { ArrowRight, Check, ChevronsUpDown, Clock3, KeyRound, Play } from "lucide-react";
+import { ArrowRight, Clock3, KeyRound, Play } from "lucide-react";
 import { useMemo, useState } from "react";
 import { timeAgo } from "../../lib/timeAgo";
 import { AgentIcon } from "../AgentIconPicker";
 import { MarkdownEditor } from "../MarkdownEditor";
-import { ENTITY_NONE_VALUE, entityOptionMatchesSearch, useEntitySelectorState } from "@/lib/entity-selector";
-import { cn } from "@/lib/utils";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../RoutineVariablesEditor";
 import { DocumentAnnotationsCountChip, TaskDocumentAnnotations } from "../TaskDocumentAnnotations";
 import { useRoutineDetail } from "./context";
@@ -60,25 +57,6 @@ export function OverviewSection({
   const boundSecrets = editDraft.env ? Object.keys(editDraft.env).length : 0;
   const lastRun = (routineRuns ?? [])[0] ?? null;
   const recentActivity = (activity ?? []).slice(0, 5);
-  const assigneeSelector = useEntitySelectorState({
-    value: editDraft.assigneeAgentId,
-    options: assigneeOptions,
-    noneLabel: "No responsible",
-    recentOptionIds: recentAssigneeIds,
-    onChange: (assigneeAgentId) => setEditDraft((current) => ({ ...current, assigneeAgentId })),
-    onConfirm: () => {
-      if (editDraft.projectId) descriptionEditorRef.current?.focus();
-      else projectSelectorRef.current?.focus();
-    },
-  });
-  const projectSelector = useEntitySelectorState({
-    value: editDraft.projectId,
-    options: projectOptions,
-    noneLabel: "No project",
-    recentOptionIds: recentProjectIds,
-    onChange: (projectId) => setEditDraft((current) => ({ ...current, projectId })),
-    onConfirm: () => descriptionEditorRef.current?.focus(),
-  });
   const summaries = [
     {
       icon: Clock3,
@@ -105,6 +83,21 @@ export function OverviewSection({
       ariaLabel: lastRun ? `Last run ${lastRun.status}. Open runs.` : "No runs. Open runs.",
     },
   ];
+  const descriptionEditor = (
+    <MarkdownEditor
+      ref={descriptionEditorRef}
+      value={editDraft.description}
+      onChange={(description) => setEditDraft((current) => ({ ...current, description }))}
+      placeholder="Add instructions..."
+      bordered={false}
+      contentClassName="min-h-(--sz-120px) text-sm leading-7"
+      mentions={mentionOptions}
+      readOnly={saveRoutine.isPending}
+      onSubmit={() => {
+        if (!saveRoutine.isPending && editDraft.title.trim()) saveRoutine.mutate();
+      }}
+    />
+  );
 
   return (
     <div className="space-y-6">
@@ -112,143 +105,78 @@ export function OverviewSection({
       <div className="overflow-x-auto overscroll-x-contain">
         <div className="inline-flex min-w-full flex-wrap items-center gap-2 text-sm text-muted-foreground sm:min-w-max sm:flex-nowrap">
           <span>For</span>
-          <Popover open={assigneeSelector.open} onOpenChange={assigneeSelector.setOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                ref={assigneeSelectorRef}
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={assigneeSelector.open}
-                aria-label="Responsible"
-                className="w-full justify-between overflow-hidden"
-                onPointerDown={() => {
-                  assigneeSelector.pointerFocusRef.current = true;
-                }}
-                onFocus={() => {
-                  if (assigneeSelector.pointerFocusRef.current)
-                    assigneeSelector.pointerFocusRef.current = false;
-                  else assigneeSelector.setOpen(true);
-                }}
-              >
-                <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-left">
-                  {currentAssignee ? <AgentIcon icon={currentAssignee.icon} className="size-3.5" /> : null}
-                  {assigneeSelector.currentOption?.label ?? "Responsible"}
-                </span>
-                <ChevronsUpDown className="size-4 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-72 p-0">
-              <Command
-                filter={(optionValue, search) =>
-                  entityOptionMatchesSearch(
-                    assigneeSelector.orderedOptions.find(
-                      (option) => (option.id || ENTITY_NONE_VALUE) === optionValue,
-                    ),
-                    search,
-                  )
-                }
-              >
-                <CommandInput autoFocus placeholder="Search responsible..." />
-                <CommandList>
-                  <CommandEmpty>No responsible found.</CommandEmpty>
-                  {assigneeSelector.orderedOptions.map((option) => {
-                    const assignee = agentById.get(option.id);
-                    return (
-                      <CommandItem
-                        key={option.id || ENTITY_NONE_VALUE}
-                        value={option.id || ENTITY_NONE_VALUE}
-                        onSelect={() => assigneeSelector.select(option)}
-                      >
-                        {assignee ? <AgentIcon icon={assignee.icon} className="size-3.5" /> : null}
-                        <span className="truncate">{option.label}</span>
-                        <Check
-                          className={cn(
-                            "ml-auto size-4",
-                            option.id === editDraft.assigneeAgentId ? "opacity-100" : "opacity-0",
-                          )}
-                        />
-                      </CommandItem>
-                    );
-                  })}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+          <EntityCombobox
+            ref={assigneeSelectorRef}
+            value={editDraft.assigneeAgentId}
+            options={assigneeOptions}
+            type="responsible"
+            ariaLabel="Responsible"
+            placeholder="Responsible"
+            noneLabel="No responsible"
+            recentOptionIds={recentAssigneeIds}
+            onValueChange={(assigneeAgentId) => setEditDraft((current) => ({ ...current, assigneeAgentId }))}
+            onConfirm={() => {
+              if (editDraft.projectId) descriptionEditorRef.current?.focus();
+              else projectSelectorRef.current?.focus();
+            }}
+            searchPlaceholder="Search responsible..."
+            emptyMessage="No responsible found."
+            renderValue={(option) => (
+              <>
+                {currentAssignee ? <AgentIcon icon={currentAssignee.icon} className="size-3.5" /> : null}
+                {option?.label ?? "Responsible"}
+              </>
+            )}
+            renderOption={(option) => {
+              const assignee = agentById.get(option.id);
+              return (
+                <>
+                  {assignee ? <AgentIcon icon={assignee.icon} className="size-3.5" /> : null}
+                  <span className="truncate">{option.label}</span>
+                </>
+              );
+            }}
+          />
           <span>in</span>
-          <Popover open={projectSelector.open} onOpenChange={projectSelector.setOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                ref={projectSelectorRef}
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={projectSelector.open}
-                aria-label="Project"
-                className="w-full justify-between overflow-hidden"
-                onPointerDown={() => {
-                  projectSelector.pointerFocusRef.current = true;
-                }}
-                onFocus={() => {
-                  if (projectSelector.pointerFocusRef.current)
-                    projectSelector.pointerFocusRef.current = false;
-                  else projectSelector.setOpen(true);
-                }}
-              >
-                <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-left">
-                  {currentProject ? (
+          <EntityCombobox
+            ref={projectSelectorRef}
+            value={editDraft.projectId}
+            options={projectOptions}
+            type="project"
+            ariaLabel="Project"
+            placeholder="Project"
+            noneLabel="No project"
+            recentOptionIds={recentProjectIds}
+            onValueChange={(projectId) => setEditDraft((current) => ({ ...current, projectId }))}
+            onConfirm={() => descriptionEditorRef.current?.focus()}
+            searchPlaceholder="Search projects..."
+            emptyMessage="No projects found."
+            renderValue={(option) => (
+              <>
+                {currentProject ? (
+                  <span
+                    className="size-3.5 shrink-0 rounded-sm"
+                    style={{ backgroundColor: currentProject.color ?? "var(--project-none)" }}
+                  />
+                ) : null}
+                {option?.label ?? "Project"}
+              </>
+            )}
+            renderOption={(option) => {
+              const project = projectById.get(option.id);
+              return (
+                <>
+                  {option.id ? (
                     <span
                       className="size-3.5 shrink-0 rounded-sm"
-                      style={{ backgroundColor: currentProject.color ?? "var(--project-none)" }}
+                      style={{ backgroundColor: project?.color ?? "var(--project-none)" }}
                     />
                   ) : null}
-                  {projectSelector.currentOption?.label ?? "Project"}
-                </span>
-                <ChevronsUpDown className="size-4 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-72 p-0">
-              <Command
-                filter={(optionValue, search) =>
-                  entityOptionMatchesSearch(
-                    projectSelector.orderedOptions.find(
-                      (option) => (option.id || ENTITY_NONE_VALUE) === optionValue,
-                    ),
-                    search,
-                  )
-                }
-              >
-                <CommandInput autoFocus placeholder="Search projects..." />
-                <CommandList>
-                  <CommandEmpty>No projects found.</CommandEmpty>
-                  {projectSelector.orderedOptions.map((option) => {
-                    const project = projectById.get(option.id);
-                    return (
-                      <CommandItem
-                        key={option.id || ENTITY_NONE_VALUE}
-                        value={option.id || ENTITY_NONE_VALUE}
-                        onSelect={() => projectSelector.select(option)}
-                      >
-                        {option.id ? (
-                          <span
-                            className="size-3.5 shrink-0 rounded-sm"
-                            style={{ backgroundColor: project?.color ?? "var(--project-none)" }}
-                          />
-                        ) : null}
-                        <span className="truncate">{option.label}</span>
-                        <Check
-                          className={cn(
-                            "ml-auto size-4",
-                            option.id === editDraft.projectId ? "opacity-100" : "opacity-0",
-                          )}
-                        />
-                      </CommandItem>
-                    );
-                  })}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+                  <span className="truncate">{option.label}</span>
+                </>
+              );
+            }}
+          />
         </div>
       </div>
 
@@ -298,38 +226,10 @@ export function OverviewSection({
               panelOpen={descriptionAnnotationsOpen}
               onPanelOpenChange={setDescriptionAnnotationsOpen}
             >
-              <MarkdownEditor
-                ref={descriptionEditorRef}
-                value={editDraft.description}
-                onChange={(description) => setEditDraft((current) => ({ ...current, description }))}
-                placeholder="Add instructions..."
-                bordered={false}
-                contentClassName="min-h-(--sz-120px) text-sm leading-7"
-                mentions={mentionOptions}
-                readOnly={saveRoutine.isPending}
-                onSubmit={() => {
-                  if (!saveRoutine.isPending && editDraft.title.trim()) {
-                    saveRoutine.mutate();
-                  }
-                }}
-              />
+              {descriptionEditor}
             </TaskDocumentAnnotations>
           ) : (
-            <MarkdownEditor
-              ref={descriptionEditorRef}
-              value={editDraft.description}
-              onChange={(description) => setEditDraft((current) => ({ ...current, description }))}
-              placeholder="Add instructions..."
-              bordered={false}
-              contentClassName="min-h-(--sz-120px) text-sm leading-7"
-              mentions={mentionOptions}
-              readOnly={saveRoutine.isPending}
-              onSubmit={() => {
-                if (!saveRoutine.isPending && editDraft.title.trim()) {
-                  saveRoutine.mutate();
-                }
-              }}
-            />
+            descriptionEditor
           )}
         </FieldSet>
         {saveRoutine.isPending ? (

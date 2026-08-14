@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { Item, ItemActions, ItemGroup } from "@/components/ui/item";
+import type { OpenStateProps } from "@/lib/presentation-contracts";
 
 interface ShortcutEntry {
   keys: string[];
@@ -131,13 +132,7 @@ export function KeyboardShortcutsCheatsheetContent() {
   );
 }
 
-export function KeyboardShortcutsCheatsheet({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+export function KeyboardShortcutsCheatsheet({ open, onOpenChange }: OpenStateProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md gap-0 p-0 overflow-hidden" showCloseButton={false}>

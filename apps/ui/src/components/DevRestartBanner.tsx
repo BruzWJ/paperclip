@@ -2,20 +2,9 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, RotateCcw, TimerReset } from "lucide-react";
 import { healthApi, type DevServerHealthStatus } from "../api/health";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Banner, BannerAction, BannerIcon, BannerTitle } from "@/components/kibo-ui/banner";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 
 const RESTART_PENDING_RESET_MS = 30_000;
 
@@ -68,13 +57,13 @@ export function DevRestartBanner({ devServer }: { devServer?: DevServerHealthSta
   }
 
   return (
-    <Alert className="rounded-none border-x-0 border-t-0">
-      <AlertTriangle />
-      <AlertTitle className="flex flex-wrap items-center gap-2">
-        Restart required
-        {devServer.autoRestartEnabled ? <Badge variant="secondary">Auto-restart on</Badge> : null}
-      </AlertTitle>
-      <AlertDescription className="w-full">
+    <Banner className="items-start rounded-none" role="status">
+      <BannerIcon icon={AlertTriangle} />
+      <div className="min-w-0 flex-1">
+        <BannerTitle className="flex flex-wrap items-center gap-2 font-medium">
+          Restart required
+          {devServer.autoRestartEnabled ? <DomainStatus status="active">Auto-restart on</DomainStatus> : null}
+        </BannerTitle>
         <div className="flex w-full flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0">
             <p className="mt-1 text-sm">
@@ -91,7 +80,7 @@ export function DevRestartBanner({ devServer }: { devServer?: DevServerHealthSta
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2 md:justify-end">
-            <Badge variant="secondary">
+            <DomainStatus status={devServer.waitingForIdle ? "pending" : "active"}>
               {devServer.waitingForIdle ? (
                 <>
                   <TimerReset className="h-3.5 w-3.5" />
@@ -108,28 +97,23 @@ export function DevRestartBanner({ devServer }: { devServer?: DevServerHealthSta
                   <span>Restart after active work is safe to interrupt</span>
                 </>
               )}
-            </Badge>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button size="sm" className="h-auto gap-2 px-3 py-1.5 text-xs" disabled={restartPending}>
+            </DomainStatus>
+            <ConfirmActionDialog
+              triggerAsChild
+              trigger={
+                <BannerAction className="h-auto gap-2 px-3 py-1.5 text-xs" disabled={restartPending}>
                   <RotateCcw className="h-3.5 w-3.5" />
                   <span>{restartPending ? "Restart requested" : "Restart now"}</span>
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Restart Paperclip now?</AlertDialogTitle>
-                  <AlertDialogDescription>{restartWarning}</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => void requestRestartNow()}>Restart now</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                </BannerAction>
+              }
+              title="Restart Paperclip now?"
+              description={restartWarning}
+              confirmLabel="Restart now"
+              onConfirm={() => void requestRestartNow()}
+            />
           </div>
         </div>
-      </AlertDescription>
-    </Alert>
+      </div>
+    </Banner>
   );
 }

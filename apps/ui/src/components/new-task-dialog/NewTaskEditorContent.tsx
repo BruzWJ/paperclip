@@ -6,30 +6,24 @@ import { Item, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { ListTree, Maximize2, Minimize2 } from "lucide-react";
 import { MissingUserSecretsBanner } from "@/components/secrets/MissingUserSecretsBanner";
-import { cn } from "@/lib/utils";
+import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
 import { NewTaskAssignmentSelectors } from "./NewTaskAssignmentSelectors";
 import { TaskRequestEditor, TaskTitleTextarea } from "./NewTaskTextEditors";
 import { NewTaskStagedFiles } from "./NewTaskStagedFiles";
 import { useNewTaskDialogViewModel } from "./context";
+import { STAGED_FILE_ACCEPT } from "./model";
 
 export function NewTaskEditorContent() {
   const model = useNewTaskDialogViewModel();
   const { isSubTaskMode, parentTaskLabel, newTaskDefaults, closeNewTask } = model.dialog;
   const { companyId, selectedCompany, currentUserId } = model.company;
-  const { title, request, ownerAgentId, projectId, expanded, isFileDragOver } = model.values;
+  const { title, request, ownerAgentId, projectId, expanded } = model.values;
   const { setExpanded } = model.setters;
   const { requestEditorRef, ownerSelectorRef, projectSelectorRef } = model.refs;
   const { mentionOptions } = model.options;
   const { neededUserSecretKeys } = model.derived;
   const { createTask, uploadRequestImageHandler } = model.creation;
-  const {
-    handleTitleChange,
-    handleRequestChange,
-    handleFileDragEnter,
-    handleFileDragOver,
-    handleFileDragLeave,
-    handleFileDrop,
-  } = model.actions;
+  const { handleTitleChange, handleRequestChange, stageFiles } = model.actions;
   return (
     <>
       <DialogTitle className="sr-only">Create a task</DialogTitle>
@@ -109,14 +103,8 @@ export function NewTaskEditorContent() {
 
         {/* Immutable request */}
         <Separator />
-        <div
-          className="px-4 pb-2 pt-3"
-          onDragEnter={handleFileDragEnter}
-          onDragOver={handleFileDragOver}
-          onDragLeave={handleFileDragLeave}
-          onDrop={handleFileDrop}
-        >
-          <Card className={cn("gap-0 py-0 shadow-none", isFileDragOver && "bg-accent")}>
+        <div className="px-4 pb-2 pt-3">
+          <Card className="gap-0 py-0 shadow-none">
             <TaskRequestEditor
               value={request}
               expanded={expanded}
@@ -127,6 +115,14 @@ export function NewTaskEditorContent() {
             />
           </Card>
           <NewTaskStagedFiles />
+          <AccessibleDropzone
+            ariaLabel="Upload task attachments"
+            accept={STAGED_FILE_ACCEPT}
+            maxFiles={100}
+            disabled={createTask.isPending}
+            className="mt-2"
+            onDrop={(files) => stageFiles(files)}
+          />
         </div>
       </div>
     </>

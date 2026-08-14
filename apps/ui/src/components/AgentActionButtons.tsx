@@ -3,23 +3,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pause, Play, Plus, MoreHorizontal, Copy, Trash2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
 import { useDialogActions } from "../context/DialogContext";
@@ -204,28 +195,23 @@ export function AgentActionButtons({
         )}
       </ButtonGroup>
       {pauseConfirm && (
-        <AlertDialog open={pauseConfirmOpen} onOpenChange={setPauseConfirmOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{pauseConfirm.title}</AlertDialogTitle>
-              <AlertDialogDescription asChild>
-                <div>{pauseConfirm.description}</div>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={disabled}>Cancel</AlertDialogCancel>
-              <AlertDialogAction disabled={disabled} onClick={() => agentAction.mutate("pause")}>
-                Pause anyway
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmActionDialog
+          open={pauseConfirmOpen}
+          onOpenChange={setPauseConfirmOpen}
+          title={pauseConfirm.title}
+          description={pauseConfirm.description}
+          descriptionAsChild
+          confirmLabel="Pause anyway"
+          disabled={disabled}
+          pending={agentAction.isPending}
+          onConfirm={() => agentAction.mutate("pause")}
+        />
       )}
       {showStatus && (
         <span className="hidden sm:inline">
-          <Badge variant="secondary" className="capitalize">
+          <DomainStatus status={agent.status} className="capitalize">
             {agent.status.replaceAll("_", " ")}
-          </Badge>
+          </DomainStatus>
         </span>
       )}
       {children}

@@ -1,20 +1,15 @@
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
 import {
   ORG_CARD_HEIGHT,
   ORG_CARD_WIDTH,
-  type OrgLayoutNode,
+  type OrgLayoutEdge,
 } from "@/routes/_authenticated/$companyId/org/-org-layout";
+import type { Point2D } from "@/lib/presentation-contracts";
 import type { Agent } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
 import { Download, Maximize2, Minus, Plus, Upload } from "lucide-react";
@@ -30,10 +25,7 @@ export function OrgChartActions({ companyId }: { companyId: string }) {
         </Link>
       </Button>
       <Button variant="outline" size="sm" asChild>
-        <Link
-          to="/$companyId/company/export/$"
-          params={{ companyId, _splat: "" }}
-        >
+        <Link to="/$companyId/company/export/$" params={{ companyId, _splat: "" }}>
           <Download data-icon="inline-start" />
           Export company
         </Link>
@@ -89,38 +81,21 @@ export function OrgChartAgentCard({
         <ItemContent className="min-w-0 text-left">
           <ItemTitle className="max-w-full">
             <span className="truncate">{name}</span>
-            <Badge variant="secondary" className="shrink-0 capitalize">
+            <DomainStatus status={status} className="shrink-0 capitalize">
               {status.replaceAll("_", " ")}
-            </Badge>
+            </DomainStatus>
           </ItemTitle>
-          {agent?.title ? (
-            <ItemDescription className="truncate">
-              {agent.title}
-            </ItemDescription>
-          ) : null}
-          {agent?.capabilities ? (
-            <ItemDescription>{agent.capabilities}</ItemDescription>
-          ) : null}
+          {agent?.title ? <ItemDescription className="truncate">{agent.title}</ItemDescription> : null}
+          {agent?.capabilities ? <ItemDescription>{agent.capabilities}</ItemDescription> : null}
         </ItemContent>
       </Button>
     </Item>
   );
 }
 
-export function OrgChartEdges({
-  edges,
-  pan,
-  zoom,
-}: {
-  edges: Array<{ parent: OrgLayoutNode; child: OrgLayoutNode }>;
-  pan: { x: number; y: number };
-  zoom: number;
-}) {
+export function OrgChartEdges({ edges, pan, zoom }: { edges: OrgLayoutEdge[]; pan: Point2D; zoom: number }) {
   return (
-    <svg
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 size-full"
-    >
+    <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full">
       <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
         {edges.map(({ parent, child }) => {
           const x1 = parent.x + ORG_CARD_WIDTH / 2;

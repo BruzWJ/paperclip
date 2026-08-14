@@ -7,6 +7,7 @@ import {
   type RoutineListItem,
   type RoutineVariable,
 } from "@paperclipai/shared";
+import type { SortDirection } from "@/lib/presentation-contracts";
 
 export { autoResizeTextarea } from "@/lib/textarea";
 
@@ -74,7 +75,7 @@ export type RoutineGroupBy = "folder" | "none" | "project" | "assignee";
 
 export type RoutineSortField = "updated" | "created" | "title" | "lastRun";
 
-export type RoutineSortDir = "asc" | "desc";
+export type RoutineSortDir = SortDirection;
 
 export type RoutineViewState = {
   sortField: RoutineSortField;
@@ -88,6 +89,18 @@ export type RoutineGroup = {
   label: string | null;
   items: RoutineListItem[];
 };
+
+export interface RoutineComposerDraft {
+  title: string;
+  description: string;
+  projectId: string;
+  folderId: string | null;
+  assigneeAgentId: string;
+  priority: string;
+  concurrencyPolicy: string;
+  catchUpPolicy: string;
+  variables: RoutineVariable[];
+}
 
 export const defaultRoutineViewState: RoutineViewState = {
   sortField: "title",
@@ -122,17 +135,7 @@ export function compareNullableText(left: string | null | undefined, right: stri
   });
 }
 
-export function buildRoutineMutationPayload(input: {
-  title: string;
-  description: string;
-  projectId: string;
-  folderId: string | null;
-  assigneeAgentId: string;
-  priority: string;
-  concurrencyPolicy: string;
-  catchUpPolicy: string;
-  variables: RoutineVariable[];
-}) {
+export function buildRoutineMutationPayload(input: RoutineComposerDraft) {
   return {
     ...input,
     description: input.description.trim() || null,

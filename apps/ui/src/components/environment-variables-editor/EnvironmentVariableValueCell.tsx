@@ -3,6 +3,7 @@ import { ChevronDown, KeyRound, ShieldAlert, Type as TypeIcon, UserRound, X } fr
 import type { CompanySecret, UserSecretDefinition } from "@paperclipai/shared";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import {
   DropdownMenu,
@@ -280,8 +281,19 @@ export function EnvironmentVariableValueCell({
             ) : (
               <div className="grid min-w-0 flex-1 grid-cols-(--gtc-13)">
                 {userSecretsEnabled ? (
-                  <Select
+                  <EntityCombobox
                     value={row.userSecretKey}
+                    options={[
+                      ...(row.userSecretKey &&
+                      !userSecretDefinitions?.some((definition) => definition.key === row.userSecretKey)
+                        ? [{ id: row.userSecretKey, label: `Unknown (${row.userSecretKey})` }]
+                        : []),
+                      ...(userSecretDefinitions ?? []).map((definition) => ({
+                        id: definition.key,
+                        label: `${definition.name}${definition.status !== "active" ? ` (${definition.status})` : ""}`,
+                        searchText: `${definition.key} ${definition.name}`,
+                      })),
+                    ]}
                     onValueChange={(key) => {
                       const definition = userSecretDefinitions?.find((candidate) => candidate.key === key);
                       onPatch({
@@ -289,27 +301,14 @@ export function EnvironmentVariableValueCell({
                         ...(definition && !row.name.trim() ? { name: definition.key.toUpperCase() } : {}),
                       });
                     }}
+                    type="user secret"
+                    ariaLabel="User secret"
+                    placeholder="Select user secret..."
+                    noneLabel="Select user secret..."
+                    includeNone={false}
                     disabled={disabled || isPending}
-                  >
-                    <SelectTrigger
-                      className="min-w-0 bg-transparent border-0 px-2 py-1.5 text-sm font-mono outline-none h-auto"
-                      aria-label="User secret"
-                    >
-                      <SelectValue placeholder="Select user secret..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {row.userSecretKey &&
-                      !userSecretDefinitions?.some((definition) => definition.key === row.userSecretKey) ? (
-                        <SelectItem value={row.userSecretKey}>Unknown ({row.userSecretKey})</SelectItem>
-                      ) : null}
-                      {(userSecretDefinitions ?? []).map((definition) => (
-                        <SelectItem key={definition.id} value={definition.key}>
-                          {definition.name}
-                          {definition.status !== "active" ? ` (${definition.status})` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    triggerClassName="h-auto min-w-0 rounded-none border-0 bg-transparent px-2 py-1.5 font-mono text-sm shadow-none"
+                  />
                 ) : (
                   <InputGroupInput
                     className="font-mono"

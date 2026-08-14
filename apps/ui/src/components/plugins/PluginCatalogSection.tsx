@@ -1,26 +1,11 @@
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import type {
-  PluginCatalogEntryDto,
-  PluginRecordDto,
-} from "@paperclipai/shared";
+import type { PluginCatalogEntryDto, PluginRecordDto } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
 import { Puzzle } from "lucide-react";
 function getCatalogKindLabel(kind: PluginCatalogEntryDto["kind"]) {
@@ -63,10 +48,7 @@ export function PluginCatalogSection({
       ) : null}
 
       {isLoading ? (
-        <div
-          className="flex items-center gap-2 text-sm text-muted-foreground"
-          role="status"
-        >
+        <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
           <Spinner /> Loading available plugins…
         </div>
       ) : loadError ? (
@@ -81,43 +63,23 @@ export function PluginCatalogSection({
               <Puzzle />
             </EmptyMedia>
             <EmptyTitle>No plugins available</EmptyTitle>
-            <EmptyDescription>
-              No local plugins are available in this installation.
-            </EmptyDescription>
+            <EmptyDescription>No local plugins are available in this installation.</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
         <ItemGroup>
           {catalogPlugins.map((catalogPlugin) => {
-            const installedPlugin = installedByPackageName.get(
-              catalogPlugin.packageName,
-            );
-            const installPending =
-              isInstallPending &&
-              installingPackage === catalogPlugin.packageName;
+            const installedPlugin = installedByPackageName.get(catalogPlugin.packageName);
+            const installPending = isInstallPending && installingPackage === catalogPlugin.packageName;
 
             return (
               <Item key={catalogPlugin.packageName} variant="outline">
                 <ItemContent>
                   <ItemTitle>
-                    <span className="font-medium">
-                      {catalogPlugin.displayName}
-                    </span>
-                    <Badge variant="outline">
-                      {getCatalogKindLabel(catalogPlugin.kind)}
-                    </Badge>
+                    <span className="font-medium">{catalogPlugin.displayName}</span>
+                    <Badge variant="outline">{getCatalogKindLabel(catalogPlugin.kind)}</Badge>
                     {installedPlugin ? (
-                      <Badge
-                        variant={
-                          installedPlugin.status === "ready"
-                            ? "default"
-                            : installedPlugin.status === "error"
-                              ? "destructive"
-                              : "secondary"
-                        }
-                      >
-                        {installedPlugin.status}
-                      </Badge>
+                      <DomainStatus status={installedPlugin.status}>{installedPlugin.status}</DomainStatus>
                     ) : (
                       <Badge variant="secondary">Available</Badge>
                     )}
@@ -129,13 +91,10 @@ export function PluginCatalogSection({
                   <ItemDescription>
                     {catalogPlugin.packageName} · v{catalogPlugin.version}
                   </ItemDescription>
-                  <ItemDescription>
-                    {catalogPlugin.relativePath}
-                  </ItemDescription>
+                  <ItemDescription>{catalogPlugin.relativePath}</ItemDescription>
                   {!catalogPlugin.built && !installedPlugin ? (
                     <ItemDescription>
-                      Paperclip will build this package automatically before
-                      installing it.
+                      Paperclip will build this package automatically before installing it.
                     </ItemDescription>
                   ) : null}
                 </ItemContent>
@@ -149,9 +108,7 @@ export function PluginCatalogSection({
                           pluginId: installedPlugin.id,
                         }}
                       >
-                        {installedPlugin.status === "ready"
-                          ? "Configure"
-                          : "Review configuration"}
+                        {installedPlugin.status === "ready" ? "Configure" : "Review configuration"}
                       </Link>
                     </Button>
                   ) : (

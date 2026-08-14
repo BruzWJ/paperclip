@@ -4,6 +4,7 @@ import type { CompanySecret } from "@paperclipai/shared";
 import { AlertCircle, KeyRound, Trash2, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FieldLegend, FieldSet } from "@/components/ui/field";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
@@ -186,14 +187,14 @@ function MyUserSecretRow({
               <span className="font-medium text-foreground">{leaf}</span>
             </span>
             <Badge variant="secondary">{definition.key}</Badge>
-            {disabledDefinition ? <Badge variant="outline">{definition.status}</Badge> : null}
+            {disabledDefinition ? <DomainStatus status={definition.status} /> : null}
           </ItemTitle>
           {definition.description ? <ItemDescription>{definition.description}</ItemDescription> : null}
           {definition.usageGuidance ? <ItemDescription>{definition.usageGuidance}</ItemDescription> : null}
         </ItemContent>
 
         <ItemActions>
-          <Badge variant="outline">{myValueLabel(state)}</Badge>
+          <DomainStatus status={state}>{myValueLabel(state)}</DomainStatus>
           {!disabledDefinition ? (
             <Button size="sm" variant={secret ? "outline" : "default"} onClick={onSet}>
               {secret ? "Update" : "Set value"}

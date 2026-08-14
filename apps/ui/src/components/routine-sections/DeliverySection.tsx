@@ -1,16 +1,15 @@
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
+import { FieldLegend, FieldSet } from "@/components/ui/field";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-  FieldTitle,
-} from "@/components/ui/field";
+  Choicebox,
+  ChoiceboxIndicator,
+  ChoiceboxItem,
+  ChoiceboxItemDescription,
+  ChoiceboxItemHeader,
+  ChoiceboxItemTitle,
+} from "@/components/kibo-ui/choicebox";
 import {
   Item,
   ItemActions,
@@ -67,54 +66,52 @@ export function DeliverySection() {
     <div className="space-y-6">
       <FieldSet>
         <FieldLegend variant="label">Concurrency</FieldLegend>
-        <RadioGroup
+        <Choicebox
           value={editDraft.concurrencyPolicy}
           onValueChange={(concurrencyPolicy) =>
             setEditDraft((current) => ({ ...current, concurrencyPolicy }))
           }
         >
           {concurrencyPolicyOptions.map((option) => (
-            <FieldLabel key={option.value} htmlFor={`${policyControlId}-concurrency-${option.value}`}>
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>{option.title}</FieldTitle>
-                  <FieldDescription>{option.description}</FieldDescription>
-                </FieldContent>
-                <RadioGroupItem value={option.value} id={`${policyControlId}-concurrency-${option.value}`} />
-              </Field>
-            </FieldLabel>
+            <ChoiceboxItem
+              key={option.value}
+              id={`${policyControlId}-concurrency-${option.value}`}
+              value={option.value}
+            >
+              <ChoiceboxItemHeader>
+                <ChoiceboxItemTitle>{option.title}</ChoiceboxItemTitle>
+                <ChoiceboxItemDescription>{option.description}</ChoiceboxItemDescription>
+              </ChoiceboxItemHeader>
+              <ChoiceboxIndicator id={`${policyControlId}-concurrency-${option.value}`} />
+            </ChoiceboxItem>
           ))}
-        </RadioGroup>
+        </Choicebox>
       </FieldSet>
       <FieldSet>
         <FieldLegend variant="label">Catch-up</FieldLegend>
-        <RadioGroup
+        <Choicebox
           value={editDraft.catchUpPolicy}
           onValueChange={(catchUpPolicy) => setEditDraft((current) => ({ ...current, catchUpPolicy }))}
         >
           {catchUpPolicyOptions.map((option) => (
-            <FieldLabel key={option.value} htmlFor={`${policyControlId}-catch-up-${option.value}`}>
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>{option.title}</FieldTitle>
-                  <FieldDescription>{option.description}</FieldDescription>
-                </FieldContent>
-                <RadioGroupItem value={option.value} id={`${policyControlId}-catch-up-${option.value}`} />
-              </Field>
-            </FieldLabel>
+            <ChoiceboxItem
+              key={option.value}
+              id={`${policyControlId}-catch-up-${option.value}`}
+              value={option.value}
+            >
+              <ChoiceboxItemHeader>
+                <ChoiceboxItemTitle>{option.title}</ChoiceboxItemTitle>
+                <ChoiceboxItemDescription>{option.description}</ChoiceboxItemDescription>
+              </ChoiceboxItemHeader>
+              <ChoiceboxIndicator id={`${policyControlId}-catch-up-${option.value}`} />
+            </ChoiceboxItem>
           ))}
-        </RadioGroup>
+        </Choicebox>
       </FieldSet>
       <NextFiresPreview triggers={routine.triggers} concurrencyPolicy={editDraft.concurrencyPolicy} />
     </div>
   );
 }
-
-export const dispositionToneClass: Record<string, string> = {
-  queued: "text-foreground",
-  coalesced: "text-muted-foreground",
-  skipped: "text-muted-foreground",
-};
 
 /**
  * "Next 5 fires" preview (§3.5) — the strongest "what does this policy mean?"
@@ -170,9 +167,7 @@ export function NextFiresPreview({
                   <ArrowRight />
                 </ItemMedia>
                 <ItemActions>
-                  <Badge variant="secondary" className={dispositionToneClass[entry.disposition]}>
-                    {entry.label}
-                  </Badge>
+                  <DomainStatus status={entry.disposition}>{entry.label}</DomainStatus>
                 </ItemActions>
               </Item>
             ))}

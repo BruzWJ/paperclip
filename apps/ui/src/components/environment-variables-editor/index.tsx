@@ -20,6 +20,7 @@ import {
   envKeyFromSecretName,
   rowsFromValue,
   valueFromRows,
+  type EnvironmentVariableFocusTarget,
   type EnvRow,
 } from "./model";
 import {
@@ -99,10 +100,7 @@ export const EnvironmentVariablesEditor = forwardRef<
           .filter(Boolean),
       ),
   );
-  const [pendingFocus, setPendingFocus] = useState<{
-    rowId: string;
-    field: "name" | "value";
-  } | null>(null);
+  const [pendingFocus, setPendingFocus] = useState<EnvironmentVariableFocusTarget | null>(null);
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -399,9 +397,3 @@ export const EnvironmentVariablesEditor = forwardRef<
     />
   );
 });
-
-export type { EnvRow } from "./model";
-export { EnvironmentVariableRow } from "./Row";
-export { SecretPicker } from "./SecretPicker";
-export { CreateSecretPopover } from "./CreateSecretPopover";
-export { parseDotenv } from "./parse-dotenv";

@@ -23,7 +23,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BreadcrumbProvider, useBreadcrumbs, type Breadcrumb } from "@/context/BreadcrumbContext";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import {
   storybookAgents,
   storybookTasks,
@@ -157,9 +157,7 @@ function CommandResultsSurface() {
               <CircleDot className="mr-2 h-4 w-4" />
               <span className="mr-2 font-mono text-xs text-muted-foreground">{task.identifier}</span>
               <span className="flex-1 truncate">{task.title}</span>
-              <Badge variant={statusBadgeVariant(task.boardPresentationStatus)}>
-                {task.boardPresentationStatus}
-              </Badge>
+              <DomainStatus status={task.boardPresentationStatus} />
             </CommandItem>
           ))}
         </CommandGroup>

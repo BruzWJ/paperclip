@@ -2,11 +2,56 @@
 
 import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ImageGalleryModal, type GalleryMediaItem } from "./ImageGalleryModal";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
+const textTracksDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "textTracks");
+const audioTracksDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "audioTracks");
+const textTrackLists = new WeakMap<HTMLMediaElement, EventTarget & { length: number }>();
+const audioTrackLists = new WeakMap<HTMLMediaElement, EventTarget & { length: number }>();
+
+beforeAll(() => {
+  Object.defineProperty(HTMLMediaElement.prototype, "textTracks", {
+    configurable: true,
+    get(this: HTMLMediaElement) {
+      let tracks = textTrackLists.get(this);
+      if (!tracks) {
+        tracks = Object.assign(new EventTarget(), {
+          length: 0,
+          [Symbol.iterator]: () => [][Symbol.iterator](),
+        });
+        textTrackLists.set(this, tracks);
+      }
+      return tracks;
+    },
+  });
+  Object.defineProperty(HTMLMediaElement.prototype, "audioTracks", {
+    configurable: true,
+    get(this: HTMLMediaElement) {
+      let tracks = audioTrackLists.get(this);
+      if (!tracks) {
+        tracks = Object.assign(new EventTarget(), {
+          length: 0,
+          [Symbol.iterator]: () => [][Symbol.iterator](),
+        });
+        audioTrackLists.set(this, tracks);
+      }
+      return tracks;
+    },
+  });
+});
+
+afterAll(() => {
+  if (textTracksDescriptor) {
+    Object.defineProperty(HTMLMediaElement.prototype, "textTracks", textTracksDescriptor);
+  }
+  if (audioTracksDescriptor) {
+    Object.defineProperty(HTMLMediaElement.prototype, "audioTracks", audioTracksDescriptor);
+  }
+});
 
 async function act(callback: () => void | Promise<void>) {
   let result: void | Promise<void> = undefined;
@@ -52,7 +97,7 @@ describe("ImageGalleryModal", () => {
     document.body.innerHTML = "";
   });
 
-  it("renders video media with a download link in the gallery", async () => {
+  it("renders video media with Kibo controls and a download link in the gallery", async () => {
     const video = makeMediaItem({
       id: "video-1",
       contentPath: "/api/attachments/video-1/content",
@@ -67,8 +112,14 @@ describe("ImageGalleryModal", () => {
     await flushReact();
 
     const renderedVideo = document.body.querySelector("video");
+    expect(document.body.querySelector("[data-reel-content]")).toBeTruthy();
+    expect(document.body.querySelector("[data-reel-item]")).toBeTruthy();
     expect(renderedVideo?.getAttribute("src")).toBe("/api/attachments/video-1/content");
-    expect(renderedVideo?.getAttribute("controls")).not.toBeNull();
+    expect(renderedVideo?.getAttribute("controls")).toBeNull();
+    expect(document.body.querySelector('[data-slot="media-video-player"]')).toBeTruthy();
+    expect(document.body.querySelector('[data-slot="media-video-player-controls"]')).toBeTruthy();
+    expect(document.body.querySelector("media-play-button")).toBeTruthy();
+    expect(document.body.querySelector("media-fullscreen-button")).toBeTruthy();
     expect(document.body.querySelector('a[aria-label="Download demo.webm"]')?.getAttribute("href")).toBe(
       "/api/attachments/video-1/content?download=1",
     );
@@ -96,6 +147,7 @@ describe("ImageGalleryModal", () => {
 
     expect(document.body.textContent).toContain("first.png");
     expect(document.body.textContent).toContain("1 / 2");
+    expect(document.body.querySelector("[data-rmiz]")).toBeTruthy();
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));

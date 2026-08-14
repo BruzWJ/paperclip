@@ -5,24 +5,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { formatDateTime } from "@/lib/utils";
 import type { ThreadMessage } from "@assistant-ui/react";
 import { Link } from "@tanstack/react-router";
-import {
-  Check,
-  Copy,
-  MoreHorizontal,
-  PauseCircle,
-  Reply as ReplyIcon,
-  Search,
-  Square,
-} from "lucide-react";
-import { commentDateLabel } from "./TaskChatMessageUtils";
+import { Check, Copy, MoreHorizontal, PauseCircle, Reply as ReplyIcon, Search, Square } from "lucide-react";
+import { TaskChatTimestamp } from "./TaskChatMessagePrimitives";
 import type { TaskChatReplyTarget } from "./TaskChatShared";
 
 export interface TaskChatMessageActionBarProps {
@@ -71,22 +57,9 @@ export function TaskChatMessageActionBar({
         aria-label="Copy message"
         onClick={onCopy}
       >
-        {copied ? (
-          <Check className="h-3.5 w-3.5" />
-        ) : (
-          <Copy className="h-3.5 w-3.5" />
-        )}
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       </Button>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <a href={anchorId ? `#${anchorId}` : undefined}>
-            {message.createdAt ? commentDateLabel(message.createdAt) : ""}
-          </a>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          {message.createdAt ? formatDateTime(message.createdAt) : ""}
-        </TooltipContent>
-      </Tooltip>
+      <TaskChatTimestamp anchorId={anchorId} createdAt={message.createdAt} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

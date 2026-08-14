@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { deriveOriginatingActor, type Task } from "@paperclipai/shared";
-import { Columns3, Radio } from "lucide-react";
+import { Columns3 } from "lucide-react";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -20,6 +20,7 @@ import { timeAgo } from "../lib/timeAgo";
 import { deriveInitials } from "@/lib/identity";
 import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 
 export const taskTrailingColumns: InboxTaskColumn[] = [
   "owner",
@@ -161,12 +162,12 @@ export function InboxTaskMetaLeading({
       {showStatus ? (
         <span className="hidden shrink-0 items-center sm:inline-flex">
           {statusSlot ?? (
-            <Badge
-              variant="secondary"
+            <DomainStatus
+              status={task.boardPresentationStatus}
               aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, task.blockerAttention)}
             >
               {taskValueLabel(task.boardPresentationStatus)}
-            </Badge>
+            </DomainStatus>
           )}
         </span>
       ) : null}
@@ -179,10 +180,9 @@ export function InboxTaskMetaLeading({
         <span className="shrink-0 font-mono text-xs text-muted-foreground">{task.identifier}</span>
       ) : null}
       {isLive && (
-        <Badge variant="secondary" className="px-1.5 sm:px-2">
-          <Radio aria-hidden="true" />
+        <DomainStatus status="running" className="px-1.5 sm:px-2">
           <span className="hidden sm:inline">Live</span>
-        </Badge>
+        </DomainStatus>
       )}
       {showSubtreeLiveChip && !isLive && subtreeLiveCount > 0 && (
         <Badge

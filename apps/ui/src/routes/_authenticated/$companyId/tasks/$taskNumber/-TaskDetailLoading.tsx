@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { readTaskDetailHeaderSeed } from "@/lib/taskDetailBreadcrumb";
@@ -71,7 +72,9 @@ export function TaskDetailLoadingState({
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           {headerSeed ? (
             <>
-              <Badge variant="secondary">{taskValueLabel(headerSeed.boardPresentationStatus)}</Badge>
+              <DomainStatus status={headerSeed.boardPresentationStatus}>
+                {taskValueLabel(headerSeed.boardPresentationStatus)}
+              </DomainStatus>
               <Badge variant="secondary">{taskValueLabel(headerSeed.priority)}</Badge>
               {identifier ? (
                 <span className="text-sm font-mono text-muted-foreground shrink-0">{identifier}</span>

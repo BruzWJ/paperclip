@@ -1,9 +1,7 @@
 import { cn } from "@/lib/utils";
-import type { FolderListItem } from "@paperclipai/shared";
+import { PROJECT_COLORS, type FolderListItem } from "@paperclipai/shared";
 
 export type FolderSelection = "all" | "unfiled" | string;
-
-export const FOLDER_COLORS = ["indigo", "violet", "emerald", "cyan", "amber", "slate"];
 
 export function normalizeFolderSelection(value: string | null | undefined): FolderSelection {
   if (!value) return "all";
@@ -23,22 +21,25 @@ export function selectedFolderFromList(
   return folders.find((folder) => folder.id === selection) ?? null;
 }
 
-const FOLDER_COLOR_VALUES: Record<(typeof FOLDER_COLORS)[number], string> = {
-  indigo: "var(--folder-color-indigo)",
-  violet: "var(--folder-color-violet)",
-  emerald: "var(--folder-color-emerald)",
-  cyan: "var(--folder-color-cyan)",
-  amber: "var(--folder-color-amber)",
-  slate: "var(--folder-color-slate)",
+const LEGACY_FOLDER_COLOR_VALUES: Record<string, string> = {
+  indigo: PROJECT_COLORS[0],
+  violet: PROJECT_COLORS[1],
+  emerald: PROJECT_COLORS[6],
+  cyan: PROJECT_COLORS[8],
+  amber: PROJECT_COLORS[5],
+  slate: PROJECT_COLORS[9],
 };
 
+export function resolveFolderColor(color: string | null | undefined): string {
+  return color ? (LEGACY_FOLDER_COLOR_VALUES[color] ?? color) : PROJECT_COLORS[0];
+}
+
 export function FolderSwatch({ color, className }: { color: string | null | undefined; className?: string }) {
-  const backgroundColor = color ? (FOLDER_COLOR_VALUES[color] ?? color) : "var(--folder-color-slate)";
   return (
     <span
       aria-hidden="true"
       className={cn("h-2.5 w-2.5 shrink-0 rounded-sm border border-border/40", className)}
-      style={{ backgroundColor }}
+      style={{ backgroundColor: resolveFolderColor(color) }}
     />
   );
 }

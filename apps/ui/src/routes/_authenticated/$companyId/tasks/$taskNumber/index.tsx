@@ -8,16 +8,8 @@ import { tasksApi } from "@/api/tasks";
 import { ImageGalleryModal } from "@/components/ImageGalleryModal";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useDialogActions } from "@/context/DialogContext";
 import { usePanel } from "@/context/PanelContext";
@@ -279,31 +271,16 @@ function TaskDetail() {
         />
         <TaskDetailTabs />
         <TaskTreeControlDialog />
-        <Dialog
+        <FormDialog
           open={controller.reopenDialogOpen}
           onOpenChange={(open) => {
             controller.setReopenDialogOpen(open);
             if (!open) controller.setReopenReason("");
           }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Reopen this task</DialogTitle>
-              <DialogDescription>
-                This audited command preserves the owner and execution session, clears the terminal
-                disposition, and invokes the owner with the stored immutable request.
-              </DialogDescription>
-            </DialogHeader>
-            <Field>
-              <FieldLabel>Reason</FieldLabel>
-              <Textarea
-                value={controller.reopenReason}
-                onChange={(event) => controller.setReopenReason(event.target.value)}
-                rows={4}
-                placeholder="Why should this task be reopened?"
-              />
-            </Field>
-            <DialogFooter>
+          title="Reopen this task"
+          description="This audited command preserves the owner and execution session, clears the terminal disposition, and invokes the owner with the stored immutable request."
+          footer={
+            <>
               <Button type="button" variant="outline" onClick={() => controller.setReopenDialogOpen(false)}>
                 Cancel
               </Button>
@@ -314,9 +291,18 @@ function TaskDetail() {
               >
                 {controller.reopenTask.isPending ? "Reopening..." : "Reopen task"}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </>
+          }
+        >
+          <LabeledFormField label="Reason">
+            <Textarea
+              value={controller.reopenReason}
+              onChange={(event) => controller.setReopenReason(event.target.value)}
+              rows={4}
+              placeholder="Why should this task be reopened?"
+            />
+          </LabeledFormField>
+        </FormDialog>
         <TaskDetailPropertiesSheet />
       </>
     </TaskDetailPageProvider>

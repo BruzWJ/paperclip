@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { queryKeys } from "@/lib/queryKeys";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PluginOperationResult } from "@/plugins/plugin-launcher-types";
 
 interface PluginConfigFormProps {
   pluginId: string;
@@ -19,11 +20,6 @@ interface PluginConfigFormProps {
   isLoading?: boolean;
   pluginStatus?: string;
   supportsConfigTest?: boolean;
-}
-
-interface ResultMessage {
-  type: "success" | "error";
-  text: string;
 }
 
 export function PluginConfigForm({
@@ -58,8 +54,8 @@ export function PluginConfigForm({
   }, [initialValues, schema]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saveMessage, setSaveMessage] = useState<ResultMessage | null>(null);
-  const [testResult, setTestResult] = useState<ResultMessage | null>(null);
+  const [saveMessage, setSaveMessage] = useState<PluginOperationResult | null>(null);
+  const [testResult, setTestResult] = useState<PluginOperationResult | null>(null);
 
   const isDirty =
     JSON.stringify(values) !==
@@ -69,8 +65,7 @@ export function PluginConfigForm({
     });
 
   const saveMutation = useMutation({
-    mutationFn: (configJson: Record<string, unknown>) =>
-      pluginsApi.saveConfig(pluginId, configJson),
+    mutationFn: (configJson: Record<string, unknown>) => pluginsApi.saveConfig(pluginId, configJson),
     onSuccess: (savedConfig) => {
       hasHydratedRef.current = true;
       setValues({
@@ -93,8 +88,7 @@ export function PluginConfigForm({
   });
 
   const testMutation = useMutation({
-    mutationFn: (configJson: Record<string, unknown>) =>
-      pluginsApi.testConfig(pluginId, configJson),
+    mutationFn: (configJson: Record<string, unknown>) => pluginsApi.testConfig(pluginId, configJson),
     onSuccess: (result) => {
       if (result.valid) {
         setTestResult({ type: "success", text: "Configuration test passed." });
@@ -142,10 +136,7 @@ export function PluginConfigForm({
 
   if (isLoading) {
     return (
-      <div
-        className="flex items-center gap-2 text-sm text-muted-foreground py-4"
-        role="status"
-      >
+      <div className="flex items-center gap-2 text-sm text-muted-foreground py-4" role="status">
         <Spinner className="h-4 w-4" />
         Loading configuration...
       </div>
@@ -156,9 +147,7 @@ export function PluginConfigForm({
     <div className="space-y-4">
       {saveMutation.isPending || testMutation.isPending ? (
         <p className="sr-only" role="status">
-          {saveMutation.isPending
-            ? "Saving plugin configuration."
-            : "Testing plugin configuration."}
+          {saveMutation.isPending ? "Saving plugin configuration." : "Testing plugin configuration."}
         </p>
       ) : null}
       <JsonSchemaForm
@@ -183,11 +172,7 @@ export function PluginConfigForm({
       )}
 
       <div className="flex items-center gap-2 pt-2">
-        <Button
-          onClick={handleSave}
-          disabled={saveMutation.isPending || !isDirty}
-          size="sm"
-        >
+        <Button onClick={handleSave} disabled={saveMutation.isPending || !isDirty} size="sm">
           {saveMutation.isPending ? (
             <>
               <Spinner className="h-3.5 w-3.5" />

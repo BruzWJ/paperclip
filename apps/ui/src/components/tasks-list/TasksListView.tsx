@@ -26,7 +26,6 @@ import {
 } from "lucide-react";
 import {
   KanbanBoard,
-  KANBAN_COLD_STATUSES,
   KANBAN_COLUMN_DEFAULT_PAGE_SIZE,
   KANBAN_COLUMN_PAGE_SIZE_OPTIONS,
 } from "../KanbanBoard";
@@ -244,7 +243,7 @@ export function TasksListView() {
             agents={agents}
             users={ownerUserOptions}
             creators={creatorOptions}
-            projects={projects?.map((project: { id: string; name: string }) => ({
+            projects={projects?.map((project) => ({
               id: project.id,
               name: project.name,
             }))}

@@ -39,6 +39,9 @@ type TaskExecutionRefSummary = {
   [key: string]: unknown;
 };
 
+export type CreateTaskLabelInput = Pick<TaskLabel, "name" | "color">;
+export type TaskInboxArchiveResponse = Pick<Task, "id" | "archivedAt">;
+
 export type TaskReassignmentResponse = {
   task: Task;
   ref: TaskExecutionRefSummary;
@@ -111,99 +114,64 @@ function taskListSearchParams(filters?: TaskListFilters) {
   if (filters?.projectId) params.set("projectId", filters.projectId);
   if (filters?.parentId) params.set("parentId", filters.parentId);
   if (filters?.ownerAgentId) params.set("ownerAgentId", filters.ownerAgentId);
-  if (filters?.participantAgentId)
-    params.set("participantAgentId", filters.participantAgentId);
+  if (filters?.participantAgentId) params.set("participantAgentId", filters.participantAgentId);
   if (filters?.ownerUserId) params.set("ownerUserId", filters.ownerUserId);
-  if (filters?.touchedByUserId)
-    params.set("touchedByUserId", filters.touchedByUserId);
-  if (filters?.inboxArchivedByUserId)
-    params.set("inboxArchivedByUserId", filters.inboxArchivedByUserId);
-  if (filters?.unreadForUserId)
-    params.set("unreadForUserId", filters.unreadForUserId);
+  if (filters?.touchedByUserId) params.set("touchedByUserId", filters.touchedByUserId);
+  if (filters?.inboxArchivedByUserId) params.set("inboxArchivedByUserId", filters.inboxArchivedByUserId);
+  if (filters?.unreadForUserId) params.set("unreadForUserId", filters.unreadForUserId);
   if (filters?.labelId) params.set("labelId", filters.labelId);
   if (filters?.originKind) params.set("originKind", filters.originKind);
   if (filters?.originId) params.set("originId", filters.originId);
   if (filters?.descendantOf) params.set("descendantOf", filters.descendantOf);
   if (filters?.includeBlockedBy) params.set("includeBlockedBy", "true");
-  if (filters?.includeBlockedInboxAttention)
-    params.set("includeBlockedInboxAttention", "true");
-  if (filters?.includeLiveDescendantSummary)
-    params.set("includeLiveDescendantSummary", "true");
+  if (filters?.includeBlockedInboxAttention) params.set("includeBlockedInboxAttention", "true");
+  if (filters?.includeLiveDescendantSummary) params.set("includeLiveDescendantSummary", "true");
   if (filters?.hasPlanDocument !== undefined) {
     params.set("hasPlanDocument", filters.hasPlanDocument ? "true" : "false");
   }
   if (filters?.q) params.set("q", filters.q);
   if (filters?.limit) params.set("limit", String(filters.limit));
-  if (filters?.offset !== undefined)
-    params.set("offset", String(filters.offset));
+  if (filters?.offset !== undefined) params.set("offset", String(filters.offset));
   if (filters?.sortField) params.set("sortField", filters.sortField);
   if (filters?.sortDir) params.set("sortDir", filters.sortDir);
   return params;
 }
 
 export const tasksApi = {
-  list: (
-    companyId: string,
-    filters?: TaskListFilters,
-    options?: RequestOptions,
-  ) => {
+  list: (companyId: string, filters?: TaskListFilters, options?: RequestOptions) => {
     const params = taskListSearchParams(filters);
     const qs = params.toString();
     const path = `/companies/${companyId}/tasks${qs ? `?${qs}` : ""}`;
     return options ? api.get<Task[]>(path, options) : api.get<Task[]>(path);
   },
-  listCompact: (
-    companyId: string,
-    filters?: TaskListFilters,
-    options?: RequestOptions,
-  ) => {
+  listCompact: (companyId: string, filters?: TaskListFilters, options?: RequestOptions) => {
     const params = taskListSearchParams(filters);
     params.set("view", "compact");
     const path = `/companies/${companyId}/tasks?${params.toString()}`;
-    return options
-      ? api.get<CompactTask[]>(path, options)
-      : api.get<CompactTask[]>(path);
+    return options ? api.get<CompactTask[]>(path, options) : api.get<CompactTask[]>(path);
   },
-  listLabels: (companyId: string) =>
-    api.get<TaskLabel[]>(`/companies/${companyId}/labels`),
-  createLabel: (companyId: string, data: { name: string; color: string }) =>
+  listLabels: (companyId: string) => api.get<TaskLabel[]>(`/companies/${companyId}/labels`),
+  createLabel: (companyId: string, data: CreateTaskLabelInput) =>
     api.post<TaskLabel>(`/companies/${companyId}/labels`, data),
   get: (taskId: string, options?: RequestOptions) =>
     options
       ? api.get<Task>(`/tasks/${encodeURIComponent(taskId)}`, options)
       : api.get<Task>(`/tasks/${encodeURIComponent(taskId)}`),
-  getByNumber: (
-    companyId: string,
-    taskNumber: number,
-    options?: RequestOptions,
-  ) => {
+  getByNumber: (companyId: string, taskNumber: number, options?: RequestOptions) => {
     const path = `/companies/${encodeURIComponent(companyId)}/tasks/${taskNumber}`;
     return options ? api.get<Task>(path, options) : api.get<Task>(path);
   },
-  markRead: (id: string) =>
-    api.post<{ id: string; lastReadAt: Date }>(`/tasks/${id}/read`, {}),
-  markUnread: (id: string) =>
-    api.delete<{ id: string; removed: boolean }>(`/tasks/${id}/read`),
-  archiveFromInbox: (id: string) =>
-    api.post<{ id: string; archivedAt: Date }>(
-      `/tasks/${id}/inbox-archive`,
-      {},
-    ),
+  markRead: (id: string) => api.post<{ id: string; lastReadAt: Date }>(`/tasks/${id}/read`, {}),
+  markUnread: (id: string) => api.delete<{ id: string; removed: boolean }>(`/tasks/${id}/read`),
+  archiveFromInbox: (id: string) => api.post<TaskInboxArchiveResponse>(`/tasks/${id}/inbox-archive`, {}),
   unarchiveFromInbox: (id: string) =>
-    api.delete<{ id: string; archivedAt: Date } | { ok: true }>(
-      `/tasks/${id}/inbox-archive`,
-    ),
-  create: (companyId: string, data: CreateTask) =>
-    api.post<Task>(`/companies/${companyId}/tasks`, data),
-  updateTitle: (id: string, data: UpdateTaskTitle) =>
-    api.patch<Task>(`/tasks/${id}`, data),
+    api.delete<TaskInboxArchiveResponse | { ok: true }>(`/tasks/${id}/inbox-archive`),
+  create: (companyId: string, data: CreateTask) => api.post<Task>(`/companies/${companyId}/tasks`, data),
+  updateTitle: (id: string, data: UpdateTaskTitle) => api.patch<Task>(`/tasks/${id}`, data),
   updateExecutionPolicy: (id: string, data: UpdateTaskExecutionPolicy) =>
     api.put<Task>(`/tasks/${id}/execution-policy`, data),
   decideExecutionStage: (id: string, data: DecideTaskExecutionStage) =>
-    api.post<TaskExecutionPolicyDecisionResponse>(
-      `/tasks/${id}/execution-policy/decisions`,
-      data,
-    ),
+    api.post<TaskExecutionPolicyDecisionResponse>(`/tasks/${id}/execution-policy/decisions`, data),
   creatorReassign: (id: string, data: ReassignTask) =>
     api.post<TaskReassignmentResponse>(`/tasks/${id}/creator-reassign`, data),
   commitCreatorFormUpdate: (data: CommitTaskCreatorForm) =>
@@ -211,19 +179,12 @@ export const tasksApi = {
   commitOwnerFormUpdate: (data: CommitTaskOwnerForm) =>
     api.post<TaskFormCommitResponse>("/task-owner-form-updates", data),
   selfAssignForWithdrawal: (id: string, data: SelfAssignTaskWithdrawal) =>
-    api.post<TaskWithdrawalSelfAssignmentResponse>(
-      `/tasks/${id}/withdrawal-self-assignment`,
-      data,
-    ),
-  reopen: (id: string, data: ReopenTask) =>
-    api.post<TaskReopenResponse>(`/tasks/${id}/reopen`, data),
+    api.post<TaskWithdrawalSelfAssignmentResponse>(`/tasks/${id}/withdrawal-self-assignment`, data),
+  reopen: (id: string, data: ReopenTask) => api.post<TaskReopenResponse>(`/tasks/${id}/reopen`, data),
   previewTreeControl: (id: string, data: PreviewTaskTreeControl) =>
     api.post<TaskTreeControlPreview>(`/tasks/${id}/tree-control/preview`, data),
   createTreeHold: (id: string, data: CreateTaskTreeHold) =>
-    api.post<{ hold: TaskTreeHold; preview: TaskTreeControlPreview }>(
-      `/tasks/${id}/tree-holds`,
-      data,
-    ),
+    api.post<{ hold: TaskTreeHold; preview: TaskTreeControlPreview }>(`/tasks/${id}/tree-holds`, data),
   listTreeHolds: (
     id: string,
     filters?: {
@@ -237,9 +198,7 @@ export const tasksApi = {
     if (filters?.mode) params.set("mode", filters.mode);
     if (filters?.includeMembers) params.set("includeMembers", "true");
     const qs = params.toString();
-    return api.get<TaskTreeHold[]>(
-      `/tasks/${id}/tree-holds${qs ? `?${qs}` : ""}`,
-    );
+    return api.get<TaskTreeHold[]>(`/tasks/${id}/tree-holds${qs ? `?${qs}` : ""}`);
   },
   getTreeControlState: (id: string) =>
     api.get<{
@@ -269,18 +228,11 @@ export const tasksApi = {
     const params = new URLSearchParams();
     if (filters?.cursor) params.set("cursor", filters.cursor);
     if (filters?.limit) params.set("limit", String(filters.limit));
-    if (filters?.entryLimit)
-      params.set("entryLimit", String(filters.entryLimit));
+    if (filters?.entryLimit) params.set("entryLimit", String(filters.entryLimit));
     const qs = params.toString();
-    return api.get<BoardTaskCommentGroupPage>(
-      `/tasks/${id}/comments${qs ? `?${qs}` : ""}`,
-    );
+    return api.get<BoardTaskCommentGroupPage>(`/tasks/${id}/comments${qs ? `?${qs}` : ""}`);
   },
-  getCommentThread: (
-    id: string,
-    rootCommentId: string,
-    filters?: { cursor?: string; limit?: number },
-  ) => {
+  getCommentThread: (id: string, rootCommentId: string, filters?: { cursor?: string; limit?: number }) => {
     const params = new URLSearchParams();
     if (filters?.cursor) params.set("cursor", filters.cursor);
     if (filters?.limit) params.set("limit", String(filters.limit));
@@ -296,60 +248,34 @@ export const tasksApi = {
   addComment: (id: string, data: CreateTaskUserComment) =>
     api.post<TaskUserCommentResponse>(`/tasks/${id}/comments`, data),
   listDocuments: (id: string, options?: { includeSystem?: boolean }) =>
-    api.get<TaskDocument[]>(
-      `/tasks/${id}/documents${options?.includeSystem ? "?includeSystem=true" : ""}`,
-    ),
+    api.get<TaskDocument[]>(`/tasks/${id}/documents${options?.includeSystem ? "?includeSystem=true" : ""}`),
   getDocument: (id: string, key: string) =>
     api.get<TaskDocument>(`/tasks/${id}/documents/${encodeURIComponent(key)}`),
   upsertDocument: (id: string, key: string, data: UpsertTaskDocument) =>
-    api.put<TaskDocument>(
-      `/tasks/${id}/documents/${encodeURIComponent(key)}`,
-      data,
-    ),
+    api.put<TaskDocument>(`/tasks/${id}/documents/${encodeURIComponent(key)}`, data),
   lockDocument: (id: string, key: string) =>
-    api.post<TaskDocument>(
-      `/tasks/${id}/documents/${encodeURIComponent(key)}/lock`,
-      {},
-    ),
+    api.post<TaskDocument>(`/tasks/${id}/documents/${encodeURIComponent(key)}/lock`, {}),
   unlockDocument: (id: string, key: string) =>
-    api.post<TaskDocument>(
-      `/tasks/${id}/documents/${encodeURIComponent(key)}/unlock`,
-      {},
-    ),
+    api.post<TaskDocument>(`/tasks/${id}/documents/${encodeURIComponent(key)}/unlock`, {}),
   listDocumentRevisions: (id: string, key: string) =>
-    api.get<DocumentRevision[]>(
-      `/tasks/${id}/documents/${encodeURIComponent(key)}/revisions`,
-    ),
+    api.get<DocumentRevision[]>(`/tasks/${id}/documents/${encodeURIComponent(key)}/revisions`),
   restoreDocumentRevision: (id: string, key: string, revisionId: string) =>
     api.post<TaskDocument>(
       `/tasks/${id}/documents/${encodeURIComponent(key)}/revisions/${revisionId}/restore`,
       {},
     ),
   deleteDocument: (id: string, key: string) =>
-    api.delete<{ ok: true }>(
-      `/tasks/${id}/documents/${encodeURIComponent(key)}`,
-    ),
-  listAttachments: (id: string) =>
-    api.get<TaskAttachment[]>(`/tasks/${id}/attachments`),
-  uploadAttachment: (
-    companyId: string,
-    taskId: string,
-    file: File,
-    taskCommentId?: string | null,
-  ) => {
+    api.delete<{ ok: true }>(`/tasks/${id}/documents/${encodeURIComponent(key)}`),
+  listAttachments: (id: string) => api.get<TaskAttachment[]>(`/tasks/${id}/attachments`),
+  uploadAttachment: (companyId: string, taskId: string, file: File, taskCommentId?: string | null) => {
     const form = new FormData();
     form.append("file", file);
     if (taskCommentId) {
       form.append("taskCommentId", taskCommentId);
     }
-    return api.postForm<TaskAttachment>(
-      `/companies/${companyId}/tasks/${taskId}/attachments`,
-      form,
-    );
+    return api.postForm<TaskAttachment>(`/companies/${companyId}/tasks/${taskId}/attachments`, form);
   },
-  deleteAttachment: (id: string) =>
-    api.delete<{ ok: true }>(`/attachments/${id}`),
+  deleteAttachment: (id: string) => api.delete<{ ok: true }>(`/attachments/${id}`),
   listApprovals: (id: string) => api.get<Approval[]>(`/tasks/${id}/approvals`),
-  listWorkProducts: (id: string) =>
-    api.get<TaskWorkProduct[]>(`/tasks/${id}/work-products`),
+  listWorkProducts: (id: string) => api.get<TaskWorkProduct[]>(`/tasks/${id}/work-products`),
 };

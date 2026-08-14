@@ -5,12 +5,8 @@
  * dynamic server catalog.
  */
 import type { UIAdapterModule } from "./types";
+import type { LabeledValue } from "@/lib/presentation-contracts";
 import { findUIAdapter, listUIAdapters } from "./registry";
-
-export interface AdapterOptionMetadata {
-  value: string;
-  label: string;
-}
 
 /**
  * Only exact entries in the server-admitted UI catalog are enabled.
@@ -41,7 +37,7 @@ export function isVisualAdapterChoice(type: string): boolean {
 export function listAdapterOptions(
   labelFor?: (type: string) => string,
   adapters: UIAdapterModule[] = listUIAdapters(),
-): AdapterOptionMetadata[] {
+): LabeledValue[] {
   return adapters.map((adapter) => ({
     value: adapter.type,
     label: labelFor ? labelFor(adapter.type) : adapter.label,

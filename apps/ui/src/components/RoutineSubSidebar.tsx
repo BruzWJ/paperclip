@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import {
   Sidebar as ShadcnSidebar,
   SidebarContent,
@@ -31,7 +32,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 
 type NavItem = {
@@ -119,7 +119,9 @@ export function RoutineSubSidebar({
                             {showLiveDot ? (
                               <Spinner className="size-3" aria-hidden="true" />
                             ) : (
-                              <Badge variant="secondary" className="size-2 p-0" aria-hidden="true" />
+                              <DomainStatus status="pending">
+                                <span className="sr-only">Unsaved changes</span>
+                              </DomainStatus>
                             )}
                           </SidebarMenuBadge>
                         ) : null}
@@ -171,7 +173,9 @@ export function RoutineSectionPicker({
                     <item.icon className="h-3.5 w-3.5" />
                     {item.label}
                     {isSectionDirty(item.key) ? (
-                      <Badge variant="secondary" className="size-2 p-0" aria-label="Unsaved changes" />
+                      <DomainStatus status="pending">
+                        <span className="sr-only">Unsaved changes</span>
+                      </DomainStatus>
                     ) : null}
                   </span>
                 </SelectItem>

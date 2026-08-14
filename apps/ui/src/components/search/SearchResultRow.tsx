@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";
 import { taskDisplayTitle } from "@/lib/task-display";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import * as ItemUI from "@/components/ui/item";
 
 export interface HighlightedTextProps {
@@ -229,7 +230,9 @@ function SearchResultRowImpl({ result, agentsById, isActive, className }: Search
   return (
     <SearchResultTarget result={result} className={cn(ROW_BASE, isActive && "bg-muted/40", className)}>
       <ItemUI.ItemMedia>
-        <Badge variant="secondary">{taskValueLabel(task.boardPresentationStatus)}</Badge>
+        <DomainStatus status={task.boardPresentationStatus}>
+          {taskValueLabel(task.boardPresentationStatus)}
+        </DomainStatus>
       </ItemUI.ItemMedia>
       <ItemUI.ItemContent className="min-w-0">
         <ItemUI.ItemTitle className="w-full flex-wrap">

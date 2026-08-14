@@ -317,14 +317,12 @@ export function useTaskDetailState() {
   const [copied, setCopied] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("chat");
-  const [attachmentDragActive, setAttachmentDragActive] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [treeControlOpen, setTreeControlOpen] = useState(false);
   const [treeControlMode, setTreeControlMode] = useState<TaskTreeControlMode>("pause");
   const [treeControlReason, setTreeControlReason] = useState("");
   const [treeControlCancelConfirmed, setTreeControlCancelConfirmed] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   return {
     moreOpen,
@@ -335,8 +333,6 @@ export function useTaskDetailState() {
     setMobilePropsOpen,
     detailTab,
     setDetailTab,
-    attachmentDragActive,
-    setAttachmentDragActive,
     galleryOpen,
     setGalleryOpen,
     galleryIndex,
@@ -349,7 +345,6 @@ export function useTaskDetailState() {
     setTreeControlReason,
     treeControlCancelConfirmed,
     setTreeControlCancelConfirmed,
-    fileInputRef,
   };
 }
 

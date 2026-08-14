@@ -3,18 +3,56 @@ import { useQuery } from "@tanstack/react-query";
 import { tasksApi } from "@/api/tasks";
 import { queryKeys } from "@/lib/queryKeys";
 import { buildSubTaskProgressSummary, shouldRenderSubTaskProgressSummary } from "@/lib/task-detail-subtasks";
-import { applyTaskFilters, countActiveTaskFilters, taskFilterLabel, taskPriorityOrder, taskStatusOrder } from "@/lib/task-filters";
+import {
+  applyTaskFilters,
+  countActiveTaskFilters,
+  taskFilterLabel,
+  taskPriorityOrder,
+  taskStatusOrder,
+} from "@/lib/task-filters";
 import { groupBy } from "@/lib/groupBy";
 import { formatOwnerUserLabel } from "@/lib/task-owners";
-import { KANBAN_BOARD_HIGH_VOLUME_THRESHOLD, KANBAN_COLD_STATUSES, KANBAN_COLUMN_DEFAULT_PAGE_SIZE } from "../KanbanBoard";
-import { TASK_BOARD_COLUMN_RESULT_LIMIT, isActionableWorkflowStatus, buildChecklistStepNumberMap, buildPreviousSiblingTaskIdMap, shouldSuppressSinglePreviousSiblingBlockerChip, sortTasks, taskMatchesLocalSearch } from "./model";
+import {
+  KANBAN_BOARD_HIGH_VOLUME_THRESHOLD,
+  KANBAN_COLD_STATUSES,
+  KANBAN_COLUMN_DEFAULT_PAGE_SIZE,
+} from "../KanbanBoard";
+import {
+  TASK_BOARD_COLUMN_RESULT_LIMIT,
+  isActionableWorkflowStatus,
+  buildChecklistStepNumberMap,
+  buildPreviousSiblingTaskIdMap,
+  shouldSuppressSinglePreviousSiblingBlockerChip,
+  sortTasks,
+  taskMatchesLocalSearch,
+} from "./model";
 import type { Task } from "@paperclipai/shared";
 import { useTasksListCore, type TasksListCoreInput } from "./useTasksListCore";
 
 export type TasksListDerivedInput = TasksListCoreInput & ReturnType<typeof useTasksListCore>;
 
 export function useTasksListDerived(m: TasksListDerivedInput) {
-  const { boardTasks, normalizedTaskSearch, searchWithinLoadedTasks, searchedTasks, tasks, boardTaskQueries, viewState, searchFilters, enableRoutineVisibilityFilter, liveTaskIds, showProgressSummary, defaultSortField, taskById, companyId, projectById, taskTitleMap, agents, agentName, currentUserId, companyUserLabelMap } = m;
+  const {
+    boardTasks,
+    normalizedTaskSearch,
+    searchWithinLoadedTasks,
+    searchedTasks,
+    tasks,
+    boardTaskQueries,
+    viewState,
+    enableRoutineVisibilityFilter,
+    liveTaskIds,
+    showProgressSummary,
+    defaultSortField,
+    taskById,
+    companyId,
+    projectById,
+    taskTitleMap,
+    agents,
+    agentName,
+    currentUserId,
+    companyUserLabelMap,
+  } = m;
   const boardColumnLimitReached = useMemo(
     () =>
       viewState.viewMode === "board" &&
@@ -26,23 +64,14 @@ export function useTasksListDerived(m: TasksListDerivedInput) {
   );
 
   const sourceTasks = useMemo(() => {
-    const useRemoteSearch =
-      normalizedTaskSearch.length > 0 && !searchWithinLoadedTasks;
+    const useRemoteSearch = normalizedTaskSearch.length > 0 && !searchWithinLoadedTasks;
     return boardTasks ?? (useRemoteSearch ? searchedTasks : tasks);
-  }, [
-    boardTasks,
-    tasks,
-    normalizedTaskSearch,
-    searchedTasks,
-    searchWithinLoadedTasks,
-  ]);
+  }, [boardTasks, tasks, normalizedTaskSearch, searchedTasks, searchWithinLoadedTasks]);
 
   const searchScopedTasks = useMemo(
     () =>
       normalizedTaskSearch.length > 0 && searchWithinLoadedTasks
-        ? sourceTasks.filter((task: Task) =>
-            taskMatchesLocalSearch(task, normalizedTaskSearch),
-          )
+        ? sourceTasks.filter((task: Task) => taskMatchesLocalSearch(task, normalizedTaskSearch))
         : sourceTasks,
     [normalizedTaskSearch, searchWithinLoadedTasks, sourceTasks],
   );
@@ -54,12 +83,7 @@ export function useTasksListDerived(m: TasksListDerivedInput) {
       liveTaskIds,
     );
     return sortTasks(filteredByControls, viewState);
-  }, [
-    searchScopedTasks,
-    viewState,
-    enableRoutineVisibilityFilter,
-    liveTaskIds,
-  ]);
+  }, [searchScopedTasks, viewState, enableRoutineVisibilityFilter, liveTaskIds]);
 
   const progressSummary = useMemo(
     () =>
@@ -76,14 +100,8 @@ export function useTasksListDerived(m: TasksListDerivedInput) {
     if (!checklistAffordanceEnabled) return null;
 
     const visibleTaskIds = new Set(filtered.map((task) => task.id));
-    const stepNumberByTaskId = buildChecklistStepNumberMap(
-      filtered,
-      viewState.nestingEnabled,
-    );
-    const previousSiblingTaskIdByTaskId = buildPreviousSiblingTaskIdMap(
-      filtered,
-      viewState.nestingEnabled,
-    );
+    const stepNumberByTaskId = buildChecklistStepNumberMap(filtered, viewState.nestingEnabled);
+    const previousSiblingTaskIdByTaskId = buildPreviousSiblingTaskIdMap(filtered, viewState.nestingEnabled);
     const unresolvedVisibleBlockersByTaskId = new Map<string, string[]>();
 
     filtered.forEach((task) => {
@@ -103,48 +121,31 @@ export function useTasksListDerived(m: TasksListDerivedInput) {
         unresolvedVisible,
         previousSiblingTaskIdByTaskId.get(task.id),
       );
-      unresolvedVisibleBlockersByTaskId.set(
-        task.id,
-        shouldSuppressChip ? [] : unresolvedVisible,
-      );
+      unresolvedVisibleBlockersByTaskId.set(task.id, shouldSuppressChip ? [] : unresolvedVisible);
     });
 
     const firstActionable =
-      filtered.find((task) =>
-        isActionableWorkflowStatus(task.boardPresentationStatus),
-      ) ?? null;
+      filtered.find((task) => isActionableWorkflowStatus(task.boardPresentationStatus)) ?? null;
     const currentStepTask =
-      firstActionable ??
-      filtered.find((task) => task.boardPresentationStatus === "blocked") ??
-      null;
+      firstActionable ?? filtered.find((task) => task.boardPresentationStatus === "blocked") ?? null;
 
     return {
       stepNumberByTaskId,
       unresolvedVisibleBlockersByTaskId,
       currentStepTaskId: currentStepTask?.id ?? null,
     };
-  }, [
-    checklistAffordanceEnabled,
-    filtered,
-    taskById,
-    viewState.nestingEnabled,
-  ]);
+  }, [checklistAffordanceEnabled, filtered, taskById, viewState.nestingEnabled]);
 
   const { data: labels } = useQuery({
     queryKey: queryKeys.tasks.labels(companyId),
     queryFn: () => tasksApi.listLabels(companyId),
   });
 
-  const activeFilterCount = countActiveTaskFilters(
-    viewState,
-    enableRoutineVisibilityFilter,
-  );
+  const activeFilterCount = countActiveTaskFilters(viewState, enableRoutineVisibilityFilter);
   const boardHighVolume =
-    viewState.viewMode === "board" &&
-    filtered.length > KANBAN_BOARD_HIGH_VOLUME_THRESHOLD;
+    viewState.viewMode === "board" && filtered.length > KANBAN_BOARD_HIGH_VOLUME_THRESHOLD;
   const boardCompactCards =
-    viewState.boardCardDensity === "compact" ||
-    (viewState.boardCardDensity === "auto" && boardHighVolume);
+    viewState.boardCardDensity === "compact" || (viewState.boardCardDensity === "auto" && boardHighVolume);
   const boardCollapsedStatuses = useMemo(
     () =>
       viewState.boardColdLaneMode === "collapsed" ||
@@ -183,10 +184,7 @@ export function useTasksListDerived(m: TasksListDerivedInput) {
         }));
     }
     if (viewState.groupBy === "project") {
-      const groups = groupBy(
-        filtered,
-        (task) => task.projectId ?? "__no_project",
-      );
+      const groups = groupBy(filtered, (task) => task.projectId ?? "__no_project");
       return Object.keys(groups)
         .sort((a, b) => {
           if (a === "__no_project") return 1;
@@ -197,10 +195,7 @@ export function useTasksListDerived(m: TasksListDerivedInput) {
         })
         .map((key) => ({
           key,
-          label:
-            key === "__no_project"
-              ? "No Project"
-              : (projectById.get(key)?.name ?? key.slice(0, 8)),
+          label: key === "__no_project" ? "No Project" : (projectById.get(key)?.name ?? key.slice(0, 8)),
           items: groups[key]!,
         }));
     }
@@ -215,10 +210,7 @@ export function useTasksListDerived(m: TasksListDerivedInput) {
         })
         .map((key) => ({
           key,
-          label:
-            key === "__no_parent"
-              ? "No Parent"
-              : (taskTitleMap.get(key) ?? key.slice(0, 8)),
+          label: key === "__no_parent" ? "No Parent" : (taskTitleMap.get(key) ?? key.slice(0, 8)),
           items: groups[key]!,
         }));
     }
@@ -236,13 +228,8 @@ export function useTasksListDerived(m: TasksListDerivedInput) {
         key === "board"
           ? "Board escalation"
           : key.startsWith("user:")
-            ? (formatOwnerUserLabel(
-                key.slice("user:".length),
-                currentUserId,
-                companyUserLabelMap,
-              ) ?? "User")
-            : (agentName(key.slice("agent:".length)) ??
-              key.slice("agent:".length, "agent:".length + 8)),
+            ? (formatOwnerUserLabel(key.slice("user:".length), currentUserId, companyUserLabelMap) ?? "User")
+            : (agentName(key.slice("agent:".length)) ?? key.slice("agent:".length, "agent:".length + 8)),
       items: groups[key]!,
     }));
   }, [
@@ -256,5 +243,18 @@ export function useTasksListDerived(m: TasksListDerivedInput) {
     projectById,
   ]);
 
-  return { boardColumnLimitReached, sourceTasks, searchScopedTasks, filtered, progressSummary, workflowChecklistMeta, labels, activeFilterCount, boardCompactCards, boardCollapsedStatuses, boardDensityCustomized, groupedContent };
+  return {
+    boardColumnLimitReached,
+    sourceTasks,
+    searchScopedTasks,
+    filtered,
+    progressSummary,
+    workflowChecklistMeta,
+    labels,
+    activeFilterCount,
+    boardCompactCards,
+    boardCollapsedStatuses,
+    boardDensityCustomized,
+    groupedContent,
+  };
 }

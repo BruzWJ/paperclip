@@ -5,19 +5,12 @@ import { AlertCircle, KeyRound } from "lucide-react";
 import { useCallback, useEffect } from "react";
 
 import { MyUserSecretsTab } from "@/components/secrets/MyUserSecretsTab";
+import { EntityCombobox } from "@/components/patterns/EntityCombobox";
+import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -232,92 +225,22 @@ function Secrets() {
           <SecretsImportDialog />
           <SecretEditorDialog />
           <ProviderVaultEditorDialog />
-          <Dialog open={controller.rotateOpen} onOpenChange={controller.setRotateOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>
-                  {controller.selectedSecret?.managedMode === "external_reference"
-                    ? "Update external reference"
-                    : "Update secret value"}
-                </DialogTitle>
-                <DialogDescription>
-                  {controller.selectedSecret?.managedMode === "external_reference"
-                    ? "Creates a new Paperclip metadata version that points at an existing provider secret. Paperclip does not write a new provider value."
-                    : "Creates a new provider-backed version. Consumers pinned to latest pick up the new value on the next run."}
-                </DialogDescription>
-              </DialogHeader>
-              <Field>
-                <FieldLabel htmlFor="rotate-secret-vault">Provider vault</FieldLabel>
-                <Select
-                  value={controller.rotateProviderConfigId || "__default__"}
-                  onValueChange={(value) =>
-                    controller.setRotateProviderConfigId(value === "__default__" ? "" : value)
-                  }
-                >
-                  <SelectTrigger id="rotate-secret-vault" className="h-9 w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__default__">Deployment default</SelectItem>
-                    {controller.selectedRotateProviderConfigs.map((config) => {
-                      const blockReason = getProviderConfigBlockReason(config);
-                      return (
-                        <SelectItem key={config.id} value={config.id} disabled={Boolean(blockReason)}>
-                          {config.displayName}
-                          {config.isDefault ? " (default)" : ""}
-                          {blockReason ? ` (${blockReason})` : ""}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-                {controller.selectedRotateProviderConfig ? (
-                  rotateVaultMessage ? (
-                    <Alert variant={rotateVaultBlockReason ? "destructive" : "default"}>
-                      <AlertCircle />
-                      <AlertDescription>{rotateVaultMessage}</AlertDescription>
-                    </Alert>
-                  ) : (
-                    <p className="mt-1 text-(length:--text-micro) text-muted-foreground">
-                      {controller.selectedRotateProviderConfig.isDefault ? "Default vault" : "Vault"} ·{" "}
-                      {controller.selectedRotateProviderConfig.status.replace("_", " ")}
-                    </p>
-                  )
-                ) : (
-                  <FieldDescription>This rotation uses the deployment-configured provider.</FieldDescription>
-                )}
-              </Field>
-              {controller.selectedSecret?.managedMode === "external_reference" ? (
-                <Field>
-                  <FieldLabel htmlFor="rotate-ref">External reference</FieldLabel>
-                  <Input
-                    id="rotate-ref"
-                    value={controller.rotateExternalRef}
-                    onChange={(event) => controller.setRotateExternalRef(event.target.value)}
-                    placeholder={controller.selectedSecret.externalRef ?? "Updated reference"}
-                    className="font-mono text-xs"
-                  />
-                  <FieldDescription>
-                    Rotate the actual value in the provider before changing this Paperclip reference.
-                  </FieldDescription>
-                </Field>
-              ) : (
-                <Field>
-                  <FieldLabel htmlFor="rotate-value">New value</FieldLabel>
-                  <Textarea
-                    id="rotate-value"
-                    value={controller.rotateValue}
-                    onChange={(event) => controller.setRotateValue(event.target.value)}
-                    rows={3}
-                    className="font-mono text-xs"
-                    placeholder="Paste the new value"
-                  />
-                </Field>
-              )}
-              {controller.rotateError ? (
-                <p className="text-xs text-destructive">{controller.rotateError}</p>
-              ) : null}
-              <DialogFooter>
+          <FormDialog
+            open={controller.rotateOpen}
+            onOpenChange={controller.setRotateOpen}
+            contentClassName="sm:max-w-md"
+            title={
+              controller.selectedSecret?.managedMode === "external_reference"
+                ? "Update external reference"
+                : "Update secret value"
+            }
+            description={
+              controller.selectedSecret?.managedMode === "external_reference"
+                ? "Creates a new Paperclip metadata version that points at an existing provider secret. Paperclip does not write a new provider value."
+                : "Creates a new provider-backed version. Consumers pinned to latest pick up the new value on the next run."
+            }
+            footer={
+              <>
                 <Button variant="outline" onClick={() => controller.setRotateOpen(false)}>
                   Cancel
                 </Button>
@@ -339,9 +262,82 @@ function Secrets() {
                     ? "Update reference"
                     : "Update value"}
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </>
+            }
+          >
+            <LabeledFormField
+              label="Provider vault"
+              labelFor="rotate-secret-vault"
+              description={
+                controller.selectedRotateProviderConfig
+                  ? undefined
+                  : "This rotation uses the deployment-configured provider."
+              }
+            >
+              <EntityCombobox
+                value={controller.rotateProviderConfigId}
+                options={controller.selectedRotateProviderConfigs.map((config) => {
+                  const blockReason = getProviderConfigBlockReason(config);
+                  return {
+                    id: config.id,
+                    label: `${config.displayName}${config.isDefault ? " (default)" : ""}${
+                      blockReason ? ` (${blockReason})` : ""
+                    }`,
+                    disabled: Boolean(blockReason),
+                  };
+                })}
+                onValueChange={controller.setRotateProviderConfigId}
+                type="provider vault"
+                ariaLabel="Provider vault"
+                placeholder="Deployment default"
+                noneLabel="Deployment default"
+                triggerClassName="h-9 w-full"
+                triggerProps={{ id: "rotate-secret-vault" }}
+              />
+              {controller.selectedRotateProviderConfig ? (
+                rotateVaultMessage ? (
+                  <Alert variant={rotateVaultBlockReason ? "destructive" : "default"}>
+                    <AlertCircle />
+                    <AlertDescription>{rotateVaultMessage}</AlertDescription>
+                  </Alert>
+                ) : (
+                  <p className="mt-1 text-(length:--text-micro) text-muted-foreground">
+                    {controller.selectedRotateProviderConfig.isDefault ? "Default vault" : "Vault"} ·{" "}
+                    {controller.selectedRotateProviderConfig.status.replace("_", " ")}
+                  </p>
+                )
+              ) : null}
+            </LabeledFormField>
+            {controller.selectedSecret?.managedMode === "external_reference" ? (
+              <LabeledFormField
+                label="External reference"
+                labelFor="rotate-ref"
+                description="Rotate the actual value in the provider before changing this Paperclip reference."
+              >
+                <Input
+                  id="rotate-ref"
+                  value={controller.rotateExternalRef}
+                  onChange={(event) => controller.setRotateExternalRef(event.target.value)}
+                  placeholder={controller.selectedSecret.externalRef ?? "Updated reference"}
+                  className="font-mono text-xs"
+                />
+              </LabeledFormField>
+            ) : (
+              <LabeledFormField label="New value" labelFor="rotate-value">
+                <Textarea
+                  id="rotate-value"
+                  value={controller.rotateValue}
+                  onChange={(event) => controller.setRotateValue(event.target.value)}
+                  rows={3}
+                  className="font-mono text-xs"
+                  placeholder="Paste the new value"
+                />
+              </LabeledFormField>
+            )}
+            {controller.rotateError ? (
+              <p className="text-xs text-destructive">{controller.rotateError}</p>
+            ) : null}
+          </FormDialog>
           <DeleteSecretDialog />
           <DeleteUserSecretDialog />
           <SetMySecretDialog />

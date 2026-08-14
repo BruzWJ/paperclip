@@ -7,6 +7,7 @@ import {
   type InboxWorkItemGroupBy,
 } from "@/lib/inbox";
 import { collectSubtreeLiveCounts } from "@/lib/liveTaskIds";
+import type { ParentedEntity } from "@/lib/presentation-contracts";
 import type { Task } from "@paperclipai/shared";
 import { useMemo, useRef } from "react";
 import type { NavEntry } from "./-inbox-controller-model";
@@ -90,7 +91,7 @@ export function useInboxGrouping({
   const flatNavItemsRef = useRef(flatNavItems);
   flatNavItemsRef.current = flatNavItems;
   const subtreeLiveCounts = useMemo(() => {
-    const nodes: { id: string; parentId: string | null }[] = [];
+    const nodes: ParentedEntity[] = [];
     const seen = new Set<string>();
     const pushTask = (task: Task) => {
       if (seen.has(task.id)) return;

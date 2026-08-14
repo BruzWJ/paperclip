@@ -6,32 +6,15 @@ import {
   TaskStatusChart,
 } from "@/components/ActivityCharts";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyTitle } from "@/components/ui/empty";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { taskDisplayTitle } from "@/lib/task-display";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { formatMoneyAmount, formatTokens, relativeTime } from "@/lib/utils";
-import type {
-  AgentRuntimeState,
-  BudgetCurrency,
-  TaskExecutionRunEnvelopeRecord,
-} from "@paperclipai/shared";
+import type { AgentRuntimeState, BudgetCurrency, TaskExecutionRunEnvelopeRecord } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
 
 export function LatestRunCard({
@@ -45,26 +28,18 @@ export function LatestRunCard({
   if (runs.length === 0) return null;
 
   const sorted = [...runs].sort(
-    (left, right) =>
-      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
   const run = sorted.find(isTaskExecutionRunActive) ?? sorted[0]!;
   const isLive = isTaskExecutionRunActive(run);
-  const terminalSummary = run.terminalReasonCode
-    ? run.terminalReasonCode.replace(/_/g, " ")
-    : null;
+  const terminalSummary = run.terminalReasonCode ? run.terminalReasonCode.replace(/_/g, " ") : null;
 
   return (
     <div className="space-y-3">
       <div className="flex w-full items-center justify-between">
-        <h3 className="text-sm font-medium">
-          {isLive ? "Active run" : "Latest run"}
-        </h3>
+        <h3 className="text-sm font-medium">{isLive ? "Active run" : "Latest run"}</h3>
         <Button asChild variant="ghost" size="xs">
-          <Link
-            to="/$companyId/agents/$agentId/runs/$runId"
-            params={{ companyId, agentId, runId: run.id }}
-          >
+          <Link to="/$companyId/agents/$agentId/runs/$runId" params={{ companyId, agentId, runId: run.id }}>
             View details
           </Link>
         </Button>
@@ -77,25 +52,17 @@ export function LatestRunCard({
         >
           <ItemContent>
             <ItemTitle className="flex-wrap">
-              <Badge variant={statusBadgeVariant(run.status)}>
-                {run.status.replace(/[_-]/g, " ")}
-              </Badge>
+              <DomainStatus status={run.status} />
               <Badge variant="outline" className="capitalize">
                 {run.kind}
               </Badge>
-              <span className="font-mono text-xs text-muted-foreground">
-                {run.id.slice(0, 8)}
-              </span>
+              <span className="font-mono text-xs text-muted-foreground">{run.id.slice(0, 8)}</span>
             </ItemTitle>
             {terminalSummary ? (
-              <ItemDescription className="capitalize">
-                {terminalSummary}
-              </ItemDescription>
+              <ItemDescription className="capitalize">{terminalSummary}</ItemDescription>
             ) : null}
           </ItemContent>
-          <ItemActions className="text-xs text-muted-foreground">
-            {relativeTime(run.createdAt)}
-          </ItemActions>
+          <ItemActions className="text-xs text-muted-foreground">{relativeTime(run.createdAt)}</ItemActions>
         </Link>
       </Item>
     </div>
@@ -158,11 +125,7 @@ export function AgentOverview({
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">Recent Tasks</h3>
           <Button asChild variant="ghost" size="xs">
-            <Link
-              to="/$companyId/tasks"
-              params={{ companyId }}
-              search={{ participantAgentId: agentId }}
-            >
+            <Link to="/$companyId/tasks" params={{ companyId }} search={{ participantAgentId: agentId }}>
               See all
             </Link>
           </Button>
@@ -185,18 +148,12 @@ export function AgentOverview({
                 >
                   <ItemContent>
                     <ItemTitle>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {task.identifier}
-                      </span>
+                      <span className="font-mono text-xs text-muted-foreground">{task.identifier}</span>
                       <span>{taskDisplayTitle(task)}</span>
                     </ItemTitle>
                   </ItemContent>
                   <ItemActions>
-                    <Badge
-                      variant={statusBadgeVariant(task.boardPresentationStatus)}
-                    >
-                      {task.boardPresentationStatus.replace(/[_-]/g, " ")}
-                    </Badge>
+                    <DomainStatus status={task.boardPresentationStatus} />
                   </ItemActions>
                 </Link>
               </Item>
@@ -216,10 +173,7 @@ export function AgentOverview({
 
       <div className="space-y-3">
         <h3 className="text-sm font-medium">Costs</h3>
-        <CostsSection
-          runtimeState={runtimeState}
-          budgetCurrency={budgetCurrency}
-        />
+        <CostsSection runtimeState={runtimeState} budgetCurrency={budgetCurrency} />
       </div>
     </div>
   );
@@ -243,8 +197,7 @@ export function CostsSection({
     {
       label: "Latest context",
       value:
-        runtimeState.lastContextUsedTokens !== null &&
-        runtimeState.lastContextWindowTokens !== null
+        runtimeState.lastContextUsedTokens !== null && runtimeState.lastContextWindowTokens !== null
           ? `${formatTokens(runtimeState.lastContextUsedTokens)} / ${formatTokens(runtimeState.lastContextWindowTokens)}`
           : "Unavailable",
     },
@@ -255,10 +208,7 @@ export function CostsSection({
     {
       label: "Known cost",
       value: budgetCurrency
-        ? formatMoneyAmount(
-            runtimeState.aggregateKnownCostAmount,
-            budgetCurrency,
-          )
+        ? formatMoneyAmount(runtimeState.aggregateKnownCostAmount, budgetCurrency)
         : "Currency unavailable",
     },
     { label: "Unpriced prompts", value: runtimeState.unpricedPromptCount },

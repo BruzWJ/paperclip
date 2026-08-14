@@ -8,6 +8,7 @@ import type { Agent } from "@paperclipai/shared";
 import type { ClientTaskComment } from "./optimistic-task-comments";
 import { formatOwnerUserLabel } from "./task-owners";
 import type { TaskTimelineEvent } from "./task-timeline-events";
+import type { TimestampedEntity } from "./presentation-contracts";
 
 export type TaskChatComment = ClientTaskComment & {
   runAgentId?: string | null;
@@ -54,8 +55,7 @@ export function stabilizeThreadMessages(
   const stabilizedMessages = messages.map((message, index) => {
     const fingerprint = fingerprintThreadMessage(message);
     const cached = previousById.get(message.id);
-    const stableMessage =
-      cached?.fingerprint === fingerprint ? cached.message : message;
+    const stableMessage = cached?.fingerprint === fingerprint ? cached.message : message;
     nextById.set(message.id, { fingerprint, message: stableMessage });
     if (sameSequence && previousMessages[index] !== stableMessage) {
       sameSequence = false;
@@ -69,12 +69,9 @@ export function stabilizeThreadMessages(
   };
 }
 
-function sortByCreated<T extends { createdAt: Date | string; id: string }>(
-  items: readonly T[],
-) {
+function sortByCreated<T extends TimestampedEntity>(items: readonly T[]) {
   return [...items].sort((left, right) => {
-    const timestampDifference =
-      toTimestamp(left.createdAt) - toTimestamp(right.createdAt);
+    const timestampDifference = toTimestamp(left.createdAt) - toTimestamp(right.createdAt);
     return timestampDifference || left.id.localeCompare(right.id);
   });
 }
@@ -98,9 +95,7 @@ function authorNameForComment(
   if (comment.authorAgentId) {
     return (
       agentMap?.get(comment.authorAgentId)?.name ??
-      (comment.authorType === "system"
-        ? "Paperclip"
-        : comment.authorAgentId.slice(0, 8))
+      (comment.authorType === "system" ? "Paperclip" : comment.authorAgentId.slice(0, 8))
     );
   }
   if (!comment.authorUserId) {
@@ -121,22 +116,10 @@ function createCommentMessage(args: {
   companyId?: string | null;
   projectId?: string | null;
 }): ThreadMessage {
-  const {
-    comment,
-    agentMap,
-    currentUserId,
-    userLabelMap,
-    companyId,
-    projectId,
-  } = args;
+  const { comment, agentMap, currentUserId, userLabelMap, companyId, projectId } = args;
   const isSystemNotice = comment.authorType === "system";
   const isRunProgress = comment.presentation?.kind === "run_progress";
-  const authorName = authorNameForComment(
-    comment,
-    agentMap,
-    currentUserId,
-    userLabelMap,
-  );
+  const authorName = authorNameForComment(comment, agentMap, currentUserId, userLabelMap);
   const custom = {
     kind: isSystemNotice
       ? "system_notice"
@@ -169,11 +152,9 @@ function createCommentMessage(args: {
     boardGroupRootId: comment.boardGroupRootId ?? null,
     boardIsRoot: comment.boardIsRoot === true,
     boardGroupHasMore: comment.boardGroupHasMore === true,
-    boardGroupContinuationLoading:
-      comment.boardGroupContinuationLoading === true,
+    boardGroupContinuationLoading: comment.boardGroupContinuationLoading === true,
     boardGroupContinuationError: comment.boardGroupContinuationError ?? null,
-    immediateParentDisplayReference:
-      comment.immediateParentDisplayReference ?? null,
+    immediateParentDisplayReference: comment.immediateParentDisplayReference ?? null,
     canReply: comment.boardEntryKind === "comment" && !comment.clientStatus,
   };
   const contentText =
@@ -233,12 +214,9 @@ function createTimelineEventMessage(args: {
       ? (agentMap?.get(event.actorId)?.name ?? event.actorId.slice(0, 8))
       : event.actorType === "system"
         ? "System"
-        : (formatOwnerUserLabel(event.actorId, currentUserId, userLabelMap) ??
-          "Board");
+        : (formatOwnerUserLabel(event.actorId, currentUserId, userLabelMap) ?? "Board");
   const lines = [
-    event.followUpRequested
-      ? `${actorName} requested follow-up`
-      : `${actorName} updated this task`,
+    event.followUpRequested ? `${actorName} requested follow-up` : `${actorName} updated this task`,
   ];
   if (event.lifecycleStatusChange) {
     lines.push(
@@ -248,16 +226,9 @@ function createTimelineEventMessage(args: {
   if (event.ownerChange) {
     const ownerLabel = (owner: typeof event.ownerChange.from) =>
       owner.ownerAgentId
-        ? (agentMap?.get(owner.ownerAgentId)?.name ??
-          owner.ownerAgentId.slice(0, 8))
-        : (formatOwnerUserLabel(
-            owner.ownerUserId,
-            currentUserId,
-            userLabelMap,
-          ) ?? "Board escalation");
-    lines.push(
-      `Owner: ${ownerLabel(event.ownerChange.from)} -> ${ownerLabel(event.ownerChange.to)}`,
-    );
+        ? (agentMap?.get(owner.ownerAgentId)?.name ?? owner.ownerAgentId.slice(0, 8))
+        : (formatOwnerUserLabel(owner.ownerUserId, currentUserId, userLabelMap) ?? "Board escalation");
+    lines.push(`Owner: ${ownerLabel(event.ownerChange.from)} -> ${ownerLabel(event.ownerChange.to)}`);
   }
   const message: ThreadSystemMessage = {
     id: `activity:${event.id}`,
@@ -319,30 +290,16 @@ export function buildTaskChatMessages(args: {
   currentUserId?: string | null;
   userLabelMap?: ReadonlyMap<string, string> | null;
 }) {
-  const {
-    comments,
-    timelineEvents,
-    companyId,
-    projectId,
-    agentMap,
-    currentUserId,
-    userLabelMap,
-  } = args;
+  const { comments, timelineEvents, companyId, projectId, agentMap, currentUserId, userLabelMap } = args;
   const orderedMessages: MessageWithOrder[] = [];
-  const hasGroupedBoardProjection = comments.some(
-    (comment) => comment.boardOrder !== undefined,
-  );
+  const hasGroupedBoardProjection = comments.some((comment) => comment.boardOrder !== undefined);
   const orderedComments = hasGroupedBoardProjection
-    ? [...comments].sort(
-        (left, right) => (left.boardOrder ?? 0) - (right.boardOrder ?? 0),
-      )
+    ? [...comments].sort((left, right) => (left.boardOrder ?? 0) - (right.boardOrder ?? 0))
     : sortByCreated(comments);
 
   for (const comment of orderedComments) {
     orderedMessages.push({
-      createdAtMs: hasGroupedBoardProjection
-        ? (comment.boardOrder ?? 0)
-        : toTimestamp(comment.createdAt),
+      createdAtMs: hasGroupedBoardProjection ? (comment.boardOrder ?? 0) : toTimestamp(comment.createdAt),
       order: 1,
       message: createCommentMessage({
         comment,

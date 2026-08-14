@@ -268,6 +268,7 @@ describe("FolderControls", () => {
     ) as HTMLButtonElement | undefined;
     expect(submit).toBeTruthy();
     expect(submit?.disabled).toBe(true);
+    expect(document.querySelector('[aria-label="Folder color saturation and lightness"]')).toBeTruthy();
 
     const nameInput = document.querySelector<HTMLInputElement>("#folder-name");
     act(() => {
@@ -344,6 +345,67 @@ describe("FolderControls", () => {
     });
 
     expect(onSelect).toHaveBeenCalledWith("folder-reporting");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("renders nested mobile folders through the shared tree and keeps child selection actionable", () => {
+    const onSelect = vi.fn();
+    const onOpenChange = vi.fn();
+    const nestedResult: FolderListResult = {
+      ...folderResult,
+      folders: [
+        ...folderResult.folders,
+        {
+          ...folderResult.folders[0]!,
+          id: "folder-weekly",
+          parentId: "folder-reporting",
+          name: "Weekly",
+          slug: "weekly",
+          path: "reporting/weekly",
+          depth: 2,
+          position: 1,
+          itemCount: 2,
+        },
+      ],
+    };
+    root = createRoot(container);
+
+    act(() => {
+      root?.render(
+        <MobileFolderSheet
+          open
+          onOpenChange={onOpenChange}
+          result={nestedResult}
+          selection="folder-weekly"
+          allLabel="All routines"
+          itemLabelPlural="Routines"
+          onSelect={onSelect}
+          onCreate={vi.fn()}
+        />,
+      );
+    });
+
+    const tree = document.querySelector('[role="tree"][aria-label="Routines folders"]');
+    const reportingRow = Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]')).find((row) =>
+      row.textContent?.includes("Reporting"),
+    );
+    const weeklyRow = Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]')).find((row) =>
+      row.textContent?.includes("Weekly"),
+    );
+    expect(tree).not.toBeNull();
+    expect(reportingRow?.getAttribute("aria-level")).toBe("1");
+    expect(reportingRow?.getAttribute("aria-expanded")).toBe("true");
+    expect(weeklyRow?.getAttribute("aria-level")).toBe("2");
+    expect(weeklyRow?.getAttribute("aria-selected")).toBe("true");
+
+    const weeklyButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Weekly"),
+    );
+    act(() => {
+      weeklyButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onSelect).toHaveBeenCalledWith("folder-weekly");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 

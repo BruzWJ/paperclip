@@ -3,6 +3,7 @@ import {
   readRecentSelectionIds,
   trackRecentSelectionId,
 } from "./recent-selections";
+import type { NamedEntity } from "./presentation-contracts";
 
 const STORAGE_KEY = "paperclip:recent-assignees";
 
@@ -41,10 +42,7 @@ export function trackRecentAssigneeUser(userId: string): void {
   trackRecentSelectionId(STORAGE_KEY, userSelectionId(userId));
 }
 
-export function sortAgentsByRecency<T extends { id: string; name: string }>(
-  agents: T[],
-  recentIds: string[],
-): T[] {
+export function sortAgentsByRecency<T extends NamedEntity>(agents: T[], recentIds: string[]): T[] {
   const recentIndex = new Map(recentIds.slice(0, RECENT_SELECTION_DISPLAY_LIMIT).map((id, i) => [id, i]));
   return [...agents].sort((a, b) => {
     const aRecent = recentIndex.get(a.id);

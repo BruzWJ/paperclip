@@ -13,6 +13,7 @@ import type {
 } from "./inbox-model";
 import { sortTasksByMostRecentActivity, taskLastActivityTimestamp } from "./inbox-model";
 import { formatOwnerUserLabel } from "./task-owners";
+import type { KeyedLabel } from "./presentation-contracts";
 
 const inboxWorkItemKindOrder: InboxWorkItem["kind"][] = ["task", "approval", "failed_run", "join_request"];
 
@@ -30,7 +31,7 @@ function resolveTaskOwnerGroup(
     currentUserId,
     userLabelById,
   }: Pick<InboxGroupingOptions, "agentById" | "currentUserId" | "userLabelById">,
-): { key: string; label: string } {
+): KeyedLabel {
   if (task.ownerAgentId) {
     const agentName = agentById?.get(task.ownerAgentId)?.trim();
     return {
@@ -52,7 +53,7 @@ function resolveTaskOwnerGroup(
 function resolveTaskProjectGroup(
   task: Pick<Task, "projectId">,
   { projectById }: Pick<InboxGroupingOptions, "projectById">,
-): { key: string; label: string } {
+): KeyedLabel {
   if (!task.projectId) return { key: "project:none", label: "No project" };
 
   const projectName = projectById?.get(task.projectId)?.name?.trim();
@@ -64,7 +65,7 @@ function resolveTaskProjectGroup(
 
 function groupInboxWorkItemsByTaskGroup(
   items: InboxWorkItem[],
-  resolveTaskGroup: (task: Task) => { key: string; label: string },
+  resolveTaskGroup: (task: Task) => KeyedLabel,
 ): InboxWorkItemGroup[] {
   const groups = new Map<string, { label: string; items: InboxWorkItem[]; latestTimestamp: number }>();
   for (const item of items) {

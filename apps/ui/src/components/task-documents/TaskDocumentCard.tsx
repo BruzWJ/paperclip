@@ -1,21 +1,10 @@
 import type { TaskDocument } from "@paperclipai/shared";
 import { isSystemTaskDocumentKey } from "@paperclipai/shared";
-import {
-  BadgeCheck,
-  Check,
-  Copy,
-  Diff,
-  Download,
-  FilePenLine,
-  Lock,
-  MoreHorizontal,
-  ShieldAlert,
-  Trash2,
-  Unlock,
-} from "lucide-react";
+import { Check, Copy, Diff, Download, FilePenLine, Lock, MoreHorizontal, Trash2, Unlock } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -29,16 +18,6 @@ import {
 import { cn } from "../../lib/utils";
 import { deriveDocumentRevisionState } from "../../lib/document-revisions";
 import { DocumentFrameHeader } from "../DocumentFrameHeader";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { DocumentAnnotationsCountChip } from "../TaskDocumentAnnotations";
 import { downloadDocumentFile, getRevisionActor, isPlanKey, titlesMatchKey } from "../TaskDocumentUtils";
 
@@ -91,6 +70,10 @@ interface TaskDocumentCardProps {
   doc: TaskDocument;
 }
 
+export interface TaskDocumentPresentationProps extends TaskDocumentCardProps {
+  model: TaskDocumentCardModel;
+}
+
 export function TaskDocumentCard({ controller, doc }: TaskDocumentCardProps) {
   const model = createTaskDocumentCardModel(doc, controller);
 
@@ -117,11 +100,7 @@ export function TaskDocumentCard({ controller, doc }: TaskDocumentCardProps) {
   );
 }
 
-interface TaskDocumentCardContentProps extends TaskDocumentCardProps {
-  model: TaskDocumentCardModel;
-}
-
-function TaskDocumentCardContent({ controller, doc, model }: TaskDocumentCardContentProps) {
+function TaskDocumentCardContent({ controller, doc, model }: TaskDocumentPresentationProps) {
   return (
     <CollapsibleContent
       className="mt-3 space-y-3"
@@ -146,13 +125,7 @@ function TaskDocumentCardContent({ controller, doc, model }: TaskDocumentCardCon
   );
 }
 
-interface TaskDocumentCardHeaderProps {
-  controller: TaskDocumentsSectionController;
-  doc: TaskDocument;
-  model: TaskDocumentCardModel;
-}
-
-function TaskDocumentCardHeader({ controller, doc, model }: TaskDocumentCardHeaderProps) {
+function TaskDocumentCardHeader({ controller, doc, model }: TaskDocumentPresentationProps) {
   const {
     canDeleteDocuments,
     canManageDocumentLocks,
@@ -201,10 +174,9 @@ function TaskDocumentCardHeader({ controller, doc, model }: TaskDocumentCardHead
         lowTrust ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Badge variant={promoted ? "secondary" : "destructive"} aria-label={trustLabel}>
-                {promoted ? <BadgeCheck /> : <ShieldAlert />}
+              <DomainStatus status={promoted ? "promoted" : "low_trust_review"} aria-label={trustLabel}>
                 {trustLabel}
-              </Badge>
+              </DomainStatus>
             </TooltipTrigger>
             <TooltipContent>{trustDescription}</TooltipContent>
           </Tooltip>
@@ -331,28 +303,16 @@ function TaskDocumentDeleteConfirmation({ controller, documentKey }: TaskDocumen
   if (confirmDeleteKey !== documentKey) return null;
 
   return (
-    <AlertDialog open onOpenChange={(open) => !open && setConfirmDeleteKey(null)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete document?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This document and its revision history will be permanently deleted.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleteDocument.isPending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={deleteDocument.isPending}
-            onClick={(event) => {
-              event.preventDefault();
-              deleteDocument.mutate(documentKey);
-            }}
-          >
-            {deleteDocument.isPending ? "Deleting…" : "Delete"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmActionDialog
+      open
+      onOpenChange={(open) => !open && setConfirmDeleteKey(null)}
+      title="Delete document?"
+      description="This document and its revision history will be permanently deleted."
+      confirmLabel="Delete"
+      pendingLabel="Deleting…"
+      variant="destructive"
+      pending={deleteDocument.isPending}
+      onConfirm={() => deleteDocument.mutateAsync(documentKey).then(() => undefined)}
+    />
   );
 }

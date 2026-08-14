@@ -7,7 +7,7 @@ import { TaskRow } from "@/components/TaskRow";
 import { formatMoneyAmount } from "@/lib/utils";
 import { taskValueLabel } from "@/lib/task-blockers";
 import { deriveInitials } from "@/lib/identity";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -76,11 +76,7 @@ function ControlPlaneSurfaces() {
                   </span>
                 }
                 trailingMeta={index === 0 ? "3m ago" : index === 1 ? "blocked by budget" : "review requested"}
-                mobileMeta={
-                  <Badge variant={statusBadgeVariant(task.boardPresentationStatus)}>
-                    {task.boardPresentationStatus}
-                  </Badge>
-                }
+                mobileMeta={<DomainStatus status={task.boardPresentationStatus} />}
                 titleSuffix={
                   index === 0 ? (
                     <span className="ml-2 inline-flex align-middle">
@@ -209,7 +205,7 @@ function ControlPlaneSurfaces() {
                       </Avatar>
                       <span>{agent.name}</span>
                     </span>
-                    <Badge variant={statusBadgeVariant(agent.status)}>{agent.status}</Badge>
+                    <DomainStatus status={agent.status} />
                   </div>
                   <CardDescription>{agent.title}</CardDescription>
                 </CardHeader>

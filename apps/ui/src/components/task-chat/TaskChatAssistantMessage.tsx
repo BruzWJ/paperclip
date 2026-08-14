@@ -1,18 +1,15 @@
 import { Spinner } from "@/components/ui/spinner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Message, MessageAvatar, MessageContent, MessageHeader } from "@/components/ui/message";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import type { ThreadMessage } from "@assistant-ui/react";
-import { BadgeCheck, ChevronDown, ShieldAlert } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useContext, useState } from "react";
-import { toast } from "sonner";
-import { copyTextToClipboard } from "../../lib/clipboard";
 import { cn } from "../../lib/utils";
 import { AgentIcon } from "../AgentIconPicker";
 
@@ -21,10 +18,14 @@ import {
   TaskChatCtx,
   TaskChatImmediateParentLabel,
   getThreadMessageCopyText,
-  isSourceTrustMetadata,
   replyTargetForMessage,
   resolveAssistantMessageFoldedState,
 } from "./TaskChatShared";
+import {
+  TaskChatFollowUpBadge,
+  TaskChatSourceTrustIndicator,
+  useTaskChatCopy,
+} from "./TaskChatMessagePrimitives";
 
 import { TaskChatAssistantParts } from "./TaskChatMessageParts";
 
@@ -65,24 +66,9 @@ export function TaskChatAssistantMessage({
   const agentId = authorAgentId ?? runAgentId;
   const agentIcon = agentId ? agentMap?.get(agentId)?.icon : undefined;
   const commentId = typeof custom.commentId === "string" ? custom.commentId : null;
-  const sourceTrust = isSourceTrustMetadata(custom.sourceTrust) ? custom.sourceTrust : null;
-  const lowTrust = sourceTrust?.preset === "low_trust_review";
-  const promoted = sourceTrust?.disposition === "promoted";
-  const trustLabel = promoted ? "Promoted from low-trust" : "Low-trust source";
-  const trustDescription = promoted
-    ? `Promoted from low-trust${sourceTrust?.promotedAt ? ` on ${new Date(sourceTrust.promotedAt).toLocaleString()}` : ""}.`
-    : "Authored by a low-trust review agent. Raw comment is not auto-shared with higher-trust agents.";
-  const sourceTrustIndicator = lowTrust ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge variant={promoted ? "secondary" : "destructive"} aria-label={trustLabel}>
-          {promoted ? <BadgeCheck /> : <ShieldAlert />}
-          {trustLabel}
-        </Badge>
-      </TooltipTrigger>
-      <TooltipContent>{trustDescription}</TooltipContent>
-    </Tooltip>
-  ) : null;
+  const sourceTrustIndicator = (
+    <TaskChatSourceTrustIndicator appearance="status" value={custom.sourceTrust} />
+  );
   const notices = Array.isArray(custom.notices)
     ? custom.notices.filter((notice): notice is string => typeof notice === "string" && notice.length > 0)
     : [];
@@ -98,7 +84,7 @@ export function TaskChatAssistantMessage({
     messageId: message.id,
     isFoldable,
   });
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useTaskChatCopy("Unable to copy message");
   const copyText = getThreadMessageCopyText(message);
   const replyTarget = replyTargetForMessage(message, authorName);
 
@@ -120,6 +106,7 @@ export function TaskChatAssistantMessage({
   }
 
   const followUpRequested = custom.followUpRequested === true;
+  const followUpBadge = <TaskChatFollowUpBadge requested={followUpRequested} />;
 
   const kind = typeof custom.kind === "string" ? custom.kind : null;
   const hasCommentText = message.content.some(
@@ -143,25 +130,12 @@ export function TaskChatAssistantMessage({
     </Avatar>
   );
 
-  const copyMessage = () => {
-    void copyTextToClipboard(copyText)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      })
-      .catch((error) => {
-        toast.error("Copy failed", {
-          description: error instanceof Error ? error.message : "Unable to copy message",
-        });
-      });
-  };
-
   const messageActionBar = (
     <TaskChatMessageActionBar
       message={message}
       anchorId={anchorId}
       copied={copied}
-      onCopy={copyMessage}
+      onCopy={() => copy(copyText)}
       replyTarget={replyTarget}
       onReply={onReply}
       canStopRun={canStopRun}
@@ -199,14 +173,7 @@ export function TaskChatAssistantMessage({
               </span>
               <span className="text-sm font-medium text-foreground">{authorName}</span>
               {sourceTrustIndicator}
-              {followUpRequested ? (
-                <Badge
-                  variant="outline"
-                  className="text-(length:--text-nano) uppercase tracking-(--tracking-eyebrow)"
-                >
-                  Follow-up
-                </Badge>
-              ) : null}
+              {followUpBadge}
             </MessageHeader>
             {/* Agent response bubble. */}
             <Bubble variant="outline" className={cn("min-w-0", AGENT_COMMENT_BUBBLE_WIDTH_CLASS)}>
@@ -271,20 +238,8 @@ export function TaskChatAssistantMessage({
               <div className="mb-1.5 flex items-center gap-2">
                 <span className="text-sm font-medium text-foreground">{authorName}</span>
                 {sourceTrustIndicator}
-                {followUpRequested ? (
-                  <Badge
-                    variant="outline"
-                    className="text-(length:--text-nano) uppercase tracking-(--tracking-eyebrow)"
-                  >
-                    Follow-up
-                  </Badge>
-                ) : null}
-                {isRunning ? (
-                  <Badge variant="outline">
-                    <Spinner className="h-3 w-3" />
-                    Running
-                  </Badge>
-                ) : null}
+                {followUpBadge}
+                {isRunning ? <DomainStatus status="running">Running</DomainStatus> : null}
               </div>
             )}
 

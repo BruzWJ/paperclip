@@ -1,24 +1,16 @@
-import { useState, type MouseEvent } from "react";
+import type { MouseEvent } from "react";
 import type { Task } from "@paperclipai/shared";
 import { TaskLinkQuicklook } from "../TaskLinkQuicklook";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Field, FieldContent, FieldGroup, FieldLegend, FieldSet, FieldTitle } from "@/components/ui/field";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, X } from "lucide-react";
 import { taskDisplayTitle, taskReferenceLabel } from "../../lib/task-display";
 import type { TaskPropertiesController } from "./TaskProperties";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 
 export function RemovableTaskReferencePill({
   task,
@@ -27,7 +19,6 @@ export function RemovableTaskReferencePill({
   task: NonNullable<Task["blockedBy"]>[number];
   onRemove: (taskId: string) => void;
 }) {
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const taskLabel = taskReferenceLabel(task);
   const displayTitle = taskDisplayTitle(task);
   const confirmLabel =
@@ -36,37 +27,39 @@ export function RemovableTaskReferencePill({
       : displayTitle;
   const content = (
     <>
-      <Badge variant="outline" className="shrink-0">
-        {task.boardPresentationStatus}
-      </Badge>
+      <DomainStatus status={task.boardPresentationStatus} className="shrink-0" />
       <span className="truncate">{taskLabel}</span>
     </>
   );
   const removeLabel = `Remove ${taskLabel} as blocker`;
   const handleRemove = (event: MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
     event.stopPropagation();
-    setIsConfirmOpen(true);
-  };
-  const confirmRemove = () => {
-    onRemove(task.id);
-    setIsConfirmOpen(false);
   };
 
   return (
     <>
       <span className="group relative inline-flex">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="absolute -right-1 -top-1 z-10 size-4 rounded-full opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
-          aria-label={removeLabel}
-          title={removeLabel}
-          onClick={handleRemove}
-        >
-          <X className="h-3 w-3" />
-        </Button>
+        <ConfirmActionDialog
+          triggerAsChild
+          trigger={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="absolute -right-1 -top-1 z-10 size-4 rounded-full opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+              aria-label={removeLabel}
+              title={removeLabel}
+              onClick={handleRemove}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          }
+          title="Remove blocker?"
+          description={<>Remove {confirmLabel} as a blocker for this task.</>}
+          confirmLabel="Remove blocker"
+          variant="destructive"
+          onConfirm={() => onRemove(task.id)}
+        />
         <Button asChild variant="outline" size="xs">
           <TaskLinkQuicklook
             taskId={task.id}
@@ -79,24 +72,6 @@ export function RemovableTaskReferencePill({
           </TaskLinkQuicklook>
         </Button>
       </span>
-      <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Remove blocker?</DialogTitle>
-            <DialogDescription>Remove {confirmLabel} as a blocker for this task.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">
-                Cancel
-              </Button>
-            </DialogClose>
-            <Button type="button" variant="destructive" onClick={confirmRemove}>
-              Remove blocker
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
@@ -248,7 +223,7 @@ export function TaskPropertiesRelationships(props: TaskPropertiesController) {
                       taskNumber={relation.taskNumber}
                       title={taskDisplayTitle(relation)}
                     >
-                      <Badge variant="outline">{relation.boardPresentationStatus}</Badge>
+                      <DomainStatus status={relation.boardPresentationStatus} />
                       {taskReferenceLabel(relation)}
                     </TaskLinkQuicklook>
                   </Button>
@@ -288,7 +263,7 @@ export function TaskPropertiesRelationships(props: TaskPropertiesController) {
                       taskNumber={child.taskNumber}
                       title={taskDisplayTitle(child)}
                     >
-                      <Badge variant="outline">{child.boardPresentationStatus}</Badge>
+                      <DomainStatus status={child.boardPresentationStatus} />
                       {taskReferenceLabel(child)}
                     </TaskLinkQuicklook>
                   </Button>
@@ -329,7 +304,7 @@ export function TaskPropertiesRelationships(props: TaskPropertiesController) {
                     taskNumber={related.taskNumber}
                     title={taskDisplayTitle(related)}
                   >
-                    <Badge variant="outline">{related.boardPresentationStatus}</Badge>
+                    <DomainStatus status={related.boardPresentationStatus} />
                     {taskReferenceLabel(related)}
                   </TaskLinkQuicklook>
                 </Button>

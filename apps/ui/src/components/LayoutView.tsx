@@ -12,18 +12,11 @@ import {
 } from "react";
 
 import type { DevServerHealthStatus } from "@/api/health";
+import { Banner, BannerAction, BannerTitle } from "@/components/kibo-ui/banner";
 import { Badge } from "@/components/ui/badge";
-import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormDialog } from "@/components/patterns/FormPatterns";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Spinner } from "@/components/ui/spinner";
@@ -80,11 +73,9 @@ function WorktreeBanner() {
   const [copied, setCopied] = useState(false);
   if (!branding) return null;
   return (
-    <Alert className="flex-row items-center gap-2 rounded-none border-x-0 border-t-0 px-4 py-2 text-sm">
-      <Badge variant="secondary">Worktree</Badge>
-      <Button
-        variant="ghost"
-        size="xs"
+    <Banner>
+      <BannerTitle>Worktree</BannerTitle>
+      <BannerAction
         onClick={() =>
           navigator.clipboard.writeText(branding.name).then(() => {
             setCopied(true);
@@ -93,8 +84,8 @@ function WorktreeBanner() {
         }
       >
         {copied ? "Copied!" : branding.name}
-      </Button>
-    </Alert>
+      </BannerAction>
+    </Banner>
   );
 }
 
@@ -328,15 +319,15 @@ export function LayoutView({
           <NewProjectDialog />
           <NewGoalDialog />
         </Suspense>
-        <Dialog open={newAgentOpen} onOpenChange={(open) => !open && closeNewAgent()}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Add a new agent</DialogTitle>
-              <DialogDescription>
-                Ask a leader to propose the hire or configure an ACPX runtime yourself.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="sm:flex-col">
+        <FormDialog
+          open={newAgentOpen}
+          onOpenChange={(open) => !open && closeNewAgent()}
+          contentClassName="sm:max-w-md"
+          title="Add a new agent"
+          description="Ask a leader to propose the hire or configure an ACPX runtime yourself."
+          footerClassName="sm:flex-col"
+          footer={
+            <>
               <Button
                 className="w-full"
                 onClick={() => {
@@ -364,9 +355,9 @@ export function LayoutView({
                 <Settings2 data-icon="inline-start" />
                 Configure an ACPX runtime manually
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </>
+          }
+        />
         <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       </div>
     </GeneralSettingsProvider>

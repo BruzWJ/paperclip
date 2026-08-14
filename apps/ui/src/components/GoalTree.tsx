@@ -1,15 +1,13 @@
 import type { Goal } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
-import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import { statusBadgeVariant } from "../lib/status-variant";
-import { ChevronRight } from "lucide-react";
-import { cn } from "../lib/utils";
-import { useState } from "react";
+import { useMemo } from "react";
+
+import { DomainTree, type DomainTreeNode } from "@/components/patterns/DomainTree";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import * as Collapse from "@/components/ui/collapsible";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
-import { Item, ItemGroup } from "@/components/ui/item";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { cn } from "@/lib/utils";
 
 interface GoalTreeProps {
   goals: Goal[];
@@ -17,101 +15,38 @@ interface GoalTreeProps {
   onSelect?: (goal: Goal) => void;
 }
 
-interface GoalNodeProps {
-  goal: Goal;
-  allGoals: Goal[];
-  depth: number;
-  linkGoals?: boolean;
-  onSelect?: (goal: Goal) => void;
+function buildGoalNodes(goals: Goal[]): DomainTreeNode<Goal>[] {
+  const goalIds = new Set(goals.map((goal) => goal.id));
+  const childrenByParentId = new Map<string, Goal[]>();
+  for (const goal of goals) {
+    if (!goal.parentId || !goalIds.has(goal.parentId)) continue;
+    const siblings = childrenByParentId.get(goal.parentId) ?? [];
+    siblings.push(goal);
+    childrenByParentId.set(goal.parentId, siblings);
+  }
+
+  const mapGoal = (goal: Goal): DomainTreeNode<Goal> => ({
+    id: goal.id,
+    value: goal,
+    children: (childrenByParentId.get(goal.id) ?? []).map(mapGoal),
+  });
+
+  return goals.filter((goal) => !goal.parentId || !goalIds.has(goal.parentId)).map(mapGoal);
 }
 
-function GoalNode({ goal, allGoals, depth, linkGoals, onSelect }: GoalNodeProps) {
-  const companyId = useCompanyRouteId();
-  const [expanded, setExpanded] = useState(true);
-  const children = allGoals.filter((item) => item.parentId === goal.id);
-  const hasChildren = children.length > 0;
-
-  const treeToggle = hasChildren ? (
-    <Collapse.CollapsibleTrigger asChild>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        className="size-4 shrink-0"
-        aria-label={`${expanded ? "Collapse" : "Expand"} ${goal.title} subtree`}
-      >
-        <ChevronRight className={cn("size-3 transition-transform", expanded && "rotate-90")} />
-      </Button>
-    </Collapse.CollapsibleTrigger>
-  ) : (
-    <span className="w-4 shrink-0" />
-  );
-
-  const goalContent = (
-    <>
-      <span className="text-xs text-muted-foreground capitalize">{goal.level}</span>
-      <span className="min-w-0 flex-1 truncate">{goal.title}</span>
-      <Badge variant={statusBadgeVariant(goal.status)}>{goal.status.replace(/[_-]/g, " ")}</Badge>
-    </>
-  );
-
-  const interactiveContentClasses =
-    "flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-  const rowContent = linkGoals ? (
-    <Link
-      to="/$companyId/goals/$goalId"
-      params={{ companyId, goalId: goal.id }}
-      className={cn(interactiveContentClasses, "no-underline text-inherit")}
-    >
-      {goalContent}
-    </Link>
-  ) : onSelect ? (
-    <Button
-      type="button"
-      variant="ghost"
-      className={cn(interactiveContentClasses, "h-auto p-0")}
-      onClick={() => onSelect(goal)}
-    >
-      {goalContent}
-    </Button>
-  ) : (
-    <div className="flex min-w-0 flex-1 items-center gap-2">{goalContent}</div>
-  );
-
-  return (
-    <Collapse.Collapsible open={expanded} onOpenChange={setExpanded} role="listitem">
-      <Item
-        size="sm"
-        className="flex-nowrap gap-2 rounded-none border-0 px-3 py-1.5"
-        style={{ paddingLeft: `${depth * 16 + 12}px` }}
-      >
-        {treeToggle}
-        {rowContent}
-      </Item>
-      {hasChildren ? (
-        <Collapse.CollapsibleContent>
-          <ItemGroup>
-            {children.map((child) => (
-              <GoalNode
-                key={child.id}
-                goal={child}
-                allGoals={allGoals}
-                depth={depth + 1}
-                linkGoals={linkGoals}
-                onSelect={onSelect}
-              />
-            ))}
-          </ItemGroup>
-        </Collapse.CollapsibleContent>
-      ) : null}
-    </Collapse.Collapsible>
-  );
-}
-
+/** Goal hierarchy rendered through the shared Kibo Tree domain adapter. */
 export function GoalTree({ goals, linkGoals, onSelect }: GoalTreeProps) {
-  const goalIds = new Set(goals.map((g) => g.id));
-  const roots = goals.filter((g) => !g.parentId || !goalIds.has(g.parentId));
-
+  const companyId = useCompanyRouteId();
+  const nodes = useMemo(() => buildGoalNodes(goals), [goals]);
+  const initiallyExpanded = useMemo(
+    () =>
+      new Set(
+        nodes.flatMap(function collect(node): string[] {
+          return node.children?.length ? [node.id, ...node.children.flatMap(collect)] : [];
+        }),
+      ),
+    [nodes],
+  );
   if (goals.length === 0) {
     return (
       <Empty className="border-0 p-4 md:p-4">
@@ -121,17 +56,52 @@ export function GoalTree({ goals, linkGoals, onSelect }: GoalTreeProps) {
   }
 
   return (
-    <ItemGroup className="overflow-hidden rounded-md border py-1">
-      {roots.map((goal) => (
-        <GoalNode
-          key={goal.id}
-          goal={goal}
-          allGoals={goals}
-          depth={0}
-          linkGoals={linkGoals}
-          onSelect={onSelect}
-        />
-      ))}
-    </ItemGroup>
+    <DomainTree
+      nodes={nodes}
+      defaultExpandedIds={initiallyExpanded}
+      ariaLabel="Goals"
+      showIcons={false}
+      onActivate={({ value }) => onSelect?.(value)}
+      renderLabel={({ node }) => {
+        const goal = node.value;
+        const content = (
+          <>
+            <span className="text-xs text-muted-foreground capitalize">{goal.level}</span>
+            <span className="min-w-0 flex-1 truncate">{goal.title}</span>
+            <DomainStatus status={goal.status} />
+          </>
+        );
+        const classes = "flex min-w-0 flex-1 items-center gap-2 text-left";
+
+        if (linkGoals) {
+          return (
+            <Link
+              to="/$companyId/goals/$goalId"
+              params={{ companyId, goalId: goal.id }}
+              className={cn(classes, "no-underline text-inherit")}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {content}
+            </Link>
+          );
+        }
+        if (onSelect) {
+          return (
+            <Button
+              type="button"
+              variant="ghost"
+              className={cn(classes, "h-auto p-0")}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelect(goal);
+              }}
+            >
+              {content}
+            </Button>
+          );
+        }
+        return <span className={classes}>{content}</span>;
+      }}
+    />
   );
 }

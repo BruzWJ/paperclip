@@ -12,7 +12,7 @@ import {
 } from "../TaskDocumentUtils";
 import type { useTaskDocumentDraftActions } from "./useTaskDocumentDraftActions";
 
-type EditorState = ReturnType<typeof useTaskDocumentEditorState>;
+export type TaskDocumentEditorState = ReturnType<typeof useTaskDocumentEditorState>;
 type DraftActions = ReturnType<typeof useTaskDocumentDraftActions>;
 
 export interface UseTaskDocumentEffectsOptions {
@@ -21,7 +21,7 @@ export interface UseTaskDocumentEffectsOptions {
   sortedDocuments: TaskDocument[];
   locationHash: string;
   forceEditDocumentKey?: string;
-  editorState: EditorState;
+  editorState: TaskDocumentEditorState;
   draftActions: DraftActions;
 }
 

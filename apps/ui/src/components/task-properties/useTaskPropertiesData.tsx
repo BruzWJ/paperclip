@@ -5,7 +5,7 @@ import { accessApi } from "../../api/access";
 import { agentsApi } from "../../api/agents";
 import { authApi } from "../../api/auth";
 import { projectsApi } from "../../api/projects";
-import { tasksApi } from "../../api/tasks";
+import { tasksApi, type CreateTaskLabelInput } from "../../api/tasks";
 import { useCompanyRouteId } from "../../hooks/useCompanyRouteId";
 import { useProjectOrder } from "../../hooks/useProjectOrder";
 import {
@@ -101,7 +101,7 @@ export function useTaskPropertiesData({
     enabled: !!companyId && state.blockedByOpen && normalizedBlockedBySearch.length > 0,
   });
   const createLabel = useMutation({
-    mutationFn: (data: { name: string; color: string }) => tasksApi.createLabel(companyId!, data),
+    mutationFn: (data: CreateTaskLabelInput) => tasksApi.createLabel(companyId!, data),
     onSuccess: async (created) => {
       queryClient.setQueryData<TaskLabel[] | undefined>(queryKeys.tasks.labels(companyId!), (current) => {
         if (!current) return [created];

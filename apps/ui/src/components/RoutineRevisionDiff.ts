@@ -1,5 +1,4 @@
 import {
-  type CompanySecret,
   type EnvBinding,
   type EnvSecretRefBinding,
   type RoutineEnvConfig,
@@ -8,12 +7,13 @@ import {
   type RoutineVariable,
   type SecretVersionSelector,
 } from "@paperclipai/shared";
+import type { EnvDiffCounts, NamedEntityLookup, SecretLookup } from "@/lib/presentation-contracts";
 
-type AgentLookup = Map<string, { id: string; name: string }>;
-
-type ProjectLookup = Map<string, { id: string; name: string }>;
-
-type SecretLookup = Map<string, CompanySecret>;
+interface RoutineFieldChange {
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+}
 
 export function getActorLabel(revision: RoutineRevision): string {
   if (revision.createdByUserId) return "board";
@@ -21,12 +21,12 @@ export function getActorLabel(revision: RoutineRevision): string {
   return "system";
 }
 
-export function resolveAgentName(agentId: string | null, lookup: AgentLookup) {
+export function resolveAgentName(agentId: string | null, lookup: NamedEntityLookup) {
   if (!agentId) return "Unassigned";
   return lookup.get(agentId)?.name ?? agentId;
 }
 
-export function resolveProjectName(projectId: string | null, lookup: ProjectLookup) {
+export function resolveProjectName(projectId: string | null, lookup: NamedEntityLookup) {
   if (!projectId) return "No project";
   return lookup.get(projectId)?.name ?? projectId;
 }
@@ -64,28 +64,23 @@ export function collectWebhookTriggerDifferences(
     .map((trigger) => trigger.label ?? "webhook");
 }
 
-export function describeSnapshotField(value: unknown): string {
+function describeSnapshotField(value: unknown): string {
   if (value == null) return "—";
   if (typeof value === "string") return value;
   return JSON.stringify(value);
 }
 
-export function computeFieldChanges(
+function collectFieldChanges(
   left: RoutineRevision,
   right: RoutineRevision,
-  agents: AgentLookup,
-  projects: ProjectLookup,
+  agents: NamedEntityLookup,
+  projects: NamedEntityLookup,
   secrets: SecretLookup,
-): Array<{ field: string; oldValue: string | null; newValue: string | null }> {
+): RoutineFieldChange[] {
   const oldRoutine = left.snapshot.routine;
   const newRoutine = right.snapshot.routine;
-  const changes: Array<{
-    field: string;
-    oldValue: string | null;
-    newValue: string | null;
-  }> = [];
+  const changes: RoutineFieldChange[] = [];
   const compareScalar = (
-    _field: string,
     label: string,
     oldVal: unknown,
     newVal: unknown,
@@ -99,28 +94,21 @@ export function computeFieldChanges(
       });
     }
   };
-  compareScalar("title", "Title", oldRoutine.title, newRoutine.title);
-  compareScalar("priority", "Priority", oldRoutine.priority, newRoutine.priority);
+  compareScalar("Title", oldRoutine.title, newRoutine.title);
+  compareScalar("Priority", oldRoutine.priority, newRoutine.priority);
   compareScalar(
-    "assigneeAgentId",
     "Default agent",
     resolveAgentName(oldRoutine.assigneeAgentId, agents),
     resolveAgentName(newRoutine.assigneeAgentId, agents),
   );
   compareScalar(
-    "projectId",
     "Project",
     resolveProjectName(oldRoutine.projectId, projects),
     resolveProjectName(newRoutine.projectId, projects),
   );
-  compareScalar(
-    "concurrencyPolicy",
-    "Concurrency",
-    oldRoutine.concurrencyPolicy,
-    newRoutine.concurrencyPolicy,
-  );
-  compareScalar("catchUpPolicy", "Catch-up", oldRoutine.catchUpPolicy, newRoutine.catchUpPolicy);
-  compareScalar("status", "Status", oldRoutine.status, newRoutine.status);
+  compareScalar("Concurrency", oldRoutine.concurrencyPolicy, newRoutine.concurrencyPolicy);
+  compareScalar("Catch-up", oldRoutine.catchUpPolicy, newRoutine.catchUpPolicy);
+  compareScalar("Status", oldRoutine.status, newRoutine.status);
   if (JSON.stringify(oldRoutine.variables) !== JSON.stringify(newRoutine.variables)) {
     changes.push({
       field: "Variables",
@@ -133,37 +121,51 @@ export function computeFieldChanges(
   return changes;
 }
 
+export function formatRoutineFieldDiff(
+  left: RoutineRevision,
+  right: RoutineRevision,
+  agents: NamedEntityLookup,
+  projects: NamedEntityLookup,
+  secrets: SecretLookup,
+) {
+  const changes = collectFieldChanges(left, right, agents, projects, secrets);
+  return {
+    oldText: changes.map((change) => `${change.field}: ${change.oldValue ?? "—"}`).join("\n"),
+    newText: changes.map((change) => `${change.field}: ${change.newValue ?? "—"}`).join("\n"),
+  };
+}
+
 export function normalizeEnv(env: RoutineEnvConfig | null): Record<string, EnvBinding> {
   if (!env) return {};
   return env;
 }
 
-export function envBindingKind(binding: EnvBinding): "plain" | "secret_ref" {
+function envBindingKind(binding: EnvBinding): "plain" | "secret_ref" {
   if (binding && typeof binding === "object" && "type" in binding && binding.type === "secret_ref") {
     return "secret_ref";
   }
   return "plain";
 }
 
-export function asSecretRef(binding: EnvBinding): EnvSecretRefBinding | null {
+function asSecretRef(binding: EnvBinding): EnvSecretRefBinding | null {
   if (binding && typeof binding === "object" && "type" in binding && binding.type === "secret_ref") {
     return binding;
   }
   return null;
 }
 
-export function formatVersionSelector(version: SecretVersionSelector | undefined): string {
+function formatVersionSelector(version: SecretVersionSelector | undefined): string {
   if (version == null || version === "latest") return "latest";
   return `v${version}`;
 }
 
-export function describeSecretRef(ref: EnvSecretRefBinding, secrets: SecretLookup): string {
+function describeSecretRef(ref: EnvSecretRefBinding, secrets: SecretLookup): string {
   const secret = secrets.get(ref.secretId);
   const name = secret?.name ?? "<missing-secret>";
   return `${name} ${formatVersionSelector(ref.version)}`;
 }
 
-export function describeEnvBinding(binding: EnvBinding | undefined, secrets: SecretLookup): string {
+function describeEnvBinding(binding: EnvBinding | undefined, secrets: SecretLookup): string {
   if (binding === undefined) return "—";
   const ref = asSecretRef(binding);
   if (ref) return `secret_ref → ${describeSecretRef(ref, secrets)}`;
@@ -178,13 +180,6 @@ export function summarizeEnv(env: RoutineEnvConfig | null): string {
   if (secretCount === 0) return `${entries.length} ${keyLabel}`;
   return `${entries.length} ${keyLabel} (${secretCount} secret ${secretCount === 1 ? "ref" : "refs"})`;
 }
-
-type EnvDiffCounts = {
-  added: number;
-  removed: number;
-  changed: number;
-  total: number;
-};
 
 export function summarizeEnvDiffCounts(
   current: RoutineEnvConfig | null,
@@ -222,15 +217,11 @@ export function formatEnvDiffCounts(counts: EnvDiffCounts): string {
   return parts.join(", ");
 }
 
-export function compareEnv(
+function compareEnv(
   oldEnv: RoutineEnvConfig | null,
   newEnv: RoutineEnvConfig | null,
   secrets: SecretLookup,
-  changes: Array<{
-    field: string;
-    oldValue: string | null;
-    newValue: string | null;
-  }>,
+  changes: RoutineFieldChange[],
 ) {
   const oldRec = normalizeEnv(oldEnv);
   const newRec = normalizeEnv(newEnv);
@@ -294,19 +285,15 @@ export function compareEnv(
   }
 }
 
-export function summarizeVariables(variables: RoutineVariable[]): string {
+function summarizeVariables(variables: RoutineVariable[]): string {
   if (variables.length === 0) return "(none)";
   return variables.map((variable) => `${variable.name}=${formatVariableDefault(variable)}`).join(", ");
 }
 
-export function compareTriggers(
+function compareTriggers(
   oldTriggers: RoutineRevisionSnapshotTriggerV1[],
   newTriggers: RoutineRevisionSnapshotTriggerV1[],
-  changes: Array<{
-    field: string;
-    oldValue: string | null;
-    newValue: string | null;
-  }>,
+  changes: RoutineFieldChange[],
 ) {
   const byId = new Map<
     string,

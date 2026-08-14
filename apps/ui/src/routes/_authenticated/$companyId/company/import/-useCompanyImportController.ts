@@ -15,17 +15,17 @@ import { queryKeys } from "@/lib/queryKeys";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import type {
   CompanyPortabilityCollisionStrategy,
-  CompanyPortabilityFileEntry,
   CompanyPortabilityPreviewResult,
 } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useMemo, useState } from "react";
 import {
   buildCompanyImportAdapterOverrides,
   buildCompanyImportNameOverrides,
   buildCompanyImportSelectedFiles,
   buildCompanyImportSource,
+  type LocalCompanyImportPackage,
 } from "./-company-import-controller-helpers";
 import {
   applyImportedSidebarOrder,
@@ -42,7 +42,6 @@ export function useCompanyImportController() {
   const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const packageInputRef = useRef<HTMLInputElement | null>(null);
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
@@ -52,11 +51,8 @@ export function useCompanyImportController() {
   // Source state
   const [sourceMode, setSourceMode] = useState<"github" | "local">("github");
   const [importUrl, setImportUrl] = useState("");
-  const [localPackage, setLocalPackage] = useState<{
-    name: string;
-    rootPath: string | null;
-    files: Record<string, CompanyPortabilityFileEntry>;
-  } | null>(null);
+  const [localPackage, setLocalPackage] = useState<LocalCompanyImportPackage | null>(null);
+  const [localPackageFile, setLocalPackageFile] = useState<File | null>(null);
 
   // Target state
   const [targetMode, setTargetMode] = useState<"existing" | "new">("new");
@@ -225,12 +221,11 @@ export function useCompanyImportController() {
     },
   });
 
-  async function handleChooseLocalPackage(e: ChangeEvent<HTMLInputElement>) {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
+  async function handleChooseLocalPackage(file: File) {
     try {
-      const pkg = await readLocalPackageZip(fileList[0]!);
+      const pkg = await readLocalPackageZip(file);
       setLocalPackage(pkg);
+      setLocalPackageFile(file);
       setImportPreview(null);
     } catch (err) {
       toast.error("Package read failed", {
@@ -419,10 +414,10 @@ export function useCompanyImportController() {
     importPreview,
     importUrl,
     localPackage,
+    localPackageFile,
     localZipHelpText,
     nameOverrides,
     newCompanyName,
-    packageInputRef,
     previewContent,
     previewMutation,
     renameMap,

@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Toggle } from "@/components/ui/toggle";
 import { formatDate, formatNumber, formatProjectBudget } from "@/lib/utils";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { getProjectIcon } from "@/lib/project-icons";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import {
@@ -31,18 +31,16 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowUpDown, Check, Hexagon, Plus, Star } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
+import type { SortDirection } from "@/lib/presentation-contracts";
 
 export const Route = createFileRoute("/_authenticated/$companyId/projects/")({
   component: Projects,
 });
 
 type ProjectSortField = "name" | "updated" | "created" | "targetDate";
-
-type ProjectSortDir = "asc" | "desc";
 
 const PROJECT_SORT_OPTIONS: Array<{ field: ProjectSortField; label: string }> = [
   { field: "name", label: "Name" },
@@ -67,7 +65,7 @@ function projectTime(value: Date | string | null | undefined): number | null {
 function compareOptionalTime(
   left: Date | string | null | undefined,
   right: Date | string | null | undefined,
-  sortDir: ProjectSortDir,
+  sortDir: SortDirection,
 ) {
   const leftTime = projectTime(left);
   const rightTime = projectTime(right);
@@ -77,7 +75,7 @@ function compareOptionalTime(
   return sortDir === "asc" ? leftTime - rightTime : rightTime - leftTime;
 }
 
-function sortProjects(projects: Project[], sortField: ProjectSortField, sortDir: ProjectSortDir) {
+function sortProjects(projects: Project[], sortField: ProjectSortField, sortDir: SortDirection) {
   return [...projects].sort((left, right) => {
     let comparison = 0;
     if (sortField === "name") {
@@ -101,7 +99,7 @@ function Projects() {
   const { openNewProject } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [sortField, setSortField] = useState<ProjectSortField>("name");
-  const [sortDir, setSortDir] = useState<ProjectSortDir>("asc");
+  const [sortDir, setSortDir] = useState<SortDirection>("asc");
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Projects" }]);
@@ -233,7 +231,6 @@ function Projects() {
                       membershipMutation.variables?.resourceType === "project" &&
                       membershipMutation.variables.resourceId === project.id;
                     const starPending = pending && membershipMutation.variables?.starred !== undefined;
-                    const joinLeavePending = pending && membershipMutation.variables?.starred === undefined;
                     const starred = isStarred(membershipsQuery.data, "project", project.id);
                     const ProjectIcon = getProjectIcon(project.icon);
                     return (
@@ -285,30 +282,13 @@ function Projects() {
                                 {formatDate(project.targetDate)}
                               </span>
                             )}
-                            <Badge variant={statusBadgeVariant(project.status)}>
-                              {project.status.replace(/[_-]/g, " ")}
-                            </Badge>
+                            <DomainStatus status={project.status} />
                             <MembershipAction
                               state={state}
-                              pending={joinLeavePending}
-                              pendingState={joinLeavePending ? membershipMutation.variables?.state : null}
+                              mutation={membershipMutation}
+                              resourceId={project.id}
                               resourceName={project.name}
-                              onJoin={() =>
-                                membershipMutation.mutate({
-                                  resourceType: "project",
-                                  resourceId: project.id,
-                                  resourceName: project.name,
-                                  state: "joined",
-                                })
-                              }
-                              onLeave={() =>
-                                membershipMutation.mutate({
-                                  resourceType: "project",
-                                  resourceId: project.id,
-                                  resourceName: project.name,
-                                  state: "left",
-                                })
-                              }
+                              resourceType="project"
                             />
                             <Toggle
                               size="sm"

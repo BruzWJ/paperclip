@@ -1,27 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Shield, ShieldCheck } from "lucide-react";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
+import {
+  Choicebox,
+  ChoiceboxIndicator,
+  ChoiceboxItem,
+  ChoiceboxItemDescription,
+  ChoiceboxItemHeader,
+  ChoiceboxItemTitle,
+} from "@/components/kibo-ui/choicebox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "@/components/ui/field";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Input } from "@/components/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemFooter,
-  ItemGroup,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
+import { useSettingsBreadcrumbs } from "@/hooks/useSettingsBreadcrumbs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { useCompany } from "@/context/CompanyContext";
@@ -36,33 +35,16 @@ export const Route = createFileRoute("/_authenticated/$companyId/company/setting
 function InstanceAccess() {
   const companyId = useCompanyRouteId();
   const { companies } = useCompany();
-  const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    setBreadcrumbs([
-      {
-        label: "Settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Instance settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings/instance" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      { label: "Access" },
-    ]);
-  }, [companyId, setBreadcrumbs]);
+  useSettingsBreadcrumbs({
+    companyId,
+    instance: true,
+    page: "Access",
+  });
 
   const usersQuery = useQuery({
     queryKey: queryKeys.access.adminUsers(search),
@@ -182,45 +164,39 @@ function InstanceAccess() {
             <CardDescription>Select an account to manage its instance access.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Field>
-              <FieldLabel htmlFor="instance-user-search">Search users</FieldLabel>
+            <LabeledFormField label="Search users" labelFor="instance-user-search">
               <Input
                 id="instance-user-search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search by name or email"
               />
-            </Field>
-            <ToggleGroup
-              type="single"
+            </LabeledFormField>
+            <Choicebox
               value={selectedUserId ?? ""}
               onValueChange={(value) => {
                 if (value) setSelectedUserId(value);
               }}
-              className="flex-col items-stretch gap-2"
+              className="gap-2"
             >
               {(usersQuery.data ?? []).map((user) => (
-                <ToggleGroupItem
-                  key={user.id}
-                  value={user.id}
-                  variant="outline"
-                  className="h-auto w-full justify-start p-0 text-left"
-                >
-                  <Item size="sm" className="w-full border-0">
-                    <ItemContent className="min-w-0">
-                      <ItemTitle className="truncate">{user.name || user.email || user.id}</ItemTitle>
-                      <ItemDescription className="truncate">{user.email || user.id}</ItemDescription>
-                    </ItemContent>
-                    <ItemActions>
+                <ChoiceboxItem key={user.id} id={`instance-user-${user.id}`} value={user.id}>
+                  <ChoiceboxItemHeader className="min-w-0">
+                    <ChoiceboxItemTitle className="truncate">
+                      {user.name || user.email || user.id}
                       {user.isInstanceAdmin ? <ShieldCheck className="h-4 w-4" /> : null}
-                    </ItemActions>
-                    <ItemFooter className="text-xs text-muted-foreground">
+                    </ChoiceboxItemTitle>
+                    <ChoiceboxItemDescription className="truncate">
+                      {user.email || user.id}
+                    </ChoiceboxItemDescription>
+                    <ChoiceboxItemDescription>
                       {user.activeCompanyMembershipCount} active company memberships
-                    </ItemFooter>
-                  </Item>
-                </ToggleGroupItem>
+                    </ChoiceboxItemDescription>
+                  </ChoiceboxItemHeader>
+                  <ChoiceboxIndicator id={`instance-user-${user.id}`} />
+                </ChoiceboxItem>
               ))}
-            </ToggleGroup>
+            </Choicebox>
           </CardContent>
         </Card>
 

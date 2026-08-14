@@ -13,9 +13,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Calendar, CircleDot, Flag, Loader2, Minus, MoreHorizontal, Paperclip } from "lucide-react";
+import { Calendar, CircleDot, Flag, Loader2, Minus, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { priorities, STAGED_FILE_ACCEPT } from "./model";
+import { priorities } from "./model";
 import { useNewTaskDialogViewModel } from "./context";
 
 export function NewTaskActions() {
@@ -24,12 +24,11 @@ export function NewTaskActions() {
   const { draftHasText, requestHasText, selectedOwnerAgentId, status, priority, ownerAgentId, workMode } =
     model.values;
   const { setStatus, setPriority, setWorkMode } = model.setters;
-  const { stageFileInputRef } = model.refs;
   const { statuses, workModeOptions } = model.options;
   const { currentStatus, currentPriority, currentWorkMode, canDiscardDraft, createTaskErrorMessage } =
     model.derived;
   const { createTask } = model.creation;
-  const { handleStageFilesPicked, discardDraft, handleSubmit } = model.actions;
+  const { discardDraft, handleSubmit } = model.actions;
   const CurrentWorkModeIcon = currentWorkMode.icon;
   return (
     <>
@@ -91,26 +90,6 @@ export function NewTaskActions() {
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-
-        <input
-          ref={stageFileInputRef}
-          type="file"
-          aria-label="Upload task attachments"
-          accept={STAGED_FILE_ACCEPT}
-          className="hidden"
-          onChange={handleStageFilesPicked}
-          multiple
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          onClick={() => stageFileInputRef.current?.click()}
-          disabled={createTask.isPending}
-        >
-          <Paperclip className="h-3 w-3" />
-          Upload
-        </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

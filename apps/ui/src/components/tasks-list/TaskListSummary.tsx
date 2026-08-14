@@ -2,11 +2,10 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import { TASK_STATUSES } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import type { SubTaskProgressSummary } from "@/lib/task-detail-subtasks";
-import { shouldRenderSubTaskProgressSummary } from "@/lib/task-detail-subtasks";
 import { tasksApi } from "@/api/tasks";
 import { queryKeys } from "@/lib/queryKeys";
 import { formatDurationMs, formatMoneyAmount } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Card, CardContent } from "@/components/ui/card";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
@@ -151,9 +150,9 @@ export function SubTaskProgressSummaryStrip({
           />
           <div className="flex flex-wrap gap-1" aria-label="Sub-task status counts">
             {statusEntries.map(({ status, count }) => (
-              <Badge key={status} variant="outline">
+              <DomainStatus key={status} status={status}>
                 {taskStatusLabels[status]}: {count}
-              </Badge>
+              </DomainStatus>
             ))}
           </div>
         </div>

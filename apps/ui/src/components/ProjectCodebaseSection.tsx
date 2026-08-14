@@ -9,17 +9,7 @@ import type { ProjectCodebase } from "@paperclipai/shared";
 import { isCanonicalProjectRepositoryUrl } from "@paperclipai/shared";
 import { ExternalLink, Github, Trash2 } from "lucide-react";
 import { formatProjectRepositoryUrl } from "../lib/project-codebase";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { ChoosePathButton } from "./PathInstructionsModal";
 
 export interface ProjectCodebaseSectionProps {
@@ -135,27 +125,19 @@ export function ProjectCodebaseSection({
                     {codebase.repoUrl ? "Change repo" : "Set repo"}
                   </Button>
                   {codebase.repoUrl ? (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
+                    <ConfirmActionDialog
+                      triggerAsChild
+                      trigger={
                         <Button variant="ghost" size="icon-xs" disabled={pending} aria-label="Clear repo">
                           <Trash2 />
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Clear repository URL?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This removes the source repository URL from the project.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction variant="destructive" onClick={onClearRepoUrl}>
-                            Clear repository
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                      }
+                      title="Clear repository URL?"
+                      description="This removes the source repository URL from the project."
+                      confirmLabel="Clear repository"
+                      variant="destructive"
+                      onConfirm={onClearRepoUrl}
+                    />
                   ) : null}
                 </div>
               </div>
@@ -188,8 +170,9 @@ export function ProjectCodebaseSection({
                     {codebase.localFolder ? "Change local folder" : "Set local folder"}
                   </Button>
                   {codebase.localFolder ? (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
+                    <ConfirmActionDialog
+                      triggerAsChild
+                      trigger={
                         <Button
                           variant="ghost"
                           size="icon-xs"
@@ -198,22 +181,13 @@ export function ProjectCodebaseSection({
                         >
                           <Trash2 />
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Clear local execution folder?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Runs will return to an instance-managed task folder.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction variant="destructive" onClick={onClearLocalFolder}>
-                            Clear local folder
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                      }
+                      title="Clear local execution folder?"
+                      description="Runs will return to an instance-managed task folder."
+                      confirmLabel="Clear local folder"
+                      variant="destructive"
+                      onConfirm={onClearLocalFolder}
+                    />
                   ) : null}
                 </div>
               </div>

@@ -8,15 +8,14 @@ import type { FolderListItem, RoutineListItem } from "@paperclipai/shared";
 import { useMutation, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { Dispatch, SetStateAction } from "react";
-import { buildRoutineMutationPayload } from "./-routines-list-data";
-
-type RoutineDraft = Parameters<typeof buildRoutineMutationPayload>[0];
+import type { NamedColor } from "@/lib/presentation-contracts";
+import { buildRoutineMutationPayload, type RoutineComposerDraft } from "./-routines-list-data";
 
 type RoutinesMutationContext = {
   companyId: string;
   queryClient: QueryClient;
-  draft: RoutineDraft;
-  setDraft: Dispatch<SetStateAction<RoutineDraft>>;
+  draft: RoutineComposerDraft;
+  setDraft: Dispatch<SetStateAction<RoutineComposerDraft>>;
   setComposerOpen: Dispatch<SetStateAction<boolean>>;
   setAdvancedOpen: Dispatch<SetStateAction<boolean>>;
   navigate: ReturnType<typeof useNavigate>;
@@ -123,8 +122,7 @@ export function useRoutinesMutations(input: RoutinesMutationContext) {
     },
   });
   const createFolder = useMutation({
-    mutationFn: (payload: { name: string; color: string | null }) =>
-      foldersApi.create(companyId, { kind: "routine", ...payload }),
+    mutationFn: (payload: NamedColor) => foldersApi.create(companyId, { kind: "routine", ...payload }),
     onSuccess: async (folder) => {
       setFolderDialogOpen(false);
       setFolderDialogTarget(null);

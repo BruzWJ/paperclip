@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { HexColorPicker } from "@/components/patterns/BrandColorPicker";
 import type { useTaskPropertiesData } from "./useTaskPropertiesData";
 import type { useTaskPropertiesState } from "./useTaskPropertiesState";
 
@@ -111,13 +112,11 @@ export function useTaskLabelProperties({
       </div>
       <div className="mt-2 space-y-2">
         <Separator />
-        <div className="flex items-center gap-1">
-          <Input
-            aria-label="New label color"
-            className="h-7 w-7 p-0"
-            type="color"
+        <div className="space-y-2">
+          <HexColorPicker
+            ariaLabel="New label color"
             value={state.newLabelColor}
-            onChange={(event) => state.setNewLabelColor(event.target.value)}
+            onChange={state.setNewLabelColor}
           />
           <Input
             aria-label="New label name"

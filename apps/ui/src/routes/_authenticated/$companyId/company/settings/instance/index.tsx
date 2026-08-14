@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, LogOut, Play, SlidersHorizontal } from "lucide-react";
 import { authApi } from "@/api/auth";
@@ -11,11 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
+import { useSettingsBreadcrumbs } from "@/hooks/useSettingsBreadcrumbs";
 import { queryKeys } from "@/lib/queryKeys";
 import { getWorktreeInstanceId, isWorktreeRuntime } from "@/lib/worktree-branding";
-import { Switch } from "@/components/ui/switch";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { SettingsSwitchField } from "@/components/patterns/FormPatterns";
 
 export const Route = createFileRoute("/_authenticated/$companyId/company/settings/instance/")({
   component: InstanceGeneralSettings,
@@ -66,7 +65,6 @@ function formatActivationTimestamp(iso: string): string {
 
 function InstanceGeneralSettings() {
   const companyId = useCompanyRouteId();
-  const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -81,20 +79,11 @@ function InstanceGeneralSettings() {
     },
   });
 
-  useEffect(() => {
-    setBreadcrumbs([
-      {
-        label: "Settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      { label: "Instance settings" },
-      { label: "General" },
-    ]);
-  }, [companyId, setBreadcrumbs]);
+  useSettingsBreadcrumbs({
+    companyId,
+    instance: true,
+    page: "General",
+  });
 
   const generalQuery = useQuery({
     queryKey: queryKeys.instance.generalSettings,
@@ -167,6 +156,7 @@ function InstanceGeneralSettings() {
   ] as const;
   const toggleSettings = [
     {
+      id: "censor-username-in-logs",
       title: "Censor username in logs",
       description:
         "Hide the username segment in home-directory paths and similar operator-visible log output. Standalone username mentions outside of paths are not yet masked in the live transcript view. This is off by default.",
@@ -175,6 +165,7 @@ function InstanceGeneralSettings() {
       ariaLabel: "Toggle username log censoring",
     },
     {
+      id: "server-info-debug-view",
       title: "Server Info debug view",
       description:
         "Show server restart, running commit, and checkout-state details in the account menu. This is off by default.",
@@ -183,6 +174,7 @@ function InstanceGeneralSettings() {
       ariaLabel: "Toggle Server Info debug view",
     },
     {
+      id: "auto-restart-dev-server",
       title: "Auto-restart dev server when idle",
       description:
         "Automatically request a dev-server restart after backend changes once no task executions are active. This is off by default.",
@@ -191,6 +183,7 @@ function InstanceGeneralSettings() {
       ariaLabel: "Toggle automatic idle dev-server restart",
     },
     {
+      id: "reconcile-workspace-branches",
       title: "Reconcile workspace branches",
       description:
         "Advance managed workspace branches when it is safe to reconcile them with their configured source. Direct project folders are never changed. This safeguard is on by default.",
@@ -201,6 +194,7 @@ function InstanceGeneralSettings() {
       ariaLabel: "Toggle workspace branch reconciliation",
     },
     {
+      id: "repair-dirty-workspaces",
       title: "Repair dirty workspaces",
       description:
         "Quarantine and repair managed workspaces that are left in a dirty state before they are reused. Direct project folders are never changed. This safeguard is on by default.",
@@ -211,6 +205,7 @@ function InstanceGeneralSettings() {
       ariaLabel: "Toggle dirty workspace repair",
     },
     {
+      id: "keyboard-shortcuts",
       title: "Keyboard shortcuts",
       description:
         "Enable app keyboard shortcuts, including inbox navigation and global shortcuts like creating tasks or toggling panels. This is off by default.",
@@ -268,20 +263,15 @@ function InstanceGeneralSettings() {
       {toggleSettings.map((setting) => (
         <Card key={setting.title}>
           <CardContent>
-            <Item>
-              <ItemContent>
-                <ItemTitle>{setting.title}</ItemTitle>
-                <ItemDescription>{setting.description}</ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <Switch
-                  checked={setting.checked}
-                  onCheckedChange={() => updateGeneralMutation.mutate(setting.payload)}
-                  disabled={updateGeneralMutation.isPending}
-                  aria-label={setting.ariaLabel}
-                />
-              </ItemActions>
-            </Item>
+            <SettingsSwitchField
+              id={`instance-setting-${setting.id}`}
+              label={setting.title}
+              description={setting.description}
+              checked={setting.checked}
+              onCheckedChange={() => updateGeneralMutation.mutate(setting.payload)}
+              disabled={updateGeneralMutation.isPending}
+              aria-label={setting.ariaLabel}
+            />
           </CardContent>
         </Card>
       ))}
@@ -289,27 +279,19 @@ function InstanceGeneralSettings() {
       {inWorktree ? (
         <Card>
           <CardContent className="space-y-4">
-            <Item>
-              <ItemContent>
-                <ItemTitle>Run scheduled tasks in this worktree</ItemTitle>
-                <ItemDescription>
-                  Allow automatic schedule and webhook runs in this worktree instance. Only routines created
-                  after enabling can run automatically; toggling off and on resets the cutoff.
-                </ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                <Switch
-                  checked={worktreeRunExecution}
-                  onCheckedChange={() =>
-                    updateGeneralMutation.mutate({
-                      enableWorktreeRunExecution: !worktreeRunExecution,
-                    })
-                  }
-                  disabled={updateGeneralMutation.isPending}
-                  aria-label="Toggle worktree scheduled task execution"
-                />
-              </ItemActions>
-            </Item>
+            <SettingsSwitchField
+              id="instance-setting-worktree-run-execution"
+              label="Run scheduled tasks in this worktree"
+              description="Allow automatic schedule and webhook runs in this worktree instance. Only routines created after enabling can run automatically; toggling off and on resets the cutoff."
+              checked={worktreeRunExecution}
+              onCheckedChange={() =>
+                updateGeneralMutation.mutate({
+                  enableWorktreeRunExecution: !worktreeRunExecution,
+                })
+              }
+              disabled={updateGeneralMutation.isPending}
+              aria-label="Toggle worktree scheduled task execution"
+            />
             {worktreeRunExecutionState.kind === "armed" ? (
               <Alert>
                 <Play />

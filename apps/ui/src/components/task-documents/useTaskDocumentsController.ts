@@ -197,7 +197,7 @@ export function useTaskDocumentsSectionController({
     syncDocumentCaches,
     invalidateTaskDocuments,
   });
-  const { resetAutosaveState, markDocumentDirty, beginEdit, commitDraft } = draftActions;
+  const { resetAutosaveState } = draftActions;
 
   const getDocumentRevisions = useCallback(
     (key: string) => {

@@ -3,10 +3,11 @@ import { memo, useMemo } from "react";
 
 import { TaskChatTextPart } from "./TaskChatMessageUtils";
 
-import {
-  TaskChatChainOfThought,
-  TaskChatCoTPart,
-} from "./TaskChatChainOfThought";
+import { TaskChatChainOfThought, TaskChatCoTPart } from "./TaskChatChainOfThought";
+
+type AssistantPartGroup =
+  | { type: "text"; part: TextMessagePart; index: number }
+  | { type: "cot"; parts: TaskChatCoTPart[]; startIndex: number };
 
 export const TaskChatTextParts = memo(function TaskChatTextParts({
   message,
@@ -35,14 +36,8 @@ export const TaskChatTextParts = memo(function TaskChatTextParts({
 
 export function groupAssistantParts(
   content: readonly ThreadMessage["content"][number][],
-): Array<
-  | { type: "text"; part: TextMessagePart; index: number }
-  | { type: "cot"; parts: TaskChatCoTPart[]; startIndex: number }
-> {
-  const groups: Array<
-    | { type: "text"; part: TextMessagePart; index: number }
-    | { type: "cot"; parts: TaskChatCoTPart[]; startIndex: number }
-  > = [];
+): AssistantPartGroup[] {
+  const groups: AssistantPartGroup[] = [];
   let pendingCoT: TaskChatCoTPart[] = [];
   let pendingStartIndex = -1;
 
@@ -80,10 +75,7 @@ export const TaskChatAssistantParts = memo(function TaskChatAssistantParts({
   message: ThreadMessage;
   hasCoT: boolean;
 }) {
-  const groupedParts = useMemo(
-    () => groupAssistantParts(message.content),
-    [message.content],
-  );
+  const groupedParts = useMemo(() => groupAssistantParts(message.content), [message.content]);
   return (
     <>
       {groupedParts.map((group) => {

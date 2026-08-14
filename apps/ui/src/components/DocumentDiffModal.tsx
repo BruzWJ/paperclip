@@ -4,14 +4,12 @@ import type { QueryKey } from "@tanstack/react-query";
 import type { DocumentRevision } from "@paperclipai/shared";
 import { tasksApi } from "../api/tasks";
 import { queryKeys } from "../lib/queryKeys";
-import { buildLineDiff } from "../lib/line-diff";
 import { relativeTime } from "../lib/utils";
+import { DiffCodeBlock } from "@/components/patterns/DiffCodeBlock";
+import { RevisionCombobox } from "@/components/patterns/RevisionCombobox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
-import { LineDiffTable } from "./LineDiffTable";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function getRevisionLabel(revision: DocumentRevision) {
   const actor = revision.createdByUserId ? "board" : revision.createdByAgentId ? "agent" : "system";
@@ -46,6 +44,10 @@ export function DocumentDiffModal({
     if (!revisions) return [];
     return [...revisions].sort((a, b) => b.revisionNumber - a.revisionNumber);
   }, [revisions]);
+  const revisionOptions = useMemo(
+    () => sortedRevisions.map((revision) => ({ id: revision.id, label: getRevisionLabel(revision) })),
+    [sortedRevisions],
+  );
 
   // Default: compare previous (latestRevisionNumber - 1) with current (latestRevisionNumber)
   const [leftRevisionId, setLeftRevisionId] = useState<string | null>(null);
@@ -62,7 +64,6 @@ export function DocumentDiffModal({
 
   const leftBody = leftRevision?.body ?? "";
   const rightBody = rightRevision?.body ?? "";
-  const diffRows = useMemo(() => buildLineDiff(leftBody, rightBody), [leftBody, rightBody]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -75,40 +76,24 @@ export function DocumentDiffModal({
           </DialogHeader>
 
           <div className="flex items-center gap-4 shrink-0">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">Old</Badge>
-              <Select value={effectiveLeftId ?? ""} onValueChange={(value) => setLeftRevisionId(value)}>
-                <SelectTrigger aria-label="Select old revision" className="h-7 w-60 text-xs border-border/60">
-                  <SelectValue placeholder="Select revision" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sortedRevisions.map((revision) => (
-                    <SelectItem key={revision.id} value={revision.id} className="text-xs">
-                      {getRevisionLabel(revision)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">New</Badge>
-              <Select value={effectiveRightId ?? ""} onValueChange={(value) => setRightRevisionId(value)}>
-                <SelectTrigger aria-label="Select new revision" className="h-7 w-60 text-xs border-border/60">
-                  <SelectValue placeholder="Select revision" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sortedRevisions.map((revision) => (
-                    <SelectItem key={revision.id} value={revision.id} className="text-xs">
-                      {getRevisionLabel(revision)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <RevisionCombobox
+              label="Old"
+              side="old"
+              value={effectiveLeftId ?? ""}
+              onValueChange={setLeftRevisionId}
+              options={revisionOptions}
+            />
+            <RevisionCombobox
+              label="New"
+              side="new"
+              value={effectiveRightId ?? ""}
+              onValueChange={setRightRevisionId}
+              options={revisionOptions}
+            />
           </div>
         </div>
 
-        <div className="overflow-auto flex-1 rounded-md border border-border text-xs">
+        <div className="min-h-0 flex-1 overflow-auto text-xs">
           {!revisions ? (
             <div className="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
               <Spinner /> Loading revisions...
@@ -137,7 +122,12 @@ export function DocumentDiffModal({
               <EmptyDescription>Both sides are the same revision.</EmptyDescription>
             </Empty>
           ) : (
-            <LineDiffTable rows={diffRows} />
+            <DiffCodeBlock
+              oldText={leftBody}
+              newText={rightBody}
+              filename={documentKey.endsWith(".md") ? documentKey : `${documentKey}.md`}
+              language="markdown"
+            />
           )}
         </div>
       </DialogContent>

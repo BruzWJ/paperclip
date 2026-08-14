@@ -1,17 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, GripVertical, LogOut, Plus, Settings, UserPlus } from "lucide-react";
-import {
-  DndContext,
-  MouseSensor,
-  TouchSensor,
-  closestCenter,
-  type DragEndEvent,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { ListGroup, ListItem, ListItems, ListProvider, type DragEndEvent } from "@/components/kibo-ui/list";
 import type { Company } from "@paperclipai/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
@@ -30,85 +20,63 @@ import { useCompany } from "@/context/CompanyContext";
 import { useDialogActions } from "@/context/DialogContext";
 import { useCompanyOrder } from "@/hooks/useCompanyOrder";
 import { queryKeys } from "@/lib/queryKeys";
+import type { ControlledOpenStateProps } from "@/lib/presentation-contracts";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "@/lib/utils";
 import { useSidebar } from "../context/SidebarContext";
 
-interface SidebarCompanyMenuProps {
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
+function CompanyAvatar({ company }: { company: Company }) {
+  return (
+    <Avatar size="sm">
+      <AvatarImage src={company.logoUrl ?? undefined} alt={`${company.name} logo`} />
+      <AvatarFallback>{company.name.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
+    </Avatar>
+  );
 }
 
-function SortableCompanyItem({
+function CompanyMenuItem({
   company,
-  isEditing,
   isSelected,
   onSelect,
 }: {
   company: Company;
-  isEditing: boolean;
   isSelected: boolean;
   onSelect: (company: Company) => void;
 }) {
-  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: company.id, disabled: !isEditing });
-
   return (
     <DropdownMenuItem
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        zIndex: isDragging ? 10 : undefined,
-      }}
-      onSelect={(event) => {
-        if (isEditing) {
-          event.preventDefault();
-          return;
-        }
-        onSelect(company);
-      }}
-      className={cn(
-        "min-w-0 gap-2 py-2",
-        isEditing && "cursor-grab",
-        isDragging && "opacity-80",
-        isSelected && "bg-accent text-accent-foreground",
-      )}
+      onSelect={() => onSelect(company)}
+      className={cn("min-w-0 gap-2 py-2", isSelected && "bg-accent text-accent-foreground")}
     >
-      <Avatar size="sm">
-        <AvatarImage src={company.logoUrl ?? undefined} alt={`${company.name} logo`} />
-        <AvatarFallback>{company.name.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
-      </Avatar>
+      <CompanyAvatar company={company} />
       <span className="min-w-0 flex-1 truncate">{company.name}</span>
-      {isEditing ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          ref={setActivatorNodeRef}
-          aria-label={`Reorder ${company.name}`}
-          className="shrink-0"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="size-4" aria-hidden="true" />
-        </Button>
-      ) : (
-        <>
-          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-(length:--text-nano) text-muted-foreground">
-            {company.taskPrefix}
-          </span>
-          {isSelected ? <Check className="size-4 text-muted-foreground" /> : null}
-        </>
-      )}
+      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-(length:--text-nano) text-muted-foreground">
+        {company.taskPrefix}
+      </span>
+      {isSelected ? <Check className="size-4 text-muted-foreground" /> : null}
     </DropdownMenuItem>
   );
 }
 
-export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompanyMenuProps = {}) {
+function ReorderableCompanyItem({ company, index }: { company: Company; index: number }) {
+  return (
+    <ListGroup id={company.id} className="bg-transparent">
+      <ListItem
+        id={company.id}
+        index={index}
+        name={`Reorder ${company.name}`}
+        parent="companies"
+        className="rounded-none border-0 bg-transparent px-2 py-2 shadow-none"
+      >
+        <CompanyAvatar company={company} />
+        <span className="min-w-0 flex-1 truncate">{company.name}</span>
+        <GripVertical className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="sr-only">Reorder {company.name}</span>
+      </ListItem>
+    </ListGroup>
+  );
+}
+
+export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: ControlledOpenStateProps = {}) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [isEditingOrder, setIsEditingOrder] = useState(false);
   const queryClient = useQueryClient();
@@ -120,14 +88,6 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
   const companyId = useCompanyRouteId();
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
-  const sensors = useSensors(
-    useSensor(MouseSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 180, tolerance: 6 },
-    }),
-  );
   const sidebarCompanies = useMemo(
     () => companies.filter((company) => company.status !== "archived"),
     [companies],
@@ -194,7 +154,11 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
       const newIndex = ids.indexOf(over.id);
       if (oldIndex === -1 || newIndex === -1) return;
 
-      persistOrder(arrayMove(ids, oldIndex, newIndex));
+      const nextIds = [...ids];
+      const [movedId] = nextIds.splice(oldIndex, 1);
+      if (!movedId) return;
+      nextIds.splice(newIndex, 0, movedId);
+      persistOrder(nextIds);
     },
     [orderedCompanies, persistOrder],
   );
@@ -252,22 +216,24 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
           </Button>
         </div>
         <div className="max-h-96 overflow-y-auto">
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext
-              items={orderedCompanies.map((company) => company.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {orderedCompanies.map((company) => (
-                <SortableCompanyItem
-                  key={company.id}
-                  company={company}
-                  isEditing={isEditingOrder}
-                  isSelected={company.id === companyId}
-                  onSelect={selectCompany}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
+          {isEditingOrder ? (
+            <ListProvider onDragEnd={handleDragEnd}>
+              <ListItems className="gap-0 p-0">
+                {orderedCompanies.map((company, index) => (
+                  <ReorderableCompanyItem key={company.id} company={company} index={index} />
+                ))}
+              </ListItems>
+            </ListProvider>
+          ) : (
+            orderedCompanies.map((company) => (
+              <CompanyMenuItem
+                key={company.id}
+                company={company}
+                isSelected={company.id === companyId}
+                onSelect={selectCompany}
+              />
+            ))
+          )}
           {orderedCompanies.length === 0 ? <DropdownMenuItem disabled>No companies</DropdownMenuItem> : null}
         </div>
         <DropdownMenuSeparator />

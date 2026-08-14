@@ -1,8 +1,7 @@
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
 import type { Agent, DocumentAnnotationThreadWithComments, TaskDocument } from "@paperclipai/shared";
-import { documentAnnotationsApi, type DocumentAnnotationTarget } from "@/api/document-annotations";
-import { queryKeys } from "@/lib/queryKeys";
+import type { DocumentAnnotationTarget } from "@/api/document-annotations";
+import { useDocumentAnnotations } from "@/hooks/useDocumentAnnotations";
 import { parseDocumentAnnotationHash } from "@/lib/document-annotation-hash";
 import { isKeyboardShortcutTextInputTarget } from "@/lib/keyboardShortcuts";
 import {
@@ -176,18 +175,7 @@ export function TaskDocumentAnnotations({
     };
   }, [doc.key, isMobile, panelOpen]);
 
-  const annotationsQuery = useQuery({
-    queryKey:
-      target.kind === "routine"
-        ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
-        : queryKeys.tasks.documentAnnotations(target.taskId, target.documentKey, "all"),
-    queryFn: () =>
-      documentAnnotationsApi.list(target, {
-        status: "all",
-        includeComments: true,
-      }),
-    staleTime: 30_000,
-  });
+  const annotationsQuery = useDocumentAnnotations(target);
   const allThreads = annotationsQuery.data ?? [];
 
   // Resolve deep link `#document-<key>&thread=...&comment=...` once per change.

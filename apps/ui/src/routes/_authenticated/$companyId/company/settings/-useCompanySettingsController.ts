@@ -6,7 +6,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES, MAX_COMPANY_ATTACHMENT_MAX_BYTES } from "@paperclipai/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useState } from "react";
 
 const BYTES_PER_MIB = 1024 * 1024;
 
@@ -110,13 +110,11 @@ export function useCompanySettingsController() {
     },
   });
 
-  const handleLogoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    event.currentTarget.value = "";
-    if (!file) return;
+  const handleLogoFile = (file: File) => {
     setLogoUploadError(null);
     logoUploadMutation.mutate(file);
   };
+  const handleLogoFileError = (error: Error) => setLogoUploadError(error.message);
   const handleSaveGeneral = () =>
     generalMutation.mutate({
       name: companyName.trim(),
@@ -153,7 +151,8 @@ export function useCompanySettingsController() {
     description,
     generalDirty,
     generalMutation,
-    handleLogoFileChange,
+    handleLogoFile,
+    handleLogoFileError,
     handleSaveGeneral,
     logoUploadError,
     logoUploadMutation,

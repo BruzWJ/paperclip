@@ -30,26 +30,13 @@ import {
   type FilterChipLookups,
   type SearchFilters,
 } from "@/lib/search-filters";
-
-export interface SearchFilterAgent {
-  id: string;
-  name: string;
-}
-export interface SearchFilterProject {
-  id: string;
-  name: string;
-}
-export interface SearchFilterLabel {
-  id: string;
-  name: string;
-  color: string;
-}
+import type { ColoredNamedEntity, NamedEntity } from "@/lib/presentation-contracts";
 
 export interface SearchFilterDataProps {
   counts?: CompanySearchFilterOptionCounts;
-  agents: SearchFilterAgent[];
-  projects: SearchFilterProject[];
-  labels: SearchFilterLabel[];
+  agents: NamedEntity[];
+  projects: NamedEntity[];
+  labels: ColoredNamedEntity[];
   currentUserId: string | null;
 }
 

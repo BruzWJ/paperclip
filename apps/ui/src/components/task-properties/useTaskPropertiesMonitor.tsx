@@ -16,19 +16,12 @@ import {
 import { timeAgo } from "../../lib/timeAgo";
 import { cn } from "../../lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { TaskPropertiesData } from "./useTaskPropertiesData";
 import type { TaskPropertiesState } from "./useTaskPropertiesState";
+import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 
 interface UseTaskPropertiesMonitorOptions {
   task: Task;
@@ -37,11 +30,13 @@ interface UseTaskPropertiesMonitorOptions {
   data: TaskPropertiesData;
 }
 
+interface ExecutionStageDecision {
+  outcome: "approved" | "changes_requested";
+  body: string;
+}
+
 export function useTaskPropertiesMonitor({ task, onUpdate, state, data }: UseTaskPropertiesMonitorOptions) {
-  const [executionDecision, setExecutionDecision] = useState<{
-    outcome: "approved" | "changes_requested";
-    body: string;
-  } | null>(null);
+  const [executionDecision, setExecutionDecision] = useState<ExecutionStageDecision | null>(null);
   const currentExecutionLabel = (() => {
     if (!task.executionState?.currentStageType) return null;
     const stageLabel = task.executionState.currentStageType === "review" ? "Review" : "Approval";
@@ -58,7 +53,7 @@ export function useTaskPropertiesMonitor({ task, onUpdate, state, data }: UseTas
   })();
 
   const decideExecutionStage = useMutation({
-    mutationFn: (input: { outcome: "approved" | "changes_requested"; body: string }) =>
+    mutationFn: (input: ExecutionStageDecision) =>
       tasksApi.decideExecutionStage(task.id, {
         ...input,
         idempotencyKey: crypto.randomUUID(),
@@ -311,30 +306,19 @@ export function useTaskPropertiesMonitor({ task, onUpdate, state, data }: UseTas
     </div>
   );
   const executionDecisionDialog = (
-    <Dialog
+    <FormDialog
       open={executionDecision !== null}
       onOpenChange={(open) => {
         if (!open && !decideExecutionStage.isPending) setExecutionDecision(null);
       }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {executionDecision?.outcome === "approved"
-              ? "Record the approval decision"
-              : "Describe the changes requested"}
-          </DialogTitle>
-          <DialogDescription>This note is recorded with the execution-stage decision.</DialogDescription>
-        </DialogHeader>
-        <Textarea
-          aria-label="Execution decision note"
-          value={executionDecision?.body ?? ""}
-          onChange={(event) =>
-            setExecutionDecision((current) => (current ? { ...current, body: event.target.value } : current))
-          }
-          autoFocus
-        />
-        <DialogFooter>
+      title={
+        executionDecision?.outcome === "approved"
+          ? "Record the approval decision"
+          : "Describe the changes requested"
+      }
+      description="This note is recorded with the execution-stage decision."
+      footer={
+        <>
           <Button
             type="button"
             variant="outline"
@@ -350,9 +334,20 @@ export function useTaskPropertiesMonitor({ task, onUpdate, state, data }: UseTas
           >
             {decideExecutionStage.isPending ? "Recording…" : "Record decision"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <LabeledFormField label="Decision note">
+        <Textarea
+          aria-label="Execution decision note"
+          value={executionDecision?.body ?? ""}
+          onChange={(event) =>
+            setExecutionDecision((current) => (current ? { ...current, body: event.target.value } : current))
+          }
+          autoFocus
+        />
+      </LabeledFormField>
+    </FormDialog>
   );
 
   return {

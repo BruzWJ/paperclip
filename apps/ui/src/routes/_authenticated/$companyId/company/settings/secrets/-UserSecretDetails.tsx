@@ -5,12 +5,14 @@ import type { UserSecretCoverageSummary, UserSecretDefinition } from "@paperclip
 import { useQuery } from "@tanstack/react-query";
 import { Users } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { DetailList } from "@/components/patterns/DetailList";
 import { Button } from "@/components/ui/button";
-import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
+import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
+import { relativeTime as formatRelative } from "@/lib/utils";
 
-import { formatRelative, statusLabel } from "./-secrets-model";
+import { statusLabel } from "./-secrets-model";
 
 export function CoverageInline({
   companyId,
@@ -28,7 +30,7 @@ export function CoverageInline({
   });
   const summary = coverageQuery.data;
   if (coverageQuery.isPending) return <Spinner aria-label="Loading secret coverage" />;
-  if (coverageQuery.isError) return <Badge variant="destructive">Coverage unavailable</Badge>;
+  if (coverageQuery.isError) return <DomainStatus status="unhealthy">Coverage unavailable</DomainStatus>;
   return (
     <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
       <Users className="h-3 w-3" />
@@ -38,9 +40,9 @@ export function CoverageInline({
           : coverageSummaryLabel(summary)}
       </span>
       {summary && summary.missingCount > 0 ? (
-        <Badge variant="outline">
+        <DomainStatus status="missing">
           {compact ? `${summary.missingCount} miss` : `${summary.missingCount} missing`}
-        </Badge>
+        </DomainStatus>
       ) : null}
     </span>
   );
@@ -64,7 +66,7 @@ export function UserSecretDetailsTab({
     { label: "Key", value: <code>{definition.key}</code> },
     {
       label: "Status",
-      value: <Badge variant="outline">{statusLabel(definition.status)}</Badge>,
+      value: <DomainStatus status={definition.status}>{statusLabel(definition.status)}</DomainStatus>,
     },
     {
       label: "Coverage",
@@ -85,16 +87,7 @@ export function UserSecretDetailsTab({
 
   return (
     <>
-      <ItemGroup className="divide-y">
-        {details.map(({ label, value }) => (
-          <Item key={label} size="sm" className="rounded-none border-0">
-            <ItemContent className="max-w-(--sz-10rem) flex-none">
-              <ItemDescription>{label}</ItemDescription>
-            </ItemContent>
-            <ItemContent className="min-w-0 text-foreground">{value}</ItemContent>
-          </Item>
-        ))}
-      </ItemGroup>
+      <DetailList items={details} />
       <Alert className="mt-3">
         <AlertDescription>
           No value is stored on this admin row. Each member manages their own value under My secrets.

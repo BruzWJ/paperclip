@@ -1,7 +1,4 @@
-import { accessApi } from "@/api/access";
-import { agentsApi } from "@/api/agents";
 import { foldersApi } from "@/api/folders";
-import { projectsApi } from "@/api/projects";
 import { routinesApi } from "@/api/routines";
 import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
 import { tasksApi } from "@/api/tasks";
@@ -11,9 +8,12 @@ import {
   selectedFolderFromList,
   type FolderSelection,
 } from "@/components/folders/FolderControls";
-import type { EntityOption } from "@/lib/entity-selector";
 import type { MarkdownEditorRef, MentionOption } from "@/components/MarkdownEditor";
 import { nextRoutineStatus } from "@/components/RoutineList";
+import {
+  useRoutineAssignmentPresentation,
+  useRoutineDirectoryData,
+} from "@/components/routines/useRoutinePresentationData";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { toast } from "sonner";
 import { useSidebar } from "@/context/SidebarContext";
@@ -21,9 +21,9 @@ import { buildMarkdownMentionOptions } from "@/lib/company-members";
 import { collectLiveTaskIds } from "@/lib/liveTaskIds";
 import { queryKeys } from "@/lib/queryKeys";
 import { autoResizeTextarea } from "@/lib/textarea";
-import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "@/lib/recent-assignees";
-import { getRecentProjectIds, trackRecentProject } from "@/lib/recent-projects";
-import type { FolderListItem, RoutineListItem, RoutineVariable } from "@paperclipai/shared";
+import { trackRecentAssignee } from "@/lib/recent-assignees";
+import { trackRecentProject } from "@/lib/recent-projects";
+import type { FolderListItem, RoutineListItem } from "@paperclipai/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +35,7 @@ import {
   saveRoutineViewState,
   sortRoutines,
   type RoutinesTab,
+  type RoutineComposerDraft,
   type RoutineViewState,
 } from "./-routines-list-data";
 import { moveRoutineSelection, useRoutinesMutations } from "./-useRoutinesMutations";
@@ -65,17 +66,7 @@ export function useRoutinesController() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const activeTab: RoutinesTab = search.tab === "runs" ? "runs" : "routines";
-  const [draft, setDraft] = useState<{
-    title: string;
-    description: string;
-    projectId: string;
-    folderId: string | null;
-    assigneeAgentId: string;
-    priority: string;
-    concurrencyPolicy: string;
-    catchUpPolicy: string;
-    variables: RoutineVariable[];
-  }>({
+  const [draft, setDraft] = useState<RoutineComposerDraft>({
     title: "",
     description: "",
     projectId: "",
@@ -113,18 +104,7 @@ export function useRoutinesController() {
     queryFn: () => foldersApi.list(companyId, "routine"),
     enabled: activeTab === "routines",
   });
-  const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(companyId),
-    queryFn: () => agentsApi.list(companyId),
-  });
-  const { data: projects } = useQuery({
-    queryKey: queryKeys.projects.list(companyId),
-    queryFn: () => projectsApi.list(companyId),
-  });
-  const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyUserDirectory(companyId),
-    queryFn: () => accessApi.listUserDirectory(companyId),
-  });
+  const { agents, projects, companyMembers } = useRoutineDirectoryData(companyId);
   const {
     data: routineExecutionTasks,
     isLoading: recentRunsLoading,
@@ -187,34 +167,8 @@ export function useRoutinesController() {
     setRunDialogRoutine,
   });
 
-  const recentAssigneeIds = useMemo(() => getRecentAssigneeIds(), [composerOpen]);
-  const recentProjectIds = useMemo(() => getRecentProjectIds(), [composerOpen]);
-  const assigneeOptions = useMemo<EntityOption[]>(
-    () =>
-      sortAgentsByRecency(
-        (agents ?? []).filter((agent) => agent.status !== "terminated"),
-        recentAssigneeIds,
-      ).map((agent) => ({
-        id: agent.id,
-        label: agent.name,
-        searchText: `${agent.name} ${agent.title ?? ""}`,
-      })),
-    [agents, recentAssigneeIds],
-  );
-  const projectOptions = useMemo<EntityOption[]>(
-    () =>
-      (projects ?? []).map((project) => ({
-        id: project.id,
-        label: project.name,
-        searchText: project.description ?? "",
-      })),
-    [projects],
-  );
-  const agentById = useMemo(() => new Map((agents ?? []).map((agent) => [agent.id, agent])), [agents]);
-  const projectById = useMemo(
-    () => new Map((projects ?? []).map((project) => [project.id, project])),
-    [projects],
-  );
+  const { agentById, assigneeOptions, projectById, projectOptions, recentAssigneeIds, recentProjectIds } =
+    useRoutineAssignmentPresentation({ agents, projects, recencyKey: composerOpen });
   const liveTaskIds = useMemo(() => collectLiveTaskIds(activeRunPage?.items), [activeRunPage]);
   const visibleRoutines = useMemo(
     () => (routines ?? []).filter((routine) => routine.status !== "archived"),

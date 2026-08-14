@@ -1,6 +1,7 @@
 import { InlineEditor } from "@/components/InlineEditor";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { TaskMonitorBanner } from "@/components/TaskMonitorBanner";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -13,7 +14,6 @@ import {
   Archive,
   Check,
   Copy,
-  Flag,
   Hexagon,
   MoreHorizontal,
   PauseCircle,
@@ -61,12 +61,12 @@ export function TaskDetailHeader() {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 min-w-0 flex-wrap">
-        <Badge
-          variant="secondary"
+        <DomainStatus
+          status={task.boardPresentationStatus}
           aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, task.blockerAttention)}
         >
           {taskValueLabel(task.boardPresentationStatus)}
-        </Badge>
+        </DomainStatus>
         <Badge variant="secondary">{taskValueLabel(task.priority)}</Badge>
         <span className="text-sm font-mono text-muted-foreground shrink-0">{task.identifier}</span>
         {task.lifecycleStatus === "done" || task.lifecycleStatus === "cancelled" ? (
@@ -75,7 +75,7 @@ export function TaskDetailHeader() {
           </Button>
         ) : null}
 
-        {hasLiveRuns && <Badge variant="outline">Live</Badge>}
+        {hasLiveRuns && <DomainStatus status="running">Live</DomainStatus>}
 
         {task.originKind === "routine_execution" && task.originId && (
           <Badge asChild variant="secondary">
@@ -103,14 +103,13 @@ export function TaskDetailHeader() {
           : null}
 
         {hasAssignedBacklogBlocker(task.blockedBy) ? (
-          <Badge
-            variant="secondary"
+          <DomainStatus
+            status="blocked"
             data-testid="task-detail-parked-blocker"
             title="Blocked by parked work — at least one owned blocker is in backlog and will not dispatch its owner."
           >
-            <Flag className="h-3 w-3" />
             Blocked by parked work
-          </Badge>
+          </DomainStatus>
         ) : null}
 
         {task.projectId && projectRouteId ? (

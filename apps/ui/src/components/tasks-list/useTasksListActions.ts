@@ -8,33 +8,41 @@ import { useTasksListNavigation, type TasksListNavigationInput } from "./useTask
 
 export type TasksListActionsInput = TasksListNavigationInput & ReturnType<typeof useTasksListNavigation>;
 
+interface TaskListGroup {
+  key: string;
+  items: Task[];
+}
+
 export function useTasksListActions(m: TasksListActionsInput) {
-  const { baseCreateTaskDefaults, projectId, viewState, taskById, createTaskLabel, openNewTask, scopedKey, setVisibleTaskColumns, visibleTaskColumns, renderedTaskRowLimit } = m;
+  const {
+    baseCreateTaskDefaults,
+    projectId,
+    viewState,
+    taskById,
+    createTaskLabel,
+    openNewTask,
+    scopedKey,
+    setVisibleTaskColumns,
+    visibleTaskColumns,
+    renderedTaskRowLimit,
+  } = m;
   const newTaskDefaults = useCallback(
-    (group?: { key: string; items: Task[] }) => {
+    (group?: TaskListGroup) => {
       const groupKey = group?.key;
       const defaults: Record<string, unknown> = {
         ...(baseCreateTaskDefaults ?? {}),
       };
-      if (projectId && defaults.projectId === undefined)
-        defaults.projectId = projectId;
+      if (projectId && defaults.projectId === undefined) defaults.projectId = projectId;
       if (groupKey) {
         if (viewState.groupBy === "status") defaults.status = groupKey;
         else if (viewState.groupBy === "priority") defaults.priority = groupKey;
-        else if (
-          viewState.groupBy === "owner" &&
-          groupKey.startsWith("agent:")
-        ) {
+        else if (viewState.groupBy === "owner" && groupKey.startsWith("agent:")) {
           defaults.ownerAgentId = groupKey.slice("agent:".length);
-        } else if (
-          viewState.groupBy === "project" &&
-          groupKey !== "__no_project"
-        )
+        } else if (viewState.groupBy === "project" && groupKey !== "__no_project")
           defaults.projectId = groupKey;
         else if (viewState.groupBy === "parent" && groupKey !== "__no_parent") {
           const parentTask = taskById.get(groupKey);
-          if (parentTask)
-            Object.assign(defaults, buildSubTaskDefaultsForViewer(parentTask));
+          if (parentTask) Object.assign(defaults, buildSubTaskDefaultsForViewer(parentTask));
           else defaults.parentId = groupKey;
         }
       }
@@ -43,14 +51,10 @@ export function useTasksListActions(m: TasksListActionsInput) {
     [baseCreateTaskDefaults, taskById, projectId, viewState.groupBy],
   );
 
-  const createActionLabel = createTaskLabel
-    ? `Create ${createTaskLabel}`
-    : "Create Task";
-  const createButtonLabel = createTaskLabel
-    ? `New ${createTaskLabel}`
-    : "New Task";
+  const createActionLabel = createTaskLabel ? `Create ${createTaskLabel}` : "Create Task";
+  const createButtonLabel = createTaskLabel ? `New ${createTaskLabel}` : "New Task";
   const openCreateTaskDialog = useCallback(
-    (group?: { key: string; items: Task[] }) => {
+    (group?: TaskListGroup) => {
       openNewTask(newTaskDefaults(group));
     },
     [newTaskDefaults, openNewTask],
@@ -76,10 +80,17 @@ export function useTasksListActions(m: TasksListActionsInput) {
     [setTaskColumns, visibleTaskColumns],
   );
 
-  let remainingRowsToRender =
-    viewState.viewMode === "list"
-      ? renderedTaskRowLimit
-      : Number.POSITIVE_INFINITY;
+  let remainingRowsToRender = viewState.viewMode === "list" ? renderedTaskRowLimit : Number.POSITIVE_INFINITY;
 
-  return { newTaskDefaults, createActionLabel, createButtonLabel, openCreateTaskDialog, setTaskColumns, toggleTaskColumn, remainingRowsToRender, taskActivityText, DEFAULT_INBOX_TASK_COLUMNS };
+  return {
+    newTaskDefaults,
+    createActionLabel,
+    createButtonLabel,
+    openCreateTaskDialog,
+    setTaskColumns,
+    toggleTaskColumn,
+    remainingRowsToRender,
+    taskActivityText,
+    DEFAULT_INBOX_TASK_COLUMNS,
+  };
 }

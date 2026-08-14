@@ -10,16 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { toast } from "sonner";
 import { queryKeys } from "@/lib/queryKeys";
 import type {
@@ -42,6 +33,7 @@ import {
   safeImportProviderMetadata,
   useDebounced,
   validateDraftRow,
+  type VaultImportStep,
 } from "./VaultImportUtils";
 
 import { SelectStep } from "./VaultImportSelectStep";
@@ -60,7 +52,6 @@ interface ImportFromVaultDialogProps {
   onManageVaults?: () => void;
 }
 
-type VaultImportStep = "select" | "review" | "result";
 const VAULT_IMPORT_STEPS: { id: VaultImportStep; label: string }[] = [
   { id: "select", label: "Select" },
   { id: "review", label: "Review" },
@@ -418,23 +409,21 @@ export function ImportFromVaultDialog({
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard pending imports?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Your {selection.size} pending import
-              {selection.size === 1 ? "" : "s"} will not be saved.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => handleClose(true)}>
-              Discard
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmActionDialog
+        open={discardOpen}
+        onOpenChange={setDiscardOpen}
+        title="Discard pending imports?"
+        description={
+          <>
+            Your {selection.size} pending import
+            {selection.size === 1 ? "" : "s"} will not be saved.
+          </>
+        }
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        variant="destructive"
+        onConfirm={() => handleClose(true)}
+      />
     </>
   );
 }

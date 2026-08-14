@@ -2,9 +2,10 @@ import { approvalLabel } from "@/components/ApprovalPayload";
 import type { InboxWorkItem } from "@/lib/inbox";
 import { matchesInboxTaskSearch } from "@/lib/inbox";
 import { formatOwnerUserLabel } from "@/lib/task-owners";
+import type { CreatorOption } from "@/lib/presentation-contracts";
 import type { Agent, Task } from "@paperclipai/shared";
 import { deriveOriginatingActor } from "@paperclipai/shared";
-import { type CreatorOption, readTaskIdFromRun, runFailureMessage } from "./-inbox-row-model";
+import { readTaskIdFromRun, runFailureMessage } from "./-inbox-row-model";
 
 interface BuildInboxCreatorOptionsOptions {
   agents: Agent[] | undefined;

@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
@@ -6,6 +7,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle }
 import { type RoutineRevision } from "@paperclipai/shared";
 import { RotateCcw, Search } from "lucide-react";
 import { relativeTime } from "../lib/utils";
+import type { NamedEntityLookup } from "@/lib/presentation-contracts";
 import { MarkdownBody } from "./MarkdownBody";
 
 import {
@@ -17,10 +19,6 @@ import {
   summarizeEnv,
   summarizeTriggerSnapshot,
 } from "./RoutineRevisionDiff";
-
-type AgentLookup = Map<string, { id: string; name: string }>;
-
-type ProjectLookup = Map<string, { id: string; name: string }>;
 
 export function RevisionPreview({
   revision,
@@ -36,8 +34,8 @@ export function RevisionPreview({
   revision: RoutineRevision;
   currentRevision: RoutineRevision | null;
   isHistorical: boolean;
-  agents: AgentLookup;
-  projects: ProjectLookup;
+  agents: NamedEntityLookup;
+  projects: NamedEntityLookup;
   onCompare: () => void;
   onRestore: () => void;
   restorePending: boolean;
@@ -197,9 +195,9 @@ export function RevisionPreview({
                     <ItemDescription>{summarizeTriggerSnapshot(trigger)}</ItemDescription>
                   </ItemContent>
                   <ItemActions>
-                    <Badge variant={trigger.enabled ? "default" : "secondary"}>
+                    <DomainStatus status={trigger.enabled ? "active" : "disabled"}>
                       {trigger.enabled ? "enabled" : "disabled"}
-                    </Badge>
+                    </DomainStatus>
                   </ItemActions>
                 </Item>
               ))}

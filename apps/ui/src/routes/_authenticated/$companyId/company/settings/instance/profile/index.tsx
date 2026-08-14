@@ -1,22 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useId, useRef, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Save, Trash2, UserRoundPen } from "lucide-react";
+import { Save, Trash2, UserRoundPen } from "lucide-react";
 import type { AuthSession, CurrentUserProfile, UpdateCurrentUserProfile } from "@paperclipai/shared";
 import { authApi } from "@/api/auth";
 import { assetsApi } from "@/api/assets";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
+import { useSettingsBreadcrumbs } from "@/hooks/useSettingsBreadcrumbs";
 import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { InboxAgentPolicyControl } from "@/components/InboxAgentPolicyControl";
+import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
 export const Route = createFileRoute("/_authenticated/$companyId/company/settings/instance/profile/")({
@@ -31,11 +31,8 @@ function deriveInitials(name: string) {
 
 function ProfileSettings() {
   const companyId = useCompanyRouteId();
-  const { setBreadcrumbs } = useBreadcrumbs();
   const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
-  const avatarInputId = useId();
-  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [name, setName] = useState("");
   const [image, setImage] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
@@ -45,27 +42,11 @@ function ProfileSettings() {
     retry: false,
   });
 
-  useEffect(() => {
-    setBreadcrumbs([
-      {
-        label: "Settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Instance settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings/instance" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      { label: "Profile" },
-    ]);
-  }, [companyId, setBreadcrumbs]);
+  useSettingsBreadcrumbs({
+    companyId,
+    instance: true,
+    page: "Profile",
+  });
 
   useEffect(() => {
     const session = sessionQuery.data;
@@ -202,33 +183,10 @@ function ProfileSettings() {
             <CardDescription>{uploadHint}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-5">
-            <Input
-              ref={avatarInputRef}
-              id={avatarInputId}
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              disabled={isPending}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                uploadAvatarMutation.mutate(file);
-                event.target.value = "";
-              }}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-lg"
-              aria-label="Upload profile photo"
-              onClick={() => avatarInputRef.current?.click()}
-              disabled={isPending}
-            >
-              <Avatar size="lg">
-                {currentImage ? <AvatarImage src={currentImage} alt={currentName} /> : null}
-                <AvatarFallback>{initials}</AvatarFallback>
-              </Avatar>
-            </Button>
+            <Avatar size="lg">
+              {currentImage ? <AvatarImage src={currentImage} alt={currentName} /> : null}
+              <AvatarFallback>{initials}</AvatarFallback>
+            </Avatar>
             <div className="min-w-0 flex-1 space-y-3">
               <div>
                 <h2 className="truncate font-semibold">{currentName}</h2>
@@ -237,19 +195,6 @@ function ProfileSettings() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => avatarInputRef.current?.click()}
-                  disabled={isPending}
-                >
-                  {uploadAvatarMutation.isPending ? <Spinner /> : <Camera className="size-4" />}
-                  {uploadAvatarMutation.isPending
-                    ? "Uploading photo…"
-                    : currentImage
-                      ? "Change photo"
-                      : "Upload photo"}
-                </Button>
                 {currentImage ? (
                   <Button
                     type="button"
@@ -263,6 +208,16 @@ function ProfileSettings() {
                 ) : null}
               </div>
             </div>
+            <AccessibleDropzone
+              ariaLabel={currentImage ? "Change profile photo" : "Upload profile photo"}
+              accept={{ "image/*": [] }}
+              maxFiles={1}
+              disabled={isPending}
+              className="basis-full"
+              onDrop={([file]) => {
+                if (file) uploadAvatarMutation.mutate(file);
+              }}
+            />
           </CardContent>
         </Card>
 
@@ -277,8 +232,11 @@ function ProfileSettings() {
             });
           }}
         >
-          <Field>
-            <FieldLabel htmlFor="profile-name">Display name</FieldLabel>
+          <LabeledFormField
+            label="Display name"
+            labelFor="profile-name"
+            description="Shown in the sidebar account footer and comment author surfaces."
+          >
             <Input
               id="profile-name"
               value={name}
@@ -287,13 +245,13 @@ function ProfileSettings() {
               placeholder="Your name"
               disabled={isPending}
             />
-            <FieldDescription>
-              Shown in the sidebar account footer and comment author surfaces.
-            </FieldDescription>
-          </Field>
+          </LabeledFormField>
 
-          <Field>
-            <FieldLabel htmlFor="profile-email">Email</FieldLabel>
+          <LabeledFormField
+            label="Email"
+            labelFor="profile-email"
+            description="Email is managed by your auth session and is read-only here."
+          >
             <Input
               id="profile-email"
               value={sessionQuery.data.user.email ?? ""}
@@ -301,8 +259,7 @@ function ProfileSettings() {
               readOnly
               disabled
             />
-            <FieldDescription>Email is managed by your auth session and is read-only here.</FieldDescription>
-          </Field>
+          </LabeledFormField>
 
           <div className="md:col-span-2 flex justify-end">
             <Button type="submit" disabled={isPending || !name.trim()}>

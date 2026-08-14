@@ -5,13 +5,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UserPlus2 } from "lucide-react";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldLabel, FieldSet } from "@/components/ui/field";
+import { FieldSet } from "@/components/ui/field";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Spinner } from "@/components/ui/spinner";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -137,8 +138,7 @@ function JoinRequestQueue() {
       </div>
 
       <Card className="flex-row flex-wrap gap-3 p-4">
-        <Field>
-          <FieldLabel>Status</FieldLabel>
+        <LabeledFormField label="Status">
           <Select
             value={status}
             onValueChange={(v) => setStatus(v as "pending_approval" | "approved" | "rejected")}
@@ -152,7 +152,7 @@ function JoinRequestQueue() {
               <SelectItem value="rejected">Rejected</SelectItem>
             </SelectContent>
           </Select>
-        </Field>
+        </LabeledFormField>
       </Card>
 
       <div className="space-y-4">
@@ -172,17 +172,7 @@ function JoinRequestQueue() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant={
-                        request.status === "pending_approval"
-                          ? "secondary"
-                          : request.status === "approved"
-                            ? "outline"
-                            : "destructive"
-                      }
-                    >
-                      {request.status.replace("_", " ")}
-                    </Badge>
+                    <DomainStatus status={request.status}>{request.status.replace("_", " ")}</DomainStatus>
                   </div>
                   <div>
                     <div className="text-base font-medium">

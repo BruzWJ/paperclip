@@ -3,19 +3,13 @@ import { useAdapterCatalogSyncState } from "@/adapters/use-adapter-catalog";
 import { defaultCreateValues } from "@/components/agent-config-defaults";
 import { AgentConfigForm } from "@/components/AgentConfigForm";
 import type { FileTreeNode } from "@/components/FileTree";
+import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import * as Collapse from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import * as ItemUI from "@/components/ui/item";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { ConflictItem } from "@/routes/_authenticated/$companyId/company/import/-company-import-data";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
@@ -23,18 +17,13 @@ import { ArrowRight, Check, ChevronRight } from "lucide-react";
 import { useMemo } from "react";
 
 export function importActionBadgeVariant(action: string) {
-  if (action === "overwrite" || action === "replace")
-    return "destructive" as const;
+  if (action === "overwrite" || action === "replace") return "destructive" as const;
   if (action === "create") return "default" as const;
   if (action === "update") return "secondary" as const;
   return "outline" as const;
 }
 
-export function renderImportFileExtra(
-  node: FileTreeNode,
-  checked: boolean,
-  renameMap: Map<string, string>,
-) {
+export function renderImportFileExtra(node: FileTreeNode, checked: boolean, renameMap: Map<string, string>) {
   // Show rename indicator only on directories (folders), not individual files
   const renamedTo = node.kind === "dir" ? renameMap.get(node.path) : undefined;
   const actionBadge = node.action ? (
@@ -114,15 +103,7 @@ export function ConflictResolutionList({
                   </Button>
                 </ItemUI.ItemMedia>
                 <ItemUI.ItemContent className="min-w-0 flex-row items-center">
-                  <Badge
-                    variant={
-                      isSkipped
-                        ? "outline"
-                        : isConfirmed
-                          ? "default"
-                          : "secondary"
-                    }
-                  >
+                  <Badge variant={isSkipped ? "outline" : isConfirmed ? "default" : "secondary"}>
                     {item.kind}
                   </Badge>
                   <ItemUI.ItemTitle
@@ -244,38 +225,27 @@ export function AdapterPickerList({
                     <Badge>agent</Badge>
                   </ItemUI.ItemMedia>
                   <ItemUI.ItemContent className="min-w-0">
-                    <ItemUI.ItemTitle className="font-mono text-xs">
-                      {agent.name}
-                    </ItemUI.ItemTitle>
+                    <ItemUI.ItemTitle className="font-mono text-xs">{agent.name}</ItemUI.ItemTitle>
                     <ItemUI.ItemDescription>
-                      {selectedType
-                        ? "Operator-managed native"
-                        : "Select an adapter first"}
+                      {selectedType ? "Operator-managed native" : "Select an adapter first"}
                     </ItemUI.ItemDescription>
                   </ItemUI.ItemContent>
                   <ItemUI.ItemActions className="min-w-full flex-wrap sm:min-w-0">
                     <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-                    <Select
-                      value={selectedType || "__placeholder__"}
-                      onValueChange={(v) => onChangeAdapter(agent.slug, v)}
-                    >
-                      <SelectTrigger
-                        aria-label="Target adapter"
-                        className="min-w-(--sz-14rem) flex-1"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__placeholder__" disabled>
-                          Select target adapter
-                        </SelectItem>
-                        {adapterOptions.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <EntityCombobox
+                      value={selectedType}
+                      options={adapterOptions.map((option) => ({
+                        id: option.value,
+                        label: option.label,
+                      }))}
+                      onValueChange={(value) => onChangeAdapter(agent.slug, value)}
+                      type="adapter"
+                      ariaLabel="Target adapter"
+                      placeholder="Select target adapter"
+                      noneLabel="Select target adapter"
+                      includeNone={false}
+                      triggerClassName="min-w-(--sz-14rem) flex-1"
+                    />
                     <Collapse.CollapsibleTrigger asChild>
                       <Button
                         type="button"
@@ -284,10 +254,7 @@ export function AdapterPickerList({
                         disabled={!selectedType}
                       >
                         <ChevronRight
-                          className={cn(
-                            "h-3 w-3 transition-transform",
-                            isExpanded && "rotate-90",
-                          )}
+                          className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")}
                         />
                         configure adapter
                       </Button>

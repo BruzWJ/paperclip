@@ -10,7 +10,8 @@ import { queryKeys } from "@/lib/queryKeys";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
+import { FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -188,8 +189,7 @@ function NewAgent() {
         </CardHeader>
         <CardContent>
           <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="agent-name">Name</FieldLabel>
+            <LabeledFormField label="Name" labelFor="agent-name">
               <Input
                 id="agent-name"
                 placeholder="Agent name"
@@ -197,23 +197,24 @@ function NewAgent() {
                 onChange={(event) => setName(event.target.value)}
                 autoFocus
               />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="agent-title">Title</FieldLabel>
-              <FieldDescription>Optional display title shown alongside the agent.</FieldDescription>
+            </LabeledFormField>
+            <LabeledFormField
+              label="Title"
+              labelFor="agent-title"
+              description="Optional display title shown alongside the agent."
+            >
               <Input
                 id="agent-title"
                 placeholder="Title (display only)"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
               />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="agent-capabilities">Capabilities</FieldLabel>
-              <FieldDescription>
-                Verbatim capability description shown only when another agent can choose this agent as a
-                target.
-              </FieldDescription>
+            </LabeledFormField>
+            <LabeledFormField
+              label="Capabilities"
+              labelFor="agent-capabilities"
+              description="Verbatim capability description shown only when another agent can choose this agent as a target."
+            >
               <Textarea
                 id="agent-capabilities"
                 className="min-h-24"
@@ -221,13 +222,12 @@ function NewAgent() {
                 onChange={(event) => setCapabilities(event.target.value)}
                 placeholder="What work is this agent equipped to handle?"
               />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="agent-instructions">Agent instructions</FieldLabel>
-              <FieldDescription>
-                Optional high-level role guidance Paperclip delivers during this agent&apos;s session
-                bootstrap.
-              </FieldDescription>
+            </LabeledFormField>
+            <LabeledFormField
+              label="Agent instructions"
+              labelFor="agent-instructions"
+              description="Optional high-level role guidance Paperclip delivers during this agent's session bootstrap."
+            >
               <Textarea
                 id="agent-instructions"
                 className="min-h-24"
@@ -235,7 +235,7 @@ function NewAgent() {
                 onChange={(event) => setInstruction(event.target.value)}
                 placeholder="Describe the agent's role, priorities, and durable operating guidance."
               />
-            </Field>
+            </LabeledFormField>
           </FieldGroup>
           <Alert className="mt-6">
             <AlertDescription>
@@ -319,19 +319,23 @@ function NewAgent() {
         </CardHeader>
         <CardContent>
           <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="initial-task-title">Title</FieldLabel>
-              <FieldDescription>Optional board task title.</FieldDescription>
+            <LabeledFormField
+              label="Title"
+              labelFor="initial-task-title"
+              description="Optional board task title."
+            >
               <Input
                 id="initial-task-title"
                 placeholder="Task title (optional)"
                 value={initialTaskTitle}
                 onChange={(event) => setInitialTaskTitle(event.target.value)}
               />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="initial-task-request">Request</FieldLabel>
-              <FieldDescription>Describe the first concrete assignment for this agent.</FieldDescription>
+            </LabeledFormField>
+            <LabeledFormField
+              label="Request"
+              labelFor="initial-task-request"
+              description="Describe the first concrete assignment for this agent."
+            >
               <Textarea
                 id="initial-task-request"
                 className="min-h-28"
@@ -339,7 +343,7 @@ function NewAgent() {
                 value={initialRequest}
                 onChange={(event) => setInitialRequest(event.target.value)}
               />
-            </Field>
+            </LabeledFormField>
           </FieldGroup>
           {formError ? (
             <Alert variant="destructive" className="mt-6">

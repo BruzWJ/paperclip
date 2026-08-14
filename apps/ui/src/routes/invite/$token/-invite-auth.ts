@@ -1,4 +1,6 @@
-export type AuthMode = "sign_in" | "sign_up";
+import type { AuthMode } from "@/api/auth";
+
+export type { AuthMode } from "@/api/auth";
 export type AuthFeedback = { tone: "error" | "info"; message: string };
 export function formatUserRole(role: string | null | undefined) {
   if (!role) return null;

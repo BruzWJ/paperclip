@@ -17,6 +17,11 @@ export interface OrgLayoutNode {
   children: OrgLayoutNode[];
 }
 
+export interface OrgLayoutEdge {
+  parent: OrgLayoutNode;
+  child: OrgLayoutNode;
+}
+
 function subtreeWidth(node: OrgNode): number {
   if (node.reports.length === 0) return ORG_CARD_WIDTH;
   const childrenWidth = node.reports.reduce((sum, child) => sum + subtreeWidth(child), 0);
@@ -70,7 +75,7 @@ export function flattenOrgLayout(nodes: OrgLayoutNode[]): OrgLayoutNode[] {
 }
 
 export function collectOrgEdges(nodes: OrgLayoutNode[]) {
-  const edges: Array<{ parent: OrgLayoutNode; child: OrgLayoutNode }> = [];
+  const edges: OrgLayoutEdge[] = [];
   const walk = (node: OrgLayoutNode) => {
     for (const child of node.children) {
       edges.push({ parent: node, child });

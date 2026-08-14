@@ -3,6 +3,15 @@ import { ApiError } from "@/api/client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
+  Choicebox,
+  ChoiceboxIndicator,
+  ChoiceboxItem,
+  ChoiceboxItemDescription,
+  ChoiceboxItemHeader,
+  ChoiceboxItemTitle,
+} from "@/components/kibo-ui/choicebox";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import {
   Card,
   CardAction,
   CardContent,
@@ -12,35 +21,26 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-  FieldTitle,
-} from "@/components/ui/field";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { FieldLegend, FieldSet } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, DataTableColumnHeader, type ColumnDef } from "@/components/patterns/DataTable";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
-import { useCompany } from "@/context/CompanyContext";
+import { useSettingsBreadcrumbs } from "@/hooks/useSettingsBreadcrumbs";
 import { toast } from "sonner";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { queryKeys } from "@/lib/queryKeys";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Check, Copy, ExternalLink, MailPlus } from "lucide-react";
+import { Copy, ExternalLink, MailPlus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   formatInviteAudience,
   formatInviteState,
   INVITE_HISTORY_PAGE_SIZE,
+  type InviteHistoryRow,
   inviteRoleOptions,
   isInviteHistoryRow,
 } from "./-invite-presentation";
@@ -49,10 +49,103 @@ export const Route = createFileRoute("/_authenticated/$companyId/company/setting
   component: CompanyInvites,
 });
 
+function InviteHistoryTable({
+  companyId,
+  invites,
+  onRevoke,
+  revokePending,
+}: {
+  companyId: string;
+  invites: InviteHistoryRow[];
+  onRevoke: (inviteId: string) => void;
+  revokePending: boolean;
+}) {
+  const columns = useMemo<ColumnDef<InviteHistoryRow>[]>(
+    () => [
+      {
+        accessorKey: "state",
+        header: ({ column }) => <DataTableColumnHeader column={column} title="State" />,
+        cell: ({ row }) => (
+          <DomainStatus status={row.original.state}>{formatInviteState(row.original.state)}</DomainStatus>
+        ),
+      },
+      {
+        id: "audience",
+        accessorFn: (invite) => formatInviteAudience(invite),
+        header: ({ column }) => <DataTableColumnHeader column={column} title="For" />,
+      },
+      {
+        id: "inviter",
+        accessorFn: (invite) =>
+          invite.invitedByUser?.name || invite.invitedByUser?.email || "Unknown inviter",
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Invited by" />,
+        cell: ({ row }) => (
+          <div>
+            {row.original.invitedByUser?.name || row.original.invitedByUser?.email || "Unknown inviter"}
+            {row.original.invitedByUser?.email && row.original.invitedByUser.name ? (
+              <div className="text-xs text-muted-foreground">{row.original.invitedByUser.email}</div>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "createdAt",
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">{new Date(row.original.createdAt).toLocaleString()}</span>
+        ),
+      },
+      {
+        accessorKey: "relatedJoinRequestId",
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Join request" />,
+        cell: ({ row }) =>
+          row.original.relatedJoinRequestId ? (
+            <Link
+              to="/$companyId/inbox/requests"
+              params={{ companyId }}
+              className="underline underline-offset-4"
+            >
+              Review request
+            </Link>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        id: "action",
+        enableSorting: false,
+        header: "Action",
+        cell: ({ row }) =>
+          row.original.state === "active" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onRevoke(row.original.id)}
+              disabled={revokePending}
+            >
+              Revoke
+            </Button>
+          ) : (
+            <span className="text-xs text-muted-foreground">Inactive</span>
+          ),
+      },
+    ],
+    [companyId, onRevoke, revokePending],
+  );
+
+  return (
+    <DataTable
+      caption="Invite history"
+      columns={columns}
+      data={invites}
+      getHeadClassName={(columnId) => (columnId === "action" ? "text-right" : undefined)}
+      getCellClassName={(_invite, columnId) => (columnId === "action" ? "text-right" : undefined)}
+    />
+  );
+}
+
 function CompanyInvites() {
   const companyId = useCompanyRouteId();
-  const { selectedCompany } = useCompany();
-  const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [userRole, setUserRole] = useState<"owner" | "admin" | "operator" | "viewer">("operator");
   const [latestInviteUrl, setLatestInviteUrl] = useState<string | null>(null);
@@ -91,27 +184,10 @@ function CompanyInvites() {
     );
   }
 
-  useEffect(() => {
-    setBreadcrumbs([
-      {
-        label: selectedCompany?.name ?? "Company",
-        renderLink: (content) => (
-          <Link to="/$companyId/dashboard" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      { label: "Invites" },
-    ]);
-  }, [companyId, selectedCompany?.name, setBreadcrumbs]);
+  useSettingsBreadcrumbs({
+    companyId,
+    page: "Invites",
+  });
 
   const inviteHistoryQueryKey = queryKeys.access.invites(companyId, "all", INVITE_HISTORY_PAGE_SIZE);
   const invitesQuery = useInfiniteQuery({
@@ -224,25 +300,23 @@ function CompanyInvites() {
         <CardContent className="space-y-4">
           <FieldSet className="space-y-3">
             <FieldLegend>Choose a role</FieldLegend>
-            <RadioGroup
+            <Choicebox
               value={userRole}
               onValueChange={(value) => setUserRole(value as "owner" | "admin" | "operator" | "viewer")}
             >
               {inviteRoleOptions.map((option) => (
-                <FieldLabel key={option.value} htmlFor={`invite-role-${option.value}`}>
-                  <Field orientation="horizontal">
-                    <RadioGroupItem id={`invite-role-${option.value}`} value={option.value} />
-                    <FieldContent>
-                      <FieldTitle>
-                        {option.label}
-                        {option.value === "operator" ? <Badge variant="outline">Default</Badge> : null}
-                      </FieldTitle>
-                      <FieldDescription>{option.description}</FieldDescription>
-                    </FieldContent>
-                  </Field>
-                </FieldLabel>
+                <ChoiceboxItem key={option.value} id={`invite-role-${option.value}`} value={option.value}>
+                  <ChoiceboxIndicator id={`invite-role-${option.value}`} />
+                  <ChoiceboxItemHeader>
+                    <ChoiceboxItemTitle>
+                      {option.label}
+                      {option.value === "operator" ? <Badge variant="outline">Default</Badge> : null}
+                    </ChoiceboxItemTitle>
+                    <ChoiceboxItemDescription>{option.description}</ChoiceboxItemDescription>
+                  </ChoiceboxItemHeader>
+                </ChoiceboxItem>
               ))}
-            </RadioGroup>
+            </Choicebox>
           </FieldSet>
 
           <Alert>
@@ -267,10 +341,9 @@ function CompanyInvites() {
                 </CardDescription>
                 {latestInviteCopied ? (
                   <CardAction>
-                    <Badge variant="secondary" role="status">
-                      <Check />
+                    <DomainStatus status="succeeded" role="status">
                       Copied
-                    </Badge>
+                    </DomainStatus>
                   </CardAction>
                 ) : null}
               </CardHeader>
@@ -335,66 +408,12 @@ function CompanyInvites() {
         ) : (
           <>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>State</TableHead>
-                    <TableHead>For</TableHead>
-                    <TableHead>Invited by</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Join request</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {inviteHistory.map((invite) => (
-                    <TableRow key={invite.id}>
-                      <TableCell>
-                        <Badge variant="outline">{formatInviteState(invite.state)}</Badge>
-                      </TableCell>
-                      <TableCell>{formatInviteAudience(invite)}</TableCell>
-                      <TableCell>
-                        <div>
-                          {invite.invitedByUser?.name || invite.invitedByUser?.email || "Unknown inviter"}
-                        </div>
-                        {invite.invitedByUser?.email && invite.invitedByUser.name ? (
-                          <div className="text-xs text-muted-foreground">{invite.invitedByUser.email}</div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {new Date(invite.createdAt).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        {invite.relatedJoinRequestId ? (
-                          <Link
-                            to="/$companyId/inbox/requests"
-                            params={{ companyId }}
-                            className="underline underline-offset-4"
-                          >
-                            Review request
-                          </Link>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {invite.state === "active" ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => revokeMutation.mutate(invite.id)}
-                            disabled={revokeMutation.isPending}
-                          >
-                            Revoke
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Inactive</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <InviteHistoryTable
+                companyId={companyId}
+                invites={inviteHistory}
+                onRevoke={revokeMutation.mutate}
+                revokePending={revokeMutation.isPending}
+              />
             </CardContent>
             {invitesQuery.hasNextPage ? (
               <CardFooter className="justify-center border-t">

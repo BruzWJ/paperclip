@@ -2,27 +2,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Clock3, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { RoutineTriggerCard } from "../RoutineTriggerCard";
 import { ScheduleEditor, getScheduleCronValidation } from "../ScheduleEditor";
 import { createDefaultNewTrigger, useRoutineDetail } from "./context";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
+import { RoutineSigningFields } from "@/components/RoutineSigningFields";
 
 const triggerKinds = ["schedule", "webhook"];
-
-const signingModes = ["bearer", "hmac_sha256", "github_hmac", "none"];
-
-const signingModeDescriptions: Record<string, string> = {
-  bearer: "Expect a shared bearer token in the Authorization header.",
-  hmac_sha256: "Expect an HMAC SHA-256 signature over the request using the shared secret.",
-  github_hmac: "Accept X-Paperclip-Signature: sha256=<hex> (HMAC over raw body, no timestamp).",
-  none: "No authentication — the webhook URL itself acts as a shared secret.",
-};
-
-const SIGNING_MODES_WITHOUT_REPLAY_WINDOW = new Set(["github_hmac", "none"]);
 
 export function TriggersSection() {
   const ctx = useRoutineDetail();
@@ -65,8 +54,7 @@ export function TriggersSection() {
               <CardTitle>Add trigger</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3 px-4 md:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="new-trigger-kind">Kind</FieldLabel>
+              <LabeledFormField label="Kind" labelFor="new-trigger-kind">
                 <Select
                   value={newTrigger.kind}
                   onValueChange={(kind) => setNewTrigger((current) => ({ ...current, kind }))}
@@ -83,10 +71,9 @@ export function TriggersSection() {
                     ))}
                   </SelectContent>
                 </Select>
-              </Field>
+              </LabeledFormField>
               {newTrigger.kind === "schedule" && (
-                <Field className="md:col-span-2">
-                  <FieldLabel>Schedule</FieldLabel>
+                <LabeledFormField className="md:col-span-2" label="Schedule">
                   <ScheduleEditor
                     value={newTrigger.cronExpression}
                     onChange={(cronExpression) =>
@@ -97,53 +84,21 @@ export function TriggersSection() {
                     }
                     onValidityChange={setNewScheduleEditorValid}
                   />
-                </Field>
+                </LabeledFormField>
               )}
               {newTrigger.kind === "webhook" && (
-                <>
-                  <Field>
-                    <FieldLabel htmlFor="new-trigger-signing-mode">Signing mode</FieldLabel>
-                    <Select
-                      value={newTrigger.signingMode}
-                      onValueChange={(signingMode) =>
-                        setNewTrigger((current) => ({
-                          ...current,
-                          signingMode,
-                        }))
-                      }
-                    >
-                      <SelectTrigger id="new-trigger-signing-mode">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {signingModes.map((mode) => (
-                          <SelectItem key={mode} value={mode}>
-                            {mode}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FieldDescription>{signingModeDescriptions[newTrigger.signingMode]}</FieldDescription>
-                  </Field>
-                  {!SIGNING_MODES_WITHOUT_REPLAY_WINDOW.has(newTrigger.signingMode) && (
-                    <Field>
-                      <FieldLabel htmlFor="new-trigger-replay-window">Replay window (seconds)</FieldLabel>
-                      <Input
-                        id="new-trigger-replay-window"
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={newTrigger.replayWindowSec}
-                        onChange={(event) =>
-                          setNewTrigger((current) => ({
-                            ...current,
-                            replayWindowSec: event.target.value,
-                          }))
-                        }
-                      />
-                    </Field>
-                  )}
-                </>
+                <RoutineSigningFields
+                  describeMode
+                  idPrefix="new-trigger"
+                  signingMode={newTrigger.signingMode}
+                  replayWindowSec={newTrigger.replayWindowSec}
+                  onSigningModeChange={(signingMode) =>
+                    setNewTrigger((current) => ({ ...current, signingMode }))
+                  }
+                  onReplayWindowChange={(replayWindowSec) =>
+                    setNewTrigger((current) => ({ ...current, replayWindowSec }))
+                  }
+                />
               )}
             </CardContent>
             <CardFooter className="justify-end gap-2 px-4">

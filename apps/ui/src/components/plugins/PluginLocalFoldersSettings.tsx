@@ -2,8 +2,9 @@ import { pluginsApi, type PluginLocalFolderStatus } from "@/api/plugins";
 import { ChoosePathButton } from "@/components/PathInstructionsModal";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Item,
@@ -20,6 +21,7 @@ import type { PluginLocalFolderDeclaration } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderOpen, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import type { PluginOperationResult } from "@/plugins/plugin-launcher-types";
 
 interface PluginLocalFoldersSettingsProps {
   pluginId: string;
@@ -37,9 +39,7 @@ export function PluginLocalFoldersSettings({
     queryFn: () => pluginsApi.listLocalFolders(pluginId, companyId),
   });
 
-  const statusByKey = new Map(
-    (data?.folders ?? []).map((folder) => [folder.folderKey, folder]),
-  );
+  const statusByKey = new Map((data?.folders ?? []).map((folder) => [folder.folderKey, folder]));
 
   return (
     <div className="space-y-3">
@@ -50,16 +50,12 @@ export function PluginLocalFoldersSettings({
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>
-            {(error as Error).message ||
-              "Failed to load local folder settings."}
+            {(error as Error).message || "Failed to load local folder settings."}
           </AlertDescription>
         </Alert>
       ) : null}
       {isLoading ? (
-        <div
-          className="flex items-center gap-2 py-3 text-sm text-muted-foreground"
-          role="status"
-        >
+        <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground" role="status">
           <Spinner className="h-4 w-4" />
           Loading local folders...
         </div>
@@ -87,19 +83,11 @@ interface PluginLocalFolderRowProps {
   status?: PluginLocalFolderStatus;
 }
 
-function PluginLocalFolderRow({
-  pluginId,
-  companyId,
-  declaration,
-  status,
-}: PluginLocalFolderRowProps) {
+function PluginLocalFolderRow({ pluginId, companyId, declaration, status }: PluginLocalFolderRowProps) {
   const queryClient = useQueryClient();
   const serverPath = status?.path ?? "";
   const [pathValue, setPathValue] = useState(serverPath);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const [message, setMessage] = useState<PluginOperationResult | null>(null);
 
   useEffect(() => {
     setPathValue(serverPath);
@@ -108,14 +96,9 @@ function PluginLocalFolderRow({
 
   const saveMutation = useMutation({
     mutationFn: (path: string) =>
-      pluginsApi.configureLocalFolder(
-        pluginId,
-        companyId,
-        declaration.folderKey,
-        {
-          path,
-        },
-      ),
+      pluginsApi.configureLocalFolder(pluginId, companyId, declaration.folderKey, {
+        path,
+      }),
     onSuccess: (nextStatus) => {
       setMessage({
         type: nextStatus.healthy ? "success" : "error",
@@ -150,8 +133,7 @@ function PluginLocalFolderRow({
     },
     {
       label: "Writable",
-      value:
-        access === "read" ? "Not requested" : status?.writable ? "Yes" : "No",
+      value: access === "read" ? "Not requested" : status?.writable ? "Yes" : "No",
       ok: access === "read" || !!status?.writable,
     },
   ];
@@ -190,20 +172,15 @@ function PluginLocalFolderRow({
         <ItemContent>
           <ItemTitle className="flex-wrap">
             {declaration.displayName}
-            <Badge
-              variant="outline"
-              className="font-mono text-(length:--text-nano)"
-            >
+            <Badge variant="outline" className="font-mono text-(length:--text-nano)">
               {declaration.folderKey}
             </Badge>
-            <Badge variant={status?.healthy ? "default" : "secondary"}>
+            <DomainStatus status={status?.healthy ? "healthy" : "needs_attention"}>
               {status?.healthy ? "Healthy" : "Needs attention"}
-            </Badge>
+            </DomainStatus>
           </ItemTitle>
           {declaration.description ? (
-            <ItemDescription className="max-w-3xl">
-              {declaration.description}
-            </ItemDescription>
+            <ItemDescription className="max-w-3xl">{declaration.description}</ItemDescription>
           ) : null}
         </ItemContent>
         <ItemActions>
@@ -218,25 +195,22 @@ function PluginLocalFolderRow({
           {statusMetrics.map((metric) => (
             <Item key={metric.label} variant="muted" size="sm">
               <ItemDescription>{metric.label}</ItemDescription>
-              <Badge
-                variant={metric.ok ? "default" : "secondary"}
-                className="ml-auto"
-              >
+              <DomainStatus status={metric.ok ? "healthy" : "disabled"} className="ml-auto">
                 {metric.value}
-              </Badge>
+              </DomainStatus>
             </Item>
           ))}
         </ItemGroup>
 
-        <Field>
-          <FieldLabel htmlFor={`local-folder-${declaration.folderKey}`}>
-            Local folder path
-          </FieldLabel>
-          {status?.path ? (
-            <FieldDescription className="break-all font-mono text-xs">
-              Configured: {status.path}
-            </FieldDescription>
-          ) : null}
+        <LabeledFormField
+          label="Local folder path"
+          labelFor={`local-folder-${declaration.folderKey}`}
+          description={
+            status?.path ? (
+              <span className="break-all font-mono text-xs">Configured: {status.path}</span>
+            ) : undefined
+          }
+        >
           <div className="flex items-center gap-2">
             <Input
               id={`local-folder-${declaration.folderKey}`}
@@ -262,7 +236,7 @@ function PluginLocalFolderRow({
               Save
             </Button>
           </div>
-        </Field>
+        </LabeledFormField>
 
         <FolderRequirements status={status} declaration={declaration} />
 
@@ -274,9 +248,7 @@ function PluginLocalFolderRow({
                 {status.problems.map((problem, index) => (
                   <li key={`${problem.code}:${problem.path ?? ""}:${index}`}>
                     {problem.message}
-                    {problem.path ? (
-                      <span className="font-mono"> {problem.path}</span>
-                    ) : null}
+                    {problem.path ? <span className="font-mono"> {problem.path}</span> : null}
                   </li>
                 ))}
               </ul>
@@ -304,16 +276,13 @@ function FolderRequirements({
   status?: PluginLocalFolderStatus;
   declaration: PluginLocalFolderDeclaration;
 }) {
-  const requiredDirectories =
-    status?.requiredDirectories ?? declaration.requiredDirectories ?? [];
-  const requiredFiles =
-    status?.requiredFiles ?? declaration.requiredFiles ?? [];
+  const requiredDirectories = status?.requiredDirectories ?? declaration.requiredDirectories ?? [];
+  const requiredFiles = status?.requiredFiles ?? declaration.requiredFiles ?? [];
   const missingDirectories = status?.missingDirectories ?? requiredDirectories;
   const missingFiles = status?.missingFiles ?? requiredFiles;
   const rootNotInspected = isRootNotInspected(status);
 
-  if (requiredDirectories.length === 0 && requiredFiles.length === 0)
-    return null;
+  if (requiredDirectories.length === 0 && requiredFiles.length === 0) return null;
 
   return (
     <div className="grid gap-3 text-sm md:grid-cols-2">
@@ -339,9 +308,7 @@ function isRootNotInspected(status?: PluginLocalFolderStatus) {
   if (!status?.configured || status.readable) return false;
   return status.problems.some(
     (problem) =>
-      problem.code === "missing" ||
-      problem.code === "not_readable" ||
-      problem.code === "not_directory",
+      problem.code === "missing" || problem.code === "not_readable" || problem.code === "not_directory",
   );
 }
 
@@ -362,21 +329,15 @@ function RequirementList({
     <Item variant="outline" size="sm" className="items-stretch">
       <ItemHeader>
         <ItemTitle>{title}</ItemTitle>
-        <Badge
-          variant={
-            inspectionUnavailable
-              ? "secondary"
-              : missingItems.length > 0
-                ? "destructive"
-                : "outline"
-          }
+        <DomainStatus
+          status={inspectionUnavailable ? "unchecked" : missingItems.length > 0 ? "missing" : "ready"}
         >
           {inspectionUnavailable
             ? "Not inspected"
             : missingItems.length > 0
               ? `${missingItems.length} missing`
               : "Present"}
-        </Badge>
+        </DomainStatus>
       </ItemHeader>
       <ItemContent className="basis-full">
         {items.length > 0 ? (
@@ -384,19 +345,13 @@ function RequirementList({
             {items.map((item) => {
               const missing = missingItems.includes(item);
               return (
-                <Badge
+                <DomainStatus
                   key={item}
-                  variant={
-                    inspectionUnavailable
-                      ? "secondary"
-                      : missing
-                        ? "destructive"
-                        : "outline"
-                  }
+                  status={inspectionUnavailable ? "unchecked" : missing ? "missing" : "ready"}
                   className="font-mono text-(length:--text-micro)"
                 >
                   {item}
-                </Badge>
+                </DomainStatus>
               );
             })}
           </div>
@@ -418,9 +373,5 @@ function RequirementList({
 }
 
 function isLikelyAbsolutePath(pathValue: string) {
-  return (
-    pathValue.startsWith("/") ||
-    /^[A-Za-z]:[\\/]/.test(pathValue) ||
-    pathValue.startsWith("\\\\")
-  );
+  return pathValue.startsWith("/") || /^[A-Za-z]:[\\/]/.test(pathValue) || pathValue.startsWith("\\\\");
 }

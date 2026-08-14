@@ -1,5 +1,5 @@
 import { AgentActionButtons } from "@/components/AgentActionButtons";
-import { AgentIcon, AgentIconPicker } from "@/components/AgentIconPicker";
+import { AgentIconPicker } from "@/components/AgentIconPicker";
 import { AgentConfigurePage as AgentConfigurationPanel } from "@/components/agents/AgentConfigurationPanel";
 import { AgentOverview } from "@/components/agents/AgentOverview";
 import { AgentRunsPanel } from "@/components/agents/AgentRunsPanel";
@@ -9,16 +9,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Toggle } from "@/components/ui/toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
@@ -61,7 +55,6 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
     agent,
     agentBudgetSummary,
     agentId,
-    agentJoinLeavePending,
     agentStarPending,
     agentStarred,
     assignedTasks,
@@ -107,11 +100,24 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
       params: { companyId, agentId, tab: value },
     });
   };
+  const configActionButtons = (
+    <>
+      <Button
+        variant={isMobile ? "ghost" : "outline"}
+        size="sm"
+        onClick={() => cancelConfigActionRef.current?.()}
+        disabled={configSaving}
+      >
+        Cancel
+      </Button>
+      <Button size="sm" onClick={() => saveConfigActionRef.current?.()} disabled={configSaving}>
+        {configSaving ? "Saving…" : "Save"}
+      </Button>
+    </>
+  );
 
   return (
-    <div
-      className={cn("space-y-6", isMobile && showConfigActionBar && "pb-24")}
-    >
+    <div className={cn("space-y-6", isMobile && showConfigActionBar && "pb-24")}>
       {pendingAgentStatus ? (
         <p className="sr-only" role="status">
           {pendingAgentStatus}
@@ -120,46 +126,21 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
       {showLeftAgentNotice ? (
         <Alert>
           <AlertDescription className="flex items-center">
-            <span className="min-w-0 flex-1">
-              You left this agent. It no longer appears in your sidebar.
-            </span>
+            <span className="min-w-0 flex-1">You left this agent. It no longer appears in your sidebar.</span>
             <MembershipAction
               compact
               state="left"
-              pending={agentJoinLeavePending}
-              pendingState={
-                agentJoinLeavePending
-                  ? membershipMutation.variables?.state
-                  : null
-              }
+              mutation={membershipMutation}
+              resourceId={agent.id}
               resourceName={agent.name}
-              onJoin={() =>
-                membershipMutation.mutate({
-                  resourceType: "agent",
-                  resourceId: agent.id,
-                  resourceName: agent.name,
-                  state: "joined",
-                })
-              }
-              onLeave={() =>
-                membershipMutation.mutate({
-                  resourceType: "agent",
-                  resourceId: agent.id,
-                  resourceName: agent.name,
-                  state: "left",
-                })
-              }
+              resourceType="agent"
             />
             <Button
               type="button"
               variant="ghost"
               size="icon-xs"
               aria-label="Dismiss agent membership notice"
-              onClick={() =>
-                setDismissedLeftAgentIds((current) =>
-                  new Set(current).add(agent.id),
-                )
-              }
+              onClick={() => setDismissedLeftAgentIds((current) => new Set(current).add(agent.id))}
             >
               <X />
             </Button>
@@ -171,19 +152,14 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
           <AlertTriangle />
           <AlertTitle>Invalid reporting chain</AlertTitle>
           <AlertDescription>
-            <p>
-              {agent.name} cannot accept tasks or start runs until its reporting
-              chain is repaired.
-            </p>
-            <p className="break-words font-mono text-xs">
-              {formatOrgChainHealthPath(agent)}
-            </p>
+            <p>{agent.name} cannot accept tasks or start runs until its reporting chain is repaired.</p>
+            <p className="break-words font-mono text-xs">{formatOrgChainHealthPath(agent)}</p>
             {agent.orgChainHealth?.repairGuidance ? (
               <p>{agent.orgChainHealth.repairGuidance}</p>
             ) : (
               <p>
-                Assign this agent to an eligible manager/root, or explicitly
-                pause or terminate the affected agent/subtree.
+                Assign this agent to an eligible manager/root, or explicitly pause or terminate the affected
+                agent/subtree.
               </p>
             )}
           </AlertDescription>
@@ -192,28 +168,12 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
-          <AgentIconPicker
-            value={agent.icon}
-            onChange={(icon) => updateIcon.mutate(icon)}
-          >
-            <Button
-              type="button"
-              variant="secondary"
-              size="icon-lg"
-              aria-label="Change agent icon"
-            >
-              <AgentIcon icon={agent.icon} />
-            </Button>
-          </AgentIconPicker>
+          <AgentIconPicker value={agent.icon} onChange={(icon) => updateIcon.mutate(icon)} />
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-2xl font-bold truncate">{agent.name}</h2>
             </div>
-            {agent.title ? (
-              <p className="text-sm text-muted-foreground truncate">
-                {agent.title}
-              </p>
-            ) : null}
+            {agent.title ? <p className="text-sm text-muted-foreground truncate">{agent.title}</p> : null}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -247,18 +207,17 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
             onActionError={setActionError}
           >
             {mobileLiveRun && (
-              <Badge asChild variant="secondary" className="sm:hidden">
-                <Link
-                  to="/$companyId/agents/$agentId/runs/$runId"
-                  params={{
-                    companyId,
-                    agentId,
-                    runId: mobileLiveRun.id,
-                  }}
-                >
-                  Live
-                </Link>
-              </Badge>
+              <Link
+                to="/$companyId/agents/$agentId/runs/$runId"
+                params={{
+                  companyId,
+                  agentId,
+                  runId: mobileLiveRun.id,
+                }}
+                className="sm:hidden"
+              >
+                <DomainStatus status="running">Live</DomainStatus>
+              </Link>
             )}
           </AgentActionButtons>
         </div>
@@ -303,9 +262,7 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
           <CheckCircle2 />
           <AlertTitle>Board approval required</AlertTitle>
           <AlertDescription>
-            <span>
-              This agent is pending board approval and cannot be invoked yet.
-            </span>
+            <span>This agent is pending board approval and cannot be invoked yet.</span>
             <Button variant="outline" size="sm" asChild>
               <Link to="/$companyId/approvals" params={{ companyId }}>
                 Review approval
@@ -320,24 +277,18 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
           <AlertTitle>Plugin-managed agent awaiting board triage</AlertTitle>
           <AlertDescription>
             <p>
-              Plugin {agent.pluginManagement.pluginKey} is unavailable. Adopt
-              this existing agent to sever future plugin management, or
-              terminate it. Its current configuration and provenance remain
+              Plugin {agent.pluginManagement.pluginKey} is unavailable. Adopt this existing agent to sever
+              future plugin management, or terminate it. Its current configuration and provenance remain
               unchanged.
             </p>
             {agent.pluginManagement.lifecycleReason ? (
-              <p className="font-mono text-xs">
-                {agent.pluginManagement.lifecycleReason}
-              </p>
+              <p className="font-mono text-xs">{agent.pluginManagement.lifecycleReason}</p>
             ) : null}
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 onClick={() => adoptPluginManagement.mutate()}
-                disabled={
-                  adoptPluginManagement.isPending ||
-                  terminatePluginTriage.isPending
-                }
+                disabled={adoptPluginManagement.isPending || terminatePluginTriage.isPending}
               >
                 {adoptPluginManagement.isPending ? "Adopting…" : "Adopt agent"}
               </Button>
@@ -345,14 +296,9 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
                 size="sm"
                 variant="destructive"
                 onClick={() => terminatePluginTriage.mutate()}
-                disabled={
-                  adoptPluginManagement.isPending ||
-                  terminatePluginTriage.isPending
-                }
+                disabled={adoptPluginManagement.isPending || terminatePluginTriage.isPending}
               >
-                {terminatePluginTriage.isPending
-                  ? "Terminating…"
-                  : "Terminate agent"}
+                {terminatePluginTriage.isPending ? "Terminating…" : "Terminate agent"}
               </Button>
             </div>
           </AlertDescription>
@@ -362,23 +308,7 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
       {/* Floating Save/Cancel (desktop) */}
       {!isPluginTriage && !isMobile && showConfigActionBar && (
         <div className="fixed bottom-6 right-6 z-30">
-          <ButtonGroup>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => cancelConfigActionRef.current?.()}
-              disabled={configSaving}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => saveConfigActionRef.current?.()}
-              disabled={configSaving}
-            >
-              {configSaving ? "Saving…" : "Save"}
-            </Button>
-          </ButtonGroup>
+          <ButtonGroup>{configActionButtons}</ButtonGroup>
         </div>
       )}
 
@@ -391,21 +321,7 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
               paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)",
             }}
           >
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => cancelConfigActionRef.current?.()}
-              disabled={configSaving}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => saveConfigActionRef.current?.()}
-              disabled={configSaving}
-            >
-              {configSaving ? "Saving…" : "Save"}
-            </Button>
+            {configActionButtons}
           </ButtonGroup>
         </div>
       )}
@@ -418,8 +334,7 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
           runtimeState={runtimeState}
           budgetCurrency={
             budgetOverview?.budgetCurrency ??
-            companies.find((company) => company.id === companyId)
-              ?.budgetCurrency
+            companies.find((company) => company.id === companyId)?.budgetCurrency
           }
           agentId={agent.id}
           agentRouteId={agentId}
@@ -437,11 +352,7 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
       )}
 
       {!isPluginTriage && activeView === "runs" && (
-        <AgentRunsPanel
-          runs={runs}
-          agentRouteId={agentId}
-          selectedRunId={urlRunId ?? null}
-        />
+        <AgentRunsPanel runs={runs} agentRouteId={agentId} selectedRunId={urlRunId ?? null} />
       )}
 
       {!isPluginTriage && activeView === "budget" ? (
@@ -454,9 +365,7 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
               variant="plain"
             />
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Budget data is unavailable.
-            </p>
+            <p className="text-sm text-muted-foreground">Budget data is unavailable.</p>
           )}
         </div>
       ) : null}

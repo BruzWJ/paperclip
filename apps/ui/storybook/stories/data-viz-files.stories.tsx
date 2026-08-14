@@ -15,7 +15,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StorySection as Section, StoryShell } from "./story-layout";
@@ -162,7 +162,7 @@ function EntityRowsDemo({ empty = false }: { empty?: boolean }) {
           identifier: "agent",
           title: "CodexCoder",
           subtitle: "Senior Product Engineer · active in Storybook preview",
-          trailing: <Badge variant={statusBadgeVariant("running")}>running</Badge>,
+          trailing: <DomainStatus status="running" />,
           selected: true,
         },
         {

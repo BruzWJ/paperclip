@@ -5,20 +5,15 @@ import type { TaskExecutionRunEnvelopeRecord, TaskExecutionRunListPageRecord } f
 import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
 import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
-import { statusBadgeVariant } from "../lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { formatDateTime } from "../lib/utils";
 import { ExternalLink } from "lucide-react";
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Item, ItemContent, ItemDescription, ItemFooter, ItemGroup, ItemHeader } from "./ui/item";
+import type { TaskScope } from "@/lib/presentation-contracts";
 
-interface LiveRunWidgetProps {
-  taskId: string;
-  companyId: string;
-}
-
-export function LiveRunWidget({ taskId, companyId }: LiveRunWidgetProps) {
+export function LiveRunWidget({ taskId, companyId }: TaskScope) {
   const status = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
   const { data: runPage } = useQuery<TaskExecutionRunListPageRecord>({
     queryKey: queryKeys.tasks.runs(taskId, status),
@@ -56,9 +51,7 @@ export function LiveRunWidget({ taskId, companyId }: LiveRunWidgetProps) {
                 <ItemContent className="gap-3">
                   <ItemHeader>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={statusBadgeVariant(run.status)}>
-                        {run.status.replace(/[_-]/g, " ")}
-                      </Badge>
+                      <DomainStatus status={run.status} />
                       <span className="font-mono text-xs text-muted-foreground">{run.id.slice(0, 8)}</span>
                       <span className="text-xs capitalize text-muted-foreground">{run.kind}</span>
                     </div>

@@ -6,7 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { EnvironmentVariableRow } from "./Row";
 import { rowDirtyFields } from "./EnvironmentVariablesEditorState";
-import { validateName, type EnvRow } from "./model";
+import { validateName, type EnvironmentVariableFocusTarget, type EnvRow } from "./model";
 
 export interface EnvironmentVariablesEditorViewProps {
   editorRootRef: RefObject<HTMLDivElement | null>;
@@ -20,7 +20,7 @@ export interface EnvironmentVariablesEditorViewProps {
   duplicateNames: ReadonlySet<string>;
   touchedNames: ReadonlySet<string>;
   committedRowsById: ReadonlyMap<string, EnvRow>;
-  pendingFocus: { rowId: string; field: "name" | "value" } | null;
+  pendingFocus: EnvironmentVariableFocusTarget | null;
   quickBind: readonly CompanySecret[];
   hasUnsavedChanges: boolean;
   changeSummaryText: string;

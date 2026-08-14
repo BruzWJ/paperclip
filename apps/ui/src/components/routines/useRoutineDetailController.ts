@@ -1,5 +1,4 @@
 import { type RestoreRoutineRevisionResponse } from "@/api/routines";
-import type { EntityOption } from "@/lib/entity-selector";
 import { type MarkdownEditorRef, type MentionOption } from "@/components/MarkdownEditor";
 import {
   EDITABLE_SECTIONS,
@@ -14,8 +13,8 @@ import { toast } from "sonner";
 import { buildMarkdownMentionOptions } from "@/lib/company-members";
 import { queryKeys } from "@/lib/queryKeys";
 import { autoResizeTextarea } from "@/lib/textarea";
-import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "@/lib/recent-assignees";
-import { getRecentProjectIds, trackRecentProject } from "@/lib/recent-projects";
+import { trackRecentAssignee } from "@/lib/recent-assignees";
+import { trackRecentProject } from "@/lib/recent-projects";
 import type {
   RoutineDetail as RoutineDetailType,
   RoutineEnvConfig,
@@ -28,15 +27,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildRoutineEditDraft, getRoutineDirtyFields, useRoutineDetailQueries } from "./routineDetailDraft";
 import { useRoutineDetailMutations } from "./useRoutineDetailMutations";
 
+export interface RoutineDetailControllerOptions {
+  companyId: string;
+  routineId: string;
+  section?: RoutineSectionKey;
+}
+import { useRoutineAssignmentPresentation } from "./useRoutinePresentationData";
+
 export function useRoutineDetailController({
   companyId,
   routineId,
   section: sectionParam,
-}: {
-  companyId: string;
-  routineId: string;
-  section?: RoutineSectionKey;
-}) {
+}: RoutineDetailControllerOptions) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const hydratedRoutineIdRef = useRef<string | null>(null);
@@ -179,34 +181,8 @@ export function useRoutineDetailController({
     navigateToSection,
   });
 
-  const agentById = useMemo(() => new Map((agents ?? []).map((agent) => [agent.id, agent])), [agents]);
-  const projectById = useMemo(
-    () => new Map((projects ?? []).map((project) => [project.id, project])),
-    [projects],
-  );
-  const recentAssigneeIds = useMemo(() => getRecentAssigneeIds(), [routine?.id]);
-  const recentProjectIds = useMemo(() => getRecentProjectIds(), [routine?.id]);
-  const assigneeOptions = useMemo<EntityOption[]>(
-    () =>
-      sortAgentsByRecency(
-        (agents ?? []).filter((agent) => agent.status !== "terminated"),
-        recentAssigneeIds,
-      ).map((agent) => ({
-        id: agent.id,
-        label: agent.name,
-        searchText: `${agent.name} ${agent.title ?? ""}`,
-      })),
-    [agents, recentAssigneeIds],
-  );
-  const projectOptions = useMemo<EntityOption[]>(
-    () =>
-      (projects ?? []).map((project) => ({
-        id: project.id,
-        label: project.name,
-        searchText: project.description ?? "",
-      })),
-    [projects],
-  );
+  const { agentById, assigneeOptions, projectById, projectOptions, recentAssigneeIds, recentProjectIds } =
+    useRoutineAssignmentPresentation({ agents, projects, recencyKey: routine?.id });
   const mentionOptions = useMemo<MentionOption[]>(
     () =>
       buildMarkdownMentionOptions({

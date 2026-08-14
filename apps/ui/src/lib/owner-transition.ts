@@ -20,36 +20,12 @@ import { parseAgentMentionHref } from "@paperclipai/shared";
  * (a board comment that cancelled the active run) rather than an unexplained
  * failure or a plain control-plane cancel.
  */
-export function isOperatorInterruptedRun(
-  terminalReasonCode: string | null | undefined,
-): boolean {
+export function isOperatorInterruptedRun(terminalReasonCode: string | null | undefined): boolean {
   return terminalReasonCode === "operator_interrupted";
-}
-
-export function runStatusClassName(status: string): string {
-  switch (status) {
-    case "succeeded":
-      return "text-green-700 dark:text-green-300";
-    case "failed":
-    case "error":
-      return "text-red-700 dark:text-red-300";
-    case "timed_out":
-      return "text-orange-700 dark:text-orange-300";
-    case "running":
-      return "text-blue-700 dark:text-blue-300";
-    case "queued":
-    case "pending":
-      return "text-amber-700 dark:text-amber-300";
-    case "cancelled":
-      return "text-muted-foreground";
-    default:
-      return "text-foreground";
-  }
 }
 
 export interface RunStatusPresentation {
   label: string;
-  className: string;
   /** Screen-reader-only clarifier, or null. */
   srHint: string | null;
 }
@@ -66,13 +42,11 @@ export function resolveRunStatusPresentation(
   if (status === "cancelled" && opts.operatorInterrupted) {
     return {
       label: "interrupted",
-      className: "text-amber-700 dark:text-amber-300",
       srHint: "interrupted by board comment",
     };
   }
   return {
     label: status === "timed_out" ? "timed out" : status.replace(/_/g, " "),
-    className: runStatusClassName(status),
     srHint: null,
   };
 }
@@ -152,11 +126,7 @@ export function findPlainAgentNameCandidate(
 export type OwnerPreviewTone = "neutral" | "warn";
 
 export type ComposerOwnerPreviewKind =
-  | "interrupt_change_owner"
-  | "dispatch_owner"
-  | "notify_agent"
-  | "plain_text_only"
-  | "none";
+  "interrupt_change_owner" | "dispatch_owner" | "notify_agent" | "plain_text_only" | "none";
 
 export interface ComposerOwnerPreview {
   kind: ComposerOwnerPreviewKind;
@@ -194,9 +164,7 @@ export interface ComposerOwnerPreviewInput {
  * durably do. This is the composer footer preview (design surface 1c) and the
  * core of the agent-vs-user disambiguation.
  */
-export function computeComposerOwnerPreview(
-  input: ComposerOwnerPreviewInput,
-): ComposerOwnerPreview {
+export function computeComposerOwnerPreview(input: ComposerOwnerPreviewInput): ComposerOwnerPreview {
   const hasOwnerChange = input.ownerTarget !== input.currentOwnerValue;
 
   if (hasOwnerChange) {
@@ -243,11 +211,8 @@ export function computeComposerOwnerPreview(
 
 export type OwnerTransitionKind = "agent_dispatch" | "user_owner" | "board_owner";
 
-export interface TimelineOwnerLike {
-  ownerKind: "agent" | "user" | "board";
-  ownerAgentId: string | null;
-  ownerUserId: string | null;
-}
+export type { TaskOwnerReference as TimelineOwnerLike } from "@/lib/presentation-contracts";
+import type { TaskOwnerReference } from "@/lib/presentation-contracts";
 
 export interface OwnerTransitionInfo {
   kind: OwnerTransitionKind;
@@ -261,7 +226,7 @@ export interface OwnerTransitionInfo {
  * states are self-describing in the activity log.
  */
 export function classifyOwnerTransition(
-  to: TimelineOwnerLike,
+  to: TaskOwnerReference,
   opts: { agentName?: string | null; interruptedRunAttached?: boolean } = {},
 ): OwnerTransitionInfo {
   if (to.ownerKind === "agent" && to.ownerAgentId) {
@@ -300,7 +265,9 @@ export interface OwnerChangeInterruptCopy {
  * operator picks a different owner mid-run. Naming the running agent keeps
  * the interrupt consequence concrete instead of a bare "are you sure".
  */
-export function describeOwnerChangeInterrupt(opts: { runningAgentName?: string | null } = {}): OwnerChangeInterruptCopy {
+export function describeOwnerChangeInterrupt(
+  opts: { runningAgentName?: string | null } = {},
+): OwnerChangeInterruptCopy {
   const who = opts.runningAgentName?.trim() || "An agent";
   return {
     banner: `${who} is running — changing the owner will interrupt this run.`,
@@ -312,10 +279,7 @@ export function describeOwnerChangeInterrupt(opts: { runningAgentName?: string |
 
 // --- Pause/hold "What this affects" buckets (PAP-10675, design surface 4) ------
 
-export type PauseAffectsBucketKey =
-  | "live_runs"
-  | "queued_runs"
-  | "inactive";
+export type PauseAffectsBucketKey = "live_runs" | "queued_runs" | "inactive";
 
 export interface PauseAffectsTaskLike {
   activeRun: { status: "queued" | "running" } | null;
@@ -355,9 +319,7 @@ const PAUSE_BUCKET_DETAIL: Record<PauseAffectsBucketKey, string> = {
  * pause dialog summarises. Each non-skipped task lands in exactly one bucket:
  * a live run, a queued run, or inactive work.
  */
-export function computePauseAffectsSummary(
-  tasks: readonly PauseAffectsTaskLike[],
-): PauseAffectsSummary {
+export function computePauseAffectsSummary(tasks: readonly PauseAffectsTaskLike[]): PauseAffectsSummary {
   const counts: Record<PauseAffectsBucketKey, number> = {
     live_runs: 0,
     queued_runs: 0,
@@ -373,11 +335,7 @@ export function computePauseAffectsSummary(
     else counts.inactive += 1;
   }
 
-  const order: PauseAffectsBucketKey[] = [
-    "live_runs",
-    "queued_runs",
-    "inactive",
-  ];
+  const order: PauseAffectsBucketKey[] = ["live_runs", "queued_runs", "inactive"];
 
   return {
     buckets: order.map((key) => ({

@@ -23,7 +23,8 @@ import {
 import {
   describeScope,
   SUBGROUP_LABELS,
-  type SubGroupKey,
+  type CompanySearchError,
+  type CompanySearchSubgroup,
 } from "@/routes/_authenticated/$companyId/search/-search-state";
 import type {
   Agent,
@@ -39,7 +40,7 @@ export interface SearchTabContentProps {
   isLoading: boolean;
   hasResults: boolean;
   hasError: boolean;
-  apiError: { message: string; status?: number } | null;
+  apiError: CompanySearchError | null;
   isEmpty: boolean;
   trimmedQuery: string;
   scope: CompanySearchScope;
@@ -49,7 +50,7 @@ export interface SearchTabContentProps {
   refetch: () => void;
   recentSearches: string[];
   onRecentClick: (query: string) => void;
-  subgroups: Array<{ key: SubGroupKey; results: CompanySearchResult[] }>;
+  subgroups: CompanySearchSubgroup[];
   totalResults: number;
   allMatchTotal: number;
   activeFilterCount: number;

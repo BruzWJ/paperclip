@@ -8,23 +8,15 @@ import type {
 } from "@paperclipai/plugin-sdk/ui";
 import { Component, createElement as h, type ReactNode } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import * as CardUI from "@/components/ui/card";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
-import * as TableUI from "@/components/ui/table";
-
-const STATUS_BADGE_VARIANT = {
-  ok: "default",
-  warning: "secondary",
-  error: "destructive",
-  info: "outline",
-  pending: "secondary",
-} as const;
+import { DataTable, DataTableColumnHeader, type ColumnDef } from "@/components/patterns/DataTable";
 
 export function PluginSdkStatusBadge({ label, status }: StatusBadgeProps) {
-  return h(Badge, { variant: STATUS_BADGE_VARIANT[status] }, label);
+  return h(DomainStatus, { status }, label);
 }
 
 function tableState(message: string, loading = false) {
@@ -40,54 +32,42 @@ function tableState(message: string, loading = false) {
   );
 }
 
-function renderTableColumn(column: DataTableProps["columns"][number], row?: Record<string, unknown>) {
-  const header = row === undefined;
-  return h(
-    header ? TableUI.TableHead : TableUI.TableCell,
-    {
-      key: column.key,
-      className: header ? "whitespace-normal" : "min-w-0 whitespace-normal",
-      scope: header ? "col" : undefined,
-      style: column.width ? { width: column.width } : undefined,
-    },
-    header
-      ? column.header
-      : column.render
-        ? column.render(row[column.key], row)
-        : String(row[column.key] ?? ""),
-  );
-}
-
 export function PluginSdkDataTable({ columns, rows, loading, emptyMessage = "No rows." }: DataTableProps) {
   if (loading) return tableState("Loading...", true);
   if (!rows.length) return tableState(emptyMessage);
+  const tableColumns: ColumnDef<Record<string, unknown>>[] = columns.map((definition) => ({
+    id: definition.key,
+    accessorFn: (row) => row[definition.key],
+    enableSorting: definition.sortable === true,
+    header: ({ column }) =>
+      definition.sortable
+        ? h(DataTableColumnHeader<Record<string, unknown>, unknown>, {
+            column,
+            title: definition.header,
+          })
+        : h("div", { style: definition.width ? { width: definition.width } : undefined }, definition.header),
+    cell: ({ row }) =>
+      h(
+        "div",
+        {
+          className: "min-w-0 whitespace-normal",
+          style: definition.width ? { width: definition.width } : undefined,
+        },
+        definition.render
+          ? definition.render(row.original[definition.key], row.original)
+          : String(row.original[definition.key] ?? ""),
+      ),
+  }));
   return h(
     CardUI.Card,
     { className: "gap-0 overflow-hidden py-0" },
-    h(
-      TableUI.Table,
-      { className: "table-fixed" },
-      h(
-        TableUI.TableHeader,
-        null,
-        h(
-          TableUI.TableRow,
-          null,
-          columns.map((column) => renderTableColumn(column)),
-        ),
-      ),
-      h(
-        TableUI.TableBody,
-        null,
-        rows.map((row, index) =>
-          h(
-            TableUI.TableRow,
-            { key: String(row.id ?? index) },
-            columns.map((column) => renderTableColumn(column, row)),
-          ),
-        ),
-      ),
-    ),
+    h(DataTable<Record<string, unknown>>, {
+      caption: "Plugin data",
+      className: "table-fixed",
+      columns: tableColumns,
+      data: rows,
+      getHeadClassName: () => "whitespace-normal",
+    }),
   );
 }
 

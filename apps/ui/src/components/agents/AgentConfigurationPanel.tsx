@@ -3,19 +3,9 @@ import { ApiError } from "@/api/client";
 import { AgentConfigForm } from "@/components/AgentConfigForm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { FieldDescription, FieldSet } from "@/components/ui/field";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
@@ -30,19 +20,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+interface AgentConfigurationPanelProps {
+  agent: AgentDetailRecord;
+  onDirtyChange: (dirty: boolean) => void;
+  onSaveActionChange: (save: (() => void) | null) => void;
+  onCancelActionChange: (cancel: (() => void) | null) => void;
+  onSavingChange: (saving: boolean) => void;
+}
+
 export function AgentConfigurePage({
   agent,
   onDirtyChange,
   onSaveActionChange,
   onCancelActionChange,
   onSavingChange,
-}: {
-  agent: AgentDetailRecord;
-  onDirtyChange: (dirty: boolean) => void;
-  onSaveActionChange: (save: (() => void) | null) => void;
-  onCancelActionChange: (cancel: (() => void) | null) => void;
-  onSavingChange: (saving: boolean) => void;
-}) {
+}: AgentConfigurationPanelProps) {
   const [revisionsOpen, setRevisionsOpen] = useState(false);
 
   const { data: adapterRevisions } = useQuery({
@@ -107,39 +99,22 @@ export function ConfigurationTab({
   onSaveActionChange,
   onCancelActionChange,
   onSavingChange,
-}: {
-  agent: AgentDetailRecord;
-  onDirtyChange: (dirty: boolean) => void;
-  onSaveActionChange: (save: (() => void) | null) => void;
-  onCancelActionChange: (cancel: (() => void) | null) => void;
-  onSavingChange: (saving: boolean) => void;
-}) {
+}: AgentConfigurationPanelProps) {
   const companyId = useCompanyRouteId();
   const queryClient = useQueryClient();
   const [formDirty, setFormDirty] = useState(false);
-  const [formSaveAction, setFormSaveAction] = useState<(() => void) | null>(
-    null,
-  );
-  const [formCancelAction, setFormCancelAction] = useState<(() => void) | null>(
-    null,
-  );
+  const [formSaveAction, setFormSaveAction] = useState<(() => void) | null>(null);
+  const [formCancelAction, setFormCancelAction] = useState<(() => void) | null>(null);
   // Stable callback identities: AgentConfigForm re-registers its save/cancel
   // actions whenever these props change, and storing them in state triggers a
   // re-render — fresh inline arrows here would cause an infinite update loop.
-  const handleFormSaveActionChange = useCallback(
-    (action: (() => void) | null) => {
-      setFormSaveAction(() => action);
-    },
-    [],
-  );
-  const handleFormCancelActionChange = useCallback(
-    (action: (() => void) | null) => {
-      setFormCancelAction(() => action);
-    },
-    [],
-  );
-  const [awaitingRefreshAfterSave, setAwaitingRefreshAfterSave] =
-    useState(false);
+  const handleFormSaveActionChange = useCallback((action: (() => void) | null) => {
+    setFormSaveAction(() => action);
+  }, []);
+  const handleFormCancelActionChange = useCallback((action: (() => void) | null) => {
+    setFormCancelAction(() => action);
+  }, []);
+  const [awaitingRefreshAfterSave, setAwaitingRefreshAfterSave] = useState(false);
   const lastAgentRef = useRef(agent);
   const updateConfiguration = useMutation({
     mutationFn: async (data: Record<string, unknown>) => {
@@ -160,10 +135,7 @@ export function ConfigurationTab({
         : null;
 
       if (Object.keys(runtimeAgentPatch).length > 0) {
-        const runtimeConfiguration = await agentsApi.updateRuntimeConfiguration(
-          agent.id,
-          runtimeAgentPatch,
-        );
+        const runtimeConfiguration = await agentsApi.updateRuntimeConfiguration(agent.id, runtimeAgentPatch);
         queryClient.setQueryData(
           queryKeys.agents.runtimeConfiguration(agent.id, companyId),
           runtimeConfiguration,
@@ -171,17 +143,11 @@ export function ConfigurationTab({
       }
 
       if (Object.keys(operationalPatch).length > 0) {
-        await agentsApi.updateOperationalConfiguration(
-          agent.id,
-          operationalPatch,
-        );
+        await agentsApi.updateOperationalConfiguration(agent.id, operationalPatch);
       }
 
       if (hasAdapterRevisionChange) {
-        await agentsApi.createAdapterConfigRevision(
-          agent.id,
-          adapterRevisionConfiguration!,
-        );
+        await agentsApi.createAdapterConfigRevision(agent.id, adapterRevisionConfiguration!);
       }
     },
     onMutate: () => {
@@ -202,11 +168,7 @@ export function ConfigurationTab({
     onError: (err) => {
       setAwaitingRefreshAfterSave(false);
       const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Could not save agent";
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not save agent";
       toast.error("Save failed", { description: message });
     },
   });
@@ -217,8 +179,7 @@ export function ConfigurationTab({
     }
     lastAgentRef.current = agent;
   }, [agent, awaitingRefreshAfterSave]);
-  const isConfigSaving =
-    updateConfiguration.isPending || awaitingRefreshAfterSave;
+  const isConfigSaving = updateConfiguration.isPending || awaitingRefreshAfterSave;
 
   useEffect(() => {
     onDirtyChange(formDirty);
@@ -274,8 +235,8 @@ export function ConfigurationTab({
         />
       </FieldSet>
       <FieldDescription>
-        Saved adapter config affects the next run. Active runs keep the config
-        they started with, and config changes may start a fresh adapter session.
+        Saved adapter config affects the next run. Active runs keep the config they started with, and config
+        changes may start a fresh adapter session.
       </FieldDescription>
     </div>
   );

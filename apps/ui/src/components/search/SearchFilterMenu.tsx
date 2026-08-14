@@ -4,14 +4,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/components/kibo-ui/combobox";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
@@ -111,29 +112,33 @@ export function SearchFilterMenu(props: SearchFilterMenuProps) {
       : undefined;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className={cn(
-            "h-8 gap-1 text-xs font-normal",
-            active && "border-primary/60 text-foreground",
-            triggerClassName,
-          )}
-          aria-label={`Filter by ${label}`}
-        >
-          <span className="truncate">{summarizeTrigger(label, selected, options)}</span>
-          {active ? (
-            <Badge className="ml-0.5 h-4 min-w-4 px-1 text-(length:--text-nano) tabular-nums">
-              {selected.length}
-            </Badge>
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align={align} className={cn("w-64 p-0", contentClassName)}>
+    <Combobox
+      data={options.map((option) => ({ label: option.label, value: option.value }))}
+      type={`${label.toLowerCase()} filter`}
+      value={selected[0] ?? ""}
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <ComboboxTrigger
+        variant="outline"
+        size="sm"
+        className={cn(
+          "h-8 gap-1 text-xs font-normal",
+          active && "border-primary/60 text-foreground",
+          triggerClassName,
+        )}
+        aria-label={`Filter by ${label}`}
+      >
+        <span className="truncate">{summarizeTrigger(label, selected, options)}</span>
+        {active ? (
+          <Badge className="ml-0.5 h-4 min-w-4 px-1 text-(length:--text-nano) tabular-nums">
+            {selected.length}
+          </Badge>
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+        )}
+      </ComboboxTrigger>
+      <ComboboxContent popoverOptions={{ align, className: cn("!w-64 p-0", contentClassName) }}>
         <div className="flex items-center justify-between px-3 py-2">
           <span className="text-xs font-medium text-muted-foreground">{label}</span>
           {props.multi && active ? (
@@ -166,57 +171,55 @@ export function SearchFilterMenu(props: SearchFilterMenuProps) {
           </ToggleGroup>
         ) : null}
 
-        <Command>
-          {searchable ? (
-            <CommandInput aria-label="Search filter options" placeholder={searchPlaceholder} />
-          ) : null}
-          <CommandList>
-            <CommandEmpty>{emptyMessage}</CommandEmpty>
-            <CommandGroup>
-              {options.map((option) => {
-                const isSelected = selected.includes(option.value);
-                return (
-                  <CommandItem
-                    key={option.value}
-                    value={option.value}
-                    keywords={[option.label, option.searchText ?? ""]}
-                    onSelect={() => handleOptionClick(option.value)}
-                  >
-                    {props.multi ? (
-                      <Checkbox
-                        checked={isSelected}
-                        tabIndex={-1}
-                        aria-hidden="true"
-                        className="pointer-events-none"
-                      />
-                    ) : (
-                      <span className="flex h-4 w-4 items-center justify-center">
-                        {isSelected ? <Check className="h-3.5 w-3.5 text-primary" /> : null}
-                      </span>
-                    )}
-                    {option.icon ? (
-                      <span className="flex h-4 w-4 items-center justify-center">{option.icon}</span>
-                    ) : null}
-                    {option.swatch ? (
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: option.swatch }}
-                        aria-hidden
-                      />
-                    ) : null}
-                    <span className="min-w-0 flex-1 truncate text-sm">{option.label}</span>
-                    {typeof option.count === "number" ? (
-                      <Badge variant="secondary" className="ml-auto tabular-nums">
-                        {option.count}
-                      </Badge>
-                    ) : null}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+        {searchable ? (
+          <ComboboxInput aria-label="Search filter options" placeholder={searchPlaceholder} />
+        ) : null}
+        <ComboboxList>
+          <ComboboxEmpty>{emptyMessage}</ComboboxEmpty>
+          <ComboboxGroup>
+            {options.map((option) => {
+              const isSelected = selected.includes(option.value);
+              return (
+                <ComboboxItem
+                  key={option.value}
+                  value={option.value}
+                  keywords={[option.label, option.searchText ?? ""]}
+                  onSelect={() => handleOptionClick(option.value)}
+                >
+                  {props.multi ? (
+                    <Checkbox
+                      checked={isSelected}
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      className="pointer-events-none"
+                    />
+                  ) : (
+                    <span className="flex h-4 w-4 items-center justify-center">
+                      {isSelected ? <Check className="h-3.5 w-3.5 text-primary" /> : null}
+                    </span>
+                  )}
+                  {option.icon ? (
+                    <span className="flex h-4 w-4 items-center justify-center">{option.icon}</span>
+                  ) : null}
+                  {option.swatch ? (
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: option.swatch }}
+                      aria-hidden
+                    />
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate text-sm">{option.label}</span>
+                  {typeof option.count === "number" ? (
+                    <Badge variant="secondary" className="ml-auto tabular-nums">
+                      {option.count}
+                    </Badge>
+                  ) : null}
+                </ComboboxItem>
+              );
+            })}
+          </ComboboxGroup>
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   );
 }

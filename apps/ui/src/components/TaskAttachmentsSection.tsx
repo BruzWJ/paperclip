@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TaskAttachment } from "@paperclipai/shared";
 import { Download, ExternalLink, FileText, Maximize2, Paperclip, Trash2 } from "lucide-react";
@@ -17,6 +17,7 @@ import {
   AttachmentTrigger,
 } from "@/components/ui/attachment";
 import { Card } from "@/components/ui/card";
+import { MediaVideoPlayer } from "./MediaVideoPlayer";
 import { FoldCurtain } from "./FoldCurtain";
 import { MarkdownBody } from "./MarkdownBody";
 import { formatBytes, getOutputFileGlyph } from "@/lib/task-output";
@@ -29,30 +30,24 @@ import {
   isVideoAttachment,
 } from "@/lib/task-attachments";
 import { queryKeys } from "@/lib/queryKeys";
-import { cn } from "@/lib/utils";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 
 interface TaskAttachmentsSectionProps {
   attachments: TaskAttachment[];
-  uploadButton?: ReactNode;
   error?: string | null;
-  dragActive?: boolean;
   deletePending?: boolean;
   onDelete?: (attachmentId: string) => void;
   onImageClick: (attachment: TaskAttachment) => void;
-  onDragEnter?: (evt: DragEvent<HTMLDivElement>) => void;
-  onDragOver?: (evt: DragEvent<HTMLDivElement>) => void;
-  onDragLeave?: (evt: DragEvent<HTMLDivElement>) => void;
-  onDrop?: (evt: DragEvent<HTMLDivElement>) => void;
+}
+
+interface AttachmentItemProps {
+  attachment: TaskAttachment;
+  onDelete?: (attachmentId: string) => void;
+  deletePending?: boolean;
+}
+
+interface PreviewableAttachmentItemProps extends AttachmentItemProps {
+  onPreview?: (attachment: TaskAttachment) => void;
 }
 
 async function fetchAttachmentText(attachment: TaskAttachment) {
@@ -70,12 +65,7 @@ function AttachmentActions({
   onDelete,
   deletePending,
   onPreview,
-}: {
-  attachment: TaskAttachment;
-  onDelete?: (attachmentId: string) => void;
-  deletePending?: boolean;
-  onPreview?: (attachment: TaskAttachment) => void;
-}) {
+}: PreviewableAttachmentItemProps) {
   const filename = attachmentFilename(attachment);
   return (
     <div className="flex shrink-0 items-center gap-1">
@@ -129,15 +119,7 @@ function AttachmentMeta({ attachment }: { attachment: TaskAttachment }) {
   );
 }
 
-function MarkdownAttachmentCard({
-  attachment,
-  onDelete,
-  deletePending,
-}: {
-  attachment: TaskAttachment;
-  onDelete?: (attachmentId: string) => void;
-  deletePending?: boolean;
-}) {
+function MarkdownAttachmentCard({ attachment, onDelete, deletePending }: AttachmentItemProps) {
   const filename = attachmentFilename(attachment);
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.tasks.attachmentPreview(attachment.id),
@@ -187,23 +169,16 @@ function VideoAttachmentCard({
   onDelete,
   deletePending,
   onPreview,
-}: {
-  attachment: TaskAttachment;
-  onDelete?: (attachmentId: string) => void;
-  deletePending?: boolean;
-  onPreview?: (attachment: TaskAttachment) => void;
-}) {
+}: PreviewableAttachmentItemProps) {
   const filename = attachmentFilename(attachment);
   return (
     <Card id={`attachment-${attachment.id}`} className="block scroll-mt-20 overflow-hidden py-0">
       <AspectRatio ratio={16 / 9} className="overflow-hidden bg-black">
-        <video
+        <MediaVideoPlayer
           src={attachment.contentPath}
-          controls
           preload="metadata"
           playsInline
           aria-label={`Video output: ${filename}`}
-          className="size-full"
         />
       </AspectRatio>
       <div className="flex flex-col gap-2 p-3 md:flex-row md:items-center md:justify-between">
@@ -222,15 +197,7 @@ function VideoAttachmentCard({
   );
 }
 
-function GenericAttachmentRow({
-  attachment,
-  onDelete,
-  deletePending,
-}: {
-  attachment: TaskAttachment;
-  onDelete?: (attachmentId: string) => void;
-  deletePending?: boolean;
-}) {
+function GenericAttachmentRow({ attachment, onDelete, deletePending }: AttachmentItemProps) {
   const filename = attachmentFilename(attachment);
   return (
     <AttachmentShell id={`attachment-${attachment.id}`} className="w-full flex-nowrap scroll-mt-20">
@@ -268,16 +235,10 @@ function GenericAttachmentRow({
 
 export function TaskAttachmentsSection({
   attachments,
-  uploadButton,
   error,
-  dragActive = false,
   deletePending = false,
   onDelete,
   onImageClick,
-  onDragEnter,
-  onDragOver,
-  onDragLeave,
-  onDrop,
 }: TaskAttachmentsSectionProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const { imageAttachments, markdownAttachments, videoAttachments, genericAttachments } = useMemo(() => {
@@ -309,20 +270,13 @@ export function TaskAttachmentsSection({
   };
 
   return (
-    <div
-      className={cn("space-y-3 rounded-lg transition-colors", dragActive && "bg-primary/5")}
-      onDragEnter={onDragEnter}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
+    <div className="space-y-3 rounded-lg">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Paperclip className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
           <h3 className="text-sm font-medium text-muted-foreground">Attachments</h3>
           <span className="text-xs text-muted-foreground">{attachments.length}</span>
         </div>
-        {uploadButton}
       </div>
 
       {error && <p className="text-xs text-destructive">{error}</p>}
@@ -405,24 +359,17 @@ export function TaskAttachmentsSection({
       )}
 
       {onDelete && confirmDeleteId ? (
-        <AlertDialog open onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete attachment?</AlertDialogTitle>
-              <AlertDialogDescription>This attachment will be permanently deleted.</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={deletePending}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                disabled={deletePending}
-                onClick={() => confirmDelete(confirmDeleteId)}
-              >
-                {deletePending ? "Deleting…" : "Delete"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmActionDialog
+          open
+          onOpenChange={(open) => !open && setConfirmDeleteId(null)}
+          title="Delete attachment?"
+          description="This attachment will be permanently deleted."
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          pending={deletePending}
+          variant="destructive"
+          onConfirm={() => confirmDelete(confirmDeleteId)}
+        />
       ) : null}
     </div>
   );

@@ -8,11 +8,12 @@ import {
 } from "@paperclipai/shared";
 import { AlertOctagon, ArrowUpRight, PauseCircle } from "lucide-react";
 import { formatMoneyAmount } from "../lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
 const ONE_AMOUNT = parseMoneyAmount("1");
@@ -61,7 +62,7 @@ export function BudgetIncidentCard({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <CardDescription>{incident.scopeType} hard stop</CardDescription>
-              <Badge variant={incident.status === "resolved" ? "outline" : "secondary"}>{stateLabel}</Badge>
+              <DomainStatus status={incident.approvalStatus ?? incident.status}>{stateLabel}</DomainStatus>
             </div>
             <CardTitle className="mt-1 text-base">{incident.scopeName}</CardTitle>
             <CardDescription className="mt-1">
@@ -82,8 +83,7 @@ export function BudgetIncidentCard({
           </AlertDescription>
         </Alert>
 
-        <Field>
-          <FieldLabel htmlFor={budgetInputId}>New budget ({incident.budgetCurrency})</FieldLabel>
+        <LabeledFormField label={`New budget (${incident.budgetCurrency})`} labelFor={budgetInputId}>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Input
               id={budgetInputId}
@@ -106,7 +106,7 @@ export function BudgetIncidentCard({
           {parsed !== null && !exceedsObserved ? (
             <FieldError>The new budget must exceed current observed spend.</FieldError>
           ) : null}
-        </Field>
+        </LabeledFormField>
 
         <div className="flex justify-end">
           <Button

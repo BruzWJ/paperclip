@@ -11,9 +11,8 @@ import {
   usePluginSlots,
 } from "@/plugins/slots";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { PluginRouteBoundary } from "@/components/patterns/PluginRouteBoundary";
 import { ArrowLeft } from "lucide-react";
 
 const BUILT_IN_COMPANY_ROUTES = new Set<string>(PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS);
@@ -84,64 +83,41 @@ function PluginPage() {
     ]);
   }, [pageSlot, pluginRouteSplat, routeCompanyId, setBreadcrumbs, routeSidebarActive]);
 
-  if (!resolvedCompanyId) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>Company not found</EmptyTitle>
-          <EmptyDescription>No company matches UUID &quot;{routeCompanyId}&quot;.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Spinner />
-        Loading…
-      </div>
-    );
-  }
-
-  if (errorMessage) {
-    return (
-      <Alert variant="destructive">
-        <AlertDescription>Plugin extensions unavailable: {errorMessage}</AlertDescription>
-      </Alert>
-    );
-  }
-
-  if (!pageSlot) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>Page not found</EmptyTitle>
-          <EmptyDescription>No plugin provides this page.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
-
   return (
-    <div className="space-y-4">
-      {!routeSidebarActive && (
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/$companyId/dashboard" params={{ companyId: routeCompanyId }}>
-              <ArrowLeft data-icon="inline-start" className="h-4 w-4 mr-1" />
-              Back
-            </Link>
-          </Button>
+    <PluginRouteBoundary
+      resolvedCompanyId={resolvedCompanyId}
+      requestedCompanyId={routeCompanyId}
+      loading={isLoading}
+      errorMessage={errorMessage}
+    >
+      {pageSlot ? (
+        <div className="space-y-4">
+          {!routeSidebarActive && (
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/$companyId/dashboard" params={{ companyId: routeCompanyId }}>
+                  <ArrowLeft data-icon="inline-start" className="h-4 w-4 mr-1" />
+                  Back
+                </Link>
+              </Button>
+            </div>
+          )}
+          <PluginSlotMount
+            slot={pageSlot}
+            context={context}
+            className="min-h-(--sz-200px)"
+            missingBehavior="placeholder"
+          />
         </div>
+      ) : (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>Page not found</EmptyTitle>
+            <EmptyDescription>No plugin provides this page.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
-      <PluginSlotMount
-        slot={pageSlot}
-        context={context}
-        className="min-h-(--sz-200px)"
-        missingBehavior="placeholder"
-      />
-    </div>
+    </PluginRouteBoundary>
   );
 }
 

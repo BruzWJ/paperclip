@@ -1,13 +1,10 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import type { RemoteSecretImportResult, RemoteSecretImportRowResult } from "@paperclipai/shared";
 import { useMemo } from "react";
-import { CheckCircle2, Link2, XCircle } from "lucide-react";
 
-import { type DraftSelection, middleTruncate } from "./VaultImportUtils";
-
-type Step = "select" | "review" | "result";
+import { type DraftSelection, middleTruncate, type VaultImportStep } from "./VaultImportUtils";
 
 interface ResultStepProps {
   result: RemoteSecretImportResult;
@@ -45,9 +42,9 @@ export function ResultStep({ result, draftList }: ResultStepProps) {
       <Alert data-testid="result-summary">
         <AlertTitle>{heading}</AlertTitle>
         <AlertDescription>
-          <Badge>{result.importedCount} created</Badge>
-          <Badge variant="secondary">{result.skippedCount} skipped</Badge>
-          <Badge variant="destructive">{result.errorCount} failed</Badge>
+          <DomainStatus status="imported">{result.importedCount} created</DomainStatus>
+          <DomainStatus status="skipped">{result.skippedCount} skipped</DomainStatus>
+          <DomainStatus status="failed">{result.errorCount} failed</DomainStatus>
         </AlertDescription>
       </Alert>
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -92,24 +89,9 @@ export function ResultGroup({
             >
               <ItemContent>
                 <ItemTitle>
-                  <Badge
-                    variant={
-                      row.status === "imported"
-                        ? "default"
-                        : row.status === "skipped"
-                          ? "secondary"
-                          : "destructive"
-                    }
-                  >
-                    {row.status === "imported" ? (
-                      <CheckCircle2 />
-                    ) : row.status === "skipped" ? (
-                      <Link2 />
-                    ) : (
-                      <XCircle />
-                    )}
+                  <DomainStatus status={row.status}>
                     {row.status === "imported" ? "Created" : row.status === "skipped" ? "Skipped" : "Failed"}
-                  </Badge>
+                  </DomainStatus>
                   {row.name}
                 </ItemTitle>
                 <ItemDescription>{row.key}</ItemDescription>
@@ -130,7 +112,7 @@ export function ResultGroup({
 }
 
 interface FooterStatusProps {
-  step: Step;
+  step: VaultImportStep;
   totalSelected: number;
   readyReviewCount: number;
   blockedReviewCount: number;
@@ -155,7 +137,7 @@ export function FooterStatus({
     return (
       <div className="text-xs text-muted-foreground">
         {readyReviewCount} ready
-        {blockedReviewCount > 0 && <Badge variant="destructive">{blockedReviewCount} blocked</Badge>}
+        {blockedReviewCount > 0 && <DomainStatus status="blocked">{blockedReviewCount} blocked</DomainStatus>}
       </div>
     );
   }

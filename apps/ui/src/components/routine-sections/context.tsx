@@ -13,6 +13,7 @@ import type { RoutineTriggerResponse, RotateRoutineTriggerResponse } from "../..
 import type { agentsApi } from "../../api/agents";
 import type { projectsApi } from "../../api/projects";
 import type { secretsApi } from "../../api/secrets";
+import type { NameValuePair } from "@/lib/presentation-contracts";
 
 export const ROUTINE_SECTION_KEYS = [
   "overview",
@@ -26,6 +27,11 @@ export const ROUTINE_SECTION_KEYS = [
 ] as const;
 
 export type RoutineSectionKey = (typeof ROUTINE_SECTION_KEYS)[number];
+
+export interface RoutineTriggerPatch {
+  id: string;
+  patch: Record<string, unknown>;
+}
 
 /** Editable sections own a save bar; read-only (operate) sections do not. */
 export const EDITABLE_SECTIONS: RoutineSectionKey[] = [
@@ -115,7 +121,7 @@ export type RoutineDetailContextValue = {
   newTrigger: NewTriggerDraft;
   setNewTrigger: React.Dispatch<React.SetStateAction<NewTriggerDraft>>;
   createTrigger: UseMutationResult<RoutineTriggerResponse, unknown, void, unknown>;
-  updateTrigger: UseMutationResult<unknown, unknown, { id: string; patch: Record<string, unknown> }, unknown>;
+  updateTrigger: UseMutationResult<unknown, unknown, RoutineTriggerPatch, unknown>;
   deleteTrigger: UseMutationResult<unknown, unknown, string, unknown>;
   rotateTrigger: UseMutationResult<RotateRoutineTriggerResponse, unknown, string, unknown>;
 
@@ -124,7 +130,7 @@ export type RoutineDetailContextValue = {
   setSecretMessage: (message: SecretMessage | null) => void;
   copySecretValue: (label: string, value: string) => void;
   availableSecrets: SecretList;
-  createSecret: UseMutationResult<CompanySecret, unknown, { name: string; value: string }, unknown>;
+  createSecret: UseMutationResult<CompanySecret, unknown, NameValuePair, unknown>;
 
   // entities
   agents: AgentList;

@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Item, ItemActions, ItemContent, ItemFooter, ItemGroup } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, DataTableColumnHeader, type ColumnDef } from "@/components/patterns/DataTable";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
   CompanySecret,
@@ -23,9 +24,10 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
+import { useMemo } from "react";
+import { relativeTime as formatRelative } from "@/lib/utils";
 import { CoverageInline } from "./-UserSecretDetails";
 import {
-  formatRelative,
   formatSecretPathCounts,
   modeLabel,
   providerLabel,
@@ -34,10 +36,9 @@ import {
 } from "./-secrets-model";
 import {
   SecretsBreadcrumb,
-  SecretsFolderCard,
-  SecretsFolderTableRow,
+  SecretsFolderItem,
   SecretsRowActions,
-  SecretsUpRow,
+  SecretsUpItem,
 } from "./-SecretsListRenderers";
 import { useSecretsPage } from "./-SecretsPageContext";
 
@@ -78,6 +79,93 @@ export function SecretsBrowser() {
     unifiedRows,
     userDefinitionsQuery,
   } = useSecretsPage();
+  const columns = useMemo<ColumnDef<UnifiedSecretRow>[]>(
+    () => [
+      {
+        id: "secret",
+        accessorFn: (row) => (row.kind === "company" ? row.secret.name : row.definition.name),
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Secret" />,
+        cell: ({ row }) => {
+          const name =
+            row.original.kind === "company" ? row.original.secret.name : row.original.definition.name;
+          return (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => openSecretRow(row.original)}
+              aria-label={`Open secret ${name}`}
+            >
+              <SecretIdentity row={row.original} />
+            </Button>
+          );
+        },
+      },
+      {
+        id: "status",
+        accessorFn: (row) => (row.kind === "company" ? row.secret.status : row.definition.status),
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        cell: ({ row }) => {
+          const status =
+            row.original.kind === "company" ? row.original.secret.status : row.original.definition.status;
+          return <DomainStatus status={status}>{statusLabel(status)}</DomainStatus>;
+        },
+      },
+      {
+        id: "versionCoverage",
+        accessorFn: (row) => (row.kind === "company" ? row.secret.latestVersion : 0),
+        enableSorting: false,
+        header: "Version / coverage",
+        cell: ({ row }) =>
+          row.original.kind === "company" ? (
+            <span className="truncate text-muted-foreground">
+              <span className="font-mono text-foreground">v{row.original.secret.latestVersion}</span>
+              <span>
+                {" "}
+                · {row.original.secret.managedMode === "external_reference" ? "linked" : "managed"}
+              </span>
+            </span>
+          ) : (
+            <CoverageInline companyId={companyId} definitionId={row.original.definition.id} compact />
+          ),
+      },
+      {
+        id: "updated",
+        accessorFn: (row) => (row.kind === "company" ? row.secret.updatedAt : row.definition.updatedAt),
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Updated" />,
+        cell: ({ row }) => {
+          const updatedAt =
+            row.original.kind === "company"
+              ? row.original.secret.updatedAt
+              : row.original.definition.updatedAt;
+          const updatedTooltip =
+            row.original.kind === "company"
+              ? [
+                  `Updated: ${formatRelative(row.original.secret.updatedAt)}`,
+                  `Last rotated: ${formatRelative(row.original.secret.lastRotatedAt)}`,
+                  `Last resolved: ${formatRelative(row.original.secret.lastResolvedAt)}`,
+                ].join("\n")
+              : `Updated: ${formatRelative(row.original.definition.updatedAt)}\nLast resolved: user values resolve per member`;
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span aria-label={updatedTooltip} className="cursor-help">
+                  {formatRelative(updatedAt)}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-72 whitespace-pre-wrap">{updatedTooltip}</TooltipContent>
+            </Tooltip>
+          );
+        },
+      },
+      {
+        id: "actions",
+        enableSorting: false,
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => <SecretsRowActions row={row.original} />,
+      },
+    ],
+    [companyId, openSecretRow],
+  );
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       {secretsQuery.isError || userDefinitionsQuery.isError ? (
@@ -167,102 +255,33 @@ export function SecretsBrowser() {
           ) : (
             <>
               <div className="hidden @min-[40rem]:block" data-testid="secrets-table-view">
-                <Table aria-label="Secrets">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Secret</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Version / coverage</TableHead>
-                      <TableHead>Updated</TableHead>
-                      <TableHead>
-                        <span className="sr-only">Actions</span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {showUpRow ? <SecretsUpRow variant="table" /> : null}
+                {showUpRow || folderRows.length > 0 ? (
+                  <ItemGroup className="mb-3">
+                    {showUpRow ? <SecretsUpItem /> : null}
                     {folderRows.map((folder) => (
-                      <SecretsFolderTableRow key={folder.path} folder={folder} />
+                      <SecretsFolderItem key={folder.path} folder={folder} />
                     ))}
-                    {secretRows.map((row) => {
-                      const status = row.kind === "company" ? row.secret.status : row.definition.status;
-                      const name = row.kind === "company" ? row.secret.name : row.definition.name;
-                      const updatedAt =
-                        row.kind === "company" ? row.secret.updatedAt : row.definition.updatedAt;
-                      const updatedTooltip =
-                        row.kind === "company"
-                          ? [
-                              `Updated: ${formatRelative(row.secret.updatedAt)}`,
-                              `Last rotated: ${formatRelative(row.secret.lastRotatedAt)}`,
-                              `Last resolved: ${formatRelative(row.secret.lastResolvedAt)}`,
-                            ].join("\n")
-                          : `Updated: ${formatRelative(row.definition.updatedAt)}\nLast resolved: user values resolve per member`;
-                      return (
-                        <TableRow
-                          key={row.id}
-                          data-state={
-                            (row.kind === "company" && selectedSecretId === row.secret.id) ||
-                            (row.kind === "user" && selectedDefinitionId === row.definition.id)
-                              ? "selected"
-                              : undefined
-                          }
-                        >
-                          <TableCell>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() => openSecretRow(row)}
-                              aria-label={`Open secret ${name}`}
-                            >
-                              <SecretIdentity row={row} />
-                            </Button>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{statusLabel(status)}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            {row.kind === "company" ? (
-                              <span className="truncate text-muted-foreground">
-                                <span className="font-mono text-foreground">v{row.secret.latestVersion}</span>
-                                <span>
-                                  {" "}
-                                  · {row.secret.managedMode === "external_reference" ? "linked" : "managed"}
-                                </span>
-                              </span>
-                            ) : (
-                              <CoverageInline
-                                companyId={companyId}
-                                definitionId={row.definition.id}
-                                compact
-                              />
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span aria-label={updatedTooltip} className="cursor-help">
-                                  {formatRelative(updatedAt)}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent className="max-w-72 whitespace-pre-wrap">
-                                {updatedTooltip}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TableCell>
-                          <TableCell>
-                            <SecretsRowActions row={row} />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                  </ItemGroup>
+                ) : null}
+                {secretRows.length > 0 ? (
+                  <DataTable
+                    caption="Secrets"
+                    columns={columns}
+                    data={secretRows}
+                    rowClassName={(row) =>
+                      (row.kind === "company" && selectedSecretId === row.secret.id) ||
+                      (row.kind === "user" && selectedDefinitionId === row.definition.id)
+                        ? "bg-muted/50"
+                        : undefined
+                    }
+                  />
+                ) : null}
               </div>
 
               <ItemGroup className="@min-[40rem]:hidden" data-testid="secrets-card-view">
-                {showUpRow ? <SecretsUpRow variant="card" /> : null}
+                {showUpRow ? <SecretsUpItem /> : null}
                 {folderRows.map((folder) => (
-                  <SecretsFolderCard key={folder.path} folder={folder} />
+                  <SecretsFolderItem key={folder.path} folder={folder} />
                 ))}
                 {secretRows.map((row) => {
                   const status = row.kind === "company" ? row.secret.status : row.definition.status;
@@ -290,14 +309,14 @@ export function SecretsBrowser() {
                         <ItemFooter>
                           {row.kind === "company" ? (
                             <>
-                              <Badge variant="outline">{statusLabel(status)}</Badge>
+                              <DomainStatus status={status}>{statusLabel(status)}</DomainStatus>
                             </>
                           ) : (
                             <>
                               <Badge variant="secondary">
                                 <UserRound /> Each user
                               </Badge>
-                              <Badge variant="outline">{statusLabel(status)}</Badge>
+                              <DomainStatus status={status}>{statusLabel(status)}</DomainStatus>
                               <CoverageInline
                                 companyId={companyId}
                                 definitionId={row.definition.id}

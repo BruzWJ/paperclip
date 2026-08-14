@@ -1,7 +1,7 @@
 import type { Task } from "@paperclipai/shared";
 import { ChevronRight } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { InboxTaskMetaLeading, InboxTaskTrailingColumns, taskActivityText } from "@/components/TaskColumns";
 import { TaskRow } from "@/components/TaskRow";
@@ -79,12 +79,12 @@ export function InboxTaskItem({
     blockerAttention?.state === "covered"
   );
   const statusIcon = (
-    <Badge
-      variant="secondary"
+    <DomainStatus
+      status={task.boardPresentationStatus}
       aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, blockerAttention)}
     >
       {taskValueLabel(task.boardPresentationStatus)}
-    </Badge>
+    </DomainStatus>
   );
 
   return (

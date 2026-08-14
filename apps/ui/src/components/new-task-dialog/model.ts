@@ -4,18 +4,36 @@ import { AlertTriangle, ArrowDown, ArrowUp, Minus } from "lucide-react";
 const DRAFT_KEY = "paperclip:task-request-draft:v2";
 
 export const DEBOUNCE_MS = 800;
-export const MOBILE_DIALOG_HEIGHT = "calc(100dvh - max(1rem, env(safe-area-inset-top)) - max(1rem, env(safe-area-inset-bottom)))";
-export const STAGED_FILE_ACCEPT = "image/*,application/pdf,text/plain,text/markdown,application/json,text/csv,text/html,.md,.markdown";
+export const MOBILE_DIALOG_HEIGHT =
+  "calc(100dvh - max(1rem, env(safe-area-inset-top)) - max(1rem, env(safe-area-inset-bottom)))";
+export const STAGED_FILE_ACCEPT = {
+  "image/*": [],
+  "application/pdf": [".pdf"],
+  "text/plain": [".txt"],
+  "text/markdown": [".md", ".markdown"],
+  "application/json": [".json"],
+  "text/csv": [".csv"],
+  "text/html": [".html", ".htm"],
+};
 
 export interface TaskDraft {
-  title: string; request: string; status: string; priority: string;
-  ownerAgentId: string; reviewerValue: string; approverValue: string;
-  projectId: string; workMode?: TaskWorkMode;
+  title: string;
+  request: string;
+  status: string;
+  priority: string;
+  ownerAgentId: string;
+  reviewerValue: string;
+  approverValue: string;
+  projectId: string;
+  workMode?: TaskWorkMode;
 }
 
 export type StagedTaskFile = {
-  id: string; file: File; kind: "document" | "attachment";
-  documentKey?: string; title?: string | null;
+  id: string;
+  file: File;
+  kind: "document" | "attachment";
+  documentKey?: string;
+  title?: string | null;
 };
 
 export function loadDraft(): TaskDraft | null {
@@ -27,24 +45,44 @@ export function loadDraft(): TaskDraft | null {
   }
 }
 
-export function saveDraft(draft: TaskDraft) { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); }
-export function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
+export function saveDraft(draft: TaskDraft) {
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+}
+export function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY);
+}
 
 export function isTextDocumentFile(file: File) {
   const name = file.name.toLowerCase();
-  return name.endsWith(".md") || name.endsWith(".markdown") ||
-    name.endsWith(".txt") || file.type === "text/markdown" || file.type === "text/plain";
+  return (
+    name.endsWith(".md") ||
+    name.endsWith(".markdown") ||
+    name.endsWith(".txt") ||
+    file.type === "text/markdown" ||
+    file.type === "text/plain"
+  );
 }
 
-export function fileBaseName(filename: string) { return filename.replace(/\.[^.]+$/, ""); }
+export function fileBaseName(filename: string) {
+  return filename.replace(/\.[^.]+$/, "");
+}
 
 export function slugifyDocumentKey(input: string) {
-  return input.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "document";
+  return (
+    input
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "document"
+  );
 }
 
 export function titleizeFilename(input: string) {
-  return input.split(/[-_ ]+/g).filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  return input
+    .split(/[-_ ]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 export function createUniqueDocumentKey(baseKey: string, stagedFiles: StagedTaskFile[]) {
@@ -78,7 +116,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function isRequiredUserSecretBinding(value: unknown): value is Extract<EnvBinding, { type: "user_secret_ref" }> {
+function isRequiredUserSecretBinding(
+  value: unknown,
+): value is Extract<EnvBinding, { type: "user_secret_ref" }> {
   return (
     isRecord(value) &&
     value.type === "user_secret_ref" &&
@@ -89,14 +129,18 @@ function isRequiredUserSecretBinding(value: unknown): value is Extract<EnvBindin
   );
 }
 
-function collectRequiredUserSecretKeysFromEnv(env: AgentEnvConfig | Record<string, unknown> | null | undefined): string[] {
+function collectRequiredUserSecretKeysFromEnv(
+  env: AgentEnvConfig | Record<string, unknown> | null | undefined,
+): string[] {
   if (!isRecord(env)) return [];
   return Object.values(env).flatMap((binding) =>
     isRequiredUserSecretBinding(binding) ? [binding.key.trim()] : [],
   );
 }
 
-export function uniqueRequiredUserSecretKeys(inputs: Array<AgentEnvConfig | Record<string, unknown> | null | undefined>): string[] {
+export function uniqueRequiredUserSecretKeys(
+  inputs: Array<AgentEnvConfig | Record<string, unknown> | null | undefined>,
+): string[] {
   return [...new Set(inputs.flatMap(collectRequiredUserSecretKeysFromEnv))];
 }
 
@@ -115,7 +159,9 @@ export const priorities = [
   { value: "low", label: "Low", icon: ArrowDown },
 ];
 
-export function isWorkModePeriodShortcut(event: Pick<React.KeyboardEvent, "code" | "ctrlKey" | "key" | "metaKey">) {
+export function isWorkModePeriodShortcut(
+  event: Pick<React.KeyboardEvent, "code" | "ctrlKey" | "key" | "metaKey">,
+) {
   return (event.metaKey || event.ctrlKey) && (event.code === "Period" || event.key === ".");
 }
 

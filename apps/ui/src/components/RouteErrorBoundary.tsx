@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { useLocation, useRouter } from "@tanstack/react-router";
+import { CodeBlockPanel } from "@/components/patterns/CodeBlockPanel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -56,7 +57,12 @@ class RouteErrorBoundaryInner extends Component<RouteErrorBoundaryInnerProps, Ro
             <Alert variant="destructive">
               <AlertTitle>Render error</AlertTitle>
               <AlertDescription>
-                <pre className="overflow-auto whitespace-pre-wrap text-xs">{error.message}</pre>
+                <CodeBlockPanel
+                  bodyClassName="max-h-64"
+                  code={error.message}
+                  filename="render-error.txt"
+                  syntaxHighlighting={false}
+                />
               </AlertDescription>
             </Alert>
             <div className="flex items-center gap-2">

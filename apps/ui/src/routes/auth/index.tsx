@@ -3,17 +3,17 @@ import { assertOnlySearchKeys, optionalCanonicalInternalPathSearch } from "../-s
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
-import { authApi } from "@/api/auth";
+import { authApi, type AuthMode } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { getRememberedInviteToken } from "@/lib/invite-memory";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { useTheme } from "@/context/ThemeContext";
-import { Moon, Sun } from "lucide-react";
+import { ThemeSelector } from "@/components/patterns/ThemeSelector";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 
 export function validateAuthSearch(search: Record<string, unknown>): {
   next?: string;
@@ -27,10 +27,7 @@ export const Route = createFileRoute("/auth/")({
   component: AuthPage,
 });
 
-type AuthMode = "sign_in" | "sign_up";
-
 function AuthPage() {
-  const { theme, toggleTheme } = useTheme();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { next } = getRouteApi("/auth/").useSearch();
@@ -112,16 +109,7 @@ function AuthPage() {
   return (
     <main className="fixed inset-0 flex items-center justify-center overflow-y-auto bg-muted/30 p-6">
       <div className="absolute top-4 right-4 z-10">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={toggleTheme}
-          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          aria-keyshortcuts="Meta+Shift+D Control+Shift+D"
-        >
-          {theme === "dark" ? <Sun /> : <Moon />}
-        </Button>
+        <ThemeSelector />
       </div>
       <Card className="w-full max-w-md">
         <CardHeader>
@@ -152,8 +140,7 @@ function AuthPage() {
           >
             <FieldGroup className="gap-4">
               {mode === "sign_up" && (
-                <Field data-invalid={error ? true : undefined}>
-                  <FieldLabel htmlFor="name">Name</FieldLabel>
+                <LabeledFormField data-invalid={error ? true : undefined} label="Name" labelFor="name">
                   <Input
                     id="name"
                     name="name"
@@ -166,10 +153,9 @@ function AuthPage() {
                     aria-describedby={error ? errorId : undefined}
                     autoFocus
                   />
-                </Field>
+                </LabeledFormField>
               )}
-              <Field data-invalid={error ? true : undefined}>
-                <FieldLabel htmlFor="email">Email</FieldLabel>
+              <LabeledFormField data-invalid={error ? true : undefined} label="Email" labelFor="email">
                 <Input
                   id="email"
                   name="email"
@@ -183,9 +169,8 @@ function AuthPage() {
                   aria-describedby={error ? errorId : undefined}
                   autoFocus={mode === "sign_in"}
                 />
-              </Field>
-              <Field data-invalid={error ? true : undefined}>
-                <FieldLabel htmlFor="password">Password</FieldLabel>
+              </LabeledFormField>
+              <LabeledFormField data-invalid={error ? true : undefined} label="Password" labelFor="password">
                 <Input
                   id="password"
                   name="password"
@@ -198,7 +183,7 @@ function AuthPage() {
                   aria-invalid={error ? true : undefined}
                   aria-describedby={error ? errorId : undefined}
                 />
-              </Field>
+              </LabeledFormField>
             </FieldGroup>
             {error && (
               <Alert id={errorId} variant="destructive" className="mt-4">

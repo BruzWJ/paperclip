@@ -1,18 +1,7 @@
 import type { TaskAttachment } from "@paperclipai/shared";
-import {
-  useId,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type Dispatch,
-  type DragEvent,
-  type SetStateAction,
-} from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 
-import {
-  hasFilePayload,
-  type ComposerAttachmentItem,
-} from "./TaskChatMessageUtils";
+import { type ComposerAttachmentItem } from "./TaskChatMessageUtils";
 
 export interface TaskChatAttachmentsOptions {
   onImageUpload?: (file: File) => Promise<string>;
@@ -20,20 +9,14 @@ export interface TaskChatAttachmentsOptions {
   setBody: Dispatch<SetStateAction<string>>;
 }
 
-/** Owns the upload queue and drag-and-drop state used by the task composer. */
+/** Owns the upload queue used by the Kibo Dropzone in the task composer. */
 export function useTaskChatAttachments({
   onImageUpload,
   onAttachImage,
   setBody,
 }: TaskChatAttachmentsOptions) {
   const [attaching, setAttaching] = useState(false);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [composerAttachments, setComposerAttachments] = useState<
-    ComposerAttachmentItem[]
-  >([]);
-  const dragDepthRef = useRef(0);
-  const attachInputRef = useRef<HTMLInputElement | null>(null);
-  const attachInputId = useId();
+  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachmentItem[]>([]);
   const canAcceptFiles = Boolean(onImageUpload || onAttachImage);
 
   async function attachFile(file: File) {
@@ -58,9 +41,7 @@ export function useTaskChatAttachments({
         setBody((prev) => (prev ? `${prev}\n\n${markdown}` : markdown));
         setComposerAttachments((prev) =>
           prev.map((item) =>
-            item.id === attachmentId
-              ? { ...item, status: "attached", contentPath: url }
-              : item,
+            item.id === attachmentId ? { ...item, status: "attached", contentPath: url } : item,
           ),
         );
       } else if (onAttachImage) {
@@ -105,19 +86,7 @@ export function useTaskChatAttachments({
     }
   }
 
-  async function handleAttachFile(evt: ChangeEvent<HTMLInputElement>) {
-    const file = evt.target.files?.[0];
-    if (!file) return;
-    setAttaching(true);
-    try {
-      await attachFile(file);
-    } finally {
-      setAttaching(false);
-      if (attachInputRef.current) attachInputRef.current.value = "";
-    }
-  }
-
-  async function handleDroppedFiles(files: FileList | null | undefined) {
+  async function handleDroppedFiles(files: File[] | FileList | null | undefined) {
     if (!files || files.length === 0) return;
     setAttaching(true);
     try {
@@ -129,60 +98,11 @@ export function useTaskChatAttachments({
     }
   }
 
-  function resetDragState() {
-    dragDepthRef.current = 0;
-    setIsDragOver(false);
-  }
-
-  function handleFileDragEnter(evt: DragEvent<HTMLDivElement>) {
-    if (!canAcceptFiles || !hasFilePayload(evt)) return;
-    evt.preventDefault();
-    evt.stopPropagation();
-    dragDepthRef.current += 1;
-    setIsDragOver(true);
-  }
-
-  function handleFileDragOver(evt: DragEvent<HTMLDivElement>) {
-    if (!canAcceptFiles || !hasFilePayload(evt)) return;
-    evt.preventDefault();
-    evt.stopPropagation();
-    evt.dataTransfer.dropEffect = "copy";
-  }
-
-  function handleFileDragLeave(evt: DragEvent<HTMLDivElement>) {
-    if (!canAcceptFiles || !hasFilePayload(evt)) return;
-    evt.preventDefault();
-    evt.stopPropagation();
-    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-    if (dragDepthRef.current === 0) setIsDragOver(false);
-  }
-
-  function handleFileDrop(evt: DragEvent<HTMLDivElement>) {
-    if (!canAcceptFiles || !hasFilePayload(evt)) return;
-    evt.preventDefault();
-    evt.stopPropagation();
-    resetDragState();
-    void handleDroppedFiles(evt.dataTransfer?.files);
-  }
-
   return {
     attaching,
-    setAttaching,
-    isDragOver,
-    setIsDragOver,
     composerAttachments,
     setComposerAttachments,
-    dragDepthRef,
-    attachInputRef,
-    attachInputId,
     canAcceptFiles,
-    attachFile,
-    handleAttachFile,
     handleDroppedFiles,
-    resetDragState,
-    handleFileDragEnter,
-    handleFileDragOver,
-    handleFileDragLeave,
-    handleFileDrop,
   };
 }

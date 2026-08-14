@@ -1,9 +1,9 @@
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { EntityCombobox } from "@/components/patterns/EntityCombobox";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
@@ -21,10 +21,9 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { autoResizeTextarea } from "@/lib/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   catchUpPolicies,
   catchUpPolicyDescriptions,
@@ -32,9 +31,7 @@ import {
   concurrencyPolicyDescriptions,
 } from "@/routes/_authenticated/$companyId/routines/-routines-list-data";
 import type { RoutinesController } from "@/routes/_authenticated/$companyId/routines/-useRoutinesController";
-import { Check, ChevronsUpDown, ChevronDown, ChevronRight, Plus } from "lucide-react";
-import { ENTITY_NONE_VALUE, entityOptionMatchesSearch, useEntitySelectorState } from "@/lib/entity-selector";
-import { cn } from "@/lib/utils";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 
 interface RoutineComposerDialogProps {
   controller: RoutinesController;
@@ -82,32 +79,6 @@ function ReadyRoutineComposerDialog({
   const Title = controller.isMobile ? DrawerTitle : DialogTitle;
   const Description = controller.isMobile ? DrawerDescription : DialogDescription;
   const Footer = controller.isMobile ? DrawerFooter : DialogFooter;
-  const assigneeSelector = useEntitySelectorState({
-    value: draft.assigneeAgentId,
-    options: assigneeOptions,
-    noneLabel: "No responsible",
-    recentOptionIds: recentAssigneeIds,
-    onChange: (assigneeAgentId) => {
-      if (assigneeAgentId) trackRecentAssignee(assigneeAgentId);
-      setDraft((current) => ({ ...current, assigneeAgentId }));
-    },
-    onConfirm: () => {
-      if (draft.projectId) descriptionEditorRef.current?.focus();
-      else projectSelectorRef.current?.focus();
-    },
-  });
-  const projectSelector = useEntitySelectorState({
-    value: draft.projectId,
-    options: projectOptions,
-    noneLabel: "No project",
-    recentOptionIds: recentProjectIds,
-    onChange: (projectId) => {
-      if (projectId) trackRecentProject(projectId);
-      setDraft((current) => ({ ...current, projectId }));
-    },
-    onConfirm: () => descriptionEditorRef.current?.focus(),
-  });
-
   return (
     <>
       <Root
@@ -172,170 +143,104 @@ function ReadyRoutineComposerDialog({
               <div className="overflow-x-auto overscroll-x-contain">
                 <div className="inline-flex min-w-full flex-wrap items-center gap-2 text-sm text-muted-foreground sm:min-w-max sm:flex-nowrap">
                   <span>For</span>
-                  <Popover open={assigneeSelector.open} onOpenChange={assigneeSelector.setOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        ref={assigneeSelectorRef}
-                        type="button"
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={assigneeSelector.open}
-                        aria-label="Responsible"
-                        className="w-full justify-between overflow-hidden"
-                        onPointerDown={() => {
-                          assigneeSelector.pointerFocusRef.current = true;
-                        }}
-                        onFocus={() => {
-                          if (assigneeSelector.pointerFocusRef.current) {
-                            assigneeSelector.pointerFocusRef.current = false;
-                          } else assigneeSelector.setOpen(true);
-                        }}
-                      >
-                        <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-left">
-                          {currentAssignee ? (
-                            <AgentIcon icon={currentAssignee.icon} className="size-3.5" />
-                          ) : null}
-                          {assigneeSelector.currentOption?.label ?? "Responsible"}
-                        </span>
-                        <ChevronsUpDown className="size-4 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-72 p-0">
-                      <Command
-                        filter={(optionValue, search) =>
-                          entityOptionMatchesSearch(
-                            assigneeSelector.orderedOptions.find(
-                              (option) => (option.id || ENTITY_NONE_VALUE) === optionValue,
-                            ),
-                            search,
-                          )
-                        }
-                      >
-                        <CommandInput autoFocus placeholder="Search responsible..." />
-                        <CommandList>
-                          <CommandEmpty>No responsible found.</CommandEmpty>
-                          {assigneeSelector.orderedOptions.map((option) => {
-                            const assignee = agentById.get(option.id);
-                            return (
-                              <CommandItem
-                                key={option.id || ENTITY_NONE_VALUE}
-                                value={option.id || ENTITY_NONE_VALUE}
-                                onSelect={() => assigneeSelector.select(option)}
-                              >
-                                {assignee ? <AgentIcon icon={assignee.icon} className="size-3.5" /> : null}
-                                <span className="truncate">{option.label}</span>
-                                <Check
-                                  className={cn(
-                                    "ml-auto size-4",
-                                    option.id === draft.assigneeAgentId ? "opacity-100" : "opacity-0",
-                                  )}
-                                />
-                              </CommandItem>
-                            );
-                          })}
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <EntityCombobox
+                    ref={assigneeSelectorRef}
+                    value={draft.assigneeAgentId}
+                    options={assigneeOptions}
+                    type="responsible"
+                    ariaLabel="Responsible"
+                    placeholder="Responsible"
+                    noneLabel="No responsible"
+                    recentOptionIds={recentAssigneeIds}
+                    onValueChange={(assigneeAgentId) => {
+                      if (assigneeAgentId) trackRecentAssignee(assigneeAgentId);
+                      setDraft((current) => ({ ...current, assigneeAgentId }));
+                    }}
+                    onConfirm={() => {
+                      if (draft.projectId) descriptionEditorRef.current?.focus();
+                      else projectSelectorRef.current?.focus();
+                    }}
+                    searchPlaceholder="Search responsible..."
+                    emptyMessage="No responsible found."
+                    renderValue={(option) => (
+                      <>
+                        {currentAssignee ? (
+                          <AgentIcon icon={currentAssignee.icon} className="size-3.5" />
+                        ) : null}
+                        {option?.label ?? "Responsible"}
+                      </>
+                    )}
+                    renderOption={(option) => {
+                      const assignee = agentById.get(option.id);
+                      return (
+                        <>
+                          {assignee ? <AgentIcon icon={assignee.icon} className="size-3.5" /> : null}
+                          <span className="truncate">{option.label}</span>
+                        </>
+                      );
+                    }}
+                  />
                   <span>in</span>
-                  <Popover open={projectSelector.open} onOpenChange={projectSelector.setOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        ref={projectSelectorRef}
-                        type="button"
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={projectSelector.open}
-                        aria-label="Project"
-                        className="w-full justify-between overflow-hidden"
-                        onPointerDown={() => {
-                          projectSelector.pointerFocusRef.current = true;
-                        }}
-                        onFocus={() => {
-                          if (projectSelector.pointerFocusRef.current)
-                            projectSelector.pointerFocusRef.current = false;
-                          else projectSelector.setOpen(true);
-                        }}
-                      >
-                        <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-left">
-                          {currentProject ? (
+                  <EntityCombobox
+                    ref={projectSelectorRef}
+                    value={draft.projectId}
+                    options={projectOptions}
+                    type="project"
+                    ariaLabel="Project"
+                    placeholder="Project"
+                    noneLabel="No project"
+                    recentOptionIds={recentProjectIds}
+                    onValueChange={(projectId) => {
+                      if (projectId) trackRecentProject(projectId);
+                      setDraft((current) => ({ ...current, projectId }));
+                    }}
+                    onConfirm={() => descriptionEditorRef.current?.focus()}
+                    searchPlaceholder="Search projects..."
+                    emptyMessage="No projects found."
+                    renderValue={(option) => (
+                      <>
+                        {currentProject ? (
+                          <span
+                            className="size-3.5 shrink-0 rounded-sm"
+                            style={{ backgroundColor: currentProject.color ?? "var(--project-none)" }}
+                          />
+                        ) : null}
+                        {option?.label ?? "Project"}
+                      </>
+                    )}
+                    renderOption={(option) => {
+                      const project = projectById.get(option.id);
+                      return (
+                        <>
+                          {option.id ? (
                             <span
                               className="size-3.5 shrink-0 rounded-sm"
-                              style={{ backgroundColor: currentProject.color ?? "var(--project-none)" }}
+                              style={{ backgroundColor: project?.color ?? "var(--project-none)" }}
                             />
                           ) : null}
-                          {projectSelector.currentOption?.label ?? "Project"}
-                        </span>
-                        <ChevronsUpDown className="size-4 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-72 p-0">
-                      <Command
-                        filter={(optionValue, search) =>
-                          entityOptionMatchesSearch(
-                            projectSelector.orderedOptions.find(
-                              (option) => (option.id || ENTITY_NONE_VALUE) === optionValue,
-                            ),
-                            search,
-                          )
-                        }
-                      >
-                        <CommandInput autoFocus placeholder="Search projects..." />
-                        <CommandList>
-                          <CommandEmpty>No projects found.</CommandEmpty>
-                          {projectSelector.orderedOptions.map((option) => {
-                            const project = projectById.get(option.id);
-                            return (
-                              <CommandItem
-                                key={option.id || ENTITY_NONE_VALUE}
-                                value={option.id || ENTITY_NONE_VALUE}
-                                onSelect={() => projectSelector.select(option)}
-                              >
-                                {option.id ? (
-                                  <span
-                                    className="size-3.5 shrink-0 rounded-sm"
-                                    style={{ backgroundColor: project?.color ?? "var(--project-none)" }}
-                                  />
-                                ) : null}
-                                <span className="truncate">{option.label}</span>
-                                <Check
-                                  className={cn(
-                                    "ml-auto size-4",
-                                    option.id === draft.projectId ? "opacity-100" : "opacity-0",
-                                  )}
-                                />
-                              </CommandItem>
-                            );
-                          })}
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                          <span className="truncate">{option.label}</span>
+                        </>
+                      );
+                    }}
+                  />
                   <span>filed in</span>
-                  <Select
-                    value={draft.folderId ?? "__unfiled"}
-                    onValueChange={(value) =>
-                      setDraft((current) => ({
-                        ...current,
-                        folderId: value === "__unfiled" ? null : value,
-                      }))
+                  <EntityCombobox
+                    value={draft.folderId ?? ""}
+                    options={(routineFolders?.folders ?? []).map((folder) => ({
+                      id: folder.id,
+                      label: folder.name,
+                    }))}
+                    onValueChange={(folderId) =>
+                      setDraft((current) => ({ ...current, folderId: folderId || null }))
                     }
-                  >
-                    <SelectTrigger
-                      aria-label="Routine folder"
-                      className="h-8 w-auto min-w-32 border-0 bg-muted/50 px-2 shadow-none"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__unfiled">Unfiled</SelectItem>
-                      {(routineFolders?.folders ?? []).map((folder) => (
-                        <SelectItem key={folder.id} value={folder.id}>
-                          {folder.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    type="folder"
+                    ariaLabel="Routine folder"
+                    placeholder="Unfiled"
+                    noneLabel="Unfiled"
+                    searchPlaceholder="Search folders..."
+                    emptyMessage="No folders found."
+                    triggerClassName="h-8 w-auto min-w-32 border-0 bg-muted/50 px-2 shadow-none"
+                  />
                 </div>
               </div>
             </div>
@@ -379,8 +284,10 @@ function ReadyRoutineComposerDialog({
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-3">
                   <div className="grid gap-4 md:grid-cols-2">
-                    <Field>
-                      <FieldLabel>Concurrency</FieldLabel>
+                    <LabeledFormField
+                      label="Concurrency"
+                      description={concurrencyPolicyDescriptions[draft.concurrencyPolicy]}
+                    >
                       <Select
                         value={draft.concurrencyPolicy}
                         onValueChange={(concurrencyPolicy) =>
@@ -401,12 +308,11 @@ function ReadyRoutineComposerDialog({
                           ))}
                         </SelectContent>
                       </Select>
-                      <FieldDescription>
-                        {concurrencyPolicyDescriptions[draft.concurrencyPolicy]}
-                      </FieldDescription>
-                    </Field>
-                    <Field>
-                      <FieldLabel>Catch-up</FieldLabel>
+                    </LabeledFormField>
+                    <LabeledFormField
+                      label="Catch-up"
+                      description={catchUpPolicyDescriptions[draft.catchUpPolicy]}
+                    >
                       <Select
                         value={draft.catchUpPolicy}
                         onValueChange={(catchUpPolicy) =>
@@ -424,8 +330,7 @@ function ReadyRoutineComposerDialog({
                           ))}
                         </SelectContent>
                       </Select>
-                      <FieldDescription>{catchUpPolicyDescriptions[draft.catchUpPolicy]}</FieldDescription>
-                    </Field>
+                    </LabeledFormField>
                   </div>
                 </CollapsibleContent>
               </Collapsible>

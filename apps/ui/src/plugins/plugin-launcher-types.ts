@@ -9,12 +9,19 @@ import type {
 import type { PluginMountContext, PluginRenderCloseHandler } from "./bridge";
 import type { RegisteredPluginComponent } from "./plugin-component-registry";
 
-export type ResolvedPluginLauncher = PluginLauncherDeclaration & {
+export interface ResolvedPluginIdentity {
   pluginId: string;
   pluginUpdatedAt: string;
   pluginKey: string;
   pluginDisplayName: string;
-};
+}
+
+export interface PluginOperationResult {
+  type: "success" | "error";
+  text: string;
+}
+
+export type ResolvedPluginLauncher = PluginLauncherDeclaration & ResolvedPluginIdentity;
 
 export type UsePluginLaunchersFilters = {
   placementZones: PluginLauncherPlacementZone[];

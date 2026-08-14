@@ -11,28 +11,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Field, FieldGroup, FieldLabel, FieldSet } from "@/components/ui/field";
+import { FieldGroup, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Spinner } from "@/components/ui/spinner";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RoutineSigningFields } from "@/components/RoutineSigningFields";
 import { getScheduleCronValidation, ScheduleEditor } from "./ScheduleEditor";
 import { buildRoutineTriggerPatch } from "../lib/routine-trigger-patch";
 import { describeCron } from "../lib/cron-readable";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-
-const signingModes = ["bearer", "hmac_sha256", "github_hmac", "none"];
-const SIGNING_MODES_WITHOUT_REPLAY_WINDOW = new Set(["github_hmac", "none"]);
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 
 function getLocalTimezone(): string {
   try {
@@ -110,9 +98,9 @@ export function RoutineTriggerCard({
             </CardDescription>
             <CardAction className="flex items-center gap-2">
               {trigger.lastResult ? (
-                <Badge variant={lastResultOk ? "secondary" : "destructive"}>
+                <DomainStatus status={lastResultOk ? "succeeded" : "failed"}>
                   {String(trigger.lastResult)}
-                </Badge>
+                </DomainStatus>
               ) : null}
               <span className="text-sm text-muted-foreground">
                 {trigger.kind === "schedule" && trigger.nextRunAt
@@ -126,8 +114,7 @@ export function RoutineTriggerCard({
 
           <CardContent>
             <FieldGroup className="grid gap-3 md:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor={`routine-trigger-${trigger.id}-label`}>Label</FieldLabel>
+              <LabeledFormField label="Label" labelFor={`routine-trigger-${trigger.id}-label`}>
                 <Input
                   id={`routine-trigger-${trigger.id}-label`}
                   value={draft.label}
@@ -138,87 +125,46 @@ export function RoutineTriggerCard({
                     }))
                   }
                 />
-              </Field>
+              </LabeledFormField>
               {trigger.kind === "schedule" && (
-                <Field className="md:col-span-2">
-                  <FieldLabel>Schedule</FieldLabel>
+                <LabeledFormField className="md:col-span-2" label="Schedule">
                   <ScheduleEditor
                     value={draft.cronExpression}
                     onChange={(cronExpression) => setDraft((current) => ({ ...current, cronExpression }))}
                     onValidityChange={setScheduleIsValid}
                   />
-                </Field>
+                </LabeledFormField>
               )}
               {trigger.kind === "webhook" && (
-                <>
-                  <Field>
-                    <FieldLabel>Signing mode</FieldLabel>
-                    <Select
-                      value={draft.signingMode}
-                      onValueChange={(signingMode) => setDraft((current) => ({ ...current, signingMode }))}
-                    >
-                      <SelectTrigger aria-label="Signing mode">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {signingModes.map((mode) => (
-                          <SelectItem key={mode} value={mode}>
-                            {mode}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  {!SIGNING_MODES_WITHOUT_REPLAY_WINDOW.has(draft.signingMode) && (
-                    <Field>
-                      <FieldLabel htmlFor={`routine-trigger-${trigger.id}-replay-window`}>
-                        Replay window (seconds)
-                      </FieldLabel>
-                      <Input
-                        id={`routine-trigger-${trigger.id}-replay-window`}
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={draft.replayWindowSec}
-                        onChange={(event) =>
-                          setDraft((current) => ({
-                            ...current,
-                            replayWindowSec: event.target.value,
-                          }))
-                        }
-                      />
-                    </Field>
-                  )}
-                </>
+                <RoutineSigningFields
+                  idPrefix={`routine-trigger-${trigger.id}`}
+                  signingMode={draft.signingMode}
+                  replayWindowSec={draft.replayWindowSec}
+                  onSigningModeChange={(signingMode) => setDraft((current) => ({ ...current, signingMode }))}
+                  onReplayWindowChange={(replayWindowSec) =>
+                    setDraft((current) => ({ ...current, replayWindowSec }))
+                  }
+                />
               )}
             </FieldGroup>
           </CardContent>
 
           <CardFooter className="gap-2">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
+            <ConfirmActionDialog
+              triggerAsChild
+              trigger={
                 <Button type="button" variant="ghost" size="sm" className="mr-auto">
                   <Trash2 data-icon="inline-start" />
                   Delete
                 </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete trigger?</AlertDialogTitle>
-                  <AlertDialogDescription>This removes the trigger from the routine.</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    variant="destructive"
-                    disabled={isPending}
-                    onClick={() => onDelete(trigger.id)}
-                  >
-                    Delete trigger
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+              }
+              title="Delete trigger?"
+              description="This removes the trigger from the routine."
+              confirmLabel="Delete trigger"
+              variant="destructive"
+              pending={isPending}
+              onConfirm={() => onDelete(trigger.id)}
+            />
             {trigger.kind === "webhook" && (
               <Button
                 type="button"

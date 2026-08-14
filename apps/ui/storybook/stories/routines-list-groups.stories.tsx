@@ -4,16 +4,16 @@ import { ChevronRight } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   RoutineListRow,
-  type RoutineListAgentSummary,
   type RoutineListProjectSummary,
   type RoutineListRowItem,
 } from "@/components/RoutineList";
+import type { NamedAgentSummary } from "@/lib/presentation-contracts";
 
 const projectById = new Map<string, RoutineListProjectSummary>([
   ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", { name: "Board UI", color: "#6366f1" }],
   ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6", { name: "Growth", color: "#10b981" }],
 ]);
-const agentById = new Map<string, RoutineListAgentSummary>([
+const agentById = new Map<string, NamedAgentSummary>([
   ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", { name: "CodexCoder", icon: null }],
   ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7", { name: "Digest Bot", icon: null }],
 ]);
@@ -25,17 +25,52 @@ const GROUPS: Group[] = [
     key: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
     label: "Board UI",
     items: [
-      { id: "ffffffff-ffff-4fff-8fff-fffffffffff6", title: "Weekly digest", status: "active", projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7", lastRun: { triggeredAt: "2026-06-09T08:00:00Z", status: "succeeded" } },
-      { id: "ffffffff-ffff-4fff-8fff-fffffffffff7", title: "Triage stale tasks", status: "active", projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", lastRun: { triggeredAt: "2026-06-08T08:00:00Z", status: "succeeded" } },
-      { id: "ffffffff-ffff-4fff-8fff-fffffffffff8", title: "Nightly changelog draft", status: "paused", projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", lastRun: null },
+      {
+        id: "ffffffff-ffff-4fff-8fff-fffffffffff6",
+        title: "Weekly digest",
+        status: "active",
+        projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+        assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7",
+        lastRun: { triggeredAt: "2026-06-09T08:00:00Z", status: "succeeded" },
+      },
+      {
+        id: "ffffffff-ffff-4fff-8fff-fffffffffff7",
+        title: "Triage stale tasks",
+        status: "active",
+        projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+        assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+        lastRun: { triggeredAt: "2026-06-08T08:00:00Z", status: "succeeded" },
+      },
+      {
+        id: "ffffffff-ffff-4fff-8fff-fffffffffff8",
+        title: "Nightly changelog draft",
+        status: "paused",
+        projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+        assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+        lastRun: null,
+      },
     ],
   },
   {
     key: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
     label: "Growth",
     items: [
-      { id: "ffffffff-ffff-4fff-8fff-fffffffffff9", title: "Lead enrichment sweep", status: "active", projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6", assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", lastRun: { triggeredAt: "2026-06-09T06:00:00Z", status: "running" } },
-      { id: "ffffffff-ffff-4fff-8fff-fffffffffff0", title: "Outbound follow-ups", status: "active", projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6", assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7", lastRun: { triggeredAt: "2026-06-07T06:00:00Z", status: "failed" } },
+      {
+        id: "ffffffff-ffff-4fff-8fff-fffffffffff9",
+        title: "Lead enrichment sweep",
+        status: "active",
+        projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+        assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+        lastRun: { triggeredAt: "2026-06-09T06:00:00Z", status: "running" },
+      },
+      {
+        id: "ffffffff-ffff-4fff-8fff-fffffffffff0",
+        title: "Outbound follow-ups",
+        status: "active",
+        projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+        assigneeAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7",
+        lastRun: { triggeredAt: "2026-06-07T06:00:00Z", status: "failed" },
+      },
     ],
   },
 ];
@@ -56,7 +91,9 @@ function GroupedList() {
               }
             >
               {group.label ? (
-                <div className={`flex items-center gap-2 rounded-lg border border-border px-3 py-2${isOpen ? " mb-1" : ""}`}>
+                <div
+                  className={`flex items-center gap-2 rounded-lg border border-border px-3 py-2${isOpen ? " mb-1" : ""}`}
+                >
                   <CollapsibleTrigger className="flex items-center gap-1.5">
                     <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
                     <span className="text-sm font-semibold uppercase tracking-wide">{group.label}</span>

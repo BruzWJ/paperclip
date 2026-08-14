@@ -5,7 +5,7 @@ import { ArrowRight, ClipboardList } from "lucide-react";
 import { useContext, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { formatOwnerUserLabel } from "../../lib/task-owners";
-import { type TaskTimelineOwner } from "../../lib/task-timeline-events";
+import type { TaskTimelineOwnerChange, TaskTimelineStatusChange } from "../../lib/task-timeline-events";
 import { timeAgo } from "../../lib/timeAgo";
 import { cn } from "../../lib/utils";
 import { AgentIcon } from "../AgentIconPicker";
@@ -53,36 +53,23 @@ export function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
   const companyId = useCompanyRouteId();
   const { agentMap, currentUserId, userLabelMap } = useContext(TaskChatCtx);
   const custom = message.metadata.custom as Record<string, unknown>;
-  const anchorId =
-    typeof custom.anchorId === "string" ? custom.anchorId : undefined;
+  const anchorId = typeof custom.anchorId === "string" ? custom.anchorId : undefined;
   const runId = typeof custom.runId === "string" ? custom.runId : null;
-  const runAgentId =
-    typeof custom.runAgentId === "string" ? custom.runAgentId : null;
+  const runAgentId = typeof custom.runAgentId === "string" ? custom.runAgentId : null;
   const runAgent = runAgentId ? (agentMap?.get(runAgentId) ?? null) : null;
   const runAgentRef = runAgent?.id ?? null;
-  const runAgentName =
-    typeof custom.runAgentName === "string" ? custom.runAgentName : null;
-  const runStatus =
-    typeof custom.runStatus === "string" ? custom.runStatus : null;
-  const actorName =
-    typeof custom.actorName === "string" ? custom.actorName : null;
-  const actorType =
-    typeof custom.actorType === "string" ? custom.actorType : null;
+  const runAgentName = typeof custom.runAgentName === "string" ? custom.runAgentName : null;
+  const runStatus = typeof custom.runStatus === "string" ? custom.runStatus : null;
+  const actorName = typeof custom.actorName === "string" ? custom.actorName : null;
+  const actorType = typeof custom.actorType === "string" ? custom.actorType : null;
   const actorId = typeof custom.actorId === "string" ? custom.actorId : null;
   const lifecycleStatusChange =
-    typeof custom.lifecycleStatusChange === "object" &&
-    custom.lifecycleStatusChange
-      ? (custom.lifecycleStatusChange as {
-          from: string | null;
-          to: string | null;
-        })
+    typeof custom.lifecycleStatusChange === "object" && custom.lifecycleStatusChange
+      ? (custom.lifecycleStatusChange as TaskTimelineStatusChange)
       : null;
   const ownerChange =
     typeof custom.ownerChange === "object" && custom.ownerChange
-      ? (custom.ownerChange as {
-          from: TaskTimelineOwner;
-          to: TaskTimelineOwner;
-        })
+      ? (custom.ownerChange as TaskTimelineOwnerChange)
       : null;
   if (custom.kind === "system_notice") {
     return <SystemNoticeCommentRow message={message} anchorId={anchorId} />;
@@ -90,10 +77,8 @@ export function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
 
   if (custom.kind === "event" && actorName) {
     const isAgent = actorType === "agent";
-    const agentIcon =
-      isAgent && actorId ? agentMap?.get(actorId)?.icon : undefined;
-    const isCurrentUser =
-      actorType === "user" && !!currentUserId && actorId === currentUserId;
+    const agentIcon = isAgent && actorId ? agentMap?.get(actorId)?.icon : undefined;
+    const isCurrentUser = actorType === "user" && !!currentUserId && actorId === currentUserId;
     const rowIcon = agentIcon ? (
       <AgentIcon icon={agentIcon} className="h-3 w-3" />
     ) : (
@@ -102,8 +87,7 @@ export function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
     const ownerResolvers: OwnerChipResolvers = {
       agentMap,
       currentUserId,
-      resolveUserLabel: (userId) =>
-        formatOwnerUserLabel(userId, null, userLabelMap),
+      resolveUserLabel: (userId) => formatOwnerUserLabel(userId, null, userLabelMap),
     };
 
     return (
@@ -111,9 +95,7 @@ export function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs">
           <span className="font-medium text-foreground">{actorName}</span>
           <span className="text-muted-foreground">
-            {custom.followUpRequested === true
-              ? "requested follow-up"
-              : "updated this task"}
+            {custom.followUpRequested === true ? "requested follow-up" : "updated this task"}
           </span>
           <a
             href={anchorId ? `#${anchorId}` : undefined}
@@ -128,23 +110,16 @@ export function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
             <span className="text-(length:--text-nano) font-medium uppercase tracking-wider text-muted-foreground/70">
               Lifecycle
             </span>
-            <span className="text-muted-foreground">
-              {humanizeValue(lifecycleStatusChange.from)}
-            </span>
+            <span className="text-muted-foreground">{humanizeValue(lifecycleStatusChange.from)}</span>
             <ArrowRight className="h-3 w-3 text-muted-foreground/70" />
-            <span className="font-medium text-foreground">
-              {humanizeValue(lifecycleStatusChange.to)}
-            </span>
+            <span className="font-medium text-foreground">{humanizeValue(lifecycleStatusChange.to)}</span>
           </div>
         ) : null}
 
         {ownerChange ? (
           <div className="space-y-1">
             <div
-              className={cn(
-                "flex flex-wrap items-center gap-1.5 text-xs",
-                isCurrentUser && "justify-end",
-              )}
+              className={cn("flex flex-wrap items-center gap-1.5 text-xs", isCurrentUser && "justify-end")}
             >
               <span className="text-(length:--text-nano) font-medium uppercase tracking-wider text-muted-foreground/70">
                 Owner
@@ -167,16 +142,9 @@ export function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
   }
 
   const displayedRunAgentName =
-    runAgentName ??
-    (runAgent ? runAgent.name : runAgentId ? runAgentId.slice(0, 8) : null);
+    runAgentName ?? (runAgent ? runAgent.name : runAgentId ? runAgentId.slice(0, 8) : null);
   const runAgentIcon = runAgent?.icon;
-  if (
-    custom.kind === "run" &&
-    runId &&
-    runAgentId &&
-    displayedRunAgentName &&
-    runStatus
-  ) {
+  if (custom.kind === "run" && runId && runAgentId && displayedRunAgentName && runStatus) {
     const rowIcon = runAgentIcon ? (
       <AgentIcon icon={runAgentIcon} className="h-3 w-3" />
     ) : (
@@ -195,9 +163,7 @@ export function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
               {displayedRunAgentName}
             </Link>
           ) : (
-            <span className="font-medium text-foreground">
-              {displayedRunAgentName}
-            </span>
+            <span className="font-medium text-foreground">{displayedRunAgentName}</span>
           )}
           <span className="text-muted-foreground">run</span>
           {runAgentRef ? (
@@ -214,10 +180,7 @@ export function TaskChatSystemMessage({ message }: { message: ThreadMessage }) {
               {runId.slice(0, 8)}
             </Badge>
           )}
-          <RunStatusBadge
-            status={runStatus}
-            operatorInterrupted={custom.runOperatorInterrupted === true}
-          />
+          <RunStatusBadge status={runStatus} operatorInterrupted={custom.runOperatorInterrupted === true} />
           <a
             href={anchorId ? `#${anchorId}` : undefined}
             className="text-xs text-muted-foreground/70 transition-colors hover:text-foreground hover:underline"

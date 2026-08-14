@@ -167,23 +167,29 @@ describe("KanbanBoard", () => {
     expect(container.textContent).not.toContain("Task 1");
   });
 
-  it("uses the shared card and badge primitives for every column", () => {
+  it("renders the Kibo Kanban shell for every expanded lane", () => {
     const { container } = renderBoard({ tasks: [] });
-    expect(container.querySelectorAll('[data-slot="card-header"]')).toHaveLength(7);
+    expect(container.querySelectorAll('[data-slot="kanban-header"]')).toHaveLength(7);
+    expect(container.querySelectorAll('[data-slot="kanban-cards"]')).toHaveLength(7);
+    expect(container.querySelectorAll('[data-slot="scroll-area"]')).toHaveLength(7);
     expect(container.querySelectorAll('[data-slot="badge"]')).toHaveLength(14);
   });
 
-  it("uses the standard card shell for cancelled tasks", () => {
+  it("renders task links in read-only Kibo cards without dead sortable controls", () => {
     const { container } = renderBoard({
       tasks: createTasks(1, "cancelled"),
     });
 
-    const card = container
-      .querySelector('a[href="/11111111-1111-4111-8111-111111111111/tasks/1"]')
-      ?.closest('[data-slot="card"]');
+    const taskLink = container.querySelector('a[href="/11111111-1111-4111-8111-111111111111/tasks/1"]');
+    const card = taskLink?.closest('[data-slot="card"]');
 
     expect(card).not.toBeNull();
-    expect(card?.querySelector('[data-slot="card-content"]')).not.toBeNull();
+    expect(card?.firstElementChild).toBe(taskLink);
+    expect(card?.querySelector('[data-slot="card-content"]')).toBeNull();
+    expect(card?.classList.contains("cursor-grab")).toBe(false);
+    expect(card?.classList.contains("cursor-default")).toBe(true);
+    expect(taskLink?.closest('[role="button"]')).toBeNull();
+    expect(taskLink?.closest('[aria-roledescription="sortable"]')).toBeNull();
   });
 
   it("keeps core task signals in compact cards", () => {

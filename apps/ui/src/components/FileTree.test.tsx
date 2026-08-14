@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileTree, buildFileTree, toggleFileTreeCheckedFiles } from "./FileTree";
@@ -205,5 +205,76 @@ describe("FileTree", () => {
       docsRow?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     });
     expect(onToggleCheck).toHaveBeenCalledWith("docs", "dir");
+  });
+
+  it("keeps focus stable while expanding and uses roving tree keyboard navigation", () => {
+    const nodes = buildFileTree({
+      "README.md": "",
+      "docs/a.md": "",
+      "docs/b.md": "",
+    });
+
+    function ControlledFileTree() {
+      const [expandedDirs, setExpandedDirs] = useState(new Set<string>());
+      return (
+        <FileTree
+          nodes={nodes}
+          selectedFile={null}
+          expandedDirs={expandedDirs}
+          onSelectFile={() => {}}
+          onToggleDir={(path) => {
+            setExpandedDirs((current) => {
+              const next = new Set(current);
+              if (next.has(path)) next.delete(path);
+              else next.add(path);
+              return next;
+            });
+          }}
+        />
+      );
+    }
+
+    act(() => {
+      root.render(<ControlledFileTree />);
+    });
+
+    const docsRow = row("docs");
+    act(() => {
+      docsRow?.focus();
+      docsRow?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+
+    expect(row("docs")).toBe(docsRow);
+    expect(document.activeElement).toBe(docsRow);
+    expect(docsRow?.tabIndex).toBe(0);
+    expect(row("docs/a.md")?.tabIndex).toBe(-1);
+
+    act(() => {
+      docsRow?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    expect(document.activeElement).toBe(row("docs/a.md"));
+
+    act(() => {
+      row("docs/a.md")?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    expect(document.activeElement).toBe(row("docs/b.md"));
+
+    act(() => {
+      row("docs/b.md")?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    });
+    expect(document.activeElement).toBe(row("docs/a.md"));
+
+    act(() => {
+      row("docs/a.md")?.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+    });
+    expect(document.activeElement).toBe(row("docs/b.md"));
+
+    act(() => {
+      row("docs/b.md")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+    });
+    expect(document.activeElement).toBe(row("README.md"));
+    expect(row("README.md")?.tabIndex).toBe(0);
+    expect(row("docs")?.tabIndex).toBe(-1);
+    expect(container.querySelectorAll('[role="treeitem"][tabindex="0"]')).toHaveLength(1);
   });
 });

@@ -1,11 +1,11 @@
 import { Spinner } from "@/components/ui/spinner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { useCallback, useMemo } from "react";
 import { Link, useMatches } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useQuery } from "@tanstack/react-query";
-import { DollarSign, LogOut, MoreHorizontal, Star } from "lucide-react";
+import { LogOut, MoreHorizontal, Star } from "lucide-react";
 import { useSidebar } from "../context/SidebarContext";
 import { projectsApi } from "../api/projects";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
@@ -138,13 +138,9 @@ export function SidebarStarredProjects() {
                 </Avatar>
                 <span className="flex-1 truncate">{project.name}</span>
                 {!rail && project.pauseReason === "budget" ? (
-                  <Badge
-                    variant="destructive"
-                    title="Project paused by budget"
-                    aria-label="Project paused by budget"
-                  >
-                    <DollarSign aria-hidden="true" />
-                  </Badge>
+                  <DomainStatus status="hard_stop" title="Project paused by budget">
+                    <span className="sr-only">Project paused by budget</span>
+                  </DomainStatus>
                 ) : null}
               </Link>
             </SidebarMenuButton>

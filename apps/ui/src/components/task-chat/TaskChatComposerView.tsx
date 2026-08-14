@@ -1,7 +1,7 @@
 import { Spinner } from "@/components/ui/spinner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { FieldLabel } from "@/components/ui/field";
+import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
 import {
   Attachment,
   AttachmentContent,
@@ -13,14 +13,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item";
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { AlertTriangle, Check, ChevronsUpDown, Paperclip, Reply as ReplyIcon, X } from "lucide-react";
+import { EntityCombobox } from "@/components/patterns/EntityCombobox";
+import { AlertTriangle, Check, Reply as ReplyIcon, X } from "lucide-react";
 import { forwardRef } from "react";
 import { cn } from "../../lib/utils";
 import { AgentIcon } from "../AgentIconPicker";
 import { MarkdownEditor } from "../MarkdownEditor";
-import { ENTITY_NONE_VALUE, entityOptionMatchesSearch, useEntitySelectorState } from "@/lib/entity-selector";
 import { ComposerMentionCoach, ComposerOwnerPreviewRow } from "../owner-transition/OwnerTransitionViews";
 
 import {
@@ -35,7 +33,6 @@ import { useTaskChatComposerController } from "./useTaskChatComposerController";
 export function TaskChatComposerView(props: ReturnType<typeof useTaskChatComposerController>) {
   const {
     onImageUpload,
-    onAttachImage,
     enableOwnerChange,
     ownerOptions,
     mentions,
@@ -48,24 +45,17 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
     setBody,
     isSubmitting,
     attaching,
-    isDragOver,
     composerAttachments,
     ownerTarget,
     setOwnerTarget,
     setDismissedCoachToken,
     resolvedTaskWorkMode,
-    attachInputRef,
-    attachInputId,
     ownerTriggerRef,
     editorRef,
     composerContainerRef,
     canAcceptFiles,
     handleSubmit,
-    handleAttachFile,
-    handleFileDragEnter,
-    handleFileDragOver,
-    handleFileDragLeave,
-    handleFileDrop,
+    handleDroppedFiles,
     ownerResolvers,
     plainNameCandidate,
     ownerPreview,
@@ -73,13 +63,6 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
     coachAgentName,
     insertCoachMention,
   } = props;
-  const ownerSelector = useEntitySelectorState({
-    value: ownerTarget,
-    options: ownerOptions,
-    noneLabel: "Choose owner",
-    includeNone: false,
-    onChange: setOwnerTarget,
-  });
   if (composerDisabledReason) {
     return (
       <Alert>
@@ -92,34 +75,8 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
       ref={composerContainerRef}
       data-testid="task-chat-composer"
       data-pending-work-mode={resolvedTaskWorkMode}
-      className={cn(
-        "relative gap-0 rounded-md border-border/70 bg-background/95 p-(--sz-15px) shadow-(--shadow-extract-4) backdrop-blur transition-(--tp-border-color-background-color-box-shadow) duration-150 supports-[backdrop-filter]:bg-background/85 dark:shadow-(--shadow-extract-5)",
-        isDragOver && "border-primary/45 bg-background shadow-(--shadow-extract-7)",
-      )}
-      onDragEnterCapture={handleFileDragEnter}
-      onDragOverCapture={handleFileDragOver}
-      onDragLeaveCapture={handleFileDragLeave}
-      onDropCapture={handleFileDrop}
+      className="relative gap-0 rounded-md border-border/70 bg-background/95 p-(--sz-15px) shadow-(--shadow-extract-4) backdrop-blur transition-(--tp-border-color-background-color-box-shadow) duration-150 supports-[backdrop-filter]:bg-background/85 dark:shadow-(--shadow-extract-5)"
     >
-      {isDragOver && canAcceptFiles ? (
-        <div
-          data-testid="task-chat-composer-drop-overlay"
-          className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-sm border border-dashed border-primary/55 bg-background/75 px-4 py-3 text-center shadow-sm backdrop-blur-(--blur-2px) dark:bg-background/65"
-        >
-          <div className="flex max-w-md items-center gap-3 rounded-md bg-background/80 px-3 py-2 text-left shadow-sm ring-1 ring-border/60">
-            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <Paperclip className="h-4 w-4" />
-            </span>
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-foreground">Drop to upload</div>
-              <div className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                Images insert into the reply. Other files are added to this task.
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {replyTarget ? (
         <Item
           data-testid="task-chat-reply-target"
@@ -230,6 +187,16 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
         </AttachmentGroup>
       ) : null}
 
+      {canAcceptFiles ? (
+        <AccessibleDropzone
+          ariaLabel="Attach files to this comment"
+          maxFiles={20}
+          disabled={attaching}
+          className="my-2"
+          onDrop={(files) => void handleDroppedFiles(files)}
+        />
+      ) : null}
+
       {shouldRenderComposerOwnerPreview(body, ownerPreview) ? (
         <div className="my-2">
           <ComposerOwnerPreviewRow preview={ownerPreview} resolvers={ownerResolvers} />
@@ -237,112 +204,44 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
       ) : null}
 
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <div className="mr-auto flex items-center gap-2">
-          {onImageUpload || onAttachImage ? (
-            <>
-              <FieldLabel className="sr-only" htmlFor={attachInputId}>
-                Attach file
-              </FieldLabel>
-              <input
-                id={attachInputId}
-                ref={attachInputRef}
-                type="file"
-                className="hidden"
-                onChange={handleAttachFile}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => attachInputRef.current?.click()}
-                disabled={attaching}
-                aria-label="Attach file"
-                title="Attach file"
-              >
-                <Paperclip className="h-4 w-4" />
-              </Button>
-            </>
-          ) : null}
-        </div>
+        <div className="mr-auto" />
 
         {enableOwnerChange && ownerOptions.length > 0 ? (
-          <Popover open={ownerSelector.open} onOpenChange={ownerSelector.setOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                ref={ownerTriggerRef}
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={ownerSelector.open}
-                aria-label="Owner"
-                className="h-8 w-full justify-between overflow-hidden text-xs"
-                onPointerDown={() => {
-                  ownerSelector.pointerFocusRef.current = true;
-                }}
-                onFocus={() => {
-                  if (ownerSelector.pointerFocusRef.current) {
-                    ownerSelector.pointerFocusRef.current = false;
-                  } else {
-                    ownerSelector.setOpen(true);
-                  }
-                }}
-              >
-                {ownerSelector.currentOption ? (
-                  <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-left">
-                    {(() => {
-                      const agentId = ownerSelector.currentOption.id.startsWith("agent:")
-                        ? ownerSelector.currentOption.id.slice("agent:".length)
-                        : null;
-                      const agent = agentId ? agentMap?.get(agentId) : null;
-                      return agent ? <AgentIcon icon={agent.icon} className="size-3.5 shrink-0" /> : null;
-                    })()}
-                    {ownerSelector.currentOption.label}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">Owner</span>
-                )}
-                <ChevronsUpDown className="ml-2 size-4 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" collisionPadding={16} className="w-72 max-w-(--sz-calc-23) p-0">
-              <Command
-                filter={(optionValue, search) =>
-                  entityOptionMatchesSearch(
-                    ownerSelector.orderedOptions.find(
-                      (option) => (option.id || ENTITY_NONE_VALUE) === optionValue,
-                    ),
-                    search,
-                  )
-                }
-              >
-                <CommandInput autoFocus placeholder="Search agent owners..." />
-                <CommandList>
-                  <CommandEmpty>No agent owners found.</CommandEmpty>
-                  {ownerSelector.orderedOptions.map((option) => {
-                    const agentId = option.id.startsWith("agent:") ? option.id.slice("agent:".length) : null;
-                    const agent = agentId ? agentMap?.get(agentId) : null;
-                    return (
-                      <CommandItem
-                        key={option.id}
-                        value={option.id || ENTITY_NONE_VALUE}
-                        keywords={[option.label, option.searchText ?? ""]}
-                        onSelect={() => ownerSelector.select(option)}
-                      >
-                        {agent ? <AgentIcon icon={agent.icon} className="size-3.5 shrink-0" /> : null}
-                        <span className="truncate">{option.label}</span>
-                        <Check
-                          className={cn(
-                            "ml-auto size-4",
-                            option.id === ownerTarget ? "opacity-100" : "opacity-0",
-                          )}
-                        />
-                      </CommandItem>
-                    );
-                  })}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+          <EntityCombobox
+            ref={ownerTriggerRef}
+            value={ownerTarget}
+            options={ownerOptions}
+            type="agent owner"
+            ariaLabel="Owner"
+            placeholder="Owner"
+            noneLabel="Choose owner"
+            includeNone={false}
+            onValueChange={setOwnerTarget}
+            triggerClassName="h-8 text-xs"
+            searchPlaceholder="Search agent owners..."
+            emptyMessage="No agent owners found."
+            renderValue={(option) => {
+              if (!option) return <span className="text-muted-foreground">Owner</span>;
+              const agentId = option.id.startsWith("agent:") ? option.id.slice("agent:".length) : null;
+              const agent = agentId ? agentMap?.get(agentId) : null;
+              return (
+                <>
+                  {agent ? <AgentIcon icon={agent.icon} className="size-3.5 shrink-0" /> : null}
+                  {option.label}
+                </>
+              );
+            }}
+            renderOption={(option) => {
+              const agentId = option.id.startsWith("agent:") ? option.id.slice("agent:".length) : null;
+              const agent = agentId ? agentMap?.get(agentId) : null;
+              return (
+                <>
+                  {agent ? <AgentIcon icon={agent.icon} className="size-3.5 shrink-0" /> : null}
+                  <span className="truncate">{option.label}</span>
+                </>
+              );
+            }}
+          />
         ) : null}
 
         <Button size="sm" disabled={isSubmitting || !body.trim()} onClick={() => void handleSubmit()}>

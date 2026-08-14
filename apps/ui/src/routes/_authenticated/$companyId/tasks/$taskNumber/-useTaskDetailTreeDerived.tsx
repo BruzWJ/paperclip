@@ -1,17 +1,8 @@
 import { tasksApi } from "@/api/tasks";
 import { Button } from "@/components/ui/button";
 import { computePauseAffectsSummary } from "@/lib/owner-transition";
-import { cn } from "@/lib/utils";
 import type { Agent, Task, TaskTreeControlMode } from "@paperclipai/shared";
-import { Paperclip } from "lucide-react";
-import {
-  useMemo,
-  type ChangeEvent,
-  type Dispatch,
-  type DragEvent,
-  type RefObject,
-  type SetStateAction,
-} from "react";
+import { useMemo } from "react";
 
 import { isMarkdownFile } from "./-task-detail-model";
 import type {
@@ -33,9 +24,6 @@ export interface TaskDetailTreeDerivedOptions {
   activeCancelHolds: Awaited<ReturnType<typeof tasksApi.listTreeHolds>>;
   treeControlCancelConfirmed: boolean;
   attachmentListLength: number;
-  attachmentDragActive: boolean;
-  setAttachmentDragActive: Dispatch<SetStateAction<boolean>>;
-  fileInputRef: RefObject<HTMLInputElement | null>;
   uploadAttachment: ReturnType<typeof useTaskDetailActionMutations>["uploadAttachment"];
   importMarkdownDocument: ReturnType<typeof useTaskDetailActionMutations>["importMarkdownDocument"];
   commitHumanOwnerStatus: ReturnType<typeof useTaskDetailCoreMutations>["commitHumanOwnerStatus"];
@@ -60,9 +48,6 @@ export function useTaskDetailTreeDerived({
   activeCancelHolds,
   treeControlCancelConfirmed,
   attachmentListLength,
-  attachmentDragActive,
-  setAttachmentDragActive,
-  fileInputRef,
   uploadAttachment,
   importMarkdownDocument,
   commitHumanOwnerStatus,
@@ -127,24 +112,8 @@ export function useTaskDetailTreeDerived({
     [activePauseHold?.holdId, activeRootPauseHoldsForDisplay],
   );
 
-  const handleFilePicked = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files?.length) return;
-    for (const file of Array.from(files)) {
-      if (isMarkdownFile(file)) {
-        await importMarkdownDocument.mutateAsync(file);
-      } else {
-        await uploadAttachment.mutateAsync(file);
-      }
-    }
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-  const handleAttachmentDrop = async (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setAttachmentDragActive(false);
-    const files = event.dataTransfer.files;
-    if (!files?.length) return;
-    for (const file of Array.from(files)) {
+  const handleAttachmentFiles = async (files: File[]) => {
+    for (const file of files) {
       if (isMarkdownFile(file)) {
         await importMarkdownDocument.mutateAsync(file);
       } else {
@@ -272,34 +241,6 @@ export function useTaskDetailTreeDerived({
     !treeControlPreviewLoading &&
     (treeControlMode !== "cancel" || treeControlCancelConfirmed);
   const attachmentUploadPending = uploadAttachment.isPending || importMarkdownDocument.isPending;
-  const attachmentUploadButton = (
-    <>
-      <input
-        ref={fileInputRef}
-        type="file"
-        aria-label="Upload task attachments"
-        className="hidden"
-        onChange={handleFilePicked}
-        multiple
-      />
-      {attachmentUploadPending ? (
-        <span className="sr-only" role="status">
-          Uploading attachment.
-        </span>
-      ) : null}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={attachmentUploadPending}
-        className={cn(attachmentDragActive && "border-primary bg-primary/5")}
-      >
-        <Paperclip className="size-4" />
-        {attachmentUploadPending ? "Uploading..." : "Upload attachment"}
-      </Button>
-    </>
-  );
-
   return {
     pauseAffectsSummary,
     treePreviewDisplayTasks,
@@ -309,7 +250,7 @@ export function useTaskDetailTreeDerived({
     activePauseHoldRoot,
     activeRootPauseHold,
     ancestors: task?.ancestors ?? [],
-    handleAttachmentDrop,
+    handleAttachmentFiles,
     hasAttachments: attachmentListLength > 0,
     treePreviewWarnings,
     heldDescendantCount,
@@ -324,7 +265,7 @@ export function useTaskDetailTreeDerived({
     composerHint: pausedComposerHint,
     humanLifecycleFormControls,
     canApplyTreeControl,
-    attachmentUploadButton,
+    attachmentUploadPending,
     executeTreeControl,
   };
 }

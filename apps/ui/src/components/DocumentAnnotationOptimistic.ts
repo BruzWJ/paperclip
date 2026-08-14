@@ -1,6 +1,6 @@
 import { type DocumentAnnotationTarget } from "@/api/document-annotations";
-import type { CompanyUserProfile } from "@/lib/company-members";
 import { buildDocumentAnnotationHash } from "@/lib/document-annotation-hash";
+import type { DocumentActorLookups } from "./TaskDocumentUtils";
 import type {
   Agent,
   DocumentAnnotationComment,
@@ -14,10 +14,7 @@ export function isSubmitShortcut(event: React.KeyboardEvent<HTMLTextAreaElement>
 
 export function resolveAuthor(
   comment: DocumentAnnotationComment,
-  maps: {
-    agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
-    userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
-  },
+  maps: DocumentActorLookups,
 ): {
   name: string;
   role: "board" | "agent";

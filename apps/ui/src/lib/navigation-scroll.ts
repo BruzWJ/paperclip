@@ -1,4 +1,4 @@
-export type NavigationType = "POP" | "PUSH" | "REPLACE";
+import type { NavigationAction } from "./navigation-action";
 
 export const SIDEBAR_SCROLL_RESET_STATE = {
   paperclipSidebarScrollReset: true,
@@ -11,7 +11,7 @@ export type NavigationScrollRoute =
 export function shouldResetScrollOnNavigation(params: {
   previousRoute: NavigationScrollRoute | null;
   route: NavigationScrollRoute;
-  navigationType: NavigationType;
+  navigationType: NavigationAction;
   state: unknown;
 }): boolean {
   const { previousRoute, route, navigationType, state } = params;

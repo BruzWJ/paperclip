@@ -142,6 +142,7 @@ describe("owner transition views", () => {
     expect(onInsert).toHaveBeenCalledOnce();
     expect(onDismiss).toHaveBeenCalledOnce();
     expect(onConfirm).toHaveBeenCalledOnce();
+    expect(view.textContent).toContain("Run active");
   });
 
   it("shows run and pause status without legacy singleton state", () => {

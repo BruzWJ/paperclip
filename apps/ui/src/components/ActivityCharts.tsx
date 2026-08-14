@@ -68,6 +68,16 @@ function resolveRunActivity(props: RunChartProps): DashboardRunActivityDay[] {
   return [];
 }
 
+function EmptyChart({ title }: { title: string }) {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>{title}</EmptyTitle>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
 type ChartSeries = {
   key: string;
   stacked?: boolean;
@@ -119,13 +129,7 @@ const RUN_CONFIG = {
 export function RunActivityChart(props: RunChartProps) {
   const activity = resolveRunActivity(props);
   if (!activity.some((entry) => entry.total > 0)) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>No runs yet</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
-    );
+    return <EmptyChart title="No runs yet" />;
   }
 
   const hasRecovered = activity.some((entry) => entry.recovered > 0);
@@ -165,13 +169,7 @@ export function PriorityChart({ tasks }: { tasks: { priority: string; createdAt:
 
   const data = Array.from(grouped.values());
   if (!data.some((entry) => PRIORITIES.some((key) => entry[key] > 0))) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>No tasks</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
-    );
+    return <EmptyChart title="No tasks" />;
   }
 
   return (
@@ -213,14 +211,7 @@ export function TaskStatusChart({
     presentStatuses.add(status);
   }
 
-  if (presentStatuses.size === 0)
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>No tasks</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
-    );
+  if (presentStatuses.size === 0) return <EmptyChart title="No tasks" />;
   const series = STATUS_ORDER.filter((status) => presentStatuses.has(status));
 
   return (
@@ -239,13 +230,7 @@ const SUCCESS_CONFIG = {
 export function SuccessRateChart(props: RunChartProps) {
   const activity = resolveRunActivity(props);
   if (!activity.some((entry) => entry.total > 0)) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>No runs yet</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
-    );
+    return <EmptyChart title="No runs yet" />;
   }
 
   const data = activity.map((entry) => ({

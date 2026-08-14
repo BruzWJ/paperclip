@@ -1,4 +1,4 @@
-import { TASK_STATUSES, type Task, type TaskStatus, type Project } from "@paperclipai/shared";
+import { TASK_STATUSES, type Task, type TaskStatus } from "@paperclipai/shared";
 import { tasksApi } from "@/api/tasks";
 import {
   defaultTaskFilterState,
@@ -17,6 +17,7 @@ import {
 } from "../KanbanBoard";
 import { buildTaskTree } from "@/lib/task-tree";
 import { workflowSort } from "@/lib/workflow-sort";
+import type { NamedEntity, NamedEntityWithColor } from "@/lib/presentation-contracts";
 export const TASK_SEARCH_DEBOUNCE_MS = 250;
 export const TASK_SEARCH_RESULT_LIMIT = 200;
 export const TASK_BOARD_COLUMN_RESULT_LIMIT = 200;
@@ -306,27 +307,14 @@ export function shouldSuppressSinglePreviousSiblingBlockerChip(
 
 /* ── Component ── */
 
-export interface Agent {
-  id: string;
-  name: string;
-}
-
-export type CreatorOption = {
-  id: string;
-  label: string;
-  kind: "agent" | "user";
-  searchText?: string;
-};
-
-export type ProjectOption = Pick<Project, "id" | "name" | "color">;
 export type TaskListRequestFilters = NonNullable<Parameters<typeof tasksApi.list>[1]>;
 
 export interface TasksListProps {
   tasks: Task[];
   isLoading?: boolean;
   error?: Error | null;
-  agents?: Agent[];
-  projects?: ProjectOption[];
+  agents?: NamedEntity[];
+  projects?: NamedEntityWithColor[];
   liveTaskIds?: Set<string>;
   projectId?: string;
   viewStateKey: string;

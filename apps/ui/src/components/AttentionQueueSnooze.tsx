@@ -2,7 +2,7 @@ import { AlarmClock } from "lucide-react";
 import { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Field, FieldLabel } from "./ui/field";
+import { LabeledFormField } from "./patterns/FormPatterns";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -66,8 +66,7 @@ export function SnoozeSubmenu({ onSnooze }: { onSnooze: (snoozedUntil: string) =
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
-        <Field className="gap-1.5 px-2 py-1.5">
-          <FieldLabel>Custom</FieldLabel>
+        <LabeledFormField className="gap-1.5 px-2 py-1.5" label="Custom">
           <div className="flex flex-col gap-1.5">
             <Input
               type="date"
@@ -97,7 +96,7 @@ export function SnoozeSubmenu({ onSnooze }: { onSnooze: (snoozedUntil: string) =
               Snooze until…
             </Button>
           </div>
-        </Field>
+        </LabeledFormField>
       </DropdownMenuSubContent>
     </DropdownMenuSub>
   );

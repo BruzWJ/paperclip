@@ -2,6 +2,7 @@ import { TaskOutputSection } from "@/components/task-output/TaskOutputSection";
 import { TaskAttachmentsSection } from "@/components/TaskAttachmentsSection";
 import { TaskDocumentsSection } from "@/components/TaskDocumentsSection";
 import { TaskProperties } from "@/components/task-properties/TaskProperties";
+import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
 import { TasksList } from "@/components/TasksList";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -17,16 +18,15 @@ export function TaskDetailWorkProducts() {
   const {
     agentMap,
     agents,
-    attachmentDragActive,
     attachmentError,
     attachmentList,
-    attachmentUploadButton,
+    attachmentUploadPending,
     attachmentsInitialLoading,
     childPauseBadgeById,
     childTasks,
     childTasksLoading,
     deleteAttachment,
-    handleAttachmentDrop,
+    handleAttachmentFiles,
     hasAttachments,
     liveTaskIds,
     location,
@@ -37,7 +37,6 @@ export function TaskDetailWorkProducts() {
     projects,
     resolvedTaskDetailState,
     session,
-    setAttachmentDragActive,
     setGalleryIndex,
     setGalleryOpen,
     showRichSubTasksSection,
@@ -128,10 +127,22 @@ export function TaskDetailWorkProducts() {
           const attachment = await uploadAttachment.mutateAsync(file);
           return attachment.contentPath;
         }}
-        extraActions={!hasAttachments ? attachmentUploadButton : null}
         agentMap={agentMap}
         userProfileMap={userProfileMap}
       />
+      <div aria-busy={attachmentUploadPending}>
+        <AccessibleDropzone
+          ariaLabel="Upload task attachments"
+          maxFiles={100}
+          disabled={attachmentUploadPending}
+          onDrop={(files) => void handleAttachmentFiles(files)}
+        />
+        {attachmentUploadPending ? (
+          <span className="sr-only" role="status">
+            Uploading attachment.
+          </span>
+        ) : null}
+      </div>
       <TaskOutputSection
         workProducts={workProducts}
         onMediaClick={(item) => {
@@ -152,9 +163,7 @@ export function TaskDetailWorkProducts() {
       ) : hasAttachments ? (
         <TaskAttachmentsSection
           attachments={attachmentList}
-          uploadButton={attachmentUploadButton}
           error={attachmentError}
-          dragActive={attachmentDragActive}
           deletePending={deleteAttachment.isPending}
           onDelete={(attachmentId) => deleteAttachment.mutate(attachmentId)}
           onImageClick={(attachment) => {
@@ -162,19 +171,6 @@ export function TaskDetailWorkProducts() {
             setGalleryIndex(idx >= 0 ? idx : 0);
             setGalleryOpen(true);
           }}
-          onDragEnter={(evt) => {
-            evt.preventDefault();
-            setAttachmentDragActive(true);
-          }}
-          onDragOver={(evt) => {
-            evt.preventDefault();
-            setAttachmentDragActive(true);
-          }}
-          onDragLeave={(evt) => {
-            if (evt.currentTarget.contains(evt.relatedTarget as Node | null)) return;
-            setAttachmentDragActive(false);
-          }}
-          onDrop={(evt) => void handleAttachmentDrop(evt)}
         />
       ) : null}
     </>

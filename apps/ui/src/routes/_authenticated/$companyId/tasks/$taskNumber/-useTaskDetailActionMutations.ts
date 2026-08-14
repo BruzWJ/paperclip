@@ -32,6 +32,11 @@ export interface TaskDetailActionMutationsOptions {
   cacheActions: ReturnType<typeof useTaskDetailCacheActions>;
 }
 
+interface ApprovalDecisionInput {
+  approvalId: string;
+  action: "approve" | "reject";
+}
+
 /** Owns approval, comment, attachment, document, and inbox mutations. */
 export function useTaskDetailActionMutations({
   companyId,
@@ -42,10 +47,7 @@ export function useTaskDetailActionMutations({
   cacheActions,
 }: TaskDetailActionMutationsOptions) {
   const queryClient = useQueryClient();
-  const [pendingApprovalAction, setPendingApprovalAction] = useState<{
-    approvalId: string;
-    action: "approve" | "reject";
-  } | null>(null);
+  const [pendingApprovalAction, setPendingApprovalAction] = useState<ApprovalDecisionInput | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [optimisticComments, setOptimisticComments] = useState<OptimisticTaskComment[]>([]);
   const [locallyQueuedCommentRunIds, setLocallyQueuedCommentRunIds] = useState<Map<string, string>>(
@@ -59,7 +61,7 @@ export function useTaskDetailActionMutations({
   } = cacheActions;
 
   const approvalDecision = useMutation({
-    mutationFn: async ({ approvalId, action }: { approvalId: string; action: "approve" | "reject" }) =>
+    mutationFn: async ({ approvalId, action }: ApprovalDecisionInput) =>
       action === "approve" ? approvalsApi.approve(approvalId) : approvalsApi.reject(approvalId),
     onMutate: ({ approvalId, action }) => {
       setPendingApprovalAction({ approvalId, action });

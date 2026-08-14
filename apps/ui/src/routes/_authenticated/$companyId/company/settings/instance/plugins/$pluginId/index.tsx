@@ -4,13 +4,13 @@ import { PluginConfigForm } from "@/components/plugins/PluginConfigForm";
 import { PluginLocalFoldersSettings } from "@/components/plugins/PluginLocalFoldersSettings";
 import { PluginRuntimeStatus } from "@/components/plugins/PluginRuntimeStatus";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
-import { useCompany } from "@/context/CompanyContext";
+import { useSettingsBreadcrumbs } from "@/hooks/useSettingsBreadcrumbs";
 import { queryKeys } from "@/lib/queryKeys";
 import { PluginSlotMount, usePluginSlots } from "@/plugins/slots";
 import { isCanonicalUuid } from "@paperclipai/shared";
@@ -30,8 +30,6 @@ export const Route = createFileRoute(
 
 /** Installed-plugin configuration and runtime diagnostics. */
 function PluginSettings() {
-  const { selectedCompany } = useCompany();
-  const { setBreadcrumbs } = useBreadcrumbs();
   const { companyId, pluginId } = getRouteApi(
     "/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/",
   ).useParams();
@@ -85,43 +83,12 @@ function PluginSettings() {
   // If the plugin has a custom settingsPage slot, prefer that over auto-generated form
   const hasCustomSettingsPage = pluginSlots.length > 0;
 
-  useEffect(() => {
-    setBreadcrumbs([
-      {
-        label: selectedCompany?.name ?? "Company",
-        renderLink: (content) => (
-          <Link to="/$companyId/dashboard" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Instance settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings/instance" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Plugins",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings/instance/plugins" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      { label: plugin ? plugin.manifestJson.displayName : "Plugin Details" },
-    ]);
-  }, [selectedCompany?.name, setBreadcrumbs, companyId, plugin]);
+  useSettingsBreadcrumbs({
+    companyId,
+    instance: true,
+    parent: "plugins",
+    page: plugin ? plugin.manifestJson.displayName : "Plugin Details",
+  });
 
   useEffect(() => {
     setActiveTab("configuration");
@@ -147,8 +114,6 @@ function PluginSettings() {
   }
 
   const displayStatus = plugin.status;
-  const statusVariant =
-    plugin.status === "ready" ? "default" : plugin.status === "error" ? "destructive" : "secondary";
   const pluginDescription = plugin.manifestJson.description;
   const pluginCapabilities = plugin.manifestJson.capabilities;
   const localFolderDeclarations = plugin.manifestJson.localFolders ?? [];
@@ -169,9 +134,9 @@ function PluginSettings() {
         <div className="flex items-center gap-2">
           <Puzzle className="h-6 w-6 text-muted-foreground" />
           <h1 className="text-xl font-semibold">{plugin.manifestJson.displayName}</h1>
-          <Badge variant={statusVariant} className="ml-2">
+          <DomainStatus status={displayStatus} className="ml-2">
             {displayStatus}
-          </Badge>
+          </DomainStatus>
           <Badge variant="outline" className="ml-1">
             v{plugin.manifestJson.version}
           </Badge>
@@ -275,7 +240,6 @@ function PluginSettings() {
             dashboardLoading={dashboardLoading}
             recentLogs={recentLogs}
             plugin={plugin}
-            statusVariant={statusVariant}
             displayStatus={displayStatus}
             pluginCapabilities={pluginCapabilities}
           />

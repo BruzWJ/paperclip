@@ -2,19 +2,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/components/kibo-ui/combobox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Bot, Check, Filter, User, X } from "lucide-react";
-import { useId, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   defaultTaskFilterState,
   hasTaskOwnerFilter,
@@ -28,23 +30,7 @@ import {
   type TaskFilterState,
 } from "../lib/task-filters";
 import { formatOwnerUserLabel } from "../lib/task-owners";
-
-type AgentOption = { id: string; name: string };
-type ProjectOption = { id: string; name: string };
-type UserOption = { id: string; name: string };
-
-type LabelOption = {
-  id: string;
-  name: string;
-  color: string;
-};
-
-type CreatorOption = {
-  id: string;
-  label: string;
-  kind: "agent" | "user";
-  searchText?: string;
-};
+import type { ColoredNamedEntity, CreatorOption, NamedEntity } from "../lib/presentation-contracts";
 
 export function TaskFiltersPopover({
   state,
@@ -63,10 +49,10 @@ export function TaskFiltersPopover({
   state: TaskFilterState;
   onChange: (patch: Partial<TaskFilterState>) => void;
   activeFilterCount: number;
-  agents?: AgentOption[];
-  users?: UserOption[];
-  projects?: ProjectOption[];
-  labels?: LabelOption[];
+  agents?: NamedEntity[];
+  users?: NamedEntity[];
+  projects?: NamedEntity[];
+  labels?: ColoredNamedEntity[];
   currentUserId?: string | null;
   enableRoutineVisibilityFilter?: boolean;
   buttonVariant?: "ghost" | "outline";
@@ -74,6 +60,7 @@ export function TaskFiltersPopover({
   creators?: CreatorOption[];
 }) {
   const filterControlId = useId();
+  const [creatorComboboxOpen, setCreatorComboboxOpen] = useState(false);
   const creatorOptions = creators ?? [];
   const creatorOptionById = useMemo(
     () => new Map(creatorOptions.map((option) => [option.id, option])),
@@ -327,36 +314,49 @@ export function TaskFiltersPopover({
                       ))}
                     </div>
                   ) : null}
-                  <Command className="border">
-                    <CommandInput placeholder="Search creators..." aria-label="Search creators" />
-                    <CommandList className="max-h-32">
-                      <CommandEmpty>No creators match.</CommandEmpty>
-                      <CommandGroup>
-                        {creatorOptions.map((creator) => {
-                          const selected = state.creators.includes(creator.id);
-                          return (
-                            <CommandItem
-                              key={creator.id}
-                              value={`${creator.label} ${creator.searchText ?? ""}`}
-                              onSelect={() =>
-                                onChange({
-                                  creators: toggleTaskFilterValue(state.creators, creator.id),
-                                })
-                              }
-                            >
-                              {creator.kind === "agent" ? (
-                                <Bot className="h-3.5 w-3.5" />
-                              ) : (
-                                <User className="h-3.5 w-3.5" />
-                              )}
-                              <span className="min-w-0 flex-1 truncate">{creator.label}</span>
-                              {selected ? <Check /> : null}
-                            </CommandItem>
-                          );
-                        })}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
+                  <Combobox
+                    data={creatorOptions.map((creator) => ({
+                      label: creator.label,
+                      value: creator.id,
+                    }))}
+                    type="creator"
+                    value=""
+                    open={creatorComboboxOpen}
+                    onOpenChange={setCreatorComboboxOpen}
+                  >
+                    <ComboboxTrigger className="w-full" aria-label="Choose creators" />
+                    <ComboboxContent>
+                      <ComboboxInput placeholder="Search creators..." aria-label="Search creators" />
+                      <ComboboxList className="max-h-32">
+                        <ComboboxEmpty>No creators match.</ComboboxEmpty>
+                        <ComboboxGroup>
+                          {creatorOptions.map((creator) => {
+                            const selected = state.creators.includes(creator.id);
+                            return (
+                              <ComboboxItem
+                                key={creator.id}
+                                value={creator.id}
+                                keywords={[creator.label, creator.searchText ?? ""]}
+                                onSelect={() =>
+                                  onChange({
+                                    creators: toggleTaskFilterValue(state.creators, creator.id),
+                                  })
+                                }
+                              >
+                                {creator.kind === "agent" ? (
+                                  <Bot className="h-3.5 w-3.5" />
+                                ) : (
+                                  <User className="h-3.5 w-3.5" />
+                                )}
+                                <span className="min-w-0 flex-1 truncate">{creator.label}</span>
+                                {selected ? <Check /> : null}
+                              </ComboboxItem>
+                            );
+                          })}
+                        </ComboboxGroup>
+                      </ComboboxList>
+                    </ComboboxContent>
+                  </Combobox>
                 </div>
               ) : null}
 

@@ -12,13 +12,12 @@ import { agentsApi } from "../api/agents";
 import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
 import { tasksApi } from "../api/tasks";
 import { queryKeys } from "../lib/queryKeys";
-import { statusBadgeVariant } from "../lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { cn, relativeTime } from "../lib/utils";
 import { Bot, ExternalLink } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";
 import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -148,7 +147,7 @@ const AgentRunCard = memo(function AgentRunCard({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Badge variant="secondary">Live</Badge>
+              <DomainStatus status="running">Live</DomainStatus>
               <span className="inline-flex min-w-0 items-center gap-1.5" title={agentName}>
                 <Avatar size="sm">
                   <AvatarFallback>{deriveInitials(agentName)}</AvatarFallback>
@@ -157,7 +156,7 @@ const AgentRunCard = memo(function AgentRunCard({
               </span>
             </div>
             <div className="mt-2 flex items-center gap-2 text-(length:--text-micro) text-muted-foreground">
-              <Badge variant={statusBadgeVariant(run.status)}>{run.status.replace(/[_-]/g, " ")}</Badge>
+              <DomainStatus status={run.status} />
               <span>{relativeTime(run.createdAt)}</span>
             </div>
           </div>

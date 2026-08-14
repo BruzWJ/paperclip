@@ -1,13 +1,9 @@
 import type { ThreadMessage, ToolCallMessagePart } from "@assistant-ui/react";
-import { memo, useContext, type DragEvent as ReactDragEvent } from "react";
+import { memo, useContext } from "react";
 import { type PaperclipTaskRuntimeOwnerChange } from "../../hooks/usePaperclipTaskRuntime";
 import type { CompanyUserProfile } from "../../lib/company-members";
 import { timeAgo } from "../../lib/timeAgo";
-import {
-  displayToolName,
-  isCommandTool,
-  summarizeToolInput,
-} from "../../lib/transcriptPresentation";
+import { displayToolName, isCommandTool, summarizeToolInput } from "../../lib/transcriptPresentation";
 import { cn, formatShortDate } from "../../lib/utils";
 import { MarkdownBody } from "../MarkdownBody";
 
@@ -26,10 +22,6 @@ export type ComposerAttachmentItem = {
   contentPath?: string;
   error?: string;
 };
-
-export function hasFilePayload(evt: ReactDragEvent<HTMLDivElement>) {
-  return Array.from(evt.dataTransfer?.types ?? []).includes("Files");
-}
 
 export function formatAttachmentSize(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "";
@@ -66,9 +58,7 @@ export function clearDraft(draftKey: string) {
   }
 }
 
-export function parseOwnerChange(
-  target: string,
-): PaperclipTaskRuntimeOwnerChange | null {
+export function parseOwnerChange(target: string): PaperclipTaskRuntimeOwnerChange | null {
   if (!target.startsWith("agent:")) return null;
   const ownerAgentId = target.slice("agent:".length);
   return ownerAgentId ? { ownerAgentId } : null;
@@ -95,10 +85,7 @@ export const TaskChatTextPart = memo(function TaskChatTextPart({
   const { onImageClick } = useContext(TaskChatCtx);
   return (
     <MarkdownBody
-      className={cn(
-        "text-sm leading-6",
-        onAccent && "paperclip-markdown-on-accent",
-      )}
+      className={cn("text-sm leading-6", onAccent && "paperclip-markdown-on-accent")}
       style={recessed ? { opacity: 0.55 } : undefined}
       softBreaks
       onImageClick={onImageClick}
@@ -113,9 +100,7 @@ export function humanizeValue(value: string | null) {
   return value.replace(/_/g, " ");
 }
 
-export function taskChatMessageCustom(
-  message: ThreadMessage,
-): Record<string, unknown> {
+export function taskChatMessageCustom(message: ThreadMessage): Record<string, unknown> {
   return (message.metadata?.custom ?? {}) as Record<string, unknown>;
 }
 
@@ -129,10 +114,7 @@ export function taskChatMessageAnchorId(message: ThreadMessage): string | null {
   return typeof custom.anchorId === "string" ? custom.anchorId : null;
 }
 
-export function taskChatMessageRunIsActive(
-  message: ThreadMessage,
-  activeRunIds: ReadonlySet<string>,
-) {
+export function taskChatMessageRunIsActive(message: ThreadMessage, activeRunIds: ReadonlySet<string>) {
   const runId = taskChatMessageCustom(message).runId;
   return typeof runId === "string" && activeRunIds.has(runId);
 }
@@ -150,9 +132,7 @@ export function taskChatMessageQueuedRunIsInterrupting(
   interruptingQueuedRunId: string | null | undefined,
 ) {
   const targetRunId = taskChatMessageCustom(message).queueTargetRunId;
-  return (
-    typeof targetRunId === "string" && interruptingQueuedRunId === targetRunId
-  );
+  return typeof targetRunId === "string" && interruptingQueuedRunId === targetRunId;
 }
 
 export function initialsForName(name: string) {
@@ -170,16 +150,9 @@ export function resolveTaskChatHumanAuthor(args: {
   userProfileMap?: ReadonlyMap<string, CompanyUserProfile> | null;
 }) {
   const { authorName, authorUserId, currentUserId, userProfileMap } = args;
-  const profile = authorUserId
-    ? (userProfileMap?.get(authorUserId) ?? null)
-    : null;
-  const isCurrentUser = Boolean(
-    authorUserId && currentUserId && authorUserId === currentUserId,
-  );
-  const resolvedAuthorName =
-    profile?.label?.trim() ||
-    authorName?.trim() ||
-    (isCurrentUser ? "You" : "User");
+  const profile = authorUserId ? (userProfileMap?.get(authorUserId) ?? null) : null;
+  const isCurrentUser = Boolean(authorUserId && currentUserId && authorUserId === currentUserId);
+  const resolvedAuthorName = profile?.label?.trim() || authorName?.trim() || (isCurrentUser ? "You" : "User");
 
   return {
     isCurrentUser,
@@ -188,9 +161,7 @@ export function resolveTaskChatHumanAuthor(args: {
   };
 }
 
-export function toolCountSummary(
-  toolParts: ToolCallMessagePart[],
-): string | null {
+export function toolCountSummary(toolParts: ToolCallMessagePart[]): string | null {
   if (toolParts.length === 0) return null;
   let commands = 0;
   let other = 0;
@@ -199,8 +170,7 @@ export function toolCountSummary(
     else other++;
   }
   const parts: string[] = [];
-  if (commands > 0)
-    parts.push(`ran ${commands} command${commands === 1 ? "" : "s"}`);
+  if (commands > 0) parts.push(`ran ${commands} command${commands === 1 ? "" : "s"}`);
   if (other > 0) parts.push(`called ${other} tool${other === 1 ? "" : "s"}`);
   return parts.join(", ");
 }
@@ -208,9 +178,6 @@ export function toolCountSummary(
 export function cleanToolDisplayText(tool: ToolCallMessagePart): string {
   const name = displayToolName(tool.toolName, tool.args);
   if (isCommandTool(tool.toolName, tool.args)) return name;
-  const summary =
-    tool.result === undefined
-      ? summarizeToolInput(tool.toolName, tool.args)
-      : null;
+  const summary = tool.result === undefined ? summarizeToolInput(tool.toolName, tool.args) : null;
   return summary ? `${name} ${summary}` : name;
 }

@@ -1,5 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import type { ActivityEvent } from "@paperclipai/shared";
+import { JsonCodeBlock } from "@/components/patterns/JsonCodeBlock";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import * as Collapse from "@/components/ui/collapsible";
@@ -68,9 +69,7 @@ export function RoutineActivityRow({ event }: { event: RoutineActivityEvent }) {
       </Collapse.CollapsibleTrigger>
       <Collapse.CollapsibleContent>
         {hasPayload ? (
-          <pre className="mx-1 mb-2 overflow-x-auto rounded-md bg-neutral-950 p-3 font-mono text-xs text-neutral-200">
-            {JSON.stringify(event.details, null, 2)}
-          </pre>
+          <JsonCodeBlock className="mx-1 mb-2" filename="activity-details.json" value={event.details} />
         ) : null}
       </Collapse.CollapsibleContent>
     </Collapse.Collapsible>

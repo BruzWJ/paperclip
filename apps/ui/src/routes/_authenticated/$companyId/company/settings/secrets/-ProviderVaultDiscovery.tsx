@@ -16,7 +16,7 @@ import {
   ProviderVaultForm,
   readableErrorMessage,
 } from "./-secrets-model";
-import { SafeProviderErrorDetails } from "./-ProviderVaultErrors";
+import { ProviderErrorDetails } from "./-ProviderVaultErrors";
 
 export function AwsProviderVaultDiscoveryPanel({
   form,
@@ -167,7 +167,7 @@ export function AwsProviderVaultDiscoveryError({ form, error }: { form: Provider
             <dd>{details?.providerVaultContext ?? "draft_config"}</dd>
           </div>
         </dl>
-        <SafeProviderErrorDetails details={safeDetails} />
+        <ProviderErrorDetails details={safeDetails} />
       </AlertDescription>
     </Alert>
   );

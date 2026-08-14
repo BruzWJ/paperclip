@@ -1,9 +1,11 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { FieldDescription, FieldError, FieldGroup } from "@/components/ui/field";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { nextCronFires, parseCronExpression } from "../lib/cron-fires";
+import type { LabeledValue } from "../lib/presentation-contracts";
 
 export type SchedulePreset =
   "every_minute" | "every_hour" | "every_day" | "weekdays" | "weekly" | "monthly" | "custom";
@@ -39,6 +41,38 @@ const scheduleDaysOfMonth = Array.from({ length: 31 }, (_, index) => ({
 }));
 const hasOption = (options: Array<{ value: string }>, value: string) =>
   options.some((option) => option.value === value);
+
+function ScheduleSelect({
+  ariaLabel,
+  className,
+  onValueChange,
+  optionPrefix = "",
+  options,
+  value,
+}: {
+  ariaLabel: string;
+  className: string;
+  onValueChange: (value: string) => void;
+  optionPrefix?: string;
+  options: LabeledValue[];
+  value: string;
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger className={className} aria-label={ariaLabel}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {optionPrefix}
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 export function parseCronToPreset(cron: string): {
   preset: SchedulePreset;
@@ -87,28 +121,6 @@ export function buildCron(
     monthly: `${minute} ${hour} ${dayOfMonth} * *`,
     custom: "",
   }[preset];
-}
-
-export function describeSchedule(cron: string): string {
-  const { preset, hour, minute, dayOfWeek, dayOfMonth } = parseCronToPreset(cron);
-  const hourLabel = scheduleHours.find((option) => option.value === hour)?.label ?? hour;
-  const time = `${hourLabel.replace(/ (AM|PM)$/, "")}:${minute.padStart(2, "0")} ${hourLabel.match(/(AM|PM)$/)?.[0] ?? ""}`;
-  const day = scheduleDaysOfWeek.find((option) => option.value === dayOfWeek)?.label ?? dayOfWeek;
-  return {
-    every_minute: "Every minute",
-    every_hour: `Every hour at :${minute.padStart(2, "0")}`,
-    every_day: `Every day at ${time}`,
-    weekdays: `Weekdays at ${time}`,
-    weekly: `Every ${day} at ${time}`,
-    monthly: `Monthly on the ${dayOfMonth}${ordinalSuffix(Number(dayOfMonth))} at ${time}`,
-    custom: cron || "No schedule set",
-  }[preset];
-}
-
-function ordinalSuffix(value: number): string {
-  const suffixes = ["th", "st", "nd", "rd"];
-  const remainder = value % 100;
-  return suffixes[(remainder - 20) % 10] || suffixes[remainder] || suffixes[0];
 }
 
 export function getScheduleCronValidation(cron: string): {
@@ -183,8 +195,7 @@ export function ScheduleEditor({
 
   return (
     <FieldGroup className="gap-3">
-      <Field>
-        <FieldLabel>Frequency</FieldLabel>
+      <LabeledFormField label="Frequency">
         <Select value={preset} onValueChange={(v) => handlePresetChange(v as SchedulePreset)}>
           <SelectTrigger className="w-full" aria-label="Schedule frequency">
             <SelectValue placeholder="Choose frequency..." />
@@ -197,11 +208,14 @@ export function ScheduleEditor({
             ))}
           </SelectContent>
         </Select>
-      </Field>
+      </LabeledFormField>
 
       {preset === "custom" ? (
-        <Field data-invalid={!customValidation.valid}>
-          <FieldLabel htmlFor={customCronId}>Cron expression</FieldLabel>
+        <LabeledFormField
+          data-invalid={!customValidation.valid}
+          label="Cron expression"
+          labelFor={customCronId}
+        >
           <Input
             id={customCronId}
             value={customCron}
@@ -237,55 +251,41 @@ export function ScheduleEditor({
               {customValidation.message}
             </FieldError>
           )}
-        </Field>
+        </LabeledFormField>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
           {preset !== "every_minute" && preset !== "every_hour" && (
             <>
               <span className="text-sm text-muted-foreground">at</span>
-              <Select value={hour} onValueChange={(next) => updateSchedule({ hour: next })}>
-                <SelectTrigger className="w-(--sz-120px)" aria-label="Hour">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {scheduleHours.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ScheduleSelect
+                ariaLabel="Hour"
+                className="w-(--sz-120px)"
+                value={hour}
+                options={scheduleHours}
+                onValueChange={(next) => updateSchedule({ hour: next })}
+              />
               <span className="text-sm text-muted-foreground">:</span>
-              <Select value={minute} onValueChange={(next) => updateSchedule({ minute: next })}>
-                <SelectTrigger className="w-(--sz-80px)" aria-label="Minute">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {scheduleMinutes.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ScheduleSelect
+                ariaLabel="Minute"
+                className="w-(--sz-80px)"
+                value={minute}
+                options={scheduleMinutes}
+                onValueChange={(next) => updateSchedule({ minute: next })}
+              />
             </>
           )}
 
           {preset === "every_hour" && (
             <>
               <span className="text-sm text-muted-foreground">at minute</span>
-              <Select value={minute} onValueChange={(next) => updateSchedule({ minute: next })}>
-                <SelectTrigger className="w-(--sz-80px)" aria-label="Minute">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {scheduleMinutes.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      :{option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ScheduleSelect
+                ariaLabel="Minute"
+                className="w-(--sz-80px)"
+                value={minute}
+                options={scheduleMinutes}
+                optionPrefix=":"
+                onValueChange={(next) => updateSchedule({ minute: next })}
+              />
             </>
           )}
 
@@ -314,18 +314,13 @@ export function ScheduleEditor({
           {preset === "monthly" && (
             <>
               <span className="text-sm text-muted-foreground">on day</span>
-              <Select value={dayOfMonth} onValueChange={(next) => updateSchedule({ dayOfMonth: next })}>
-                <SelectTrigger className="w-(--sz-80px)" aria-label="Day of month">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {scheduleDaysOfMonth.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ScheduleSelect
+                ariaLabel="Day of month"
+                className="w-(--sz-80px)"
+                value={dayOfMonth}
+                options={scheduleDaysOfMonth}
+                onValueChange={(next) => updateSchedule({ dayOfMonth: next })}
+              />
             </>
           )}
         </div>

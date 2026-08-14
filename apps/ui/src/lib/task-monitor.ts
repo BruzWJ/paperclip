@@ -6,7 +6,7 @@ const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 const DUE_NOW_GRACE_MS = MINUTE_MS;
 
-type MonitorDate = Date | string;
+export type MonitorDate = Date | string;
 
 type MonitorDetails = {
   nextCheckAt?: MonitorDate | null;
@@ -27,13 +27,7 @@ export interface MonitorTaskLike {
   monitorAttemptCount?: number | null;
 }
 
-export type MonitorDisplayState =
-  | "scheduled"
-  | "retrying"
-  | "due-now"
-  | "overdue"
-  | "cleared"
-  | "none";
+export type MonitorDisplayState = "scheduled" | "retrying" | "due-now" | "overdue" | "cleared" | "none";
 
 export interface DerivedMonitorState {
   state: MonitorDisplayState;
@@ -94,8 +88,7 @@ function zonedYmd(
     day: "numeric",
     timeZone,
   }).formatToParts(date);
-  const pick = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "";
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
   return { year: pick("year"), month: pick("month"), day: pick("day") };
 }
 
@@ -164,19 +157,16 @@ export function formatMonitorAbsoluteFull(
   return `${datePart}, ${timePart}`;
 }
 
-export function deriveMonitorState(task: MonitorTaskLike, now: MonitorDate = new Date()): DerivedMonitorState {
+export function deriveMonitorState(
+  task: MonitorTaskLike,
+  now: MonitorDate = new Date(),
+): DerivedMonitorState {
   const runtimeMonitor = task.executionState?.monitor ?? null;
   const policyMonitor = task.executionPolicy?.monitor ?? null;
   const nextCheckAt =
-    runtimeMonitor?.nextCheckAt ??
-    task.monitorNextCheckAt ??
-    policyMonitor?.nextCheckAt ??
-    null;
+    runtimeMonitor?.nextCheckAt ?? task.monitorNextCheckAt ?? policyMonitor?.nextCheckAt ?? null;
   const hasMonitor = runtimeMonitor !== null || policyMonitor !== null || task.monitorNextCheckAt != null;
-  const attemptCount =
-    runtimeMonitor?.attemptCount ??
-    (hasMonitor ? task.monitorAttemptCount : null) ??
-    0;
+  const attemptCount = runtimeMonitor?.attemptCount ?? (hasMonitor ? task.monitorAttemptCount : null) ?? 0;
   const serviceName = runtimeMonitor?.serviceName ?? policyMonitor?.serviceName ?? null;
 
   if (runtimeMonitor?.status === "cleared") {
@@ -221,11 +211,14 @@ export function useMonitorCountdown(nextCheckAt: MonitorDate | null | undefined)
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
     const scheduleNextTick = () => {
-      timeoutId = setTimeout(() => {
-        if (cancelled) return;
-        setNow(new Date(Date.now()));
-        scheduleNextTick();
-      }, countdownCadence(new Date(nextCheckTimestamp)));
+      timeoutId = setTimeout(
+        () => {
+          if (cancelled) return;
+          setNow(new Date(Date.now()));
+          scheduleNextTick();
+        },
+        countdownCadence(new Date(nextCheckTimestamp)),
+      );
     };
 
     scheduleNextTick();

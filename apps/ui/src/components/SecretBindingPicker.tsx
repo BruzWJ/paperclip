@@ -1,19 +1,21 @@
 import { Spinner } from "@/components/ui/spinner";
 import { useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, KeyRound, Plus, X } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
 import type { CompanySecret, SecretVersionSelector } from "@paperclipai/shared";
 import { secretsApi } from "../api/secrets";
 import { queryKeys } from "../lib/queryKeys";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { FieldDescription, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
+import { SecretPicker } from "@/components/environment-variables-editor/SecretPicker";
+import { createSecretCreationDraft, type SecretCreationDraft } from "@/lib/presentation-contracts";
 import { cn } from "../lib/utils";
 
 export interface SecretBindingValue {
@@ -39,14 +41,6 @@ interface SecretBindingPickerProps {
 
 const VERSION_LATEST: SecretVersionSelector = "latest";
 
-function describeSecret(secret: CompanySecret): string {
-  const provider = secret.provider.replaceAll("_", " ");
-  if (secret.managedMode === "external_reference") {
-    return `External · ${provider}`;
-  }
-  return provider;
-}
-
 export function SecretBindingPicker({
   value,
   onChange,
@@ -61,9 +55,7 @@ export function SecretBindingPicker({
   const queryClient = useQueryClient();
   const companyId = useCompanyRouteId();
   const [createOpen, setCreateOpen] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createValue, setCreateValue] = useState("");
-  const [createDescription, setCreateDescription] = useState("");
+  const [createDraft, setCreateDraft] = useState<SecretCreationDraft>(() => createSecretCreationDraft());
   const [createError, setCreateError] = useState<string | null>(null);
   const secretSelectId = useId();
 
@@ -84,13 +76,19 @@ export function SecretBindingPicker({
   }, [secretsQuery.data, value]);
 
   const selectedMissing = Boolean(value && !selectedSecret);
+  const pickerSecrets = useMemo(() => {
+    if (!selectedSecret || filteredSecrets.some((secret) => secret.id === selectedSecret.id)) {
+      return filteredSecrets;
+    }
+    return [selectedSecret, ...filteredSecrets];
+  }, [filteredSecrets, selectedSecret]);
 
   const createMutation = useMutation({
     mutationFn: () =>
       secretsApi.create(companyId, {
-        name: createName.trim(),
-        value: createValue,
-        description: createDescription.trim() || null,
+        name: createDraft.name.trim(),
+        value: createDraft.value,
+        description: createDraft.description.trim() || null,
       }),
     onSuccess: (created) => {
       queryClient.invalidateQueries({
@@ -98,9 +96,7 @@ export function SecretBindingPicker({
       });
       onChange({ secretId: created.id, version: VERSION_LATEST });
       setCreateOpen(false);
-      setCreateName("");
-      setCreateValue("");
-      setCreateDescription("");
+      setCreateDraft(createSecretCreationDraft());
       setCreateError(null);
     },
     onError: (error) => {
@@ -120,59 +116,41 @@ export function SecretBindingPicker({
           Loading secret choices.
         </p>
       ) : null}
-      <Field>
-        {label ? (
-          <div className="flex items-center justify-between">
-            <FieldLabel htmlFor={secretSelectId}>{label}</FieldLabel>
-            {value ? (
-              <Button
-                type="button"
-                variant="link"
-                size="xs"
-                onClick={() => onChange(null)}
-                disabled={disabled}
-              >
-                <X className="h-3 w-3" /> Clear
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
+      <LabeledFormField
+        label={label || placeholder}
+        labelClassName={label ? undefined : "sr-only"}
+        labelFor={secretSelectId}
+        labelActions={
+          value ? (
+            <Button type="button" variant="link" size="xs" onClick={() => onChange(null)} disabled={disabled}>
+              <X className="h-3 w-3" /> Clear
+            </Button>
+          ) : undefined
+        }
+      >
         <div className="flex items-center gap-1.5">
-          <div className="relative flex-1">
-            <KeyRound className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground z-10" />
-            <Select
-              value={value?.secretId ?? ""}
-              onValueChange={(next) => {
-                if (!next) {
-                  onChange(null);
-                  return;
-                }
-                onChange({
-                  secretId: next,
-                  version: value?.version ?? VERSION_LATEST,
-                });
-              }}
+          <div className="min-w-0 flex-1">
+            <SecretPicker
+              secretId={value?.secretId ?? ""}
+              secrets={pickerSecrets}
+              selectableStatuses={statusFilter}
               disabled={disabled || secretsQuery.isPending}
-            >
-              <SelectTrigger
-                id={secretSelectId}
-                className={cn("h-9 w-full pl-7", selectedMissing && "border-destructive text-destructive")}
-              >
-                <SelectValue placeholder={secretsQuery.isPending ? "Loading…" : placeholder} />
-              </SelectTrigger>
-              <SelectContent>
-                {selectedMissing && value ? (
-                  <SelectItem value={value.secretId}>
-                    Missing secret ({value.secretId.slice(0, 8)}…)
-                  </SelectItem>
-                ) : null}
-                {filteredSecrets.map((secret) => (
-                  <SelectItem key={secret.id} value={secret.id}>
-                    {secret.name} — {describeSecret(secret)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              triggerId={secretSelectId}
+              ariaLabel={label || placeholder}
+              placeholder={secretsQuery.isPending ? "Loading…" : placeholder}
+              triggerClassName="h-9 min-h-9"
+              onSelect={(secretId) =>
+                onChange({
+                  secretId,
+                  version: value?.version ?? VERSION_LATEST,
+                })
+              }
+              onCreateNew={(query) => {
+                setCreateDraft(createSecretCreationDraft({ name: query }));
+                setCreateError(null);
+                setCreateOpen(true);
+              }}
+            />
           </div>
           {allowVersionSelector ? (
             <Select
@@ -208,23 +186,11 @@ export function SecretBindingPicker({
               </SelectContent>
             </Select>
           ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setCreateOpen(true)}
-            disabled={disabled}
-            aria-label="Create secret"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
         </div>
 
         {selectedSecret ? (
           <FieldDescription>
-            {selectedSecret.status !== "active" ? (
-              <Badge variant="outline">{selectedSecret.status}</Badge>
-            ) : null}{" "}
+            {selectedSecret.status !== "active" ? <DomainStatus status={selectedSecret.status} /> : null}{" "}
             Bound to {versionDisplay(value?.version)} · {selectedSecret.key}
           </FieldDescription>
         ) : selectedMissing ? (
@@ -237,69 +203,71 @@ export function SecretBindingPicker({
         ) : filteredSecrets.length === 0 && !secretsQuery.isPending ? (
           <FieldDescription>{emptyHint}</FieldDescription>
         ) : null}
-      </Field>
+      </LabeledFormField>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
-          {createMutation.isPending ? (
-            <p className="sr-only" role="status">
-              Creating and binding secret.
-            </p>
-          ) : null}
-          <DialogHeader>
-            <DialogTitle>Create new secret</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Field>
-              <FieldLabel htmlFor="secret-name">Name</FieldLabel>
-              <Input
-                id="secret-name"
-                value={createName}
-                onChange={(event) => setCreateName(event.target.value)}
-                placeholder="OPENAI_API_KEY"
-                autoFocus
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="secret-value">Value</FieldLabel>
-              <Textarea
-                id="secret-value"
-                value={createValue}
-                onChange={(event) => setCreateValue(event.target.value)}
-                rows={3}
-                placeholder="Paste the secret value"
-                className="font-mono text-xs"
-              />
-              <FieldDescription>
-                The value is stored once and never re-displayed. Rotate to replace.
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="secret-description">Description</FieldLabel>
-              <Input
-                id="secret-description"
-                value={createDescription}
-                onChange={(event) => setCreateDescription(event.target.value)}
-                placeholder="Optional notes (no values)"
-              />
-            </Field>
-            <FieldError>{createError}</FieldError>
-          </div>
-          <DialogFooter>
+      <FormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        contentClassName="sm:max-w-md"
+        title="Create new secret"
+        footer={
+          <>
             <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
             <Button
               type="button"
               onClick={() => createMutation.mutate()}
-              disabled={!createName.trim() || !createValue || createMutation.isPending}
+              disabled={!createDraft.name.trim() || !createDraft.value || createMutation.isPending}
             >
               {createMutation.isPending ? <Spinner className="h-3.5 w-3.5" /> : null}
               Create &amp; bind
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        {createMutation.isPending ? (
+          <p className="sr-only" role="status">
+            Creating and binding secret.
+          </p>
+        ) : null}
+        <div className="space-y-3">
+          <LabeledFormField label="Name" labelFor="secret-name">
+            <Input
+              id="secret-name"
+              value={createDraft.name}
+              onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))}
+              placeholder="OPENAI_API_KEY"
+              autoFocus
+            />
+          </LabeledFormField>
+          <LabeledFormField
+            label="Value"
+            labelFor="secret-value"
+            description="The value is stored once and never re-displayed. Rotate to replace."
+          >
+            <Textarea
+              id="secret-value"
+              value={createDraft.value}
+              onChange={(event) => setCreateDraft((current) => ({ ...current, value: event.target.value }))}
+              rows={3}
+              placeholder="Paste the secret value"
+              className="font-mono text-xs"
+            />
+          </LabeledFormField>
+          <LabeledFormField label="Description" labelFor="secret-description">
+            <Input
+              id="secret-description"
+              value={createDraft.description}
+              onChange={(event) =>
+                setCreateDraft((current) => ({ ...current, description: event.target.value }))
+              }
+              placeholder="Optional notes (no values)"
+            />
+          </LabeledFormField>
+          {createError ? <FieldError>{createError}</FieldError> : null}
+        </div>
+      </FormDialog>
     </div>
   );
 }

@@ -1,26 +1,21 @@
 import { ApiError } from "@/api/client";
-import {
-  routinesApi,
-  type RotateRoutineTriggerResponse,
-  type RoutineTriggerResponse,
-} from "@/api/routines";
+import { routinesApi, type RotateRoutineTriggerResponse, type RoutineTriggerResponse } from "@/api/routines";
 import { secretsApi } from "@/api/secrets";
 import type { RoutineRunDialogSubmitData } from "@/components/RoutineRunVariablesDialog";
 import {
   createDefaultNewTrigger,
   type RoutineEditDraft,
   type RoutineSectionKey,
+  type RoutineTriggerPatch,
   type SecretMessage,
 } from "@/components/routine-sections/context";
 import { toast } from "sonner";
 import { queryKeys } from "@/lib/queryKeys";
-import {
-  buildRoutineMutationPayload,
-  getLocalTimezone,
-} from "./routineDetailDraft";
+import { buildRoutineMutationPayload, getLocalTimezone } from "./routineDetailDraft";
 import type { RoutineDetail } from "@paperclipai/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
+import type { NameValuePair } from "@/lib/presentation-contracts";
 
 export interface UseRoutineDetailMutationsOptions {
   companyId: string;
@@ -49,8 +44,7 @@ export function useRoutineDetailMutations({
   const queryClient = useQueryClient();
 
   const createSecret = useMutation({
-    mutationFn: (input: { name: string; value: string }) =>
-      secretsApi.create(companyId, input),
+    mutationFn: (input: NameValuePair) => secretsApi.create(companyId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.secrets.list(companyId),
@@ -88,16 +82,13 @@ export function useRoutineDetailMutations({
       if (mutationError instanceof ApiError && mutationError.status === 409) {
         setSaveConflict(true);
         toast.warning("Routine changed", {
-          description:
-            "Someone else updated this routine. Reload to see the latest revision.",
+          description: "Someone else updated this routine. Reload to see the latest revision.",
         });
         return;
       }
       toast.error("Failed to save routine", {
         description:
-          mutationError instanceof Error
-            ? mutationError.message
-            : "Paperclip could not save the routine.",
+          mutationError instanceof Error ? mutationError.message : "Paperclip could not save the routine.",
       });
     },
   });
@@ -105,12 +96,8 @@ export function useRoutineDetailMutations({
   const runRoutine = useMutation({
     mutationFn: (data?: RoutineRunDialogSubmitData) =>
       routinesApi.run(routineId, {
-        ...(data?.variables && Object.keys(data.variables).length > 0
-          ? { variables: data.variables }
-          : {}),
-        ...(data?.assigneeAgentId !== undefined
-          ? { assigneeAgentId: data.assigneeAgentId }
-          : {}),
+        ...(data?.variables && Object.keys(data.variables).length > 0 ? { variables: data.variables } : {}),
+        ...(data?.assigneeAgentId !== undefined ? { assigneeAgentId: data.assigneeAgentId } : {}),
         ...(data?.projectId !== undefined ? { projectId: data.projectId } : {}),
       }),
     onSuccess: async () => {
@@ -135,9 +122,7 @@ export function useRoutineDetailMutations({
     onError: (runError) => {
       toast.error("Routine run failed", {
         description:
-          runError instanceof Error
-            ? runError.message
-            : "Paperclip could not start the routine run.",
+          runError instanceof Error ? runError.message : "Paperclip could not start the routine run.",
       });
     },
   });
@@ -154,8 +139,7 @@ export function useRoutineDetailMutations({
     },
     onSuccess: async (_data, status) => {
       toast.success("Routine saved", {
-        description:
-          status === "paused" ? "Automation paused." : "Automation enabled.",
+        description: status === "paused" ? "Automation paused." : "Automation enabled.",
       });
       await Promise.all([
         queryClient.invalidateQueries({
@@ -169,9 +153,7 @@ export function useRoutineDetailMutations({
     onError: (statusError) => {
       toast.error("Failed to update routine", {
         description:
-          statusError instanceof Error
-            ? statusError.message
-            : "Paperclip could not update the routine.",
+          statusError instanceof Error ? statusError.message : "Paperclip could not update the routine.",
       });
     },
   });
@@ -181,10 +163,7 @@ export function useRoutineDetailMutations({
       const existingOfKind = (routine?.triggers ?? []).filter(
         (trigger) => trigger.kind === newTrigger.kind,
       ).length;
-      const autoLabel =
-        existingOfKind > 0
-          ? `${newTrigger.kind}-${existingOfKind + 1}`
-          : newTrigger.kind;
+      const autoLabel = existingOfKind > 0 ? `${newTrigger.kind}-${existingOfKind + 1}` : newTrigger.kind;
       return routinesApi.createTrigger(routineId, {
         kind: newTrigger.kind,
         label: autoLabel,
@@ -218,21 +197,13 @@ export function useRoutineDetailMutations({
     onError: (triggerError) => {
       toast.error("Failed to add trigger", {
         description:
-          triggerError instanceof Error
-            ? triggerError.message
-            : "Paperclip could not create the trigger.",
+          triggerError instanceof Error ? triggerError.message : "Paperclip could not create the trigger.",
       });
     },
   });
 
   const updateTrigger = useMutation({
-    mutationFn: ({
-      id,
-      patch,
-    }: {
-      id: string;
-      patch: Record<string, unknown>;
-    }) => routinesApi.updateTrigger(id, patch),
+    mutationFn: ({ id, patch }: RoutineTriggerPatch) => routinesApi.updateTrigger(id, patch),
     onSuccess: async () => {
       toast.success("Trigger saved", {
         description: "The routine cadence update was saved.",
@@ -242,9 +213,7 @@ export function useRoutineDetailMutations({
     onError: (triggerError) => {
       toast.error("Failed to update trigger", {
         description:
-          triggerError instanceof Error
-            ? triggerError.message
-            : "Paperclip could not update the trigger.",
+          triggerError instanceof Error ? triggerError.message : "Paperclip could not update the trigger.",
       });
     },
   });
@@ -258,16 +227,13 @@ export function useRoutineDetailMutations({
     onError: (triggerError) => {
       toast.error("Failed to delete trigger", {
         description:
-          triggerError instanceof Error
-            ? triggerError.message
-            : "Paperclip could not delete the trigger.",
+          triggerError instanceof Error ? triggerError.message : "Paperclip could not delete the trigger.",
       });
     },
   });
 
   const rotateTrigger = useMutation({
-    mutationFn: (id: string): Promise<RotateRoutineTriggerResponse> =>
-      routinesApi.rotateTriggerSecret(id),
+    mutationFn: (id: string): Promise<RotateRoutineTriggerResponse> => routinesApi.rotateTriggerSecret(id),
     onSuccess: async (result) => {
       setSecretMessage({
         title: "Webhook secret rotated",

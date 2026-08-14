@@ -1,4 +1,4 @@
-import { FormField } from "./JsonSchemaFields";
+import { JsonSchemaField } from "./JsonSchemaFields";
 import { JsonSchemaFormContent } from "./JsonSchemaFormContent";
 import type { JsonSchemaNode } from "./JsonSchemaUtils";
 
@@ -24,14 +24,12 @@ export interface JsonSchemaFormFieldProps {
   path: string;
 }
 
-export { ArrayField, FormField, ObjectField } from "./JsonSchemaFields";
-
 /**
  * Renders primitive values, enums, secrets, objects, and arrays from a JSON
  * Schema while preserving nested validation paths.
  */
 export function JsonSchemaForm(props: JsonSchemaFormProps) {
-  return <JsonSchemaFormContent {...props} FieldComponent={FormField} />;
+  return <JsonSchemaFormContent {...props} FieldComponent={JsonSchemaField} />;
 }
 
 export * from "./JsonSchemaScalarFields";

@@ -1,14 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
-import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Cpu } from "lucide-react";
-import { useCompany } from "@/context/CompanyContext";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
+import { useSettingsBreadcrumbs } from "@/hooks/useSettingsBreadcrumbs";
 import { adaptersApi } from "@/api/adapters";
 import { useAdapterCatalogSyncState } from "@/adapters/use-adapter-catalog";
 import { queryKeys } from "@/lib/queryKeys";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -23,39 +21,12 @@ export const Route = createFileRoute("/_authenticated/$companyId/company/setting
 
 function AdapterManager() {
   const companyId = useCompanyRouteId();
-  const { selectedCompany } = useCompany();
-  const { setBreadcrumbs } = useBreadcrumbs();
   useAdapterCatalogSyncState();
-
-  useEffect(() => {
-    setBreadcrumbs([
-      {
-        label: selectedCompany?.name ?? "Company",
-        renderLink: (content) => (
-          <Link to="/$companyId/dashboard" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      {
-        label: "Instance settings",
-        renderLink: (content) => (
-          <Link to="/$companyId/company/settings/instance" params={{ companyId }}>
-            {content}
-          </Link>
-        ),
-      },
-      { label: "Local agents" },
-    ]);
-  }, [companyId, selectedCompany?.name, setBreadcrumbs]);
+  useSettingsBreadcrumbs({
+    companyId,
+    instance: true,
+    page: "Local agents",
+  });
 
   const {
     data: adapters,
@@ -121,13 +92,13 @@ function AdapterManager() {
                       <ItemTitle>
                         {adapter.label}
                         <Badge variant="outline">Local runtime contract</Badge>
-                        <Badge variant={isReady ? "secondary" : "destructive"}>
+                        <DomainStatus status={isReady ? "ready" : "failed"}>
                           {isReady
                             ? "Ready"
                             : adapter.diagnostic.code === "acpx_catalog_invalid"
                               ? "Catalog metadata rejected"
                               : "Probe failed"}
-                        </Badge>
+                        </DomainStatus>
                       </ItemTitle>
                       <ItemDescription>
                         {isReady ? (

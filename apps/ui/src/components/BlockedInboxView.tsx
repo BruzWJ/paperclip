@@ -24,6 +24,7 @@ import { deriveInitials } from "@/lib/identity";
 import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -113,6 +114,20 @@ export function BlockedInboxView({
       return next;
     });
   };
+  const renderBlockedRow = (row: BlockedInboxTaskRow) => (
+    <BlockedInboxRow
+      key={row.task.id}
+      row={row}
+      taskLinkState={taskLinkState}
+      agentNameById={agentNameById}
+      userLabelById={userLabelById}
+      liveTaskIds={liveTaskIds}
+      subtreeLiveCounts={subtreeLiveCounts}
+      showStatusColumn={showStatusColumn}
+      showIdentifierColumn={showIdentifierColumn}
+      showUpdatedColumn={showUpdatedColumn}
+    />
+  );
 
   if (isLoading) {
     return (
@@ -181,20 +196,7 @@ export function BlockedInboxView({
     <div data-testid="blocked-inbox" className="space-y-3">
       <div className="overflow-hidden rounded-xl">
         {groupBy === "none"
-          ? sortedRows.map((row) => (
-              <BlockedInboxRow
-                key={row.task.id}
-                row={row}
-                taskLinkState={taskLinkState}
-                agentNameById={agentNameById}
-                userLabelById={userLabelById}
-                liveTaskIds={liveTaskIds}
-                subtreeLiveCounts={subtreeLiveCounts}
-                showStatusColumn={showStatusColumn}
-                showIdentifierColumn={showIdentifierColumn}
-                showUpdatedColumn={showUpdatedColumn}
-              />
-            ))
+          ? sortedRows.map(renderBlockedRow)
           : groups.map((group) => {
               const isCollapsed = collapsedVariants.has(group.variant);
               return (
@@ -227,22 +229,7 @@ export function BlockedInboxView({
                         </CollapsibleTrigger>
                       </div>
                     </div>
-                    <CollapsibleContent>
-                      {group.rows.map((row) => (
-                        <BlockedInboxRow
-                          key={row.task.id}
-                          row={row}
-                          taskLinkState={taskLinkState}
-                          agentNameById={agentNameById}
-                          userLabelById={userLabelById}
-                          liveTaskIds={liveTaskIds}
-                          subtreeLiveCounts={subtreeLiveCounts}
-                          showStatusColumn={showStatusColumn}
-                          showIdentifierColumn={showIdentifierColumn}
-                          showUpdatedColumn={showUpdatedColumn}
-                        />
-                      ))}
-                    </CollapsibleContent>
+                    <CollapsibleContent>{group.rows.map(renderBlockedRow)}</CollapsibleContent>
                   </div>
                 </Collapsible>
               );
@@ -390,12 +377,12 @@ function BlockedInboxRow({
       }
       mobileLeading={
         <span className="flex shrink-0 items-center gap-1.5 pt-px">
-          <Badge
-            variant="secondary"
+          <DomainStatus
+            status={row.task.boardPresentationStatus}
             aria-label={taskStatusAccessibleLabel(row.task.boardPresentationStatus, blockerAttention)}
           >
             {taskValueLabel(row.task.boardPresentationStatus)}
-          </Badge>
+          </DomainStatus>
         </span>
       }
       titleSuffix={
@@ -428,12 +415,12 @@ function BlockedRowDesktopMeta({
   return (
     <span className="hidden shrink-0 items-center gap-2 sm:inline-flex">
       {showStatusColumn ? (
-        <Badge
-          variant="secondary"
+        <DomainStatus
+          status={row.task.boardPresentationStatus}
           aria-label={taskStatusAccessibleLabel(row.task.boardPresentationStatus, blockerAttention)}
         >
           {taskValueLabel(row.task.boardPresentationStatus)}
-        </Badge>
+        </DomainStatus>
       ) : null}
       {showIdentifierColumn ? (
         <span className="font-mono text-xs text-muted-foreground">{identifier}</span>

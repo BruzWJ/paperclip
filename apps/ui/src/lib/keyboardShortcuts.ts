@@ -13,13 +13,30 @@ const MODIFIER_ONLY_KEYS = new Set(["Shift", "Meta", "Control", "Alt"]);
 
 export type InboxQuickArchiveKeyAction = "ignore" | "archive" | "disarm";
 export type InboxUndoArchiveKeyAction = "ignore" | "undo_archive";
-export type TaskDetailGoKeyAction =
-  | "ignore"
-  | "arm"
-  | "navigate_inbox"
-  | "focus_comment"
-  | "disarm";
+export type TaskDetailGoKeyAction = "ignore" | "arm" | "navigate_inbox" | "focus_comment" | "disarm";
 export type AttentionQueueKeyAction = "ignore" | "next" | "previous" | "toggle" | "dismiss";
+
+interface KeyboardShortcutKeyInput {
+  defaultPrevented: boolean;
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  target: EventTarget | null;
+  hasOpenDialog: boolean;
+}
+
+interface ArmedKeyboardShortcutKeyInput extends KeyboardShortcutKeyInput {
+  armed: boolean;
+}
+
+interface AttentionQueueKeyInput extends KeyboardShortcutKeyInput {
+  hasSelection: boolean;
+}
+
+interface UndoArchiveKeyInput extends KeyboardShortcutKeyInput {
+  hasUndoableArchive: boolean;
+}
 
 export function isKeyboardShortcutTextInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -94,16 +111,7 @@ export function resolveAttentionQueueKeyAction({
   target,
   hasOpenDialog,
   hasSelection,
-}: {
-  defaultPrevented: boolean;
-  key: string;
-  metaKey: boolean;
-  ctrlKey: boolean;
-  altKey: boolean;
-  target: EventTarget | null;
-  hasOpenDialog: boolean;
-  hasSelection: boolean;
-}): AttentionQueueKeyAction {
+}: AttentionQueueKeyInput): AttentionQueueKeyAction {
   if (defaultPrevented || metaKey || ctrlKey || altKey || isModifierOnlyKey(key)) return "ignore";
   if (hasOpenDialog || isKeyboardShortcutTextInputTarget(target)) return "ignore";
 
@@ -132,16 +140,7 @@ export function resolveInboxQuickArchiveKeyAction({
   altKey,
   target,
   hasOpenDialog,
-}: {
-  armed: boolean;
-  defaultPrevented: boolean;
-  key: string;
-  metaKey: boolean;
-  ctrlKey: boolean;
-  altKey: boolean;
-  target: EventTarget | null;
-  hasOpenDialog: boolean;
-}): InboxQuickArchiveKeyAction {
+}: ArmedKeyboardShortcutKeyInput): InboxQuickArchiveKeyAction {
   if (!armed) return "ignore";
   if (defaultPrevented) return "ignore";
   if (metaKey || ctrlKey || altKey || isModifierOnlyKey(key)) return "ignore";
@@ -159,16 +158,7 @@ export function resolveInboxUndoArchiveKeyAction({
   altKey,
   target,
   hasOpenDialog,
-}: {
-  hasUndoableArchive: boolean;
-  defaultPrevented: boolean;
-  key: string;
-  metaKey: boolean;
-  ctrlKey: boolean;
-  altKey: boolean;
-  target: EventTarget | null;
-  hasOpenDialog: boolean;
-}): InboxUndoArchiveKeyAction {
+}: UndoArchiveKeyInput): InboxUndoArchiveKeyAction {
   if (!hasUndoableArchive) return "ignore";
   if (defaultPrevented) return "ignore";
   if (metaKey || ctrlKey || altKey || isModifierOnlyKey(key)) return "ignore";
@@ -186,16 +176,7 @@ export function resolveTaskDetailGoKeyAction({
   altKey,
   target,
   hasOpenDialog,
-}: {
-  armed: boolean;
-  defaultPrevented: boolean;
-  key: string;
-  metaKey: boolean;
-  ctrlKey: boolean;
-  altKey: boolean;
-  target: EventTarget | null;
-  hasOpenDialog: boolean;
-}): TaskDetailGoKeyAction {
+}: ArmedKeyboardShortcutKeyInput): TaskDetailGoKeyAction {
   if (defaultPrevented) return armed ? "disarm" : "ignore";
   if (metaKey || ctrlKey || altKey || isModifierOnlyKey(key)) return "ignore";
   if (hasOpenDialog || isKeyboardShortcutTextInputTarget(target)) {

@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { SEARCH_OPERATOR_QUICK_FILTERS, searchOperatorSuggestions } from "@/lib/search-query-parser";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import {
   Bot,
   CircleDot,
@@ -156,9 +156,7 @@ export function CommandPaletteWithSearchAll({
                   <CircleDot className="mr-2 h-4 w-4" />
                   <span className="mr-2 font-mono text-xs text-muted-foreground">{task.identifier}</span>
                   <span className="flex-1 truncate">{task.title}</span>
-                  <Badge variant={statusBadgeVariant(task.boardPresentationStatus)}>
-                    {task.boardPresentationStatus}
-                  </Badge>
+                  <DomainStatus status={task.boardPresentationStatus} />
                 </CommandItem>
               ))}
             </CommandGroup>

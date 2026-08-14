@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Activity as ActivityIcon, Play, SlidersHorizontal, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -209,12 +210,9 @@ export function RunsSection() {
                       <Badge variant="outline" className="shrink-0">
                         {run.source}
                       </Badge>
-                      <Badge
-                        variant={run.status === "failed" ? "destructive" : "secondary"}
-                        className="shrink-0"
-                      >
+                      <DomainStatus status={run.status} className="shrink-0">
                         {run.status.replaceAll("_", " ")}
-                      </Badge>
+                      </DomainStatus>
                     </ItemMedia>
                     <ItemContent>
                       <ItemTitle>

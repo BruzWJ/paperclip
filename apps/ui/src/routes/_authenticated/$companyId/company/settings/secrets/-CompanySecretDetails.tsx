@@ -1,6 +1,8 @@
 import { accessApi, type CompanyUserDirectoryEntry } from "@/api/access";
 import { CompanyBoardLink } from "@/components/CompanyBoardLink";
 import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { DetailList } from "@/components/patterns/DetailList";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
@@ -16,14 +18,9 @@ import type {
   SecretProviderDescriptor,
 } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
+import { relativeTime as formatRelative } from "@/lib/utils";
 
-import {
-  formatRelative,
-  modeDescription,
-  modeLabel,
-  providerLabel,
-  providerVaultLabel,
-} from "./-secrets-model";
+import { modeDescription, modeLabel, providerLabel, providerVaultLabel } from "./-secrets-model";
 
 export function SecretDetailsTab({
   secret,
@@ -76,16 +73,7 @@ export function SecretDetailsTab({
 
   return (
     <>
-      <ItemGroup className="divide-y">
-        {details.map(({ label, value }) => (
-          <Item key={label} size="sm" className="rounded-none border-0">
-            <ItemContent className="max-w-(--sz-10rem) flex-none">
-              <ItemDescription>{label}</ItemDescription>
-            </ItemContent>
-            <ItemContent className="min-w-0 text-foreground">{value}</ItemContent>
-          </Item>
-        ))}
-      </ItemGroup>
+      <DetailList items={details} />
       <Alert className="mt-3">
         <AlertDescription>
           {modeDescription(secret.managedMode)} Paperclip never re-displays stored values.
@@ -137,7 +125,9 @@ export function SecretUsageTab({
                 <ItemTitle>{binding.target.label}</ItemTitle>
               )}
               {binding.target.status ? (
-                <Badge variant="outline">{binding.target.status.replaceAll("_", " ")}</Badge>
+                <DomainStatus status={binding.target.status}>
+                  {binding.target.status.replaceAll("_", " ")}
+                </DomainStatus>
               ) : null}
               <ItemDescription>{binding.targetId}</ItemDescription>
               <ItemDescription>

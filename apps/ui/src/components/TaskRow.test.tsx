@@ -71,7 +71,7 @@ describe("TaskRow", () => {
     container.remove();
   });
 
-  it("renders task status with the shared badge primitive", () => {
+  it("renders task status through the shared Kibo Status pattern", () => {
     const root = createRoot(container);
 
     act(() => {
@@ -82,6 +82,8 @@ describe("TaskRow", () => {
     expect(badges.length).toBeGreaterThan(0);
     badges.forEach((badge) => {
       expect(badge.textContent).toBe("In Progress");
+      expect(badge.classList.contains("online")).toBe(true);
+      expect(badge.querySelector('[aria-hidden="true"]')).not.toBeNull();
     });
 
     act(() => {

@@ -1,5 +1,5 @@
 import { Spinner } from "@/components/ui/spinner";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -11,16 +11,7 @@ import {
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import type { Agent } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
-import {
-  AlertTriangle,
-  DollarSign,
-  LogOut,
-  MoreHorizontal,
-  PauseCircle,
-  Pencil,
-  PlayCircle,
-  Star,
-} from "lucide-react";
+import { AlertTriangle, LogOut, MoreHorizontal, PauseCircle, Pencil, PlayCircle, Star } from "lucide-react";
 import { cn } from "../lib/utils";
 import { AgentIcon } from "./AgentIconPicker";
 import { SidebarNavItem } from "./SidebarNavItem";
@@ -102,9 +93,9 @@ export function SidebarAgentItem({
     withinMenuItem: true,
     liveAccessory:
       agent.pauseReason === "budget" ? (
-        <Badge variant="destructive" title="Agent paused by budget" aria-label="Agent paused by budget">
-          <DollarSign aria-hidden="true" />
-        </Badge>
+        <DomainStatus status="hard_stop" title="Agent paused by budget">
+          <span className="sr-only">Agent paused by budget</span>
+        </DomainStatus>
       ) : undefined,
   };
   const navItem = activeTab ? (

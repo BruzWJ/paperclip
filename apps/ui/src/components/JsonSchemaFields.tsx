@@ -75,7 +75,7 @@ export const ArrayField = React.memo(
             <Card key={index} className="group relative flex-row items-start gap-2 p-3">
               <div className="flex-1">
                 <div className="mb-2 text-xs font-medium text-muted-foreground">Item {index + 1}</div>
-                <FormField
+                <JsonSchemaField
                   propSchema={itemSchema}
                   value={item}
                   label=""
@@ -172,7 +172,7 @@ export const ObjectField = React.memo(
                   values={(value as Record<string, unknown>) ?? {}}
                   onChange={handleObjectChange}
                   disabled={disabled}
-                  FieldComponent={FormField}
+                  FieldComponent={JsonSchemaField}
                   errors={Object.fromEntries(
                     Object.entries(errors)
                       .filter(([errPath]) => errPath.startsWith(`${path}/`))
@@ -191,7 +191,7 @@ export const ObjectField = React.memo(
 /**
  * Orchestrator component that selects and renders the appropriate field type based on the schema node.
  */
-export const FormField = React.memo(
+export const JsonSchemaField = React.memo(
   ({
     propSchema,
     value,

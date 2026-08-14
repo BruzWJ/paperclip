@@ -1,8 +1,8 @@
 import type { Agent } from "@paperclipai/shared";
-import * as Menu from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
 import { User } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
+import { EntityCombobox } from "@/components/patterns/EntityCombobox";
+import type { EntityOption } from "@/lib/entity-selector";
 
 export function ReportsToPicker({
   agents,
@@ -26,18 +26,41 @@ export function ReportsToPicker({
   const current = value ? agents.find((a) => a.id === value) : null;
   const terminatedManager = current?.status === "terminated";
   const unknownManager = Boolean(value && !current);
+  const options: EntityOption[] = rows.map((agent) => ({
+    id: agent.id,
+    label: agent.name,
+    searchText: `${agent.name} ${agent.title ?? ""}`,
+  }));
 
   return (
-    <Menu.DropdownMenu>
-      <Menu.DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          className="h-auto max-w-full min-w-0 justify-start overflow-hidden py-1"
-          aria-invalid={terminatedManager || unknownManager || undefined}
-          disabled={disabled}
-        >
+    <EntityCombobox
+      value={value ?? ""}
+      options={options}
+      type="manager"
+      ariaLabel="Reports to"
+      placeholder={disabled ? disabledEmptyLabel : chooseLabel}
+      noneLabel="No manager"
+      disabled={disabled}
+      openOnFocus={false}
+      searchPlaceholder="Search managers..."
+      emptyMessage="No eligible managers found."
+      triggerClassName="h-auto max-w-full min-w-0 justify-start py-1"
+      triggerProps={{
+        size: "xs",
+        "aria-invalid": terminatedManager || unknownManager || undefined,
+      }}
+      contentLeading={
+        terminatedManager || unknownManager ? (
+          <p className="border-b px-3 py-2 text-xs text-muted-foreground">
+            {terminatedManager
+              ? `Current manager ${current.name} is terminated. Choose a new manager or clear.`
+              : "Saved manager is missing from this company. Choose a new manager or clear."}
+          </p>
+        ) : undefined
+      }
+      onValueChange={(id) => onChange(id || null)}
+      renderValue={() => (
+        <>
           {unknownManager ? (
             <>
               <User className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -56,48 +79,18 @@ export function ReportsToPicker({
               <span className="min-w-0 truncate">{disabled ? disabledEmptyLabel : chooseLabel}</span>
             </>
           )}
-        </Button>
-      </Menu.DropdownMenuTrigger>
-      <Menu.DropdownMenuContent className="w-48" align="start">
-        {terminatedManager && (
+        </>
+      )}
+      renderOption={(option) => {
+        const agent = rows.find((candidate) => candidate.id === option.id);
+        return (
           <>
-            <Menu.DropdownMenuLabel className="flex min-w-0 items-center gap-2 overflow-hidden text-xs font-normal text-muted-foreground">
-              <AgentIcon icon={current.icon} className="shrink-0 h-3 w-3" />
-              <span className="min-w-0 truncate">Current: {current.name} (terminated)</span>
-            </Menu.DropdownMenuLabel>
-            <Menu.DropdownMenuSeparator />
+            {agent ? <AgentIcon icon={agent.icon} className="size-3 shrink-0 text-muted-foreground" /> : null}
+            <span className="min-w-0 flex-1 truncate">{option.label}</span>
+            {agent?.title ? <span className="shrink-0 text-muted-foreground">{agent.title}</span> : null}
           </>
-        )}
-        {unknownManager && (
-          <>
-            <Menu.DropdownMenuLabel className="whitespace-normal text-xs font-normal text-muted-foreground">
-              Saved manager is missing from this company. Choose a new manager or clear.
-            </Menu.DropdownMenuLabel>
-            <Menu.DropdownMenuSeparator />
-          </>
-        )}
-        <Menu.DropdownMenuRadioGroup
-          value={value ?? "none"}
-          onValueChange={(id) => onChange(id === "none" ? null : id)}
-        >
-          <Menu.DropdownMenuRadioItem value="none" className="text-xs">
-            No manager
-          </Menu.DropdownMenuRadioItem>
-          {rows.map((agent) => (
-            <Menu.DropdownMenuRadioItem
-              key={agent.id}
-              value={agent.id}
-              className="min-w-0 overflow-hidden text-xs"
-            >
-              <AgentIcon icon={agent.icon} className="size-3 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 truncate">{agent.name}</span>
-              {agent.title ? (
-                <span className="ml-auto shrink-0 text-muted-foreground">{agent.title}</span>
-              ) : null}
-            </Menu.DropdownMenuRadioItem>
-          ))}
-        </Menu.DropdownMenuRadioGroup>
-      </Menu.DropdownMenuContent>
-    </Menu.DropdownMenu>
+        );
+      }}
+    />
   );
 }

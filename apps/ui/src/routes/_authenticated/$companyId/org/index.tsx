@@ -10,11 +10,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { queryKeys } from "@/lib/queryKeys";
-import { type Agent } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Network } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { indexEntitiesById, type Point2D } from "@/lib/presentation-contracts";
 import {
   ORG_CARD_HEIGHT,
   ORG_CARD_WIDTH,
@@ -36,18 +36,13 @@ const TOUCH_MOVE_THRESHOLD = 6;
 
 // ── Tree layout types ───────────────────────────────────────────────────
 
-interface Point {
-  x: number;
-  y: number;
-}
-
 interface TouchGesture {
   mode: "pan" | "pinch" | null;
-  startPoint: Point;
-  startPan: Point;
+  startPoint: Point2D;
+  startPan: Point2D;
   startZoom: number;
   startDistance: number;
-  startCenter: Point;
+  startCenter: Point2D;
   moved: boolean;
 }
 
@@ -55,7 +50,7 @@ function clampZoom(value: number): number {
   return Math.min(Math.max(value, MIN_ZOOM), MAX_ZOOM);
 }
 
-function touchPoint(touch: React.Touch): Point {
+function touchPoint(touch: React.Touch): Point2D {
   return { x: touch.clientX, y: touch.clientY };
 }
 
@@ -65,7 +60,7 @@ function touchDistance(a: React.Touch, b: React.Touch): number {
   return Math.hypot(dx, dy);
 }
 
-function touchCenter(a: React.Touch, b: React.Touch, container: HTMLDivElement): Point {
+function touchCenter(a: React.Touch, b: React.Touch, container: HTMLDivElement): Point2D {
   const rect = container.getBoundingClientRect();
   return {
     x: (a.clientX + b.clientX) / 2 - rect.left,
@@ -90,11 +85,7 @@ function OrgChart() {
     queryFn: () => agentsApi.list(companyId),
   });
 
-  const agentMap = useMemo(() => {
-    const m = new Map<string, Agent>();
-    for (const a of agents ?? []) m.set(a.id, a);
-    return m;
-  }, [agents]);
+  const agentMap = useMemo(() => indexEntitiesById(agents), [agents]);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Org Chart" }]);
@@ -227,7 +218,7 @@ function OrgChart() {
   );
 
   const zoomTowardPoint = useCallback(
-    (newZoom: number, point: Point) => {
+    (newZoom: number, point: Point2D) => {
       const clampedZoom = clampZoom(newZoom);
       const scale = clampedZoom / zoom;
       setPan({

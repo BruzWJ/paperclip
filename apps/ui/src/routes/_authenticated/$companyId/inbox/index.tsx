@@ -3,10 +3,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { createElement, useCallback, useEffect } from "react";
 
 import { BlockedInboxView } from "@/components/BlockedInboxView";
+import { Banner, BannerClose, BannerIcon, BannerTitle } from "@/components/kibo-ui/banner";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TaskFiltersPopover } from "@/components/TaskFiltersPopover";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -31,7 +32,7 @@ import {
   type InboxWorkItemGroupBy,
 } from "@/lib/inbox";
 import { countActiveTaskFilters as countTaskFilters, type TaskFilterState } from "@/lib/task-filters";
-import { AlertTriangle, Inbox as InboxIcon, Search, X } from "lucide-react";
+import { AlertTriangle, Inbox as InboxIcon, Search } from "lucide-react";
 
 import { INBOX_TASK_DETAIL_LOCATION_STATE, type SectionKey } from "./-inbox-controller-model";
 import { InboxPageProvider, useInboxPage } from "./-InboxPageContext";
@@ -385,43 +386,29 @@ function InboxAlerts() {
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Alerts</h3>
         <div className="space-y-2">
           {showAggregateAgentError ? (
-            <Alert variant="destructive">
-              <AlertTriangle />
-              <AlertDescription>
+            <Banner visible inset onClose={() => dismissAlert("alert:agent-errors")}>
+              <BannerIcon icon={AlertTriangle} />
+              <BannerTitle>
                 <Link to="/$companyId/agents" params={{ companyId }}>
                   {dashboard!.agents.error} agent
                   {dashboard!.agents.error === 1 ? " has" : "s have"} errors
                 </Link>
-              </AlertDescription>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => dismissAlert("alert:agent-errors")}
-                className="absolute right-2 top-2"
-                aria-label="Dismiss"
-              >
-                <X />
-              </Button>
-            </Alert>
+              </BannerTitle>
+              <DomainStatus status="failed">Needs attention</DomainStatus>
+              <BannerClose aria-label="Dismiss" />
+            </Banner>
           ) : null}
           {showBudgetAlert ? (
-            <Alert>
-              <AlertTriangle />
-              <AlertDescription>
+            <Banner visible inset onClose={() => dismissAlert("alert:budget")}>
+              <BannerIcon icon={AlertTriangle} />
+              <BannerTitle>
                 <Link to="/$companyId/costs" params={{ companyId }}>
                   Budget at {dashboard!.costs.monthUtilizationPercent}% utilization this month
                 </Link>
-              </AlertDescription>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => dismissAlert("alert:budget")}
-                className="absolute right-2 top-2"
-                aria-label="Dismiss"
-              >
-                <X />
-              </Button>
-            </Alert>
+              </BannerTitle>
+              <DomainStatus status="warning">Budget warning</DomainStatus>
+              <BannerClose aria-label="Dismiss" />
+            </Banner>
           ) : null}
         </div>
       </section>

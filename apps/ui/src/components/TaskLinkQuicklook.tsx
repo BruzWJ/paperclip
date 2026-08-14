@@ -12,10 +12,16 @@ import {
 } from "@/lib/taskDetailCache";
 import { cn } from "@/lib/utils";
 import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import {
+  Glimpse,
+  GlimpseContent,
+  GlimpseDescription,
+  GlimpseTitle,
+  GlimpseTrigger,
+} from "@/components/kibo-ui/glimpse";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
 type TaskQuicklookTask = Pick<Task, "id" | "title" | "taskNumber" | "updatedAt"> & {
@@ -58,20 +64,22 @@ function TaskQuicklookCard({
   return (
     <div className={cn("space-y-2", compact && "space-y-1.5")}>
       <div className="flex items-start gap-2">
-        <Badge
-          variant="secondary"
+        <DomainStatus
+          status={task.boardPresentationStatus}
           aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, task.blockerAttention)}
         >
           {taskValueLabel(task.boardPresentationStatus)}
-        </Badge>
-        <Link
-          to="/$companyId/tasks/$taskNumber"
-          params={{ companyId, taskNumber: String(task.taskNumber) }}
-          state={linkState ?? withTaskDetailHeaderSeed(null, task)}
-          className="text-sm font-medium leading-snug hover:underline line-clamp-2"
-        >
-          {task.title}
-        </Link>
+        </DomainStatus>
+        <GlimpseTitle>
+          <Link
+            to="/$companyId/tasks/$taskNumber"
+            params={{ companyId, taskNumber: String(task.taskNumber) }}
+            state={linkState ?? withTaskDetailHeaderSeed(null, task)}
+            className="hover:underline"
+          >
+            {task.title}
+          </Link>
+        </GlimpseTitle>
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="font-mono">{task.identifier}</span>
@@ -80,11 +88,7 @@ function TaskQuicklookCard({
         <span>&middot;</span>
         <span>{timeAgo(new Date(task.updatedAt))}</span>
       </div>
-      {requestSummary ? (
-        <p className="text-xs leading-5 text-muted-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:4] overflow-hidden">
-          {requestSummary}
-        </p>
-      ) : null}
+      {requestSummary ? <GlimpseDescription>{requestSummary}</GlimpseDescription> : null}
     </div>
   );
 }
@@ -99,8 +103,8 @@ export const TaskLinkQuicklook = React.forwardRef<
     state?: React.ComponentProps<typeof Link>["state"];
     disableTaskQuicklook?: boolean;
     taskPrefetch?: Task | null;
-    taskQuicklookSide?: React.ComponentProps<typeof HoverCardContent>["side"];
-    taskQuicklookAlign?: React.ComponentProps<typeof HoverCardContent>["align"];
+    taskQuicklookSide?: React.ComponentProps<typeof GlimpseContent>["side"];
+    taskQuicklookAlign?: React.ComponentProps<typeof GlimpseContent>["align"];
   }
 >(function TaskLinkQuicklookImpl(
   {
@@ -202,9 +206,9 @@ export const TaskLinkQuicklook = React.forwardRef<
   }
 
   return (
-    <HoverCard open={open} onOpenChange={setOpen} openDelay={120} closeDelay={100}>
-      <HoverCardTrigger asChild>{link}</HoverCardTrigger>
-      <HoverCardContent className="w-72 p-3" side={taskQuicklookSide} align={taskQuicklookAlign}>
+    <Glimpse open={open} onOpenChange={setOpen} openDelay={120} closeDelay={100}>
+      <GlimpseTrigger asChild>{link}</GlimpseTrigger>
+      <GlimpseContent className="w-72 p-3" side={taskQuicklookSide} align={taskQuicklookAlign}>
         {data ? (
           <TaskQuicklookCard task={data} linkState={prefetchedState} compact />
         ) : (
@@ -223,7 +227,7 @@ export const TaskLinkQuicklook = React.forwardRef<
             )}
           </div>
         )}
-      </HoverCardContent>
-    </HoverCard>
+      </GlimpseContent>
+    </Glimpse>
   );
 });

@@ -2,6 +2,7 @@ import type { CompanyBoardRouteTarget } from "@paperclipai/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, type MouseEventHandler, type ReactNode } from "react";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import type { ProjectScope, RoutineScope } from "@/lib/presentation-contracts";
 
 interface CompanyBoardLinkProps {
   routeTarget: CompanyBoardRouteTarget;
@@ -11,9 +12,7 @@ interface CompanyBoardLinkProps {
 }
 
 function assertNeverRouteTarget(target: never): never {
-  throw new Error(
-    `Unsupported company board route target: ${JSON.stringify(target)}`,
-  );
+  throw new Error(`Unsupported company board route target: ${JSON.stringify(target)}`);
 }
 
 type CompanyBoardRouteOptions =
@@ -28,11 +27,11 @@ type CompanyBoardRouteOptions =
     }
   | {
       to: "/$companyId/projects/$projectId";
-      params: { companyId: string; projectId: string };
+      params: ProjectScope;
     }
   | {
       to: "/$companyId/routines/$routineId";
-      params: { companyId: string; routineId: string };
+      params: RoutineScope;
     }
   | {
       to: "/$companyId/approvals/$approvalId";
@@ -116,12 +115,7 @@ export function useNavigateCompanyBoardTarget() {
 }
 
 /** Renders a shared structured board target through native TanStack routes. */
-export function CompanyBoardLink({
-  routeTarget,
-  children,
-  className,
-  onClick,
-}: CompanyBoardLinkProps) {
+export function CompanyBoardLink({ routeTarget, children, className, onClick }: CompanyBoardLinkProps) {
   const companyId = useCompanyRouteId();
 
   const routeOptions = companyBoardRouteOptions(routeTarget, companyId);

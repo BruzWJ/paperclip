@@ -3,7 +3,7 @@ import { HelpCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable, DataTableColumnHeader, type ColumnDef } from "@/components/patterns/DataTable";
 
 const BUILTIN_VARIABLE_DOCS = [
   {
@@ -15,6 +15,24 @@ const BUILTIN_VARIABLE_DOCS = [
     name: "timestamp",
     example: "April 28, 2026 at 12:17 PM UTC",
     description: "Human-readable UTC date and time at run time.",
+  },
+];
+
+type BuiltinVariableDoc = (typeof BUILTIN_VARIABLE_DOCS)[number];
+
+const BUILTIN_VARIABLE_COLUMNS: ColumnDef<BuiltinVariableDoc>[] = [
+  {
+    accessorKey: "name",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Built-in" />,
+    cell: ({ row }) => <Badge variant="outline">{`{{${row.original.name}}}`}</Badge>,
+  },
+  {
+    accessorKey: "example",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Example" />,
+  },
+  {
+    accessorKey: "description",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Description" />,
   },
 ];
 
@@ -45,26 +63,11 @@ export function RoutineVariablesHint() {
               default.
             </DialogDescription>
           </DialogHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Built-in</TableHead>
-                <TableHead>Example</TableHead>
-                <TableHead>Description</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {BUILTIN_VARIABLE_DOCS.map((entry) => (
-                <TableRow key={entry.name}>
-                  <TableCell>
-                    <Badge variant="outline">{`{{${entry.name}}}`}</Badge>
-                  </TableCell>
-                  <TableCell>{entry.example}</TableCell>
-                  <TableCell>{entry.description}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            caption="Built-in routine variables"
+            columns={BUILTIN_VARIABLE_COLUMNS}
+            data={BUILTIN_VARIABLE_DOCS}
+          />
         </DialogContent>
       </Dialog>
     </>

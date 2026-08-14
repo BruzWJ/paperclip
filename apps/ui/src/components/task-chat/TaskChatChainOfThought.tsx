@@ -1,17 +1,9 @@
 import { Spinner } from "@/components/ui/spinner";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import type {
-  ReasoningMessagePart,
-  ThreadMessage,
-  ToolCallMessagePart,
-} from "@assistant-ui/react";
-import { Brain, Check, ChevronDown } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import type { ReasoningMessagePart, ThreadMessage, ToolCallMessagePart } from "@assistant-ui/react";
+import { Brain, ChevronDown } from "lucide-react";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { isCoTSegmentActive } from "../../lib/task-chat-messages";
 import { cn } from "../../lib/utils";
@@ -21,13 +13,15 @@ import { cleanToolDisplayText, toolCountSummary } from "./TaskChatMessageUtils";
 
 import { TaskChatToolPart, getToolIcon } from "./TaskChatToolPart";
 
-import {
-  TaskChatCtx,
-  countCoTSegments,
-  findCoTSegmentIndex,
-} from "./TaskChatShared";
+import { TaskChatCtx, countCoTSegments, findCoTSegmentIndex } from "./TaskChatShared";
 
 export type TaskChatCoTPart = ReasoningMessagePart | ToolCallMessagePart;
+
+interface RollingTickerState {
+  key: number;
+  current: string;
+  exiting: string | null;
+}
 
 export function TaskChatChainOfThought({
   message,
@@ -38,30 +32,19 @@ export function TaskChatChainOfThought({
 }) {
   const { agentMap } = useContext(TaskChatCtx);
   const custom = message.metadata.custom as Record<string, unknown>;
-  const runAgentId =
-    typeof custom.runAgentId === "string" ? custom.runAgentId : null;
-  const authorAgentId =
-    typeof custom.authorAgentId === "string" ? custom.authorAgentId : null;
+  const runAgentId = typeof custom.runAgentId === "string" ? custom.runAgentId : null;
+  const authorAgentId = typeof custom.authorAgentId === "string" ? custom.authorAgentId : null;
   const agentId = authorAgentId ?? runAgentId;
   const agentIcon = agentId ? agentMap?.get(agentId)?.icon : undefined;
-  const isMessageRunning =
-    message.role === "assistant" && message.status?.type === "running";
+  const isMessageRunning = message.role === "assistant" && message.status?.type === "running";
 
-  const myIndex = useMemo(
-    () => findCoTSegmentIndex(message.content, cotParts),
-    [message.content, cotParts],
-  );
+  const myIndex = useMemo(() => findCoTSegmentIndex(message.content, cotParts), [message.content, cotParts]);
 
   const allReasoningText = cotParts
-    .filter(
-      (p): p is { type: "reasoning"; text: string } =>
-        p.type === "reasoning" && !!p.text,
-    )
+    .filter((p): p is { type: "reasoning"; text: string } => p.type === "reasoning" && !!p.text)
     .map((p) => p.text)
     .join("\n");
-  const toolParts = cotParts.filter(
-    (p): p is ToolCallMessagePart => p.type === "tool-call",
-  );
+  const toolParts = cotParts.filter((p): p is ToolCallMessagePart => p.type === "tool-call");
 
   const isActive = isCoTSegmentActive({
     isMessageRunning,
@@ -82,11 +65,7 @@ export function TaskChatChainOfThought({
   return (
     <Collapsible open={expanded && hasContent} onOpenChange={setExpanded}>
       <CollapsibleTrigger asChild disabled={!hasContent}>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-auto w-full items-start justify-start"
-        >
+        <Button type="button" variant="ghost" className="h-auto w-full items-start justify-start">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2.5">
               <span className="inline-flex items-center gap-2 text-sm font-medium text-foreground/80">
@@ -95,21 +74,13 @@ export function TaskChatChainOfThought({
                 ) : isActive ? (
                   <Spinner className="h-4 w-4 shrink-0 text-muted-foreground" />
                 ) : (
-                  <Badge variant="secondary" aria-label="Completed">
-                    <Check />
-                  </Badge>
+                  <DomainStatus status="completed" aria-label="Completed">
+                    <span className="sr-only">Completed</span>
+                  </DomainStatus>
                 )}
-                {isActive ? (
-                  <span className="shimmer-text">{headerVerb}</span>
-                ) : (
-                  headerVerb
-                )}
+                {isActive ? <span className="shimmer-text">{headerVerb}</span> : headerVerb}
               </span>
-              {toolSummary ? (
-                <span className="text-xs text-muted-foreground/40">
-                  · {toolSummary}
-                </span>
-              ) : null}
+              {toolSummary ? <span className="text-xs text-muted-foreground/40">· {toolSummary}</span> : null}
             </div>
           </div>
           {hasContent ? (
@@ -125,18 +96,12 @@ export function TaskChatChainOfThought({
       <CollapsibleContent className="space-y-1 py-1">
         {isActive ? (
           <>
-            {allReasoningText ? (
-              <TaskChatReasoningPart text={allReasoningText} />
-            ) : null}
-            {toolParts.length > 0 ? (
-              <TaskChatRollingToolPart toolParts={toolParts} />
-            ) : null}
+            {allReasoningText ? <TaskChatReasoningPart text={allReasoningText} /> : null}
+            {toolParts.length > 0 ? <TaskChatRollingToolPart toolParts={toolParts} /> : null}
           </>
         ) : (
           <>
-            {allReasoningText ? (
-              <TaskChatReasoningPart text={allReasoningText} />
-            ) : null}
+            {allReasoningText ? <TaskChatReasoningPart text={allReasoningText} /> : null}
             {toolParts.map((tool) => (
               <TaskChatToolPart
                 key={tool.toolCallId}
@@ -157,11 +122,11 @@ export function TaskChatReasoningPart({ text }: { text: string }) {
   const lines = text.split("\n").filter((l) => l.trim());
   const lastLine = lines[lines.length - 1] ?? text.slice(-200);
   const prevRef = useRef(lastLine);
-  const [ticker, setTicker] = useState<{
-    key: number;
-    current: string;
-    exiting: string | null;
-  }>({ key: 0, current: lastLine, exiting: null });
+  const [ticker, setTicker] = useState<RollingTickerState>({
+    key: 0,
+    current: lastLine,
+    exiting: null,
+  });
 
   useEffect(() => {
     if (lastLine !== prevRef.current) {
@@ -200,22 +165,18 @@ export function TaskChatReasoningPart({ text }: { text: string }) {
   );
 }
 
-export function TaskChatRollingToolPart({
-  toolParts,
-}: {
-  toolParts: ToolCallMessagePart[];
-}) {
+export function TaskChatRollingToolPart({ toolParts }: { toolParts: ToolCallMessagePart[] }) {
   const latest = toolParts[toolParts.length - 1];
   if (!latest) return null;
 
   const fullText = cleanToolDisplayText(latest);
 
   const prevRef = useRef(fullText);
-  const [ticker, setTicker] = useState<{
-    key: number;
-    current: string;
-    exiting: string | null;
-  }>({ key: 0, current: fullText, exiting: null });
+  const [ticker, setTicker] = useState<RollingTickerState>({
+    key: 0,
+    current: fullText,
+    exiting: null,
+  });
 
   useEffect(() => {
     if (fullText !== prevRef.current) {

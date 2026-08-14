@@ -1,9 +1,8 @@
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { timeAgo } from "@/lib/timeAgo";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import type { Task, TaskExecutionRunEnvelopeRecord } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
 import { X, XCircle } from "lucide-react";
@@ -55,7 +54,7 @@ export function FailedRunInboxRow({
         )}
       </ItemTitle>
       <ItemDescription>
-        <Badge variant={statusBadgeVariant(run.status)}>{run.status.replace(/[_-]/g, " ")}</Badge>
+        <DomainStatus status={run.status} />
         {linkedAgentName && task ? ` · ${linkedAgentName}` : ""}
         {` · ${displayError} · ${timeAgo(run.createdAt)}`}
       </ItemDescription>

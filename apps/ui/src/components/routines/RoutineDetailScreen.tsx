@@ -1,14 +1,8 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { RoutineRunVariablesDialog } from "@/components/RoutineRunVariablesDialog";
 import { RoutineSaveBar } from "@/components/RoutineSaveBar";
-import {
-  RoutineSectionPicker,
-  RoutineSubSidebar,
-} from "@/components/RoutineSubSidebar";
-import {
-  RoutineDetailContext,
-  type RoutineSectionKey,
-} from "@/components/routine-sections/context";
+import { RoutineSectionPicker, RoutineSubSidebar } from "@/components/RoutineSubSidebar";
+import { RoutineDetailContext, type RoutineSectionKey } from "@/components/routine-sections/context";
 import {
   DeliverySection,
   OverviewSection,
@@ -16,28 +10,20 @@ import {
   TriggersSection,
   VariablesSection,
 } from "@/components/routine-sections/editable-sections";
-import {
-  ActivitySection,
-  HistorySection,
-  RunsSection,
-} from "@/components/routine-sections/operate-sections";
+import { ActivitySection, HistorySection, RunsSection } from "@/components/routine-sections/operate-sections";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, FieldLabel } from "@/components/ui/field";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { Switch } from "@/components/ui/switch";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { SettingsSwitchField } from "@/components/patterns/FormPatterns";
 import { Textarea } from "@/components/ui/textarea";
 import { Link } from "@tanstack/react-router";
 import { AlertCircle, Repeat, Sparkles } from "lucide-react";
 import { useEffect } from "react";
 
-import { useRoutineDetailController } from "@/components/routines/useRoutineDetailController";
+import {
+  useRoutineDetailController,
+  type RoutineDetailControllerOptions,
+} from "@/components/routines/useRoutineDetailController";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { autoResizeTextarea } from "@/lib/textarea";
 
@@ -52,11 +38,7 @@ const SECTION_TITLES: Record<RoutineSectionKey, string> = {
   history: "History",
 };
 
-export function RoutineDetailScreen(props: {
-  companyId: string;
-  routineId: string;
-  section?: RoutineSectionKey;
-}) {
+export function RoutineDetailScreen(props: RoutineDetailControllerOptions) {
   const model = useRoutineDetailController(props);
   if (model.state === "loading") return <Skeleton className="h-32 w-full" />;
   if (model.state === "error")
@@ -77,10 +59,7 @@ export function RoutineDetailScreen(props: {
 function RoutineDetailReady({
   model,
 }: {
-  model: Extract<
-    ReturnType<typeof useRoutineDetailController>,
-    { state: "ready" }
-  >;
+  model: Extract<ReturnType<typeof useRoutineDetailController>, { state: "ready" }>;
 }) {
   const { setBreadcrumbs } = useBreadcrumbs();
   const {
@@ -190,33 +169,20 @@ function RoutineDetailReady({
             ) : null}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-3">
-            <Button
-              size="sm"
-              onClick={() => setRunVariablesOpen(true)}
-              disabled={runRoutine.isPending}
-            >
+            <Button size="sm" onClick={() => setRunVariablesOpen(true)} disabled={runRoutine.isPending}>
               <Repeat className="h-3.5 w-3.5 sm:mr-1" />
-              <span className="hidden sm:inline">
-                {runRoutine.isPending ? "Starting…" : "Run routine"}
-              </span>
+              <span className="hidden sm:inline">{runRoutine.isPending ? "Starting…" : "Run routine"}</span>
             </Button>
-            <Field orientation="horizontal" className="w-auto gap-2">
-              <Switch
-                id="routine-automation"
-                size="default"
-                checked={automationEnabled}
-                onCheckedChange={contextValue.onToggleAutomation}
-                disabled={automationToggleDisabled}
-                aria-label={
-                  automationEnabled
-                    ? "Pause automatic triggers"
-                    : "Enable automatic triggers"
-                }
-              />
-              <FieldLabel htmlFor="routine-automation">
-                {automationLabel}
-              </FieldLabel>
-            </Field>
+            <SettingsSwitchField
+              id="routine-automation"
+              fieldClassName="w-auto gap-2"
+              label={automationLabel}
+              size="default"
+              checked={automationEnabled}
+              onCheckedChange={contextValue.onToggleAutomation}
+              disabled={automationToggleDisabled}
+              aria-label={automationEnabled ? "Pause automatic triggers" : "Enable automatic triggers"}
+            />
           </div>
         </header>
 
@@ -243,14 +209,9 @@ function RoutineDetailReady({
           >
             <section
               aria-labelledby="routine-section-title"
-              className={
-                isEditableSection ? "mx-auto w-full max-w-3xl" : "w-full"
-              }
+              className={isEditableSection ? "mx-auto w-full max-w-3xl" : "w-full"}
             >
-              <h2
-                id="routine-section-title"
-                className="mb-4 text-lg font-semibold"
-              >
+              <h2 id="routine-section-title" className="mb-4 text-lg font-semibold">
                 {SECTION_TITLES[section]}
               </h2>
 
@@ -269,8 +230,7 @@ function RoutineDetailReady({
                   isSaving={saveRoutine.isPending}
                   saveConflict={saveConflict}
                   onSave={() => {
-                    if (!saveRoutine.isPending && editDraft.title.trim())
-                      saveRoutine.mutate();
+                    if (!saveRoutine.isPending && editDraft.title.trim()) saveRoutine.mutate();
                   }}
                   onDiscard={() => discardSection(section)}
                   onReload={reloadLatest}

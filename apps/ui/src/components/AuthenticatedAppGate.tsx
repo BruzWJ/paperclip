@@ -5,6 +5,7 @@ import { ApiError } from "@/api/client";
 import { authApi } from "@/api/auth";
 import { healthApi } from "@/api/health";
 import { queryKeys } from "@/lib/queryKeys";
+import { CodeBlockPanel } from "@/components/patterns/CodeBlockPanel";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
@@ -213,9 +214,12 @@ export function AuthenticatedAppGate() {
                       ? "A bootstrap invite is already active. Check your Paperclip startup logs for the first-admin URL, or run this command on the host to rotate it:"
                       : "Run this command on the host that runs Paperclip to print a one-time first-admin invite URL:"}
                   </p>
-                  <pre className="mt-3 overflow-x-auto rounded-md border bg-muted/30 p-3 font-mono text-xs">
-                    {BOOTSTRAP_ADMIN_COMMAND}
-                  </pre>
+                  <CodeBlockPanel
+                    className="mt-3"
+                    code={BOOTSTRAP_ADMIN_COMMAND}
+                    filename="bootstrap-admin.sh"
+                    language="bash"
+                  />
                 </div>
                 {!claimAvailable ? (
                   <p className="mt-4 text-xs text-muted-foreground">

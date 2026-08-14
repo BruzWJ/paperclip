@@ -1,4 +1,5 @@
 import type { TaskExecutionRunEnvelopeRecord } from "@paperclipai/shared";
+import type { ParentedEntity } from "./presentation-contracts";
 
 function isLiveRunStatus(status: string): boolean {
   return status === "queued" || status === "scheduled_retry" || status === "running";
@@ -18,10 +19,7 @@ export function collectLiveTaskIds(
  * Minimal tree node shape needed to roll live descendants up to their ancestors.
  * Both list and inbox task objects satisfy this.
  */
-export interface SubtreeLiveNode {
-  id: string;
-  parentId: string | null;
-}
+export type SubtreeLiveNode = ParentedEntity;
 
 /**
  * Derive, for every task in the already-loaded tree, how many of its

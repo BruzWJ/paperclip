@@ -1,9 +1,7 @@
 import {
   createContext,
   useContext,
-  type ChangeEvent,
   type Dispatch,
-  type DragEvent,
   type KeyboardEvent,
   type RefObject,
   type SetStateAction,
@@ -41,7 +39,6 @@ export type NewTaskDialogViewModel = {
     workMode: TaskWorkMode;
     expanded: boolean;
     stagedFiles: StagedTaskFile[];
-    isFileDragOver: boolean;
   };
   setters: {
     setStatus: Dispatch<SetStateAction<string>>;
@@ -56,7 +53,6 @@ export type NewTaskDialogViewModel = {
   };
   refs: {
     requestEditorRef: RefObject<MarkdownEditorRef | null>;
-    stageFileInputRef: RefObject<HTMLInputElement | null>;
     ownerSelectorRef: RefObject<HTMLButtonElement | null>;
     projectSelectorRef: RefObject<HTMLButtonElement | null>;
   };
@@ -92,11 +88,7 @@ export type NewTaskDialogViewModel = {
     handleTitleChange: (value: string) => void;
     handleRequestChange: (value: string) => void;
     handleProjectChange: (value: string) => void;
-    handleStageFilesPicked: (event: ChangeEvent<HTMLInputElement>) => void;
-    handleFileDragEnter: (event: DragEvent<HTMLDivElement>) => void;
-    handleFileDragOver: (event: DragEvent<HTMLDivElement>) => void;
-    handleFileDragLeave: (event: DragEvent<HTMLDivElement>) => void;
-    handleFileDrop: (event: DragEvent<HTMLDivElement>) => void;
+    stageFiles: (files: File[]) => void;
     removeStagedFile: (id: string) => void;
     discardDraft: () => void;
     handleSubmit: () => void;

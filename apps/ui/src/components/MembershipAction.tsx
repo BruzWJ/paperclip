@@ -1,29 +1,64 @@
 import type { MouseEvent } from "react";
 import { LogIn, LogOut } from "lucide-react";
-import type { ResourceMembershipState } from "@paperclipai/shared";
+import type { ResourceMembershipResourceType, ResourceMembershipState } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import type { ResourceMembershipMutation } from "@/hooks/useResourceMemberships";
 import { cn } from "../lib/utils";
 
-interface MembershipActionProps {
+interface MembershipActionBaseProps {
   state: ResourceMembershipState;
   resourceName: string;
   pending?: boolean;
   pendingState?: ResourceMembershipState | null;
   compact?: boolean;
-  onJoin: () => void;
-  onLeave: () => void;
 }
 
-export function MembershipAction({
-  state,
-  resourceName,
-  pending = false,
-  pendingState = null,
-  compact = false,
-  onJoin,
-  onLeave,
-}: MembershipActionProps) {
+type MembershipActionProps = MembershipActionBaseProps &
+  (
+    | {
+        mutation: ResourceMembershipMutation;
+        resourceId: string;
+        resourceType: ResourceMembershipResourceType;
+        onJoin?: never;
+        onLeave?: never;
+      }
+    | {
+        mutation?: never;
+        resourceId?: never;
+        resourceType?: never;
+        onJoin: () => void;
+        onLeave: () => void;
+      }
+  );
+
+function mutateMembership(props: MembershipActionProps, state: ResourceMembershipState) {
+  if (props.mutation) {
+    props.mutation.mutate({
+      resourceType: props.resourceType,
+      resourceId: props.resourceId,
+      resourceName: props.resourceName,
+      state,
+    });
+  } else if (state === "joined") {
+    props.onJoin();
+  } else {
+    props.onLeave();
+  }
+}
+
+/** Shared shadcn membership action, optionally bound directly to the membership mutation. */
+export function MembershipAction(props: MembershipActionProps) {
+  const { state, resourceName, compact = false } = props;
+  const mutationPending = Boolean(
+    props.mutation?.isPending &&
+    props.mutation.variables?.resourceType === props.resourceType &&
+    props.mutation.variables.resourceId === props.resourceId &&
+    props.mutation.variables.starred === undefined,
+  );
+  const pending = props.pending ?? mutationPending;
+  const pendingState =
+    props.pendingState ?? (mutationPending ? (props.mutation?.variables?.state ?? null) : null);
   const isLeft = state === "left";
   const label = pending ? (pendingState === "left" ? "Leaving..." : "Joining...") : isLeft ? "Join" : "Leave";
   const ariaLabel = `${isLeft ? "Join" : "Leave"} ${resourceName}`;
@@ -33,8 +68,7 @@ export function MembershipAction({
     event.preventDefault();
     event.stopPropagation();
     if (pending) return;
-    if (isLeft) onJoin();
-    else onLeave();
+    mutateMembership(props, isLeft ? "joined" : "left");
   }
 
   return (

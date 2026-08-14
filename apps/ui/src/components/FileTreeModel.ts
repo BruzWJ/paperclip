@@ -124,7 +124,7 @@ export function toggleFileTreeCheckedFiles(
   return next;
 }
 
-type FrontmatterData = Record<string, string | string[]>;
+export type FrontmatterData = Record<string, string | string[]>;
 
 export function parseFrontmatter(content: string): { data: FrontmatterData; body: string } | null {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);

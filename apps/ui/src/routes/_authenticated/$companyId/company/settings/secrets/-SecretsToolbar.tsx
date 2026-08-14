@@ -13,6 +13,7 @@ import type { SecretProvider, SecretStatus } from "@paperclipai/shared";
 import { Cloud, Filter, Folder, Info, Plus, Search, X } from "lucide-react";
 import { useSecretsPage } from "./-SecretsPageContext";
 import type { ProvidedByFilter } from "./-secrets-model";
+import type { LabeledValue } from "@/lib/presentation-contracts";
 
 export function SecretsToolbar() {
   const {
@@ -51,7 +52,7 @@ export function SecretsToolbar() {
     key: "status" | "provided-by" | "provider";
     label: string;
     value: string;
-    options: Array<{ value: string; label: string }>;
+    options: LabeledValue[];
   }> = [
     {
       key: "status",

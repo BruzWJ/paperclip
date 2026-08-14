@@ -5,7 +5,6 @@ import { MembershipAction } from "@/components/MembershipAction";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Toggle } from "@/components/ui/toggle";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -25,13 +24,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -44,9 +37,10 @@ import {
   useResourceMembershipMutation,
   useResourceMemberships,
 } from "@/hooks/useResourceMemberships";
-import { AGENT_FILTER_TABS } from "@/lib/agent-filter-tabs";
+import type { AgentFilterTab, AgentLiveRunSummary } from "@/lib/agent-filter-tabs";
+import { indexEntitiesById } from "@/lib/presentation-contracts";
 import { queryKeys } from "@/lib/queryKeys";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { cn } from "@/lib/utils";
 import { type Agent } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
@@ -54,14 +48,9 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, Bot, GitBranch, List, Plus, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  AgentMetaColumns,
-  OrgTreeNode,
-} from "@/components/agents/AgentsOrgTree";
+import { AgentMetaColumns, AgentsOrgTree } from "@/components/agents/AgentsOrgTree";
 
-type FilterTab = (typeof AGENT_FILTER_TABS)[number];
-
-const AGENT_FILTER_TAB_ITEMS: { value: FilterTab; label: string }[] = [
+const AGENT_FILTER_TAB_ITEMS: { value: AgentFilterTab; label: string }[] = [
   { value: "all", label: "All" },
   { value: "idle", label: "Idle" },
   { value: "paused", label: "Paused" },
@@ -73,7 +62,7 @@ const AGENT_FILTER_TAB_ITEMS: { value: FilterTab; label: string }[] = [
 // lives in the task thread, not an agent run state (PAP-75).
 const HIDDEN_AGENT_STATUSES = new Set(["terminated", "pending_approval"]);
 
-function matchesFilter(status: string, tab: FilterTab): boolean {
+function matchesFilter(status: string, tab: AgentFilterTab): boolean {
   if (tab === "all") return true;
   if (tab === "idle") return status === "idle";
   if (tab === "paused") return status === "paused";
@@ -81,7 +70,7 @@ function matchesFilter(status: string, tab: FilterTab): boolean {
   return true;
 }
 
-function filterAgents(agents: Agent[], tab: FilterTab): Agent[] {
+function filterAgents(agents: Agent[], tab: AgentFilterTab): Agent[] {
   return agents
     .filter((a) => {
       if (HIDDEN_AGENT_STATUSES.has(a.status)) return false;
@@ -90,7 +79,7 @@ function filterAgents(agents: Agent[], tab: FilterTab): Agent[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function filterOrgTree(nodes: OrgNode[], tab: FilterTab): OrgNode[] {
+function filterOrgTree(nodes: OrgNode[], tab: AgentFilterTab): OrgNode[] {
   return nodes
     .reduce<OrgNode[]>((acc, node) => {
       const filteredReports = filterOrgTree(node.reports, tab);
@@ -109,7 +98,7 @@ function filterOrgTree(nodes: OrgNode[], tab: FilterTab): OrgNode[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function Agents({ tab }: { tab: FilterTab }) {
+export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
   const companyId = useCompanyRouteId();
   const { openNewAgent } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -137,10 +126,7 @@ export function Agents({ tab }: { tab: FilterTab }) {
   });
 
   const activeRunStatuses = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
-  const runsQueryKey = [
-    ...queryKeys.runs(companyId, { status: activeRunStatuses }),
-    "agents-page",
-  ] as const;
+  const runsQueryKey = [...queryKeys.runs(companyId, { status: activeRunStatuses }), "agents-page"] as const;
   const { data: runPage } = useQuery({
     queryKey: runsQueryKey,
     queryFn: () =>
@@ -178,7 +164,7 @@ export function Agents({ tab }: { tab: FilterTab }) {
 
   // Map agentId -> first live run + live run count
   const liveRunByAgent = useMemo(() => {
-    const map = new Map<string, { runId: string; liveCount: number }>();
+    const map = new Map<string, AgentLiveRunSummary>();
     for (const r of runPage?.items ?? []) {
       const existing = map.get(r.targetAgentId);
       if (existing) {
@@ -190,11 +176,7 @@ export function Agents({ tab }: { tab: FilterTab }) {
     return map;
   }, [runPage?.items]);
 
-  const agentMap = useMemo(() => {
-    const map = new Map<string, Agent>();
-    for (const a of agents ?? []) map.set(a.id, a);
-    return map;
-  }, [agents]);
+  const agentMap = useMemo(() => indexEntitiesById(agents), [agents]);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Agents" }]);
@@ -207,16 +189,12 @@ export function Agents({ tab }: { tab: FilterTab }) {
   const filtered = filterAgents(agents ?? [], tab);
   const filteredOrg = filterOrgTree(orgTree ?? [], tab);
   const renderAgentRow = (agent: Agent) => {
-    const hasInvalidOrgChain =
-      agent.orgChainHealth?.status === "invalid_org_chain";
+    const hasInvalidOrgChain = agent.orgChainHealth?.status === "invalid_org_chain";
     const agentPending =
       membershipMutation.isPending &&
       membershipMutation.variables?.resourceType === "agent" &&
       membershipMutation.variables.resourceId === agent.id;
-    const agentStarPending =
-      agentPending && membershipMutation.variables?.starred !== undefined;
-    const agentJoinLeavePending =
-      agentPending && membershipMutation.variables?.starred === undefined;
+    const agentStarPending = agentPending && membershipMutation.variables?.starred !== undefined;
     const agentStarred = isStarred(membershipsQuery.data, "agent", agent.id);
     return (
       <Item
@@ -224,8 +202,7 @@ export function Agents({ tab }: { tab: FilterTab }) {
         size="sm"
         className={cn(
           agent.pausedAt && tab !== "paused" ? "opacity-50" : "",
-          resourceMembershipState(membershipsQuery.data, "agent", agent.id) ===
-            "left"
+          resourceMembershipState(membershipsQuery.data, "agent", agent.id) === "left"
             ? "sm:text-foreground/55"
             : "",
         )}
@@ -237,9 +214,7 @@ export function Agents({ tab }: { tab: FilterTab }) {
               aria-label="Invalid reporting chain"
             />
           ) : (
-            <Badge variant={statusBadgeVariant(agent.status)}>
-              {agent.status.replace(/_/g, " ")}
-            </Badge>
+            <DomainStatus status={agent.status} />
           )}
         </ItemMedia>
         <ItemContent className="min-w-0">
@@ -250,9 +225,7 @@ export function Agents({ tab }: { tab: FilterTab }) {
           >
             <ItemTitle>{agent.name}</ItemTitle>
             {agent.title || agent.capabilities ? (
-              <ItemDescription>
-                {agent.title ?? agent.capabilities}
-              </ItemDescription>
+              <ItemDescription>{agent.title ?? agent.capabilities}</ItemDescription>
             ) : null}
           </Link>
         </ItemContent>
@@ -263,34 +236,28 @@ export function Agents({ tab }: { tab: FilterTab }) {
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-3">
               {liveRunByAgent.has(agent.id) && (
-                <Badge asChild variant="secondary">
-                  <Link
-                    to="/$companyId/agents/$agentId/runs/$runId"
-                    params={{
-                      companyId,
-                      agentId: agent.id,
-                      runId: liveRunByAgent.get(agent.id)!.runId,
-                    }}
-                    onClick={(event) => event.stopPropagation()}
-                  >
+                <Link
+                  to="/$companyId/agents/$agentId/runs/$runId"
+                  params={{
+                    companyId,
+                    agentId: agent.id,
+                    runId: liveRunByAgent.get(agent.id)!.runId,
+                  }}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <DomainStatus status="running">
                     Live
                     {liveRunByAgent.get(agent.id)!.liveCount > 1
                       ? ` (${liveRunByAgent.get(agent.id)!.liveCount})`
                       : ""}
-                  </Link>
-                </Badge>
+                  </DomainStatus>
+                </Link>
               )}
               <span className="w-20 flex justify-end">
-                <Badge variant={statusBadgeVariant(agent.status)}>
-                  {agent.status.replace(/_/g, " ")}
-                </Badge>
+                <DomainStatus status={agent.status} />
               </span>
               <div>
-                <AgentActionButtons
-                  agent={agent}
-                  companyId={companyId}
-                  showStatus={false}
-                />
+                <AgentActionButtons agent={agent} companyId={companyId} showStatus={false} />
               </div>
               <Toggle
                 size="sm"
@@ -312,34 +279,11 @@ export function Agents({ tab }: { tab: FilterTab }) {
               </Toggle>
             </div>
             <MembershipAction
-              state={resourceMembershipState(
-                membershipsQuery.data,
-                "agent",
-                agent.id,
-              )}
-              pending={agentJoinLeavePending}
-              pendingState={
-                agentJoinLeavePending
-                  ? (membershipMutation.variables?.state ?? null)
-                  : null
-              }
+              state={resourceMembershipState(membershipsQuery.data, "agent", agent.id)}
+              mutation={membershipMutation}
+              resourceId={agent.id}
               resourceName={agent.name}
-              onJoin={() =>
-                membershipMutation.mutate({
-                  resourceType: "agent",
-                  resourceId: agent.id,
-                  resourceName: agent.name,
-                  state: "joined",
-                })
-              }
-              onLeave={() =>
-                membershipMutation.mutate({
-                  resourceType: "agent",
-                  resourceId: agent.id,
-                  resourceName: agent.name,
-                  state: "left",
-                })
-              }
+              resourceType="agent"
             />
           </div>
         </ItemActions>
@@ -387,12 +331,7 @@ export function Agents({ tab }: { tab: FilterTab }) {
               size="sm"
               aria-label="View mode"
             >
-              <ToggleGroupItem
-                value="list"
-                className="px-1.5"
-                title="List view"
-                aria-label="List view"
-              >
+              <ToggleGroupItem value="list" className="px-1.5" title="List view" aria-label="List view">
                 <List className="h-3.5 w-3.5" />
               </ToggleGroupItem>
               <ToggleGroupItem
@@ -446,55 +385,36 @@ export function Agents({ tab }: { tab: FilterTab }) {
         <ItemGroup>{filtered.map(renderAgentRow)}</ItemGroup>
       )}
 
-      {effectiveView === "list" &&
-        agents &&
-        agents.length > 0 &&
-        filtered.length === 0 && (
-          <Empty className="border-0 py-8 md:py-8">
-            <EmptyDescription>
-              No agents match the selected status.
-            </EmptyDescription>
-          </Empty>
-        )}
+      {effectiveView === "list" && agents && agents.length > 0 && filtered.length === 0 && (
+        <Empty className="border-0 py-8 md:py-8">
+          <EmptyDescription>No agents match the selected status.</EmptyDescription>
+        </Empty>
+      )}
 
       {/* Org chart view */}
       {effectiveView === "org" && filteredOrg.length > 0 && (
-        <div className="py-1">
-          {filteredOrg.map((node) => (
-            <OrgTreeNode
-              key={node.id}
-              node={node}
-              depth={0}
-              agentMap={agentMap}
-              liveRunByAgent={liveRunByAgent}
-              tab={tab}
-              memberships={membershipsQuery.data}
-              membershipMutation={membershipMutation}
-            />
-          ))}
-        </div>
+        <AgentsOrgTree
+          key={tab}
+          nodes={filteredOrg}
+          agentMap={agentMap}
+          liveRunByAgent={liveRunByAgent}
+          tab={tab}
+          memberships={membershipsQuery.data}
+          membershipMutation={membershipMutation}
+        />
       )}
 
-      {effectiveView === "org" &&
-        orgTree &&
-        orgTree.length > 0 &&
-        filteredOrg.length === 0 && (
-          <Empty className="border-0 py-8 md:py-8">
-            <EmptyDescription>
-              No agents match the selected status.
-            </EmptyDescription>
-          </Empty>
-        )}
+      {effectiveView === "org" && orgTree && orgTree.length > 0 && filteredOrg.length === 0 && (
+        <Empty className="border-0 py-8 md:py-8">
+          <EmptyDescription>No agents match the selected status.</EmptyDescription>
+        </Empty>
+      )}
 
       {effectiveView === "org" && orgTree && orgTree.length === 0 && (
         <Empty className="border-0 py-8 md:py-8">
-          <EmptyDescription>
-            No organizational hierarchy defined.
-          </EmptyDescription>
+          <EmptyDescription>No organizational hierarchy defined.</EmptyDescription>
         </Empty>
       )}
     </div>
   );
 }
-
-export { Agents as AgentsScreen };

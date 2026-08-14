@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Company } from "@paperclipai/shared";
+import type { Company, SidebarOrderPreference } from "@paperclipai/shared";
 import { sidebarPreferencesApi } from "../api/sidebarPreferences";
 import { queryKeys } from "../lib/queryKeys";
 
@@ -43,9 +43,10 @@ type UseCompanyOrderParams = {
 export function useCompanyOrder({ companies, userId }: UseCompanyOrderParams) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(
-    () => userId
-      ? queryKeys.sidebarPreferences.companyOrder(userId)
-      : ["sidebar-preferences", "company-order", null] as const,
+    () =>
+      userId
+        ? queryKeys.sidebarPreferences.companyOrder(userId)
+        : (["sidebar-preferences", "company-order", null] as const),
     [userId],
   );
 
@@ -78,11 +79,12 @@ export function useCompanyOrder({ companies, userId }: UseCompanyOrderParams) {
       setOrderedIds((current) => (areEqual(current, filtered) ? current : filtered));
       if (!userId) return;
 
-      queryClient.setQueryData(queryKey, (current: { orderedIds?: string[]; updatedAt?: Date | null } | undefined) => ({
+      queryClient.setQueryData(queryKey, (current: SidebarOrderPreference | undefined) => ({
         orderedIds: filtered,
         updatedAt: current?.updatedAt ?? null,
       }));
-      void sidebarPreferencesApi.updateCompanyOrder(userId, { orderedIds: filtered })
+      void sidebarPreferencesApi
+        .updateCompanyOrder(userId, { orderedIds: filtered })
         .then((preference) => {
           queryClient.setQueryData(queryKey, preference);
         })

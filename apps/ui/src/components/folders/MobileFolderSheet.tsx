@@ -1,32 +1,28 @@
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { DomainTree, type DomainTreeNode } from "@/components/patterns/DomainTree";
 import type { FolderListItem, FolderListResult } from "@paperclipai/shared";
 import { Check, Folder as FolderIcon, Plus } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { FolderSwatch, type FolderSelection } from "./folder-primitives";
 
-interface FolderTreeNode {
-  folder: FolderListItem;
-  children: FolderTreeNode[];
-}
-
 function treeFromResult(result: FolderListResult | null | undefined) {
-  const nodeById = new Map<string, FolderTreeNode>();
+  const nodeById = new Map<string, DomainTreeNode<FolderListItem>>();
   for (const folder of result?.folders ?? []) {
-    nodeById.set(folder.id, { folder, children: [] });
+    nodeById.set(folder.id, { id: folder.id, value: folder, children: [] });
   }
-  const roots: FolderTreeNode[] = [];
+  const roots: DomainTreeNode<FolderListItem>[] = [];
   for (const node of nodeById.values()) {
-    const parent = node.folder.parentId ? nodeById.get(node.folder.parentId) : undefined;
-    if (parent) parent.children.push(node);
+    const parent = node.value.parentId ? nodeById.get(node.value.parentId) : undefined;
+    if (parent) parent.children?.push(node);
     else roots.push(node);
   }
-  const sort = (nodes: FolderTreeNode[]) => {
+  const sort = (nodes: DomainTreeNode<FolderListItem>[]) => {
     nodes.sort(
       (left, right) =>
-        left.folder.position - right.folder.position || left.folder.name.localeCompare(right.folder.name),
+        left.value.position - right.value.position || left.value.name.localeCompare(right.value.name),
     );
-    nodes.forEach((node) => sort(node.children));
+    nodes.forEach((node) => sort(node.children ?? []));
   };
   sort(roots);
   return roots;
@@ -57,27 +53,18 @@ export function MobileFolderSheet({
   }
 
   const roots = useMemo(() => treeFromResult(result), [result]);
-
-  function renderBranch(node: FolderTreeNode, rootLabel?: string) {
-    return (
-      <div key={node.folder.id} data-folder-id={node.folder.id}>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-auto w-full justify-start gap-2 px-2 py-2 text-left"
-          onClick={() => select(node.folder.id)}
-        >
-          <FolderSwatch color={node.folder.color} />
-          <span className="min-w-0 flex-1 truncate">{rootLabel ?? node.folder.name}</span>
-          <span className="text-xs text-muted-foreground">{node.folder.itemCount}</span>
-          {selection === node.folder.id ? <Check /> : null}
-        </Button>
-        {node.children.length > 0 ? (
-          <div className="pl-3">{node.children.map((child) => renderBranch(child))}</div>
-        ) : null}
-      </div>
-    );
-  }
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
+  const expandedIds = useMemo(
+    () =>
+      new Set(
+        roots
+          .flatMap(function collect(node): string[] {
+            return node.children?.length ? [node.id, ...node.children.flatMap(collect)] : [];
+          })
+          .filter((id) => !collapsedIds.has(id)),
+      ),
+    [collapsedIds, roots],
+  );
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -97,7 +84,39 @@ export function MobileFolderSheet({
             <span className="text-xs text-muted-foreground">{result?.allCount ?? 0}</span>
             {selection === "all" ? <Check /> : null}
           </Button>
-          {roots.map((node) => renderBranch(node, node.folder.name))}
+          <DomainTree
+            nodes={roots}
+            expandedIds={expandedIds}
+            selectedIds={selection !== "all" && selection !== "unfiled" ? [selection] : []}
+            onToggle={({ id }) => {
+              setCollapsedIds((current) => {
+                const next = new Set(current);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              });
+            }}
+            ariaLabel={`${itemLabelPlural} folders`}
+            showLines={false}
+            animateExpand={false}
+            rowData={({ node }) => ({ "data-folder-id": node.id })}
+            renderIcon={({ node }) => <FolderSwatch color={node.value.color} />}
+            renderLabel={({ node }) => (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto w-full justify-start gap-2 p-0 text-left font-normal hover:bg-transparent"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  select(node.value.id);
+                }}
+              >
+                <span className="min-w-0 flex-1 truncate">{node.value.name}</span>
+                <span className="text-xs text-muted-foreground">{node.value.itemCount}</span>
+                {selection === node.value.id ? <Check /> : null}
+              </Button>
+            )}
+          />
           <Button
             type="button"
             variant="ghost"

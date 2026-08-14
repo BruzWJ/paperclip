@@ -12,10 +12,21 @@ import { buildCompanyUserLabelMap, buildCompanyUserProfileMap } from "@/lib/comp
 import { inboxTaskColumns, type InboxTaskColumn } from "@/lib/inbox";
 import { collectSubtreeLiveCounts } from "@/lib/liveTaskIds";
 import { taskDisplayTitle } from "@/lib/task-display";
+import type { CreatorOption, NamedColor } from "@/lib/presentation-contracts";
 import { taskTrailingColumns } from "../TaskColumns";
 import { useGeneralSettings } from "@/context/GeneralSettingsContext";
 import { deriveOriginatingActor, type Task } from "@paperclipai/shared";
-import { TASK_SEARCH_RESULT_LIMIT, TASK_BOARD_COLUMN_RESULT_LIMIT, INITIAL_TASK_ROW_RENDER_LIMIT, boardTaskStatuses, getInitialViewState, loadTaskColumns, saveViewState, type CreatorOption, type TasksListProps, type TaskViewState } from "./model";
+import {
+  TASK_SEARCH_RESULT_LIMIT,
+  TASK_BOARD_COLUMN_RESULT_LIMIT,
+  INITIAL_TASK_ROW_RENDER_LIMIT,
+  boardTaskStatuses,
+  getInitialViewState,
+  loadTaskColumns,
+  saveViewState,
+  type TasksListProps,
+  type TaskViewState,
+} from "./model";
 
 export type TasksListCoreInput = TasksListProps & {
   searchWithinLoadedTasks: boolean;
@@ -26,7 +37,20 @@ export type TasksListCoreInput = TasksListProps & {
 };
 
 export function useTasksListCore(m: TasksListCoreInput) {
-  const { tasks, agents, projects, liveTaskIds, projectId, viewStateKey, initialOwners, initialSearch, searchFilters, searchWithinLoadedTasks, defaultSortField, enableRoutineVisibilityFilter } = m;
+  const {
+    tasks,
+    agents,
+    projects,
+    liveTaskIds,
+    projectId,
+    viewStateKey,
+    initialOwners,
+    initialSearch,
+    searchFilters,
+    searchWithinLoadedTasks,
+    defaultSortField,
+    enableRoutineVisibilityFilter,
+  } = m;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const companyId = useCompanyRouteId();
@@ -75,12 +99,10 @@ export function useTasksListCore(m: TasksListCoreInput) {
     getInitialViewState(scopedKey, initialOwners, defaultSortField),
   );
   const [taskSearch, setTaskSearch] = useState(initialSearch ?? "");
-  const [renderedTaskRowLimit, setRenderedTaskRowLimit] = useState(
-    INITIAL_TASK_ROW_RENDER_LIMIT,
+  const [renderedTaskRowLimit, setRenderedTaskRowLimit] = useState(INITIAL_TASK_ROW_RENDER_LIMIT);
+  const [visibleTaskColumns, setVisibleTaskColumns] = useState<InboxTaskColumn[]>(() =>
+    loadTaskColumns(scopedKey),
   );
-  const [visibleTaskColumns, setVisibleTaskColumns] = useState<
-    InboxTaskColumn[]
-  >(() => loadTaskColumns(scopedKey));
   const renderedTaskIdsRef = useRef("");
   const initialServerFillRequestedRef = useRef(false);
   const deferredTaskSearch = useDeferredValue(taskSearch);
@@ -96,9 +118,7 @@ export function useTasksListCore(m: TasksListCoreInput) {
     const nextContextKey = `${scopedKey}::${initialOwnersKey}`;
     if (prevViewStateContextKey.current !== nextContextKey) {
       prevViewStateContextKey.current = nextContextKey;
-      setViewState(
-        getInitialViewState(scopedKey, initialOwners, defaultSortField),
-      );
+      setViewState(getInitialViewState(scopedKey, initialOwners, defaultSortField));
     }
   }, [scopedKey, initialOwners, initialOwnersKey, defaultSortField]);
 
@@ -125,9 +145,7 @@ export function useTasksListCore(m: TasksListCoreInput) {
   // Deleted or reassigned tasks leave orphan IDs in localStorage; this keeps
   // the stored array bounded to only current parent IDs.
   useEffect(() => {
-    const parentIds = new Set(
-      tasks.map((i: Task) => i.parentId).filter(Boolean) as string[],
-    );
+    const parentIds = new Set(tasks.map((i: Task) => i.parentId).filter(Boolean) as string[]);
     const pruned = viewState.collapsedParents.filter((id) => parentIds.has(id));
     if (pruned.length !== viewState.collapsedParents.length) {
       updateView({ collapsedParents: pruned });
@@ -141,9 +159,7 @@ export function useTasksListCore(m: TasksListCoreInput) {
       searchFilters ?? {},
       "compact",
       TASK_SEARCH_RESULT_LIMIT,
-      enableRoutineVisibilityFilter
-        ? "with-routine-executions"
-        : "without-routine-executions",
+      enableRoutineVisibilityFilter ? "with-routine-executions" : "without-routine-executions",
     ],
     queryFn: ({ signal }) =>
       tasksApi
@@ -172,9 +188,7 @@ export function useTasksListCore(m: TasksListCoreInput) {
         searchFilters ?? {},
         "compact",
         TASK_BOARD_COLUMN_RESULT_LIMIT,
-        enableRoutineVisibilityFilter
-          ? "with-routine-executions"
-          : "without-routine-executions",
+        enableRoutineVisibilityFilter ? "with-routine-executions" : "without-routine-executions",
       ],
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         tasksApi
@@ -182,9 +196,7 @@ export function useTasksListCore(m: TasksListCoreInput) {
             companyId,
             {
               ...searchFilters,
-              ...(normalizedTaskSearch.length > 0
-                ? { q: normalizedTaskSearch }
-                : {}),
+              ...(normalizedTaskSearch.length > 0 ? { q: normalizedTaskSearch } : {}),
               projectId,
               status: [status],
               limit: TASK_BOARD_COLUMN_RESULT_LIMIT,
@@ -199,7 +211,7 @@ export function useTasksListCore(m: TasksListCoreInput) {
   const agentName = useCallback(
     (id: string | null) => {
       if (!id || !agents) return null;
-      return agents.find((a: { id: string; name: string }) => a.id === id)?.name ?? null;
+      return agents.find((agent) => agent.id === id)?.name ?? null;
     },
     [agents],
   );
@@ -219,14 +231,13 @@ export function useTasksListCore(m: TasksListCoreInput) {
         name:
           member.principalId === currentUserId
             ? "Me"
-            : (companyUserLabelMap.get(member.principalId) ??
-              member.principalId.slice(0, 5)),
+            : (companyUserLabelMap.get(member.principalId) ?? member.principalId.slice(0, 5)),
       })),
     [companyMembers?.users, companyUserLabelMap, currentUserId],
   );
 
   const projectById = useMemo(() => {
-    const map = new Map<string, { name: string; color: string | null }>();
+    const map = new Map<string, NamedColor>();
     for (const project of projects ?? []) {
       map.set(project.id, { name: project.name, color: project.color ?? null });
     }
@@ -253,9 +264,7 @@ export function useTasksListCore(m: TasksListCoreInput) {
         if (!options.has(id)) {
           options.set(id, {
             id,
-            label:
-              formatOwnerUserLabel(creator.id, currentUserId) ??
-              creator.id.slice(0, 5),
+            label: formatOwnerUserLabel(creator.id, currentUserId) ?? creator.id.slice(0, 5),
             kind: "user",
             searchText: `${creator.id} board user`,
           });
@@ -297,15 +306,9 @@ export function useTasksListCore(m: TasksListCoreInput) {
     });
   }, [agents, currentUserId, tasks]);
 
-  const visibleTaskColumnSet = useMemo(
-    () => new Set(visibleTaskColumns),
-    [visibleTaskColumns],
-  );
+  const visibleTaskColumnSet = useMemo(() => new Set(visibleTaskColumns), [visibleTaskColumns]);
   const availableTaskColumns = inboxTaskColumns;
-  const availableTaskColumnSet = useMemo(
-    () => new Set(availableTaskColumns),
-    [availableTaskColumns],
-  );
+  const availableTaskColumnSet = useMemo(() => new Set(availableTaskColumns), [availableTaskColumns]);
   const subtreeLiveCounts = useMemo(
     () => collectSubtreeLiveCounts(tasks, liveTaskIds ?? new Set<string>()),
     [tasks, liveTaskIds],
@@ -313,9 +316,7 @@ export function useTasksListCore(m: TasksListCoreInput) {
   const visibleTrailingTaskColumns = useMemo(
     () =>
       taskTrailingColumns.filter(
-        (column) =>
-          visibleTaskColumnSet.has(column) &&
-          availableTaskColumnSet.has(column),
+        (column) => visibleTaskColumnSet.has(column) && availableTaskColumnSet.has(column),
       ),
     [availableTaskColumnSet, visibleTaskColumnSet],
   );
@@ -332,12 +333,7 @@ export function useTasksListCore(m: TasksListCoreInput) {
     const map = new Map<string, string>();
     for (const task of tasks) {
       const title = taskDisplayTitle(task);
-      map.set(
-        task.id,
-        task.identifier && task.identifier !== title
-          ? `${task.identifier}: ${title}`
-          : title,
-      );
+      map.set(task.id, task.identifier && task.identifier !== title ? `${task.identifier}: ${title}` : title);
     }
     return map;
   }, [tasks]);
@@ -356,5 +352,45 @@ export function useTasksListCore(m: TasksListCoreInput) {
     return isPending ? tasks : [];
   }, [boardTaskQueries, tasks, searchWithinLoadedTasks, viewState.viewMode]);
 
-  return { rootRef, navigate, companyId, keyboardShortcutsEnabled, selectedNavKey, setSelectedNavKey, pointerMovedSinceKeyNavRef, hoveredNavKeyRef, setNavSelectionFromPointer, openNewTask, currentUserId, scopedKey, viewState, taskSearch, setTaskSearch, renderedTaskRowLimit, setRenderedTaskRowLimit, visibleTaskColumns, setVisibleTaskColumns, renderedTaskIdsRef, initialServerFillRequestedRef, normalizedTaskSearch, updateView, searchedTasks, boardTaskQueries, agentName, companyUserLabelMap, companyUserProfileMap, ownerUserOptions, projectById, creatorOptions, visibleTaskColumnSet, availableTaskColumns, availableTaskColumnSet, subtreeLiveCounts, visibleTrailingTaskColumns, taskById, taskTitleMap, boardTasks };
+  return {
+    rootRef,
+    navigate,
+    companyId,
+    keyboardShortcutsEnabled,
+    selectedNavKey,
+    setSelectedNavKey,
+    pointerMovedSinceKeyNavRef,
+    hoveredNavKeyRef,
+    setNavSelectionFromPointer,
+    openNewTask,
+    currentUserId,
+    scopedKey,
+    viewState,
+    taskSearch,
+    setTaskSearch,
+    renderedTaskRowLimit,
+    setRenderedTaskRowLimit,
+    visibleTaskColumns,
+    setVisibleTaskColumns,
+    renderedTaskIdsRef,
+    initialServerFillRequestedRef,
+    normalizedTaskSearch,
+    updateView,
+    searchedTasks,
+    boardTaskQueries,
+    agentName,
+    companyUserLabelMap,
+    companyUserProfileMap,
+    ownerUserOptions,
+    projectById,
+    creatorOptions,
+    visibleTaskColumnSet,
+    availableTaskColumns,
+    availableTaskColumnSet,
+    subtreeLiveCounts,
+    visibleTrailingTaskColumns,
+    taskById,
+    taskTitleMap,
+    boardTasks,
+  };
 }

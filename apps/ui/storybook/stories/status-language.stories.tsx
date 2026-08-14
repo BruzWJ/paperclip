@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/empty";
 import { deriveInitials } from "@/lib/identity";
 import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 
 import type { BlockedNoticeFixture } from "./status-language-fixtures";
 import { blockedNoticeFixtures, coveredBlockedMatrix, coveredBlockedTask } from "./status-language-fixtures";
@@ -106,11 +106,7 @@ function CoveredBlockedSurface({ mode, size }: { mode: "light" | "dark"; size: "
         <div className={isMobile ? "max-w-[340px]" : "min-w-[620px]"}>
           <TaskRow
             task={coveredBlockedTask}
-            mobileMeta={
-              <Badge variant={statusBadgeVariant(coveredBlockedTask.boardPresentationStatus)}>
-                {coveredBlockedTask.boardPresentationStatus}
-              </Badge>
-            }
+            mobileMeta={<DomainStatus status={coveredBlockedTask.boardPresentationStatus} />}
             trailingMeta="waiting on PAP-2175"
           />
         </div>
@@ -145,9 +141,7 @@ function StatusLanguage() {
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2">
                 {TASK_STATUSES.map((status) => (
-                  <Badge key={status} variant={statusBadgeVariant(status)}>
-                    {status}
-                  </Badge>
+                  <DomainStatus key={status} status={status} />
                 ))}
               </CardContent>
             </Card>
@@ -160,9 +154,7 @@ function StatusLanguage() {
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2">
                 {AGENT_STATUSES.map((status) => (
-                  <Badge key={status} variant={statusBadgeVariant(status)}>
-                    {status}
-                  </Badge>
+                  <DomainStatus key={status} status={status} />
                 ))}
               </CardContent>
             </Card>

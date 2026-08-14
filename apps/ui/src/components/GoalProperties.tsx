@@ -5,10 +5,9 @@ import type { Goal, GoalLevel, GoalStatus } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
 import { goalsApi } from "../api/goals";
 import { queryKeys } from "../lib/queryKeys";
-import { statusBadgeVariant } from "../lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { formatDate } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import { Field, FieldContent, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,9 +62,7 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
                     size="xs"
                     className="h-auto p-0 hover:bg-transparent hover:opacity-80"
                   >
-                    <Badge variant={statusBadgeVariant(goal.status)}>
-                      {goal.status.replace(/[_-]/g, " ")}
-                    </Badge>
+                    <DomainStatus status={goal.status} />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-40" align="end">
@@ -82,7 +79,7 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Badge variant={statusBadgeVariant(goal.status)}>{goal.status.replace(/[_-]/g, " ")}</Badge>
+              <DomainStatus status={goal.status} />
             )}
           </FieldContent>
         </Field>

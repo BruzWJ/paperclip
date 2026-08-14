@@ -2,18 +2,18 @@ import { agentsApi } from "@/api/agents";
 import { approvalsApi } from "@/api/approvals";
 import { approvalLabel, ApprovalPayloadRenderer, typeIcon } from "@/components/ApprovalPayload";
 import { ApprovalComments } from "@/components/approvals/ApprovalComments";
+import { JsonCodeBlock } from "@/components/patterns/JsonCodeBlock";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { loadCompanyApproval } from "@/routes/-company-entity-loader";
 import {
   AGENT_CONTEXT_GRANT_KEYS,
@@ -291,7 +291,7 @@ function ApprovalDetail() {
               </CardTitle>
             </div>
           </div>
-          <Badge variant={statusBadgeVariant(approval.status)}>{approval.status.replace(/[_-]/g, " ")}</Badge>
+          <DomainStatus status={approval.status} />
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1 text-sm">
@@ -315,9 +315,7 @@ function ApprovalDetail() {
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
-                  {JSON.stringify(payload, null, 2)}
-                </pre>
+                <JsonCodeBlock filename="approval-request.json" value={payload} />
               </CollapsibleContent>
             </Collapsible>
             {approval.decisionNote && (

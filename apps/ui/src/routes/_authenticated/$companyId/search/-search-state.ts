@@ -18,8 +18,6 @@ import {
   type CompanySearchResult,
   type CompanySearchScope,
   type CompanySearchSort,
-  type TaskPriority,
-  type TaskStatus,
 } from "@paperclipai/shared";
 
 export type CompanySearch = {
@@ -90,6 +88,16 @@ export const SCOPE_LABELS: Record<CompanySearchScope, string> = {
 
 export type SubGroupKey = "tasks" | "comments" | "documents" | "artifacts" | "agents" | "projects";
 
+export interface CompanySearchSubgroup {
+  key: SubGroupKey;
+  results: CompanySearchResult[];
+}
+
+export interface CompanySearchError {
+  message: string;
+  status?: number;
+}
+
 export const SUBGROUP_ORDER: SubGroupKey[] = [
   "tasks",
   "comments",
@@ -119,9 +127,7 @@ export function classifyResult(result: CompanySearchResult): SubGroupKey {
   return "tasks";
 }
 
-export function buildSubgroups(
-  results: CompanySearchResult[],
-): Array<{ key: SubGroupKey; results: CompanySearchResult[] }> {
+export function buildSubgroups(results: CompanySearchResult[]): CompanySearchSubgroup[] {
   const buckets = new Map<SubGroupKey, CompanySearchResult[]>();
   for (const result of results) {
     const key = classifyResult(result);
@@ -178,19 +184,7 @@ export function searchFiltersFromRoute(search: SearchRouteState): ParsedSearchQu
   return filters;
 }
 
-export interface SearchRouteState {
-  q?: string;
-  scope?: CompanySearchScope;
-  sort?: CompanySearchSort;
-  status?: TaskStatus[];
-  priority?: TaskPriority[];
-  ownerAgentId?: string;
-  ownerUserId?: string;
-  projectId?: string;
-  labelId?: string;
-  updatedWithin?: string;
-  updatedAfter?: string;
-}
+export type SearchRouteState = CompanySearch;
 
 export function buildSearchState(
   query: string,
@@ -217,10 +211,7 @@ export function buildSearchState(
   };
 }
 
-export function shapeError(error: unknown): {
-  message: string;
-  status?: number;
-} {
+export function shapeError(error: unknown): CompanySearchError {
   if (!error) return { message: "Unknown error" };
   if (error instanceof Error) {
     const status = (error as Error & { status?: number }).status;

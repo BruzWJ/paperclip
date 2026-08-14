@@ -1,8 +1,10 @@
-import { AlertTriangle, Info, PauseCircle, User, X } from "lucide-react";
+import { AlertTriangle, Info, PauseCircle, User } from "lucide-react";
+import { Banner, BannerAction, BannerClose, BannerIcon, BannerTitle } from "@/components/kibo-ui/banner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { cn } from "../../lib/utils";
+import type { NamedAgentSummary } from "@/lib/presentation-contracts";
 import { AgentIcon } from "../AgentIconPicker";
 import {
   classifyOwnerTransition,
@@ -20,13 +22,8 @@ import {
  * so they can be exercised in isolation by component tests and Storybook.
  */
 
-export interface OwnerAgentLike {
-  name: string;
-  icon?: string | null;
-}
-
 export interface OwnerChipResolvers {
-  agentMap?: ReadonlyMap<string, OwnerAgentLike> | null;
+  agentMap?: ReadonlyMap<string, NamedAgentSummary> | null;
   resolveUserLabel?: (userId: string) => string | null;
   currentUserId?: string | null;
 }
@@ -125,15 +122,15 @@ export function RunStatusBadge({
 }) {
   const p = resolveRunStatusPresentation(status, { operatorInterrupted });
   return (
-    <Badge
-      variant="outline"
-      className={cn(p.className, className)}
+    <DomainStatus
+      status={operatorInterrupted ? "warning" : status}
+      className={className}
       data-testid="run-status-badge"
       data-interrupted={operatorInterrupted ? "true" : "false"}
     >
       {p.label}
       {p.srHint ? <span className="sr-only"> — {p.srHint}</span> : null}
-    </Badge>
+    </DomainStatus>
   );
 }
 
@@ -193,33 +190,21 @@ export function ComposerMentionCoach({
   onDismiss: () => void;
 }) {
   return (
-    <Alert data-testid="composer-mention-coach" aria-live="polite">
-      <Info aria-hidden />
-      <AlertDescription className="flex-row items-center">
-        <span className="min-w-0 flex-1">
-          Did you mean <strong>@{candidate.matchedText}</strong>? Plain text won't notify an agent or make it
-          the owner.
-        </span>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          onClick={onInsert}
-          aria-label={`Insert mention for ${agentDisplayName} into your comment`}
-        >
-          Insert mention
-        </Button>
-        <Button
-          type="button"
-          size="icon-xs"
-          variant="ghost"
-          onClick={onDismiss}
-          aria-label="Dismiss suggestion"
-        >
-          <X aria-hidden />
-        </Button>
-      </AlertDescription>
-    </Alert>
+    <Banner data-testid="composer-mention-coach" aria-live="polite" visible inset onClose={onDismiss}>
+      <BannerIcon icon={Info} />
+      <BannerTitle>
+        Did you mean <strong>@{candidate.matchedText}</strong>? Plain text won't notify an agent or make it
+        the owner.
+      </BannerTitle>
+      <BannerAction
+        type="button"
+        onClick={onInsert}
+        aria-label={`Insert mention for ${agentDisplayName} into your comment`}
+      >
+        Insert mention
+      </BannerAction>
+      <BannerClose type="button" aria-label="Dismiss suggestion" />
+    </Banner>
   );
 }
 
@@ -233,10 +218,11 @@ export function OwnerRunningBanner({
   className?: string;
 }) {
   return (
-    <Alert role="status" aria-live="polite" data-testid="owner-running-banner" className={className}>
-      <AlertTriangle aria-hidden />
-      <AlertDescription>{copy.banner}</AlertDescription>
-    </Alert>
+    <Banner role="status" aria-live="polite" data-testid="owner-running-banner" className={className} inset>
+      <BannerIcon icon={AlertTriangle} />
+      <BannerTitle>{copy.banner}</BannerTitle>
+      <DomainStatus status="running">Run active</DomainStatus>
+    </Banner>
   );
 }
 
@@ -257,29 +243,22 @@ export function InterruptOwnerChangeConfirm({
   onCancel: () => void;
 }) {
   return (
-    <Alert data-testid="interrupt-owner-change-confirm">
-      <AlertTriangle aria-hidden />
-      <AlertTitle>{copy.confirmTitle}</AlertTitle>
-      <AlertDescription>
-        <div className="flex flex-wrap items-center gap-1">
+    <Banner data-testid="interrupt-owner-change-confirm" inset>
+      <BannerIcon icon={AlertTriangle} />
+      <BannerTitle>
+        <span className="block font-medium">{copy.confirmTitle}</span>
+        <span className="flex flex-wrap items-center gap-1">
           <span>Change owner to</span>
           <OwnerChip owner={to} resolvers={resolvers} />
-        </div>
-        <div className="flex justify-end gap-2">
-          <Button type="button" size="xs" variant="outline" onClick={onCancel}>
-            {copy.cancelAction}
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            onClick={onConfirm}
-            data-testid="interrupt-owner-change-confirm-action"
-          >
-            {copy.confirmAction}
-          </Button>
-        </div>
-      </AlertDescription>
-    </Alert>
+        </span>
+      </BannerTitle>
+      <BannerAction type="button" onClick={onCancel}>
+        {copy.cancelAction}
+      </BannerAction>
+      <BannerAction type="button" onClick={onConfirm} data-testid="interrupt-owner-change-confirm-action">
+        {copy.confirmAction}
+      </BannerAction>
+    </Banner>
   );
 }
 

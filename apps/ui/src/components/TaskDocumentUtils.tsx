@@ -19,6 +19,11 @@ export type DraftState = {
   isNew: boolean;
 };
 
+export interface DocumentActorLookups {
+  agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
+  userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
+}
+
 export type DocumentConflictState = {
   key: string;
   serverDocument: TaskDocument;
@@ -115,10 +120,7 @@ export function downloadDocumentFile(key: string, body: string) {
 
 export function getRevisionActor(
   revision: DocumentRevision,
-  maps: {
-    agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
-    userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
-  },
+  maps: DocumentActorLookups,
 ): DocumentFrameHeaderRevisionActor {
   if (revision.createdByAgentId) {
     const agent = maps.agentMap?.get(revision.createdByAgentId);

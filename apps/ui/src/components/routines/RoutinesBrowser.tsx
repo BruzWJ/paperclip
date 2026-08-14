@@ -322,7 +322,8 @@ export function RoutinesDialogs({ controller }: { controller: RoutinesController
           if (!open) setDeleteFolderTarget(null);
         }}
         onConfirm={() => {
-          if (deleteFolderTarget) deleteFolder.mutate(deleteFolderTarget.id);
+          if (!deleteFolderTarget) return;
+          return deleteFolder.mutateAsync(deleteFolderTarget.id).then(() => undefined);
         }}
       />
       <MobileFolderSheet

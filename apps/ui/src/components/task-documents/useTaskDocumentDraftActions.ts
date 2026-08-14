@@ -8,9 +8,7 @@ import {
   type DocumentSubjectConfig,
   type DraftState,
 } from "../TaskDocumentUtils";
-import type { useTaskDocumentEditorState } from "./useTaskDocumentEffects";
-
-type EditorState = ReturnType<typeof useTaskDocumentEditorState>;
+import type { TaskDocumentEditorState } from "./useTaskDocumentEffects";
 
 export interface UseTaskDocumentDraftActionsOptions {
   documentSubject: DocumentSubjectConfig;
@@ -19,7 +17,7 @@ export interface UseTaskDocumentDraftActionsOptions {
     isPending: boolean;
     mutateAsync: (draft: DraftState) => Promise<TaskDocument>;
   };
-  editorState: EditorState;
+  editorState: TaskDocumentEditorState;
   syncDocumentCaches: (document: TaskDocument) => void;
   invalidateTaskDocuments: () => void;
 }

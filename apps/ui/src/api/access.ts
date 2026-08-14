@@ -1,11 +1,20 @@
-import type {
-  InviteSource,
-  JoinRequest,
-  PermissionKey,
-} from "@paperclipai/shared";
+import type { InviteSource, JoinRequest, PermissionKey } from "@paperclipai/shared";
 import { api } from "./client";
 
 export type UserCompanyRole = "owner" | "admin" | "operator" | "viewer";
+
+export interface AccessUserSummary {
+  id: string;
+  email: string | null;
+  name: string | null;
+  image: string | null;
+}
+
+export interface CompanyInviteListOptions {
+  state?: "active" | "revoked" | "accepted" | "expired";
+  limit?: number;
+  offset?: number;
+}
 
 type InviteSummary = {
   id: string;
@@ -68,12 +77,7 @@ export type CompanyMember = {
   membershipRole: UserCompanyRole;
   createdAt: string;
   updatedAt: string;
-  user: {
-    id: string;
-    email: string | null;
-    name: string | null;
-    image: string | null;
-  } | null;
+  user: AccessUserSummary | null;
   grants: CompanyMemberGrant[];
   removal?: {
     canArchive: boolean;
@@ -98,12 +102,7 @@ export type CompanyMembersResponse = {
 export type CompanyUserDirectoryEntry = {
   principalId: string;
   status: "active";
-  user: {
-    id: string;
-    email: string | null;
-    name: string | null;
-    image: string | null;
-  } | null;
+  user: AccessUserSummary | null;
 };
 
 export type CompanyUserDirectoryResponse = {
@@ -125,12 +124,7 @@ export type CompanyInviteRecord = {
   createdAt: string;
   updatedAt: string;
   state: "active" | "revoked" | "accepted" | "expired";
-  invitedByUser: {
-    id: string;
-    email: string | null;
-    name: string | null;
-    image: string | null;
-  } | null;
+  invitedByUser: AccessUserSummary | null;
   relatedJoinRequestId: string | null;
 };
 
@@ -140,24 +134,9 @@ export type CompanyInviteListResponse = {
 };
 
 export type CompanyJoinRequest = JoinRequest & {
-  requesterUser: {
-    id: string;
-    email: string | null;
-    name: string | null;
-    image: string | null;
-  } | null;
-  approvedByUser: {
-    id: string;
-    email: string | null;
-    name: string | null;
-    image: string | null;
-  } | null;
-  rejectedByUser: {
-    id: string;
-    email: string | null;
-    name: string | null;
-    image: string | null;
-  } | null;
+  requesterUser: AccessUserSummary | null;
+  approvedByUser: AccessUserSummary | null;
+  rejectedByUser: AccessUserSummary | null;
   invite: {
     id: string;
     inviteType: "company_join" | "bootstrap_admin";
@@ -166,20 +145,11 @@ export type CompanyJoinRequest = JoinRequest & {
     expiresAt: string;
     revokedAt: string | null;
     acceptedAt: string | null;
-    invitedByUser: {
-      id: string;
-      email: string | null;
-      name: string | null;
-      image: string | null;
-    } | null;
+    invitedByUser: AccessUserSummary | null;
   } | null;
 };
 
-export type AdminUserDirectoryEntry = {
-  id: string;
-  email: string | null;
-  name: string | null;
-  image: string | null;
+export type AdminUserDirectoryEntry = AccessUserSummary & {
   isInstanceAdmin: boolean;
   activeCompanyMembershipCount: number;
 };
@@ -198,23 +168,16 @@ export type UserCompanyAccessEntry = {
 };
 
 export type UserCompanyAccessResponse = {
-  user: {
-    id: string;
-    email: string | null;
-    name: string | null;
-    image: string | null;
-    isInstanceAdmin: boolean;
-  } | null;
+  user:
+    | (AccessUserSummary & {
+        isInstanceAdmin: boolean;
+      })
+    | null;
   companyAccess: UserCompanyAccessEntry[];
 };
 
 export type CurrentBoardAccess = {
-  user: {
-    id: string;
-    email: string | null;
-    name: string | null;
-    image: string | null;
-  } | null;
+  user: AccessUserSummary | null;
   userId: string;
   isInstanceAdmin: boolean;
   companyIds: string[];
@@ -227,11 +190,7 @@ export type CurrentBoardAccess = {
   keyId: string | null;
 };
 
-function buildInviteListQuery(options: {
-  state?: "active" | "revoked" | "accepted" | "expired";
-  limit?: number;
-  offset?: number;
-}) {
+function buildInviteListQuery(options: CompanyInviteListOptions) {
   const params = new URLSearchParams();
   if (options.state) params.set("state", options.state);
   if (options.limit) params.set("limit", String(options.limit));
@@ -248,8 +207,7 @@ export const accessApi = {
     } = {},
   ) => api.post<CompanyInviteCreated>(`/companies/${companyId}/invites`, input),
 
-  getInvite: (token: string) =>
-    api.get<InviteSummary>(`/invites/${encodeURIComponent(token)}`),
+  getInvite: (token: string) => api.get<InviteSummary>(`/invites/${encodeURIComponent(token)}`),
 
   acceptInvite: (token: string) =>
     api.post<JoinRequest | { bootstrapAccepted: true; userId: string }>(
@@ -257,36 +215,20 @@ export const accessApi = {
       {},
     ),
 
-  listInvites: (
-    companyId: string,
-    options: {
-      state?: "active" | "revoked" | "accepted" | "expired";
-      limit?: number;
-      offset?: number;
-    } = {},
-  ) =>
-    api.get<CompanyInviteListResponse>(
-      `/companies/${companyId}/invites${buildInviteListQuery(options)}`,
-    ),
+  listInvites: (companyId: string, options: CompanyInviteListOptions = {}) =>
+    api.get<CompanyInviteListResponse>(`/companies/${companyId}/invites${buildInviteListQuery(options)}`),
 
-  revokeInvite: (inviteId: string) =>
-    api.post(`/invites/${inviteId}/revoke`, {}),
+  revokeInvite: (inviteId: string) => api.post(`/invites/${inviteId}/revoke`, {}),
 
   listJoinRequests: (
     companyId: string,
     status: "pending_approval" | "approved" | "rejected" = "pending_approval",
-  ) =>
-    api.get<CompanyJoinRequest[]>(
-      `/companies/${companyId}/join-requests?status=${status}`,
-    ),
+  ) => api.get<CompanyJoinRequest[]>(`/companies/${companyId}/join-requests?status=${status}`),
 
-  listMembers: (companyId: string) =>
-    api.get<CompanyMembersResponse>(`/companies/${companyId}/members`),
+  listMembers: (companyId: string) => api.get<CompanyMembersResponse>(`/companies/${companyId}/members`),
 
   listUserDirectory: (companyId: string) =>
-    api.get<CompanyUserDirectoryResponse>(
-      `/companies/${companyId}/user-directory`,
-    ),
+    api.get<CompanyUserDirectoryResponse>(`/companies/${companyId}/user-directory`),
 
   updateMember: (
     companyId: string,
@@ -295,32 +237,18 @@ export const accessApi = {
       membershipRole?: UserCompanyRole;
       status?: "pending" | "active" | "suspended";
     },
-  ) =>
-    api.patch<CompanyMember>(
-      `/companies/${companyId}/members/${memberId}`,
-      input,
-    ),
+  ) => api.patch<CompanyMember>(`/companies/${companyId}/members/${memberId}`, input),
 
   archiveMember: (companyId: string, memberId: string) =>
-    api.post<ArchiveCompanyMemberResponse>(
-      `/companies/${companyId}/members/${memberId}/archive`,
-      {},
-    ),
+    api.post<ArchiveCompanyMemberResponse>(`/companies/${companyId}/members/${memberId}/archive`, {}),
 
   approveJoinRequest: (companyId: string, requestId: string) =>
-    api.post<JoinRequest>(
-      `/companies/${companyId}/join-requests/${requestId}/approve`,
-      {},
-    ),
+    api.post<JoinRequest>(`/companies/${companyId}/join-requests/${requestId}/approve`, {}),
 
   rejectJoinRequest: (companyId: string, requestId: string) =>
-    api.post<JoinRequest>(
-      `/companies/${companyId}/join-requests/${requestId}/reject`,
-      {},
-    ),
+    api.post<JoinRequest>(`/companies/${companyId}/join-requests/${requestId}/reject`, {}),
 
-  claimBootstrapAdmin: () =>
-    api.post<{ claimed: true; userId: string }>("/bootstrap/claim", {}),
+  claimBootstrapAdmin: () => api.post<{ claimed: true; userId: string }>("/bootstrap/claim", {}),
 
   getCliAuthChallenge: (id: string, token: string) =>
     api.get<CliAuthChallengeStatus>(
@@ -343,27 +271,18 @@ export const accessApi = {
     ),
 
   searchAdminUsers: (query: string) =>
-    api.get<AdminUserDirectoryEntry[]>(
-      `/admin/users?${new URLSearchParams({ query }).toString()}`,
-    ),
+    api.get<AdminUserDirectoryEntry[]>(`/admin/users?${new URLSearchParams({ query }).toString()}`),
 
-  promoteInstanceAdmin: (userId: string) =>
-    api.post(`/admin/users/${userId}/promote-instance-admin`, {}),
+  promoteInstanceAdmin: (userId: string) => api.post(`/admin/users/${userId}/promote-instance-admin`, {}),
 
-  demoteInstanceAdmin: (userId: string) =>
-    api.post(`/admin/users/${userId}/demote-instance-admin`, {}),
+  demoteInstanceAdmin: (userId: string) => api.post(`/admin/users/${userId}/demote-instance-admin`, {}),
 
   getUserCompanyAccess: (userId: string) =>
     api.get<UserCompanyAccessResponse>(`/admin/users/${userId}/company-access`),
 
   setUserCompanyAccess: (userId: string, companyIds: string[]) =>
-    api.put<UserCompanyAccessResponse>(
-      `/admin/users/${userId}/company-access`,
-      { companyIds },
-    ),
+    api.put<UserCompanyAccessResponse>(`/admin/users/${userId}/company-access`, { companyIds }),
 
   getCurrentBoardAccess: (userId: string) =>
-    api.get<CurrentBoardAccess>(
-      `/cli-auth/users/${encodeURIComponent(userId)}`,
-    ),
+    api.get<CurrentBoardAccess>(`/cli-auth/users/${encodeURIComponent(userId)}`),
 };

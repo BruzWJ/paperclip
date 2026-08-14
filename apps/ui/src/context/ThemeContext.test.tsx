@@ -3,7 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ThemeProvider, useTheme } from "./ThemeContext";
+import { ThemeProvider, type ThemePreference, useTheme } from "./ThemeContext";
 
 const THEME_STORAGE_KEY = "paperclip.theme";
 
@@ -61,12 +61,14 @@ function installMatchMedia(initialMatches: boolean): FakeMediaQueryList {
 describe("ThemeContext", () => {
   let container: HTMLDivElement;
   let observedTheme: "light" | "dark" | null = null;
-  let setTheme: ((theme: "light" | "dark") => void) | null = null;
+  let observedPreference: ThemePreference | null = null;
+  let setTheme: ((theme: ThemePreference) => void) | null = null;
   let toggleTheme: (() => void) | null = null;
 
   function Probe() {
     const ctx = useTheme();
     observedTheme = ctx.theme;
+    observedPreference = ctx.preference;
     setTheme = ctx.setTheme;
     toggleTheme = ctx.toggleTheme;
     return null;
@@ -77,6 +79,7 @@ describe("ThemeContext", () => {
     document.documentElement.className = "";
     document.documentElement.style.colorScheme = "";
     observedTheme = null;
+    observedPreference = null;
     setTheme = null;
     toggleTheme = null;
     container = document.createElement("div");
@@ -101,6 +104,7 @@ describe("ThemeContext", () => {
     });
 
     expect(observedTheme).toBe("dark");
+    expect(observedPreference).toBe("system");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
     expect(mql.listenerCount()).toBe(1);
 
@@ -108,6 +112,7 @@ describe("ThemeContext", () => {
       mql.dispatch(false);
     });
     expect(observedTheme).toBe("light");
+    expect(observedPreference).toBe("system");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
 
@@ -141,6 +146,7 @@ describe("ThemeContext", () => {
       setTheme?.("light");
     });
     expect(observedTheme).toBe("light");
+    expect(observedPreference).toBe("light");
     expect(mql.listenerCount()).toBe(1);
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
 

@@ -1,35 +1,29 @@
 import { runsApi, type TaskExecutionRunJoinedDetail } from "@/api/runs";
 import { tasksApi } from "@/api/tasks";
+import { JsonCodeBlock } from "@/components/patterns/JsonCodeBlock";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Empty, EmptyTitle } from "@/components/ui/empty";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import { useSidebar } from "@/context/SidebarContext";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { queryKeys } from "@/lib/queryKeys";
-import { statusBadgeVariant } from "@/lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { cn, relativeTime } from "@/lib/utils";
 import type { TaskExecutionRunEnvelopeRecord } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
+import type { DetailListItem } from "@/components/patterns/DetailList";
 
 function runDuration(run: TaskExecutionRunEnvelopeRecord) {
   if (!run.startedAt) return null;
   const startedAt = new Date(run.startedAt).getTime();
-  const finishedAt = run.finishedAt
-    ? new Date(run.finishedAt).getTime()
-    : Date.now();
+  const finishedAt = run.finishedAt ? new Date(run.finishedAt).getTime() : Date.now();
   if (!Number.isFinite(startedAt) || !Number.isFinite(finishedAt)) return null;
   const seconds = Math.max(0, Math.round((finishedAt - startedAt) / 1000));
   if (seconds < 60) return String(seconds) + "s";
@@ -57,18 +51,11 @@ function RunListItem({
   const content = (
     <ItemContent>
       <ItemTitle className="flex-wrap">
-        <Badge variant={statusBadgeVariant(run.status)}>
-          {run.status.replace(/[_-]/g, " ")}
-        </Badge>
-        <Badge
-          variant="outline"
-          className="px-1.5 text-(length:--text-nano) capitalize"
-        >
+        <DomainStatus status={run.status} />
+        <Badge variant="outline" className="px-1.5 text-(length:--text-nano) capitalize">
           {run.kind}
         </Badge>
-        <span className="font-mono text-xs text-muted-foreground">
-          {run.id.slice(0, 8)}
-        </span>
+        <span className="font-mono text-xs text-muted-foreground">{run.id.slice(0, 8)}</span>
         <span className="ml-auto shrink-0 text-(length:--text-micro) text-muted-foreground">
           {relativeTime(run.createdAt)}
         </span>
@@ -83,10 +70,7 @@ function RunListItem({
   if (isSelected) {
     return (
       <Item asChild variant="muted" size="sm" className={className}>
-        <Link
-          to="/$companyId/agents/$agentId/$tab"
-          params={{ companyId, agentId, tab: "runs" }}
-        >
+        <Link to="/$companyId/agents/$agentId/$tab" params={{ companyId, agentId, tab: "runs" }}>
           {content}
         </Link>
       </Item>
@@ -94,10 +78,7 @@ function RunListItem({
   }
   return (
     <Item asChild size="sm" className={className}>
-      <Link
-        to="/$companyId/agents/$agentId/runs/$runId"
-        params={{ companyId, agentId, runId: run.id }}
-      >
+      <Link to="/$companyId/agents/$agentId/runs/$runId" params={{ companyId, agentId, runId: run.id }}>
         {content}
       </Link>
     </Item>
@@ -125,12 +106,9 @@ export function AgentRunsPanel({
   }
 
   const sorted = [...runs].sort(
-    (left, right) =>
-      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
-  const effectiveRunId = isMobile
-    ? selectedRunId
-    : (selectedRunId ?? sorted[0]?.id ?? null);
+  const effectiveRunId = isMobile ? selectedRunId : (selectedRunId ?? sorted[0]?.id ?? null);
   const selectedRun = sorted.find((run) => run.id === effectiveRunId) ?? null;
 
   if (isMobile) {
@@ -153,12 +131,7 @@ export function AgentRunsPanel({
     return (
       <ItemGroup className="overflow-x-hidden rounded-lg border">
         {sorted.map((run) => (
-          <RunListItem
-            key={run.id}
-            run={run}
-            isSelected={false}
-            agentId={agentRouteId}
-          />
+          <RunListItem key={run.id} run={run} isSelected={false} agentId={agentRouteId} />
         ))}
       </ItemGroup>
     );
@@ -166,16 +139,8 @@ export function AgentRunsPanel({
 
   return (
     <div className="flex gap-0">
-      <div
-        className={cn(
-          "shrink-0 rounded-lg border",
-          selectedRun ? "w-72" : "w-full",
-        )}
-      >
-        <ItemGroup
-          className="sticky top-4 overflow-y-auto"
-          style={{ maxHeight: "calc(100vh - 2rem)" }}
-        >
+      <div className={cn("shrink-0 rounded-lg border", selectedRun ? "w-72" : "w-full")}>
+        <ItemGroup className="sticky top-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 2rem)" }}>
           {sorted.map((run) => (
             <RunListItem
               key={run.id}
@@ -233,11 +198,7 @@ function BoundedRecordSection<T>({
 }
 
 function JsonData({ value }: { value: unknown }) {
-  return (
-    <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 text-(length:--text-micro)">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  );
+  return <JsonCodeBlock bodyClassName="max-h-64" value={value} />;
 }
 
 function RecordContent({
@@ -262,19 +223,13 @@ function RecordContent({
         <span>{detail}</span>
         {trailing ? <span className="ml-auto">{trailing}</span> : null}
       </ItemTitle>
-      {description ? (
-        <ItemDescription className="font-mono">{description}</ItemDescription>
-      ) : null}
+      {description ? <ItemDescription className="font-mono">{description}</ItemDescription> : null}
       {children}
     </ItemContent>
   );
 }
 
-function RunDetail({
-  run: initialRun,
-}: {
-  run: TaskExecutionRunEnvelopeRecord;
-}) {
+function RunDetail({ run: initialRun }: { run: TaskExecutionRunEnvelopeRecord }) {
   const companyId = useCompanyRouteId();
   const {
     data: detail,
@@ -290,7 +245,7 @@ function RunDetail({
     queryKey: queryKeys.tasks.detail(run.taskId),
     queryFn: () => tasksApi.get(run.taskId),
   });
-  const summaryRows: Array<{ label: string; value: ReactNode }> = [
+  const summaryRows: DetailListItem[] = [
     {
       label: "Task",
       value: task ? (
@@ -316,15 +271,11 @@ function RunDetail({
     <div className="min-w-0 space-y-4">
       <Card className="gap-4 py-4">
         <CardHeader className="flex-row flex-wrap items-center gap-2 px-4">
-          <Badge variant={statusBadgeVariant(run.status)}>
-            {run.status.replace(/[_-]/g, " ")}
-          </Badge>
+          <DomainStatus status={run.status} />
           <Badge variant="outline" className="capitalize">
             {run.kind}
           </Badge>
-          <span className="font-mono text-xs text-muted-foreground">
-            {run.id}
-          </span>
+          <span className="font-mono text-xs text-muted-foreground">{run.id}</span>
         </CardHeader>
         <CardContent className="space-y-3 px-4">
           <ItemGroup className="grid gap-2 sm:grid-cols-2">
@@ -344,10 +295,7 @@ function RunDetail({
       </Card>
 
       {isLoading && !detail ? (
-        <p
-          className="flex items-center gap-2 text-sm text-muted-foreground"
-          role="status"
-        >
+        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
           <Spinner />
           Loading joined run detail…
         </p>
@@ -355,9 +303,7 @@ function RunDetail({
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>
-            {error instanceof Error
-              ? error.message
-              : "Could not load the run detail."}
+            {error instanceof Error ? error.message : "Could not load the run detail."}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -371,12 +317,9 @@ function RunDetail({
                 {detail.finalization.record.action.replace(/_/g, " ")}
               </Badge>
               {detail.finalization.liveness ? (
-                <Badge variant="outline" className="capitalize">
-                  {detail.finalization.liveness.livenessState.replace(
-                    /_/g,
-                    " ",
-                  )}
-                </Badge>
+                <DomainStatus status={detail.finalization.liveness.livenessState} className="capitalize">
+                  {detail.finalization.liveness.livenessState.replace(/_/g, " ")}
+                </DomainStatus>
               ) : null}
             </ItemTitle>
             {detail.finalization.liveness?.livenessReason ? (

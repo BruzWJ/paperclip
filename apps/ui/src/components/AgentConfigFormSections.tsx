@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
+import { FieldLegend, FieldSet } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import type { Agent } from "@paperclipai/shared";
@@ -54,19 +55,13 @@ export function AgentIdentitySection({
         <CardTitle className="text-sm">Identity</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 px-4">
-        <Field>
-          <FieldLabel>Name</FieldLabel>
-          <FieldDescription>{help.name}</FieldDescription>
+        <LabeledFormField label="Name" description={help.name}>
           <DraftInput value={name} onCommit={onNameChange} immediate placeholder="Agent name" />
-        </Field>
-        <Field>
-          <FieldLabel>Title</FieldLabel>
-          <FieldDescription>{help.title}</FieldDescription>
+        </LabeledFormField>
+        <LabeledFormField label="Title" description={help.title}>
           <DraftInput value={title} onCommit={onTitleChange} immediate placeholder="e.g. VP of Engineering" />
-        </Field>
-        <Field>
-          <FieldLabel>Reports to</FieldLabel>
-          <FieldDescription>{help.reportsTo}</FieldDescription>
+        </LabeledFormField>
+        <LabeledFormField label="Reports to" description={help.reportsTo}>
           <ReportsToPicker
             agents={agents}
             value={reportsTo}
@@ -74,10 +69,8 @@ export function AgentIdentitySection({
             excludeAgentIds={[agent.id]}
             chooseLabel="Choose manager…"
           />
-        </Field>
-        <Field>
-          <FieldLabel>Capabilities</FieldLabel>
-          <FieldDescription>{help.capabilities}</FieldDescription>
+        </LabeledFormField>
+        <LabeledFormField label="Capabilities" description={help.capabilities}>
           <div aria-busy={uploadPending}>
             <FieldSet disabled={uploadPending} className="min-w-0 gap-0">
               <FieldLegend className="sr-only">Capabilities</FieldLegend>
@@ -96,10 +89,8 @@ export function AgentIdentitySection({
               </p>
             ) : null}
           </div>
-        </Field>
-        <Field>
-          <FieldLabel>Instructions</FieldLabel>
-          <FieldDescription>{help.instruction}</FieldDescription>
+        </LabeledFormField>
+        <LabeledFormField label="Instructions" description={help.instruction}>
           <DraftTextarea
             value={instruction}
             onCommit={onInstructionChange}
@@ -107,7 +98,7 @@ export function AgentIdentitySection({
             minRows={4}
             placeholder="Describe this agent's role, priorities, and durable operating guidance..."
           />
-        </Field>
+        </LabeledFormField>
       </CardContent>
     </Card>
   );
@@ -185,9 +176,7 @@ export function AgentAdapterSection({
       </CardHeader>
       <CardContent className="space-y-3 px-4">
         {showAdapterTypeField ? (
-          <Field>
-            <FieldLabel>Adapter type</FieldLabel>
-            <FieldDescription>{help.adapterType}</FieldDescription>
+          <LabeledFormField label="Adapter type" description={help.adapterType}>
             <Select value={adapterType} onValueChange={onAdapterTypeChange}>
               <SelectTrigger size="sm" className="w-full shadow-none">
                 <SelectValue placeholder="Select an adapter" />
@@ -200,7 +189,7 @@ export function AgentAdapterSection({
                 ))}
               </SelectContent>
             </Select>
-          </Field>
+          </LabeledFormField>
         ) : null}
 
         {hasAdapterType && hasAdapter ? adapterFields : null}

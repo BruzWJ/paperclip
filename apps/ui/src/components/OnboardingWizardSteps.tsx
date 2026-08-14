@@ -1,5 +1,13 @@
 import { Button } from "@/components/ui/button";
-import { Field, FieldLabel } from "@/components/ui/field";
+import {
+  Choicebox,
+  ChoiceboxIndicator,
+  ChoiceboxItem,
+  ChoiceboxItemDescription,
+  ChoiceboxItemHeader,
+  ChoiceboxItemTitle,
+} from "@/components/kibo-ui/choicebox";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -63,17 +71,7 @@ export function OnboardingCompanyNameStep({
           <p className="text-xs text-muted-foreground">What should we call your company?</p>
         </div>
       </div>
-      <Field className="group mt-3 gap-1">
-        <FieldLabel
-          className={cn(
-            "text-xs font-normal transition-colors",
-            companyName.trim()
-              ? "text-foreground"
-              : "text-muted-foreground group-focus-within:text-foreground",
-          )}
-        >
-          Company name
-        </FieldLabel>
+      <LabeledFormField className="group mt-3 gap-1" label="Company name">
         <Input
           aria-label="Company name"
           placeholder="Acme Corp"
@@ -87,7 +85,7 @@ export function OnboardingCompanyNameStep({
           }}
           autoFocus
         />
-      </Field>
+      </LabeledFormField>
       <Button
         type="button"
         variant="link"
@@ -184,8 +182,7 @@ export function OnboardingGrowStep({
           multiline: false,
         },
       ].map((field) => (
-        <Field key={field.label} className="group gap-1">
-          <FieldLabel className="text-xs font-normal text-muted-foreground">{field.label}</FieldLabel>
+        <LabeledFormField key={field.label} className="group gap-1" label={field.label}>
           {field.multiline ? (
             <Textarea
               aria-label={field.label}
@@ -202,7 +199,7 @@ export function OnboardingGrowStep({
               onChange={(event) => field.onChange(event.target.value)}
             />
           )}
-        </Field>
+        </LabeledFormField>
       ))}
       {companyName.trim() && workDescription.trim() ? (
         <>
@@ -212,17 +209,14 @@ export function OnboardingGrowStep({
             </Button>
           ) : null}
           {companyGoal.trim() ? (
-            <Field className="group gap-1">
-              <FieldLabel className="text-xs font-normal text-foreground">
-                Generated mission — edit however you like:
-              </FieldLabel>
+            <LabeledFormField className="group gap-1" label="Generated mission — edit however you like:">
               <Textarea
                 aria-label="Generated mission"
                 className="min-h-(--sz-60px) resize-none"
                 value={companyGoal}
                 onChange={(event) => onCompanyGoalChange(event.target.value)}
               />
-            </Field>
+            </LabeledFormField>
           ) : null}
         </>
       ) : null}
@@ -259,33 +253,30 @@ export function OnboardingMissionPathSelector({
   return (
     <div className="space-y-3">
       <p className="text-xs text-foreground">How would you like to define your mission?</p>
-      <ToggleGroup
-        type="single"
+      <Choicebox
         value={missionPath ?? ""}
         onValueChange={(value) => {
           if (value === "direct" || value === "questionnaire") onChange(value);
         }}
-        className="grid grid-cols-2 gap-2"
+        className="grid gap-2 md:grid-cols-2"
       >
-        <ToggleGroupItem
-          value="direct"
-          variant="outline"
-          className="h-auto flex-col items-center gap-1.5 p-3 text-xs whitespace-normal"
-        >
+        <ChoiceboxItem id="mission-path-direct" value="direct">
           <Sparkles className="h-4 w-4" />
-          <span className="font-medium">I know my mission</span>
-          <span className="text-muted-foreground text-(length:--text-nano)">Type it directly</span>
-        </ToggleGroupItem>
-        <ToggleGroupItem
-          value="questionnaire"
-          variant="outline"
-          className="h-auto flex-col items-center gap-1.5 p-3 text-xs whitespace-normal"
-        >
+          <ChoiceboxItemHeader>
+            <ChoiceboxItemTitle>I know my mission</ChoiceboxItemTitle>
+            <ChoiceboxItemDescription>Type it directly</ChoiceboxItemDescription>
+          </ChoiceboxItemHeader>
+          <ChoiceboxIndicator id="mission-path-direct" />
+        </ChoiceboxItem>
+        <ChoiceboxItem id="mission-path-questionnaire" value="questionnaire">
           <ListTodo className="h-4 w-4" />
-          <span className="font-medium">Help me figure it out</span>
-          <span className="text-muted-foreground text-(length:--text-nano)">Answer a few questions</span>
-        </ToggleGroupItem>
-      </ToggleGroup>
+          <ChoiceboxItemHeader>
+            <ChoiceboxItemTitle>Help me figure it out</ChoiceboxItemTitle>
+            <ChoiceboxItemDescription>Answer a few questions</ChoiceboxItemDescription>
+          </ChoiceboxItemHeader>
+          <ChoiceboxIndicator id="mission-path-questionnaire" />
+        </ChoiceboxItem>
+      </Choicebox>
     </div>
   );
 }
@@ -304,15 +295,7 @@ export function OnboardingMissionFields({
   if (missionPath === "direct") {
     return (
       <div className="animate-in space-y-3 fade-in duration-200">
-        <Field className="group gap-1">
-          <FieldLabel
-            className={cn(
-              "text-xs font-normal",
-              companyGoal.trim() ? "text-foreground" : "text-muted-foreground",
-            )}
-          >
-            Mission
-          </FieldLabel>
+        <LabeledFormField className="group gap-1" label="Mission">
           <Textarea
             aria-label="Mission"
             className="min-h-(--sz-60px) resize-none"
@@ -321,7 +304,7 @@ export function OnboardingMissionFields({
             onChange={(event) => onCompanyGoalChange(event.target.value)}
             autoFocus
           />
-        </Field>
+        </LabeledFormField>
         <ToggleGroup
           type="single"
           value={companyGoal}
@@ -354,10 +337,10 @@ export function OnboardingMissionFields({
   if (missionConfirmed) {
     return (
       <div className="animate-in space-y-3 fade-in duration-200">
-        <Field className="group gap-1">
-          <FieldLabel className="text-xs font-normal text-foreground">
-            Here&apos;s your draft mission — edit it however you like:
-          </FieldLabel>
+        <LabeledFormField
+          className="group gap-1"
+          label="Here's your draft mission — edit it however you like:"
+        >
           <Textarea
             aria-label="Draft mission"
             className="min-h-(--sz-60px) resize-none"
@@ -365,7 +348,7 @@ export function OnboardingMissionFields({
             onChange={(event) => onCompanyGoalChange(event.target.value)}
             autoFocus
           />
-        </Field>
+        </LabeledFormField>
         <Button
           type="button"
           variant="link"
@@ -412,8 +395,7 @@ export function OnboardingMissionFields({
           value: q4,
         },
       ].map((field) => (
-        <Field key={field.question} className="group gap-1">
-          <FieldLabel className="text-xs font-normal text-muted-foreground">{field.label}</FieldLabel>
+        <LabeledFormField key={field.question} className="group gap-1" label={field.label}>
           <Input
             aria-label={field.ariaLabel ?? field.label}
             placeholder={field.placeholder}
@@ -421,7 +403,7 @@ export function OnboardingMissionFields({
             onChange={(event) => onQuestionChange(field.question, event.target.value)}
             autoFocus={field.question === 1}
           />
-        </Field>
+        </LabeledFormField>
       ))}
       {q1.trim() ? (
         <Button

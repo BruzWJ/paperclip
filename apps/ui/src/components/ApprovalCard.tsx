@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, XCircle, Clock, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { Badge } from "@/components/ui/badge";
@@ -12,24 +12,8 @@ import type { Approval, Agent } from "@paperclipai/shared";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-
-function statusIcon(status: string) {
-  if (status === "approved") return <CheckCircle2 className="size-3.5" />;
-  if (status === "rejected") return <XCircle className="size-3.5" />;
-  if (status === "revision_requested") return <Clock className="size-3.5" />;
-  if (status === "pending") return <Clock className="size-3.5" />;
-  return null;
-}
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 
 export function ApprovalCard({
   approval,
@@ -102,10 +86,7 @@ export function ApprovalCard({
           </div>
         </div>
         <div className="shrink-0">
-          <Badge variant="secondary">
-            {statusIcon(approval.status)}
-            <span className="capitalize">{approval.status.replace(/_/g, " ")}</span>
-          </Badge>
+          <DomainStatus status={approval.status}>{approval.status.replace(/_/g, " ")}</DomainStatus>
         </div>
       </CardHeader>
 
@@ -171,22 +152,17 @@ export function ApprovalCard({
           ) : null}
         </CardFooter>
       ) : null}
-      <AlertDialog open={rejectConfirmationOpen} onOpenChange={setRejectConfirmationOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reject this approval?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This records a rejection for this request. Review the approval details before continuing.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={isPending} onClick={() => onReject?.()}>
-              {pendingAction === "reject" ? "Rejecting..." : "Reject approval"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmActionDialog
+        open={rejectConfirmationOpen}
+        onOpenChange={setRejectConfirmationOpen}
+        title="Reject this approval?"
+        description="This records a rejection for this request. Review the approval details before continuing."
+        confirmLabel="Reject approval"
+        pendingLabel={pendingAction === "reject" ? "Rejecting..." : "Reject approval"}
+        variant="destructive"
+        pending={isPending}
+        onConfirm={() => onReject?.()}
+      />
     </Card>
   );
 }

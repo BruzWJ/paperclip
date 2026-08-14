@@ -1,21 +1,8 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import type { PluginRecordDto } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle, Power, Puzzle, Settings, Trash } from "lucide-react";
@@ -77,10 +64,7 @@ export function InstalledPluginsSection({
                       {plugin.manifestJson.displayName}
                     </Link>
                   ) : (
-                    <span
-                      className="block truncate font-medium"
-                      title={plugin.manifestJson.displayName}
-                    >
+                    <span className="block truncate font-medium" title={plugin.manifestJson.displayName}>
                       {plugin.manifestJson.displayName}
                     </span>
                   )}
@@ -98,11 +82,7 @@ export function InstalledPluginsSection({
                     <AlertDescription title={plugin.lastError ?? undefined}>
                       {errorSummaryByPluginId.get(plugin.id)}
                     </AlertDescription>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onShowError(plugin)}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => onShowError(plugin)}>
                       View full error
                     </Button>
                   </Alert>
@@ -110,17 +90,7 @@ export function InstalledPluginsSection({
               </ItemContent>
               <ItemActions className="flex-col items-end">
                 <div className="flex items-center gap-2">
-                  <Badge
-                    variant={
-                      plugin.status === "ready"
-                        ? "default"
-                        : plugin.status === "error"
-                          ? "destructive"
-                          : "secondary"
-                    }
-                  >
-                    {plugin.status}
-                  </Badge>
+                  <DomainStatus status={plugin.status}>{plugin.status}</DomainStatus>
                   {isInstanceAdmin ? (
                     <>
                       <Button
@@ -147,12 +117,7 @@ export function InstalledPluginsSection({
                   ) : null}
                 </div>
                 {isInstanceAdmin ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2 h-8"
-                    asChild
-                  >
+                  <Button variant="outline" size="sm" className="mt-2 h-8" asChild>
                     <Link
                       to="/$companyId/company/settings/instance/plugins/$pluginId"
                       params={{ companyId, pluginId: plugin.id }}

@@ -1,10 +1,12 @@
 import { useId, useState } from "react";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { PopoverTitle, PopoverDescription } from "@/components/ui/popover";
+import { createSecretCreationDraft } from "@/lib/presentation-contracts";
 
 const SECRET_NAME_RE = /^[a-z][a-z0-9_]*$/;
 
@@ -34,8 +36,9 @@ export function SecretPopoverForm({
   onCancel,
   onSubmit,
 }: SecretPopoverFormProps) {
-  const [name, setName] = useState(initialName);
-  const [value, setValue] = useState(initialValue);
+  const [draft, setDraft] = useState(() =>
+    createSecretCreationDraft({ name: initialName, value: initialValue }),
+  );
   const [reveal, setReveal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +46,7 @@ export function SecretPopoverForm({
   const nameErrorId = useId();
   const valueErrorId = useId();
 
-  const trimmedName = name.trim();
+  const trimmedName = draft.name.trim();
   const nameError = (() => {
     if (!trimmedName) return touched ? "Name is required" : null;
     if (!SECRET_NAME_RE.test(trimmedName)) return "Use lowercase letters, digits and _";
@@ -52,8 +55,8 @@ export function SecretPopoverForm({
     }
     return null;
   })();
-  const valueError = value.length === 0 ? (touched ? "Value is required" : null) : null;
-  const canSubmit = !submitting && trimmedName.length > 0 && value.length > 0 && !nameError;
+  const valueError = draft.value.length === 0 ? (touched ? "Value is required" : null) : null;
+  const canSubmit = !submitting && trimmedName.length > 0 && draft.value.length > 0 && !nameError;
 
   async function handleSubmit() {
     setTouched(true);
@@ -61,7 +64,7 @@ export function SecretPopoverForm({
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(trimmedName, value);
+      await onSubmit(trimmedName, draft.value);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Failed to create secret");
       setSubmitting(false);
@@ -83,18 +86,17 @@ export function SecretPopoverForm({
         ) : null}
       </div>
 
-      <Field data-invalid={Boolean(nameError)}>
-        <FieldLabel>Secret name</FieldLabel>
+      <LabeledFormField data-invalid={Boolean(nameError)} label="Secret name">
         <Input
           className="font-mono"
-          value={name}
+          value={draft.name}
           autoFocus
           spellCheck={false}
           placeholder="secret_name"
           aria-label="Secret name"
           aria-invalid={nameError ? true : undefined}
           aria-describedby={nameError ? nameErrorId : undefined}
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
           onBlur={() => setTouched(true)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -104,22 +106,25 @@ export function SecretPopoverForm({
           }}
         />
         <FieldError id={nameErrorId}>{nameError}</FieldError>
-      </Field>
+      </LabeledFormField>
 
-      <Field data-invalid={Boolean(valueError)}>
-        <FieldLabel>Secret value</FieldLabel>
+      <LabeledFormField data-invalid={Boolean(valueError)} label="Secret value">
         <InputGroup>
           <InputGroupInput
             className="font-mono"
             type={reveal ? "text" : "password"}
-            value={value}
+            value={draft.value}
             readOnly={mode === "store"}
             spellCheck={false}
             placeholder={mode === "create" ? "value" : undefined}
             aria-label="Secret value"
             aria-invalid={valueError ? true : undefined}
             aria-describedby={valueError ? valueErrorId : undefined}
-            onChange={mode === "create" ? (event) => setValue(event.target.value) : undefined}
+            onChange={
+              mode === "create"
+                ? (event) => setDraft((current) => ({ ...current, value: event.target.value }))
+                : undefined
+            }
           />
           <InputGroupAddon align="inline-end">
             <InputGroupButton
@@ -132,7 +137,7 @@ export function SecretPopoverForm({
           </InputGroupAddon>
         </InputGroup>
         <FieldError id={valueErrorId}>{valueError}</FieldError>
-      </Field>
+      </LabeledFormField>
 
       {error ? <p className="text-(length:--text-micro) text-destructive">{error}</p> : null}
 

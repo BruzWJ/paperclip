@@ -7,8 +7,10 @@ import { projectsApi } from "@/api/projects";
 import { secretsApi } from "@/api/secrets";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { queryKeys } from "@/lib/queryKeys";
+import type { AutosaveState } from "@/hooks/useAutosaveIndicator";
+import type { NameValuePair } from "@/lib/presentation-contracts";
 
-export type ProjectFieldSaveState = "idle" | "saving" | "saved" | "error";
+export type ProjectFieldSaveState = AutosaveState;
 
 export type ProjectConfigFieldKey = "name" | "description" | "status" | "goals" | "env";
 
@@ -51,7 +53,7 @@ export function useProjectPropertiesFields({
     retry: false,
   });
   const createSecret = useMutation({
-    mutationFn: (input: { name: string; value: string }) => secretsApi.create(companyId, input),
+    mutationFn: (input: NameValuePair) => secretsApi.create(companyId, input),
     onSuccess: () =>
       queryClient.invalidateQueries({
         queryKey: queryKeys.secrets.list(companyId),

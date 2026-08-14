@@ -1,23 +1,16 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldContent, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
+import { BrandColorPicker } from "@/components/patterns/BrandColorPicker";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
+import { LabeledFormField, SettingsSwitchField } from "@/components/patterns/FormPatterns";
+import { FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { PROJECT_COLORS } from "@paperclipai/shared";
 import { Download, Settings, Upload } from "lucide-react";
 import { useEffect } from "react";
 import {
@@ -44,7 +37,8 @@ function CompanySettings() {
     description,
     generalDirty,
     generalMutation,
-    handleLogoFileChange,
+    handleLogoFile,
+    handleLogoFileError,
     handleSaveGeneral,
     logoUploadError,
     logoUploadMutation,
@@ -96,19 +90,18 @@ function CompanySettings() {
           <CardTitle>General</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Field>
-            <FieldLabel>Company name</FieldLabel>
-            <FieldDescription>The display name for your company.</FieldDescription>
+          <LabeledFormField label="Company name" description="The display name for your company.">
             <Input
               aria-label="Company name"
               type="text"
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
             />
-          </Field>
-          <Field>
-            <FieldLabel>Description</FieldLabel>
-            <FieldDescription>Optional description shown in the company profile.</FieldDescription>
+          </LabeledFormField>
+          <LabeledFormField
+            label="Description"
+            description="Optional description shown in the company profile."
+          >
             <Input
               aria-label="Company description"
               type="text"
@@ -116,7 +109,7 @@ function CompanySettings() {
               placeholder="Optional company description"
               onChange={(e) => setDescription(e.target.value)}
             />
-          </Field>
+          </LabeledFormField>
         </CardContent>
       </Card>
 
@@ -135,16 +128,24 @@ function CompanySettings() {
               </Avatar>
             </div>
             <div className="flex-1 space-y-3">
-              <Field>
-                <FieldLabel>Logo</FieldLabel>
-                <FieldDescription>Upload a PNG, JPEG, WEBP, GIF, or SVG logo image.</FieldDescription>
+              <LabeledFormField label="Logo" description="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image.">
                 <div className="space-y-2">
-                  <Input
-                    aria-label="Company logo image"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-                    onChange={handleLogoFileChange}
-                    className="h-auto py-1.5 file:mr-4 file:bg-muted file:px-2.5 file:py-1 file:text-xs"
+                  <AccessibleDropzone
+                    accept={{
+                      "image/png": [".png"],
+                      "image/jpeg": [".jpg", ".jpeg"],
+                      "image/webp": [".webp"],
+                      "image/gif": [".gif"],
+                      "image/svg+xml": [".svg"],
+                    }}
+                    ariaLabel="Upload company logo"
+                    disabled={logoUploadMutation.isPending}
+                    maxFiles={1}
+                    onDrop={(files) => {
+                      const file = files[0];
+                      if (file) handleLogoFile(file);
+                    }}
+                    onError={handleLogoFileError}
                   />
                   {logoUrl && (
                     <div className="flex items-center gap-2">
@@ -175,49 +176,22 @@ function CompanySettings() {
                     </span>
                   )}
                 </div>
-              </Field>
-              <Field>
-                <FieldLabel>Brand color</FieldLabel>
-                <FieldDescription>
-                  Sets the hue for the company icon. Leave empty for auto-generated color.
-                </FieldDescription>
-                <div className="flex items-center gap-2">
-                  {/* token-extraction: allowlisted — a color input value must be a real hex string, not a var() reference. */}
-                  <Input
-                    aria-label="Brand color picker"
-                    type="color"
-                    value={brandColor || "#6366f1"}
-                    onChange={(e) => setBrandColor(e.target.value)}
-                    className="h-8 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
-                  />
-                  <Input
-                    aria-label="Brand color hex value"
-                    type="text"
-                    value={brandColor}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === "" || /^#[0-9a-fA-F]{0,6}$/.test(v)) {
-                        setBrandColor(v);
-                      }
-                    }}
-                    placeholder="Auto"
-                    className="w-28 font-mono"
-                  />
-                  {brandColor && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setBrandColor("")}
-                      className="text-xs text-muted-foreground"
-                    >
-                      Clear
-                    </Button>
-                  )}
-                </div>
-              </Field>
-              <Field>
-                <FieldLabel>Attachment size limit</FieldLabel>
-                <FieldDescription>Accepted range: 1-{MAX_COMPANY_ATTACHMENT_MAX_MIB} MiB.</FieldDescription>
+              </LabeledFormField>
+              <LabeledFormField
+                label="Brand color"
+                description="Sets the hue for the company icon. Leave empty for auto-generated color."
+              >
+                {/* token-extraction: allowlisted — the picker fallback must be a real hex color. */}
+                <BrandColorPicker
+                  value={brandColor}
+                  fallbackValue={PROJECT_COLORS[0]}
+                  onChange={setBrandColor}
+                />
+              </LabeledFormField>
+              <LabeledFormField
+                label="Attachment size limit"
+                description={`Accepted range: 1-${MAX_COMPANY_ATTACHMENT_MAX_MIB} MiB.`}
+              >
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
                     <Input
@@ -238,7 +212,7 @@ function CompanySettings() {
                     </FieldError>
                   )}
                 </div>
-              </Field>
+              </LabeledFormField>
             </div>
           </div>
         </CardContent>
@@ -272,20 +246,14 @@ function CompanySettings() {
           <CardTitle>Hiring</CardTitle>
         </CardHeader>
         <CardContent>
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldLabel htmlFor="company-settings-team-approval-toggle">
-                Require board approval for new hires
-              </FieldLabel>
-              <FieldDescription>New agent hires stay pending until approved by board.</FieldDescription>
-            </FieldContent>
-            <Switch
-              id="company-settings-team-approval-toggle"
-              checked={!!selectedCompany.requireBoardApprovalForNewAgents}
-              onCheckedChange={(value) => settingsMutation.mutate(value)}
-              data-testid="company-settings-team-approval-toggle"
-            />
-          </Field>
+          <SettingsSwitchField
+            id="company-settings-team-approval-toggle"
+            label="Require board approval for new hires"
+            description="New agent hires stay pending until approved by board."
+            checked={!!selectedCompany.requireBoardApprovalForNewAgents}
+            onCheckedChange={(value) => settingsMutation.mutate(value)}
+            data-testid="company-settings-team-approval-toggle"
+          />
         </CardContent>
       </Card>
 
@@ -326,8 +294,17 @@ function CompanySettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
+          <ConfirmActionDialog
+            title={`Archive “${selectedCompany.name}”?`}
+            description="Archive this company to hide it from the sidebar. This persists in the database."
+            confirmLabel="Archive company"
+            pendingLabel="Archiving..."
+            variant="destructive"
+            disabled={selectedCompany.status === "archived"}
+            pending={archiveMutation.isPending}
+            onConfirm={archiveCompany}
+            triggerAsChild
+            trigger={
               <Button
                 variant="destructive"
                 disabled={archiveMutation.isPending || selectedCompany.status === "archived"}
@@ -338,22 +315,8 @@ function CompanySettings() {
                     ? "Already archived"
                     : "Archive company"}
               </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Archive “{selectedCompany.name}”?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Archive this company to hide it from the sidebar. This persists in the database.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={archiveCompany}>
-                  Archive company
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+            }
+          />
           {archiveMutation.error ? (
             <Alert variant="destructive">
               <AlertDescription>

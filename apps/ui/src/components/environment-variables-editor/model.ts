@@ -1,6 +1,16 @@
-import type { CompanySecret, EnvBinding, SecretVersionSelector, UserSecretDefinition } from "@paperclipai/shared";
+import type {
+  CompanySecret,
+  EnvBinding,
+  SecretVersionSelector,
+  UserSecretDefinition,
+} from "@paperclipai/shared";
 
 export type RowSource = "text" | "secret" | "user_secret";
+
+export interface EnvironmentVariableFocusTarget {
+  rowId: string;
+  field: "name" | "value";
+}
 
 /** Local, per-row UI state. Only a subset is emitted upward (see {@link valueFromRows}). */
 export interface EnvRow {
@@ -36,7 +46,9 @@ export function emptyRow(source: RowSource = "text"): EnvRow {
   };
 }
 
-function isSecretRef(binding: unknown): binding is { type: "secret_ref"; secretId?: unknown; version?: unknown } {
+function isSecretRef(
+  binding: unknown,
+): binding is { type: "secret_ref"; secretId?: unknown; version?: unknown } {
   return (
     typeof binding === "object" &&
     binding !== null &&

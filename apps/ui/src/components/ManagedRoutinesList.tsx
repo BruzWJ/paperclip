@@ -5,10 +5,10 @@ import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import {
   RoutineListRow,
-  type RoutineListAgentSummary,
   type RoutineListProjectSummary,
   type RoutineListRowItem,
 } from "@/components/RoutineList";
+import type { NamedAgentSummary } from "@/lib/presentation-contracts";
 
 export type ManagedRoutinesListAgent = {
   id: string;
@@ -97,7 +97,7 @@ export function ManagedRoutinesList({
   onReconcile,
   onReset,
 }: ManagedRoutinesListProps) {
-  const agentById = new Map<string, RoutineListAgentSummary>(
+  const agentById = new Map<string, NamedAgentSummary>(
     agents.map((agent) => [agent.id, { name: agent.name, icon: agent.icon }]),
   );
   const projectById = new Map<string, RoutineListProjectSummary>(

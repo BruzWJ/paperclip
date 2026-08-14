@@ -29,6 +29,7 @@ vi.mock("@/api/auth", () => ({
 vi.mock("@/context/ThemeContext", () => ({
   useTheme: () => ({
     theme: "dark",
+    preference: "system",
     setTheme: vi.fn(),
     toggleTheme: vi.fn(),
   }),
@@ -93,6 +94,18 @@ describe("AuthPage", () => {
     await flushReact();
     return { root, queryClient };
   }
+
+  it("uses the Kibo theme switcher for system, light, and dark preferences", async () => {
+    const { root } = await mount();
+
+    expect(container.querySelector('button[aria-label="System theme"]')).toBeTruthy();
+    expect(container.querySelector('button[aria-label="Light theme"]')).toBeTruthy();
+    expect(container.querySelector('button[aria-label="Dark theme"]')).toBeTruthy();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
 
   it("exposes password-manager metadata and a11y attributes on the sign-in form", async () => {
     const { root } = await mount();

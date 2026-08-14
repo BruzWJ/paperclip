@@ -20,10 +20,7 @@ export const SIDEBAR_RAIL_HIDDEN_LABEL =
   "block w-0 min-w-0 overflow-hidden whitespace-nowrap text-transparent select-none";
 
 /** Preserve the exact decimal string while making its denomination explicit. */
-export function formatMoneyAmount(
-  amount: MoneyAmount,
-  currency: BudgetCurrency | string,
-): string {
+export function formatMoneyAmount(amount: MoneyAmount, currency: BudgetCurrency | string): string {
   return `${currency} ${serializeMoneyAmount(amount)}`;
 }
 
@@ -68,9 +65,12 @@ export function formatShortDate(date: Date | string): string {
   });
 }
 
-export function relativeTime(date: Date | string): string {
+export function relativeTime(date: Date | string | null | undefined): string {
+  if (!date) return "—";
   const now = Date.now();
   const then = new Date(date).getTime();
+  if (!Number.isFinite(then)) return "—";
+  if (then > now) return new Date(then).toLocaleDateString();
   const diffSec = Math.round((now - then) / 1000);
   if (diffSec < 60) return "just now";
   const diffMin = Math.round(diffSec / 60);
@@ -96,14 +96,11 @@ export function formatDurationMs(ms: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  if (minutes < 60)
-    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   if (hours < 24) {
-    return remainingMinutes > 0
-      ? `${hours}h ${remainingMinutes}m`
-      : `${hours}h`;
+    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
   }
   const days = Math.floor(hours / 24);
   const remainingHours = hours % 24;

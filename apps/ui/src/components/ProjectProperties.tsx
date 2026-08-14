@@ -13,24 +13,14 @@ import { Field, FieldContent, FieldGroup, FieldLabel } from "@/components/ui/fie
 import type { Project } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
 import { Archive, ArchiveRestore, Plus, X } from "lucide-react";
-import { statusBadgeVariant } from "../lib/status-variant";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { cn, formatDate } from "../lib/utils";
 import { DraftInput } from "./agent-config-primitives";
 import { EnvironmentVariablesEditor } from "./environment-variables-editor";
 import { InlineEditor } from "./InlineEditor";
 
 import { ProjectCodebaseSection } from "./ProjectCodebaseSection";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -52,12 +42,6 @@ export type { ProjectConfigFieldKey } from "./useProjectPropertiesFields";
 export type { ProjectFieldSaveState } from "./useProjectPropertiesFields";
 
 const projectStatuses = ["backlog", "planned", "in_progress", "completed", "cancelled"];
-
-function saveStateVariant(state: ProjectFieldSaveState) {
-  if (state === "error") return "destructive" as const;
-  if (state === "saving") return "secondary" as const;
-  return "default" as const;
-}
 
 export function ProjectProperties({
   project,
@@ -106,9 +90,9 @@ export function ProjectProperties({
           <FieldLabel>
             Name
             {fieldState("name") !== "idle" ? (
-              <Badge variant={saveStateVariant(fieldState("name"))} role="status">
+              <DomainStatus status={fieldState("name")} role="status">
                 {fieldState("name")}
-              </Badge>
+              </DomainStatus>
             ) : null}
           </FieldLabel>
           <FieldContent>
@@ -129,9 +113,9 @@ export function ProjectProperties({
           <FieldLabel>
             Description
             {fieldState("description") !== "idle" ? (
-              <Badge variant={saveStateVariant(fieldState("description"))} role="status">
+              <DomainStatus status={fieldState("description")} role="status">
                 {fieldState("description")}
-              </Badge>
+              </DomainStatus>
             ) : null}
           </FieldLabel>
           <FieldContent>
@@ -156,9 +140,9 @@ export function ProjectProperties({
           <FieldLabel>
             Status
             {fieldState("status") !== "idle" ? (
-              <Badge variant={saveStateVariant(fieldState("status"))} role="status">
+              <DomainStatus status={fieldState("status")} role="status">
                 {fieldState("status")}
-              </Badge>
+              </DomainStatus>
             ) : null}
           </FieldLabel>
           <FieldContent>
@@ -183,9 +167,7 @@ export function ProjectProperties({
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Badge variant={statusBadgeVariant(project.status)}>
-                {project.status.replace(/[_-]/g, " ")}
-              </Badge>
+              <DomainStatus status={project.status} />
             )}
           </FieldContent>
         </Field>
@@ -193,9 +175,9 @@ export function ProjectProperties({
           <FieldLabel>
             Goals
             {fieldState("goals") !== "idle" ? (
-              <Badge variant={saveStateVariant(fieldState("goals"))} role="status">
+              <DomainStatus status={fieldState("goals")} role="status">
                 {fieldState("goals")}
-              </Badge>
+              </DomainStatus>
             ) : null}
           </FieldLabel>
           <FieldContent>
@@ -276,9 +258,9 @@ export function ProjectProperties({
           <FieldLabel>
             Env
             {fieldState("env") !== "idle" ? (
-              <Badge variant={saveStateVariant(fieldState("env"))} role="status">
+              <DomainStatus status={fieldState("env")} role="status">
                 {fieldState("env")}
-              </Badge>
+              </DomainStatus>
             ) : null}
           </FieldLabel>
           <FieldContent>
@@ -374,32 +356,25 @@ export function ProjectProperties({
                     ? "Unarchive this project to restore it in the sidebar and project selectors."
                     : "Archive this project to hide it from the sidebar and project selectors."}
                 </p>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
+                <ConfirmActionDialog
+                  title={`${project.archivedAt ? "Unarchive" : "Archive"} “${project.name}”?`}
+                  description={
+                    project.archivedAt
+                      ? "Restore this project in the sidebar and project selectors."
+                      : "Hide this project from the sidebar and project selectors."
+                  }
+                  confirmLabel={`${project.archivedAt ? "Unarchive" : "Archive"} project`}
+                  pending={archivePending}
+                  variant="destructive"
+                  onConfirm={() => onArchive(!project.archivedAt)}
+                  triggerAsChild
+                  trigger={
                     <Button size="sm" variant="destructive" disabled={archivePending}>
                       {archivePending ? <Spinner /> : project.archivedAt ? <ArchiveRestore /> : <Archive />}
                       {project.archivedAt ? "Unarchive project" : "Archive project"}
                     </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>
-                        {project.archivedAt ? "Unarchive" : "Archive"} “{project.name}”?
-                      </AlertDialogTitle>
-                      <AlertDialogDescription>
-                        {project.archivedAt
-                          ? "Restore this project in the sidebar and project selectors."
-                          : "Hide this project from the sidebar and project selectors."}
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction variant="destructive" onClick={() => onArchive(!project.archivedAt)}>
-                        {project.archivedAt ? "Unarchive" : "Archive"} project
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                  }
+                />
               </CardContent>
             </Card>
           </div>

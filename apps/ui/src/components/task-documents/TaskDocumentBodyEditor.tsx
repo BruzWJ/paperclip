@@ -1,28 +1,22 @@
-import type { TaskDocument } from "@paperclipai/shared";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Card } from "@/components/ui/card";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
+import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Input } from "@/components/ui/input";
 import { cn, relativeTime } from "../../lib/utils";
 import { MarkdownEditor } from "../MarkdownEditor";
 import { TaskDocumentAnnotations } from "../TaskDocumentAnnotations";
 import { isPlanKey, renderFoldableBody } from "../TaskDocumentUtils";
 
-import type { TaskDocumentCardModel } from "./TaskDocumentCard";
+import type { TaskDocumentPresentationProps } from "./TaskDocumentCard";
 import type { TaskDocumentsSectionController } from "./useTaskDocumentsController";
 
-interface TaskDocumentBodyEditorProps {
-  controller: TaskDocumentsSectionController;
-  doc: TaskDocument;
-  model: TaskDocumentCardModel;
-}
-
-export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentBodyEditorProps) {
+export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentPresentationProps) {
   const {
     mentions,
     imageUploadHandler,
@@ -78,6 +72,23 @@ export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentB
     );
   }
 
+  const documentStateLabel = isHistoricalPreview
+    ? "Viewing historical revision"
+    : activeDraft
+      ? activeConflict
+        ? "Out of date"
+        : autosaveDocumentKey === doc.key
+          ? autosaveState === "saving"
+            ? "Autosaving..."
+            : autosaveState === "saved"
+              ? "Saved"
+              : autosaveState === "error"
+                ? "Could not save"
+                : null
+          : null
+      : null;
+  const documentState = isHistoricalPreview ? "previous" : activeConflict ? "conflict" : autosaveState;
+
   return (
     <>
       {activeDraft && !isPlanKey(doc.key) && !isHistoricalPreview ? (
@@ -118,26 +129,7 @@ export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentB
         )}
       </div>
       <div className="flex min-h-4 items-center justify-end">
-        <Badge
-          variant={autosaveState === "error" ? "destructive" : "outline"}
-          className={activeDraft || isHistoricalPreview ? undefined : "invisible"}
-        >
-          {isHistoricalPreview
-            ? "Viewing historical revision"
-            : activeDraft
-              ? activeConflict
-                ? "Out of date"
-                : autosaveDocumentKey === doc.key
-                  ? autosaveState === "saving"
-                    ? "Autosaving..."
-                    : autosaveState === "saved"
-                      ? "Saved"
-                      : autosaveState === "error"
-                        ? "Could not save"
-                        : ""
-                  : ""
-              : ""}
-        </Badge>
+        {documentStateLabel ? <DomainStatus status={documentState}>{documentStateLabel}</DomainStatus> : null}
       </div>
     </>
   );
@@ -178,10 +170,12 @@ export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps
       onBlurCapture={handleDraftBlur}
       onKeyDown={handleDraftKeyDown}
     >
-      <Field data-invalid={Boolean(newDocumentKeyError)}>
-        <FieldLabel className="sr-only" htmlFor={newDocumentKeyInputId}>
-          Document key
-        </FieldLabel>
+      <LabeledFormField
+        data-invalid={Boolean(newDocumentKeyError)}
+        label="Document key"
+        labelClassName="sr-only"
+        labelFor={newDocumentKeyInputId}
+      >
         <Input
           id={newDocumentKeyInputId}
           autoFocus
@@ -196,12 +190,9 @@ export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps
         {newDocumentKeyError ? (
           <FieldError id={newDocumentKeyErrorId}>{newDocumentKeyError}</FieldError>
         ) : null}
-      </Field>
+      </LabeledFormField>
       {!isPlanKey(draft.key) ? (
-        <Field>
-          <FieldLabel className="sr-only" htmlFor={newDocumentTitleInputId}>
-            Document title
-          </FieldLabel>
+        <LabeledFormField label="Document title" labelClassName="sr-only" labelFor={newDocumentTitleInputId}>
           <Input
             id={newDocumentTitleInputId}
             value={draft.title}
@@ -210,7 +201,7 @@ export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps
             }
             placeholder="Optional title"
           />
-        </Field>
+        </LabeledFormField>
       ) : null}
       <MarkdownEditor
         value={draft.body}
@@ -236,13 +227,7 @@ export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps
   );
 }
 
-interface TaskDocumentRevisionNoticesProps {
-  controller: TaskDocumentsSectionController;
-  doc: TaskDocument;
-  model: TaskDocumentCardModel;
-}
-
-export function TaskDocumentRevisionNotices({ controller, doc, model }: TaskDocumentRevisionNoticesProps) {
+export function TaskDocumentRevisionNotices({ controller, doc, model }: TaskDocumentPresentationProps) {
   const {
     setDocumentConflict,
     restoreDocumentRevision,

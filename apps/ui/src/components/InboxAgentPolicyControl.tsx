@@ -10,18 +10,18 @@ import { AgentIcon } from "./AgentIconPicker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldLabel,
-  FieldSet,
-  FieldTitle,
-} from "@/components/ui/field";
+import { FieldLabel, FieldSet } from "@/components/ui/field";
 import { Item, ItemContent, ItemGroup, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Choicebox,
+  ChoiceboxIndicator,
+  ChoiceboxItem,
+  ChoiceboxItemDescription,
+  ChoiceboxItemHeader,
+  ChoiceboxItemTitle,
+} from "@/components/kibo-ui/choicebox";
 
 const MODE_OPTIONS: { value: string; title: string; description?: string }[] = [
   {
@@ -157,7 +157,7 @@ export function InboxAgentPolicyControl({
       </div>
 
       <FieldSet className="max-w-2xl">
-        <RadioGroup
+        <Choicebox
           aria-label="Inbox agent archiving policy"
           value={draft.mode}
           onValueChange={(value) =>
@@ -165,17 +165,17 @@ export function InboxAgentPolicyControl({
           }
         >
           {MODE_OPTIONS.map((option) => (
-            <FieldLabel key={option.value} htmlFor={option.value}>
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle>{option.title}</FieldTitle>
-                  {option.description ? <FieldDescription>{option.description}</FieldDescription> : null}
-                </FieldContent>
-                <RadioGroupItem value={option.value} id={option.value} />
-              </Field>
-            </FieldLabel>
+            <ChoiceboxItem key={option.value} id={option.value} value={option.value}>
+              <ChoiceboxItemHeader>
+                <ChoiceboxItemTitle>{option.title}</ChoiceboxItemTitle>
+                {option.description ? (
+                  <ChoiceboxItemDescription>{option.description}</ChoiceboxItemDescription>
+                ) : null}
+              </ChoiceboxItemHeader>
+              <ChoiceboxIndicator id={option.value} />
+            </ChoiceboxItem>
           ))}
-        </RadioGroup>
+        </Choicebox>
       </FieldSet>
 
       {draft.mode === "allowlist" ? (
