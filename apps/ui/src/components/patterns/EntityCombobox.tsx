@@ -56,6 +56,8 @@ export interface EntityComboboxProps {
   listClassName?: string;
   onContentKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   getOptionClassName?: (option: EntityOption) => string | undefined;
+  /** Whether to render the chevrons beside the current trigger value. */
+  showTriggerIndicator?: boolean;
   showSelectionIndicator?: boolean;
   renderValue?: (option: EntityOption | null) => ReactNode;
   renderOption?: (option: EntityOption) => ReactNode;
@@ -114,6 +116,7 @@ export const EntityCombobox = forwardRef<HTMLButtonElement, EntityComboboxProps>
     listClassName,
     onContentKeyDown,
     getOptionClassName,
+    showTriggerIndicator = true,
     showSelectionIndicator = true,
     renderValue,
     renderOption,
@@ -197,6 +200,11 @@ export const EntityCombobox = forwardRef<HTMLButtonElement, EntityComboboxProps>
     onPointerDown: onTriggerPointerDown,
     ...restTriggerProps
   } = triggerProps ?? {};
+  const triggerIsIconOnly =
+    triggerProps?.size === "icon" ||
+    triggerProps?.size === "icon-xs" ||
+    triggerProps?.size === "icon-sm" ||
+    triggerProps?.size === "icon-lg";
 
   function renderItem(option: EntityOption, encodedValue: string) {
     return (
@@ -244,7 +252,10 @@ export const EntityCombobox = forwardRef<HTMLButtonElement, EntityComboboxProps>
           aria-expanded={selector.open}
           aria-label={ariaLabel}
           disabled={disabled}
-          className={cn("w-full justify-between overflow-hidden", triggerClassName)}
+          className={cn(
+            triggerIsIconOnly ? "justify-center overflow-visible" : "w-full justify-between overflow-hidden",
+            triggerClassName,
+          )}
           onPointerDown={(event) => {
             onTriggerPointerDown?.(event);
             if (!event.defaultPrevented) selector.pointerFocusRef.current = true;
@@ -266,7 +277,8 @@ export const EntityCombobox = forwardRef<HTMLButtonElement, EntityComboboxProps>
         >
           <span
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-2 truncate text-left",
+              "flex min-w-0 items-center gap-2 truncate text-left",
+              !triggerIsIconOnly && "flex-1",
               !selector.currentOption && "text-muted-foreground",
             )}
           >
@@ -274,7 +286,7 @@ export const EntityCombobox = forwardRef<HTMLButtonElement, EntityComboboxProps>
               ? renderValue(selector.currentOption)
               : (selector.currentOption?.label ?? placeholder)}
           </span>
-          <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+          {showTriggerIndicator ? <ChevronsUpDown className="size-4 shrink-0 opacity-50" /> : null}
         </ComboboxTrigger>
       </span>
       <ComboboxContent

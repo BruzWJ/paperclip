@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EntityOption } from "@/lib/entity-selector";
+import { AgentIconPicker } from "../AgentIconPicker";
 import { EntityCombobox } from "./EntityCombobox";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -148,6 +149,50 @@ describe("EntityCombobox", () => {
       "No entity",
     ]);
     expect(document.querySelector('[data-rich-option="gamma"]')).not.toBeNull();
+  });
+
+  it("supports a square icon-only trigger without rendering the chevrons indicator", () => {
+    flushSync(() =>
+      root!.render(
+        <EntityCombobox
+          value="beta"
+          options={options}
+          type="entity"
+          ariaLabel="Entity icon"
+          placeholder="Choose entity"
+          noneLabel="No entity"
+          onValueChange={() => undefined}
+          triggerProps={{ size: "icon-lg" }}
+          showTriggerIndicator={false}
+          renderValue={() => <span data-testid="selected-icon">Icon</span>}
+        />,
+      ),
+    );
+
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Entity icon"]');
+    const value = container.querySelector<HTMLElement>('[data-testid="selected-icon"]')?.parentElement;
+
+    expect(trigger?.className).toContain("size-10");
+    expect(trigger?.className).not.toContain("w-full");
+    expect(value?.className).not.toContain("flex-1");
+    expect(trigger?.querySelector(".lucide-chevrons-up-down")).toBeNull();
+  });
+
+  it("targets cmdk's inner list sizer for the agent icon grid", async () => {
+    flushSync(() => root!.render(<AgentIconPicker value="bot" onChange={() => undefined} />));
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Change agent icon"]');
+
+    await clickTrigger(trigger!);
+
+    const list = document.querySelector<HTMLElement>('[data-slot="command-list"]');
+    const sizer = list?.querySelector<HTMLElement>("[cmdk-list-sizer]");
+    const directItems = Array.from(sizer?.children ?? []).filter((child) =>
+      child.matches('[data-slot="command-item"]'),
+    );
+
+    expect(list?.className).toContain("[&_[cmdk-list-sizer]]:grid");
+    expect(list?.className).toContain("[&_[cmdk-list-sizer]]:grid-cols-7");
+    expect(directItems.length).toBeGreaterThan(7);
   });
 
   it("matches searchText in addition to the visible label", async () => {

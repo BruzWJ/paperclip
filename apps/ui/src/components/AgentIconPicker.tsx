@@ -40,10 +40,10 @@ export function AgentIconPicker({ value, onChange }: AgentIconPickerProps) {
       onValueChange={onChange}
       searchPlaceholder="Search icons..."
       emptyMessage="No icons match"
-      triggerClassName="w-auto justify-center overflow-visible"
       triggerProps={{ variant: "secondary", size: "icon-lg" }}
       contentClassName="!w-72"
-      listClassName="grid max-h-48 grid-cols-7 gap-1 p-1"
+      listClassName="max-h-48 [&_[cmdk-empty]]:col-span-7 [&_[cmdk-list-sizer]]:grid [&_[cmdk-list-sizer]]:grid-cols-7 [&_[cmdk-list-sizer]]:gap-1 [&_[cmdk-list-sizer]]:p-1"
+      showTriggerIndicator={false}
       showSelectionIndicator={false}
       getOptionClassName={(option) =>
         `size-8 justify-center p-0 ${selectedValue === option.id ? "bg-accent ring-1 ring-primary" : ""}`
