@@ -19,7 +19,6 @@ import {
   useRef,
   useState,
   type Dispatch,
-  type ReactNode,
   type SetStateAction,
 } from "react";
 import {
@@ -40,10 +39,7 @@ export interface TaskDetailEffectsOptions {
   taskId: string;
   task: Task | undefined;
   taskDetailSource: TaskDetailSource | null;
-  breadcrumbTitle: string;
-  breadcrumbStatusLeading: ReactNode;
-  breadcrumbStatusKey?: string;
-  hasLiveRuns: boolean;
+  breadcrumbTaskIdentifier: string;
   setBreadcrumbs: ReturnType<typeof useBreadcrumbs>["setBreadcrumbs"];
   navigationType: NavigationAction;
   panelTask: Task | null;
@@ -71,10 +67,7 @@ export function useTaskDetailEffects({
   taskId,
   task,
   taskDetailSource,
-  breadcrumbTitle,
-  breadcrumbStatusLeading,
-  breadcrumbStatusKey,
-  hasLiveRuns,
+  breadcrumbTaskIdentifier,
   setBreadcrumbs,
   navigationType,
   panelTask,
@@ -115,19 +108,14 @@ export function useTaskDetailEffects({
           }),
       },
       {
-        label: breadcrumbTitle,
-        leading: breadcrumbStatusLeading,
-        leadingKey: breadcrumbStatusKey,
+        label: breadcrumbTaskIdentifier,
       },
     ]);
   }, [
-    breadcrumbTitle,
+    breadcrumbTaskIdentifier,
     companyId,
-    hasLiveRuns,
     setBreadcrumbs,
     taskDetailSource,
-    breadcrumbStatusLeading,
-    breadcrumbStatusKey,
   ]);
 
   useEffect(() => {

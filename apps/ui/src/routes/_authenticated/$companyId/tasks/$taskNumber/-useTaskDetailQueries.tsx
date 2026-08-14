@@ -7,14 +7,12 @@ import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
 import { tasksApi } from "@/api/tasks";
 import { useProjectOrder } from "@/hooks/useProjectOrder";
 import type { MentionOption } from "@/components/MarkdownEditor";
-import { DomainStatus } from "@/components/patterns/DomainStatus";
 import {
   buildCompanyUserLabelMap,
   buildCompanyUserProfileMap,
   buildMarkdownMentionOptions,
 } from "@/lib/company-members";
 import { collectLiveTaskIds } from "@/lib/liveTaskIds";
-import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
 import {
   mergeTaskComments,
   type ClientTaskComment,
@@ -267,7 +265,6 @@ export function useTaskDetailQueries({
 
 export interface TaskDetailDerivedDataOptions {
   task: Task | undefined;
-  taskId: string;
   agents?: Agent[];
   companyMembers?: Awaited<ReturnType<typeof accessApi.listUserDirectory>>;
   taskOwnerCatalog?: Awaited<ReturnType<typeof agentsApi.listInvokableTaskOwners>>;
@@ -285,10 +282,9 @@ export interface TaskDetailDerivedDataOptions {
   openNewTask: (defaults: ReturnType<typeof buildSubTaskDefaultsForViewer>) => void;
 }
 
-/** Computes stable maps, navigation, ownership, and breadcrumb presentation. */
+/** Computes stable maps, navigation, and ownership presentation. */
 export function useTaskDetailDerivedData({
   task,
-  taskId,
   agents,
   companyMembers,
   taskOwnerCatalog,
@@ -324,14 +320,6 @@ export function useTaskDetailDerivedData({
       }),
     [agents, companyMembers?.users, orderedProjects, mentionTasks],
   );
-  const resolvedProject = useMemo(
-    () =>
-      task?.projectId
-        ? (orderedProjects.find((project) => project.id === task.projectId) ?? task.project ?? null)
-        : null,
-    [task?.project, task?.projectId, orderedProjects],
-  );
-  const projectRouteId = resolvedProject?.id ?? null;
   const childTasks = useMemo(() => {
     const descendants = task?.id ? filterTaskDescendants(task.id, rawChildTasks) : rawChildTasks;
     return [...descendants].sort(
@@ -383,34 +371,11 @@ export function useTaskDetailDerivedData({
     [comments, optimisticComments],
   );
 
-  const breadcrumbTitle = task?.title ?? taskId;
-  const breadcrumbStatus = task?.boardPresentationStatus;
-  const breadcrumbBlockerAttention = task?.blockerAttention;
-  const breadcrumbStatusKey = breadcrumbStatus
-    ? `${breadcrumbStatus}|${JSON.stringify(breadcrumbBlockerAttention ?? null)}`
-    : undefined;
-  const breadcrumbStatusLeading = useMemo(
-    () =>
-      breadcrumbStatus ? (
-        <DomainStatus
-          status={breadcrumbStatus}
-          aria-label={taskStatusAccessibleLabel(breadcrumbStatus, breadcrumbBlockerAttention)}
-        >
-          {taskValueLabel(breadcrumbStatus)}
-        </DomainStatus>
-      ) : undefined,
-    // The key is a complete signature of the presentation inputs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [breadcrumbStatusKey],
-  );
-
   return {
     agentMap,
     userProfileMap,
     userLabelMap,
     mentionOptions,
-    resolvedProject,
-    projectRouteId,
     childTasks,
     liveTaskIds,
     taskPanelKey,
@@ -426,8 +391,5 @@ export function useTaskDetailDerivedData({
     currentOwnerValue,
     suggestedOwnerValue: currentOwnerValue,
     threadComments,
-    breadcrumbTitle,
-    breadcrumbStatusKey,
-    breadcrumbStatusLeading,
   };
 }

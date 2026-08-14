@@ -49,8 +49,6 @@ function TaskDetailHeaderScenario({ mobile = false }: { mobile?: boolean }) {
     agentMap,
     userLabelMap,
     userProfileMap,
-    resolvedProject: task.project,
-    projectRouteId: task.projectId,
     hasLiveRuns: !mobile,
     isMobile: mobile,
     isFromInbox: false,

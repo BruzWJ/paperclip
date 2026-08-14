@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { readTaskDetailHeaderSeed } from "@/lib/taskDetailBreadcrumb";
 import { taskValueLabel } from "@/lib/task-blockers";
 import { cn } from "@/lib/utils";
-import { Hexagon, Repeat } from "lucide-react";
+import { Repeat } from "lucide-react";
 
 export function TaskSectionSkeleton({
   titleWidth = "w-28",
@@ -62,73 +62,47 @@ export function TaskDetailLoadingState({
 }: {
   headerSeed: ReturnType<typeof readTaskDetailHeaderSeed>;
 }) {
-  const identifier = headerSeed?.identifier ?? null;
-
   return (
     <div className="max-w-3xl space-y-6">
       <div className="space-y-3">
         <div className="flex min-w-0 items-start gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">
+          <div className="min-w-0 flex-1">
             {headerSeed ? (
-              <>
-                {identifier ? (
-                  <span className="shrink-0 font-mono text-xs font-medium text-muted-foreground">
-                    {identifier}
-                  </span>
-                ) : null}
-                {headerSeed.projectId ? (
-                  <span className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                    <Hexagon className="size-3 shrink-0" />
-                    <span className="truncate">
-                      {headerSeed.projectName ?? headerSeed.projectId.slice(0, 8)}
-                    </span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60">
-                    <Hexagon className="size-3 shrink-0" />
-                    No project
-                  </span>
-                )}
-                {headerSeed.originKind === "routine_execution" && headerSeed.originId ? (
-                  <Badge variant="secondary" title={`Routine execution from routine ${headerSeed.originId}`}>
-                    <Repeat />
-                    Routine
-                  </Badge>
-                ) : null}
-              </>
+              <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{headerSeed.title}</h1>
             ) : (
-              <>
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-4 w-28" />
-              </>
+              <Skeleton className="h-8 w-(--sz-calc-37)" />
             )}
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-1 pt-0.5">
             <Skeleton className="size-8 rounded-md" />
             <Skeleton className="size-8 rounded-md" />
           </div>
         </div>
 
         {headerSeed ? (
-          <>
-            <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{headerSeed.title}</h1>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <DomainStatus status={headerSeed.boardPresentationStatus}>
                 {taskValueLabel(headerSeed.boardPresentationStatus)}
               </DomainStatus>
               <Badge variant="secondary">{taskValueLabel(headerSeed.priority)} priority</Badge>
-              <Skeleton className="h-6 w-28" />
+              {headerSeed.originKind === "routine_execution" && headerSeed.originId ? (
+                <Badge variant="secondary" title={`Routine execution from routine ${headerSeed.originId}`}>
+                  <Repeat />
+                  Routine
+                </Badge>
+              ) : null}
             </div>
-          </>
+            <Skeleton className="h-6 w-28" />
+          </div>
         ) : (
-          <>
-            <Skeleton className="h-8 w-(--sz-calc-37)" />
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
               <Skeleton className="h-6 w-20" />
               <Skeleton className="h-6 w-24" />
-              <Skeleton className="h-6 w-28" />
             </div>
-          </>
+            <Skeleton className="h-6 w-28" />
+          </div>
         )}
       </div>
 

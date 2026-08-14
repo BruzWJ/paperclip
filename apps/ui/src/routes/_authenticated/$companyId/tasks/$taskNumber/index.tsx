@@ -139,7 +139,6 @@ export function useTaskDetailController() {
     ...queryData,
     ...actionMutations,
     task,
-    taskId,
     comments: commentData.comments,
     openNewTask,
   });
@@ -174,6 +173,7 @@ export function useTaskDetailController() {
     companyId,
     taskId,
     task,
+    breadcrumbTaskIdentifier: task?.identifier ?? routeTask.identifier,
     taskDetailSource,
     setBreadcrumbs,
     navigationType,

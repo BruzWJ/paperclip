@@ -23,7 +23,6 @@ import {
   Archive,
   Check,
   Copy,
-  Hexagon,
   MoreHorizontal,
   PauseCircle,
   PlayCircle,
@@ -155,8 +154,6 @@ export function TaskDetailHeader() {
     isMobile,
     moreOpen,
     panelVisible,
-    projectRouteId,
-    resolvedProject,
     setMobilePropsOpen,
     setMoreOpen,
     setPanelVisible,
@@ -183,56 +180,18 @@ export function TaskDetailHeader() {
     <div className="space-y-4">
       <header className="space-y-3" data-testid="task-detail-header">
         <div className="flex min-w-0 items-start gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">
-            <span className="shrink-0 font-mono text-xs font-medium text-muted-foreground">
-              {task.identifier}
-            </span>
-
-            {task.projectId && projectRouteId ? (
-              <Link
-                to="/$companyId/projects/$projectId"
-                params={{ companyId, projectId: projectRouteId }}
-                className="inline-flex min-w-0 items-center gap-1 rounded text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Hexagon className="size-3 shrink-0" />
-                <span className="max-w-48 truncate">
-                  {resolvedProject?.name ?? task.project?.name ?? task.projectId.slice(0, 8)}
-                </span>
-              </Link>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60">
-                <Hexagon className="size-3 shrink-0" />
-                No project
-              </span>
-            )}
-
-            {task.originKind === "routine_execution" && task.originId ? (
-              <Badge asChild variant="secondary">
-                <Link
-                  to="/$companyId/routines/$routineId"
-                  params={{ companyId, routineId: task.originId }}
-                  title={`Routine execution from routine ${task.originId}`}
-                >
-                  <Repeat /> Routine
-                </Link>
-              </Badge>
-            ) : null}
-
-            {task.workMode === "ask" || task.workMode === "planning"
-              ? (() => {
-                  const workModeMeta = workModeMetaFor(task.workMode);
-                  const WorkModeIcon = workModeMeta.icon;
-                  return (
-                    <Badge variant="outline" title={`This task is in ${workModeMeta.label.toLowerCase()}.`}>
-                      <WorkModeIcon aria-hidden="true" />
-                      {workModeMeta.label}
-                    </Badge>
-                  );
-                })()
-              : null}
+          <div className="min-w-0 flex-1">
+            <InlineEditor
+              value={task.title ?? ""}
+              onSave={(title) => updateTaskTitle.mutateAsync(title || null)}
+              as="h1"
+              className="text-xl font-semibold leading-tight sm:text-2xl [&>button]:text-xl [&>button]:font-semibold sm:[&>button]:text-2xl"
+              placeholder="Add a title..."
+              nullable
+            />
           </div>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1" role="group" aria-label="Task utilities">
+          <div className="ml-auto flex shrink-0 items-center gap-1 pt-0.5" role="group" aria-label="Task utilities">
             {!isMobile && canArchiveFromInbox ? (
               <HeaderIconAction
                 size={actionButtonSize}
@@ -284,15 +243,6 @@ export function TaskDetailHeader() {
           </div>
         </div>
 
-        <InlineEditor
-          value={task.title ?? ""}
-          onSave={(title) => updateTaskTitle.mutateAsync(title || null)}
-          as="h1"
-          className="text-xl font-semibold leading-tight sm:text-2xl [&>button]:text-xl [&>button]:font-semibold sm:[&>button]:text-2xl"
-          placeholder="Add a title..."
-          nullable
-        />
-
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Task state">
             <DomainStatus
@@ -304,6 +254,29 @@ export function TaskDetailHeader() {
             <Badge variant="secondary" aria-label={`${taskValueLabel(task.priority)} priority`}>
               {taskValueLabel(task.priority)} priority
             </Badge>
+            {task.originKind === "routine_execution" && task.originId ? (
+              <Badge asChild variant="secondary">
+                <Link
+                  to="/$companyId/routines/$routineId"
+                  params={{ companyId, routineId: task.originId }}
+                  title={`Routine execution from routine ${task.originId}`}
+                >
+                  <Repeat /> Routine
+                </Link>
+              </Badge>
+            ) : null}
+            {task.workMode === "ask" || task.workMode === "planning"
+              ? (() => {
+                  const workModeMeta = workModeMetaFor(task.workMode);
+                  const WorkModeIcon = workModeMeta.icon;
+                  return (
+                    <Badge variant="outline" title={`This task is in ${workModeMeta.label.toLowerCase()}.`}>
+                      <WorkModeIcon aria-hidden="true" />
+                      {workModeMeta.label}
+                    </Badge>
+                  );
+                })()
+              : null}
             {hasLiveRuns ? <DomainStatus status="running">Live run</DomainStatus> : null}
             {hasAssignedBacklogBlocker(task.blockedBy) ? (
               <DomainStatus
