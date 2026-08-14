@@ -1,9 +1,6 @@
 import type { Agent } from "@paperclipai/shared";
 import { describe, expect, it } from "vitest";
-import {
-  formatActivityVerb,
-  formatTaskActivityAction,
-} from "./activity-format";
+import { formatActivityVerb } from "./activity-format";
 
 describe("activity formatting", () => {
   const agentMap = new Map<string, Agent>([
@@ -22,9 +19,6 @@ describe("activity formatting", () => {
     expect(formatActivityVerb("task.blockers_updated", details)).toBe(
       "added blocker PAP-22 to",
     );
-    expect(formatTaskActivityAction("task.blockers_updated", details)).toBe(
-      "added blocker PAP-22",
-    );
   });
 
   it("formats reviewer activity using agent names", () => {
@@ -38,11 +32,6 @@ describe("activity formatting", () => {
     expect(
       formatActivityVerb("task.reviewers_updated", details, { agentMap }),
     ).toBe("added reviewer Reviewer Bot to");
-    expect(
-      formatTaskActivityAction("task.reviewers_updated", details, {
-        agentMap,
-      }),
-    ).toBe("added reviewer Reviewer Bot");
   });
 
   it("formats approver removals using user-aware labels", () => {
@@ -55,9 +44,6 @@ describe("activity formatting", () => {
 
     expect(formatActivityVerb("task.approvers_updated", details)).toBe(
       "removed approver user user- from",
-    );
-    expect(formatTaskActivityAction("task.approvers_updated", details)).toBe(
-      "removed approver user user-",
     );
   });
 
@@ -74,11 +60,6 @@ describe("activity formatting", () => {
     expect(
       formatActivityVerb("task.reviewers_updated", details, { agentMap }),
     ).toBe("updated reviewers on");
-    expect(
-      formatTaskActivityAction("task.reviewers_updated", details, {
-        agentMap,
-      }),
-    ).toBe("updated reviewers");
   });
 
 });

@@ -351,9 +351,6 @@ export function useTaskDetailTreeMutation({
         queryClient.invalidateQueries({
           queryKey: queryKeys.tasks.detail(taskId),
         }),
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.tasks.activity(taskId),
-        }),
         queryClient.invalidateQueries({ queryKey: ["tasks", "runs", taskId] }),
         queryClient.invalidateQueries({
           queryKey: ["tasks", "tree-control-state", taskId],

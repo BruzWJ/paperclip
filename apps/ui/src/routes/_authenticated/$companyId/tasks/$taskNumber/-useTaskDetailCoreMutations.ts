@@ -69,9 +69,6 @@ export function useTaskDetailCoreMutations({
     },
     onSuccess: (nextTask) => {
       mergeTaskResponseIntoCaches(nextTask);
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.activity(taskId),
-      });
       invalidateTaskCollections();
     },
     onError: (error, _variables, context) => {
@@ -97,9 +94,6 @@ export function useTaskDetailCoreMutations({
       tasksApi.updateExecutionPolicy(taskId, { executionPolicy }),
     onSuccess: (nextTask) => {
       mergeTaskResponseIntoCaches(nextTask);
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.activity(taskId),
-      });
       invalidateTaskCollections();
     },
     onError: (error) => {

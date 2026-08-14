@@ -54,7 +54,6 @@ export const queryKeys = {
     documentRevisions: (taskId: string, key: string) => ["tasks", "document-revisions", taskId, key] as const,
     documentAnnotations: (taskId: string, key: string, status: "open" | "resolved" | "all" = "all") =>
       ["tasks", "document-annotations", taskId, key, status] as const,
-    activity: (taskId: string) => ["tasks", "activity", taskId] as const,
     runs: (taskId: string, status?: readonly string[]) =>
       ["tasks", "runs", taskId, status?.join(",") ?? "all"] as const,
     approvals: (taskId: string) => ["tasks", "approvals", taskId] as const,

@@ -52,9 +52,6 @@ describe("LiveUpdatesProvider canonical invalidation", () => {
       queryKey: ["tasks", "detail", TASK_ID],
     });
     expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["tasks", "activity", TASK_ID],
-    });
-    expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: ["tasks", "runs", TASK_ID],
     });
     expect(invalidateQueries).not.toHaveBeenCalledWith(

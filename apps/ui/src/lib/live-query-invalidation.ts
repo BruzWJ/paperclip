@@ -144,10 +144,6 @@ export function invalidateTaskActivityQueries(
     ...invalidationOptions,
   });
   queryClient.invalidateQueries({
-    queryKey: queryKeys.tasks.activity(taskId),
-    ...invalidationOptions,
-  });
-  queryClient.invalidateQueries({
     queryKey: ["tasks", "runs", taskId],
     ...invalidationOptions,
   });

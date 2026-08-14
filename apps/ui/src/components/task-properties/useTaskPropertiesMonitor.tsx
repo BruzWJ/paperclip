@@ -70,9 +70,6 @@ export function useTaskPropertiesMonitor({
       void data.queryClient.invalidateQueries({
         queryKey: queryKeys.tasks.detail(task.id),
       });
-      void data.queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.activity(task.id),
-      });
       if (data.companyId) {
         void data.queryClient.invalidateQueries({
           queryKey: queryKeys.tasks.list(data.companyId),
