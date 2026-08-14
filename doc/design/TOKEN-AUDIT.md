@@ -17,6 +17,15 @@ The token gate covers component and page render code. Visual values must come
 from the token layer, except for entries explicitly allowlisted in
 `apps/ui/src/index.css` with their reason.
 
+Official registry source has a separate ownership boundary:
+
+- `apps/ui/src/components/ui/**` is unmodified shadcn source.
+- `apps/ui/src/components/kibo-ui/**` is Kibo source, with only the generic
+  compatibility corrections and opt-in hooks enumerated in its `README.md`.
+- feature components and routes are Paperclip-owned adapters and remain fully gated.
+
+Do not silence a project-owned violation by moving it into a registry directory.
+
 ## Review procedure
 
 1. Inspect the current component and page source rather than relying on a

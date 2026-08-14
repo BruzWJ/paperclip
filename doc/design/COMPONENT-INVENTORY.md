@@ -26,3 +26,13 @@ The board exposes the retained task, agent, project, goal, routine, approval,
 plugin, and run surfaces. Removed experimental products are intentionally absent
 from the inventory and must not be reintroduced through a component, route, or
 storybook story.
+
+## Ownership tiers
+
+- `components/ui`: official shadcn primitives, updated through the shadcn CLI.
+- `components/kibo-ui`: official Kibo composed components, updated through the Kibo CLI.
+- all other component and route modules: Paperclip-owned domain adapters and screens.
+
+Adapters may translate Paperclip data and behavior into a registry component's
+public API. They must not copy or rename the registry implementation, and a
+registry source file must not acquire Paperclip-specific branches.

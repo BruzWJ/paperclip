@@ -1,6 +1,6 @@
 # Paperclip Design Principles
 
-**Status:** v0.3 — anchor document for design-language simplification. Governs structure, not brand. Brand values (color, type, iconography) are intentionally unspecified: they are being redesigned and will land as token values only. Nothing in `apps/ui/` may hardcode them. Spacing/radius scales are likewise TBD pending the token audit (see Principle 3).
+**Status:** v0.4 — anchor document for a shadcn-centered, Kibo-backed board UI. Governs structure, not brand. Shadcn and Kibo registry sources provide the default component appearance; Paperclip-owned adapters and screens express product semantics without forking their styling or behavior.
 
 Changes from v0.2: token layer location corrected to the repo's real source (`apps/ui/src/index.css`); existing token tiers inventoried; snapshot-coverage scope bounded for Run 1; the canonical task terminology cutover moved out of the zero-visual-change run.
 
@@ -14,7 +14,9 @@ Paperclip is an operational control plane: org charts, tasks, heartbeat runs, bu
 
 ## The token layer (where visual values live)
 
-The single token source is **`apps/ui/src/index.css`** (Tailwind v4; there is no tailwind config file — tokens are CSS custom properties consumed via `@theme`). Do NOT create a parallel token source such as `apps/ui/src/tokens/` — that would produce two sources of truth. If index.css grows unwieldy, extracted values may live in a `tokens.css` **imported by index.css** so the pipeline still has one root.
+The single Paperclip-owned token source is **`apps/ui/src/index.css`** (Tailwind v4; there is no tailwind config file — tokens are CSS custom properties consumed via `@theme`). Do NOT create a parallel token source such as `apps/ui/src/tokens/` — that would produce two sources of truth. If index.css grows unwieldy, extracted values may live in a `tokens.css` **imported by index.css** so the pipeline still has one root.
+
+`apps/ui/src/components/ui/**` and `apps/ui/src/components/kibo-ui/**` are registry-owned source. Keep them aligned with the official shadcn and Kibo registries and update them through their CLIs. The only exceptions are generic compatibility corrections and opt-in hooks documented in `apps/ui/src/components/kibo-ui/README.md`; upstream defaults must remain unchanged, and project-specific behavior belongs in gated adapters outside those directories. Registry source may contain upstream literal utilities that are intentionally outside Paperclip's token and hand-authored file-size gates; editing those values locally would create an unmaintainable fork.
 
 Tailwind v4 gotcha: `@theme inline` bakes literal values at build time. Any token that must be runtime-tunable (theme editor, dark mode overrides) must be defined in a NON-inline block.
 
@@ -37,7 +39,7 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
 
 ## Enforcement (what "compliant" means for the extraction run)
 
-- **Zero visual change is proven, not promised:** Storybook visual snapshots are baselined before any refactor, and all snapshots match baseline after it. A change that alters rendered output must be intentional and human-approved.
+- **Visual changes are explicit:** registry adoption may intentionally reset a surface to the default shadcn/Kibo appearance. Domain behavior and accessibility remain verified with focused tests, and intentional visual changes are reviewed in Storybook.
 - **Baseline scope for Run 1:** the shared primitives in `apps/ui/src/components/ui/` (each gets a story if missing — there are only ~24) plus the ~46 existing stories under `apps/ui/storybook/stories/`. Do NOT attempt a story for every feature component (~277) in this run; full coverage is a later effort.
 - Mechanical rewrites (value extraction, renames) are done via committed codemod scripts in `scripts/`, not hand-edits — reviewable once, repeatable forever.
 - Token layer is the single source (`apps/ui/src/index.css`, per above) consumed via CSS variables / Tailwind theme — never values copied into components.
@@ -47,9 +49,9 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
 
 Aspirational (NOT gating this run): no duplicate components; every component has exactly one story covering its variants; all UI copy says "task".
 
-## Out of scope (do not do during simplification)
+## Refactor scope
 
-No visual redesign, no new colors or typefaces, no layout restructuring, no new dependencies beyond snapshot tooling, no component consolidation/merges (audit + recommend only), no copy renames, no changes to server code or app logic. Simplification means fewer parts, same product.
+Component consolidation, registry-backed composed components, and their required client dependencies are allowed when they remove duplicated UI contracts. Preserve product behavior and server contracts; default shadcn/Kibo styling does not need a Paperclip-specific compatibility layer.
 
 ## Prior art (read before auditing)
 
