@@ -19,12 +19,13 @@ import { readTaskDetailHeaderSeed, readTaskDetailLocationState } from "@/lib/tas
 import { getTaskDetailQueryOptions, seedTaskDetailCache } from "@/lib/taskDetailCache";
 
 import { TaskDetailHeader } from "./-TaskDetailHeader";
+import { TaskDetailContent } from "./-TaskDetailContent";
 import { TaskDetailLoadingState } from "./-TaskDetailLoading";
 import { TaskDetailPageProvider } from "./-TaskDetailPageContext";
 import { TaskDetailStatusPanels } from "./-TaskDetailStatusPanels";
 import { TaskDetailWorkProducts } from "./-TaskDetailWorkProducts";
 import { TaskDetailPropertiesSheet } from "./-TaskDetailWorkProducts";
-import { TaskDetailTabs, TaskTreeControlDialog } from "./-TaskTreeControlDialog";
+import { TaskTreeControlDialog } from "./-TaskTreeControlDialog";
 import { taskDetailSourceRouteOptions } from "./-task-detail-model";
 import { useTaskDetailActionMutations, useTaskDetailTreeMutation } from "./-useTaskDetailActionMutations";
 import { useTaskDetailComments } from "./-useTaskDetailComments";
@@ -269,7 +270,7 @@ function TaskDetail() {
           open={controller.galleryOpen}
           onOpenChange={controller.setGalleryOpen}
         />
-        <TaskDetailTabs />
+        <TaskDetailContent />
         <TaskTreeControlDialog />
         <FormDialog
           open={controller.reopenDialogOpen}

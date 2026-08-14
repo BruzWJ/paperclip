@@ -42,7 +42,7 @@ function TaskChatHashNavigation({
 
   useEffect(() => {
     const hash = location.hash ? `#${location.hash}` : window.location.hash;
-    if (!["#comment-", "#activity-", "#run-"].some((prefix) => hash.startsWith(prefix))) return;
+    if (!["#comment-", "#run-"].some((prefix) => hash.startsWith(prefix))) return;
     if (!messages.length || lastScrolledHashRef.current === hash) return;
     if (!decidedInitialHashRef.current) {
       decidedInitialHashRef.current = true;

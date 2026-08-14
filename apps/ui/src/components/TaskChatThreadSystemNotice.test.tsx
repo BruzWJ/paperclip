@@ -85,7 +85,6 @@ function renderThread(
     root.render(
       <TaskChatThread
         comments={comments}
-        timelineEvents={[]}
         onAdd={async () => {}}
         showComposer={false}
         agentMap={options.agentMap}

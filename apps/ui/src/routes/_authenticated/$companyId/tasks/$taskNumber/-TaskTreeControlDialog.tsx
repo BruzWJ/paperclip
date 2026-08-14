@@ -1,4 +1,3 @@
-import { TaskRelatedWorkPanel } from "@/components/TaskRelatedWorkPanel";
 import { PauseAffectsSummaryView } from "@/components/owner-transition/OwnerTransitionViews";
 import { DomainTree, type DomainTreeNode } from "@/components/patterns/DomainTree";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
@@ -8,74 +7,18 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { taskValueLabel } from "@/lib/task-blockers";
-import { PluginSlotMount } from "@/plugins/slots";
 import type { TaskTreePreviewTask } from "@paperclipai/shared";
-import { Activity as ActivityIcon, ListTree, MessageSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTaskDetailPage } from "./-TaskDetailPageContext";
 import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
-import { TaskDetailActivityTab, TaskDetailChatTab } from "./-TaskDetailChatTab";
 import {
   taskTreeControlHelpText,
   taskTreeControlLabel,
   treeControlPreviewErrorCopy,
 } from "./-task-detail-model";
-
-export function TaskDetailTabs() {
-  const { activePluginTab, detailTab, setDetailTab, task, taskPluginTabItems } = useTaskDetailPage();
-  return (
-    <Tabs value={detailTab} onValueChange={setDetailTab} className="space-y-3">
-      <TabsList variant="line" className="w-full justify-start gap-1">
-        <TabsTrigger value="chat" className="gap-1.5">
-          <MessageSquare className="h-3.5 w-3.5" />
-          Chat
-        </TabsTrigger>
-        <TabsTrigger value="activity" className="gap-1.5">
-          <ActivityIcon className="h-3.5 w-3.5" />
-          Activity
-        </TabsTrigger>
-        <TabsTrigger value="related-work" className="gap-1.5">
-          <ListTree className="h-3.5 w-3.5" />
-          Related work
-        </TabsTrigger>
-        {taskPluginTabItems.map((item) => (
-          <TabsTrigger key={item.value} value={item.value}>
-            {item.label}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-
-      <TabsContent value="chat">{detailTab === "chat" ? <TaskDetailChatTab /> : null}</TabsContent>
-
-      <TabsContent value="activity">
-        {detailTab === "activity" ? <TaskDetailActivityTab /> : null}
-      </TabsContent>
-
-      <TabsContent value="related-work">
-        <TaskRelatedWorkPanel relatedWork={task.relatedWork} />
-      </TabsContent>
-
-      {activePluginTab && (
-        <TabsContent value={activePluginTab.value}>
-          <PluginSlotMount
-            slot={activePluginTab.slot}
-            context={{
-              companyId: task.companyId,
-              projectId: task.projectId ?? null,
-              entityId: task.id,
-              entityType: "task",
-            }}
-            missingBehavior="placeholder"
-          />
-        </TabsContent>
-      )}
-    </Tabs>
-  );
-}
 
 function taskPreviewNodes(tasks: TaskTreePreviewTask[]): DomainTreeNode<TaskTreePreviewTask>[] {
   const nodeById = new Map<string, DomainTreeNode<TaskTreePreviewTask>>();

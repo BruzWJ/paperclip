@@ -143,7 +143,6 @@ export const FullConversation: Story = {
         comments={comments}
         taskId={baseComment.taskId}
         companyId={baseComment.companyId}
-        timelineEvents={[]}
         agentMap={new Map([[AGENT_ID, agent]])}
         currentUserId={USER_ID}
         userLabelMap={new Map([[USER_ID, "You"]])}
@@ -179,7 +178,6 @@ export const EmptyConversation: Story = {
         comments={[]}
         taskId={baseComment.taskId}
         companyId={baseComment.companyId}
-        timelineEvents={[]}
         onAdd={async () => undefined}
       />
     </div>

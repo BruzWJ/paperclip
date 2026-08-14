@@ -23,7 +23,6 @@ import { TaskChatThreadView } from "./task-chat/TaskChatThreadView";
 export function useTaskChatThreadController(props: TaskChatThreadProps) {
   const {
     comments,
-    timelineEvents = [],
     hasActiveRun = false,
     taskId = null,
     blockedBy = [],
@@ -103,14 +102,13 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     () =>
       buildTaskChatMessages({
         comments,
-        timelineEvents,
         companyId,
         projectId,
         agentMap,
         currentUserId,
         userLabelMap,
       }),
-    [comments, timelineEvents, companyId, projectId, agentMap, currentUserId, userLabelMap],
+    [comments, companyId, projectId, agentMap, currentUserId, userLabelMap],
   );
 
   const stableMessagesRef = useRef<readonly TaskChatMessage[]>([]);

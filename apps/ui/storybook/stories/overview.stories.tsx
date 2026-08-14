@@ -82,7 +82,7 @@ const storyGroups = [
   {
     title: "Chat & Comments",
     icon: MessageSquare,
-    stories: "Comment threads, run chat, task chat with timeline events",
+    stories: "Comment threads, run chat, and canonical task conversations",
     why: "Threaded conversations mix agent/user/system authors and need density review.",
   },
 ];
@@ -102,7 +102,7 @@ const coverageRows = [
   ["Budget & finance", "Planned", "Incident cards, provider spend, biller spend, and finance ledgers"],
   ["Dialogs & modals", "Planned", "New task/agent/goal/project dialogs, diff modal, image gallery"],
   ["Projects & goals", "Planned", "Project properties, workspace cards, goal trees, runtime controls"],
-  ["Chat & comments", "Covered", "Comment threads, run chat, task chat with timeline events"],
+  ["Chat & comments", "Covered", "Comment threads, run chat, and canonical task conversations"],
   ["Data viz & misc", "Planned", "Activity charts, kanban, filter bar, live widget, onboarding, skeletons"],
   ["Full app pages", "Deferred", "API-driven route stories after page data loaders can be fixture-injected"],
 ];

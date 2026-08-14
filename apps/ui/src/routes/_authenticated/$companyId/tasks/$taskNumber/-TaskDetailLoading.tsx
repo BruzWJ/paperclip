@@ -108,13 +108,7 @@ export function TaskDetailLoadingState({
 
       <Skeleton className="h-28 w-full rounded-lg border border-border" />
 
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Skeleton className="h-8 w-20" />
-          <Skeleton className="h-8 w-20" />
-        </div>
-        <TaskChatSkeleton />
-      </div>
+      <TaskChatSkeleton />
 
       <TaskSectionSkeleton titleWidth="w-24" rows={3} />
     </div>

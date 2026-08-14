@@ -104,7 +104,7 @@ describe("buildTaskChatMessages", () => {
       boardRunSegmentStatus: "error",
     });
 
-    const messages = buildTaskChatMessages({ comments, timelineEvents: [] });
+    const messages = buildTaskChatMessages({ comments });
     expect(messages[1]?.content).toEqual([
       { type: "text", text: "Starting the investigation." },
       { type: "reasoning", text: "I should inspect the failing check first." },
@@ -173,7 +173,6 @@ describe("buildTaskChatMessages", () => {
           boardOrder: 3,
         }),
       ],
-      timelineEvents: [],
     });
 
     expect(messages.map((message) => message.id)).toEqual(["root", "progress", "reply-1", "reply-2"]);
@@ -207,7 +206,6 @@ describe("buildTaskChatMessages", () => {
           runState: "queued",
         }),
       ],
-      timelineEvents: [],
     });
     const terminal = buildTaskChatMessages({
       comments: [
@@ -224,7 +222,6 @@ describe("buildTaskChatMessages", () => {
           runState: "terminal",
         }),
       ],
-      timelineEvents: [],
     });
 
     expect(textOf(queued[0]!)).toBe("Queued…");
@@ -238,7 +235,6 @@ describe("buildTaskChatMessages", () => {
         comment({ id: "root-1", body: "First", boardEntryKind: "comment", boardOrder: 1 }),
         comment({ id: "segment-dup", body: "Run segment", boardEntryKind: "run_segment", boardOrder: 3 }),
       ],
-      timelineEvents: [],
     });
 
     expect(messages.map((message) => message.id)).toEqual(["root-1", "segment-dup"]);
@@ -247,10 +243,7 @@ describe("buildTaskChatMessages", () => {
 
 describe("thread message stability", () => {
   it("reuses unchanged canonical projections by identity", () => {
-    const built = buildTaskChatMessages({
-      comments: [comment()],
-      timelineEvents: [],
-    });
+    const built = buildTaskChatMessages({ comments: [comment()] });
     const first = stabilizeThreadMessages(built, [], new Map());
     const second = stabilizeThreadMessages(built, first.messages, first.cache);
 

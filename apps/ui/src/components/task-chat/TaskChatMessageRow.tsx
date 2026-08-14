@@ -2,7 +2,6 @@ import {
   ChainOfThought,
   ChainOfThoughtContent,
   ChainOfThoughtHeader,
-  ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
 import { Message, MessageContent, MessageResponse, MessageToolbar } from "@/components/ai-elements/message";
 import {
@@ -23,7 +22,7 @@ import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-e
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { Tool, ToolContent, ToolHeader, type ToolPart } from "@/components/ai-elements/tool";
 import type { BoardTaskRunSegmentPart } from "@paperclipai/shared";
-import { BotIcon, ClockIcon, MessageSquareXIcon, SquareIcon } from "lucide-react";
+import { MessageSquareXIcon, SquareIcon } from "lucide-react";
 import { memo, useContext } from "react";
 import type { TaskChatMessage } from "../../lib/task-chat-messages";
 
@@ -163,34 +162,6 @@ function RunSegment({ message, custom }: { message: TaskChatMessage; custom: Rec
   );
 }
 
-function TimelineEvent({ custom }: { custom: Record<string, unknown> }) {
-  const actorName = typeof custom.actorName === "string" ? custom.actorName : "System";
-  const lifecycle = custom.lifecycleStatusChange as Record<string, unknown> | null;
-  const owner = custom.ownerChange as {
-    from?: { ownerAgentId?: string | null };
-    to?: { ownerAgentId?: string | null };
-  } | null;
-  return (
-    <ChainOfThought defaultOpen>
-      <ChainOfThoughtHeader>{actorName} updated this task</ChainOfThoughtHeader>
-      <ChainOfThoughtContent>
-        {lifecycle ? (
-          <ChainOfThoughtStep
-            icon={ClockIcon}
-            label={`Lifecycle: ${String(lifecycle.from ?? "none")} → ${String(lifecycle.to ?? "none")}`}
-          />
-        ) : null}
-        {owner ? (
-          <ChainOfThoughtStep
-            icon={BotIcon}
-            label={`Owner: ${owner.from?.ownerAgentId ?? "board"} → ${owner.to?.ownerAgentId ?? "board"}`}
-          />
-        ) : null}
-      </ChainOfThoughtContent>
-    </ChainOfThought>
-  );
-}
-
 function QueuedMessage({
   message,
   custom,
@@ -325,8 +296,6 @@ export const TaskChatMessageRow = memo(function TaskChatMessageRow({
             <QueuedMessage message={message} custom={custom} isInterrupting={isInterruptingQueuedRun} />
           ) : kind === "run-segment" ? (
             <RunSegment message={message} custom={custom} />
-          ) : kind === "event" ? (
-            <TimelineEvent custom={custom} />
           ) : (
             <MessageResponse isAnimating={message.role === "assistant" && message.status?.type === "running"}>
               {getThreadMessageCopyText(message)}

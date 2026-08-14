@@ -1,7 +1,6 @@
 import type { Agent } from "@paperclipai/shared";
 import type { ClientTaskComment } from "./optimistic-task-comments";
 import { formatOwnerUserLabel } from "./task-owners";
-import type { TaskTimelineEvent } from "./task-timeline-events";
 import type { TimestampedEntity } from "./presentation-contracts";
 
 export type TaskChatComment = ClientTaskComment & {
@@ -245,56 +244,6 @@ function createCommentMessage(args: {
   return message;
 }
 
-function createTimelineEventMessage(args: {
-  event: TaskTimelineEvent;
-  agentMap?: Map<string, Agent>;
-  currentUserId?: string | null;
-  userLabelMap?: ReadonlyMap<string, string> | null;
-}) {
-  const { event, agentMap, currentUserId, userLabelMap } = args;
-  const actorName =
-    event.actorType === "agent"
-      ? (agentMap?.get(event.actorId)?.name ?? event.actorId.slice(0, 8))
-      : event.actorType === "system"
-        ? "System"
-        : (formatOwnerUserLabel(event.actorId, currentUserId, userLabelMap) ?? "Board");
-  const lines = [
-    event.followUpRequested ? `${actorName} requested follow-up` : `${actorName} updated this task`,
-  ];
-  if (event.lifecycleStatusChange) {
-    lines.push(
-      `Lifecycle: ${event.lifecycleStatusChange.from ?? "none"} -> ${event.lifecycleStatusChange.to ?? "none"}`,
-    );
-  }
-  if (event.ownerChange) {
-    const ownerLabel = (owner: typeof event.ownerChange.from) =>
-      owner.ownerAgentId
-        ? (agentMap?.get(owner.ownerAgentId)?.name ?? owner.ownerAgentId.slice(0, 8))
-        : (formatOwnerUserLabel(owner.ownerUserId, currentUserId, userLabelMap) ?? "Board escalation");
-    lines.push(`Owner: ${ownerLabel(event.ownerChange.from)} -> ${ownerLabel(event.ownerChange.to)}`);
-  }
-  const message: TaskChatMessage = {
-    id: `activity:${event.id}`,
-    role: "system",
-    createdAt: toDate(event.createdAt),
-    content: [{ type: "text", text: lines.join("\n") }],
-    metadata: {
-      custom: {
-        kind: "event",
-        anchorId: `activity-${event.id}`,
-        eventId: event.id,
-        actorName,
-        actorType: event.actorType,
-        actorId: event.actorId,
-        lifecycleStatusChange: event.lifecycleStatusChange ?? null,
-        ownerChange: event.ownerChange ?? null,
-        followUpRequested: event.followUpRequested === true,
-      },
-    },
-  };
-  return message;
-}
-
 export function isCoTSegmentActive(args: {
   isMessageRunning: boolean;
   segmentIndex: number;
@@ -326,14 +275,13 @@ export function formatDurationWords(ms: number | null) {
 
 export function buildTaskChatMessages(args: {
   comments: readonly TaskChatComment[];
-  timelineEvents: readonly TaskTimelineEvent[];
   companyId?: string | null;
   projectId?: string | null;
   agentMap?: Map<string, Agent>;
   currentUserId?: string | null;
   userLabelMap?: ReadonlyMap<string, string> | null;
 }) {
-  const { comments, timelineEvents, companyId, projectId, agentMap, currentUserId, userLabelMap } = args;
+  const { comments, companyId, projectId, agentMap, currentUserId, userLabelMap } = args;
   const orderedMessages: MessageWithOrder[] = [];
   const hasGroupedBoardProjection = comments.some((comment) => comment.boardOrder !== undefined);
   const orderedComments = hasGroupedBoardProjection
@@ -353,20 +301,6 @@ export function buildTaskChatMessages(args: {
         projectId,
       }),
     });
-  }
-  if (!hasGroupedBoardProjection) {
-    for (const event of sortByCreated(timelineEvents)) {
-      orderedMessages.push({
-        createdAtMs: toTimestamp(event.createdAt),
-        order: 0,
-        message: createTimelineEventMessage({
-          event,
-          agentMap,
-          currentUserId,
-          userLabelMap,
-        }),
-      });
-    }
   }
   const seenIds = new Set<string>();
   return orderedMessages

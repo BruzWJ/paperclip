@@ -12,7 +12,6 @@ import { createContext, useLayoutEffect, useMemo, useRef, type ReactNode, type R
 import type { CompanyUserProfile } from "../../lib/company-members";
 import { type ComposerOwnerPreview } from "../../lib/owner-transition";
 import { type TaskChatComment, type TaskChatMessage } from "../../lib/task-chat-messages";
-import { type TaskTimelineEvent } from "../../lib/task-timeline-events";
 import type { EntityOption } from "@/lib/entity-selector";
 import { type MentionOption } from "../MarkdownEditor";
 /** Returns the plain-text content used by message copy and reply previews. */
@@ -178,7 +177,6 @@ export interface TaskChatComposerProps {
 
 export interface TaskChatThreadProps {
   comments: TaskChatComment[];
-  timelineEvents?: TaskTimelineEvent[];
   hasActiveRun?: boolean;
   activeRunIds?: ReadonlySet<string>;
   taskId?: string | null;

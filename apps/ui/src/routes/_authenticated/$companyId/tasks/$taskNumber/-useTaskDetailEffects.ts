@@ -30,7 +30,7 @@ import {
 import { queryKeys } from "@/lib/queryKeys";
 
 import { shouldScrollTaskDetailToTopOnNavigation, taskDetailSourceLabel } from "./-task-detail-model";
-import { TaskDetailSourceLink } from "./-TaskDetailChatTab";
+import { TaskDetailSourceLink } from "./-TaskDetailChat";
 import type { useTaskDetailActionMutations } from "./-useTaskDetailActionMutations";
 import type { useTaskDetailCoreMutations } from "./-useTaskDetailCoreMutations";
 
@@ -341,17 +341,10 @@ export function useTaskDetailCacheActions(companyId: string, taskId: string) {
   const queryClient = useQueryClient();
   const invalidateTaskDetail = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: queryKeys.tasks.detail(taskId) });
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.tasks.activity(taskId),
-    });
   }, [taskId, queryClient]);
   const invalidateTaskThreadLazily = useCallback(() => {
     queryClient.invalidateQueries({
       queryKey: queryKeys.tasks.detail(taskId),
-      refetchType: "inactive",
-    });
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.tasks.activity(taskId),
       refetchType: "inactive",
     });
   }, [taskId, queryClient]);

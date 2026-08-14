@@ -3,52 +3,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";
 import { formatUserLabel } from "@/lib/task-owners";
 import { cn } from "@/lib/utils";
-import { deriveOriginatingActor, type ActivityEvent, type Agent, type Task } from "@paperclipai/shared";
-
-export function ActorIdentity({
-  evt,
-  agentMap,
-  userProfileMap,
-}: {
-  evt: ActivityEvent;
-  agentMap: Map<string, Agent>;
-  userProfileMap?: Map<string, import("@/lib/company-members").CompanyUserProfile>;
-}) {
-  const id = evt.actorId;
-  let name: string;
-  let avatarUrl: string | null | undefined;
-  let agentIcon: string | null | undefined;
-  if (evt.actorType === "agent") {
-    const agent = agentMap.get(id);
-    name = agent?.name ?? id.slice(0, 8);
-    agentIcon = agent?.icon;
-  } else if (evt.actorType === "system") {
-    name = "System";
-  } else if (evt.actorType === "user") {
-    const profile = userProfileMap?.get(id);
-    name = profile?.label ?? "Board";
-    avatarUrl = profile?.image;
-  } else {
-    name = id || "Unknown";
-  }
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5" title={name}>
-      <Avatar size="sm" className={cn(evt.actorType === "agent" && "rounded-md")}>
-        {evt.actorType === "agent" ? (
-          <AvatarFallback className="rounded-md">
-            <AgentIcon icon={agentIcon} className="size-3" />
-          </AvatarFallback>
-        ) : (
-          <>
-            {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
-            <AvatarFallback>{deriveInitials(name)}</AvatarFallback>
-          </>
-        )}
-      </Avatar>
-      <span className="truncate text-xs">{name}</span>
-    </span>
-  );
-}
+import { deriveOriginatingActor, type Agent, type Task } from "@paperclipai/shared";
 
 export type AttributionActor = {
   kind: "agent" | "user";
