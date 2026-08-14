@@ -63,6 +63,10 @@ export function createTaskServiceThreadPagesOperations(
             ) as entry_rank from ${d.taskComments} root_comment inner join ${d.taskCommentProjectionSources} root_source on root_source.comment_id = root_comment.id and root_source.company_id = root_comment.company_id
            and root_source.task_id = root_comment.task_id inner join ${d.taskSessionMessages} message_entry on message_entry.company_id = root_comment.company_id and message_entry.task_id = root_comment.task_id
            and message_entry.session_id = root_comment.session_id and message_entry.run_id = root_comment.run_id and message_entry.type = 'assistant'
+           and message_entry.seq >= root_comment.projected_event_seq
+           and not exists ( select 1 from ${d.taskCommentProjectionSources} later_source where later_source.company_id = root_comment.company_id
+              and later_source.task_id = root_comment.task_id and later_source.run_id = root_comment.run_id and later_source.reply_to_comment_id is null
+              and later_source.projected_event_seq > root_comment.projected_event_seq and message_entry.seq >= later_source.projected_event_seq )
            and message_entry.id is distinct from root_source.terminal_session_message_id where root_comment.company_id = ${roots[0]!.companyId} and root_comment.task_id = ${roots[0]!.taskId}
             and root_comment.id in (${rootIdSql}) and root_comment.run_id is not null ) ranked where ranked.entry_rank <= ${limit + 1} order by ranked.root_comment_id asc, ranked.entry_rank asc `),
     ]);

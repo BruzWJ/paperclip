@@ -325,6 +325,7 @@ export function buildTaskChatMessages(args: {
       });
     }
   }
+  const seenIds = new Set<string>();
   return orderedMessages
     .sort((left, right) => {
       const timeDifference = left.createdAtMs - right.createdAtMs;
@@ -332,5 +333,10 @@ export function buildTaskChatMessages(args: {
       const orderDifference = left.order - right.order;
       return orderDifference || left.message.id.localeCompare(right.message.id);
     })
-    .map((entry) => entry.message);
+    .map((entry) => entry.message)
+    .filter((message) => {
+      if (seenIds.has(message.id)) return false;
+      seenIds.add(message.id);
+      return true;
+    });
 }

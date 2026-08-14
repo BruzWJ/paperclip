@@ -242,6 +242,15 @@ export function createTaskServiceThreadPageOperations(
           d.eq(d.taskSessionMessages.runId, root.runId),
           d.eq(d.taskSessionMessages.type, "assistant" as const),
           d.gte(d.taskSessionMessages.seq, sequenceFloor),
+          d.sql`not exists (
+            select 1 from ${d.taskCommentProjectionSources} later_source
+            where later_source.company_id = ${root.companyId}
+              and later_source.task_id = ${root.taskId}
+              and later_source.run_id = ${root.runId}
+              and later_source.reply_to_comment_id is null
+              and later_source.projected_event_seq > ${root.projectedEventSeq}
+              and ${d.taskSessionMessages.seq} >= later_source.projected_event_seq
+          )`,
           d.sql`${d.taskSessionMessages.id} is distinct from (
             select source.terminal_session_message_id from ${d.taskCommentProjectionSources} source where source.comment_id = ${root.id} and source.company_id = ${root.companyId} and source.task_id = ${root.taskId} limit 1
           )`,

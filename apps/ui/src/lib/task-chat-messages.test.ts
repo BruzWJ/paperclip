@@ -140,6 +140,19 @@ describe("buildTaskChatMessages", () => {
     expect(textOf(queued[0]!)).toBe("Queued…");
     expect(textOf(terminal[0]!)).toBe("Run finished");
   });
+
+  it("drops duplicate message ids so the runtime never sees the same id twice", () => {
+    const messages = buildTaskChatMessages({
+      comments: [
+        comment({ id: "segment-dup", body: "Run segment", boardEntryKind: "run_segment", boardOrder: 2 }),
+        comment({ id: "root-1", body: "First", boardEntryKind: "comment", boardOrder: 1 }),
+        comment({ id: "segment-dup", body: "Run segment", boardEntryKind: "run_segment", boardOrder: 3 }),
+      ],
+      timelineEvents: [],
+    });
+
+    expect(messages.map((message) => message.id)).toEqual(["root-1", "segment-dup"]);
+  });
 });
 
 describe("thread message stability", () => {
