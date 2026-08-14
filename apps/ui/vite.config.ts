@@ -1,31 +1,14 @@
 import path from "path";
 import fs from "node:fs";
-import {
-  brotliCompressSync,
-  constants as zlibConstants,
-  gzipSync,
-} from "node:zlib";
+import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { createUiDevWatchOptions } from "./src/lib/vite-watch";
 
-const PRECOMPRESS_EXTENSIONS = new Set([
-  ".js",
-  ".css",
-  ".svg",
-  ".json",
-  ".txt",
-  ".wasm",
-]);
-const PRECOMPRESS_TEXT_EXTENSIONS = new Set([
-  ".js",
-  ".css",
-  ".svg",
-  ".json",
-  ".txt",
-]);
+const PRECOMPRESS_EXTENSIONS = new Set([".js", ".css", ".svg", ".json", ".txt", ".wasm"]);
+const PRECOMPRESS_TEXT_EXTENSIONS = new Set([".js", ".css", ".svg", ".json", ".txt"]);
 const PRECOMPRESS_MIN_BYTES = 1024;
 
 // Emits sibling <name>.gz / <name>.br files for every compressible build
@@ -42,8 +25,7 @@ function precompressAssetsPlugin(): Plugin {
       }
       if (!entry.isFile()) continue;
       const ext = path.extname(entry.name).toLowerCase();
-      if (ext === ".gz" || ext === ".br" || !PRECOMPRESS_EXTENSIONS.has(ext))
-        continue;
+      if (ext === ".gz" || ext === ".br" || !PRECOMPRESS_EXTENSIONS.has(ext)) continue;
       const source = fs.readFileSync(filePath);
       if (source.length <= PRECOMPRESS_MIN_BYTES) continue;
       fs.writeFileSync(`${filePath}.gz`, gzipSync(source, { level: 9 }));
@@ -52,13 +34,9 @@ function precompressAssetsPlugin(): Plugin {
         [zlibConstants.BROTLI_PARAM_SIZE_HINT]: source.length,
       };
       if (PRECOMPRESS_TEXT_EXTENSIONS.has(ext)) {
-        brotliParams[zlibConstants.BROTLI_PARAM_MODE] =
-          zlibConstants.BROTLI_MODE_TEXT;
+        brotliParams[zlibConstants.BROTLI_PARAM_MODE] = zlibConstants.BROTLI_MODE_TEXT;
       }
-      fs.writeFileSync(
-        `${filePath}.br`,
-        brotliCompressSync(source, { params: brotliParams }),
-      );
+      fs.writeFileSync(`${filePath}.br`, brotliCompressSync(source, { params: brotliParams }));
     }
   };
 
@@ -66,8 +44,7 @@ function precompressAssetsPlugin(): Plugin {
     name: "paperclip:precompress-assets",
     apply: "build",
     writeBundle(options) {
-      const outDir =
-        options.dir ?? (options.file ? path.dirname(options.file) : undefined);
+      const outDir = options.dir ?? (options.file ? path.dirname(options.file) : undefined);
       if (!outDir || !fs.existsSync(outDir)) return;
       compressDir(outDir);
     },
@@ -101,10 +78,6 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      lexical: path.resolve(
-        __dirname,
-        "./node_modules/lexical/dist/Lexical.mjs",
-      ),
     },
   },
   server: {
