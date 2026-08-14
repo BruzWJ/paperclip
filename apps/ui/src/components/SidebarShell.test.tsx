@@ -89,6 +89,7 @@ describe("SidebarShell", () => {
       );
     });
     expect(sidebar().getAttribute("data-state")).toBe("collapsed");
+    expect(sidebar().getAttribute("data-collapsible")).toBe("icon");
     expect(shell().style.getPropertyValue("--sidebar-width-icon")).toBe(`${SIDEBAR_RAIL_WIDTH}px`);
     expect(handle()).toBeNull();
   });
@@ -100,7 +101,7 @@ describe("SidebarShell", () => {
     expect(shell().className).toContain("md:hidden");
   });
 
-  it("expands as an overlay while peeking without changing provider state", () => {
+  it("expands its contents as an overlay while preserving collapsed toggle state and the rail gap", () => {
     act(() => {
       root.render(
         <TestShell open collapsed peeking>
@@ -109,7 +110,10 @@ describe("SidebarShell", () => {
       );
     });
     expect(sidebar().getAttribute("data-state")).toBe("collapsed");
+    expect(sidebar().getAttribute("data-collapsible")).toBe("offcanvas");
+    expect(shell().className).toContain("md:w-(--sidebar-width-icon)");
     expect(panel().getAttribute("data-sidebar-overlay")).toBe("");
+    expect(panel().className).toContain("md:!left-0");
     expect(panel().className).toContain("shadow-lg");
     expect(panel().className).toContain("z-30");
   });

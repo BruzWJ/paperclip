@@ -167,7 +167,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Contr
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
+          variant="outline"
           // `px-3` (not px-2) so the logo's left edge lines up with the nav icon
           // column (nav px-3 + item px-3) and, crucially, stays put between states:
           // the Button's default size adds `has-[>svg]:px-3`, so with the chevron

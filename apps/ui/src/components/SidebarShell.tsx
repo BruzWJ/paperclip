@@ -146,6 +146,7 @@ export function SidebarShell({
       className={cn(
         "contents md:relative md:block md:h-full md:shrink-0 [&_[data-slot=sidebar-container]]:transition-none [&_[data-slot=sidebar-gap]]:transition-none",
         !open && "md:hidden",
+        peeking && "md:w-(--sidebar-width-icon)",
         className,
       )}
       style={
@@ -156,12 +157,17 @@ export function SidebarShell({
       }
     >
       <ShadcnSidebar
-        collapsible="icon"
+        // Keep the primitive's provider state collapsed so keyboard toggling still
+        // promotes the rail to a pinned sidebar. During a peek, switch away from
+        // the icon presentation so its descendant `size-8`/`hidden` rules release;
+        // this adapter preserves the rail-width layout gap and anchors the expanded
+        // panel over the page instead.
+        collapsible={peeking ? "offcanvas" : "icon"}
         data-sidebar-overlay={peeking ? "" : undefined}
         className={cn(
           "max-md:w-60 max-md:pt-(--sz-safe-top) md:!absolute md:!inset-y-0 md:!h-full",
           peeking &&
-            "md:!w-(--sidebar-width) md:z-30 md:border-r md:border-border md:bg-background md:shadow-lg",
+            "md:!left-0 md:!w-(--sidebar-width) md:z-30 md:border-r md:border-border md:bg-background md:shadow-lg",
         )}
         onMouseEnter={onPanelMouseEnter}
         onMouseLeave={onPanelMouseLeave}
