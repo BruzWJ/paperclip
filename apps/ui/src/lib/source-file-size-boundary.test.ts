@@ -7,7 +7,11 @@ import { describe, expect, it } from "vitest";
 
 const uiRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const skippedDirectories = new Set([".git", "dist", "node_modules", "storybook-static"]);
-const registryOwnedDirectories = new Set(["src/components/ui", "src/components/kibo-ui"]);
+const registryOwnedDirectories = new Set([
+  "src/components/ui",
+  "src/components/kibo-ui",
+  "src/components/ai-elements",
+]);
 // TanStack Router owns this file and overwrites it whenever the route graph changes.
 const generatedFiles = new Set(["src/routeTree.gen.ts"]);
 

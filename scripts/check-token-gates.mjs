@@ -5,8 +5,9 @@
  * Phase 2 (extraction) DONE-WHEN gate check for the design-token-extraction
  * run (see DESIGN.md and doc/design/TOKEN-AUDIT.md). Scans
  * `apps/ui/src/components/**` and `apps/ui/src/routes/**`
- * (excluding the CLI-managed shadcn and Kibo registry sources under
- * `apps/ui/src/components/ui/**` and `apps/ui/src/components/kibo-ui/**`;
+ * (excluding the CLI-managed shadcn, Kibo, and AI Elements registry sources
+ * under `apps/ui/src/components/ui/**`, `apps/ui/src/components/kibo-ui/**`,
+ * and `apps/ui/src/components/ai-elements/**`;
  * Kibo's compatibility-only corrections are recorded in that directory's README)
  * (excluding `apps/ui/src/lib|context|plugins`, which are explicitly out of
  * scope for this run per TOKEN-AUDIT.md's Batch 4 log) for three gates:
@@ -80,6 +81,7 @@ const CSS_PATH = resolve(UI_SRC, "index.css");
 const REGISTRY_OWNED_DIRS = new Set([
   resolve(UI_SRC, "components", "ui"),
   resolve(UI_SRC, "components", "kibo-ui"),
+  resolve(UI_SRC, "components", "ai-elements"),
 ]);
 
 // ── Allowlist parsing ────────────────────────────────────────────────────
