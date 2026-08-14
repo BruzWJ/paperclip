@@ -3,11 +3,12 @@ import { AlertTriangle, CheckCircle2, Clock3, Eye, GitPullRequest, Inbox, Wallet
 import { ActivityRow } from "@/components/ActivityRow";
 import { ApprovalCard } from "@/components/ApprovalCard";
 import { BudgetPolicyCard } from "@/components/BudgetPolicyCard";
-import { Identity } from "@/components/Identity";
 import { TaskRow } from "@/components/TaskRow";
-import { PriorityIcon } from "@/components/PriorityIcon";
-import { StatusBadge } from "@/components/StatusBadge";
 import { formatMoneyAmount } from "@/lib/utils";
+import { taskValueLabel } from "@/lib/task-blockers";
+import { deriveInitials } from "@/lib/identity";
+import { statusBadgeVariant } from "@/lib/status-variant";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -20,26 +21,7 @@ import {
   storybookEntityTitleMap,
   storybookTasks,
 } from "../fixtures/paperclipData";
-
-function Section({
-  eyebrow,
-  title,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="paperclip-story__frame overflow-hidden">
-      <div className="border-b border-border px-5 py-4">
-        <div className="paperclip-story__label">{eyebrow}</div>
-        <h2 className="mt-1 text-xl font-semibold">{title}</h2>
-      </div>
-      <div className="p-5">{children}</div>
-    </section>
-  );
-}
+import { StorySection as Section } from "./story-layout";
 
 function ControlPlaneSurfaces() {
   return (
@@ -51,8 +33,9 @@ function ControlPlaneSurfaces() {
               <div className="paperclip-story__label">Product surfaces</div>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight">Control-plane boards and cards</h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Paperclip's common board surfaces are deliberately dense: task rows, approvals, budget policy cards,
-                and audit rows all need to scan quickly while preserving enough state to make autonomous work governable.
+                Paperclip's common board surfaces are deliberately dense: task rows, approvals, budget policy
+                cards, and audit rows all need to scan quickly while preserving enough state to make
+                autonomous work governable.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -75,16 +58,29 @@ function ControlPlaneSurfaces() {
                 onArchive={() => undefined}
                 desktopTrailing={
                   <span className="hidden items-center gap-2 lg:inline-flex">
-                    <PriorityIcon priority={task.priority} showLabel />
+                    <Badge variant="secondary">{taskValueLabel(task.priority)}</Badge>
                     {task.ownerAgentId ? (
-                      <Identity name={storybookAgentMap.get(task.ownerAgentId)?.name ?? "Unassigned"} size="sm" />
+                      <span className="inline-flex items-center gap-1.5">
+                        <Avatar size="sm">
+                          <AvatarFallback>
+                            {deriveInitials(storybookAgentMap.get(task.ownerAgentId)?.name ?? "Unassigned")}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-xs">
+                          {storybookAgentMap.get(task.ownerAgentId)?.name ?? "Unassigned"}
+                        </span>
+                      </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">Board</span>
                     )}
                   </span>
                 }
                 trailingMeta={index === 0 ? "3m ago" : index === 1 ? "blocked by budget" : "review requested"}
-                mobileMeta={<StatusBadge status={task.boardPresentationStatus} />}
+                mobileMeta={
+                  <Badge variant={statusBadgeVariant(task.boardPresentationStatus)}>
+                    {task.boardPresentationStatus}
+                  </Badge>
+                }
                 titleSuffix={
                   index === 0 ? (
                     <span className="ml-2 inline-flex align-middle">
@@ -103,7 +99,11 @@ function ControlPlaneSurfaces() {
               <ApprovalCard
                 key={approval.id}
                 approval={approval}
-                requesterAgent={approval.requestedByAgentId ? storybookAgentMap.get(approval.requestedByAgentId) ?? null : null}
+                requesterAgent={
+                  approval.requestedByAgentId
+                    ? (storybookAgentMap.get(approval.requestedByAgentId) ?? null)
+                    : null
+                }
                 onApprove={approval.status === "pending" ? () => undefined : undefined}
                 onReject={approval.status === "pending" ? () => undefined : undefined}
                 linkToDetails
@@ -153,14 +153,37 @@ function ControlPlaneSurfaces() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {[
-                  { icon: Clock3, label: "Running", detail: "CodexCoder is editing Storybook fixtures", tone: "text-cyan-600" },
-                  { icon: GitPullRequest, label: "Review", detail: "QAChecker requested browser screenshots", tone: "text-amber-600" },
-                  { icon: CheckCircle2, label: "Verified", detail: "Vitest and static Storybook build passed", tone: "text-emerald-600" },
-                  { icon: AlertTriangle, label: "Blocked", detail: "Budget hard stop paused a run", tone: "text-red-600" },
+                  {
+                    icon: Clock3,
+                    label: "Running",
+                    detail: "CodexCoder is editing Storybook fixtures",
+                    tone: "text-cyan-600",
+                  },
+                  {
+                    icon: GitPullRequest,
+                    label: "Review",
+                    detail: "QAChecker requested browser screenshots",
+                    tone: "text-amber-600",
+                  },
+                  {
+                    icon: CheckCircle2,
+                    label: "Verified",
+                    detail: "Vitest and static Storybook build passed",
+                    tone: "text-emerald-600",
+                  },
+                  {
+                    icon: AlertTriangle,
+                    label: "Blocked",
+                    detail: "Budget hard stop paused a run",
+                    tone: "text-red-600",
+                  },
                 ].map((item) => {
                   const Icon = item.icon;
                   return (
-                    <div key={item.label} className="flex items-start gap-3 rounded-lg border border-border bg-background/70 p-3">
+                    <div
+                      key={item.label}
+                      className="flex items-start gap-3 rounded-lg border border-border bg-background/70 p-3"
+                    >
                       <Icon className={`mt-0.5 h-4 w-4 ${item.tone}`} />
                       <div>
                         <div className="text-sm font-medium">{item.label}</div>
@@ -180,8 +203,13 @@ function ControlPlaneSurfaces() {
               <Card key={agent.id} className="shadow-none">
                 <CardHeader>
                   <div className="flex items-start justify-between gap-3">
-                    <Identity name={agent.name} size="lg" />
-                    <StatusBadge status={agent.status} />
+                    <span className="inline-flex items-center gap-2">
+                      <Avatar size="lg">
+                        <AvatarFallback>{deriveInitials(agent.name)}</AvatarFallback>
+                      </Avatar>
+                      <span>{agent.name}</span>
+                    </span>
+                    <Badge variant={statusBadgeVariant(agent.status)}>{agent.status}</Badge>
                   </div>
                   <CardDescription>{agent.title}</CardDescription>
                 </CardHeader>
@@ -211,7 +239,9 @@ function ControlPlaneSurfaces() {
                   <Inbox className="h-4 w-4" />
                   Inbox slice
                 </CardTitle>
-                <CardDescription>Small panels should keep controls reachable without nested cards.</CardDescription>
+                <CardDescription>
+                  Small panels should keep controls reachable without nested cards.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
@@ -238,7 +268,7 @@ function ControlPlaneSurfaces() {
                 selected
                 unreadState="visible"
                 onMarkRead={() => undefined}
-                desktopTrailing={<PriorityIcon priority="high" showLabel />}
+                desktopTrailing={<Badge variant="secondary">High</Badge>}
                 trailingMeta="active run"
               />
             </div>

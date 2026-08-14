@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import type { Meta, StoryObj } from "@storybook/react-vite";
+import { AgentDetailScreen as AgentDetail } from "@/components/agents/AgentDetailScreen";
+import { queryKeys } from "@/lib/queryKeys";
 import {
   canonicalizeMoneyAmount,
   type AgentDetail as AgentDetailRecord,
   type AgentRuntimeState,
   type BudgetOverview,
 } from "@paperclipai/shared";
-import { AgentDetail } from "@/routes/_authenticated/$companyId/agents/$agentId";
-import { queryKeys } from "@/lib/queryKeys";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import {
   createTaskExecutionRun,
   storybookAgentMap,
@@ -103,10 +103,7 @@ const budgetOverviewFixture: BudgetOverview = {
 };
 
 function seedAgentDetailData(queryClient: QueryClient) {
-  queryClient.setQueryData(
-    [...queryKeys.agents.detail(AGENT_ID), COMPANY_ID],
-    agentDetailFixture,
-  );
+  queryClient.setQueryData([...queryKeys.agents.detail(AGENT_ID), COMPANY_ID], agentDetailFixture);
   queryClient.setQueryData(queryKeys.agents.runtimeState(AGENT_ID), runtimeStateFixture);
   queryClient.setQueryData(queryKeys.runs(COMPANY_ID, { agentId: AGENT_ID }), {
     items: runsFixture,
@@ -129,7 +126,12 @@ function seedAgentDetailData(queryClient: QueryClient) {
   });
   queryClient.setQueryData(queryKeys.auth.session, {
     session: { id: "storybook-session", userId: USER_ID },
-    user: { id: USER_ID, name: "Storybook User", email: "storybook@example.com", image: null },
+    user: {
+      id: USER_ID,
+      name: "Storybook User",
+      email: "storybook@example.com",
+      image: null,
+    },
   });
 }
 

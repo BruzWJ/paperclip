@@ -3,13 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { AlertTriangle, ArrowRight, Check, Copy, Play, Plus, Save, Search, Settings } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -23,42 +17,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { StorySection as Section } from "./story-layout";
 
 const buttonVariants = ["default", "secondary", "outline", "ghost", "destructive", "link"] as const;
 const buttonSizes = ["xs", "sm", "default", "lg", "icon", "icon-sm"] as const;
 const badgeVariants = ["default", "secondary", "outline", "destructive", "ghost", "link"] as const;
-
-function Section({
-  eyebrow,
-  title,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="paperclip-story__frame overflow-hidden">
-      <div className="border-b border-border px-5 py-4">
-        <div className="paperclip-story__label">{eyebrow}</div>
-        <h2 className="mt-1 text-xl font-semibold">{title}</h2>
-      </div>
-      <div className="p-5">{children}</div>
-    </section>
-  );
-}
 
 function FoundationsMatrix() {
   const [autoMode, setAutoMode] = useState(true);
@@ -95,7 +64,9 @@ function FoundationsMatrix() {
               ))}
             </div>
             <div className="rounded-lg border border-border bg-background/70 p-4">
-              <div className="mb-3 text-xs font-medium text-muted-foreground">Sizes and icon-only actions</div>
+              <div className="mb-3 text-xs font-medium text-muted-foreground">
+                Sizes and icon-only actions
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 {buttonSizes.map((size) => (
                   <Button key={size} size={size} variant={size.startsWith("icon") ? "outline" : "secondary"}>
@@ -136,7 +107,9 @@ function FoundationsMatrix() {
                 <Label htmlFor="story-summary">Comment</Label>
                 <Textarea
                   id="story-summary"
-                  defaultValue={"Implemented the foundation stories.\nNext action: run static build verification."}
+                  defaultValue={
+                    "Implemented the foundation stories.\nNext action: run static build verification."
+                  }
                   rows={5}
                 />
               </div>
@@ -174,18 +147,25 @@ function FoundationsMatrix() {
             <Card className="shadow-none">
               <CardHeader>
                 <CardTitle>Governed settings</CardTitle>
-                <CardDescription>Switches, checkboxes, and validation copy in one compact panel.</CardDescription>
+                <CardDescription>
+                  Switches, checkboxes, and validation copy in one compact panel.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
                   <div>
                     <div className="text-sm font-medium">Auto mode</div>
-                    <div className="text-xs text-muted-foreground">Let agents continue after review approval.</div>
+                    <div className="text-xs text-muted-foreground">
+                      Let agents continue after review approval.
+                    </div>
                   </div>
                   <Switch checked={autoMode} onCheckedChange={setAutoMode} />
                 </div>
                 <label className="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
-                  <Checkbox checked={boardApproval} onCheckedChange={(value) => setBoardApproval(value === true)} />
+                  <Checkbox
+                    checked={boardApproval}
+                    onCheckedChange={(value) => setBoardApproval(value === true)}
+                  />
                   <span>
                     <span className="font-medium">Require board approval for new agents</span>
                     <span className="mt-1 block text-xs text-muted-foreground">
@@ -207,7 +187,8 @@ function FoundationsMatrix() {
                 <TabsTrigger value="budget">Budget</TabsTrigger>
               </TabsList>
               <TabsContent value="details" className="pt-5 text-sm leading-6 text-muted-foreground">
-                The line tab style is used on dense detail pages where the content, not the tab chrome, needs to dominate.
+                The line tab style is used on dense detail pages where the content, not the tab chrome, needs
+                to dominate.
               </TabsContent>
               <TabsContent value="activity" className="pt-5 text-sm leading-6 text-muted-foreground">
                 Activity copy stays compact and pairs with timestamped rows in the product stories.
@@ -254,7 +235,8 @@ function FoundationsMatrix() {
                   <DialogHeader>
                     <DialogTitle>Create task</DialogTitle>
                     <DialogDescription>
-                      Dialogs should keep the primary decision and risk clear without leaving the current board context.
+                      Dialogs should keep the primary decision and risk clear without leaving the current
+                      board context.
                     </DialogDescription>
                   </DialogHeader>
                   <Separator />

@@ -1,324 +1,62 @@
 import { useState } from "react";
+
 import type { Meta, StoryObj } from "@storybook/react-vite";
+
 import { AGENT_STATUSES, TASK_PRIORITIES, TASK_STATUSES } from "@paperclipai/shared";
-import type {
-  TaskBlockerAttention,
-  TaskRelationTaskSummary,
-} from "@paperclipai/shared";
+
 import { Clock3, DollarSign, FolderKanban, Inbox, Users } from "lucide-react";
-import { EmptyState } from "@/components/EmptyState";
-import { Identity } from "@/components/Identity";
+import type { LucideIcon } from "lucide-react";
+
 import { TaskBlockedNotice } from "@/components/TaskBlockedNotice";
+
 import { TaskRow } from "@/components/TaskRow";
-import { MetricCard } from "@/components/MetricCard";
-import { PriorityIcon } from "@/components/PriorityIcon";
-import { StatusBadge } from "@/components/StatusBadge";
-import { StatusIcon } from "@/components/StatusIcon";
+
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { createTask } from "../fixtures/paperclipData";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { deriveInitials } from "@/lib/identity";
+import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
+import { statusBadgeVariant } from "@/lib/status-variant";
 
-function Section({
-  eyebrow,
-  title,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="paperclip-story__frame overflow-hidden">
-      <div className="border-b border-border px-5 py-4">
-        <div className="paperclip-story__label">{eyebrow}</div>
-        <h2 className="mt-1 text-xl font-semibold">{title}</h2>
-      </div>
-      <div className="p-5">{children}</div>
-    </section>
-  );
-}
+import type { BlockedNoticeFixture } from "./status-language-fixtures";
+import { blockedNoticeFixtures, coveredBlockedMatrix, coveredBlockedTask } from "./status-language-fixtures";
+import { StorySection as Section } from "./story-layout";
 
-type CoveredBlockedCell = {
+const metricExamples: Array<{
+  icon: LucideIcon;
+  value: string | number;
   label: string;
-  status: string;
-  blockerAttention: TaskBlockerAttention | null;
-  expectedVisual: string;
-  expectedCopy: string;
-};
-
-function attention(
-  partial: Partial<TaskBlockerAttention> & Pick<TaskBlockerAttention, "state" | "reason">,
-): TaskBlockerAttention {
-  return {
-    state: partial.state,
-    reason: partial.reason,
-    unresolvedBlockerCount: partial.unresolvedBlockerCount ?? 0,
-    coveredBlockerCount: partial.coveredBlockerCount ?? 0,
-    stalledBlockerCount: partial.stalledBlockerCount ?? 0,
-    attentionBlockerCount: partial.attentionBlockerCount ?? 0,
-    sampleBlockerIdentifier: partial.sampleBlockerIdentifier ?? null,
-    sampleStalledBlockerIdentifier: partial.sampleStalledBlockerIdentifier ?? null,
-  };
-}
-
-const coveredBlockedMatrix: CoveredBlockedCell[] = [
+  description: string;
+}> = [
+  { icon: Users, value: 8, label: "Agents", description: "3 live runs" },
   {
-    label: "Normal blocked",
-    status: "blocked",
-    blockerAttention: null,
-    expectedVisual: "solid red ring",
-    expectedCopy: "Blocked",
+    icon: FolderKanban,
+    value: 27,
+    label: "Open tasks",
+    description: "5 in review",
   },
   {
-    label: "Covered by 1 active child",
-    status: "blocked",
-    blockerAttention: attention({
-      state: "covered",
-      reason: "active_child",
-      unresolvedBlockerCount: 1,
-      coveredBlockerCount: 1,
-      sampleBlockerIdentifier: "PAP-2175",
-    }),
-    expectedVisual: "cyan ring",
-    expectedCopy: "Blocked · waiting on active sub-task PAP-2175",
+    icon: DollarSign,
+    value: "$675",
+    label: "MTD spend",
+    description: "27% of budget",
   },
   {
-    label: "Covered by N active children",
-    status: "blocked",
-    blockerAttention: attention({
-      state: "covered",
-      reason: "active_child",
-      unresolvedBlockerCount: 3,
-      coveredBlockerCount: 3,
-    }),
-    expectedVisual: "cyan ring",
-    expectedCopy: "Blocked · waiting on 3 active sub-tasks",
-  },
-  {
-    label: "Covered by active dependency",
-    status: "blocked",
-    blockerAttention: attention({
-      state: "covered",
-      reason: "active_dependency",
-      unresolvedBlockerCount: 1,
-      coveredBlockerCount: 1,
-      sampleBlockerIdentifier: "PAP-1918",
-    }),
-    expectedVisual: "cyan ring",
-    expectedCopy: "Blocked · covered by active dependency PAP-1918",
-  },
-  {
-    label: "Covered by N active dependencies",
-    status: "blocked",
-    blockerAttention: attention({
-      state: "covered",
-      reason: "active_dependency",
-      unresolvedBlockerCount: 2,
-      coveredBlockerCount: 2,
-    }),
-    expectedVisual: "cyan ring",
-    expectedCopy: "Blocked · covered by 2 active dependencies",
-  },
-  {
-    label: "Stalled review (single leaf)",
-    status: "blocked",
-    blockerAttention: attention({
-      state: "stalled",
-      reason: "stalled_review",
-      unresolvedBlockerCount: 1,
-      stalledBlockerCount: 1,
-      sampleBlockerIdentifier: "PAP-2279",
-      sampleStalledBlockerIdentifier: "PAP-2279",
-    }),
-    expectedVisual: "amber ring with dot",
-    expectedCopy: "Blocked · review stalled on PAP-2279",
-  },
-  {
-    label: "Stalled review (multiple leaves)",
-    status: "blocked",
-    blockerAttention: attention({
-      state: "stalled",
-      reason: "stalled_review",
-      unresolvedBlockerCount: 2,
-      stalledBlockerCount: 2,
-      sampleStalledBlockerIdentifier: "PAP-2279",
-    }),
-    expectedVisual: "amber ring with dot",
-    expectedCopy: "Blocked · 2 reviews stalled with no clear next step",
-  },
-  {
-    label: "Mixed: 1 covered, 1 needs attention",
-    status: "blocked",
-    blockerAttention: attention({
-      state: "needs_attention",
-      reason: "attention_required",
-      unresolvedBlockerCount: 2,
-      coveredBlockerCount: 1,
-      attentionBlockerCount: 1,
-    }),
-    expectedVisual: "solid red ring",
-    expectedCopy: "Blocked · 2 unresolved blockers need attention",
-  },
-  {
-    label: "Needs attention (single blocker)",
-    status: "blocked",
-    blockerAttention: attention({
-      state: "needs_attention",
-      reason: "attention_required",
-      unresolvedBlockerCount: 1,
-      attentionBlockerCount: 1,
-      sampleBlockerIdentifier: "PAP-1042",
-    }),
-    expectedVisual: "solid red ring",
-    expectedCopy: "Blocked · 1 unresolved blocker needs attention",
-  },
-  {
-    label: "Non-blocked with prop ignored",
-    status: "in_progress",
-    blockerAttention: attention({
-      state: "covered",
-      reason: "active_child",
-      unresolvedBlockerCount: 1,
-      coveredBlockerCount: 1,
-      sampleBlockerIdentifier: "PAP-2175",
-    }),
-    expectedVisual: "yellow ring",
-    expectedCopy: "In Progress",
-  },
-];
-
-const coveredBlockedTask = createTask({
-  id: "dddddddd-dddd-4ddd-8ddd-ddddddddd011",
-  identifier: "PAP-2178",
-  taskNumber: 2178,
-  title: "Covered blocked visual state: final acceptance",
-  boardPresentationStatus: "blocked",
-  priority: "medium",
-  blockerAttention: coveredBlockedMatrix[1]!.blockerAttention ?? undefined,
-  lastActivityAt: new Date("2026-04-24T13:40:00.000Z"),
-  updatedAt: new Date("2026-04-24T13:40:00.000Z"),
-});
-
-function summaryBlocker(
-  partial: Partial<TaskRelationTaskSummary> &
-    Pick<
-      TaskRelationTaskSummary,
-      "id" | "identifier" | "title" | "boardPresentationStatus"
-    >,
-): TaskRelationTaskSummary {
-  return {
-    id: partial.id,
-    taskNumber:
-      partial.taskNumber ?? Number(partial.identifier.split("-").at(-1)),
-    identifier: partial.identifier,
-    title: partial.title,
-    boardPresentationStatus: partial.boardPresentationStatus,
-    priority: partial.priority ?? "medium",
-    ownerAgentId: partial.ownerAgentId ?? null,
-    ownerUserId: partial.ownerUserId ?? null,
-    terminalBlockers: partial.terminalBlockers,
-  };
-}
-
-type BlockedNoticeStateLabel =
-  | "Default covered"
-  | "Stalled (single leaf)"
-  | "Stalled (multiple leaves)";
-
-type BlockedNoticeFixture = {
-  label: BlockedNoticeStateLabel;
-  caption: string;
-  blockers: TaskRelationTaskSummary[];
-  blockerAttention: TaskBlockerAttention;
-};
-
-const stalledLeafSingle = summaryBlocker({
-  id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01c",
-  identifier: "PAP-2279",
-  title: "Stage gate review for export pipeline",
-  boardPresentationStatus: "in_review",
-});
-
-const stalledLeafMultiPrimary = summaryBlocker({
-  id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01a",
-  identifier: "PAP-2284",
-  title: "Approve schema migration",
-  boardPresentationStatus: "in_review",
-});
-
-const stalledLeafMultiSecondary = summaryBlocker({
-  id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01b",
-  identifier: "PAP-2291",
-  title: "Sign off on rollout copy",
-  boardPresentationStatus: "in_review",
-});
-
-const blockedNoticeFixtures: BlockedNoticeFixture[] = [
-  {
-    label: "Default covered",
-    caption: "Active sub-task covers the chain — informational only.",
-    blockers: [
-      summaryBlocker({
-        id: "dddddddd-dddd-4ddd-8ddd-ddddddddd00f",
-        identifier: "PAP-2175",
-        title: "Wire export pipeline preview",
-        boardPresentationStatus: "in_progress",
-      }),
-    ],
-    blockerAttention: attention({
-      state: "covered",
-      reason: "active_child",
-      unresolvedBlockerCount: 1,
-      coveredBlockerCount: 1,
-      sampleBlockerIdentifier: "PAP-2175",
-    }),
-  },
-  {
-    label: "Stalled (single leaf)",
-    caption: "Chain stalled on one leaf review — copy names the leaf and shows the chip strip.",
-    blockers: [
-      summaryBlocker({
-        id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01f",
-        identifier: "PAP-2278",
-        title: "Ship rollout dashboard",
-        boardPresentationStatus: "blocked",
-        terminalBlockers: [stalledLeafSingle],
-      }),
-    ],
-    blockerAttention: attention({
-      state: "stalled",
-      reason: "stalled_review",
-      unresolvedBlockerCount: 1,
-      stalledBlockerCount: 1,
-      sampleBlockerIdentifier: "PAP-2279",
-      sampleStalledBlockerIdentifier: "PAP-2279",
-    }),
-  },
-  {
-    label: "Stalled (multiple leaves)",
-    caption: "Multiple stalled reviews — body uses plural agreement (\"reviews\"/\"them\") to match the chip strip.",
-    blockers: [
-      summaryBlocker({
-        id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01d",
-        identifier: "PAP-2283",
-        title: "Coordinate billing change rollout",
-        boardPresentationStatus: "blocked",
-        terminalBlockers: [stalledLeafMultiPrimary],
-      }),
-      summaryBlocker({
-        id: "dddddddd-dddd-4ddd-8ddd-ddddddddd01e",
-        identifier: "PAP-2290",
-        title: "Coordinate marketing transfer",
-        boardPresentationStatus: "blocked",
-        terminalBlockers: [stalledLeafMultiSecondary],
-      }),
-    ],
-    blockerAttention: attention({
-      state: "stalled",
-      reason: "stalled_review",
-      unresolvedBlockerCount: 2,
-      stalledBlockerCount: 2,
-      sampleStalledBlockerIdentifier: "PAP-2284",
-    }),
+    icon: Clock3,
+    value: "14m",
+    label: "P95 run age",
+    description: "last 24 hours",
   },
 ];
 
@@ -368,7 +106,11 @@ function CoveredBlockedSurface({ mode, size }: { mode: "light" | "dark"; size: "
         <div className={isMobile ? "max-w-[340px]" : "min-w-[620px]"}>
           <TaskRow
             task={coveredBlockedTask}
-            mobileMeta={<StatusBadge status={coveredBlockedTask.boardPresentationStatus} />}
+            mobileMeta={
+              <Badge variant={statusBadgeVariant(coveredBlockedTask.boardPresentationStatus)}>
+                {coveredBlockedTask.boardPresentationStatus}
+              </Badge>
+            }
             trailingMeta="waiting on PAP-2175"
           />
         </div>
@@ -385,10 +127,12 @@ function StatusLanguage() {
       <main className="paperclip-story__inner space-y-6">
         <section className="paperclip-story__frame p-6">
           <div className="paperclip-story__label">Language</div>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Status, priority, identity, and metrics</h1>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+            Status, priority, identity, and metrics
+          </h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-            These components carry the operational vocabulary of the board: who is acting, what state work is in,
-            how urgent it is, and whether capacity or spend needs attention.
+            These components carry the operational vocabulary of the board: who is acting, what state work is
+            in, how urgent it is, and whether capacity or spend needs attention.
           </p>
         </section>
 
@@ -401,18 +145,24 @@ function StatusLanguage() {
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2">
                 {TASK_STATUSES.map((status) => (
-                  <StatusBadge key={status} status={status} />
+                  <Badge key={status} variant={statusBadgeVariant(status)}>
+                    {status}
+                  </Badge>
                 ))}
               </CardContent>
             </Card>
             <Card className="shadow-none">
               <CardHeader>
                 <CardTitle>Agent statuses</CardTitle>
-                <CardDescription>Runtime and governance states shown in org, sidebar, and detail surfaces.</CardDescription>
+                <CardDescription>
+                  Runtime and governance states shown in org, sidebar, and detail surfaces.
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2">
                 {AGENT_STATUSES.map((status) => (
-                  <StatusBadge key={status} status={status} />
+                  <Badge key={status} variant={statusBadgeVariant(status)}>
+                    {status}
+                  </Badge>
                 ))}
               </CardContent>
             </Card>
@@ -431,7 +181,12 @@ function StatusLanguage() {
                     <div className="text-sm font-medium">{item.label}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{item.expectedVisual}</div>
                   </div>
-                  <StatusIcon status={item.status} blockerAttention={item.blockerAttention} />
+                  <Badge
+                    variant="secondary"
+                    aria-label={taskStatusAccessibleLabel(item.status, item.blockerAttention)}
+                  >
+                    {taskValueLabel(item.status)}
+                  </Badge>
                 </div>
                 <div className="mt-4 rounded-md bg-muted/45 px-2.5 py-2 font-mono text-[11px] leading-5 text-muted-foreground">
                   {item.expectedCopy}
@@ -440,9 +195,9 @@ function StatusLanguage() {
             ))}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Tooltip and aria-label copy begin with "Blocked · " for every cell after the first. Covered cells show a cyan
-            ring with a small dot, stalled-review cells show an amber ring with a centered dot, and the needs-attention
-            cells retain the solid red ring.
+            Tooltip and aria-label copy begin with "Blocked · " for every cell after the first. Covered cells
+            show a cyan ring with a small dot, stalled-review cells show an amber ring with a centered dot,
+            and the needs-attention cells retain the solid red ring.
           </p>
         </Section>
 
@@ -467,9 +222,9 @@ function StatusLanguage() {
             ))}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Stalled-state copy switches to "stalled in review without a clear next step" and adds a "Stalled in review"
-            chip strip beneath the regular blocker chips. The trailing imperative pluralizes when multiple stalled
-            leaves are surfaced ("reviews"/"them") to match the chip strip.
+            Stalled-state copy switches to "stalled in review without a clear next step" and adds a "Stalled
+            in review" chip strip beneath the regular blocker chips. The trailing imperative pluralizes when
+            multiple stalled leaves are surfaced ("reviews"/"them") to match the chip strip.
           </p>
         </Section>
 
@@ -477,8 +232,11 @@ function StatusLanguage() {
           <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
             <div className="grid gap-3 sm:grid-cols-2">
               {TASK_PRIORITIES.map((item) => (
-                <div key={item} className="flex items-center justify-between rounded-lg border border-border bg-background/70 p-4">
-                  <PriorityIcon priority={item} showLabel />
+                <div
+                  key={item}
+                  className="flex items-center justify-between rounded-lg border border-border bg-background/70 p-4"
+                >
+                  <Badge variant="secondary">{taskValueLabel(item)}</Badge>
                   <span className="font-mono text-xs text-muted-foreground">{item}</span>
                 </div>
               ))}
@@ -486,10 +244,23 @@ function StatusLanguage() {
             <Card className="shadow-none">
               <CardHeader>
                 <CardTitle>Editable priority</CardTitle>
-                <CardDescription>Click the control to inspect the same popover used in task rows.</CardDescription>
+                <CardDescription>
+                  Click the control to inspect the same popover used in task rows.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <PriorityIcon priority={priority} onChange={setPriority} showLabel />
+                <Select value={priority} onValueChange={setPriority}>
+                  <SelectTrigger aria-label="Priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TASK_PRIORITIES.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {taskValueLabel(item)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <div className="mt-3 text-xs text-muted-foreground">Current value: {priority}</div>
               </CardContent>
             </Card>
@@ -503,7 +274,9 @@ function StatusLanguage() {
                 <CardTitle>XS</CardTitle>
               </CardHeader>
               <CardContent>
-                <Identity name="CodexCoder" size="xs" />
+                <Avatar size="sm">
+                  <AvatarFallback>{deriveInitials("CodexCoder")}</AvatarFallback>
+                </Avatar>
               </CardContent>
             </Card>
             <Card className="shadow-none">
@@ -511,7 +284,9 @@ function StatusLanguage() {
                 <CardTitle>Small</CardTitle>
               </CardHeader>
               <CardContent>
-                <Identity name="Board User" size="sm" initials="BU" />
+                <Avatar>
+                  <AvatarFallback>BU</AvatarFallback>
+                </Avatar>
               </CardContent>
             </Card>
             <Card className="shadow-none">
@@ -519,7 +294,9 @@ function StatusLanguage() {
                 <CardTitle>Default</CardTitle>
               </CardHeader>
               <CardContent>
-                <Identity name="DesignSystemCoder" />
+                <Avatar size="lg">
+                  <AvatarFallback>{deriveInitials("DesignSystemCoder")}</AvatarFallback>
+                </Avatar>
               </CardContent>
             </Card>
             <Card className="shadow-none">
@@ -527,7 +304,9 @@ function StatusLanguage() {
                 <CardTitle>Long label</CardTitle>
               </CardHeader>
               <CardContent className="max-w-[220px]">
-                <Identity name="Senior Product Engineering Reviewer" size="lg" />
+                <Avatar size="lg">
+                  <AvatarFallback>{deriveInitials("Senior Product Engineering Reviewer")}</AvatarFallback>
+                </Avatar>
               </CardContent>
             </Card>
           </div>
@@ -536,39 +315,19 @@ function StatusLanguage() {
         <Section eyebrow="Dashboard" title="Metrics, quota bars, empty states, and copy affordances">
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <MetricCard
-                icon={Users}
-                value={8}
-                label="Agents"
-                description="3 live runs"
-                linkOptions={{
-                  to: "/$companyId/agents/idle",
-                  params: { companyId: "11111111-1111-4111-8111-111111111111" },
-                }}
-              />
-              <MetricCard
-                icon={FolderKanban}
-                value={27}
-                label="Open tasks"
-                description="5 in review"
-                linkOptions={{
-                  to: "/$companyId/tasks",
-                  params: { companyId: "11111111-1111-4111-8111-111111111111" },
-                }}
-              />
-              <MetricCard
-                icon={DollarSign}
-                value="$675"
-                label="MTD spend"
-                description="27% of budget"
-                linkOptions={{
-                  to: "/$companyId/costs",
-                  params: { companyId: "11111111-1111-4111-8111-111111111111" },
-                }}
-              />
-              <MetricCard icon={Clock3} value="14m" label="P95 run age" description="last 24 hours" />
+              {metricExamples.map(({ icon: Icon, value, label, description }) => (
+                <Card key={label}>
+                  <CardHeader>
+                    <CardDescription className="flex items-center gap-2">
+                      <Icon className="size-4" />
+                      {label}
+                    </CardDescription>
+                    <CardTitle>{value}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm text-muted-foreground">{description}</CardContent>
+                </Card>
+              ))}
             </div>
-
           </div>
 
           <div className="mt-5 grid gap-5">
@@ -578,7 +337,18 @@ function StatusLanguage() {
                 <CardDescription>Used when a list has no meaningful rows yet.</CardDescription>
               </CardHeader>
               <CardContent>
-                <EmptyState icon={Inbox} message="No assigned work is waiting in this queue." action="Create task" onAction={() => undefined} />
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <Inbox />
+                    </EmptyMedia>
+                    <EmptyTitle>No assigned work</EmptyTitle>
+                    <EmptyDescription>No assigned work is waiting in this queue.</EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button onClick={() => undefined}>Create task</Button>
+                  </EmptyContent>
+                </Empty>
               </CardContent>
             </Card>
           </div>

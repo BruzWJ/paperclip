@@ -2,14 +2,10 @@ import { useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { CompanySecret, EnvBinding, SecretStatus } from "@paperclipai/shared";
 import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
-import { ToastProvider } from "@/context/ToastContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Toaster } from "@/components/ui/sonner";
 
-function secret(
-  id: string,
-  name: string,
-  overrides: Partial<CompanySecret> = {},
-): CompanySecret {
+function secret(id: string, name: string, overrides: Partial<CompanySecret> = {}): CompanySecret {
   return {
     id,
     companyId: "11111111-1111-4111-8111-111111111111",
@@ -38,19 +34,40 @@ function secret(
 }
 
 const SECRETS: CompanySecret[] = [
-  secret("a3000000-0000-4000-8000-000000000003", "GITHUB_TOKEN", { latestVersion: 3 }),
-  secret("a3000000-0000-4000-8000-000000000005", "DB_CONNECTION", { latestVersion: 3 }),
-  secret("a3000000-0000-4000-8000-000000000004", "OPENAI_API_KEY", { latestVersion: 2 }),
-  secret("a3000000-0000-4000-8000-000000000008", "/paperclip-cloud/prod/provider/resend/api-key-with-a-very-long-name", { latestVersion: 4 }),
-  secret("a3000000-0000-4000-8000-000000000009", "RETIRED_DEPLOY_KEY", { status: "disabled", latestVersion: 2 }),
-  secret("a3000000-0000-4000-8000-00000000000a", "OLD_STRIPE_KEY", { status: "archived", latestVersion: 4 }),
+  secret("a3000000-0000-4000-8000-000000000003", "GITHUB_TOKEN", {
+    latestVersion: 3,
+  }),
+  secret("a3000000-0000-4000-8000-000000000005", "DB_CONNECTION", {
+    latestVersion: 3,
+  }),
+  secret("a3000000-0000-4000-8000-000000000004", "OPENAI_API_KEY", {
+    latestVersion: 2,
+  }),
+  secret(
+    "a3000000-0000-4000-8000-000000000008",
+    "/paperclip-cloud/prod/provider/resend/api-key-with-a-very-long-name",
+    { latestVersion: 4 },
+  ),
+  secret("a3000000-0000-4000-8000-000000000009", "RETIRED_DEPLOY_KEY", {
+    status: "disabled",
+    latestVersion: 2,
+  }),
+  secret("a3000000-0000-4000-8000-00000000000a", "OLD_STRIPE_KEY", {
+    status: "archived",
+    latestVersion: 4,
+  }),
 ];
 
-const RECENTLY_USED: CompanySecret[] = [SECRETS[2], secret("a3000000-0000-4000-8000-00000000000b", "SLACK_WEBHOOK", { latestVersion: 1 })];
+const RECENTLY_USED: CompanySecret[] = [
+  SECRETS[2],
+  secret("a3000000-0000-4000-8000-00000000000b", "SLACK_WEBHOOK", {
+    latestVersion: 1,
+  }),
+];
 
 function Surface({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }) {
   return (
-    <ToastProvider>
+    <>
       <div className="p-6">
         <Card className="w-full max-w-[720px]">
           <CardHeader>
@@ -62,7 +79,8 @@ function Surface({ title, hint, children }: { title: string; hint?: ReactNode; c
           </CardContent>
         </Card>
       </div>
-    </ToastProvider>
+      <Toaster />
+    </>
   );
 }
 
@@ -84,7 +102,11 @@ function Editor({
       disabled={disabled}
       onChange={(next) => setEnv(next ?? {})}
       onCreateSecret={async (name, value) =>
-        secret(`s-new-${name}`, name.toUpperCase(), { key: name, latestVersion: 1, description: `len=${value.length}` })
+        secret(`s-new-${name}`, name.toUpperCase(), {
+          key: name,
+          latestVersion: 1,
+          description: `len=${value.length}`,
+        })
       }
     />
   );
@@ -104,9 +126,20 @@ export const Default: Story = {
       <Editor
         initial={{
           NODE_ENV: { type: "plain", value: "production" },
-          GH_TOKEN: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000003", version: "latest" },
-          DB_URL: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000005", version: 3 },
-          STRIPE_API_KEY: { type: "plain", value: "sk-live-51H8xL0aBcDeFgHiJkLmNoPq" },
+          GH_TOKEN: {
+            type: "secret_ref",
+            secretId: "a3000000-0000-4000-8000-000000000003",
+            version: "latest",
+          },
+          DB_URL: {
+            type: "secret_ref",
+            secretId: "a3000000-0000-4000-8000-000000000005",
+            version: 3,
+          },
+          STRIPE_API_KEY: {
+            type: "plain",
+            value: "sk-live-51H8xL0aBcDeFgHiJkLmNoPq",
+          },
         }}
       />
     </Surface>
@@ -125,8 +158,15 @@ export const Empty: Story = {
 /** Frame 3 — secret picker open (interactive: click the secret trigger). */
 export const PickerOpen: Story = {
   render: () => (
-    <Surface title="Secret picker" hint="Click the secret value trigger to open the fuzzy picker; type to filter, or pick the pinned “+ Create secret” item.">
-      <Editor initial={{ GH_TOKEN: { type: "secret_ref", secretId: "", version: "latest" } }} />
+    <Surface
+      title="Secret picker"
+      hint="Click the secret value trigger to open the fuzzy picker; type to filter, or pick the pinned “+ Create secret” item."
+    >
+      <Editor
+        initial={{
+          GH_TOKEN: { type: "secret_ref", secretId: "", version: "latest" },
+        }}
+      />
     </Surface>
   ),
 };
@@ -135,7 +175,15 @@ export const PickerOpen: Story = {
 export const LongSecretName: Story = {
   render: () => (
     <Surface title="Long secret name">
-      <Editor initial={{ RESEND_API_KEY: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000008", version: "latest" } }} />
+      <Editor
+        initial={{
+          RESEND_API_KEY: {
+            type: "secret_ref",
+            secretId: "a3000000-0000-4000-8000-000000000008",
+            version: "latest",
+          },
+        }}
+      />
     </Surface>
   ),
 };
@@ -143,8 +191,15 @@ export const LongSecretName: Story = {
 /** Frame 5 — create-secret popover (interactive: open picker → Create secret). */
 export const CreateSecret: Story = {
   render: () => (
-    <Surface title="Create secret" hint="Open the secret picker and choose “+ Create secret …” to open the anchored create popover (name + masked value).">
-      <Editor initial={{ NEW_TOKEN: { type: "secret_ref", secretId: "", version: "latest" } }} />
+    <Surface
+      title="Create secret"
+      hint="Open the secret picker and choose “+ Create secret …” to open the anchored create popover (name + masked value)."
+    >
+      <Editor
+        initial={{
+          NEW_TOKEN: { type: "secret_ref", secretId: "", version: "latest" },
+        }}
+      />
     </Surface>
   ),
 };
@@ -152,8 +207,18 @@ export const CreateSecret: Story = {
 /** Frame 6 — store-as-secret popover (interactive: click the ShieldAlert on the sensitive row). */
 export const StoreAsSecret: Story = {
   render: () => (
-    <Surface title="Store value as secret" hint="The sensitive-looking row shows a ShieldAlert “Store as secret” — click it to open the store popover (value preserved, masked). The adjacent “×” dismisses the hint and unmasks the value, keeping it as plain text.">
-      <Editor initial={{ AWS_SECRET_ACCESS_KEY: { type: "plain", value: "wJalrXUtnFEMI0K7MDENGbPxRfiCYEXAMPLEKEY" } }} />
+    <Surface
+      title="Store value as secret"
+      hint="The sensitive-looking row shows a ShieldAlert “Store as secret” — click it to open the store popover (value preserved, masked). The adjacent “×” dismisses the hint and unmasks the value, keeping it as plain text."
+    >
+      <Editor
+        initial={{
+          AWS_SECRET_ACCESS_KEY: {
+            type: "plain",
+            value: "wJalrXUtnFEMI0K7MDENGbPxRfiCYEXAMPLEKEY",
+          },
+        }}
+      />
     </Surface>
   ),
 };
@@ -161,8 +226,19 @@ export const StoreAsSecret: Story = {
 /** Frame 6 — version popover (interactive: click the amber version tag). */
 export const VersionPopover: Story = {
   render: () => (
-    <Surface title="Version pinning" hint="The bound secret is pinned to v3 (amber tag). Click the tag to choose latest (recommended) or a specific version.">
-      <Editor initial={{ DB_URL: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000005", version: 3 } }} />
+    <Surface
+      title="Version pinning"
+      hint="The bound secret is pinned to v3 (amber tag). Click the tag to choose latest (recommended) or a specific version."
+    >
+      <Editor
+        initial={{
+          DB_URL: {
+            type: "secret_ref",
+            secretId: "a3000000-0000-4000-8000-000000000005",
+            version: 3,
+          },
+        }}
+      />
     </Surface>
   ),
 };
@@ -170,13 +246,24 @@ export const VersionPopover: Story = {
 /** Frame 7 — validation trio + attention summary. */
 export const Validation: Story = {
   render: () => (
-    <Surface title="Validation & health" hint="Invalid charset + reserved prefix warn on load; missing + disabled secret bindings drive the “2 bindings need attention” summary. Add a duplicate name to see the duplicate flag.">
+    <Surface
+      title="Validation & health"
+      hint="Invalid charset + reserved prefix warn on load; missing + disabled secret bindings drive the “2 bindings need attention” summary. Add a duplicate name to see the duplicate flag."
+    >
       <Editor
         initial={{
           "API-URL": { type: "plain", value: "https://api.example.com" },
           PAPERCLIP_TOKEN: { type: "plain", value: "override" },
-          ABANDONED: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-00000000000d", version: "latest" },
-          RETIRED: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000009", version: "latest" },
+          ABANDONED: {
+            type: "secret_ref",
+            secretId: "a3000000-0000-4000-8000-00000000000d",
+            version: "latest",
+          },
+          RETIRED: {
+            type: "secret_ref",
+            secretId: "a3000000-0000-4000-8000-000000000009",
+            version: "latest",
+          },
         }}
       />
     </Surface>
@@ -186,13 +273,19 @@ export const Validation: Story = {
 /** Frame 8 — bulk-paste result (post-import state, last row flagged sensitive). */
 export const BulkPasteResult: Story = {
   render: () => (
-    <Surface title="Bulk .env paste — result" hint="Pasting a multi-line KEY=VALUE block into an empty Name field imports one row per pair; sensitive-looking rows are auto-flagged.">
+    <Surface
+      title="Bulk .env paste — result"
+      hint="Pasting a multi-line KEY=VALUE block into an empty Name field imports one row per pair; sensitive-looking rows are auto-flagged."
+    >
       <Editor
         initial={{
           NODE_ENV: { type: "plain", value: "production" },
           PORT: { type: "plain", value: "3000" },
           LOG_LEVEL: { type: "plain", value: "info" },
-          STRIPE_API_KEY: { type: "plain", value: "sk-live-51H8xL0aBcDeFgHiJkLmNoPq" },
+          STRIPE_API_KEY: {
+            type: "plain",
+            value: "sk-live-51H8xL0aBcDeFgHiJkLmNoPq",
+          },
         }}
       />
     </Surface>
@@ -202,19 +295,27 @@ export const BulkPasteResult: Story = {
 /** Frame 9 — 390px stacked layout (container-responsive). */
 export const MobileStacked: Story = {
   render: () => (
-    <ToastProvider>
+    <>
       <div className="p-6">
         <div className="w-[390px] rounded-lg border border-border p-4">
           <Editor
             initial={{
               NODE_ENV: { type: "plain", value: "production" },
-              GH_TOKEN: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000003", version: "latest" },
-              STRIPE_API_KEY: { type: "plain", value: "sk-live-51H8xL0aBcDeFgHiJkLmNoPq" },
+              GH_TOKEN: {
+                type: "secret_ref",
+                secretId: "a3000000-0000-4000-8000-000000000003",
+                version: "latest",
+              },
+              STRIPE_API_KEY: {
+                type: "plain",
+                value: "sk-live-51H8xL0aBcDeFgHiJkLmNoPq",
+              },
             }}
           />
         </div>
       </div>
-    </ToastProvider>
+      <Toaster />
+    </>
   ),
 };
 
@@ -226,8 +327,16 @@ export const Disabled: Story = {
         disabled
         initial={{
           NODE_ENV: { type: "plain", value: "production" },
-          GH_TOKEN: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000003", version: "latest" },
-          RETIRED: { type: "secret_ref", secretId: "a3000000-0000-4000-8000-000000000009", version: "latest" },
+          GH_TOKEN: {
+            type: "secret_ref",
+            secretId: "a3000000-0000-4000-8000-000000000003",
+            version: "latest",
+          },
+          RETIRED: {
+            type: "secret_ref",
+            secretId: "a3000000-0000-4000-8000-000000000009",
+            version: "latest",
+          },
         }}
       />
     </Surface>

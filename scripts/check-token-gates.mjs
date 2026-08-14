@@ -5,6 +5,8 @@
  * Phase 2 (extraction) DONE-WHEN gate check for the design-token-extraction
  * run (see DESIGN.md and doc/design/TOKEN-AUDIT.md). Scans
  * `apps/ui/src/components/**` and `apps/ui/src/routes/**`
+ * (excluding the CLI-managed `apps/ui/src/components/ui/**` shadcn source,
+ * which must remain byte-compatible with the upstream component catalog)
  * (excluding `apps/ui/src/lib|context|plugins`, which are explicitly out of
  * scope for this run per TOKEN-AUDIT.md's Batch 4 log) for three gates:
  *
@@ -102,6 +104,12 @@ function isAllowlisted(relPath, allowlist) {
 function walk(dir, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name);
+    if (
+      entry.isDirectory() &&
+      p === resolve(UI_SRC, "components", "ui")
+    ) {
+      continue;
+    }
     if (entry.isDirectory()) walk(p, out);
     else if (/\.(tsx?|jsx?)$/.test(entry.name)) out.push(p);
   }

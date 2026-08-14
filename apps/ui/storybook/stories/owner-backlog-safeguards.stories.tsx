@@ -2,20 +2,21 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ReactNode } from "react";
 import { CircleDot, Flag, MoreHorizontal, Paperclip } from "lucide-react";
 import type { TaskRelationTaskSummary } from "@paperclipai/shared";
-import { TaskOwnerBacklogNotice } from "@/components/TaskOwnerBacklogNotice";
 import { TaskBlockedNotice } from "@/components/TaskBlockedNotice";
 import { TaskRow } from "@/components/TaskRow";
 import { storybookAgents, createTask } from "../fixtures/paperclipData";
 
-const codexAgent = storybookAgents.find((agent) => agent.id === "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1") ?? storybookAgents[0]!;
-const qaAgent = storybookAgents.find((agent) => agent.id === "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2") ?? storybookAgents[0]!;
+const codexAgent =
+  storybookAgents.find((agent) => agent.id === "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1") ?? storybookAgents[0]!;
 
 function StoryFrame({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="min-h-screen bg-background p-4 text-foreground sm:p-8">
       <div className="mx-auto max-w-5xl space-y-5">
         <div>
-          <div className="text-xs font-medium uppercase text-muted-foreground">Owner-backlog UI safeguards</div>
+          <div className="text-xs font-medium uppercase text-muted-foreground">
+            Owner-backlog UI safeguards
+          </div>
           <h1 className="mt-1 text-2xl font-semibold">{title}</h1>
         </div>
         {children}
@@ -27,7 +28,9 @@ function StoryFrame({ title, children }: { title: string; children: ReactNode })
 function CreationFormPanel() {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 text-sm font-medium text-muted-foreground">A. Task creation chip bar with intent note</div>
+      <div className="mb-3 text-sm font-medium text-muted-foreground">
+        A. Task creation chip bar with intent note
+      </div>
 
       <div className="space-y-3 rounded-md border border-border/60 bg-background p-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -66,7 +69,9 @@ function CreationFormPanel() {
         <div className="flex items-start gap-2 rounded-md border border-amber-300/70 bg-amber-50/90 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
           <Flag className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
           <span className="leading-snug">
-            Assigning implies executable intent — leave status as <span className="font-medium">Backlog</span> only to deliberately park this. The owner will not be dispatched until status moves to <span className="font-medium">Todo</span> or <span className="font-medium">In Progress</span>.
+            Assigning implies executable intent — leave status as <span className="font-medium">Backlog</span>{" "}
+            only to deliberately park this. The owner will not be dispatched until status moves to{" "}
+            <span className="font-medium">Todo</span> or <span className="font-medium">In Progress</span>.
           </span>
         </div>
       </div>
@@ -92,20 +97,6 @@ function CreationFormPanel() {
   );
 }
 
-function OwnerBacklogNoticePanel() {
-  return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 text-sm font-medium text-muted-foreground">B. Task panel banner — parked with owner</div>
-      <TaskOwnerBacklogNotice
-        taskStatus="backlog"
-        ownerAgent={qaAgent}
-        ownerUserId={null}
-        onResume={() => undefined}
-      />
-    </div>
-  );
-}
-
 function BlockedByParkedWorkPanel() {
   const parkedBlocker: TaskRelationTaskSummary = {
     id: "dddddddd-dddd-4ddd-8ddd-ddddddddd026",
@@ -119,7 +110,9 @@ function BlockedByParkedWorkPanel() {
   };
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 text-sm font-medium text-muted-foreground">C. Parent task blocked by parked work</div>
+      <div className="mb-3 text-sm font-medium text-muted-foreground">
+        C. Parent task blocked by parked work
+      </div>
       <TaskBlockedNotice
         taskStatus="blocked"
         blockers={[parkedBlocker]}
@@ -196,9 +189,6 @@ function AllStates() {
     <StoryFrame title="Owner-backlog liveness UI">
       <section className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <CreationFormPanel />
-        <OwnerBacklogNoticePanel />
-      </section>
-      <section className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <BlockedByParkedWorkPanel />
         <ListRowsPanel />
       </section>
@@ -221,13 +211,6 @@ export const CreationForm: Story = {
   render: () => (
     <StoryFrame title="Task creation chip bar with intent note">
       <CreationFormPanel />
-    </StoryFrame>
-  ),
-};
-export const OwnerBacklogBanner: Story = {
-  render: () => (
-    <StoryFrame title="Task panel banner — parked with owner">
-      <OwnerBacklogNoticePanel />
     </StoryFrame>
   ),
 };

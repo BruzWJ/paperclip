@@ -3,7 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Task, TaskBlockedInboxAttention } from "@paperclipai/shared";
 import { BlockedInboxView } from "@/components/BlockedInboxView";
-import { BlockedReasonChip } from "@/components/BlockedReasonChip";
+import { Badge } from "@/components/ui/badge";
+import { blockedReasonLabel } from "@/lib/blockedInbox";
 import { defaultTaskFilterState } from "@/lib/task-filters";
 import { queryKeys } from "@/lib/queryKeys";
 import { storybookTasks } from "../fixtures/paperclipData";
@@ -20,9 +21,7 @@ const blockedViewDefaults = {
   showUpdatedColumn: true,
 };
 
-function attention(
-  overrides: Partial<TaskBlockedInboxAttention> = {},
-): TaskBlockedInboxAttention {
+function attention(overrides: Partial<TaskBlockedInboxAttention> = {}): TaskBlockedInboxAttention {
   return {
     kind: "blocked",
     state: "needs_attention",
@@ -102,9 +101,7 @@ const fixtureTasks: Task[] = [
       reason: "external_owner_action",
       state: "external_wait",
       severity: "low",
-      stoppedSinceAt: new Date(
-        Date.now() - 3 * 24 * 60 * 60 * 1000,
-      ).toISOString(),
+      stoppedSinceAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
       owner: { type: "external", agentId: null, userId: null, label: "Stripe" },
       action: { label: "Awaiting Stripe", detail: null },
     }),
@@ -114,10 +111,7 @@ const fixtureTasks: Task[] = [
 function PrimeBlockedFixtures({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   useMemo(() => {
-    queryClient.setQueryData(
-      queryKeys.tasks.listBlockedAttention(companyId),
-      fixtureTasks,
-    );
+    queryClient.setQueryData(queryKeys.tasks.listBlockedAttention(companyId), fixtureTasks);
   }, [queryClient]);
   return <>{children}</>;
 }
@@ -158,26 +152,21 @@ function BlockedTabSurfaceMobile() {
 }
 
 function BlockedReasonChipsCatalog() {
+  const examples = [
+    ["pending_board_decision", "medium", "Needs decision · medium", "secondary"],
+    ["blocked_chain_stalled", "critical", "Blocked chain stalled · critical", "destructive"],
+    ["external_owner_action", "low", "External wait · low", "outline"],
+  ] as const;
   return (
     <div className="grid gap-3 p-6 sm:grid-cols-2">
-      <div className="space-y-2">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">
-          Needs decision · medium
+      {examples.map(([reason, severity, description, variant]) => (
+        <div key={reason} className="space-y-2">
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">{description}</div>
+          <Badge variant={variant} aria-label={`Reason: ${blockedReasonLabel(reason)}, severity ${severity}`}>
+            {blockedReasonLabel(reason)}
+          </Badge>
         </div>
-        <BlockedReasonChip reason="pending_board_decision" severity="medium" />
-      </div>
-      <div className="space-y-2">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">
-          Blocked chain stalled · critical
-        </div>
-        <BlockedReasonChip reason="blocked_chain_stalled" severity="critical" />
-      </div>
-      <div className="space-y-2">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">
-          External wait · low (no severity dot)
-        </div>
-        <BlockedReasonChip reason="external_owner_action" severity="low" />
-      </div>
+      ))}
     </div>
   );
 }
