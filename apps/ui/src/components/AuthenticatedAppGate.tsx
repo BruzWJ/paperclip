@@ -1,4 +1,4 @@
-import { Link, Navigate, Outlet, useLocation } from "@tanstack/react-router";
+import { Link, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
@@ -15,7 +15,9 @@ import { BOOTSTRAP_ADMIN_COMMAND } from "@/bootstrapSetup";
 import { ShieldCheck, Terminal, TriangleAlert } from "lucide-react";
 
 export function AuthenticatedAppGate() {
-  const location = useLocation();
+  const location = useRouterState({
+    select: (state) => state.resolvedLocation ?? state.location,
+  });
   const queryClient = useQueryClient();
   const healthQuery = useQuery({
     queryKey: queryKeys.health,

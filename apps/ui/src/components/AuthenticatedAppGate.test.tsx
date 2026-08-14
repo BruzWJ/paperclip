@@ -40,13 +40,19 @@ vi.mock("@tanstack/react-router", () => ({
       {children}
     </a>
   ),
-  Navigate: ({ to }: { to: string }) => <div>Navigate:{to}</div>,
+  Navigate: ({ to, search }: { to: string; search?: { next?: string } }) => <div>Navigate:{to}:{search?.next}</div>,
   Outlet: () => <div>Outlet content</div>,
-  useLocation: () => ({
-    pathname: `/${COMPANY_ID}/company/settings/instance`,
-    searchStr: "",
-    hash: "",
-  }),
+  useRouterState: ({ select }: { select: (state: unknown) => unknown }) =>
+    select({
+      location: {
+        pathname: "/auth",
+        searchStr: `?next=/${COMPANY_ID}/company/settings/instance`,
+      },
+      resolvedLocation: {
+        pathname: `/${COMPANY_ID}/company/settings/instance`,
+        searchStr: "",
+      },
+    }),
 }));
 
 async function flushReact() {
@@ -112,6 +118,7 @@ describe("AuthenticatedAppGate", () => {
     await waitForText(container, "Navigate:/auth");
 
     expect(container.textContent).toContain("Navigate:/auth");
+    expect(container.textContent).toContain(`Navigate:/auth:/${COMPANY_ID}/company/settings/instance`);
     expect(mockAccessApi.getCurrentBoardAccess).not.toHaveBeenCalled();
 
     unmountRoot(root);
