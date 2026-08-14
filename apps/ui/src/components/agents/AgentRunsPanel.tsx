@@ -140,7 +140,7 @@ export function AgentRunsPanel({
   return (
     <div className="flex gap-0">
       <div className={cn("shrink-0 rounded-lg border", selectedRun ? "w-72" : "w-full")}>
-        <ItemGroup className="sticky top-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 2rem)" }}>
+        <ItemGroup className="sticky -top-6 gap-2 p-2 overflow-y-auto">
           {sorted.map((run) => (
             <RunListItem
               key={run.id}

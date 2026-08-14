@@ -229,7 +229,7 @@ export function LayoutView({
             <div
               className={cn(
                 isMobile &&
-                  "sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85",
+                "sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85",
               )}
             >
               <StandaloneBrowserControls mobile={isMobile} />
