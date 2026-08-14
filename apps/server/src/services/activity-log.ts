@@ -1,10 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { activityLog, companies, tasks } from "@paperclipai/db";
-import {
-  isCanonicalUuid,
-  type ActivityLoggedLiveEventPayload,
-} from "@paperclipai/shared";
+import { type Db, activityLog, companies, tasks } from "@paperclipai/db";
+import { isCanonicalUuid, type ActivityLoggedLiveEventPayload } from "@paperclipai/shared";
 import { publishLiveEvent } from "./live-events.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { sanitizeRecord } from "../redaction.js";
@@ -48,24 +44,14 @@ function resolveCanonicalTaskId(input: LogActivityInput) {
   );
 }
 
-function readActivityActorType(
-  value: string,
-): ActivityLoggedLiveEventPayload["actorType"] {
-  if (
-    value === "agent" ||
-    value === "user" ||
-    value === "system" ||
-    value === "plugin"
-  ) {
+function readActivityActorType(value: string): ActivityLoggedLiveEventPayload["actorType"] {
+  if (value === "agent" || value === "user" || value === "system" || value === "plugin") {
     return value;
   }
   throw new Error(`Persisted activity has unsupported actor type: ${value}`);
 }
 
-export async function resolveResponsibleUserIdForActivity(
-  db: Db,
-  input: LogActivityInput,
-) {
+export async function resolveResponsibleUserIdForActivity(db: Db, input: LogActivityInput) {
   if (input.actorType === "user") {
     return readExactNonEmptyString(input.actorId);
   }
@@ -81,8 +67,7 @@ export async function resolveResponsibleUserIdForActivity(
       .where(and(eq(tasks.companyId, input.companyId), eq(tasks.id, taskId)))
       .then((rows) => rows[0] ?? null);
     const taskResponsibleUserId =
-      readExactNonEmptyString(task?.responsibleUserId) ??
-      readExactNonEmptyString(task?.creatorUserId);
+      readExactNonEmptyString(task?.responsibleUserId) ?? readExactNonEmptyString(task?.creatorUserId);
     if (taskResponsibleUserId) return taskResponsibleUserId;
   }
 
@@ -100,17 +85,13 @@ export async function persistActivityLog(
   options: PersistActivityLogOptions = {},
 ): Promise<PersistedActivityLog> {
   const currentUserRedactionOptions = {
-    enabled: (await instanceSettingsService(db).getGeneral())
-      .censorUsernameInLogs,
+    enabled: (await instanceSettingsService(db).getGeneral()).censorUsernameInLogs,
   };
   const sanitizedDetails = input.details ? sanitizeRecord(input.details) : null;
   const redactedDetails = sanitizedDetails
     ? redactCurrentUserValue(sanitizedDetails, currentUserRedactionOptions)
     : null;
-  const responsibleUserId = await resolveResponsibleUserIdForActivity(
-    db,
-    input,
-  );
+  const responsibleUserId = await resolveResponsibleUserIdForActivity(db, input);
   const taskId = resolveCanonicalTaskId(input);
   const row = await db
     .insert(activityLog)

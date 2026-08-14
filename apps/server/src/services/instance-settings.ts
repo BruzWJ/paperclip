@@ -1,5 +1,4 @@
-import type { Db } from "@paperclipai/db";
-import { companies, instanceSettings } from "@paperclipai/db";
+import { type Db, companies, instanceSettings } from "@paperclipai/db";
 import {
   instanceGeneralSettingsSchema,
   parseOptionalBooleanEnvironmentValue,
@@ -39,18 +38,12 @@ export type WorktreeRunExecutionActivationState =
     };
 
 export function isWorktreeRuntimeEnvironment(value: string | undefined) {
-  return (
-    parseOptionalBooleanEnvironmentValue(value, "PAPERCLIP_IN_WORKTREE") ??
-    false
-  );
+  return parseOptionalBooleanEnvironmentValue(value, "PAPERCLIP_IN_WORKTREE") ?? false;
 }
 
 function getRuntimeInstanceId(env: Record<string, string | undefined>) {
   return (
-    parseOptionalExactNonEmptyEnvironmentValue(
-      env.PAPERCLIP_INSTANCE_ID,
-      "PAPERCLIP_INSTANCE_ID",
-    ) ?? null
+    parseOptionalExactNonEmptyEnvironmentValue(env.PAPERCLIP_INSTANCE_ID, "PAPERCLIP_INSTANCE_ID") ?? null
   );
 }
 
@@ -116,8 +109,7 @@ export function applyGeneralSettingsPatch(
 
   return {
     ...nextGeneral,
-    worktreeRunExecutionActivatedAt: (options.now ?? (() => new Date()))()
-      .toISOString(),
+    worktreeRunExecutionActivatedAt: (options.now ?? (() => new Date()))().toISOString(),
     worktreeRunExecutionActivationInstanceId: getRuntimeInstanceId(runtimeEnv),
   };
 }
@@ -127,16 +119,10 @@ export function resolveWorktreeRunExecutionActivation(
   currentInstanceId: string | null | undefined,
 ): WorktreeRunExecutionActivationState {
   if (general.enableWorktreeRunExecution !== true) {
-    return suppressWorktreeRunExecution(
-      "setting_disabled",
-      general.worktreeRunExecutionActivationInstanceId,
-    );
+    return suppressWorktreeRunExecution("setting_disabled", general.worktreeRunExecutionActivationInstanceId);
   }
   if (!general.worktreeRunExecutionActivatedAt) {
-    return suppressWorktreeRunExecution(
-      "missing_cutoff",
-      general.worktreeRunExecutionActivationInstanceId,
-    );
+    return suppressWorktreeRunExecution("missing_cutoff", general.worktreeRunExecutionActivationInstanceId);
   }
   if (!currentInstanceId) {
     return suppressWorktreeRunExecution(
@@ -185,10 +171,7 @@ function toInstanceSettings(row: typeof instanceSettings.$inferSelect) {
   };
 }
 
-export function instanceSettingsService(
-  db: Db,
-  options: InstanceSettingsServiceOptions = {},
-) {
+export function instanceSettingsService(db: Db, options: InstanceSettingsServiceOptions = {}) {
   async function getOrCreateRow() {
     const existing = await db
       .select()
@@ -234,11 +217,7 @@ export function instanceSettingsService(
 
     updateGeneral: async (patch: PatchInstanceGeneralSettings) => {
       const current = await getOrCreateRow();
-      const nextGeneral = applyGeneralSettingsPatch(
-        current.general,
-        patch,
-        options,
-      );
+      const nextGeneral = applyGeneralSettingsPatch(current.general, patch, options);
       const now = new Date();
       const [updated] = await db
         .update(instanceSettings)

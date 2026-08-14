@@ -7,14 +7,15 @@ import { resolvePaperclipEnvPath } from "./paths.js";
  * Loads operator-owned environment files at an explicit process startup
  * boundary. Importing server configuration never calls this function.
  */
-export function loadRuntimeEnvironmentFiles(input: {
-  paperclipEnvFilePath?: string;
-  cwd?: string;
-  environment?: NodeJS.ProcessEnv;
-} = {}): void {
+export function loadRuntimeEnvironmentFiles(
+  input: {
+    paperclipEnvFilePath?: string;
+    cwd?: string;
+    environment?: NodeJS.ProcessEnv;
+  } = {},
+): void {
   const environment = input.environment ?? process.env;
-  const paperclipEnvFilePath =
-    input.paperclipEnvFilePath ?? resolvePaperclipEnvPath();
+  const paperclipEnvFilePath = input.paperclipEnvFilePath ?? resolvePaperclipEnvPath();
 
   if (existsSync(paperclipEnvFilePath)) {
     loadDotenv({

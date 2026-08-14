@@ -1,11 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import {
-  companyUserSidebarPreferences,
-  userSidebarPreferences,
-} from "@paperclipai/db";
-import type { SidebarOrderPreference } from "@paperclipai/shared";
-import { upsertSidebarOrderPreferenceSchema } from "@paperclipai/shared";
+import { type Db, companyUserSidebarPreferences, userSidebarPreferences } from "@paperclipai/db";
+import { type SidebarOrderPreference, upsertSidebarOrderPreferenceSchema } from "@paperclipai/shared";
 
 function requireOrderedIds(value: unknown): string[] {
   return upsertSidebarOrderPreferenceSchema.shape.orderedIds.parse(value);

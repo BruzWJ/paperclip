@@ -1,8 +1,6 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
-import {
-  patchInstanceGeneralSettingsSchema,
-} from "@paperclipai/shared";
+import { patchInstanceGeneralSettingsSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { instanceSettingsService, logActivity } from "../services/index.js";
 import { assertBoardOrgAccess, assertInstanceAdmin } from "./authz.js";

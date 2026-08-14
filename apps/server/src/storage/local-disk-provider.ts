@@ -44,12 +44,8 @@ export function createLocalDiskStorageProvider(baseDir: string): StorageProvider
       if (!stat || !stat.isFile()) {
         throw notFound("Object not found");
       }
-      const streamOptions = input.range
-        ? { start: input.range.start, end: input.range.end }
-        : undefined;
-      const contentLength = input.range
-        ? input.range.end - input.range.start + 1
-        : stat.size;
+      const streamOptions = input.range ? { start: input.range.start, end: input.range.end } : undefined;
+      const contentLength = input.range ? input.range.end - input.range.start + 1 : stat.size;
       return {
         stream: createReadStream(filePath, streamOptions),
         contentLength,

@@ -1,11 +1,10 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { approvals, taskApprovals, taskExecutionAuthorities, tasks } from "@paperclipai/db";
+import { type Db, approvals, taskApprovals, taskExecutionAuthorities, tasks } from "@paperclipai/db";
 import { isCanonicalUuid } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
 import { redactEventPayload } from "../redaction.js";
 
-interface LinkActor {
+export interface LinkActor {
   agentId?: string | null;
   userId?: string | null;
 }
@@ -108,10 +107,7 @@ export function taskApprovalService(db: Db) {
         })
         .from(taskApprovals)
         .innerJoin(tasks, eq(taskApprovals.taskId, tasks.id))
-        .leftJoin(
-          taskExecutionAuthorities,
-          eq(taskExecutionAuthorities.id, tasks.creatorAuthorityId),
-        )
+        .leftJoin(taskExecutionAuthorities, eq(taskExecutionAuthorities.id, tasks.creatorAuthorityId))
         .where(eq(taskApprovals.approvalId, approvalId))
         .orderBy(desc(taskApprovals.createdAt));
     },

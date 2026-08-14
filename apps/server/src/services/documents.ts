@@ -1,167 +1,43 @@
-import { and, asc, desc, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
 import {
+  type Db,
   documentAnnotationComments,
   documentRevisions,
   documents,
   taskDocuments,
   tasks,
 } from "@paperclipai/db";
+
 import {
-  isCanonicalUuid,
-  isSystemTaskDocumentKey,
-  taskDocumentKeySchema,
-  validationDetails,
-} from "@paperclipai/shared";
-import { conflict, notFound, unprocessable } from "../errors.js";
-import { taskReferenceService } from "./task-references.js";
+  buildDocumentsDocumentListFilter,
+  createDocumentsContext,
+  createDocumentsMutationMethods,
+  type DocumentsContext,
+} from "./document-mutations.js";
 
-function parseDocumentKey(key: string) {
-  const parsed = taskDocumentKeySchema.safeParse(key);
-  if (!parsed.success) {
-    throw unprocessable(
-      "Invalid document key",
-      validationDetails(parsed.error),
-    );
-  }
-  return parsed.data;
-}
+import { and, eq, asc, desc } from "drizzle-orm";
+import { isCanonicalUuid } from "@paperclipai/shared";
+import { conflict, notFound } from "../errors.js";
+import {
+  mapTaskDocumentRow,
+  parseDocumentKey,
+  taskDocumentSelect,
+  isUniqueViolation,
+  nextAvailableDocumentKey,
+} from "./document-projections.js";
 
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    !!error &&
-    typeof error === "object" &&
-    "code" in error &&
-    (error as { code?: string }).code === "23505"
-  );
-}
-
-function nextAvailableDocumentKey(sourceKey: string, existingKeys: string[]) {
-  const usedKeys = new Set(existingKeys);
-  for (let index = 2; index < 1000; index += 1) {
-    const suffix = `-${index}`;
-    const baseMaxLength = 64 - suffix.length;
-    const base =
-      sourceKey.slice(0, baseMaxLength).replace(/[-_]+$/g, "") || "document";
-    const candidate = `${base}${suffix}`;
-    if (
-      !usedKeys.has(candidate) &&
-      taskDocumentKeySchema.safeParse(candidate).success
-    ) {
-      return candidate;
-    }
-  }
-  throw conflict("Unable to choose a new document key for locked document", {
-    key: sourceKey,
-  });
-}
-
-type TaskDocumentRow = {
-  id: string;
-  companyId: string;
-  taskId: string;
-  key: string;
-  title: string | null;
-  format: string;
-  latestBody: string;
-  latestRevisionId: string | null;
-  latestRevisionNumber: number;
-  createdByAgentId: string | null;
-  createdByUserId: string | null;
-  updatedByAgentId: string | null;
-  updatedByUserId: string | null;
-  lockedAt: Date | null;
-  lockedByAgentId: string | null;
-  lockedByUserId: string | null;
-  sourceTrust: typeof documents.$inferSelect.sourceTrust;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-function mapTaskDocumentBase(row: TaskDocumentRow) {
-  return {
-    id: row.id,
-    companyId: row.companyId,
-    taskId: row.taskId,
-    key: row.key,
-    title: row.title,
-    format: row.format,
-    latestRevisionId: row.latestRevisionId ?? null,
-    latestRevisionNumber: row.latestRevisionNumber,
-    createdByAgentId: row.createdByAgentId,
-    createdByUserId: row.createdByUserId,
-    updatedByAgentId: row.updatedByAgentId,
-    updatedByUserId: row.updatedByUserId,
-    lockedAt: row.lockedAt,
-    lockedByAgentId: row.lockedByAgentId,
-    lockedByUserId: row.lockedByUserId,
-    sourceTrust: row.sourceTrust ?? null,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-export function mapTaskDocumentRow(
-  row: TaskDocumentRow,
-  includeBody: true,
-): ReturnType<typeof mapTaskDocumentBase> & { body: string };
-export function mapTaskDocumentRow(
-  row: TaskDocumentRow,
-  includeBody: false,
-): ReturnType<typeof mapTaskDocumentBase>;
-export function mapTaskDocumentRow(row: TaskDocumentRow, includeBody: boolean) {
-  const document = mapTaskDocumentBase(row);
-  return includeBody ? { ...document, body: row.latestBody } : document;
-}
-
-export const taskDocumentSelect = {
-  id: documents.id,
-  companyId: documents.companyId,
-  taskId: taskDocuments.taskId,
-  key: taskDocuments.key,
-  title: documents.title,
-  format: documents.format,
-  latestBody: documents.latestBody,
-  latestRevisionId: documents.latestRevisionId,
-  latestRevisionNumber: documents.latestRevisionNumber,
-  createdByAgentId: documents.createdByAgentId,
-  createdByUserId: documents.createdByUserId,
-  updatedByAgentId: documents.updatedByAgentId,
-  updatedByUserId: documents.updatedByUserId,
-  lockedAt: documents.lockedAt,
-  lockedByAgentId: documents.lockedByAgentId,
-  lockedByUserId: documents.lockedByUserId,
-  sourceTrust: documents.sourceTrust,
-  createdAt: documents.createdAt,
-  updatedAt: documents.updatedAt,
-};
-
-export function documentService(db: Db) {
-  const filterSystemDocuments = <T extends { key: string }>(
-    rows: T[],
-    includeSystem: boolean,
-  ) =>
-    includeSystem
-      ? rows
-      : rows.filter((row) => !isSystemTaskDocumentKey(row.key));
-  const taskReferences = taskReferenceService(db);
+export function createDocumentsReadMethods(
+  scope: DocumentsContext & ReturnType<typeof buildDocumentsDocumentListFilter>,
+) {
+  const { db, filterSystemDocuments } = scope;
 
   return {
-    getTaskDocumentPayload: async (
-      task: { id: string },
-      options: { includeSystem?: boolean } = {},
-    ) => {
+    getTaskDocumentPayload: async (task: { id: string }, options: { includeSystem?: boolean } = {}) => {
       const [planDocument, documentSummaries] = await Promise.all([
         db
           .select(taskDocumentSelect)
           .from(taskDocuments)
           .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
-          .where(
-            and(
-              eq(taskDocuments.taskId, task.id),
-              eq(taskDocuments.key, "plan"),
-            ),
-          )
+          .where(and(eq(taskDocuments.taskId, task.id), eq(taskDocuments.key, "plan")))
           .then((rows) => rows[0] ?? null),
         db
           .select(taskDocumentSelect)
@@ -172,28 +48,22 @@ export function documentService(db: Db) {
       ]);
 
       return {
-        planDocument: planDocument
-          ? mapTaskDocumentRow(planDocument, true)
-          : null,
-        documentSummaries: filterSystemDocuments(
-          documentSummaries,
-          options.includeSystem ?? false,
-        ).map((row) => mapTaskDocumentRow(row, false)),
+        planDocument: planDocument ? mapTaskDocumentRow(planDocument, true) : null,
+        documentSummaries: filterSystemDocuments(documentSummaries, options.includeSystem ?? false).map(
+          (row) => mapTaskDocumentRow(row, false),
+        ),
       };
     },
 
-    listTaskDocuments: async (
-      taskId: string,
-      options: { includeSystem?: boolean } = {},
-    ) => {
+    listTaskDocuments: async (taskId: string, options: { includeSystem?: boolean } = {}) => {
       const rows = await db
         .select(taskDocumentSelect)
         .from(taskDocuments)
         .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
         .where(eq(taskDocuments.taskId, taskId))
         .orderBy(asc(taskDocuments.key), desc(documents.updatedAt));
-      return filterSystemDocuments(rows, options.includeSystem ?? false).map(
-        (row) => mapTaskDocumentRow(row, true),
+      return filterSystemDocuments(rows, options.includeSystem ?? false).map((row) =>
+        mapTaskDocumentRow(row, true),
       );
     },
 
@@ -203,9 +73,7 @@ export function documentService(db: Db) {
         .select(taskDocumentSelect)
         .from(taskDocuments)
         .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
-        .where(
-          and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)),
-        )
+        .where(and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)))
         .then((rows) => rows[0] ?? null);
       return row ? mapTaskDocumentRow(row, true) : null;
     },
@@ -230,16 +98,19 @@ export function documentService(db: Db) {
         })
         .from(taskDocuments)
         .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
-        .innerJoin(
-          documentRevisions,
-          eq(documentRevisions.documentId, documents.id),
-        )
-        .where(
-          and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)),
-        )
+        .innerJoin(documentRevisions, eq(documentRevisions.documentId, documents.id))
+        .where(and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)))
         .orderBy(desc(documentRevisions.revisionNumber));
     },
+  };
+}
 
+function createDocumentsUpsertMethod(
+  scope: DocumentsContext & ReturnType<typeof buildDocumentsDocumentListFilter>,
+) {
+  const { db, taskReferences } = scope;
+
+  return {
     upsertTaskDocument: async (input: {
       taskId: string;
       key: string;
@@ -262,8 +133,7 @@ export function documentService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!task) throw notFound("Task not found");
 
-      const maxAttempts =
-        input.lockedDocumentStrategy === "create_new_document" ? 3 : 1;
+      const maxAttempts = input.lockedDocumentStrategy === "create_new_document" ? 3 : 1;
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         try {
           return await db.transaction(async (tx) => {
@@ -338,12 +208,7 @@ export function documentService(db: Db) {
               .select(taskDocumentSelect)
               .from(taskDocuments)
               .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
-              .where(
-                and(
-                  eq(taskDocuments.taskId, task.id),
-                  eq(taskDocuments.key, key),
-                ),
-              )
+              .where(and(eq(taskDocuments.taskId, task.id), eq(taskDocuments.key, key)))
               .then((rows) => rows[0] ?? null);
 
             if (existing) {
@@ -456,10 +321,7 @@ export function documentService(db: Db) {
           });
         } catch (error) {
           if (isUniqueViolation(error)) {
-            if (
-              input.lockedDocumentStrategy === "create_new_document" &&
-              attempt < maxAttempts - 1
-            ) {
+            if (input.lockedDocumentStrategy === "create_new_document" && attempt < maxAttempts - 1) {
               continue;
             }
             throw conflict("Document key already exists on this task", { key });
@@ -468,273 +330,20 @@ export function documentService(db: Db) {
         }
       }
 
-      throw conflict(
-        "Unable to choose a new document key for locked document",
-        { key },
-      );
-    },
-
-    restoreTaskDocumentRevision: async (input: {
-      taskId: string;
-      key: string;
-      revisionId: string;
-      createdByAgentId?: string | null;
-      createdByUserId?: string | null;
-    }) => {
-      if (!isCanonicalUuid(input.revisionId)) {
-        throw notFound("Document revision not found");
-      }
-      const key = parseDocumentKey(input.key);
-      return db.transaction(async (tx) => {
-        const existing = await tx
-          .select(taskDocumentSelect)
-          .from(taskDocuments)
-          .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
-          .where(
-            and(
-              eq(taskDocuments.taskId, input.taskId),
-              eq(taskDocuments.key, key),
-            ),
-          )
-          .then((rows) => rows[0] ?? null);
-
-        if (!existing) throw notFound("Document not found");
-        if (existing.lockedAt) {
-          throw conflict("Document is locked", {
-            key: existing.key,
-            documentId: existing.id,
-            lockedAt: existing.lockedAt,
-          });
-        }
-
-        const revision = await tx
-          .select({
-            id: documentRevisions.id,
-            companyId: documentRevisions.companyId,
-            documentId: documentRevisions.documentId,
-            revisionNumber: documentRevisions.revisionNumber,
-            title: documentRevisions.title,
-            format: documentRevisions.format,
-            body: documentRevisions.body,
-          })
-          .from(documentRevisions)
-          .where(
-            and(
-              eq(documentRevisions.id, input.revisionId),
-              eq(documentRevisions.documentId, existing.id),
-            ),
-          )
-          .then((rows) => rows[0] ?? null);
-
-        if (!revision) throw notFound("Document revision not found");
-        if (existing.latestRevisionId === revision.id) {
-          throw conflict("Selected revision is already the latest revision", {
-            currentRevisionId: existing.latestRevisionId,
-          });
-        }
-
-        const now = new Date();
-        const nextRevisionNumber = existing.latestRevisionNumber + 1;
-        const [restoredRevision] = await tx
-          .insert(documentRevisions)
-          .values({
-            companyId: existing.companyId,
-            documentId: existing.id,
-            revisionNumber: nextRevisionNumber,
-            title: revision.title ?? null,
-            format: revision.format,
-            body: revision.body,
-            changeSummary: `Restored from revision ${revision.revisionNumber}`,
-            createdByAgentId: input.createdByAgentId ?? null,
-            createdByUserId: input.createdByUserId ?? null,
-            createdAt: now,
-          })
-          .returning();
-
-        await tx
-          .update(documents)
-          .set({
-            title: revision.title ?? null,
-            format: revision.format,
-            latestBody: revision.body,
-            latestRevisionId: restoredRevision.id,
-            latestRevisionNumber: nextRevisionNumber,
-            updatedByAgentId: input.createdByAgentId ?? null,
-            updatedByUserId: input.createdByUserId ?? null,
-            updatedAt: now,
-          })
-          .where(eq(documents.id, existing.id));
-
-        await tx
-          .update(taskDocuments)
-          .set({ updatedAt: now })
-          .where(eq(taskDocuments.documentId, existing.id));
-        await taskReferences.syncDocument(existing.id, tx);
-
-        return {
-          restoredFromRevisionId: revision.id,
-          restoredFromRevisionNumber: revision.revisionNumber,
-          document: {
-            ...existing,
-            title: revision.title ?? null,
-            format: revision.format,
-            body: revision.body,
-            latestRevisionId: restoredRevision.id,
-            latestRevisionNumber: nextRevisionNumber,
-            updatedByAgentId: input.createdByAgentId ?? null,
-            updatedByUserId: input.createdByUserId ?? null,
-            updatedAt: now,
-          },
-        };
-      });
-    },
-
-    lockTaskDocument: async (input: {
-      taskId: string;
-      key: string;
-      lockedByAgentId?: string | null;
-      lockedByUserId?: string | null;
-    }) => {
-      const key = parseDocumentKey(input.key);
-      return db.transaction(async (tx) => {
-        const existing = await tx
-          .select(taskDocumentSelect)
-          .from(taskDocuments)
-          .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
-          .where(
-            and(
-              eq(taskDocuments.taskId, input.taskId),
-              eq(taskDocuments.key, key),
-            ),
-          )
-          .then((rows) => rows[0] ?? null);
-
-        if (!existing) throw notFound("Document not found");
-        if (existing.lockedAt) {
-          return {
-            changed: false as const,
-            document: mapTaskDocumentRow(existing, true),
-          };
-        }
-
-        const now = new Date();
-        await tx
-          .update(documents)
-          .set({
-            lockedAt: now,
-            lockedByAgentId: input.lockedByAgentId ?? null,
-            lockedByUserId: input.lockedByUserId ?? null,
-            updatedAt: now,
-          })
-          .where(eq(documents.id, existing.id));
-
-        await tx
-          .update(taskDocuments)
-          .set({ updatedAt: now })
-          .where(eq(taskDocuments.documentId, existing.id));
-
-        return {
-          changed: true as const,
-          document: {
-            ...mapTaskDocumentRow(existing, true),
-            lockedAt: now,
-            lockedByAgentId: input.lockedByAgentId ?? null,
-            lockedByUserId: input.lockedByUserId ?? null,
-            updatedAt: now,
-          },
-        };
-      });
-    },
-
-    unlockTaskDocument: async (taskId: string, rawKey: string) => {
-      const key = parseDocumentKey(rawKey);
-      return db.transaction(async (tx) => {
-        const existing = await tx
-          .select(taskDocumentSelect)
-          .from(taskDocuments)
-          .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
-          .where(
-            and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)),
-          )
-          .then((rows) => rows[0] ?? null);
-
-        if (!existing) throw notFound("Document not found");
-        if (!existing.lockedAt) {
-          return {
-            changed: false as const,
-            document: mapTaskDocumentRow(existing, true),
-          };
-        }
-
-        const now = new Date();
-        await tx
-          .update(documents)
-          .set({
-            lockedAt: null,
-            lockedByAgentId: null,
-            lockedByUserId: null,
-            updatedAt: now,
-          })
-          .where(eq(documents.id, existing.id));
-
-        await tx
-          .update(taskDocuments)
-          .set({ updatedAt: now })
-          .where(eq(taskDocuments.documentId, existing.id));
-
-        return {
-          changed: true as const,
-          document: {
-            ...mapTaskDocumentRow(existing, true),
-            lockedAt: null,
-            lockedByAgentId: null,
-            lockedByUserId: null,
-            updatedAt: now,
-          },
-        };
-      });
-    },
-
-    deleteTaskDocument: async (taskId: string, rawKey: string) => {
-      const key = parseDocumentKey(rawKey);
-      return db.transaction(async (tx) => {
-        const existing = await tx
-          .select(taskDocumentSelect)
-          .from(taskDocuments)
-          .innerJoin(documents, eq(taskDocuments.documentId, documents.id))
-          .where(
-            and(eq(taskDocuments.taskId, taskId), eq(taskDocuments.key, key)),
-          )
-          .then((rows) => rows[0] ?? null);
-
-        if (!existing) return null;
-        if (existing.lockedAt) {
-          throw conflict("Document is locked", {
-            key: existing.key,
-            documentId: existing.id,
-            lockedAt: existing.lockedAt,
-          });
-        }
-
-        const annotationCommentIds = await tx
-          .select({ id: documentAnnotationComments.id })
-          .from(documentAnnotationComments)
-          .where(eq(documentAnnotationComments.documentId, existing.id));
-        for (const annotationComment of annotationCommentIds) {
-          await taskReferences.deleteCommentSource(annotationComment.id, tx);
-        }
-        await taskReferences.deleteDocumentSource(existing.id, tx);
-        await tx
-          .delete(taskDocuments)
-          .where(eq(taskDocuments.documentId, existing.id));
-        await tx.delete(documents).where(eq(documents.id, existing.id));
-
-        return {
-          ...existing,
-          body: existing.latestBody,
-          latestRevisionId: existing.latestRevisionId ?? null,
-        };
-      });
+      throw conflict("Unable to choose a new document key for locked document", { key });
     },
   };
+}
+
+export { mapTaskDocumentRow, taskDocumentSelect } from "./document-projections.js";
+
+export function documentService(db: Db) {
+  const context = createDocumentsContext(db);
+  const helpers1 = buildDocumentsDocumentListFilter(context);
+  const scope1 = { ...context, ...helpers1 };
+  const scope = scope1;
+  const methods1 = createDocumentsReadMethods(scope);
+  const methods2 = createDocumentsUpsertMethod(scope);
+  const methods3 = createDocumentsMutationMethods(scope);
+  return { ...methods1, ...methods2, ...methods3 };
 }

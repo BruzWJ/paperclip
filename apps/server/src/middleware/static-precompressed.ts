@@ -15,9 +15,7 @@ const VARIANT_EXTENSION: Record<PrecompressedEncoding, string> = {
  * first. An explicit `q=0` on an encoding forbids it even when a wildcard
  * would otherwise allow it. Ties in q-value prefer brotli (smaller output).
  */
-function negotiatePrecompressedEncodings(
-  value: string | string[] | undefined,
-): PrecompressedEncoding[] {
+function negotiatePrecompressedEncodings(value: string | string[] | undefined): PrecompressedEncoding[] {
   const preferences = parseAcceptEncoding(value);
   const findQ = (encoding: PrecompressedEncoding): number =>
     preferences.find((entry) => entry.encoding === encoding)?.q ??

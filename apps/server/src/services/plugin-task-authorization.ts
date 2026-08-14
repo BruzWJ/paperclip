@@ -1,8 +1,4 @@
-import {
-  companies,
-  plugins,
-  type Db,
-} from "@paperclipai/db";
+import { companies, plugins, type Db } from "@paperclipai/db";
 import { eq } from "drizzle-orm";
 import {
   resolveInvokableTaskOwnerCatalogInTransaction,
@@ -22,15 +18,11 @@ export interface PluginTaskAuthorizationIdentity {
   pluginKey: string;
 }
 
-export interface PluginTaskOwnerCatalogInput
-  extends PluginTaskAuthorizationIdentity {
+export interface PluginTaskOwnerCatalogInput extends PluginTaskAuthorizationIdentity {
   operation: PluginTaskOwnerOperation;
   installation: typeof plugins.$inferSelect | null;
   company: typeof companies.$inferSelect | null;
-  invokableOwnerCatalog: ReadonlyMap<
-    string,
-    InvokableTaskOwnerResolution
-  >;
+  invokableOwnerCatalog: ReadonlyMap<string, InvokableTaskOwnerResolution>;
 }
 
 export type PluginTaskAuthorizationRejectionReason =
@@ -67,42 +59,30 @@ function assertInstallationRequestScope(
 ): typeof plugins.$inferSelect {
   const { installation, company } = input;
   if (!installation) {
-    reject(
-      "plugin_installation_missing",
-      "Plugin installation is unavailable",
-      { pluginInstallationId: input.pluginInstallationId },
-    );
+    reject("plugin_installation_missing", "Plugin installation is unavailable", {
+      pluginInstallationId: input.pluginInstallationId,
+    });
   }
   if (
     installation.id !== input.pluginInstallationId ||
     installation.pluginKey !== input.pluginKey ||
     installation.manifestJson.id !== input.pluginKey
   ) {
-    reject(
-      "plugin_installation_identity_mismatch",
-      "Plugin installation identity does not match",
-      {
-        pluginInstallationId: input.pluginInstallationId,
-        pluginKey: input.pluginKey,
-      },
-    );
+    reject("plugin_installation_identity_mismatch", "Plugin installation identity does not match", {
+      pluginInstallationId: input.pluginInstallationId,
+      pluginKey: input.pluginKey,
+    });
   }
   if (installation.status !== "ready") {
-    reject(
-      "plugin_installation_not_ready",
-      "Plugin installation is not ready",
-      {
-        pluginInstallationId: installation.id,
-        pluginStatus: installation.status,
-      },
-    );
+    reject("plugin_installation_not_ready", "Plugin installation is not ready", {
+      pluginInstallationId: installation.id,
+      pluginStatus: installation.status,
+    });
   }
   if (!company || company.id !== input.companyId) {
-    reject(
-      "plugin_company_missing",
-      "Plugin company is unavailable",
-      { companyId: input.companyId },
-    );
+    reject("plugin_company_missing", "Plugin company is unavailable", {
+      companyId: input.companyId,
+    });
   }
   return installation;
 }
@@ -115,14 +95,10 @@ function assertPluginTaskOperationAvailability(
 ): typeof plugins.$inferSelect {
   const installation = assertInstallationRequestScope(input);
   if (!installation.manifestJson.capabilities.includes(input.operation)) {
-    reject(
-      "plugin_operation_not_approved",
-      "Plugin operation is not approved",
-      {
-        pluginInstallationId: installation.id,
-        operation: input.operation,
-      },
-    );
+    reject("plugin_operation_not_approved", "Plugin operation is not approved", {
+      pluginInstallationId: installation.id,
+      operation: input.operation,
+    });
   }
   return installation;
 }
@@ -205,15 +181,13 @@ export async function resolvePluginPermittedTaskOwnerCatalogInTransaction(
     operation: PluginTaskOwnerOperation;
   },
 ): Promise<ReadonlyMap<string, InvokableTaskOwnerResolution>> {
-  const availability =
-    await lockPluginInstallationCompanyScopeInTransaction(tx, input);
+  const availability = await lockPluginInstallationCompanyScopeInTransaction(tx, input);
   // Reject an unavailable installation/company/capability before doing the
   // broader agent-graph lock, while retaining the same transaction boundary.
   assertPluginTaskOperationAvailability({ ...input, ...availability });
-  const invokableOwnerCatalog =
-    await resolveInvokableTaskOwnerCatalogInTransaction(tx, {
-      companyId: input.companyId,
-    });
+  const invokableOwnerCatalog = await resolveInvokableTaskOwnerCatalogInTransaction(tx, {
+    companyId: input.companyId,
+  });
   return resolvePluginPermittedTaskOwnerCatalog({
     ...input,
     ...availability,
@@ -232,7 +206,6 @@ export async function assertPluginPermittedTaskOwnerInTransaction(
     ownerAgentId: string;
   },
 ): Promise<InvokableTaskOwnerResolution> {
-  const catalog =
-    await resolvePluginPermittedTaskOwnerCatalogInTransaction(tx, input);
+  const catalog = await resolvePluginPermittedTaskOwnerCatalogInTransaction(tx, input);
   return selectPluginPermittedTaskOwner(catalog, input);
 }

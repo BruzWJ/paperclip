@@ -1,6 +1,5 @@
 import { and, eq, inArray, not } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { agents, approvals } from "@paperclipai/db";
+import { type Db, agents, approvals } from "@paperclipai/db";
 import type { SidebarBadges } from "@paperclipai/shared";
 import {
   listTaskExecutionRunsForActivity,
@@ -33,7 +32,11 @@ export function sidebarBadgeService(db: Db) {
       companyId: string,
       extra?: {
         dismissals?: ReadonlyMap<string, number>;
-        joinRequests?: Array<{ id: string; updatedAt: Date | string | null; createdAt: Date | string }>;
+        joinRequests?: Array<{
+          id: string;
+          updatedAt: Date | string | null;
+          createdAt: Date | string;
+        }>;
         unreadTouchedTasks?: number;
       },
     ): Promise<SidebarBadges> => {
@@ -41,23 +44,20 @@ export function sidebarBadgeService(db: Db) {
         .select({ id: approvals.id, updatedAt: approvals.updatedAt })
         .from(approvals)
         .where(
-          and(
-            eq(approvals.companyId, companyId),
-            inArray(approvals.status, ACTIONABLE_APPROVAL_STATUSES),
-          ),
+          and(eq(approvals.companyId, companyId), inArray(approvals.status, ACTIONABLE_APPROVAL_STATUSES)),
         )
-        .then((rows) =>
-          rows.filter((row) => !isDismissed(extra?.dismissals ?? new Map(), `approval:${row.id}`, row.updatedAt)).length
+        .then(
+          (rows) =>
+            rows.filter(
+              (row) => !isDismissed(extra?.dismissals ?? new Map(), `approval:${row.id}`, row.updatedAt),
+            ).length,
         );
 
       const activeAgentIds = new Set(
         await db
           .select({ id: agents.id })
           .from(agents)
-          .where(and(
-            eq(agents.companyId, companyId),
-            not(eq(agents.status, "terminated")),
-          ))
+          .where(and(eq(agents.companyId, companyId), not(eq(agents.status, "terminated"))))
           .then((rows) => rows.map((row) => row.id)),
       );
       const latestRunByAgent = new Map<string, TaskExecutionRunEnvelope>();
@@ -69,27 +69,22 @@ export function sidebarBadgeService(db: Db) {
           limit: 200,
         });
         for (const run of page.items) {
-          if (
-            activeAgentIds.has(run.targetAgentId) &&
-            !latestRunByAgent.has(run.targetAgentId)
-          ) {
+          if (activeAgentIds.has(run.targetAgentId) && !latestRunByAgent.has(run.targetAgentId)) {
             latestRunByAgent.set(run.targetAgentId, run);
           }
         }
         cursor = page.nextCursor;
       } while (cursor !== null);
 
-      const failedRuns = [...latestRunByAgent.values()].filter((run) =>
-        FAILED_RUN_STATUSES.includes(run.status)
-        && !isDismissed(extra?.dismissals ?? new Map(), `run:${run.runId}`, run.createdAt),
+      const failedRuns = [...latestRunByAgent.values()].filter(
+        (run) =>
+          FAILED_RUN_STATUSES.includes(run.status) &&
+          !isDismissed(extra?.dismissals ?? new Map(), `run:${run.runId}`, run.createdAt),
       ).length;
 
-      const joinRequests = (extra?.joinRequests ?? []).filter((row) =>
-        !isDismissed(
-          extra?.dismissals ?? new Map(),
-          `join:${row.id}`,
-          row.updatedAt ?? row.createdAt,
-        )
+      const joinRequests = (extra?.joinRequests ?? []).filter(
+        (row) =>
+          !isDismissed(extra?.dismissals ?? new Map(), `join:${row.id}`, row.updatedAt ?? row.createdAt),
       ).length;
       const unreadTouchedTasks = extra?.unreadTouchedTasks ?? 0;
       return {

@@ -1,12 +1,8 @@
-import type { Db } from "@paperclipai/db";
-import { changeConsents } from "@paperclipai/db";
+import { type Db, changeConsents } from "@paperclipai/db";
 import { and, desc, eq, gt, inArray, isNull, lt, ne } from "drizzle-orm";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { isCanonicalUuid } from "@paperclipai/shared";
-import {
-  readTaskExecutionRun,
-  resolveTaskExecutionRunIdentityById,
-} from "./task-execution-run-service.js";
+import { readTaskExecutionRun, resolveTaskExecutionRunIdentityById } from "./task-execution-run-service.js";
 
 export const CHANGE_CONSENT_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -16,13 +12,10 @@ export function agentProfileChangeTargetKey(agentId: string) {
   return `agent:${agentId}:profile`;
 }
 
-export type ChangeConsentTransaction =
-  Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type ChangeConsentTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 function readExactNonEmptyString(value: unknown) {
-  return typeof value === "string" && value.length > 0 && value.trim() === value
-    ? value
-    : null;
+  return typeof value === "string" && value.length > 0 && value.trim() === value ? value : null;
 }
 
 function hasDisplayedDiff(value: string) {
@@ -45,17 +38,12 @@ export async function consumeAcceptedChangeConsentInTransaction(
 
   const actorRunId = input.actorRunId;
   if (!isCanonicalUuid(actorRunId)) {
-    throw forbidden(
-      "Agent mutations requiring change consent need a run id",
-      { code: "change_consent_run_id_required" },
-    );
+    throw forbidden("Agent mutations requiring change consent need a run id", {
+      code: "change_consent_run_id_required",
+    });
   }
   const targetKeys = [
-    ...new Set(
-      input.targetKeys
-        .map(readExactNonEmptyString)
-        .filter((key): key is string => Boolean(key)),
-    ),
+    ...new Set(input.targetKeys.map(readExactNonEmptyString).filter((key): key is string => Boolean(key))),
   ];
   if (targetKeys.length === 0) {
     throw forbidden("Mutation target is not consent-gated", {
@@ -85,10 +73,7 @@ export async function consumeAcceptedChangeConsentInTransaction(
         isNull(changeConsents.consumedByRunId),
       ),
     )
-    .orderBy(
-      desc(changeConsents.decidedAt),
-      desc(changeConsents.createdAt),
-    )
+    .orderBy(desc(changeConsents.decidedAt), desc(changeConsents.createdAt))
     .limit(1)
     .then((rows) => rows[0] ?? null);
 
@@ -131,11 +116,13 @@ export function changeConsentGateService(db: Db) {
     await db
       .update(changeConsents)
       .set({ status: "expired", updatedAt: now })
-      .where(and(
-        eq(changeConsents.companyId, companyId),
-        eq(changeConsents.status, "pending"),
-        lt(changeConsents.expiresAt, now),
-      ));
+      .where(
+        and(
+          eq(changeConsents.companyId, companyId),
+          eq(changeConsents.status, "pending"),
+          lt(changeConsents.expiresAt, now),
+        ),
+      );
   }
 
   return {
@@ -161,16 +148,16 @@ export function changeConsentGateService(db: Db) {
         throw badRequest("Change consent requires the exact displayed diff");
       }
       const now = new Date();
-      if (!(input.expiresAt instanceof Date) || Number.isNaN(input.expiresAt.getTime()) || input.expiresAt <= now) {
+      if (
+        !(input.expiresAt instanceof Date) ||
+        Number.isNaN(input.expiresAt.getTime()) ||
+        input.expiresAt <= now
+      ) {
         throw badRequest("Change consent expiry must be in the future");
       }
-      const sourceIdentity = await resolveTaskExecutionRunIdentityById(
-        db,
-        input.sourceRunId,
-      );
-      const sourceRun = sourceIdentity?.companyId === input.companyId
-        ? await readTaskExecutionRun(db, sourceIdentity)
-        : null;
+      const sourceIdentity = await resolveTaskExecutionRunIdentityById(db, input.sourceRunId);
+      const sourceRun =
+        sourceIdentity?.companyId === input.companyId ? await readTaskExecutionRun(db, sourceIdentity) : null;
       if (!sourceRun || sourceRun.targetAgentId !== input.requestedByAgentId) {
         throw badRequest("Change consent source run is invalid");
       }
@@ -194,9 +181,11 @@ export function changeConsentGateService(db: Db) {
       return db
         .select()
         .from(changeConsents)
-        .where(status
-          ? and(eq(changeConsents.companyId, companyId), eq(changeConsents.status, status))
-          : eq(changeConsents.companyId, companyId))
+        .where(
+          status
+            ? and(eq(changeConsents.companyId, companyId), eq(changeConsents.status, status))
+            : eq(changeConsents.companyId, companyId),
+        )
         .orderBy(desc(changeConsents.createdAt));
     },
 
@@ -218,20 +207,19 @@ export function changeConsentGateService(db: Db) {
         .update(changeConsents)
         .set({
           status: input.decision,
-          decisionReason:
-            input.reason === null || input.reason === undefined
-              ? null
-              : input.reason,
+          decisionReason: input.reason === null || input.reason === undefined ? null : input.reason,
           decidedByBoardId: boardId,
           decidedAt: now,
           updatedAt: now,
         })
-        .where(and(
-          eq(changeConsents.id, input.consentId),
-          eq(changeConsents.companyId, input.companyId),
-          eq(changeConsents.status, "pending"),
-          gt(changeConsents.expiresAt, now),
-        ))
+        .where(
+          and(
+            eq(changeConsents.id, input.consentId),
+            eq(changeConsents.companyId, input.companyId),
+            eq(changeConsents.status, "pending"),
+            gt(changeConsents.expiresAt, now),
+          ),
+        )
         .returning();
       if (updated) return updated;
 
@@ -241,7 +229,9 @@ export function changeConsentGateService(db: Db) {
         .where(and(eq(changeConsents.id, input.consentId), eq(changeConsents.companyId, input.companyId)))
         .then((rows) => rows[0] ?? null);
       if (!existing) throw notFound("Change consent not found");
-      throw conflict("Change consent is no longer pending", { status: existing.status });
+      throw conflict("Change consent is no longer pending", {
+        status: existing.status,
+      });
     },
 
     assertConsented: async (input: {
@@ -251,9 +241,7 @@ export function changeConsentGateService(db: Db) {
       targetKeys: string[];
       displayedDiff: string;
     }): Promise<boolean> => {
-      return db.transaction((tx) =>
-        consumeAcceptedChangeConsentInTransaction(tx, input),
-      );
+      return db.transaction((tx) => consumeAcceptedChangeConsentInTransaction(tx, input));
     },
   };
 }

@@ -1,5 +1,4 @@
-import { Router } from "express";
-import type { Request } from "express";
+import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   createTaskTreeHoldSchema,
@@ -11,19 +10,12 @@ import { validate } from "../middleware/validate.js";
 import { taskService, taskTreeControlService, logActivity } from "../services/index.js";
 import type { TaskTreeCancellationPort } from "../services/task-tree-control.js";
 import { assertBoard, getAccessibleResource } from "./authz.js";
-import {
-  assertExactQueryKeys,
-  parseExactBooleanQuery,
-  parseExactOptionalEnum,
-} from "./exact-query.js";
+import { assertExactQueryKeys, parseExactBooleanQuery, parseExactOptionalEnum } from "./exact-query.js";
 
 const TREE_HOLD_STATUSES = ["active", "released"] as const;
 const TREE_HOLD_MODES = ["pause", "resume", "cancel", "restore"] as const;
 
-export function taskTreeControlRoutes(
-  db: Db,
-  taskExecutionCancellation: TaskTreeCancellationPort,
-) {
+export function taskTreeControlRoutes(db: Db, taskExecutionCancellation: TaskTreeCancellationPort) {
   const router = Router({ caseSensitive: true, strict: true });
   const tasksSvc = taskService(db);
   const treeControlSvc = taskTreeControlService(db, {
@@ -73,10 +65,7 @@ export function taskTreeControlRoutes(
       ...req.body,
       actor: actorInput,
     });
-    const {
-      cancelledTaskIds,
-      ...createdResult
-    } = applied;
+    const { cancelledTaskIds, ...createdResult } = applied;
     let result = createdResult;
     await logActivity(db, {
       companyId: root.companyId,
@@ -113,19 +102,26 @@ export function taskTreeControlRoutes(
     if (result.hold.mode === "restore") {
       let statusUpdate;
       try {
-        statusUpdate = await treeControlSvc.restoreTaskStatusesForHold(root.companyId, root.id, result.hold.id, {
-          reason: result.hold.reason,
-          actor: actorInput,
-        });
-      } catch (error) {
-        await treeControlSvc.releaseHold(root.companyId, root.id, result.hold.id, {
-          reason: "Restore operation failed before subtree status updates completed",
-          metadata: {
-            cleanup: "restore_failed_before_apply",
+        statusUpdate = await treeControlSvc.restoreTaskStatusesForHold(
+          root.companyId,
+          root.id,
+          result.hold.id,
+          {
+            reason: result.hold.reason,
+            actor: actorInput,
           },
-          actor: actorInput,
-          internal: true,
-        }).catch(() => null);
+        );
+      } catch (error) {
+        await treeControlSvc
+          .releaseHold(root.companyId, root.id, result.hold.id, {
+            reason: "Restore operation failed before subtree status updates completed",
+            metadata: {
+              cleanup: "restore_failed_before_apply",
+            },
+            actor: actorInput,
+            internal: true,
+          })
+          .catch(() => null);
         throw error;
       }
       if (statusUpdate.restoreHold) {
@@ -145,12 +141,9 @@ export function taskTreeControlRoutes(
           releasedCancelHoldIds: statusUpdate.releasedCancelHoldIds,
         },
       });
-
     }
 
-    res
-      .status(result.hold.mode === "restore" || result.hold.mode === "resume" ? 200 : 201)
-      .json(result);
+    res.status(result.hold.mode === "restore" || result.hold.mode === "resume" ? 200 : 201).json(result);
   });
 
   router.get("/tasks/:id/tree-control/state", async (req, res) => {

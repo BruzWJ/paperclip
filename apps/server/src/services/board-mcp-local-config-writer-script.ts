@@ -390,5 +390,4 @@ const alreadyExists =
     ? writeTomlConfig(filePath, agent.entry())
     : writeJsonConfig(filePath, agent.configKey, agent.entry())
 
-console.log(JSON.stringify({ path: filePath, alreadyExists: alreadyExists }))`
-
+console.log(JSON.stringify({ path: filePath, alreadyExists: alreadyExists }))`;

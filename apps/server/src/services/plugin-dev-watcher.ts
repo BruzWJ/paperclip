@@ -34,19 +34,18 @@ interface PluginDevWatchSource {
   manifest: PaperclipPluginManifestV1;
 }
 
-type ResolveLocalPluginSource = (
-  pluginId: string,
-) => Promise<PluginDevWatchSource | null>;
+type ResolveLocalPluginSource = (pluginId: string) => Promise<PluginDevWatchSource | null>;
 
 export function resolvePluginWatchTargets(
   packagePath: string,
   manifest: PaperclipPluginManifestV1,
 ): string[] {
-  return [resolvePluginPath(
-    packagePath,
-    manifest.entrypoints.worker,
-    { label: "manifest.entrypoints.worker", kind: "file" },
-  )];
+  return [
+    resolvePluginPath(packagePath, manifest.entrypoints.worker, {
+      label: "manifest.entrypoints.worker",
+      kind: "file",
+    }),
+  ];
 }
 
 /**
@@ -72,17 +71,14 @@ export function createPluginDevWatcher(
 
     try {
       const watcherTargets = resolvePluginWatchTargets(absPath, source.manifest);
-      const watcher = chokidar.watch(
-        watcherTargets,
-        {
-          ignoreInitial: true,
-          awaitWriteFinish: {
-            stabilityThreshold: 200,
-            pollInterval: 100,
-          },
-          followSymlinks: false,
+      const watcher = chokidar.watch(watcherTargets, {
+        ignoreInitial: true,
+        awaitWriteFinish: {
+          stabilityThreshold: 200,
+          pollInterval: 100,
         },
-      );
+        followSymlinks: false,
+      });
 
       watcher.on("all", (_eventName, changedPath) => {
         const relativePath = path.relative(absPath, changedPath);
@@ -95,7 +91,10 @@ export function createPluginDevWatcher(
           setTimeout(() => {
             debounceTimers.delete(pluginId);
             log.info(
-              { pluginId, changedFile: relativePath || path.basename(changedPath) },
+              {
+                pluginId,
+                changedFile: relativePath || path.basename(changedPath),
+              },
               "plugin-dev-watcher: file change detected, reloading plugin runtime",
             );
 
@@ -172,10 +171,7 @@ export function createPluginDevWatcher(
       const source = await resolveLocalPluginSource(pluginId);
       if (closed || !activePluginIds.has(pluginId)) return;
       if (!source) {
-        log.debug(
-          { pluginId },
-          "plugin-dev-watcher: plugin is not a local-path install, skipping watch",
-        );
+        log.debug({ pluginId }, "plugin-dev-watcher: plugin is not a local-path install, skipping watch");
         return;
       }
       watchPlugin(pluginId, source);

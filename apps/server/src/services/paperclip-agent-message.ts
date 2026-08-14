@@ -16,9 +16,7 @@ export interface PaperclipMessageTask {
   identifier: string;
 }
 
-export type PaperclipPromptOwnerArgument =
-  | { kind: "self" }
-  | { kind: "agent"; agentId: string };
+export type PaperclipPromptOwnerArgument = { kind: "self" } | { kind: "agent"; agentId: string };
 
 interface PaperclipManagedToolPromptDefinitions {
   mention_agent: {
@@ -95,9 +93,10 @@ export type PaperclipManagedToolPromptContract = {
   } & PaperclipManagedToolPromptDefinitions[ToolName];
 }[PaperclipDeliveryPromptToolName];
 
-export type PaperclipManagedToolPrompt<
-  ToolName extends PaperclipDeliveryPromptToolName,
-> = Extract<PaperclipManagedToolPromptContract, { toolName: ToolName }>;
+export type PaperclipManagedToolPrompt<ToolName extends PaperclipDeliveryPromptToolName> = Extract<
+  PaperclipManagedToolPromptContract,
+  { toolName: ToolName }
+>;
 
 function oneLine(value: string, label: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -135,16 +134,10 @@ export function paperclipEnvelopeHasBody(
   exactBody: string,
 ): boolean {
   const separator = rendered.indexOf("\n\n");
-  return (
-    rendered.startsWith(`${heading}\n`) &&
-    separator >= 0 &&
-    rendered.slice(separator + 2) === exactBody
-  );
+  return rendered.startsWith(`${heading}\n`) && separator >= 0 && rendered.slice(separator + 2) === exactBody;
 }
 
-function renderMentionAgentPrompt(
-  input: PaperclipManagedToolPrompt<"mention_agent">,
-): string {
+function renderMentionAgentPrompt(input: PaperclipManagedToolPrompt<"mention_agent">): string {
   return envelope(
     [
       "[Paperclip agent message]",
@@ -156,9 +149,7 @@ function renderMentionAgentPrompt(
   );
 }
 
-function renderTaskCreatePrompt(
-  input: PaperclipManagedToolPrompt<"task_create">,
-): string {
+function renderTaskCreatePrompt(input: PaperclipManagedToolPrompt<"task_create">): string {
   return envelope(
     [
       "[Paperclip task assignment]",
@@ -172,9 +163,7 @@ function renderTaskCreatePrompt(
   );
 }
 
-function renderTaskAssignPrompt(
-  input: PaperclipManagedToolPrompt<"task_assign">,
-): string {
+function renderTaskAssignPrompt(input: PaperclipManagedToolPrompt<"task_assign">): string {
   return envelope(
     [
       "[Paperclip task assignment]",
@@ -188,15 +177,14 @@ function renderTaskAssignPrompt(
   );
 }
 
-function renderTaskUpdatePrompt(
-  input: PaperclipManagedToolPrompt<"task_update">,
-): string {
+function renderTaskUpdatePrompt(input: PaperclipManagedToolPrompt<"task_update">): string {
   const requestedStatus = input.arguments.status;
-  const status = requestedStatus === undefined
-    ? input.context.effectiveStatus
-    : input.context.pendingReview
-      ? `${input.context.effectiveStatus} (${requestedStatus} requested; pending execution-policy review)`
-      : `${input.context.previousStatus} -> ${input.context.effectiveStatus}`;
+  const status =
+    requestedStatus === undefined
+      ? input.context.effectiveStatus
+      : input.context.pendingReview
+        ? `${input.context.effectiveStatus} (${requestedStatus} requested; pending execution-policy review)`
+        : `${input.context.previousStatus} -> ${input.context.effectiveStatus}`;
   return envelope(
     [
       "[Paperclip task update]",
@@ -208,9 +196,7 @@ function renderTaskUpdatePrompt(
   );
 }
 
-export function renderPaperclipManagedToolPrompt(
-  input: PaperclipManagedToolPromptContract,
-): string {
+export function renderPaperclipManagedToolPrompt(input: PaperclipManagedToolPromptContract): string {
   switch (input.toolName) {
     case "mention_agent":
       return renderMentionAgentPrompt(input);

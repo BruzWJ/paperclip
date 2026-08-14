@@ -1,43 +1,162 @@
+import { execFileSync } from "node:child_process";
 import { Router } from "express";
-import type { Db } from "@paperclipai/db";
+import { type Db, instanceUserRoles, invites } from "@paperclipai/db";
 import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
-import { companies, instanceUserRoles, invites } from "@paperclipai/db";
-import type { DeploymentExposure } from "@paperclipai/shared";
-import { readPersistedDevServerStatus, toDevServerHealthStatus, writeDevServerRestartRequest } from "../dev-server-status.js";
-import { logger } from "../middleware/logger.js";
-import { getServerInfoSnapshot, type ServerInfoSnapshot } from "../server-info.js";
-import { instanceSettingsService } from "../services/instance-settings.js";
+import type {
+  DeploymentExposure,
+  ServerGitInfo,
+  ServerGitLocalChanges,
+  ServerInfoSnapshot,
+} from "@paperclipai/shared";
+import { parseBuildCommit, readBuildCommit } from "../build-commit.js";
 import {
-  listTaskExecutionRunsForActivity,
-  type TaskExecutionRunListCursor,
-} from "../services/task-execution-run-service.js";
+  readPersistedDevServerStatus,
+  toDevServerHealthStatus,
+  writeDevServerRestartRequest,
+} from "../dev-server-status.js";
+import { logger } from "../middleware/logger.js";
+import { instanceSettingsService } from "../services/instance-settings.js";
+import { countActiveTaskExecutionRuns } from "../services/task-execution-run-service.js";
 import { serverVersion } from "../version.js";
 import { isBoardActor } from "../http/request-actor.js";
 import { assertBoard } from "./authz.js";
 
-const ACTIVE_RUN_STATUSES = [
-  "queued",
-  "scheduled_retry",
-  "running",
-] as const;
+type GitCommand = () => string;
+type BuildCommitCommand = () => string | null;
 
-async function countActiveTaskExecutionRuns(db: Db): Promise<number> {
-  const companyRows = await db.select({ id: companies.id }).from(companies);
-  let total = 0;
-  for (const company of companyRows) {
-    let cursor: TaskExecutionRunListCursor | null = null;
-    do {
-      const page = await listTaskExecutionRunsForActivity(db, {
-        companyId: company.id,
-        statuses: ACTIVE_RUN_STATUSES,
-        cursor,
-        limit: 200,
-      });
-      total += page.items.length;
-      cursor = page.nextCursor;
-    } while (cursor !== null);
+const SHORT_SHA_RE = /^[0-9a-f]{7,40}$/i;
+
+function runGitInfoCommand() {
+  return execFileSync("git", ["show", "-s", "--format=%H%n%h%n%s%n%cI", "HEAD"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 1500,
+  });
+}
+
+function runGitStatusCommand() {
+  return execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=normal"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 1500,
+  });
+}
+
+function runGitBranchCommand() {
+  return execFileSync("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 1500,
+  });
+}
+
+function parseGitLocalChanges(output: string): ServerGitLocalChanges {
+  let stagedFileCount = 0;
+  let unstagedFileCount = 0;
+  let untrackedFileCount = 0;
+
+  for (const line of output.split(/\r?\n/)) {
+    if (!line) continue;
+    const indexStatus = line[0] ?? " ";
+    const worktreeStatus = line[1] ?? " ";
+    if (indexStatus === "?" && worktreeStatus === "?") {
+      untrackedFileCount += 1;
+      continue;
+    }
+    if (indexStatus !== " " && indexStatus !== "?") stagedFileCount += 1;
+    if (worktreeStatus !== " " && worktreeStatus !== "?") {
+      unstagedFileCount += 1;
+    }
   }
-  return total;
+
+  return {
+    available: true,
+    hasLocalChanges: stagedFileCount + unstagedFileCount + untrackedFileCount > 0,
+    stagedFileCount,
+    unstagedFileCount,
+    untrackedFileCount,
+  };
+}
+
+function readGitLocalChanges(command: GitCommand): ServerGitLocalChanges {
+  try {
+    return parseGitLocalChanges(command());
+  } catch {
+    return { available: false, unavailableReason: "git_status_unavailable" };
+  }
+}
+
+function parseGitInfo(
+  output: string,
+  branchName: string | null,
+  localChanges: ServerGitLocalChanges,
+): ServerGitInfo {
+  const [fullSha = "", shortSha = "", subject = "", committedAt = ""] = output.trimEnd().split("\n");
+  const parsedFullSha = parseBuildCommit(fullSha);
+  const committedAtTime = Date.parse(committedAt);
+  if (!parsedFullSha || !SHORT_SHA_RE.test(shortSha)) {
+    return { available: false, unavailableReason: "invalid_git_metadata" };
+  }
+  return {
+    available: true,
+    fullSha: parsedFullSha,
+    shortSha,
+    branchName,
+    subject: subject.trim() || "No commit subject",
+    committedAt: Number.isNaN(committedAtTime) ? null : new Date(committedAtTime).toISOString(),
+    localChanges,
+  };
+}
+
+const GIT_INFO_CACHE_TTL_MS = 3000;
+const processStartedAt = new Date().toISOString();
+let gitInfoCache: { value: ServerGitInfo; expiresAt: number } | null = null;
+
+function getServerInfoSnapshot(
+  options: {
+    now?: number;
+    gitCommand?: GitCommand;
+    gitStatusCommand?: GitCommand;
+    gitBranchCommand?: GitCommand;
+    buildCommitCommand?: BuildCommitCommand;
+  } = {},
+): ServerInfoSnapshot {
+  const now = options.now ?? Date.now();
+  if (!gitInfoCache || now >= gitInfoCache.expiresAt) {
+    let git: ServerGitInfo;
+    try {
+      const branchName = (() => {
+        try {
+          return (options.gitBranchCommand ?? runGitBranchCommand)().trim() || null;
+        } catch {
+          return null;
+        }
+      })();
+      git = parseGitInfo(
+        (options.gitCommand ?? runGitInfoCommand)(),
+        branchName,
+        readGitLocalChanges(options.gitStatusCommand ?? runGitStatusCommand),
+      );
+    } catch {
+      const buildCommit = parseBuildCommit((options.buildCommitCommand ?? readBuildCommit)());
+      git = buildCommit
+        ? {
+            available: true,
+            fullSha: buildCommit,
+            shortSha: buildCommit.slice(0, 7),
+            branchName: null,
+            subject: "Source build",
+            committedAt: null,
+            localChanges: {
+              available: false,
+              unavailableReason: "git_status_unavailable",
+            },
+          }
+        : { available: false, unavailableReason: "git_unavailable" };
+    }
+    gitInfoCache = { value: git, expiresAt: now + GIT_INFO_CACHE_TTL_MS };
+  }
+  return { processStartedAt, git: gitInfoCache.value };
 }
 
 export function healthRoutes(
@@ -64,9 +183,7 @@ export function healthRoutes(
       return;
     }
 
-    const restartRequired =
-      persistedDevServerStatus.dirty ||
-      persistedDevServerStatus.changedPathCount > 0;
+    const restartRequired = persistedDevServerStatus.dirty || persistedDevServerStatus.changedPathCount > 0;
     if (!restartRequired) {
       res.status(409).json({ error: "restart_not_required" });
       return;
@@ -175,8 +292,7 @@ export function healthRoutes(
       ]);
 
       devServer = toDevServerHealthStatus(persistedDevServerStatus, {
-        autoRestartEnabled:
-          generalSettings.autoRestartDevServerWhenIdle === true,
+        autoRestartEnabled: generalSettings.autoRestartDevServerWhenIdle === true,
         activeRunCount,
       });
     }

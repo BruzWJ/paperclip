@@ -16,18 +16,9 @@ import {
   type TaskExecutionRunListCursor,
   type TaskExecutionRunService,
 } from "../services/task-execution-run-service.js";
-import {
-  accessService,
-  taskService,
-} from "../services/index.js";
-import type {
-  AdapterConfigurationPreflightService,
-} from "../services/adapter-configuration-preflight.js";
-import {
-  assertBoard,
-  assertCompanyAccess,
-  getAccessibleResource,
-} from "./authz.js";
+import { accessService, taskService } from "../services/index.js";
+import type { AdapterConfigurationPreflightService } from "../services/adapter-configuration-preflight.js";
+import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
 import {
   assertExactQueryKeys,
   parseExactOptionalNonBlankQuery,
@@ -98,9 +89,7 @@ function runStatuses(value: unknown): readonly TaskExecutionRunStatus[] | null {
   return statuses as TaskExecutionRunStatus[];
 }
 
-function serializeRunEnvelope(
-  run: TaskExecutionRunEnvelope,
-): TaskExecutionRunEnvelopeRecord {
+function serializeRunEnvelope(run: TaskExecutionRunEnvelope): TaskExecutionRunEnvelopeRecord {
   return {
     id: run.runId,
     companyId: run.companyId,
@@ -254,9 +243,7 @@ export function runRoutes(
 
   async function accessibleIdentity(
     req: Parameters<typeof assertCompanyAccess>[0],
-    res: Parameters<Router["get"]>[1] extends (...args: infer T) => unknown
-      ? T[1]
-      : never,
+    res: Parameters<Router["get"]>[1] extends (...args: infer T) => unknown ? T[1] : never,
     runId: string,
   ) {
     return getAccessibleResource(
@@ -289,18 +276,13 @@ export function runRoutes(
     });
   });
 
-  router.post(
-    "/runs/:runId/runtime-readiness",
-    async (req, res) => {
-      assertBoard(req);
-      const runId = req.params.runId as string;
-      const identity = await accessibleIdentity(req, res, runId);
-      if (!identity) return;
-      res.json(
-        await adapterConfigurationPreflight.inspect(identity),
-      );
-    },
-  );
+  router.post("/runs/:runId/runtime-readiness", async (req, res) => {
+    assertBoard(req);
+    const runId = req.params.runId as string;
+    const identity = await accessibleIdentity(req, res, runId);
+    if (!identity) return;
+    res.json(await adapterConfigurationPreflight.inspect(identity));
+  });
 
   return router;
 }

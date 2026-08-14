@@ -35,10 +35,7 @@ import type { Db } from "@paperclipai/db";
 import { isCanonicalUuid } from "@paperclipai/shared";
 import { pluginRegistryService } from "../services/plugin-registry.js";
 import { logger } from "../middleware/logger.js";
-import {
-  PluginPathError,
-  resolvePluginPath,
-} from "../services/plugin-paths.js";
+import { PluginPathError, resolvePluginPath } from "../services/plugin-paths.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -149,9 +146,7 @@ export function pluginUiStaticRoutes(db: Db) {
     // In Express 5 with path-to-regexp v8, named wildcards may return
     // an array of path segments or a single string.
     const rawParam = req.params.filePath;
-    const rawFilePath = Array.isArray(rawParam)
-      ? rawParam.join("/")
-      : rawParam as string | undefined;
+    const rawFilePath = Array.isArray(rawParam) ? rawParam.join("/") : (rawParam as string | undefined);
 
     if (!rawFilePath || rawFilePath.length === 0) {
       res.status(400).json({ error: "File path is required" });
@@ -192,8 +187,9 @@ export function pluginUiStaticRoutes(db: Db) {
         kind: "directory",
       });
     } catch (error) {
-      const accessDenied = error instanceof PluginPathError
-        && (error.failure === "escape" || error.failure === "invalid_relative_path");
+      const accessDenied =
+        error instanceof PluginPathError &&
+        (error.failure === "escape" || error.failure === "invalid_relative_path");
       log.warn(
         {
           err: error,
@@ -219,8 +215,9 @@ export function pluginUiStaticRoutes(db: Db) {
       });
       fileStat = fs.statSync(realFilePath);
     } catch (error) {
-      const accessDenied = error instanceof PluginPathError
-        && (error.failure === "escape" || error.failure === "invalid_relative_path");
+      const accessDenied =
+        error instanceof PluginPathError &&
+        (error.failure === "escape" || error.failure === "invalid_relative_path");
       res.status(accessDenied ? 403 : 404).json({
         error: accessDenied ? "Access denied" : "File not found",
       });

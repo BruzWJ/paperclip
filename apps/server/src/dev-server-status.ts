@@ -40,9 +40,7 @@ export type DevServerRestartRequest = {
   reason: "manual_restart_now" | "auto_restart_when_idle";
 };
 
-export function getDevServerRestartRequestFilePath(
-  env: NodeJS.ProcessEnv = process.env,
-): string | null {
+export function getDevServerRestartRequestFilePath(env: NodeJS.ProcessEnv = process.env): string | null {
   const statusFilePath = env.PAPERCLIP_DEV_SERVER_STATUS_FILE?.trim();
   if (!statusFilePath) return null;
   return path.join(path.dirname(statusFilePath), "dev-server-restart-request.json");
@@ -57,8 +55,7 @@ export function writeDevServerRestartRequest(
   if (!filePath) return false;
   if (
     !isCanonicalTimestamp(request.requestedAt) ||
-    (request.reason !== "manual_restart_now" &&
-      request.reason !== "auto_restart_when_idle")
+    (request.reason !== "manual_restart_now" && request.reason !== "auto_restart_when_idle")
   ) {
     return false;
   }
@@ -75,11 +72,7 @@ export function writeDevServerRestartRequest(
       try {
         linkSync(tempPath, filePath);
       } catch (error) {
-        if (
-          error instanceof Error &&
-          "code" in error &&
-          (error as NodeJS.ErrnoException).code === "EEXIST"
-        ) {
+        if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "EEXIST") {
           return false;
         }
         throw error;
@@ -135,10 +128,7 @@ export function readDevServerRestartRequest(
     if (!isCanonicalTimestamp(record.requestedAt)) {
       return null;
     }
-    if (
-      record.reason !== "manual_restart_now" &&
-      record.reason !== "auto_restart_when_idle"
-    ) {
+    if (record.reason !== "manual_restart_now" && record.reason !== "auto_restart_when_idle") {
       return null;
     }
     return {
@@ -179,10 +169,7 @@ export function readPersistedDevServerStatus(
         ? Math.max(0, Math.trunc(changedPathCountRaw))
         : changedPathsSample.length;
     const dirtyRaw = raw.dirty;
-    const dirty =
-      typeof dirtyRaw === "boolean"
-        ? dirtyRaw
-        : changedPathCount > 0;
+    const dirty = typeof dirtyRaw === "boolean" ? dirtyRaw : changedPathCount > 0;
 
     return {
       dirty,
@@ -213,8 +200,7 @@ export function toDevServerHealthStatus(
     changedPathsSample: persisted.changedPathsSample,
     autoRestartEnabled: opts.autoRestartEnabled,
     activeRunCount: opts.activeRunCount,
-    waitingForIdle:
-      opts.autoRestartEnabled && restartRequired && opts.activeRunCount > 0,
+    waitingForIdle: opts.autoRestartEnabled && restartRequired && opts.activeRunCount > 0,
     lastRestartAt: persisted.lastRestartAt,
   };
 }

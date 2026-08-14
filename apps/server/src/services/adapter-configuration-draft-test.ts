@@ -11,9 +11,7 @@ import {
   AcpxRuntimeReadinessCleanupError,
   probeAcpxRuntimeReadiness,
 } from "@paperclipai/adapter-utils/acpx-runtime";
-import {
-  resolveRegisteredAdapterRuntimeConfiguration,
-} from "./agent-adapter-config-revisions.js";
+import { resolveRegisteredAdapterRuntimeConfiguration } from "./agent-adapter-config-revisions.js";
 
 export interface AdapterConfigurationDraftTestInput {
   readonly adapterType: string;
@@ -21,9 +19,7 @@ export interface AdapterConfigurationDraftTestInput {
 }
 
 export interface AdapterConfigurationDraftTestService {
-  test(
-    input: AdapterConfigurationDraftTestInput,
-  ): Promise<AgentAdapterConfigurationTestResult>;
+  test(input: AdapterConfigurationDraftTestInput): Promise<AgentAdapterConfigurationTestResult>;
 }
 
 function testedAt(): string {
@@ -59,12 +55,10 @@ function failedResult(input: {
  * the configured local ACPX agent initializes and accepts its generic session
  * selections in the Paperclip service environment.
  */
-export function createAdapterConfigurationDraftTestService(
-): AdapterConfigurationDraftTestService {
+export function createAdapterConfigurationDraftTestService(): AdapterConfigurationDraftTestService {
   return {
     async test(input) {
-      const resolved =
-        await resolveRegisteredAdapterRuntimeConfiguration(input);
+      const resolved = await resolveRegisteredAdapterRuntimeConfiguration(input);
       const acpConfiguration = resolved.acpConfiguration;
       let sessionCwd: string;
 
@@ -74,8 +68,7 @@ export function createAdapterConfigurationDraftTestService(
         return failedResult({
           adapterType: input.adapterType,
           reason: "acp_initialization_failed",
-          message:
-            "Paperclip could not prepare an execution workspace for the local agent test.",
+          message: "Paperclip could not prepare an execution workspace for the local agent test.",
         });
       }
 
@@ -86,8 +79,7 @@ export function createAdapterConfigurationDraftTestService(
           cwd: sessionCwd,
           registryCwd: process.cwd(),
           agentName: acpConfiguration.launchProfile.registryName,
-          configSelections:
-            acpConfiguration.sessionConfigSelections,
+          configSelections: acpConfiguration.sessionConfigSelections,
         });
         result = agentAdapterConfigurationTestResultSchema.parse({
           status: "ready",
@@ -100,22 +92,19 @@ export function createAdapterConfigurationDraftTestService(
           result = failedResult({
             adapterType: input.adapterType,
             reason: "acp_cleanup_failed",
-            message:
-              "Paperclip could not verify cleanup of the disposable test session.",
+            message: "Paperclip could not verify cleanup of the disposable test session.",
           });
         } else if (error instanceof AcpxRuntimeReadinessCapabilityError) {
           result = failedResult({
             adapterType: input.adapterType,
             reason: "acp_capability_incompatible",
-            message:
-              "The local agent runtime does not expose the controls required by this configuration.",
+            message: "The local agent runtime does not expose the controls required by this configuration.",
           });
         } else {
           result = failedResult({
             adapterType: input.adapterType,
             reason: "acp_initialization_failed",
-            message:
-              "Paperclip could not initialize the local agent with this configuration.",
+            message: "Paperclip could not initialize the local agent with this configuration.",
           });
         }
       }
@@ -126,8 +115,7 @@ export function createAdapterConfigurationDraftTestService(
         return failedResult({
           adapterType: input.adapterType,
           reason: "acp_cleanup_failed",
-          message:
-            "Paperclip could not remove the isolated local agent test workspace.",
+          message: "Paperclip could not remove the isolated local agent test workspace.",
         });
       }
       return result;

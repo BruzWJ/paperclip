@@ -4,13 +4,8 @@ import type { LocalExecutionOrchestrator } from "./local-execution-orchestrator.
 import { createTaskExecutionAttemptExecutor } from "./task-execution-attempt-executor.js";
 import { createPostgresTaskExecutionAcpEventSink } from "./task-execution-acp-events-postgres.js";
 import { createTaskExecutionCancellationService } from "./task-execution-cancellation.js";
-import {
-  createTaskExecutionDispatcher,
-  type TaskExecutionDispatcher,
-} from "./task-execution-dispatcher.js";
-import {
-  createPostgresTaskExecutionDispatcherRepository,
-} from "./task-execution-dispatcher-postgres.js";
+import { createTaskExecutionDispatcher, type TaskExecutionDispatcher } from "./task-execution-dispatcher.js";
+import { createPostgresTaskExecutionDispatcherRepository } from "./task-execution-dispatcher-postgres.js";
 import { createPostgresTaskExecutionFinalizationWriter } from "./task-execution-finalization-postgres.js";
 import { createPostgresTaskExecutionPromptCycleRepository } from "./task-execution-prompt-cycle-postgres.js";
 import { createTaskExecutionTargetAcquirer } from "./task-execution-provider-configuration.js";
@@ -24,9 +19,7 @@ import {
   createPostgresPromptCapabilityRuntime,
   type PostgresPromptCapabilityRuntime,
 } from "./run-interface-runtime.js";
-import type {
-  RuntimePluginToolPort,
-} from "./runtime-tool-gateway.js";
+import type { RuntimePluginToolPort } from "./runtime-tool-gateway.js";
 import type { PaperclipManagedToolRouter } from "./paperclip-managed-tool-router.js";
 import type { PluginBeforePromptDispatcher } from "./plugin-before-prompt-dispatcher.js";
 import type { PluginDomainEventPublisher } from "./plugin-domain-event-publisher.js";
@@ -35,10 +28,7 @@ export interface PostgresTaskExecutionProductionRuntimeOptions {
   readonly workerId: string;
   readonly targetSessionProtectionSecret: string | Uint8Array;
   readonly taskSessionStore: TaskSessionStore;
-  readonly localExecutionOrchestrator: Pick<
-    LocalExecutionOrchestrator,
-    "acquireExecutionTargetForRun"
-  >;
+  readonly localExecutionOrchestrator: Pick<LocalExecutionOrchestrator, "acquireExecutionTargetForRun">;
   readonly capabilityEndpoint: string;
   readonly capabilityCursorSecret: string;
   readonly managedTools: PaperclipManagedToolRouter;
@@ -57,25 +47,13 @@ export interface PostgresTaskExecutionProductionRuntimeOptions {
 export interface PostgresTaskExecutionProductionRuntime {
   readonly runService: ReturnType<typeof createTaskExecutionRunService>;
   readonly promptCapabilities: PostgresPromptCapabilityRuntime;
-  readonly repository: ReturnType<
-    typeof createPostgresTaskExecutionDispatcherRepository
-  >;
-  readonly attemptExecutor: ReturnType<
-    typeof createTaskExecutionAttemptExecutor
-  >;
+  readonly repository: ReturnType<typeof createPostgresTaskExecutionDispatcherRepository>;
+  readonly attemptExecutor: ReturnType<typeof createTaskExecutionAttemptExecutor>;
   readonly dispatcher: TaskExecutionDispatcher;
-  readonly targetSessionAcquirer: ReturnType<
-    typeof createTaskExecutionTargetAcquirer
-  >;
-  readonly eventProjector: ReturnType<
-    typeof createPostgresTaskExecutionAcpEventSink
-  >;
-  readonly cancellation: ReturnType<
-    typeof createTaskExecutionCancellationService
-  >;
-  readonly finalizer: ReturnType<
-    typeof createPostgresTaskExecutionFinalizationWriter
-  >;
+  readonly targetSessionAcquirer: ReturnType<typeof createTaskExecutionTargetAcquirer>;
+  readonly eventProjector: ReturnType<typeof createPostgresTaskExecutionAcpEventSink>;
+  readonly cancellation: ReturnType<typeof createTaskExecutionCancellationService>;
+  readonly finalizer: ReturnType<typeof createPostgresTaskExecutionFinalizationWriter>;
 }
 
 /**
@@ -93,23 +71,16 @@ export function createPostgresTaskExecutionProductionRuntime(
   const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? randomUUID;
   let dispatcher: TaskExecutionDispatcher | null = null;
-  let cancellation: ReturnType<
-    typeof createTaskExecutionCancellationService
-  > | null = null;
+  let cancellation: ReturnType<typeof createTaskExecutionCancellationService> | null = null;
 
-  const steeringRepository = createPostgresTaskExecutionSteeringRepository(
-    database,
-    { now, idFactory },
-  );
+  const steeringRepository = createPostgresTaskExecutionSteeringRepository(database, { now, idFactory });
   const runService = createTaskExecutionRunService({
     database,
     taskSessionStore: options.taskSessionStore,
     repository: steeringRepository,
     cancellation: {
       signalAttemptCancellation(input) {
-        return Boolean(
-          dispatcher?.signalAttemptCancellation(input),
-        );
+        return Boolean(dispatcher?.signalAttemptCancellation(input));
       },
     },
     resume: {

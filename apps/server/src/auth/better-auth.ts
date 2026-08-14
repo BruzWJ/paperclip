@@ -2,13 +2,7 @@ import type { Request, RequestHandler } from "express";
 import { betterAuth, type Auth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { toNodeHandler } from "better-auth/node";
-import type { Db } from "@paperclipai/db";
-import {
-  authAccounts,
-  authSessions,
-  authUsers,
-  authVerifications,
-} from "@paperclipai/db";
+import { type Db, authAccounts, authSessions, authUsers, authVerifications } from "@paperclipai/db";
 import type { Config } from "../config.js";
 import { resolvePaperclipInstanceId } from "../home-paths.js";
 import {
@@ -127,10 +121,7 @@ export function createBetterAuthHandler(auth: BetterAuthHandlerTarget): RequestH
   const handler = toNodeHandler(auth);
   return (req, res, next) => {
     const originalHeaders = req.headers;
-    req.headers = canonicalNodeRequestHeaders(
-      originalHeaders,
-      requireRequestAuthority(req),
-    );
+    req.headers = canonicalNodeRequestHeaders(originalHeaders, requireRequestAuthority(req));
     void Promise.resolve(handler(req, res))
       .catch(next)
       .finally(() => {
@@ -152,9 +143,8 @@ export async function resolveBetterAuthSessionFromHeaders(
     session?: { id?: string; userId?: string } | null;
     user?: { id?: string; email?: string | null; name?: string | null } | null;
   };
-  const session = value.session?.id && value.session.userId
-    ? { id: value.session.id, userId: value.session.userId }
-    : null;
+  const session =
+    value.session?.id && value.session.userId ? { id: value.session.id, userId: value.session.userId } : null;
   const user = value.user?.id
     ? {
         id: value.user.id,

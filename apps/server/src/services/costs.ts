@@ -1,12 +1,5 @@
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import {
-  agents,
-  companies,
-  costEvents,
-  tasks,
-  projects,
-} from "@paperclipai/db";
+import { type Db, agents, companies, costEvents, tasks, projects } from "@paperclipai/db";
 import {
   canonicalizeMoneyAmount,
   compareMoneyAmounts,
@@ -39,19 +32,13 @@ function trustedAmount(value: string | null | undefined): MoneyAmount {
 
 function currentUtcMonthWindow(now = new Date()) {
   return {
-    from: new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
-    ),
-    to: new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0),
-    ),
+    from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0)),
+    to: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0)),
   };
 }
 
 function remaining(spend: MoneyAmount, limit: MoneyAmount) {
-  return compareMoneyAmounts(spend, limit) >= 0
-    ? ZERO_AMOUNT
-    : subtractMoneyAmounts(limit, spend);
+  return compareMoneyAmounts(spend, limit) >= 0 ? ZERO_AMOUNT : subtractMoneyAmounts(limit, spend);
 }
 
 function dateConditions(companyId: string, range?: CostDateRange) {
@@ -64,10 +51,8 @@ function dateConditions(companyId: string, range?: CostDateRange) {
 function costAggregateSelection() {
   return {
     knownAmount: sql<string>`coalesce(sum(${costEvents.knownDeltaAmount}) filter (where ${costEvents.kind} = 'known'), 0)::text`,
-    pricedPromptCount:
-      sql<number>`count(*) filter (where ${costEvents.kind} = 'known')::int`,
-    unpricedPromptCount:
-      sql<number>`count(*) filter (where ${costEvents.kind} = 'unavailable')::int`,
+    pricedPromptCount: sql<number>`count(*) filter (where ${costEvents.kind} = 'known')::int`,
+    unpricedPromptCount: sql<number>`count(*) filter (where ${costEvents.kind} = 'unavailable')::int`,
   };
 }
 
@@ -76,29 +61,14 @@ function toCostEvent(row: typeof costEvents.$inferSelect): CostEvent {
     ...row,
     budgetCurrency: parseBudgetCurrency(row.budgetCurrency),
     observedCumulativeAmount:
-      row.observedCumulativeAmount === null
-        ? null
-        : trustedAmount(row.observedCumulativeAmount),
-    knownDeltaAmount:
-      row.knownDeltaAmount === null
-        ? null
-        : trustedAmount(row.knownDeltaAmount),
-    cursorBeforeAmount:
-      row.cursorBeforeAmount === null
-        ? null
-        : trustedAmount(row.cursorBeforeAmount),
+      row.observedCumulativeAmount === null ? null : trustedAmount(row.observedCumulativeAmount),
+    knownDeltaAmount: row.knownDeltaAmount === null ? null : trustedAmount(row.knownDeltaAmount),
+    cursorBeforeAmount: row.cursorBeforeAmount === null ? null : trustedAmount(row.cursorBeforeAmount),
     cursorBeforeCurrency:
-      row.cursorBeforeCurrency === null
-        ? null
-        : parseBudgetCurrency(row.cursorBeforeCurrency),
-    cursorAfterAmount:
-      row.cursorAfterAmount === null
-        ? null
-        : trustedAmount(row.cursorAfterAmount),
+      row.cursorBeforeCurrency === null ? null : parseBudgetCurrency(row.cursorBeforeCurrency),
+    cursorAfterAmount: row.cursorAfterAmount === null ? null : trustedAmount(row.cursorAfterAmount),
     cursorAfterCurrency:
-      row.cursorAfterCurrency === null
-        ? null
-        : parseBudgetCurrency(row.cursorAfterCurrency),
+      row.cursorAfterCurrency === null ? null : parseBudgetCurrency(row.cursorAfterCurrency),
   };
 }
 
@@ -140,24 +110,14 @@ export function costService(db: Db) {
         budgetCurrency: company.budgetCurrency,
         knownSpendAmount,
         budgetMonthlyAmount: company.budgetMonthlyAmount,
-        remainingAmount: remaining(
-          knownSpendAmount,
-          company.budgetMonthlyAmount,
-        ),
-        utilizationPercent: moneyAmountUtilizationPercent(
-          knownSpendAmount,
-          company.budgetMonthlyAmount,
-        ),
+        remainingAmount: remaining(knownSpendAmount, company.budgetMonthlyAmount),
+        utilizationPercent: moneyAmountUtilizationPercent(knownSpendAmount, company.budgetMonthlyAmount),
         pricedPromptCount: Number(row?.pricedPromptCount ?? 0),
         unpricedPromptCount: Number(row?.unpricedPromptCount ?? 0),
       };
     },
 
-    taskTreeSummary: async (
-      companyId: string,
-      taskId: string,
-      options: { excludeRoot?: boolean } = {},
-    ) => {
+    taskTreeSummary: async (companyId: string, taskId: string, options: { excludeRoot?: boolean } = {}) => {
       const { budgetCurrency } = await requireCompanyAccounting(db, companyId);
       const visibleTasks = await db
         .select({ id: tasks.id, parentId: tasks.parentId })
@@ -173,7 +133,9 @@ export function costService(db: Db) {
       }
       const pending = options.excludeRoot
         ? [...(childrenByParentId.get(taskId) ?? [])]
-        : visibleTaskIds.has(taskId) ? [taskId] : [];
+        : visibleTaskIds.has(taskId)
+          ? [taskId]
+          : [];
       const taskTreeIds: string[] = [];
       const visited = new Set<string>();
       while (pending.length > 0) {
@@ -184,43 +146,36 @@ export function costService(db: Db) {
         pending.push(...(childrenByParentId.get(currentId) ?? []));
       }
 
-      const costRows = taskTreeIds.length === 0
-        ? []
-        : await db
-          .select({
-            taskCount: sql<number>`count(distinct ${tasks.id})::int`,
-            ...costAggregateSelection(),
-          })
-          .from(tasks)
-          .leftJoin(
-            costEvents,
-            and(
-              eq(costEvents.companyId, companyId),
-              eq(costEvents.taskId, tasks.id),
-            ),
-          )
-          .where(
-            and(
-              eq(tasks.companyId, companyId),
-              visibleTaskCondition(),
-              inArray(tasks.id, taskTreeIds),
-            ),
-          );
-      const runPages = await Promise.all(taskTreeIds.map(async (treeTaskId) => {
-        const runs: TaskExecutionRunEnvelope[] = [];
-        let cursor: TaskExecutionRunListCursor | null = null;
-        do {
-          const page = await listTaskExecutionRunsForTask(db, {
-            companyId,
-            taskId: treeTaskId,
-            cursor,
-            limit: 200,
-          });
-          runs.push(...page.items);
-          cursor = page.nextCursor;
-        } while (cursor !== null);
-        return runs;
-      }));
+      const costRows =
+        taskTreeIds.length === 0
+          ? []
+          : await db
+              .select({
+                taskCount: sql<number>`count(distinct ${tasks.id})::int`,
+                ...costAggregateSelection(),
+              })
+              .from(tasks)
+              .leftJoin(costEvents, and(eq(costEvents.companyId, companyId), eq(costEvents.taskId, tasks.id)))
+              .where(
+                and(eq(tasks.companyId, companyId), visibleTaskCondition(), inArray(tasks.id, taskTreeIds)),
+              );
+      const runPages = await Promise.all(
+        taskTreeIds.map(async (treeTaskId) => {
+          const runs: TaskExecutionRunEnvelope[] = [];
+          let cursor: TaskExecutionRunListCursor | null = null;
+          do {
+            const page = await listTaskExecutionRunsForTask(db, {
+              companyId,
+              taskId: treeTaskId,
+              cursor,
+              limit: 200,
+            });
+            runs.push(...page.items);
+            cursor = page.nextCursor;
+          } while (cursor !== null);
+          return runs;
+        }),
+      );
       const startedRuns = runPages.flat().filter((run) => run.startedAt !== null);
       const runtimeCutoff = new Date();
       const costRow = costRows[0];
@@ -234,9 +189,7 @@ export function costService(db: Db) {
         unpricedPromptCount: Number(costRow?.unpricedPromptCount ?? 0),
         runCount: startedRuns.length,
         runtimeMs: startedRuns.reduce(
-          (total, run) => total + (
-            (run.finishedAt ?? runtimeCutoff).getTime() - run.startedAt!.getTime()
-          ),
+          (total, run) => total + ((run.finishedAt ?? runtimeCutoff).getTime() - run.startedAt!.getTime()),
           0,
         ),
       };
@@ -280,13 +233,7 @@ export function costService(db: Db) {
           ...costAggregateSelection(),
         })
         .from(costEvents)
-        .innerJoin(
-          tasks,
-          and(
-            eq(tasks.id, costEvents.taskId),
-            eq(tasks.companyId, costEvents.companyId),
-          ),
-        )
+        .innerJoin(tasks, and(eq(tasks.id, costEvents.taskId), eq(tasks.companyId, costEvents.companyId)))
         .leftJoin(projects, eq(projects.id, tasks.projectId))
         .where(and(...dateConditions(companyId, range)))
         .groupBy(tasks.projectId, projects.name)
@@ -305,11 +252,7 @@ export function costService(db: Db) {
       }));
     },
 
-    listEvents: async (
-      companyId: string,
-      range?: CostDateRange,
-      limit = 100,
-    ) => {
+    listEvents: async (companyId: string, range?: CostDateRange, limit = 100) => {
       await requireCompanyAccounting(db, companyId);
       const rows = await db
         .select()

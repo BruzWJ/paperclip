@@ -1,6 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { inboxDismissals } from "@paperclipai/db";
+import { type Db, inboxDismissals } from "@paperclipai/db";
 import type { InboxDismissalKind } from "@paperclipai/shared";
 
 export function inboxDismissalService(db: Db) {
@@ -8,11 +7,15 @@ export function inboxDismissalService(db: Db) {
     companyId: string,
     userId: string,
     itemKey: string,
-    input: { kind: InboxDismissalKind; dismissedAt?: Date; snoozedUntil?: Date | null },
+    input: {
+      kind: InboxDismissalKind;
+      dismissedAt?: Date;
+      snoozedUntil?: Date | null;
+    },
   ) {
     const now = new Date();
     const dismissedAt = input.dismissedAt ?? now;
-    const snoozedUntil = input.kind === "snooze" ? input.snoozedUntil ?? null : null;
+    const snoozedUntil = input.kind === "snooze" ? (input.snoozedUntil ?? null) : null;
     const [row] = await db
       .insert(inboxDismissals)
       .values({
@@ -45,12 +48,8 @@ export function inboxDismissalService(db: Db) {
         .where(and(eq(inboxDismissals.companyId, companyId), eq(inboxDismissals.userId, userId)))
         .orderBy(desc(inboxDismissals.updatedAt)),
 
-    dismiss: async (
-      companyId: string,
-      userId: string,
-      itemKey: string,
-      dismissedAt: Date = new Date(),
-    ) => upsert(companyId, userId, itemKey, { kind: "dismiss", dismissedAt }),
+    dismiss: async (companyId: string, userId: string, itemKey: string, dismissedAt: Date = new Date()) =>
+      upsert(companyId, userId, itemKey, { kind: "dismiss", dismissedAt }),
 
     snooze: async (
       companyId: string,
@@ -58,16 +57,23 @@ export function inboxDismissalService(db: Db) {
       itemKey: string,
       snoozedUntil: Date,
       dismissedAt: Date = new Date(),
-    ) => upsert(companyId, userId, itemKey, { kind: "snooze", dismissedAt, snoozedUntil }),
+    ) =>
+      upsert(companyId, userId, itemKey, {
+        kind: "snooze",
+        dismissedAt,
+        snoozedUntil,
+      }),
 
     restore: async (companyId: string, userId: string, itemKey: string) => {
       const [row] = await db
         .delete(inboxDismissals)
-        .where(and(
-          eq(inboxDismissals.companyId, companyId),
-          eq(inboxDismissals.userId, userId),
-          eq(inboxDismissals.itemKey, itemKey),
-        ))
+        .where(
+          and(
+            eq(inboxDismissals.companyId, companyId),
+            eq(inboxDismissals.userId, userId),
+            eq(inboxDismissals.itemKey, itemKey),
+          ),
+        )
         .returning();
       return row ?? null;
     },

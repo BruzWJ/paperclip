@@ -19,9 +19,7 @@ export function listAuthorizedPluginAgentTools(
   }
   if (!input.manifest.capabilities.includes("agent.tools.register")) {
     if ((input.manifest.tools?.length ?? 0) > 0) {
-      throw new Error(
-        `Plugin '${input.pluginKey}' declares agent tools without agent.tools.register`,
-      );
+      throw new Error(`Plugin '${input.pluginKey}' declares agent tools without agent.tools.register`);
     }
     return [];
   }

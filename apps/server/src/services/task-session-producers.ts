@@ -1,40 +1,25 @@
 import { taskSessions, type Db } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
-import type {
-  NonDispatchControlNotice,
-  NonDispatchUserComment,
-  TaskSessionProjectedCommentSource,
-} from "./task-session/admission.js";
 import {
+  type NonDispatchControlNotice,
+  type NonDispatchUserComment,
+  type TaskSessionProjectedCommentSource,
   createTaskSessionAdmissionService,
   type TaskSessionAdmissionResult,
 } from "./task-session/admission.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
-import {
-  TaskSessionInvariantError,
-} from "./task-session/store.js";
+import { TaskSessionInvariantError } from "./task-session/store.js";
 
 type SessionReadDb = Pick<Db, "select">;
 
-async function canonicalSessionId(
-  db: SessionReadDb,
-  companyId: string,
-  taskId: string,
-): Promise<string> {
+async function canonicalSessionId(db: SessionReadDb, companyId: string, taskId: string): Promise<string> {
   const rows = await db
     .select({ id: taskSessions.id })
     .from(taskSessions)
-    .where(
-      and(
-        eq(taskSessions.companyId, companyId),
-        eq(taskSessions.taskId, taskId),
-      ),
-    )
+    .where(and(eq(taskSessions.companyId, companyId), eq(taskSessions.taskId, taskId)))
     .limit(2);
   if (rows.length !== 1) {
-    throw new TaskSessionInvariantError(
-      `Task ${taskId} must resolve to exactly one canonical Session`,
-    );
+    throw new TaskSessionInvariantError(`Task ${taskId} must resolve to exactly one canonical Session`);
   }
   return rows[0]!.id;
 }
@@ -66,9 +51,7 @@ function canonicalClock(value: Date | string | null | undefined) {
   if (value == null) return undefined;
   const occurredAt = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(occurredAt.getTime())) {
-    throw new TaskSessionInvariantError(
-      "Canonical task Session source timestamp is invalid",
-    );
+    throw new TaskSessionInvariantError("Canonical task Session source timestamp is invalid");
   }
   return () => occurredAt;
 }
@@ -84,11 +67,7 @@ export async function appendCanonicalControlNotice(
   transaction?: TaskSessionDbTransaction,
 ): Promise<TaskSessionAdmissionResult> {
   const readDb = transaction ?? db;
-  const sessionId = await canonicalSessionId(
-    readDb,
-    input.companyId,
-    input.taskId,
-  );
+  const sessionId = await canonicalSessionId(readDb, input.companyId, input.taskId);
   const notice: NonDispatchControlNotice = {
     companyId: input.companyId,
     taskId: input.taskId,
@@ -102,8 +81,7 @@ export async function appendCanonicalControlNotice(
   };
   return createTaskSessionAdmissionService(db, {
     clock: canonicalClock(input.occurredAt),
-  })
-    .appendNonDispatchControlNotice(notice, transaction);
+  }).appendNonDispatchControlNotice(notice, transaction);
 }
 
 /**
@@ -118,11 +96,7 @@ export async function appendCanonicalUserComment(
   transaction?: TaskSessionDbTransaction,
 ): Promise<TaskSessionAdmissionResult> {
   const readDb = transaction ?? db;
-  const sessionId = await canonicalSessionId(
-    readDb,
-    input.companyId,
-    input.taskId,
-  );
+  const sessionId = await canonicalSessionId(readDb, input.companyId, input.taskId);
   const comment: NonDispatchUserComment = {
     companyId: input.companyId,
     taskId: input.taskId,
@@ -138,6 +112,5 @@ export async function appendCanonicalUserComment(
   };
   return createTaskSessionAdmissionService(db, {
     clock: canonicalClock(input.occurredAt),
-  })
-    .appendNonDispatchUserComment(comment, transaction);
+  }).appendNonDispatchUserComment(comment, transaction);
 }

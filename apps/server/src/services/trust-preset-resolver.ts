@@ -36,24 +36,24 @@ export type TrustPresetDenyReason =
 
 export type TrustPresetResolution =
   | {
-    kind: "standard";
-    preset: typeof DEFAULT_TRUST_PRESET;
-    boundary: null;
-    sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>>;
-  }
+      kind: "standard";
+      preset: typeof DEFAULT_TRUST_PRESET;
+      boundary: null;
+      sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>>;
+    }
   | {
-    kind: "low_trust_review";
-    preset: typeof LOW_TRUST_REVIEW_PRESET;
-    boundary: LowTrustBoundary & { companyId: string };
-    sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>>;
-  }
+      kind: "low_trust_review";
+      preset: typeof LOW_TRUST_REVIEW_PRESET;
+      boundary: LowTrustBoundary & { companyId: string };
+      sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>>;
+    }
   | {
-    kind: "denied";
-    reason: TrustPresetDenyReason;
-    source: TrustPresetPolicySource | null;
-    detail: string;
-    sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>>;
-  };
+      kind: "denied";
+      reason: TrustPresetDenyReason;
+      source: TrustPresetPolicySource | null;
+      detail: string;
+      sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>>;
+    };
 
 type ParsedPolicySource = {
   source: TrustPresetPolicySource;
@@ -63,9 +63,7 @@ type ParsedPolicySource = {
 };
 
 function asRecord(value: unknown): JsonRecord | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as JsonRecord
-    : null;
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as JsonRecord) : null;
 }
 
 function deny(
@@ -234,9 +232,9 @@ function mergeBoundary(
 }
 
 function hasBoundaryScope(boundary: LowTrustBoundary): boolean {
-  return Boolean(boundary.rootTaskId)
-    || Boolean(boundary.projectIds?.length)
-    || Boolean(boundary.taskIds?.length);
+  return (
+    Boolean(boundary.rootTaskId) || Boolean(boundary.projectIds?.length) || Boolean(boundary.taskIds?.length)
+  );
 }
 
 export function resolveCoreTrustPreset(input: ResolveCoreTrustPresetInput): TrustPresetResolution {
@@ -244,12 +242,24 @@ export function resolveCoreTrustPreset(input: ResolveCoreTrustPresetInput): Trus
   const sources: ParsedPolicySource[] = [];
 
   const taskPolicy = asRecord(input.task?.executionPolicy);
-  const task = parseSource("task", input.task?.companyId, taskPolicy, taskPolicy?.authorizationPolicy, sourcePresets);
+  const task = parseSource(
+    "task",
+    input.task?.companyId,
+    taskPolicy,
+    taskPolicy?.authorizationPolicy,
+    sourcePresets,
+  );
   if ("kind" in task) return task;
   sources.push(task);
 
   const runPolicy = asRecord(input.run?.executionPolicy);
-  const run = parseSource("run", input.run?.companyId, runPolicy, runPolicy?.authorizationPolicy, sourcePresets);
+  const run = parseSource(
+    "run",
+    input.run?.companyId,
+    runPolicy,
+    runPolicy?.authorizationPolicy,
+    sourcePresets,
+  );
   if ("kind" in run) return run;
   sources.push(run);
 
@@ -300,15 +310,4 @@ export function resolveCoreTrustPreset(input: ResolveCoreTrustPresetInput): Trus
     boundary,
     sourcePresets,
   };
-}
-
-export function isTaskWithinLowTrustBoundary(
-  boundary: LowTrustBoundary & { companyId: string },
-  task: { companyId: string; id?: string | null; projectId?: string | null },
-): boolean {
-  if (task.companyId !== boundary.companyId) return false;
-  if (task.id && task.id === boundary.rootTaskId) return true;
-  if (task.id && boundary.taskIds?.includes(task.id)) return true;
-  if (task.projectId && boundary.projectIds?.includes(task.projectId)) return true;
-  return false;
 }

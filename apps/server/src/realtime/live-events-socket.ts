@@ -1,12 +1,7 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import { and, eq, gt } from "drizzle-orm";
 import { Server, type Socket } from "socket.io";
-import type { Db } from "@paperclipai/db";
-import {
-  authSessions,
-  companyMemberships,
-  instanceUserRoles,
-} from "@paperclipai/db";
+import { type Db, authSessions, companyMemberships, instanceUserRoles } from "@paperclipai/db";
 import {
   LIVE_EVENT_SOCKET_EVENT,
   LIVE_EVENT_SOCKET_PATH,
@@ -87,9 +82,7 @@ function admitHandshakeRequest(
 ) {
   const authority = requestAuthorityBoundary.admit(req);
   const originHeader = req.headers.origin;
-  const browserOrigin = Array.isArray(originHeader)
-    ? null
-    : canonicalizeBrowserOrigin(originHeader);
+  const browserOrigin = Array.isArray(originHeader) ? null : canonicalizeBrowserOrigin(originHeader);
   if (browserOrigin !== authority.origin) return false;
   if (req.headers.authorization !== undefined) return false;
 
@@ -105,9 +98,7 @@ async function authorizeSocket(
   req: LiveEventsIncomingMessage,
   auth: unknown,
   opts: {
-    resolveSessionFromHeaders?: (
-      headers: Headers,
-    ) => Promise<BetterAuthSessionResult | null>;
+    resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
     requestAuthorityBoundary: RequestAuthorityBoundary;
   },
 ): Promise<LiveEventsSocketData | null> {
@@ -117,9 +108,7 @@ async function authorizeSocket(
   const companyId = parseCompanyIdFromAuth(auth);
   if (!companyId) return null;
 
-  const session = await opts.resolveSessionFromHeaders(
-    opts.requestAuthorityBoundary.headers(req),
-  );
+  const session = await opts.resolveSessionFromHeaders(opts.requestAuthorityBoundary.headers(req));
   if (!(
     isNonEmptyActorId(session?.user?.id) &&
     isNonEmptyActorId(session.session?.id) &&
@@ -157,12 +146,7 @@ async function loadSocketAuthorization(
     db
       .select({ id: instanceUserRoles.id })
       .from(instanceUserRoles)
-      .where(
-        and(
-          eq(instanceUserRoles.userId, identity.userId),
-          eq(instanceUserRoles.role, "instance_admin"),
-        ),
-      )
+      .where(and(eq(instanceUserRoles.userId, identity.userId), eq(instanceUserRoles.role, "instance_admin")))
       .then((rows) => rows[0] ?? null),
     db
       .select({ id: companyMemberships.id })
@@ -204,11 +188,7 @@ function disconnectAtSessionExpiry(socket: LiveEventsSocket): void {
   schedule();
 }
 
-async function deliverAuthorizedEvent(
-  io: LiveEventsSocketServer,
-  db: Db,
-  event: LiveEvent,
-): Promise<void> {
+async function deliverAuthorizedEvent(io: LiveEventsSocketServer, db: Db, event: LiveEvent): Promise<void> {
   const sockets = await io.in(companyRoomName(event.companyId)).fetchSockets();
   await Promise.all(
     sockets.map(async (socket) => {
@@ -239,9 +219,7 @@ export function setupLiveEventsSocketServer(
   server: HttpServer,
   db: Db,
   opts: {
-    resolveSessionFromHeaders?: (
-      headers: Headers,
-    ) => Promise<BetterAuthSessionResult | null>;
+    resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
     requestAuthorityBoundary: RequestAuthorityBoundary;
   },
 ): LiveEventsSocketServerHandle {
@@ -255,10 +233,7 @@ export function setupLiveEventsSocketServer(
       try {
         done(null, admitHandshakeRequest(req, opts.requestAuthorityBoundary));
       } catch (error) {
-        logger.warn(
-          { err: error },
-          "live Socket.IO handshake rejected by request authority",
-        );
+        logger.warn({ err: error }, "live Socket.IO handshake rejected by request authority");
         done("forbidden", false);
       }
     },
@@ -293,9 +268,7 @@ export function setupLiveEventsSocketServer(
   const deliveryTailByCompany = new Map<string, Promise<void>>();
   const unsubscribe = subscribeLiveEvents((event) => {
     const previous = deliveryTailByCompany.get(event.companyId) ?? Promise.resolve();
-    const delivery = previous
-      .catch(() => undefined)
-      .then(() => deliverAuthorizedEvent(io, db, event));
+    const delivery = previous.catch(() => undefined).then(() => deliverAuthorizedEvent(io, db, event));
     deliveryTailByCompany.set(event.companyId, delivery);
     void delivery
       .catch((error) => {

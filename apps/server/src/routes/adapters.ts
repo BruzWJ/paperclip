@@ -11,12 +11,9 @@ import {
   listAcpxAdapterProbeDiagnostics,
   listServerAdapters,
   refreshAcpxAdapters,
+  type AcpxAdapterProbeDiagnostic,
 } from "../adapters/index.js";
-import type { AcpxAdapterProbeDiagnostic } from "../adapters/index.js";
-import type {
-  AcpAdapterConfigOption,
-  ServerAdapterModule,
-} from "@paperclipai/adapter-utils";
+import type { AcpAdapterConfigOption, ServerAdapterModule } from "@paperclipai/adapter-utils";
 import { assertBoardOrgAccess } from "./authz.js";
 
 interface AdapterCapabilities {
@@ -66,9 +63,7 @@ function buildAdapterInfo(adapter: ServerAdapterModule): ReadyAdapterInfo {
   };
 }
 
-function buildUnavailableAdapterInfo(
-  diagnostic: AcpxAdapterProbeDiagnostic,
-): UnavailableAdapterInfo {
+function buildUnavailableAdapterInfo(diagnostic: AcpxAdapterProbeDiagnostic): UnavailableAdapterInfo {
   return {
     type: diagnostic.type,
     // The registry name is the only trustworthy presentation value when an
@@ -78,9 +73,10 @@ function buildUnavailableAdapterInfo(
     loaded: false,
     diagnostic: {
       code: diagnostic.code,
-      message: diagnostic.code === "acpx_catalog_invalid"
-        ? "This local agent returned an invalid runtime configuration contract."
-        : "This local agent did not pass its readiness check.",
+      message:
+        diagnostic.code === "acpx_catalog_invalid"
+          ? "This local agent returned an invalid runtime configuration contract."
+          : "This local agent did not pass its readiness check.",
     },
   };
 }
@@ -95,8 +91,7 @@ export function adapterRoutes() {
       [
         ...listServerAdapters().map((adapter) => buildAdapterInfo(adapter)),
         ...listAcpxAdapterProbeDiagnostics().map(buildUnavailableAdapterInfo),
-      ]
-        .sort((left, right) => left.type.localeCompare(right.type)),
+      ].sort((left, right) => left.type.localeCompare(right.type)),
     );
   });
 

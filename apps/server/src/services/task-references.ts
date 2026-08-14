@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
 import {
+  type Db,
   documentAnnotationComments,
   documents,
   taskComments,
@@ -8,18 +8,17 @@ import {
   taskReferenceMentions,
   tasks,
 } from "@paperclipai/db";
-import type {
-  TaskReferenceSource,
-  TaskReferenceSourceKind,
-  TaskRelatedWorkItem,
-  TaskRelatedWorkSummary,
-  TaskRelationTaskSummary,
+import {
+  type TaskReferenceSource,
+  type TaskReferenceSourceKind,
+  type TaskRelatedWorkItem,
+  type TaskRelatedWorkSummary,
+  type TaskRelationTaskSummary,
+  extractTaskReferenceMatches,
 } from "@paperclipai/shared";
-import { extractTaskReferenceMatches } from "@paperclipai/shared";
 import { notFound } from "../errors.js";
 
-export type TaskReferenceTransaction =
-  Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type TaskReferenceTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 const SOURCE_KIND_ORDER: Record<TaskReferenceSourceKind, number> = {
   title: 0,
@@ -33,14 +32,12 @@ function sourceLabel(kind: TaskReferenceSourceKind, documentKey: string | null):
   return kind;
 }
 
-function sourceWhere(
-  input: {
-    companyId?: string;
-    sourceTaskId?: string;
-    sourceKind: TaskReferenceSourceKind;
-    sourceRecordId?: string | null;
-  },
-) {
+function sourceWhere(input: {
+  companyId?: string;
+  sourceTaskId?: string;
+  sourceKind: TaskReferenceSourceKind;
+  sourceRecordId?: string | null;
+}) {
   const conditions = [eq(taskReferenceMentions.sourceKind, input.sourceKind)];
   if (input.companyId) conditions.push(eq(taskReferenceMentions.companyId, input.companyId));
   if (input.sourceTaskId) conditions.push(eq(taskReferenceMentions.sourceTaskId, input.sourceTaskId));
@@ -57,8 +54,7 @@ function toTaskSummary(row: {
   relatedTaskNumber: number;
   relatedTaskIdentifier: string;
   relatedTaskTitle: string | null;
-  relatedTaskBoardPresentationStatus:
-    TaskRelationTaskSummary["boardPresentationStatus"];
+  relatedTaskBoardPresentationStatus: TaskRelationTaskSummary["boardPresentationStatus"];
   relatedTaskPriority: TaskRelationTaskSummary["priority"];
   relatedTaskOwnerAgentId: string | null;
   relatedTaskOwnerUserId: string | null;
@@ -109,9 +105,7 @@ function diffTaskSummaries(
   const afterById = new Map(after.outbound.map((item) => [item.task.id, item.task]));
 
   return {
-    addedReferencedTasks: after.outbound
-      .map((item) => item.task)
-      .filter((task) => !beforeById.has(task.id)),
+    addedReferencedTasks: after.outbound.map((item) => item.task).filter((task) => !beforeById.has(task.id)),
     removedReferencedTasks: before.outbound
       .map((item) => item.task)
       .filter((task) => !afterById.has(task.id)),
@@ -132,19 +126,15 @@ async function replaceSourceMentionsInTx(
 ) {
   const matches = extractTaskReferenceMatches(input.text ?? "");
   const taskIds = matches.map((match) => match.taskId);
-  const resolvedTargets = taskIds.length > 0
-    ? await transaction
-        .select({
-          id: tasks.id,
-        })
-        .from(tasks)
-        .where(
-          and(
-            eq(tasks.companyId, input.companyId),
-            inArray(tasks.id, taskIds),
-          ),
-        )
-    : [];
+  const resolvedTargets =
+    taskIds.length > 0
+      ? await transaction
+          .select({
+            id: tasks.id,
+          })
+          .from(tasks)
+          .where(and(eq(tasks.companyId, input.companyId), inArray(tasks.id, taskIds)))
+      : [];
   const resolvedTargetIds = new Set(resolvedTargets.map((row) => row.id));
 
   await transaction.delete(taskReferenceMentions).where(sourceWhere(input));
@@ -161,15 +151,17 @@ async function replaceSourceMentionsInTx(
       return [];
     }
     seenTargetIds.add(targetTaskId);
-    return [{
-      companyId: input.companyId,
-      sourceTaskId: input.sourceTaskId,
-      targetTaskId,
-      sourceKind: input.sourceKind,
-      sourceRecordId: input.sourceRecordId,
-      documentKey: input.documentKey,
-      matchedText: match.matchedText,
-    }];
+    return [
+      {
+        companyId: input.companyId,
+        sourceTaskId: input.sourceTaskId,
+        targetTaskId,
+        sourceKind: input.sourceKind,
+        sourceRecordId: input.sourceRecordId,
+        documentKey: input.documentKey,
+        matchedText: match.matchedText,
+      },
+    ];
   });
   if (values.length > 0) {
     await transaction.insert(taskReferenceMentions).values(values);
@@ -181,10 +173,7 @@ async function replaceSourceMentionsInTx(
  * source comment and every reference derived from its current body become
  * visible—or roll back—together.
  */
-export async function syncComment(
-  commentId: string,
-  transaction: TaskReferenceTransaction,
-) {
+export async function syncComment(commentId: string, transaction: TaskReferenceTransaction) {
   const comment = await transaction
     .select({
       id: taskComments.id,
@@ -212,10 +201,7 @@ export async function syncComment(
  * mandatory so task creation/title change and its reference rows commit as
  * one source aggregate.
  */
-export async function syncTask(
-  taskId: string,
-  transaction: TaskReferenceTransaction,
-) {
+export async function syncTask(taskId: string, transaction: TaskReferenceTransaction) {
   const task = await transaction
     .select({
       id: tasks.id,
@@ -246,10 +232,7 @@ export async function syncTask(
   });
 }
 
-export async function syncAnnotationComment(
-  commentId: string,
-  transaction: TaskReferenceTransaction,
-) {
+export async function syncAnnotationComment(commentId: string, transaction: TaskReferenceTransaction) {
   const comment = await transaction
     .select({
       id: documentAnnotationComments.id,
@@ -274,10 +257,7 @@ export async function syncAnnotationComment(
   });
 }
 
-export async function syncDocument(
-  documentId: string,
-  transaction: TaskReferenceTransaction,
-) {
+export async function syncDocument(documentId: string, transaction: TaskReferenceTransaction) {
   const document = await transaction
     .select({
       documentId: documents.id,
@@ -305,10 +285,7 @@ export async function syncDocument(
   });
 }
 
-export async function deleteDocumentSource(
-  documentId: string,
-  transaction: TaskReferenceTransaction,
-) {
+export async function deleteDocumentSource(documentId: string, transaction: TaskReferenceTransaction) {
   await transaction
     .delete(taskReferenceMentions)
     .where(
@@ -319,10 +296,7 @@ export async function deleteDocumentSource(
     );
 }
 
-export async function deleteCommentSource(
-  commentId: string,
-  transaction: TaskReferenceTransaction,
-) {
+export async function deleteCommentSource(commentId: string, transaction: TaskReferenceTransaction) {
   await transaction
     .delete(taskReferenceMentions)
     .where(
@@ -344,65 +318,78 @@ export function taskReferenceService(db: Db) {
       })
       .from(tasks)
       .where(eq(tasks.id, taskId))
-      .then((rows: Array<{ id: string; companyId: string; title: string | null; request: string | null }>) => rows[0] ?? null);
+      .then(
+        (
+          rows: Array<{
+            id: string;
+            companyId: string;
+            title: string | null;
+            request: string | null;
+          }>,
+        ) => rows[0] ?? null,
+      );
   }
 
   async function listTaskReferenceSummary(taskId: string, dbOrTx: any = db): Promise<TaskRelatedWorkSummary> {
-      const task = await taskById(taskId, dbOrTx);
-      if (!task) throw notFound("Task not found");
+    const task = await taskById(taskId, dbOrTx);
+    if (!task) throw notFound("Task not found");
 
-      const [outboundRows, inboundRows] = await Promise.all([
-        dbOrTx
-          .select({
-            relatedTaskId: tasks.id,
-            relatedTaskNumber: tasks.taskNumber,
-            relatedTaskIdentifier: tasks.identifier,
-            relatedTaskTitle: tasks.title,
-            relatedTaskBoardPresentationStatus: tasks.boardPresentationStatus,
-            relatedTaskPriority: tasks.priority,
-            relatedTaskOwnerAgentId: tasks.ownerAgentId,
-            relatedTaskOwnerUserId: tasks.ownerUserId,
-            sourceKind: taskReferenceMentions.sourceKind,
-            sourceRecordId: taskReferenceMentions.sourceRecordId,
-            documentKey: taskReferenceMentions.documentKey,
-            matchedText: taskReferenceMentions.matchedText,
-          })
-          .from(taskReferenceMentions)
-          .innerJoin(tasks, eq(taskReferenceMentions.targetTaskId, tasks.id))
-          .where(and(
+    const [outboundRows, inboundRows] = await Promise.all([
+      dbOrTx
+        .select({
+          relatedTaskId: tasks.id,
+          relatedTaskNumber: tasks.taskNumber,
+          relatedTaskIdentifier: tasks.identifier,
+          relatedTaskTitle: tasks.title,
+          relatedTaskBoardPresentationStatus: tasks.boardPresentationStatus,
+          relatedTaskPriority: tasks.priority,
+          relatedTaskOwnerAgentId: tasks.ownerAgentId,
+          relatedTaskOwnerUserId: tasks.ownerUserId,
+          sourceKind: taskReferenceMentions.sourceKind,
+          sourceRecordId: taskReferenceMentions.sourceRecordId,
+          documentKey: taskReferenceMentions.documentKey,
+          matchedText: taskReferenceMentions.matchedText,
+        })
+        .from(taskReferenceMentions)
+        .innerJoin(tasks, eq(taskReferenceMentions.targetTaskId, tasks.id))
+        .where(
+          and(
             eq(taskReferenceMentions.companyId, task.companyId),
             eq(taskReferenceMentions.sourceTaskId, taskId),
-          )),
-        dbOrTx
-          .select({
-            relatedTaskId: tasks.id,
-            relatedTaskNumber: tasks.taskNumber,
-            relatedTaskIdentifier: tasks.identifier,
-            relatedTaskTitle: tasks.title,
-            relatedTaskBoardPresentationStatus: tasks.boardPresentationStatus,
-            relatedTaskPriority: tasks.priority,
-            relatedTaskOwnerAgentId: tasks.ownerAgentId,
-            relatedTaskOwnerUserId: tasks.ownerUserId,
-            sourceKind: taskReferenceMentions.sourceKind,
-            sourceRecordId: taskReferenceMentions.sourceRecordId,
-            documentKey: taskReferenceMentions.documentKey,
-            matchedText: taskReferenceMentions.matchedText,
-          })
-          .from(taskReferenceMentions)
-          .innerJoin(tasks, eq(taskReferenceMentions.sourceTaskId, tasks.id))
-          .where(and(
+          ),
+        ),
+      dbOrTx
+        .select({
+          relatedTaskId: tasks.id,
+          relatedTaskNumber: tasks.taskNumber,
+          relatedTaskIdentifier: tasks.identifier,
+          relatedTaskTitle: tasks.title,
+          relatedTaskBoardPresentationStatus: tasks.boardPresentationStatus,
+          relatedTaskPriority: tasks.priority,
+          relatedTaskOwnerAgentId: tasks.ownerAgentId,
+          relatedTaskOwnerUserId: tasks.ownerUserId,
+          sourceKind: taskReferenceMentions.sourceKind,
+          sourceRecordId: taskReferenceMentions.sourceRecordId,
+          documentKey: taskReferenceMentions.documentKey,
+          matchedText: taskReferenceMentions.matchedText,
+        })
+        .from(taskReferenceMentions)
+        .innerJoin(tasks, eq(taskReferenceMentions.sourceTaskId, tasks.id))
+        .where(
+          and(
             eq(taskReferenceMentions.companyId, task.companyId),
             eq(taskReferenceMentions.targetTaskId, taskId),
-          )),
-      ]);
+          ),
+        ),
+    ]);
 
-      const mapRows = (rows: Array<{
+    const mapRows = (
+      rows: Array<{
         relatedTaskId: string;
         relatedTaskNumber: number;
         relatedTaskIdentifier: string;
         relatedTaskTitle: string | null;
-        relatedTaskBoardPresentationStatus:
-          TaskRelationTaskSummary["boardPresentationStatus"];
+        relatedTaskBoardPresentationStatus: TaskRelationTaskSummary["boardPresentationStatus"];
         relatedTaskPriority: TaskRelationTaskSummary["priority"];
         relatedTaskOwnerAgentId: string | null;
         relatedTaskOwnerUserId: string | null;
@@ -410,33 +397,37 @@ export function taskReferenceService(db: Db) {
         sourceRecordId: string | null;
         documentKey: string | null;
         matchedText: string | null;
-      }>) => {
-        const grouped = new Map<string, TaskRelatedWorkItem>();
-        for (const row of rows) {
-          const existing = grouped.get(row.relatedTaskId) ?? {
-            task: toTaskSummary(row),
-            mentionCount: 0,
-            sources: [],
-          };
-          existing.mentionCount += 1;
-          existing.sources.push({
-            kind: row.sourceKind,
-            sourceRecordId: row.sourceRecordId,
-            label: sourceLabel(row.sourceKind, row.documentKey),
-            matchedText: row.matchedText,
-          });
-          grouped.set(row.relatedTaskId, existing);
-        }
+      }>,
+    ) => {
+      const grouped = new Map<string, TaskRelatedWorkItem>();
+      for (const row of rows) {
+        const existing = grouped.get(row.relatedTaskId) ?? {
+          task: toTaskSummary(row),
+          mentionCount: 0,
+          sources: [],
+        };
+        existing.mentionCount += 1;
+        existing.sources.push({
+          kind: row.sourceKind,
+          sourceRecordId: row.sourceRecordId,
+          label: sourceLabel(row.sourceKind, row.documentKey),
+          matchedText: row.matchedText,
+        });
+        grouped.set(row.relatedTaskId, existing);
+      }
 
-        return [...grouped.values()]
-          .map((item) => ({ ...item, sources: [...item.sources].sort(sortSources) }))
-          .sort(sortRelatedWork);
-      };
+      return [...grouped.values()]
+        .map((item) => ({
+          ...item,
+          sources: [...item.sources].sort(sortSources),
+        }))
+        .sort(sortRelatedWork);
+    };
 
-      return {
-        outbound: mapRows(outboundRows),
-        inbound: mapRows(inboundRows),
-      };
+    return {
+      outbound: mapRows(outboundRows),
+      inbound: mapRows(inboundRows),
+    };
   }
 
   return {

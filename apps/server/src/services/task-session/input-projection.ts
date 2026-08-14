@@ -4,10 +4,7 @@ import {
   taskSessionMessages,
   type Db,
 } from "@paperclipai/db";
-import {
-  encodeTaskSessionEvent,
-  type DurableEvent,
-} from "@paperclipai/shared/task-session";
+import { encodeTaskSessionEvent, type DurableEvent } from "@paperclipai/shared/task-session";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   canonicalTaskSessionJson,
@@ -23,20 +20,15 @@ export interface TaskSessionInputBinding {
 }
 
 function promptProjection(event: DurableEvent) {
-  if (
-    event.type !== "session.next.prompt.admitted" &&
-    event.type !== "session.next.prompted"
-  ) {
-    throw new TaskSessionLifecycleConflict(
-      "Task Session input projection requires a prompt event",
-      { eventType: event.type },
-    );
+  if (event.type !== "session.next.prompt.admitted" && event.type !== "session.next.prompted") {
+    throw new TaskSessionLifecycleConflict("Task Session input projection requires a prompt event", {
+      eventType: event.type,
+    });
   }
   if (!event.durable) {
-    throw new TaskSessionLifecycleConflict(
-      "Task Session prompt event has no durable sequence",
-      { eventType: event.type },
-    );
+    throw new TaskSessionLifecycleConflict("Task Session prompt event has no durable sequence", {
+      eventType: event.type,
+    });
   }
   const wire = encodeTaskSessionEvent(event);
   const data = wire.data as {
@@ -64,8 +56,7 @@ function sameInput(
     row.id === input.id &&
     row.sessionId === input.sessionId &&
     row.delivery === input.delivery &&
-    canonicalTaskSessionJson(row.prompt) ===
-      canonicalTaskSessionJson(input.prompt) &&
+    canonicalTaskSessionJson(row.prompt) === canonicalTaskSessionJson(input.prompt) &&
     row.timeCreated.getTime() === input.timestamp.getTime()
   );
 }
@@ -131,10 +122,9 @@ export async function projectTaskSessionInput(
       )
       .limit(1);
     if (messages[0]) {
-      throw new TaskSessionLifecycleConflict(
-        "Prompt admission reused a projected message identity",
-        { inputId: projection.id },
-      );
+      throw new TaskSessionLifecycleConflict("Prompt admission reused a projected message identity", {
+        inputId: projection.id,
+      });
     }
     if (existing) {
       if (
@@ -142,17 +132,14 @@ export async function projectTaskSessionInput(
         existing.admittedSeq !== projection.seq ||
         existing.promotedSeq !== null
       ) {
-        throw new TaskSessionLifecycleConflict(
-          "Prompt admission changed an existing Task Session input",
-          { inputId: projection.id },
-        );
+        throw new TaskSessionLifecycleConflict("Prompt admission changed an existing Task Session input", {
+          inputId: projection.id,
+        });
       }
       return;
     }
     if (input.rebuilding) {
-      throw new TaskSessionInvariantError(
-        `Rebuild is missing admitted Task Session input ${projection.id}`,
-      );
+      throw new TaskSessionInvariantError(`Rebuild is missing admitted Task Session input ${projection.id}`);
     }
     const inserted = await transaction
       .insert(taskSessionInputs)
@@ -169,48 +156,33 @@ export async function projectTaskSessionInput(
       })
       .returning({ id: taskSessionInputs.id });
     if (!inserted[0]) {
-      throw new TaskSessionInvariantError(
-        `Task Session input ${projection.id} was not admitted`,
-      );
+      throw new TaskSessionInvariantError(`Task Session input ${projection.id} was not admitted`);
     }
-    await insertDisposition(
-      transaction,
-      projection,
-      input.binding,
-      input,
-    );
+    await insertDisposition(transaction, projection, input.binding, input);
     return;
   }
 
   if (existing) {
     if (!sameInput(existing, projection)) {
-      throw new TaskSessionLifecycleConflict(
-        "Prompt promotion changed an existing Task Session input",
-        { inputId: projection.id },
-      );
+      throw new TaskSessionLifecycleConflict("Prompt promotion changed an existing Task Session input", {
+        inputId: projection.id,
+      });
     }
     if (existing.promotedSeq === projection.seq) return;
     if (existing.promotedSeq !== null) {
-      throw new TaskSessionLifecycleConflict(
-        "Task Session input was promoted at a different sequence",
-        { inputId: projection.id },
-      );
+      throw new TaskSessionLifecycleConflict("Task Session input was promoted at a different sequence", {
+        inputId: projection.id,
+      });
     }
     const updated = await transaction
       .update(taskSessionInputs)
       .set({ promotedSeq: projection.seq })
-      .where(
-        and(
-          eq(taskSessionInputs.id, projection.id),
-          isNull(taskSessionInputs.promotedSeq),
-        ),
-      )
+      .where(and(eq(taskSessionInputs.id, projection.id), isNull(taskSessionInputs.promotedSeq)))
       .returning({ id: taskSessionInputs.id });
     if (!updated[0]) {
-      throw new TaskSessionLifecycleConflict(
-        "Task Session input promotion lost its lifecycle race",
-        { inputId: projection.id },
-      );
+      throw new TaskSessionLifecycleConflict("Task Session input promotion lost its lifecycle race", {
+        inputId: projection.id,
+      });
     }
     return;
   }
@@ -230,9 +202,7 @@ export async function projectTaskSessionInput(
     })
     .returning({ id: taskSessionInputs.id });
   if (!inserted[0]) {
-    throw new TaskSessionInvariantError(
-      `Task Session input ${projection.id} was not promoted`,
-    );
+    throw new TaskSessionInvariantError(`Task Session input ${projection.id} was not promoted`);
   }
   await insertDisposition(transaction, projection, input.binding, input);
 }

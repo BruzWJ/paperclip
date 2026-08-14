@@ -21,11 +21,7 @@ import { isIP } from "node:net";
 
 export type TrustProxyValue = boolean | number | string[];
 
-const NAMED_SUBNETS: ReadonlySet<string> = new Set([
-  "loopback",
-  "linklocal",
-  "uniquelocal",
-]);
+const NAMED_SUBNETS: ReadonlySet<string> = new Set(["loopback", "linklocal", "uniquelocal"]);
 
 // Strict positive integer: no leading zeros, no whitespace, no sign.
 const STRICT_POS_INT_RE = /^[1-9]\d*$/;
@@ -58,14 +54,10 @@ function isValidSubnetToken(token: string): boolean {
 export function parseTrustProxyEnv(raw: string | undefined): TrustProxyValue | undefined {
   if (raw === undefined) return undefined;
   if (raw.length === 0) {
-    throw new Error(
-      "TRUST_PROXY: empty values are invalid — omit the variable to disable proxy trust",
-    );
+    throw new Error("TRUST_PROXY: empty values are invalid — omit the variable to disable proxy trust");
   }
   if (/\s/.test(raw)) {
-    throw new Error(
-      `TRUST_PROXY: whitespace is not allowed in ${JSON.stringify(raw)}`,
-    );
+    throw new Error(`TRUST_PROXY: whitespace is not allowed in ${JSON.stringify(raw)}`);
   }
   if (raw === "true") return true;
   if (STRICT_POS_INT_RE.test(raw)) return Number(raw);
@@ -76,14 +68,10 @@ export function parseTrustProxyEnv(raw: string | undefined): TrustProxyValue | u
   }
   const tokens = raw.split(",");
   if (tokens.some((token) => token.length === 0)) {
-    throw new Error(
-      `TRUST_PROXY: empty subnet token in ${JSON.stringify(raw)}`,
-    );
+    throw new Error(`TRUST_PROXY: empty subnet token in ${JSON.stringify(raw)}`);
   }
   if (new Set(tokens).size !== tokens.length) {
-    throw new Error(
-      `TRUST_PROXY: duplicate subnet token in ${JSON.stringify(raw)}`,
-    );
+    throw new Error(`TRUST_PROXY: duplicate subnet token in ${JSON.stringify(raw)}`);
   }
   for (const token of tokens) {
     if (!isValidSubnetToken(token)) {

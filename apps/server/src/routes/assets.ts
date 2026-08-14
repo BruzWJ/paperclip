@@ -23,9 +23,7 @@ function sanitizeSvgBuffer(input: Buffer): Buffer | null {
   if (!raw) return null;
 
   const baseDom = new JSDOM("");
-  const domPurify = createDOMPurify(
-    baseDom.window as unknown as Parameters<typeof createDOMPurify>[0],
-  );
+  const domPurify = createDOMPurify(baseDom.window as unknown as Parameters<typeof createDOMPurify>[0]);
   domPurify.addHook("uponSanitizeAttribute", (_node, data) => {
     const attrName = data.attrName.toLowerCase();
     const attrValue = (data.attrValue ?? "").trim();
@@ -94,11 +92,7 @@ export function assetRoutes(db: Db, storage: StorageService) {
     limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
   });
 
-  async function runSingleFileUpload(
-    upload: ReturnType<typeof multer>,
-    req: Request,
-    res: Response,
-  ) {
+  async function runSingleFileUpload(upload: ReturnType<typeof multer>, req: Request, res: Response) {
     await new Promise<void>((resolve, reject) => {
       upload.single("file")(req, res, (err: unknown) => {
         if (err) reject(err);
@@ -125,7 +119,11 @@ export function assetRoutes(db: Db, storage: StorageService) {
       throw err;
     }
 
-    const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
+    const file = (
+      req as Request & {
+        file?: { mimetype: string; buffer: Buffer; originalname: string };
+      }
+    ).file;
     if (!file) {
       res.status(400).json({ error: "Missing file field 'file'" });
       return;
@@ -133,7 +131,10 @@ export function assetRoutes(db: Db, storage: StorageService) {
 
     const parsedMeta = createAssetImageMetadataSchema.safeParse(req.body ?? {});
     if (!parsedMeta.success) {
-      res.status(400).json({ error: "Invalid image metadata", details: validationDetails(parsedMeta.error) });
+      res.status(400).json({
+        error: "Invalid image metadata",
+        details: validationDetails(parsedMeta.error),
+      });
       return;
     }
 
@@ -224,7 +225,11 @@ export function assetRoutes(db: Db, storage: StorageService) {
       throw err;
     }
 
-    const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
+    const file = (
+      req as Request & {
+        file?: { mimetype: string; buffer: Buffer; originalname: string };
+      }
+    ).file;
     if (!file) {
       res.status(400).json({ error: "Missing file field 'file'" });
       return;
@@ -313,10 +318,13 @@ export function assetRoutes(db: Db, storage: StorageService) {
     res.setHeader("Cache-Control", "private, max-age=60");
     res.setHeader("X-Content-Type-Options", "nosniff");
     if (responseContentType === SVG_CONTENT_TYPE) {
-      res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
+      res.setHeader(
+        "Content-Security-Policy",
+        "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
+      );
     }
     const filename = asset.originalFilename ?? "asset";
-    res.setHeader("Content-Disposition", `inline; filename=\"${filename.replaceAll("\"", "")}\"`);
+    res.setHeader("Content-Disposition", `inline; filename=\"${filename.replaceAll('"', "")}\"`);
 
     object.stream.on("error", (err) => {
       next(err);

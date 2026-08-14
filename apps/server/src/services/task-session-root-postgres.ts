@@ -6,8 +6,7 @@ import {
   type Db,
 } from "@paperclipai/db";
 
-type TaskSessionRootTransaction =
-  Parameters<Parameters<Db["transaction"]>[0]>[0];
+type TaskSessionRootTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export interface CreateTaskSessionRootInput {
   id: string;

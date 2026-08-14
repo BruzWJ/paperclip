@@ -1,15 +1,7 @@
-import type {
-  AgentVisibleTaskStatus,
-  TaskExecutionRunStatus,
-  RunLivenessState,
-} from "@paperclipai/shared";
+import type { AgentVisibleTaskStatus, TaskExecutionRunStatus, RunLivenessState } from "@paperclipai/shared";
 
 export type RunLivenessActionability =
-  | "runnable"
-  | "manager_review"
-  | "blocked_external"
-  | "approval_required"
-  | "unknown";
+  "runnable" | "manager_review" | "blocked_external" | "approval_required" | "unknown";
 
 export interface RunLivenessEvidenceInput {
   documentRevisionsCreated: number;
@@ -102,10 +94,14 @@ export function declaredBlocker(input: RunLivenessClassificationInput) {
 export function looksLikePlanningOnly(input: RunLivenessClassificationInput) {
   const text = assistantText(input);
   if (!text) return false;
-  return PLANNING_ONLY_RE.test(text) || NEXT_STEPS_RE.test(text) || /^\s*next(?: steps?| action)?\s*:/im.test(text);
+  return (
+    PLANNING_ONLY_RE.test(text) || NEXT_STEPS_RE.test(text) || /^\s*next(?: steps?| action)?\s*:/im.test(text)
+  );
 }
 
-function normalizeEvidence(evidence: Partial<RunLivenessEvidenceInput> | null | undefined): RunLivenessEvidenceInput {
+function normalizeEvidence(
+  evidence: Partial<RunLivenessEvidenceInput> | null | undefined,
+): RunLivenessEvidenceInput {
   return {
     documentRevisionsCreated: normalizeCount(evidence?.documentRevisionsCreated),
     planDocumentRevisionsCreated: normalizeCount(evidence?.planDocumentRevisionsCreated),
@@ -133,10 +129,12 @@ export function hasConcreteActionEvidence(evidence: Partial<RunLivenessEvidenceI
 
 function evidenceReason(evidence: RunLivenessEvidenceInput) {
   const parts: string[] = [];
-  if (evidence.documentRevisionsCreated > 0) parts.push(`${evidence.documentRevisionsCreated} document revision(s)`);
+  if (evidence.documentRevisionsCreated > 0)
+    parts.push(`${evidence.documentRevisionsCreated} document revision(s)`);
   if (evidence.workProductsCreated > 0) parts.push(`${evidence.workProductsCreated} work product(s)`);
   if (evidence.activityEventsCreated > 0) parts.push(`${evidence.activityEventsCreated} activity event(s)`);
-  if (evidence.toolOrActionEventsCreated > 0) parts.push(`${evidence.toolOrActionEventsCreated} tool/action event(s)`);
+  if (evidence.toolOrActionEventsCreated > 0)
+    parts.push(`${evidence.toolOrActionEventsCreated} tool/action event(s)`);
   return parts.join(", ");
 }
 
@@ -170,9 +168,7 @@ function extractNextActionFromText(text: string) {
 }
 
 function extractNextAction(input: RunLivenessClassificationInput) {
-  const candidates = input.assistantTextParts.filter(
-    (value): value is string => Boolean(readText(value)),
-  );
+  const candidates = input.assistantTextParts.filter((value): value is string => Boolean(readText(value)));
 
   for (const candidate of candidates) {
     const line = extractNextActionFromText(candidate);
@@ -189,7 +185,11 @@ export function classifyRunActionability(input: RunLivenessClassificationInput):
     return RUNNABLE_RE.test(text) ? "runnable" : "unknown";
   }
   if (APPROVAL_REQUIRED_RE.test(text)) return "approval_required";
-  if (EXTERNAL_BLOCKER_RE.test(text) || BLOCKER_RE.test(text) && /\b(?:credential|secret|api key|token|access|input|clarification)\b/i.test(text)) {
+  if (
+    EXTERNAL_BLOCKER_RE.test(text) ||
+    (BLOCKER_RE.test(text) &&
+      /\b(?:credential|secret|api key|token|access|input|clarification)\b/i.test(text))
+  ) {
     return "blocked_external";
   }
   if (MANAGER_REVIEW_RE.test(text)) return "manager_review";
@@ -207,35 +207,30 @@ export function classifyRunLiveness(input: RunLivenessClassificationInput): RunL
   const concreteEvidence = hasConcreteActionEvidence(evidence);
   const lastUsefulActionAt = concreteEvidence ? evidence.latestEvidenceAt : null;
 
-  const output = (state: RunLivenessState, reason: string, nextAction: string | null = null): RunLivenessClassification => ({
+  const output = (
+    state: RunLivenessState,
+    reason: string,
+    nextAction: string | null = null,
+  ): RunLivenessClassification => ({
     livenessState: state,
     livenessReason: compactReason(reason),
     continuationAttempt,
-    lastUsefulActionAt: state === "advanced" || state === "completed" || state === "blocked" ? lastUsefulActionAt : null,
+    lastUsefulActionAt:
+      state === "advanced" || state === "completed" || state === "blocked" ? lastUsefulActionAt : null,
     nextAction,
     actionability,
   });
 
   if (input.runStatus === "interrupted") {
-    return output(
-      "needs_followup",
-      `Run interrupted (${input.failureFacts.terminalReasonCode})`,
-    );
+    return output("needs_followup", `Run interrupted (${input.failureFacts.terminalReasonCode})`);
   }
 
   if (input.runStatus !== "succeeded") {
-    if (
-      input.failureFacts.terminalReasonCode ===
-      UNMANAGED_BACKGROUND_TASK_STOP_REASON
-    ) {
+    if (input.failureFacts.terminalReasonCode === UNMANAGED_BACKGROUND_TASK_STOP_REASON) {
       return output("failed", UNMANAGED_BACKGROUND_TASK_LIVENESS_REASON);
     }
-    const errorTypes = [
-      ...new Set(input.failureFacts.assistantErrors.map((error) => error.type)),
-    ];
-    const errorSuffix = errorTypes.length > 0
-      ? `; assistant error ${errorTypes.join(", ")}`
-      : "";
+    const errorTypes = [...new Set(input.failureFacts.assistantErrors.map((error) => error.type))];
+    const errorSuffix = errorTypes.length > 0 ? `; assistant error ${errorTypes.join(", ")}` : "";
     return output(
       "failed",
       `Run ended with ${input.runStatus} (${input.failureFacts.terminalReasonCode}${errorSuffix})`,
@@ -247,7 +242,11 @@ export function classifyRunLiveness(input: RunLivenessClassificationInput): RunL
   }
 
   if (declaredBlocker(input)) {
-    return output("blocked", taskStatus === "blocked" ? "Task status is blocked" : "Run output declared a concrete blocker", nextAction);
+    return output(
+      "blocked",
+      taskStatus === "blocked" ? "Task status is blocked" : "Run output declared a concrete blocker",
+      nextAction,
+    );
   }
 
   if (!usefulOutput && !concreteEvidence) {
@@ -260,9 +259,17 @@ export function classifyRunLiveness(input: RunLivenessClassificationInput): RunL
 
   if (looksLikePlanningOnly(input) || nextAction) {
     if (actionability === "runnable") {
-      return output("plan_only", "Run described runnable future work without concrete action evidence", nextAction);
+      return output(
+        "plan_only",
+        "Run described runnable future work without concrete action evidence",
+        nextAction,
+      );
     }
-    return output("needs_followup", "Run described future work that is not safe to auto-continue", nextAction);
+    return output(
+      "needs_followup",
+      "Run described future work that is not safe to auto-continue",
+      nextAction,
+    );
   }
 
   if (usefulOutput) {

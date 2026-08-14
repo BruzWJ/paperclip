@@ -1,9 +1,5 @@
 import fs from "node:fs";
-import {
-  paperclipConfigSchema,
-  validationDetails,
-  type PaperclipConfig,
-} from "@paperclipai/shared";
+import { paperclipConfigSchema, validationDetails, type PaperclipConfig } from "@paperclipai/shared";
 import { ZodError } from "zod";
 import { resolvePaperclipConfigPath } from "./paths.js";
 

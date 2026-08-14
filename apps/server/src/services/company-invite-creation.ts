@@ -1,10 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { Db } from "@paperclipai/db";
-import { invites } from "@paperclipai/db";
-import {
-  grantsForUserRole,
-  type UserCompanyMembershipRole,
-} from "@paperclipai/shared";
+import { type Db, invites } from "@paperclipai/db";
+import { grantsForUserRole, type UserCompanyMembershipRole } from "@paperclipai/shared";
 import { conflict } from "../errors.js";
 import { requireUserRole } from "./company-member-roles.js";
 
@@ -35,9 +31,7 @@ export function companyInviteExpiresAt(nowMs: number = Date.now()): Date {
   return new Date(nowMs + COMPANY_INVITE_TTL_MS);
 }
 
-function mergeCompanyInviteDefaults(input: {
-  userRole: UserCompanyMembershipRole;
-}): Record<string, unknown> {
+function mergeCompanyInviteDefaults(input: { userRole: UserCompanyMembershipRole }): Record<string, unknown> {
   return {
     user: {
       role: input.userRole,
@@ -47,29 +41,15 @@ function mergeCompanyInviteDefaults(input: {
 }
 
 function isInviteTokenHashCollision(error: unknown): boolean {
-  const candidates = [
-    error,
-    (error as { cause?: unknown } | null)?.cause ?? null,
-  ];
+  const candidates = [error, (error as { cause?: unknown } | null)?.cause ?? null];
   for (const candidate of candidates) {
     if (!candidate || typeof candidate !== "object") continue;
-    const code =
-      "code" in candidate && typeof candidate.code === "string"
-        ? candidate.code
-        : null;
+    const code = "code" in candidate && typeof candidate.code === "string" ? candidate.code : null;
     if (code !== "23505") continue;
     const constraint =
-      "constraint" in candidate && typeof candidate.constraint === "string"
-        ? candidate.constraint
-        : null;
-    const message =
-      "message" in candidate && typeof candidate.message === "string"
-        ? candidate.message
-        : "";
-    if (
-      constraint === "invites_token_hash_unique_idx" ||
-      message.includes("invites_token_hash_unique_idx")
-    ) {
+      "constraint" in candidate && typeof candidate.constraint === "string" ? candidate.constraint : null;
+    const message = "message" in candidate && typeof candidate.message === "string" ? candidate.message : "";
+    if (constraint === "invites_token_hash_unique_idx" || message.includes("invites_token_hash_unique_idx")) {
       return true;
     }
   }
@@ -84,10 +64,7 @@ export async function createCompanyInvite(
   invite: typeof invites.$inferSelect;
 }> {
   const userRole = requireUserRole(input.userRole ?? "operator");
-  const invitedByUserId =
-    input.provenance.source === "board_api"
-      ? input.provenance.invitedByUserId
-      : null;
+  const invitedByUserId = input.provenance.source === "board_api" ? input.provenance.invitedByUserId : null;
   const insertValues = {
     companyId: input.companyId,
     inviteType: "company_join" as const,

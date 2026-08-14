@@ -21,11 +21,7 @@ interface Entry<Scope> {
 
 export function createTargetLaneRunCoordinator<Scope, Key>(options: {
   keyOf(scope: Scope): Key;
-  drain(
-    scope: Scope,
-    force: boolean,
-    signal: AbortSignal,
-  ): Promise<void>;
+  drain(scope: Scope, force: boolean, signal: AbortSignal): Promise<void>;
 }): TargetLaneRunCoordinator<Scope> {
   const active = new Map<Key, Entry<Scope>>();
 
@@ -44,11 +40,7 @@ export function createTargetLaneRunCoordinator<Scope, Key>(options: {
       try {
         do {
           entry.pendingDrain = false;
-          await options.drain(
-            entry.scope,
-            nextForce,
-            entry.controller.signal,
-          );
+          await options.drain(entry.scope, nextForce, entry.controller.signal);
           nextForce = false;
           if (entry.pendingDrain && !entry.stopping) {
             await Promise.resolve();

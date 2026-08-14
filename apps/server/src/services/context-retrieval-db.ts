@@ -1,496 +1,31 @@
 import { and, asc, eq, gt, or, sql } from "drizzle-orm";
-import {
-  taskSessionMessages,
-  type Db,
-} from "@paperclipai/db";
+import { taskSessionMessages, type Db } from "@paperclipai/db";
 import {
   canonicalizeMoneyAmount,
-  decodeTaskDisposition,
-  decodeSystemCreatorSourceKind,
   parseBudgetCurrency,
-  type AgentVisibleTaskStatus,
   type AcpCostUnavailableReason,
 } from "@paperclipai/shared";
-import {
-  encodeTaskSessionMessage,
-  type TaskSessionMessage,
-} from "@paperclipai/shared/task-session";
-import type {
-  CanonicalRunTracePart,
-  CanonicalRunTraceTurn,
-  CanonicalRunTrace,
-  ContextRetrievalCommentProjection,
-  ContextRetrievalTaskProjection,
-  ContextRetrievalRepository,
-  ProviderSafeTaskCreator,
-  ProviderSafeTaskOwner,
-  RetrievalCursorPosition,
-  RetrievalTaskFilters,
-} from "./context-retrieval.js";
+import type { CanonicalRunTrace, ContextRetrievalRepository } from "./context-retrieval.js";
 import {
   resolveTaskExecutionRunIdentityById,
   type TaskExecutionRunService,
 } from "./task-execution-run-service.js";
-import {
-  redactEventPayload,
-  redactSensitiveText,
-} from "../redaction.js";
-import { redactCurrentUserValue } from "../log-redaction.js";
 import { decodeStoredTaskSessionMessage } from "./task-session/store.js";
-
-interface TaskProjectionRow {
-  id: string;
-  identifier: string;
-  title: string | null;
-  request: string | null;
-  status: string | null;
-  disposition: unknown;
-  priority: string;
-  parentId: string | null;
-  ownerKind: string | null;
-  ownerAgentId: string | null;
-  ownerUserId: string | null;
-  creatorKind: string | null;
-  creatorAuthorityId: string | null;
-  creatorAgentId: string | null;
-  creatorAdapterConfigRevisionId: string | null;
-  creatorUserId: string | null;
-  creatorPluginInstallationId: string | null;
-  creatorPluginKey: string | null;
-  creatorCallbackKey: string | null;
-  creatorCallbackVersion: string | null;
-  creatorRoutineId: string | null;
-  creatorRoutineDispatchId: string | null;
-  creatorSystemSourceKind: string | null;
-  creatorSystemSourceId: string | null;
-  directChildCount: number | string;
-  updatedAt: Date | string;
-}
-
-interface CommentProjectionRow {
-  id: string;
-  taskId: string;
-  body: string;
-  authorType: string | null;
-  authorAgentId: string | null;
-  authorUserId: string | null;
-  authorPluginKey: string | null;
-  runId: string | null;
-  sequence: number | string;
-  createdAt: Date | string;
-}
-
-function exactStatus(value: string | null): AgentVisibleTaskStatus {
-  if (
-    value !== "open" &&
-    value !== "blocked" &&
-    value !== "done" &&
-    value !== "cancelled"
-  ) {
-    throw new Error("Canonical task row has no agent-visible lifecycle status");
-  }
-  return value;
-}
-
-function exactPriority(
-  value: string,
-): ContextRetrievalTaskProjection["priority"] {
-  if (
-    value !== "critical" &&
-    value !== "high" &&
-    value !== "medium" &&
-    value !== "low"
-  ) {
-    throw new Error(`Canonical task row has invalid priority ${value}`);
-  }
-  return value;
-}
-
-function owner(row: TaskProjectionRow): ProviderSafeTaskOwner {
-  if (row.ownerKind === "agent" && row.ownerAgentId && !row.ownerUserId) {
-    return { kind: "agent", agentId: row.ownerAgentId };
-  }
-  if (row.ownerKind === "user" && row.ownerUserId && !row.ownerAgentId) {
-    return { kind: "user", userId: row.ownerUserId };
-  }
-  if (row.ownerKind === "board" && !row.ownerAgentId && !row.ownerUserId) {
-    return { kind: "board" };
-  }
-  throw new Error("Canonical task row has an invalid owner shape");
-}
-
-function creator(row: TaskProjectionRow): ProviderSafeTaskCreator {
-  switch (row.creatorKind) {
-    case "agent-execution":
-      if (
-        row.creatorAuthorityId &&
-        row.creatorAgentId &&
-        row.creatorAdapterConfigRevisionId
-      ) {
-        return {
-          kind: "agent-execution",
-          agentId: row.creatorAgentId,
-        };
-      }
-      break;
-    case "user/board":
-      return { kind: "user/board", userId: row.creatorUserId };
-    case "plugin":
-      if (
-        row.creatorPluginInstallationId &&
-        row.creatorPluginKey &&
-        row.creatorCallbackKey &&
-        row.creatorCallbackVersion
-      ) {
-        return {
-          kind: "plugin",
-          pluginKey: row.creatorPluginKey,
-        };
-      }
-      break;
-    case "routine":
-      if (row.creatorRoutineId && row.creatorRoutineDispatchId) {
-        return {
-          kind: "routine",
-          routineId: row.creatorRoutineId,
-        };
-      }
-      break;
-    case "system":
-      if (row.creatorSystemSourceKind && row.creatorSystemSourceId) {
-        return {
-          kind: "system",
-          sourceKind: decodeSystemCreatorSourceKind(
-            row.creatorSystemSourceKind,
-          ),
-        };
-      }
-      break;
-  }
-  throw new Error("Canonical task row has an invalid creator shape");
-}
-
-function iso(value: Date | string | number): string {
-  const date = value instanceof Date ? value : new Date(value);
-  if (!Number.isFinite(date.getTime())) {
-    throw new Error("Canonical projection timestamp is invalid");
-  }
-  return date.toISOString();
-}
-
-function finiteNumber(value: number | string | null | undefined): number {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function executedRows<Row>(result: unknown): Row[] {
-  return Array.from(result as Iterable<Row>);
-}
-
-export function mapContextTaskRow(
-  row: TaskProjectionRow,
-): ContextRetrievalTaskProjection {
-  if (!row.request) {
-    throw new Error("Canonical task row has no immutable request");
-  }
-  const status = exactStatus(row.status);
-  const disposition =
-    row.disposition === null
-      ? null
-      : decodeTaskDisposition(row.disposition);
-  if (
-    ((status === "open" || status === "blocked") &&
-      disposition !== null) ||
-    ((status === "done" || status === "cancelled") &&
-      disposition === null)
-  ) {
-    throw new Error(
-      "Canonical task row has an invalid lifecycle/disposition shape",
-    );
-  }
-  return {
-    id: row.id,
-    identifier: row.identifier,
-    title: row.title,
-    request: row.request,
-    status,
-    disposition,
-    priority: exactPriority(row.priority),
-    creator: creator(row),
-    owner: owner(row),
-    parentId: row.parentId,
-    directChildCount: Number(row.directChildCount),
-    updatedAt: iso(row.updatedAt),
-  };
-}
-
-function afterDate(after: RetrievalCursorPosition | null): Date | null {
-  if (!after) return null;
-  const value = new Date(after.sortValue);
-  if (!Number.isFinite(value.getTime())) {
-    throw new Error("Task keyset cursor timestamp is invalid");
-  }
-  return value;
-}
-
-const TASK_SELECT = sql.raw(`
-  i.id,
-  i.identifier,
-  i.title,
-  i.request,
-  i.lifecycle_status AS "status",
-  i.disposition,
-  i.priority,
-  i.parent_id AS "parentId",
-  i.owner_kind AS "ownerKind",
-  i.owner_agent_id AS "ownerAgentId",
-  i.owner_user_id AS "ownerUserId",
-  i.creator_kind AS "creatorKind",
-  i.creator_authority_id AS "creatorAuthorityId",
-  (
-    SELECT authority.agent_id
-    FROM task_execution_authorities authority
-    WHERE authority.company_id = i.company_id
-      AND authority.id = i.creator_authority_id
-    LIMIT 1
-  ) AS "creatorAgentId",
-  i.creator_adapter_config_revision_id AS "creatorAdapterConfigRevisionId",
-  i.creator_user_id AS "creatorUserId",
-  i.creator_plugin_installation_id AS "creatorPluginInstallationId",
-  i.creator_plugin_key AS "creatorPluginKey",
-  i.creator_callback_key AS "creatorCallbackKey",
-  i.creator_callback_version AS "creatorCallbackVersion",
-  i.creator_routine_id AS "creatorRoutineId",
-  i.creator_routine_dispatch_id AS "creatorRoutineDispatchId",
-  i.creator_system_source_kind AS "creatorSystemSourceKind",
-  i.creator_system_source_id AS "creatorSystemSourceId",
-  (
-    SELECT count(*)
-    FROM tasks child
-    WHERE child.company_id = i.company_id
-      AND child.parent_id = i.id
-      AND child.hidden_at IS NULL
-  ) AS "directChildCount",
-  i.updated_at AS "updatedAt"
-`);
-
-function taskFilterSql(filters: RetrievalTaskFilters) {
-  return sql`
-    ${filters.status ? sql`AND i.lifecycle_status = ${filters.status}` : sql``}
-    ${filters.priority ? sql`AND i.priority = ${filters.priority}` : sql``}
-  `;
-}
-
-function taskAfterSql(after: RetrievalCursorPosition | null) {
-  const timestamp = afterDate(after);
-  return timestamp && after
-    ? sql`AND (i.updated_at < ${timestamp} OR (i.updated_at = ${timestamp} AND i.id::text < ${after.id}))`
-    : sql``;
-}
-
-export function mapContextCommentAuthor(
-  row: CommentProjectionRow,
-): ContextRetrievalCommentProjection["author"] {
-  if (
-    row.authorType === "agent" &&
-    typeof row.authorAgentId === "string" &&
-    row.authorAgentId.length > 0 &&
-    row.authorUserId === null &&
-    row.authorPluginKey === null
-  ) {
-    return { kind: "agent", agentId: row.authorAgentId };
-  }
-  if (
-    row.authorType === "user" &&
-    row.authorAgentId === null &&
-    typeof row.authorUserId === "string" &&
-    row.authorUserId.length > 0 &&
-    row.authorPluginKey === null
-  ) {
-    return { kind: "user", userId: row.authorUserId };
-  }
-  if (
-    row.authorType === "plugin" &&
-    row.authorAgentId === null &&
-    row.authorUserId === null &&
-    typeof row.authorPluginKey === "string" &&
-    row.authorPluginKey.length > 0
-  ) {
-    return { kind: "plugin", pluginKey: row.authorPluginKey };
-  }
-  if (
-    row.authorType === "system" &&
-    row.authorAgentId === null &&
-    row.authorUserId === null &&
-    row.authorPluginKey === null
-  ) {
-    return { kind: "system" };
-  }
-  throw new Error("Canonical task comment row has an invalid author shape");
-}
-
-function sanitizedValue(value: unknown): unknown {
-  if (typeof value === "string") {
-    return redactCurrentUserValue(redactSensitiveText(value));
-  }
-  if (Array.isArray(value)) {
-    return value.map(sanitizedValue);
-  }
-  if (value && typeof value === "object") {
-    return redactCurrentUserValue(
-      redactEventPayload(value as Record<string, unknown>),
-    );
-  }
-  return value;
-}
-
-function wireRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function wireString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function safeModel(
-  value: unknown,
-): CanonicalRunTraceTurn["model"] {
-  const model = wireRecord(value);
-  const id = wireString(model.id);
-  const providerId = wireString(model.providerID);
-  if (!id || !providerId) return null;
-  return {
-    id,
-    providerId,
-    ...(wireString(model.variant)
-      ? { variant: wireString(model.variant) }
-      : {}),
-  };
-}
-
-function assistantParts(value: unknown): CanonicalRunTracePart[] {
-  if (!Array.isArray(value)) return [];
-  const result: CanonicalRunTracePart[] = [];
-  for (const rawPart of value) {
-    const part = wireRecord(rawPart);
-    const kind = wireString(part.type);
-    const id = wireString(part.id);
-    if (!id) continue;
-    if ((kind === "text" || kind === "reasoning") && wireString(part.text) !== null) {
-      result.push({
-        kind,
-        id,
-        text: redactSensitiveText(String(part.text)),
-      });
-      continue;
-    }
-    if (kind !== "tool") continue;
-    const state = wireRecord(part.state);
-    const status = wireString(state.status);
-    const callId = id;
-    const name = wireString(part.name);
-    if (
-      !name ||
-      (status !== "pending" &&
-        status !== "running" &&
-        status !== "completed" &&
-        status !== "error")
-    ) {
-      continue;
-    }
-    const output =
-      status === "pending"
-        ? undefined
-        : sanitizedValue(
-            Object.fromEntries(
-              ["structured", "content", "result"]
-                .filter((key) => state[key] !== undefined)
-                .map((key) => [key, state[key]]),
-            ),
-          );
-    const error = wireRecord(state.error);
-    result.push({
-      kind: "tool",
-      id,
-      callId,
-      name,
-      state: status,
-      input: sanitizedValue(state.input),
-      ...(output !== undefined ? { output } : {}),
-      ...(wireString(error.type) ? { errorKind: wireString(error.type) } : {}),
-    });
-  }
-  return result;
-}
-
-/**
- * Builds the descriptor-safe run turn from a schema-validated V2 message.
- * Provider metadata, attachments/snapshots, token/cost usage, and message
- * metadata are intentionally absent from this allowlist.
- */
-export function sanitizeCanonicalMessage(
-  message: TaskSessionMessage,
-  seq: number,
-): CanonicalRunTraceTurn {
-  const wire = encodeTaskSessionMessage(message) as unknown as Record<
-    string,
-    unknown
-  >;
-  const time = wireRecord(wire.time);
-  const base = {
-    seq,
-    id: String(wire.id),
-    kind: message.type,
-    timestamp: iso(Number(time.created)),
-  } satisfies Pick<
-    CanonicalRunTraceTurn,
-    "seq" | "id" | "kind" | "timestamp"
-  >;
-  const completedAt =
-    typeof time.completed === "number" ? iso(time.completed) : null;
-
-  switch (message.type) {
-    case "agent-switched":
-      return {
-        ...base,
-        agentId: wireString(wire.agent),
-      };
-    case "model-switched":
-      return {
-        ...base,
-        model: safeModel(wire.model),
-      };
-    case "user":
-    case "synthetic":
-    case "system":
-      return {
-        ...base,
-        text: redactSensitiveText(String(wire.text ?? "")),
-      };
-    case "shell":
-      return {
-        ...base,
-        ...(completedAt ? { completedAt } : {}),
-        callId: wireString(wire.callID),
-        command: redactSensitiveText(String(wire.command ?? "")),
-        output: redactSensitiveText(String(wire.output ?? "")),
-      };
-    case "assistant": {
-      const error = wireRecord(wire.error);
-      return {
-        ...base,
-        ...(completedAt ? { completedAt } : {}),
-        agentId: wireString(wire.agent),
-        model: safeModel(wire.model),
-        content: assistantParts(wire.content),
-        finish: wireString(wire.finish),
-        errorKind: wireString(error.type),
-      };
-    }
-  }
-}
+import {
+  type CommentProjectionRow,
+  executedRows,
+  finiteNumber,
+  iso,
+  mapContextTaskRow,
+  TASK_SELECT,
+  taskAfterSql,
+  taskFilterSql,
+  type TaskProjectionRow,
+} from "./context-retrieval-db-task-projections.js";
+import {
+  mapContextCommentAuthor,
+  sanitizeCanonicalMessage,
+} from "./context-retrieval-db-message-projections.js";
 
 export function createContextRetrievalDbRepository(
   db: Db,
@@ -574,10 +109,7 @@ export function createContextRetrievalDbRepository(
 
     async listTaskComments({ companyId, taskId, after, limit }) {
       const afterSequence = after ? Number(after.sortValue) : null;
-      if (
-        after &&
-        (!Number.isSafeInteger(afterSequence) || afterSequence! < 0)
-      ) {
+      if (after && (!Number.isSafeInteger(afterSequence) || afterSequence! < 0)) {
         throw new Error("Comment keyset cursor sequence is invalid");
       }
       const rows = executedRows<CommentProjectionRow>(
@@ -628,17 +160,10 @@ export function createContextRetrievalDbRepository(
 
     async runTask({ companyId, runId }) {
       const identity = await resolveTaskExecutionRunIdentityById(db, runId);
-      return identity?.companyId === companyId
-        ? { taskId: identity.taskId }
-        : null;
+      return identity?.companyId === companyId ? { taskId: identity.taskId } : null;
     },
 
-    async readCanonicalRunTrace({
-      companyId,
-      runId,
-      after,
-      limit,
-    }) {
+    async readCanonicalRunTrace({ companyId, runId, after, limit }) {
       const identity = await resolveTaskExecutionRunIdentityById(db, runId);
       if (!identity || identity.companyId !== companyId) return null;
       const afterSeq = after ? Number(after.sortValue) : -1;
@@ -694,10 +219,7 @@ export function createContextRetrievalDbRepository(
             after
               ? or(
                   gt(taskSessionMessages.seq, afterSeq),
-                  and(
-                    eq(taskSessionMessages.seq, afterSeq),
-                    gt(taskSessionMessages.id, after.id),
-                  ),
+                  and(eq(taskSessionMessages.seq, afterSeq), gt(taskSessionMessages.id, after.id)),
                 )
               : undefined,
           ),
@@ -709,29 +231,26 @@ export function createContextRetrievalDbRepository(
       );
       const accountingRow = detail.accounting.items.at(-1) ?? null;
       const costRow = accountingRow
-        ? detail.costs.items.find(
-            (candidate) => candidate.accountingId === accountingRow.id,
-          ) ?? null
+        ? (detail.costs.items.find((candidate) => candidate.accountingId === accountingRow.id) ?? null)
         : null;
-      const accounting = accountingRow && costRow
-        ? {
-            contextUsedTokens: finiteNumber(accountingRow.contextUsedTokens),
-            contextWindowTokens: finiteNumber(accountingRow.contextWindowTokens),
-            budgetCurrency: parseBudgetCurrency(costRow.budgetCurrency),
-            cost: costRow.kind === "known"
-              ? {
-                  kind: "known" as const,
-                  knownDeltaAmount: canonicalizeMoneyAmount(
-                    costRow.knownDeltaAmount ?? "0",
-                  ),
-                }
-              : {
-                  kind: "unavailable" as const,
-                  unavailableReason:
-                    costRow.unavailableReason as AcpCostUnavailableReason,
-                },
-          }
-        : null;
+      const accounting =
+        accountingRow && costRow
+          ? {
+              contextUsedTokens: finiteNumber(accountingRow.contextUsedTokens),
+              contextWindowTokens: finiteNumber(accountingRow.contextWindowTokens),
+              budgetCurrency: parseBudgetCurrency(costRow.budgetCurrency),
+              cost:
+                costRow.kind === "known"
+                  ? {
+                      kind: "known" as const,
+                      knownDeltaAmount: canonicalizeMoneyAmount(costRow.knownDeltaAmount ?? "0"),
+                    }
+                  : {
+                      kind: "unavailable" as const,
+                      unavailableReason: costRow.unavailableReason as AcpCostUnavailableReason,
+                    },
+            }
+          : null;
       return {
         runId,
         runKind: run.kind,
@@ -756,3 +275,5 @@ export function createContextRetrievalDbRepository(
     },
   };
 }
+export * from "./context-retrieval-db-task-projections.js";
+export * from "./context-retrieval-db-message-projections.js";

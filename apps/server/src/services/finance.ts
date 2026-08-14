@@ -1,12 +1,5 @@
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import {
-  agents,
-  financeEvents,
-  goals,
-  tasks,
-  projects,
-} from "@paperclipai/db";
+import { type Db, agents, financeEvents, goals, tasks, projects } from "@paperclipai/db";
 import {
   canonicalizeMoneyAmount,
   compareMoneyAmounts,
@@ -29,20 +22,12 @@ function trustedAmount(value: string | null | undefined): MoneyAmount {
 
 function parseFinanceCurrency(value: unknown) {
   if (typeof value !== "string" || !/^[A-Z]{3}$/.test(value)) {
-    throw unprocessable(
-      "Finance currency must be an exact uppercase three-letter code",
-    );
+    throw unprocessable("Finance currency must be an exact uppercase three-letter code");
   }
   return value;
 }
 
-async function assertBelongsToCompany(
-  db: Db,
-  table: any,
-  id: string,
-  companyId: string,
-  label: string,
-) {
+async function assertBelongsToCompany(db: Db, table: any, id: string, companyId: string, label: string) {
   const row = await db
     .select()
     .from(table)
@@ -63,12 +48,9 @@ function rangeConditions(companyId: string, range?: FinanceDateRange) {
 
 function aggregateSelection() {
   return {
-    debitAmount:
-      sql<string>`coalesce(sum(case when ${financeEvents.direction} = 'debit' then ${financeEvents.amount} else 0 end), 0)::text`,
-    creditAmount:
-      sql<string>`coalesce(sum(case when ${financeEvents.direction} = 'credit' then ${financeEvents.amount} else 0 end), 0)::text`,
-    estimatedDebitAmount:
-      sql<string>`coalesce(sum(case when ${financeEvents.direction} = 'debit' and ${financeEvents.estimated} = true then ${financeEvents.amount} else 0 end), 0)::text`,
+    debitAmount: sql<string>`coalesce(sum(case when ${financeEvents.direction} = 'debit' then ${financeEvents.amount} else 0 end), 0)::text`,
+    creditAmount: sql<string>`coalesce(sum(case when ${financeEvents.direction} = 'credit' then ${financeEvents.amount} else 0 end), 0)::text`,
+    estimatedDebitAmount: sql<string>`coalesce(sum(case when ${financeEvents.direction} = 'debit' and ${financeEvents.estimated} = true then ${financeEvents.amount} else 0 end), 0)::text`,
     eventCount: sql<number>`count(*)::int`,
   };
 }
@@ -111,10 +93,7 @@ function summaryRow(row: {
 
 export function financeService(db: Db) {
   return {
-    createEvent: async (
-      companyId: string,
-      data: Omit<typeof financeEvents.$inferInsert, "companyId">,
-    ) => {
+    createEvent: async (companyId: string, data: Omit<typeof financeEvents.$inferInsert, "companyId">) => {
       if (data.agentId) {
         await assertBelongsToCompany(db, agents, data.agentId, companyId, "Agent");
       }
@@ -161,8 +140,7 @@ export function financeService(db: Db) {
           biller: financeEvents.biller,
           currency: financeEvents.currency,
           ...aggregateSelection(),
-          kindCount:
-            sql<number>`count(distinct ${financeEvents.eventKind})::int`,
+          kindCount: sql<number>`count(distinct ${financeEvents.eventKind})::int`,
         })
         .from(financeEvents)
         .where(and(...rangeConditions(companyId, range)))
@@ -194,11 +172,7 @@ export function financeService(db: Db) {
       }));
     },
 
-    list: async (
-      companyId: string,
-      range?: FinanceDateRange,
-      limit = 100,
-    ) => {
+    list: async (companyId: string, range?: FinanceDateRange, limit = 100) => {
       const rows = await db
         .select()
         .from(financeEvents)

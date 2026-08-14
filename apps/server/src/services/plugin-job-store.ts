@@ -30,13 +30,8 @@
  */
 
 import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { plugins, pluginJobs, pluginJobRuns } from "@paperclipai/db";
-import type {
-  PluginJobDeclaration,
-  PluginJobRunStatus,
-  PluginJobRunTrigger,
-} from "@paperclipai/shared";
+import { type Db, plugins, pluginJobs, pluginJobRuns } from "@paperclipai/db";
+import type { PluginJobDeclaration, PluginJobRunStatus, PluginJobRunTrigger } from "@paperclipai/shared";
 import { notFound } from "../errors.js";
 
 // ---------------------------------------------------------------------------
@@ -101,12 +96,7 @@ export function pluginJobStore(db: Db) {
     const rows = await db
       .select({ id: plugins.id, status: plugins.status })
       .from(plugins)
-      .where(
-        and(
-          eq(plugins.id, pluginId),
-          eq(plugins.status, "ready"),
-        ),
-      );
+      .where(and(eq(plugins.id, pluginId), eq(plugins.status, "ready")));
     if (rows.length === 0) {
       throw notFound(`Ready plugin installation not found: ${pluginId}`);
     }
@@ -152,21 +142,13 @@ export function pluginJobStore(db: Db) {
      * @param pluginId - UUID of the owning plugin
      * @param declarations - Job declarations from the plugin manifest
      */
-    async syncJobDeclarations(
-      pluginId: string,
-      declarations: PluginJobDeclaration[],
-    ): Promise<void> {
+    async syncJobDeclarations(pluginId: string, declarations: PluginJobDeclaration[]): Promise<void> {
       await assertPluginReady(pluginId);
 
       // Fetch existing jobs for this plugin
-      const existingJobs = await db
-        .select()
-        .from(pluginJobs)
-        .where(eq(pluginJobs.pluginId, pluginId));
+      const existingJobs = await db.select().from(pluginJobs).where(eq(pluginJobs.pluginId, pluginId));
 
-      const existingByKey = new Map(
-        existingJobs.map((j) => [j.jobKey, j]),
-      );
+      const existingByKey = new Map(existingJobs.map((j) => [j.jobKey, j]));
 
       const declaredKeys = new Set<string>();
 
@@ -192,10 +174,7 @@ export function pluginJobStore(db: Db) {
 
           if (Object.keys(updates).length > 0) {
             updates.updatedAt = new Date();
-            await db
-              .update(pluginJobs)
-              .set(updates)
-              .where(eq(pluginJobs.id, existing.id));
+            await db.update(pluginJobs).set(updates).where(eq(pluginJobs.id, existing.id));
           }
         } else {
           // Insert new job
@@ -249,13 +228,8 @@ export function pluginJobStore(db: Db) {
      * @param jobId - UUID of the job row
      * @returns The job row, or `null` if not found
      */
-    async getJobById(
-      jobId: string,
-    ): Promise<(typeof pluginJobs.$inferSelect) | null> {
-      const rows = await db
-        .select()
-        .from(pluginJobs)
-        .where(eq(pluginJobs.id, jobId));
+    async getJobById(jobId: string): Promise<typeof pluginJobs.$inferSelect | null> {
+      const rows = await db.select().from(pluginJobs).where(eq(pluginJobs.id, jobId));
       return rows[0] ?? null;
     },
 
@@ -268,7 +242,7 @@ export function pluginJobStore(db: Db) {
     async getJobByIdForPlugin(
       pluginId: string,
       jobId: string,
-    ): Promise<(typeof pluginJobs.$inferSelect) | null> {
+    ): Promise<typeof pluginJobs.$inferSelect | null> {
       const rows = await db
         .select()
         .from(pluginJobs)
@@ -277,10 +251,7 @@ export function pluginJobStore(db: Db) {
     },
 
     /** Persist the scheduler's sole next-execution pointer. */
-    async updateNextRunAt(
-      jobId: string,
-      nextRunAt: Date | null,
-    ): Promise<void> {
+    async updateNextRunAt(jobId: string, nextRunAt: Date | null): Promise<void> {
       await db
         .update(pluginJobs)
         .set({
@@ -303,12 +274,14 @@ export function pluginJobStore(db: Db) {
           nextRunAt: input.nextRunAt,
           updatedAt: new Date(),
         })
-        .where(and(
-          eq(pluginJobs.id, input.jobId),
-          eq(pluginJobs.status, "active"),
-          eq(pluginJobs.schedule, input.schedule),
-          eq(pluginJobs.nextRunAt, input.currentNextRunAt),
-        ))
+        .where(
+          and(
+            eq(pluginJobs.id, input.jobId),
+            eq(pluginJobs.status, "active"),
+            eq(pluginJobs.schedule, input.schedule),
+            eq(pluginJobs.nextRunAt, input.currentNextRunAt),
+          ),
+        )
         .returning({ id: pluginJobs.id });
       return rows.length === 1;
     },
@@ -326,27 +299,21 @@ export function pluginJobStore(db: Db) {
      *
      * @returns The newly created run, or `null` when admission is unavailable.
      */
-    async createRunIfIdle(
-      input: CreateJobRunInput,
-    ): Promise<typeof pluginJobRuns.$inferSelect | null> {
+    async createRunIfIdle(input: CreateJobRunInput): Promise<typeof pluginJobRuns.$inferSelect | null> {
       return db.transaction(async (tx) => {
         const [job] = await tx
           .select({ id: pluginJobs.id, status: pluginJobs.status })
           .from(pluginJobs)
-          .where(and(
-            eq(pluginJobs.id, input.jobId),
-            eq(pluginJobs.pluginId, input.pluginId),
-          ))
+          .where(and(eq(pluginJobs.id, input.jobId), eq(pluginJobs.pluginId, input.pluginId)))
           .for("update");
         if (!job || job.status !== "active") return null;
 
         const activeRuns = await tx
           .select({ id: pluginJobRuns.id })
           .from(pluginJobRuns)
-          .where(and(
-            eq(pluginJobRuns.jobId, input.jobId),
-            inArray(pluginJobRuns.status, ["queued", "running"]),
-          ));
+          .where(
+            and(eq(pluginJobRuns.jobId, input.jobId), inArray(pluginJobRuns.status, ["queued", "running"])),
+          );
         if (activeRuns.length > 0) return null;
 
         const [run] = await tx
@@ -377,10 +344,7 @@ export function pluginJobStore(db: Db) {
           status: "running" as PluginJobRunStatus,
           startedAt: new Date(),
         })
-        .where(and(
-          eq(pluginJobRuns.id, runId),
-          eq(pluginJobRuns.status, "queued"),
-        ))
+        .where(and(eq(pluginJobRuns.id, runId), eq(pluginJobRuns.status, "queued")))
         .returning({ id: pluginJobRuns.id });
       return rows.length > 0;
     },
@@ -392,10 +356,7 @@ export function pluginJobStore(db: Db) {
      * @param runId - UUID of the run row
      * @param input - Completion details
      */
-    async completeRun(
-      runId: string,
-      input: CompleteJobRunInput,
-    ): Promise<boolean> {
+    async completeRun(runId: string, input: CompleteJobRunInput): Promise<boolean> {
       const rows = await db
         .update(pluginJobRuns)
         .set({
@@ -404,10 +365,7 @@ export function pluginJobStore(db: Db) {
           durationMs: input.durationMs ?? null,
           finishedAt: new Date(),
         })
-        .where(and(
-          eq(pluginJobRuns.id, runId),
-          inArray(pluginJobRuns.status, ["queued", "running"]),
-        ))
+        .where(and(eq(pluginJobRuns.id, runId), inArray(pluginJobRuns.status, ["queued", "running"])))
         .returning({ id: pluginJobRuns.id });
       return rows.length > 0;
     },
@@ -416,25 +374,16 @@ export function pluginJobStore(db: Db) {
      * Cancel every non-terminal run owned by a plugin in one durable update.
      * This reconciles work that cannot survive a runtime restart or unload.
      */
-    async cancelNonTerminalRuns(
-      pluginId: string,
-      reason: string,
-    ): Promise<number> {
+    async cancelNonTerminalRuns(pluginId: string, reason: string): Promise<number> {
       return cancelRuns(
-        and(
-          eq(pluginJobRuns.pluginId, pluginId),
-          inArray(pluginJobRuns.status, ["queued", "running"]),
-        )!,
+        and(eq(pluginJobRuns.pluginId, pluginId), inArray(pluginJobRuns.status, ["queued", "running"]))!,
         reason,
       );
     },
 
     /** Cancel every non-terminal job run during server startup recovery. */
     async cancelAllNonTerminalRuns(reason: string): Promise<number> {
-      return cancelRuns(
-        inArray(pluginJobRuns.status, ["queued", "running"]),
-        reason,
-      );
+      return cancelRuns(inArray(pluginJobRuns.status, ["queued", "running"]), reason);
     },
 
     /**
@@ -443,10 +392,7 @@ export function pluginJobStore(db: Db) {
      * @param jobId - UUID of the job
      * @param limit - Maximum number of rows to return (default: 50)
      */
-    async listRunsByJob(
-      jobId: string,
-      limit = 50,
-    ): Promise<(typeof pluginJobRuns.$inferSelect)[]> {
+    async listRunsByJob(jobId: string, limit = 50): Promise<(typeof pluginJobRuns.$inferSelect)[]> {
       return db
         .select()
         .from(pluginJobRuns)

@@ -1,7 +1,6 @@
 import { Router } from "express";
-import type { Db } from "@paperclipai/db";
+import { type Db, inboxDismissals, joinRequests } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
-import { inboxDismissals, joinRequests } from "@paperclipai/db";
 import { compareMoneyAmounts, parseMoneyAmount } from "@paperclipai/shared";
 import { sidebarBadgeService } from "../services/sidebar-badges.js";
 import { accessService } from "../services/access.js";
@@ -21,17 +20,12 @@ function buildDismissedAtByKey(
   const entries: Array<[string, number]> = [];
   for (const dismissal of dismissals) {
     if (dismissal.kind === "snooze") {
-      const snoozedUntil = dismissal.snoozedUntil
-        ? new Date(dismissal.snoozedUntil).getTime()
-        : 0;
+      const snoozedUntil = dismissal.snoozedUntil ? new Date(dismissal.snoozedUntil).getTime() : 0;
       if (Number.isFinite(snoozedUntil) && snoozedUntil > now)
         entries.push([dismissal.itemKey, Number.MAX_SAFE_INTEGER]);
       continue;
     }
-    entries.push([
-      dismissal.itemKey,
-      new Date(dismissal.dismissedAt).getTime(),
-    ]);
+    entries.push([dismissal.itemKey, new Date(dismissal.dismissedAt).getTime()]);
   }
   return new Map(entries);
 }
@@ -46,8 +40,7 @@ export function sidebarBadgeRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const canApproveJoins =
-      req.actor.isInstanceAdmin ||
-      (await access.canUser(companyId, req.actor.userId, "joins:approve"));
+      req.actor.isInstanceAdmin || (await access.canUser(companyId, req.actor.userId, "joins:approve"));
 
     const visibleJoinRequests = canApproveJoins
       ? collapseDuplicatePendingUserJoinRequests(
@@ -61,12 +54,7 @@ export function sidebarBadgeRoutes(db: Db) {
               createdAt: joinRequests.createdAt,
             })
             .from(joinRequests)
-            .where(
-              and(
-                eq(joinRequests.companyId, companyId),
-                eq(joinRequests.status, "pending_approval"),
-              ),
-            ),
+            .where(and(eq(joinRequests.companyId, companyId), eq(joinRequests.status, "pending_approval"))),
         ).map(({ id, updatedAt, createdAt }) => ({
           id,
           updatedAt,
@@ -82,12 +70,7 @@ export function sidebarBadgeRoutes(db: Db) {
         snoozedUntil: inboxDismissals.snoozedUntil,
       })
       .from(inboxDismissals)
-      .where(
-        and(
-          eq(inboxDismissals.companyId, companyId),
-          eq(inboxDismissals.userId, req.actor.userId),
-        ),
-      )
+      .where(and(eq(inboxDismissals.companyId, companyId), eq(inboxDismissals.userId, req.actor.userId)))
       .then(buildDismissedAtByKey);
 
     const badges = await svc.get(companyId, {
@@ -98,14 +81,11 @@ export function sidebarBadgeRoutes(db: Db) {
     const hasFailedRuns = badges.failedRuns > 0;
     const alertsCount =
       (summary.agents.error > 0 && !hasFailedRuns ? 1 : 0) +
-      (compareMoneyAmounts(
-        summary.costs.monthBudgetAmount,
-        parseMoneyAmount("0"),
-      ) > 0 && summary.costs.monthUtilizationPercent >= 80
+      (compareMoneyAmounts(summary.costs.monthBudgetAmount, parseMoneyAmount("0")) > 0 &&
+      summary.costs.monthUtilizationPercent >= 80
         ? 1
         : 0);
-    badges.inbox =
-      badges.failedRuns + alertsCount + badges.joinRequests + badges.approvals;
+    badges.inbox = badges.failedRuns + alertsCount + badges.joinRequests + badges.approvals;
 
     res.json(badges);
   });

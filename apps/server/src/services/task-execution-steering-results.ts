@@ -7,8 +7,7 @@ export interface TaskExecutionSteeringResultIdentity {
   readonly segmentOrdinal: number;
 }
 
-export interface TaskExecutionSteeringResult
-  extends TaskExecutionSteeringResultIdentity {
+export interface TaskExecutionSteeringResult extends TaskExecutionSteeringResultIdentity {
   readonly outcome: "succeeded" | "failed" | "cancelled";
   readonly response: string;
   readonly reason: string | null;
@@ -20,9 +19,7 @@ export interface TaskExecutionSteeringResultExpectation {
 }
 
 export interface TaskExecutionSteeringResultBroker {
-  expect(
-    identity: TaskExecutionSteeringResultIdentity,
-  ): TaskExecutionSteeringResultExpectation;
+  expect(identity: TaskExecutionSteeringResultIdentity): TaskExecutionSteeringResultExpectation;
   rebind(
     interrupted: TaskExecutionSteeringResultIdentity,
     continuation: TaskExecutionSteeringResultIdentity,
@@ -30,15 +27,8 @@ export interface TaskExecutionSteeringResultBroker {
   publish(result: TaskExecutionSteeringResult): void;
 }
 
-function exactIdentity(
-  identity: TaskExecutionSteeringResultIdentity,
-): void {
-  for (const value of [
-    identity.companyId,
-    identity.taskId,
-    identity.runId,
-    identity.refId,
-  ]) {
+function exactIdentity(identity: TaskExecutionSteeringResultIdentity): void {
+  for (const value of [identity.companyId, identity.taskId, identity.runId, identity.refId]) {
     if (value.length === 0 || value !== value.trim()) {
       throw new TypeError("Steering result identity must be exact");
     }
@@ -71,10 +61,7 @@ function identityKey(identity: TaskExecutionSteeringResultIdentity): string {
  * persistence, transcript, or provider state.
  */
 export function createTaskExecutionSteeringResultBroker(): TaskExecutionSteeringResultBroker {
-  const expectations = new Map<
-    string,
-    Set<(result: TaskExecutionSteeringResult) => void>
-  >();
+  const expectations = new Map<string, Set<(result: TaskExecutionSteeringResult) => void>>();
   return Object.freeze({
     expect(identity: TaskExecutionSteeringResultIdentity) {
       const key = identityKey(identity);
@@ -82,9 +69,7 @@ export function createTaskExecutionSteeringResultBroker(): TaskExecutionSteering
       const result = new Promise<TaskExecutionSteeringResult>((resolve) => {
         resolveResult = resolve;
       });
-      const resolvers =
-        expectations.get(key) ??
-        new Set<(result: TaskExecutionSteeringResult) => void>();
+      const resolvers = expectations.get(key) ?? new Set<(result: TaskExecutionSteeringResult) => void>();
       resolvers.add(resolveResult);
       expectations.set(key, resolvers);
       return Object.freeze({
@@ -113,8 +98,7 @@ export function createTaskExecutionSteeringResultBroker(): TaskExecutionSteering
       if (!interruptedResolvers) return;
       expectations.delete(interruptedKey);
       const continuationResolvers =
-        expectations.get(continuationKey) ??
-        new Set<(result: TaskExecutionSteeringResult) => void>();
+        expectations.get(continuationKey) ?? new Set<(result: TaskExecutionSteeringResult) => void>();
       for (const resolve of interruptedResolvers) {
         continuationResolvers.add(resolve);
       }

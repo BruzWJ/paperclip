@@ -8,35 +8,55 @@ import { inboxDismissalService, logActivity } from "../services/index.js";
 
 const ITEM_KEY_RE = /^(approval|join|run|attention):.+$/;
 
-const exactItemKeySchema = z.string().min(1)
+const exactItemKeySchema = z
+  .string()
+  .min(1)
   .regex(ITEM_KEY_RE, "Unsupported inbox item key")
   .refine((value) => value.trim() === value);
 
-const inboxDismissalSchema = z.object({
-  itemKey: exactItemKeySchema,
-  kind: z.enum(["dismiss", "snooze"]).default("dismiss"),
-  snoozedUntil: z.string().datetime().refine((value) => new Date(value).toISOString() === value).optional(),
-}).superRefine((value, ctx) => {
-  if (value.kind === "dismiss") {
-    if (value.snoozedUntil != null) {
-      addValidationDetail(ctx, { path: ["snoozedUntil"], message: "Dismissals must not include snoozedUntil" });
+const inboxDismissalSchema = z
+  .object({
+    itemKey: exactItemKeySchema,
+    kind: z.enum(["dismiss", "snooze"]).default("dismiss"),
+    snoozedUntil: z
+      .string()
+      .datetime()
+      .refine((value) => new Date(value).toISOString() === value)
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === "dismiss") {
+      if (value.snoozedUntil != null) {
+        addValidationDetail(ctx, {
+          path: ["snoozedUntil"],
+          message: "Dismissals must not include snoozedUntil",
+        });
+      }
+      return;
     }
-    return;
-  }
 
-  if (!value.snoozedUntil) {
-    addValidationDetail(ctx, { path: ["snoozedUntil"], message: "Snooze requires snoozedUntil" });
-    return;
-  }
-  const timestamp = new Date(value.snoozedUntil).getTime();
-  if (!Number.isFinite(timestamp)) {
-    addValidationDetail(ctx, { path: ["snoozedUntil"], message: "snoozedUntil must be an ISO timestamp" });
-    return;
-  }
-  if (timestamp <= Date.now()) {
-    addValidationDetail(ctx, { path: ["snoozedUntil"], message: "snoozedUntil must be in the future" });
-  }
-});
+    if (!value.snoozedUntil) {
+      addValidationDetail(ctx, {
+        path: ["snoozedUntil"],
+        message: "Snooze requires snoozedUntil",
+      });
+      return;
+    }
+    const timestamp = new Date(value.snoozedUntil).getTime();
+    if (!Number.isFinite(timestamp)) {
+      addValidationDetail(ctx, {
+        path: ["snoozedUntil"],
+        message: "snoozedUntil must be an ISO timestamp",
+      });
+      return;
+    }
+    if (timestamp <= Date.now()) {
+      addValidationDetail(ctx, {
+        path: ["snoozedUntil"],
+        message: "snoozedUntil must be in the future",
+      });
+    }
+  });
 
 export function inboxDismissalRoutes(db: Db) {
   const router = Router({ caseSensitive: true, strict: true });
@@ -51,36 +71,33 @@ export function inboxDismissalRoutes(db: Db) {
     res.json(dismissals);
   });
 
-  router.post(
-    "/companies/:companyId/inbox-dismissals",
-    validate(inboxDismissalSchema),
-    async (req, res) => {
-      const companyId = req.params.companyId as string;
-      assertCompanyAccess(req, companyId);
-      const userId = req.actor.userId;
+  router.post("/companies/:companyId/inbox-dismissals", validate(inboxDismissalSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const userId = req.actor.userId;
 
-      const dismissal = req.body.kind === "snooze"
+    const dismissal =
+      req.body.kind === "snooze"
         ? await svc.snooze(companyId, userId, req.body.itemKey, new Date(req.body.snoozedUntil))
         : await svc.dismiss(companyId, userId, req.body.itemKey, new Date());
-      await logActivity(db, {
-        companyId,
-        actorType: "user",
-        actorId: req.actor.userId,
-        action: dismissal.kind === "snooze" ? "inbox.snoozed" : "inbox.dismissed",
-        entityType: "company",
-        entityId: companyId,
-        details: {
-          userId,
-          itemKey: dismissal.itemKey,
-          kind: dismissal.kind,
-          dismissedAt: dismissal.dismissedAt,
-          snoozedUntil: dismissal.snoozedUntil,
-        },
-      });
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: req.actor.userId,
+      action: dismissal.kind === "snooze" ? "inbox.snoozed" : "inbox.dismissed",
+      entityType: "company",
+      entityId: companyId,
+      details: {
+        userId,
+        itemKey: dismissal.itemKey,
+        kind: dismissal.kind,
+        dismissedAt: dismissal.dismissedAt,
+        snoozedUntil: dismissal.snoozedUntil,
+      },
+    });
 
-      res.status(201).json(dismissal);
-    },
-  );
+    res.status(201).json(dismissal);
+  });
 
   router.delete("/companies/:companyId/inbox-dismissals/:itemKey", async (req, res) => {
     const companyId = req.params.companyId as string;

@@ -1,9 +1,4 @@
-import {
-  existsSync,
-  lstatSync,
-  readFileSync,
-  statSync,
-} from "node:fs";
+import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import {
@@ -22,9 +17,7 @@ function parseEnvFile(contents: string): Record<string, string> {
   for (const rawLine of contents.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
-    const match = rawLine.match(
-      /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/,
-    );
+    const match = rawLine.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
     if (!match) {
       throw new Error("Pinned worktree env contains an invalid line.");
     }
@@ -50,29 +43,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expected: string[],
-): boolean {
+function hasExactKeys(value: Record<string, unknown>, expected: string[]): boolean {
   const actual = Object.keys(value).sort();
   const canonical = [...expected].sort();
-  return (
-    actual.length === canonical.length &&
-    actual.every((key, index) => key === canonical[index])
-  );
+  return actual.length === canonical.length && actual.every((key, index) => key === canonical[index]);
 }
 
-function parseIdentity(
-  value: unknown,
-  field: string,
-): VerifiedDatabaseIdentity {
+function parseIdentity(value: unknown, field: string): VerifiedDatabaseIdentity {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, [
-      "clusterSystemIdentifier",
-      "databaseOid",
-      "databaseName",
-    ]) ||
+    !hasExactKeys(value, ["clusterSystemIdentifier", "databaseOid", "databaseName"]) ||
     typeof value.clusterSystemIdentifier !== "string" ||
     typeof value.databaseOid !== "string" ||
     typeof value.databaseName !== "string"
@@ -140,40 +120,24 @@ function parseWorktreeMarker(markerPath: string): ParsedWorktreeMarker {
     typeof parsed.parent.configPath !== "string" ||
     typeof parsed.parent.locator !== "string" ||
     typeof parsed.fingerprints.targetDatabaseUrlSha256 !== "string" ||
-    !/^[0-9a-f]{64}$/.test(
-      parsed.fingerprints.targetDatabaseUrlSha256,
-    ) ||
+    !/^[0-9a-f]{64}$/.test(parsed.fingerprints.targetDatabaseUrlSha256) ||
     typeof parsed.fingerprints.betterAuthSecretSha256 !== "string" ||
-    !/^[0-9a-f]{64}$/.test(
-      parsed.fingerprints.betterAuthSecretSha256,
-    ) ||
-    typeof parsed.fingerprints.parentBetterAuthSecretSha256 !==
-      "string" ||
-    !/^[0-9a-f]{64}$/.test(
-      parsed.fingerprints.parentBetterAuthSecretSha256,
-    )
+    !/^[0-9a-f]{64}$/.test(parsed.fingerprints.betterAuthSecretSha256) ||
+    typeof parsed.fingerprints.parentBetterAuthSecretSha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(parsed.fingerprints.parentBetterAuthSecretSha256)
   ) {
     throw new Error(`Immutable worktree marker ${markerPath} is invalid.`);
   }
   return {
     worktreeInstanceId: parsed.worktreeInstanceId,
-    targetIdentity: parseIdentity(
-      parsed.target.identity,
-      "target.identity",
-    ),
-    parentIdentity: parseIdentity(
-      parsed.parent.identity,
-      "parent.identity",
-    ),
+    targetIdentity: parseIdentity(parsed.target.identity, "target.identity"),
+    parentIdentity: parseIdentity(parsed.parent.identity, "parent.identity"),
     targetLocator: parsed.target.locator,
     parentConfigPath: path.resolve(parsed.parent.configPath),
     parentLocator: parsed.parent.locator,
-    targetDatabaseUrlSha256:
-      parsed.fingerprints.targetDatabaseUrlSha256,
-    betterAuthSecretSha256:
-      parsed.fingerprints.betterAuthSecretSha256,
-    parentBetterAuthSecretSha256:
-      parsed.fingerprints.parentBetterAuthSecretSha256,
+    targetDatabaseUrlSha256: parsed.fingerprints.targetDatabaseUrlSha256,
+    betterAuthSecretSha256: parsed.fingerprints.betterAuthSecretSha256,
+    parentBetterAuthSecretSha256: parsed.fingerprints.parentBetterAuthSecretSha256,
   };
 }
 
@@ -189,9 +153,7 @@ export function isLinkedGitWorktreeCheckout(rootDir: string): boolean {
   return (
     existsSync(gitMetadataPath) &&
     lstatSync(gitMetadataPath).isFile() &&
-    readFileSync(gitMetadataPath, "utf8")
-      .trimStart()
-      .startsWith("gitdir:")
+    readFileSync(gitMetadataPath, "utf8").trimStart().startsWith("gitdir:")
   );
 }
 
@@ -200,11 +162,7 @@ export function resolveWorktreeEnvFilePath(rootDir: string): string {
 }
 
 export function resolveWorktreeMarkerFilePath(rootDir: string): string {
-  return path.resolve(
-    rootDir,
-    ".paperclip",
-    "worktree-instance.json",
-  );
+  return path.resolve(rootDir, ".paperclip", "worktree-instance.json");
 }
 
 export type WorktreeEnvBootstrapResult =
@@ -228,23 +186,20 @@ export type WorktreeEnvBootstrapDependencies = {
   resolveDatabaseTarget: typeof resolveDatabaseTarget;
   probeDatabaseIdentity: typeof probeDatabaseIdentity;
   assertSameDatabaseIdentity: typeof assertSameDatabaseIdentity;
-  assertDistinctDatabaseIdentities:
-    typeof assertDistinctDatabaseIdentities;
+  assertDistinctDatabaseIdentities: typeof assertDistinctDatabaseIdentities;
 };
 
-const productionBootstrapDependencies:
-  WorktreeEnvBootstrapDependencies = {
-    resolveDatabaseTarget,
-    probeDatabaseIdentity,
-    assertSameDatabaseIdentity,
-    assertDistinctDatabaseIdentities,
-  };
+const productionBootstrapDependencies: WorktreeEnvBootstrapDependencies = {
+  resolveDatabaseTarget,
+  probeDatabaseIdentity,
+  assertSameDatabaseIdentity,
+  assertDistinctDatabaseIdentities,
+};
 
 export async function bootstrapDevRunnerWorktreeEnv(
   rootDir: string,
   env: NodeJS.ProcessEnv = process.env,
-  dependencies: WorktreeEnvBootstrapDependencies =
-    productionBootstrapDependencies,
+  dependencies: WorktreeEnvBootstrapDependencies = productionBootstrapDependencies,
 ): Promise<WorktreeEnvBootstrapResult> {
   if (!isLinkedGitWorktreeCheckout(rootDir)) {
     return {
@@ -255,11 +210,7 @@ export async function bootstrapDevRunnerWorktreeEnv(
   }
   const envPath = resolveWorktreeEnvFilePath(rootDir);
   const markerPath = resolveWorktreeMarkerFilePath(rootDir);
-  const creationLockPath = path.resolve(
-    rootDir,
-    ".paperclip",
-    "worktree-creation.lock",
-  );
+  const creationLockPath = path.resolve(rootDir, ".paperclip", "worktree-creation.lock");
   if (!existsSync(envPath) && !existsSync(markerPath)) {
     return { envPath, markerPath, missingEnv: true };
   }
@@ -269,15 +220,9 @@ export async function bootstrapDevRunnerWorktreeEnv(
     );
   }
   if (existsSync(creationLockPath)) {
-    throw new Error(
-      "Linked worktree creation did not finish. Discard it and provision the worktree again.",
-    );
+    throw new Error("Linked worktree creation did not finish. Discard it and provision the worktree again.");
   }
-  const configPath = path.resolve(
-    rootDir,
-    ".paperclip",
-    "config.json",
-  );
+  const configPath = path.resolve(rootDir, ".paperclip", "config.json");
   if (!existsSync(configPath)) {
     throw new Error(
       "Linked worktree creation marker has no matching config. Discard it and provision a new worktree.",
@@ -296,61 +241,36 @@ export async function bootstrapDevRunnerWorktreeEnv(
     !entries.DATABASE_URL ||
     !entries.BETTER_AUTH_SECRET
   ) {
-    throw new Error(
-      "Pinned worktree env must contain exactly DATABASE_URL and BETTER_AUTH_SECRET.",
-    );
+    throw new Error("Pinned worktree env must contain exactly DATABASE_URL and BETTER_AUTH_SECRET.");
   }
   const marker = parseWorktreeMarker(markerPath);
   if (
-    sha256(entries.DATABASE_URL) !==
-      marker.targetDatabaseUrlSha256 ||
-    sha256(entries.BETTER_AUTH_SECRET) !==
-      marker.betterAuthSecretSha256
+    sha256(entries.DATABASE_URL) !== marker.targetDatabaseUrlSha256 ||
+    sha256(entries.BETTER_AUTH_SECRET) !== marker.betterAuthSecretSha256
   ) {
-    throw new Error(
-      "Pinned worktree env does not match its immutable creation marker.",
-    );
+    throw new Error("Pinned worktree env does not match its immutable creation marker.");
   }
-  if (
-    redactExternalPostgresConnectionString(entries.DATABASE_URL) !==
-    marker.targetLocator
-  ) {
-    throw new Error(
-      "Pinned worktree database locator does not match its immutable creation marker.",
-    );
+  if (redactExternalPostgresConnectionString(entries.DATABASE_URL) !== marker.targetLocator) {
+    throw new Error("Pinned worktree database locator does not match its immutable creation marker.");
   }
 
   const parentTarget = dependencies.resolveDatabaseTarget({
     configPath: marker.parentConfigPath,
     environment: {},
   });
-  const parentEnvPath = path.resolve(
-    path.dirname(marker.parentConfigPath),
-    ".env",
-  );
+  const parentEnvPath = path.resolve(path.dirname(marker.parentConfigPath), ".env");
   if (!existsSync(parentEnvPath)) {
-    throw new Error(
-      "Persisted parent env is unavailable. Discard this worktree and create a new one.",
-    );
+    throw new Error("Persisted parent env is unavailable. Discard this worktree and create a new one.");
   }
-  const parentEntries = parseEnvFile(
-    readFileSync(parentEnvPath, "utf8"),
-  );
+  const parentEntries = parseEnvFile(readFileSync(parentEnvPath, "utf8"));
   if (
     !parentEntries.BETTER_AUTH_SECRET ||
-    sha256(parentEntries.BETTER_AUTH_SECRET) !==
-      marker.parentBetterAuthSecretSha256 ||
+    sha256(parentEntries.BETTER_AUTH_SECRET) !== marker.parentBetterAuthSecretSha256 ||
     parentEntries.BETTER_AUTH_SECRET === entries.BETTER_AUTH_SECRET
   ) {
-    throw new Error(
-      "Worktree Better Auth secret must remain distinct from the persisted parent secret.",
-    );
+    throw new Error("Worktree Better Auth secret must remain distinct from the persisted parent secret.");
   }
-  if (
-    redactExternalPostgresConnectionString(
-      parentTarget.connectionString,
-    ) !== marker.parentLocator
-  ) {
+  if (redactExternalPostgresConnectionString(parentTarget.connectionString) !== marker.parentLocator) {
     throw new Error(
       "Persisted parent database locator has drifted. Discard this worktree and create a new one.",
     );
@@ -358,9 +278,7 @@ export async function bootstrapDevRunnerWorktreeEnv(
 
   const [targetIdentity, parentIdentity] = await Promise.all([
     dependencies.probeDatabaseIdentity(entries.DATABASE_URL),
-    dependencies.probeDatabaseIdentity(
-      parentTarget.connectionString,
-    ),
+    dependencies.probeDatabaseIdentity(parentTarget.connectionString),
   ]);
   dependencies.assertSameDatabaseIdentity(
     marker.targetIdentity,

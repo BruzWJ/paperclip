@@ -1,6 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { taskWorkProducts } from "@paperclipai/db";
+import { type Db, taskWorkProducts } from "@paperclipai/db";
 import { isCanonicalUuid, type TaskWorkProduct } from "@paperclipai/shared";
 
 type TaskWorkProductRow = typeof taskWorkProducts.$inferSelect;
@@ -50,7 +49,11 @@ export function workProductService(db: Db) {
       return row ? toTaskWorkProduct(row) : null;
     },
 
-    createForTask: async (taskId: string, companyId: string, data: Omit<typeof taskWorkProducts.$inferInsert, "taskId" | "companyId">) => {
+    createForTask: async (
+      taskId: string,
+      companyId: string,
+      data: Omit<typeof taskWorkProducts.$inferInsert, "taskId" | "companyId">,
+    ) => {
       const row = await db.transaction(async (tx) => {
         if (data.isPrimary) {
           await tx

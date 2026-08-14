@@ -1,10 +1,25 @@
 import { loadConfig, type Config } from "../config.js";
-import { createStorageProviderFromConfig } from "./provider-registry.js";
+import { createLocalDiskStorageProvider } from "./local-disk-provider.js";
+import { createS3StorageProvider } from "./s3-provider.js";
 import { createStorageService } from "./service.js";
-import type { StorageService } from "./types.js";
+import type { StorageProvider, StorageService } from "./types.js";
 
 let cachedStorageService: StorageService | null = null;
 let cachedSignature: string | null = null;
+
+function createStorageProviderFromConfig(config: Config): StorageProvider {
+  if (config.storageProvider === "local_disk") {
+    return createLocalDiskStorageProvider(config.storageLocalDiskBaseDir);
+  }
+
+  return createS3StorageProvider({
+    bucket: config.storageS3Bucket,
+    region: config.storageS3Region,
+    endpoint: config.storageS3Endpoint,
+    prefix: config.storageS3Prefix,
+    forcePathStyle: config.storageS3ForcePathStyle,
+  });
+}
 
 function signatureForConfig(config: Config): string {
   return JSON.stringify({

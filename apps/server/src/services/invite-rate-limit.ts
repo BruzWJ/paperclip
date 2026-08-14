@@ -20,11 +20,13 @@ export type InviteRateLimiter = {
   consume(ip: string): InviteRateLimitResult;
 };
 
-export function createInviteRateLimiter(options: {
-  windowMs?: number;
-  maxRequests?: number;
-  now?: () => number;
-} = {}): InviteRateLimiter {
+export function createInviteRateLimiter(
+  options: {
+    windowMs?: number;
+    maxRequests?: number;
+    now?: () => number;
+  } = {},
+): InviteRateLimiter {
   const windowMs = options.windowMs ?? INVITE_RATE_LIMIT_WINDOW_MS;
   const maxRequests = options.maxRequests ?? INVITE_RATE_LIMIT_MAX_REQUESTS;
   const now = options.now ?? Date.now;
@@ -59,10 +61,7 @@ export function createInviteRateLimiter(options: {
           allowed: false,
           limit: maxRequests,
           remaining: 0,
-          retryAfterSeconds: Math.max(
-            1,
-            Math.ceil((oldestHit + windowMs - currentTime) / 1000),
-          ),
+          retryAfterSeconds: Math.max(1, Math.ceil((oldestHit + windowMs - currentTime) / 1000)),
         };
       }
 

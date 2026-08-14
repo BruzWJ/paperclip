@@ -5,11 +5,7 @@ import { canonicalUuidSchema, isCanonicalUuid } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { activityService } from "../services/activity.js";
 import { logActivity } from "../services/activity-log.js";
-import {
-  assertBoard,
-  assertCompanyAccess,
-  getAccessibleResource,
-} from "./authz.js";
+import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
 import { accessService, taskService } from "../services/index.js";
 import {
   assertExactQueryKeys,
@@ -18,10 +14,7 @@ import {
 } from "./exact-query.js";
 
 const createActivitySchema = z.object({
-  actorType: z
-    .enum(["agent", "user", "system", "plugin"])
-    .optional()
-    .default("system"),
+  actorType: z.enum(["agent", "user", "system", "plugin"]).optional().default("system"),
   actorId: z.string().min(1),
   action: z.string().min(1),
   entityType: z.string().min(1),
@@ -47,11 +40,9 @@ export function activityRoutes(db: Db) {
       resource: { type: "company", companyId },
     });
     if (decision.allowed) return true;
-    res
-      .status(403)
-      .json({
-        error: "Activity is outside this actor's authorization boundary",
-      });
+    res.status(403).json({
+      error: "Activity is outside this actor's authorization boundary",
+    });
     return false;
   }
 
@@ -82,11 +73,9 @@ export function activityRoutes(db: Db) {
       },
     });
     if (decision.allowed) return true;
-    res
-      .status(403)
-      .json({
-        error: "Task activity is outside this actor's authorization boundary",
-      });
+    res.status(403).json({
+      error: "Task activity is outside this actor's authorization boundary",
+    });
     return false;
   }
 
@@ -116,29 +105,20 @@ export function activityRoutes(db: Db) {
     res.json(result);
   });
 
-  router.post(
-    "/companies/:companyId/activity",
-    validate(createActivitySchema),
-    async (req, res) => {
-      assertBoard(req);
-      const companyId = req.params.companyId as string;
-      assertCompanyAccess(req, companyId);
-      const event = await logActivity(db, {
-        companyId,
-        ...req.body,
-      });
-      res.status(201).json(event);
-    },
-  );
+  router.post("/companies/:companyId/activity", validate(createActivitySchema), async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const event = await logActivity(db, {
+      companyId,
+      ...req.body,
+    });
+    res.status(201).json(event);
+  });
 
   router.get("/tasks/:id/activity", async (req, res) => {
     const taskId = req.params.id as string;
-    const task = await getAccessibleResource(
-      req,
-      res,
-      taskSvc.getById(taskId),
-      "Task not found",
-    );
+    const task = await getAccessibleResource(req, res, taskSvc.getById(taskId), "Task not found");
     if (!task) return;
     if (!(await assertTaskReadAllowed(req, res, task))) return;
     const result = await svc.forTask(task.id);

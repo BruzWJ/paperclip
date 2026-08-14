@@ -18,11 +18,13 @@ export type CompanySearchRateLimiter = {
   consume(actor: CompanySearchRateLimitActor): CompanySearchRateLimitResult;
 };
 
-export function createCompanySearchRateLimiter(options: {
-  windowMs?: number;
-  maxRequests?: number;
-  now?: () => number;
-} = {}): CompanySearchRateLimiter {
+export function createCompanySearchRateLimiter(
+  options: {
+    windowMs?: number;
+    maxRequests?: number;
+    now?: () => number;
+  } = {},
+): CompanySearchRateLimiter {
   const windowMs = options.windowMs ?? COMPANY_SEARCH_RATE_LIMIT_WINDOW_MS;
   const maxRequests = options.maxRequests ?? COMPANY_SEARCH_RATE_LIMIT_MAX_REQUESTS;
   const now = options.now ?? Date.now;

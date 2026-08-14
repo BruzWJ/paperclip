@@ -1,5 +1,4 @@
-import type { Db } from "@paperclipai/db";
-import { principalPermissionGrants } from "@paperclipai/db";
+import { type Db, principalPermissionGrants } from "@paperclipai/db";
 import {
   grantsForUserRole,
   type UserCompanyMembershipRole,
@@ -31,10 +30,8 @@ export async function insertMissingPrincipalGrants(
       input.grants.map((grant) => ({
         companyId: input.companyId,
         principalType: input.principalType,
-        principalUserId:
-          input.principalType === "user" ? input.principalId : null,
-        principalAgentId:
-          input.principalType === "agent" ? input.principalId : null,
+        principalUserId: input.principalType === "user" ? input.principalId : null,
+        principalAgentId: input.principalType === "agent" ? input.principalId : null,
         permissionKey: grant.permissionKey,
         scope: grant.scope ?? null,
         grantedByUserId: input.grantedByUserId,

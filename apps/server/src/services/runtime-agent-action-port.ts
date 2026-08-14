@@ -9,15 +9,9 @@ import {
 } from "./paperclip-managed-tool-router.js";
 import { RuntimeToolArgumentsInvalid } from "./runtime-tool-errors.js";
 
-export type AgentRunAgentActionPort = Pick<
-  AgentRunManagedActionPort,
-  "agentHire" | "agentConfigure"
->;
+export type AgentRunAgentActionPort = Pick<AgentRunManagedActionPort, "agentHire" | "agentConfigure">;
 
-export type AgentRunNonAgentActionPort = Omit<
-  AgentRunManagedActionPort,
-  "agentHire" | "agentConfigure"
->;
+export type AgentRunNonAgentActionPort = Omit<AgentRunManagedActionPort, "agentHire" | "agentConfigure">;
 
 async function mapInvalidArguments<T>(action: () => Promise<T>): Promise<T> {
   try {
@@ -48,8 +42,7 @@ export function createRuntimeAgentActionPort(
 ): AgentRunAgentActionPort {
   return {
     async agentHire(input) {
-      const { reportsTo: _reportsTo, ...configuration } =
-        input.command.configuration;
+      const { reportsTo: _reportsTo, ...configuration } = input.command.configuration;
       return mapInvalidArguments(async () => {
         await service.hireFromRun({
           capability: input.authority.capability,
@@ -72,10 +65,7 @@ export function createRuntimeAgentActionPort(
           });
           return { status: "configured" as const };
         } catch (error) {
-          if (
-            !(error instanceof RuntimeAgentConfigurationConsentRequired)
-            || !options.requestChangeConsent
-          ) {
+          if (!(error instanceof RuntimeAgentConfigurationConsentRequired) || !options.requestChangeConsent) {
             throw error;
           }
           await options.requestChangeConsent({

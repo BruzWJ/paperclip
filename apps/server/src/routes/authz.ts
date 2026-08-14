@@ -1,20 +1,14 @@
 import type { Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { authUsers, companyMemberships } from "@paperclipai/db";
+import { type Db, authUsers, companyMemberships } from "@paperclipai/db";
 import { forbidden, unauthorized } from "../errors.js";
-import {
-  isBoardActor,
-  type BoardActor,
-  type RequestActor,
-} from "../http/request-actor.js";
+import { isBoardActor, type BoardActor, type RequestActor } from "../http/request-actor.js";
 
-type RequestWithActor<TActor extends RequestActor> =
-  Request & { actor: TActor };
+type RequestWithActor<TActor extends RequestActor> = Request & {
+  actor: TActor;
+};
 
-export function assertAuthenticated(
-  req: Request,
-): asserts req is RequestWithActor<BoardActor> {
+export function assertAuthenticated(req: Request): asserts req is RequestWithActor<BoardActor> {
   if (req.actor.type === "none") {
     throw unauthorized();
   }
@@ -23,9 +17,7 @@ export function assertAuthenticated(
   }
 }
 
-export function assertBoard(
-  req: Request,
-): asserts req is RequestWithActor<BoardActor> {
+export function assertBoard(req: Request): asserts req is RequestWithActor<BoardActor> {
   if (!isBoardActor(req.actor)) {
     throw forbidden("Board access required");
   }
@@ -56,9 +48,7 @@ export function hasBoardOrgAccess(req: Request) {
   return Array.isArray(req.actor.companyIds) && req.actor.companyIds.length > 0;
 }
 
-export function assertBoardOrgAccess(
-  req: Request,
-): asserts req is RequestWithActor<BoardActor> {
+export function assertBoardOrgAccess(req: Request): asserts req is RequestWithActor<BoardActor> {
   assertBoard(req);
   if (hasBoardOrgAccess(req)) {
     return;
@@ -66,9 +56,7 @@ export function assertBoardOrgAccess(
   throw forbidden("Company membership or instance admin access required");
 }
 
-export function assertInstanceAdmin(
-  req: Request,
-): asserts req is RequestWithActor<BoardActor> {
+export function assertInstanceAdmin(req: Request): asserts req is RequestWithActor<BoardActor> {
   assertBoard(req);
   if (req.actor.isInstanceAdmin) {
     return;
@@ -103,11 +91,7 @@ export function assertCompanyAccess(
  * routes. A board key is accepted only after middleware has resolved it to a
  * real Better Auth user; raw/provider identities never satisfy this shape.
  */
-export async function authorizeHumanTaskSteering(
-  db: Db,
-  req: Request,
-  companyId: string,
-): Promise<string> {
+export async function authorizeHumanTaskSteering(db: Db, req: Request, companyId: string): Promise<string> {
   assertCompanyAccess(req, companyId);
   assertBoard(req);
   const userId = req.actor.userId;
@@ -167,11 +151,7 @@ export async function getAccessibleResource<T extends { companyId: string }>(
   notFoundMessage: string,
 ): Promise<T | null> {
   const resolved = await resource;
-  if (
-    !resolved
-    || !isBoardActor(req.actor)
-    || !req.actor.companyIds.includes(resolved.companyId)
-  ) {
+  if (!resolved || !isBoardActor(req.actor) || !req.actor.companyIds.includes(resolved.companyId)) {
     res.status(404).json({ error: notFoundMessage });
     return null;
   }

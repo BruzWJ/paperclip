@@ -1,14 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, count, eq, notInArray } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import { type Db, companies, companyLogos, assets, agents, tasks } from "@paperclipai/db";
 import { isCanonicalUuid } from "@paperclipai/shared";
-import {
-  companies,
-  companyLogos,
-  assets,
-  agents,
-  tasks,
-} from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
 import {
@@ -17,10 +10,7 @@ import {
   purgeCompanySessionGraphInTx,
   reactivateCompanySessionGraphInTx,
 } from "./task-session-lifecycle.js";
-import {
-  budgetService,
-  type CanonicalCompanyCreation,
-} from "./budgets.js";
+import { budgetService, type CanonicalCompanyCreation } from "./budgets.js";
 
 export interface CompanyActivityActor {
   actorType: "user" | "agent" | "system" | "plugin";
@@ -41,24 +31,13 @@ export function companyService(db: Db) {
 
   type CompanyTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-  async function applyArchiveCascadeInTx(
-    tx: CompanyTx,
-    id: string,
-    actor: CompanyActivityActor,
-  ) {
-    const lifecycle = await archiveCompanySessionGraphInTx(
-      tx,
-      id,
-      randomUUID(),
-      {
-        actor: {
-          requestedByAgentId:
-            actor.actorType === "agent" ? actor.agentId ?? actor.actorId : null,
-          requestedByUserId:
-            actor.actorType === "user" ? actor.actorId : null,
-        },
+  async function applyArchiveCascadeInTx(tx: CompanyTx, id: string, actor: CompanyActivityActor) {
+    const lifecycle = await archiveCompanySessionGraphInTx(tx, id, randomUUID(), {
+      actor: {
+        requestedByAgentId: actor.actorType === "agent" ? (actor.agentId ?? actor.actorId) : null,
+        requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
       },
-    );
+    });
     if (!lifecycle) throw notFound("Company not found");
     const pausedAgentRows = await tx
       .update(agents)
@@ -68,10 +47,12 @@ export function companyService(db: Db) {
         pausedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(and(
-        eq(agents.companyId, id),
-        notInArray(agents.status, ["paused", "terminated", "pending_approval"]),
-      ))
+      .where(
+        and(
+          eq(agents.companyId, id),
+          notInArray(agents.status, ["paused", "terminated", "pending_approval"]),
+        ),
+      )
       .returning({ id: agents.id });
 
     return {
@@ -137,18 +118,12 @@ export function companyService(db: Db) {
     };
   }
 
-  async function getMonthlySpendByCompanyIds(
-    companyIds: string[],
-  ) {
+  async function getMonthlySpendByCompanyIds(companyIds: string[]) {
     return budgets.getCompanyMonthlyKnownSpend(companyIds);
   }
 
-  async function hydrateCompanySpend<T extends { id: string }>(
-    rows: T[],
-  ) {
-    const spendByCompanyId = await getMonthlySpendByCompanyIds(
-      rows.map((row) => row.id),
-    );
+  async function hydrateCompanySpend<T extends { id: string }>(rows: T[]) {
+    const spendByCompanyId = await getMonthlySpendByCompanyIds(rows.map((row) => row.id));
     return rows.map((row) => ({
       ...row,
       knownSpendAmount: spendByCompanyId.get(row.id)!,
@@ -179,10 +154,7 @@ export function companyService(db: Db) {
       return enrichCompany(hydrated);
     },
 
-    create: async (
-      data: CanonicalCompanyCreation,
-      actorUserId: string | null = null,
-    ) => {
+    create: async (data: CanonicalCompanyCreation, actorUserId: string | null = null) => {
       const created = await budgets.createCompany(data, actorUserId);
       const row = await getCompanyQuery(db)
         .where(eq(companies.id, created.id))
@@ -194,10 +166,9 @@ export function companyService(db: Db) {
 
     update: async (
       id: string,
-      data: Omit<
-        Partial<typeof companies.$inferInsert>,
-        "budgetCurrency" | "budgetMonthlyAmount"
-      > & { logoAssetId?: string | null },
+      data: Omit<Partial<typeof companies.$inferInsert>, "budgetCurrency" | "budgetMonthlyAmount"> & {
+        logoAssetId?: string | null;
+      },
       actor: CompanyActivityActor = SYSTEM_COMPANY_ACTOR,
     ) => {
       const result = await db.transaction(async (tx) => {
@@ -222,9 +193,7 @@ export function companyService(db: Db) {
           }
         }
 
-        const archiveCascade = willArchive
-          ? await applyArchiveCascadeInTx(tx, id, actor)
-          : null;
+        const archiveCascade = willArchive ? await applyArchiveCascadeInTx(tx, id, actor) : null;
         if (willReactivate) {
           await reactivateCompanySessionGraphInTx(tx, { companyId: id });
         }
@@ -247,11 +216,13 @@ export function companyService(db: Db) {
               pausedAt: null,
               updatedAt: new Date(),
             })
-            .where(and(
-              eq(agents.companyId, id),
-              eq(agents.status, "paused"),
-              eq(agents.pauseReason, "company_archived"),
-            ))
+            .where(
+              and(
+                eq(agents.companyId, id),
+                eq(agents.status, "paused"),
+                eq(agents.pauseReason, "company_archived"),
+              ),
+            )
             .returning({ id: agents.id });
           agentsRestored = restoredRows.length;
         }
@@ -278,13 +249,15 @@ export function companyService(db: Db) {
           await tx.delete(assets).where(eq(assets.id, existing.logoAssetId));
         }
 
-        const [hydrated] = await hydrateCompanySpend([{
-          ...updated,
-          logoAssetId: logoAssetId === undefined ? existing.logoAssetId : logoAssetId,
-        }]);
+        const [hydrated] = await hydrateCompanySpend([
+          {
+            ...updated,
+            logoAssetId: logoAssetId === undefined ? existing.logoAssetId : logoAssetId,
+          },
+        ]);
 
-        const shouldLogReactivation = willReactivate &&
-          (existing.status === "archived" || agentsRestored > 0);
+        const shouldLogReactivation =
+          willReactivate && (existing.status === "archived" || agentsRestored > 0);
 
         return {
           company: enrichCompany(hydrated),
@@ -322,9 +295,7 @@ export function companyService(db: Db) {
         if (!existing) return null;
 
         const wasAlreadyArchived = existing.status === "archived";
-        const cascade = wasAlreadyArchived
-          ? null
-          : await applyArchiveCascadeInTx(tx, id, actor);
+        const cascade = wasAlreadyArchived ? null : await applyArchiveCascadeInTx(tx, id, actor);
 
         const row = await getCompanyQuery(tx)
           .where(eq(companies.id, id))
@@ -345,17 +316,12 @@ export function companyService(db: Db) {
       return result.company;
     },
 
-    remove: async (
-      id: string,
-      actor: CompanyActivityActor = SYSTEM_COMPANY_ACTOR,
-    ) => {
+    remove: async (id: string, actor: CompanyActivityActor = SYSTEM_COMPANY_ACTOR) => {
       const begin = await db.transaction((tx) =>
         beginCompanyHardDeleteInTx(tx, id, randomUUID(), {
           actor: {
-            requestedByAgentId:
-              actor.actorType === "agent" ? actor.agentId ?? actor.actorId : null,
-            requestedByUserId:
-              actor.actorType === "user" ? actor.actorId : null,
+            requestedByAgentId: actor.actorType === "agent" ? (actor.agentId ?? actor.actorId) : null,
+            requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
           },
         }),
       );
@@ -396,14 +362,8 @@ export function companyService(db: Db) {
 
     stats: () =>
       Promise.all([
-        db
-          .select({ companyId: agents.companyId, count: count() })
-          .from(agents)
-          .groupBy(agents.companyId),
-        db
-          .select({ companyId: tasks.companyId, count: count() })
-          .from(tasks)
-          .groupBy(tasks.companyId),
+        db.select({ companyId: agents.companyId, count: count() }).from(agents).groupBy(agents.companyId),
+        db.select({ companyId: tasks.companyId, count: count() }).from(tasks).groupBy(tasks.companyId),
       ]).then(([agentRows, taskRows]) => {
         const result: Record<string, { agentCount: number; taskCount: number }> = {};
         for (const row of agentRows) {

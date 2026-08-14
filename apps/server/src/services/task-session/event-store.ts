@@ -24,8 +24,7 @@ import {
   type StoredTaskSessionEvent,
 } from "./store.js";
 
-export type TaskSessionDbTransaction =
-  Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type TaskSessionDbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export interface TaskSessionScope {
   companyId: string;
@@ -39,10 +38,7 @@ export {
   type StoredTaskSessionEvent,
 } from "./store.js";
 
-export type ProjectableTaskSessionEvent = Omit<
-  StoredTaskSessionEvent,
-  "type"
-> & {
+export type ProjectableTaskSessionEvent = Omit<StoredTaskSessionEvent, "type"> & {
   type: DurableEvent["type"];
   storedType: string;
   version: number;
@@ -50,14 +46,10 @@ export type ProjectableTaskSessionEvent = Omit<
   event: DurableEvent;
 };
 
-export function projectableTaskSessionEvent(
-  row: StoredTaskSessionEvent,
-): ProjectableTaskSessionEvent {
+export function projectableTaskSessionEvent(row: StoredTaskSessionEvent): ProjectableTaskSessionEvent {
   const decoded = decodeStoredTaskSessionEvent(row);
   if (!decoded.event.durable) {
-    throw new TaskSessionInvariantError(
-      `Task Session event ${row.id} has no durable envelope`,
-    );
+    throw new TaskSessionInvariantError(`Task Session event ${row.id} has no durable envelope`);
   }
   return {
     ...row,
@@ -79,9 +71,7 @@ export async function loadStoredTaskSessionEvent(
     .where(eq(taskSessionEvents.id, eventId))
     .limit(1);
   if (!rows[0]) {
-    throw new TaskSessionInvariantError(
-      `Task Session event ${eventId} must exist before projection`,
-    );
+    throw new TaskSessionInvariantError(`Task Session event ${eventId} must exist before projection`);
   }
   return decodeStoredTaskSessionEvent(rows[0]);
 }
@@ -103,9 +93,7 @@ export async function reserveTaskSessionEventSequence(
     .returning({ seq: taskSessionEventSequences.seq });
   const seq = rows[0]?.seq;
   if (seq === undefined) {
-    throw new TaskSessionInvariantError(
-      `Task Session ${scope.sessionId} has no event sequence row`,
-    );
+    throw new TaskSessionInvariantError(`Task Session ${scope.sessionId} has no event sequence row`);
   }
   return { highWaterSeq: seq - 1, seq };
 }
@@ -121,11 +109,7 @@ export async function reserveTaskSessionMessageId(
   scope: TaskSessionScope,
   reservationKey: string,
 ): Promise<string> {
-  if (
-    !reservationKey ||
-    reservationKey.trim().length === 0 ||
-    reservationKey.length > 500
-  ) {
+  if (!reservationKey || reservationKey.trim().length === 0 || reservationKey.length > 500) {
     throw new TaskSessionInvariantError(
       "Task Session message reservation key must be non-empty and at most 500 characters",
     );
@@ -148,9 +132,7 @@ export async function reserveTaskSessionMessageId(
     .for("update")
     .then((rows) => rows[0] ?? null);
   if (!allocator) {
-    throw new TaskSessionInvariantError(
-      `Task Session ${scope.sessionId} has no message-id allocator row`,
-    );
+    throw new TaskSessionInvariantError(`Task Session ${scope.sessionId} has no message-id allocator row`);
   }
 
   const existing = await transaction
@@ -161,10 +143,7 @@ export async function reserveTaskSessionMessageId(
         eq(taskSessionMessageIdReservations.companyId, scope.companyId),
         eq(taskSessionMessageIdReservations.taskId, scope.taskId),
         eq(taskSessionMessageIdReservations.sessionId, scope.sessionId),
-        eq(
-          taskSessionMessageIdReservations.reservationKey,
-          reservationKey,
-        ),
+        eq(taskSessionMessageIdReservations.reservationKey, reservationKey),
       ),
     )
     .limit(1)
@@ -211,9 +190,7 @@ export async function reserveTaskSessionMessageId(
     })
     .returning({ messageId: taskSessionMessageIdReservations.messageId });
   if (!reservation[0]) {
-    throw new TaskSessionInvariantError(
-      `Task Session ${scope.sessionId} message id was not reserved`,
-    );
+    throw new TaskSessionInvariantError(`Task Session ${scope.sessionId} message id was not reserved`);
   }
   return reservation[0].messageId;
 }
@@ -231,15 +208,8 @@ export async function assertReservedTaskSessionMessageIds(
 ): Promise<void> {
   const uniqueMessageIds = [...new Set(messageIds)];
   if (uniqueMessageIds.length === 0) return;
-  if (
-    uniqueMessageIds.some(
-      (messageId) =>
-        typeof messageId !== "string" || messageId.length === 0,
-    )
-  ) {
-    throw new TaskSessionLifecycleConflict(
-      "Durable Session event has an invalid message identity",
-    );
+  if (uniqueMessageIds.some((messageId) => typeof messageId !== "string" || messageId.length === 0)) {
+    throw new TaskSessionLifecycleConflict("Durable Session event has an invalid message identity");
   }
 
   const reservations = await transaction
@@ -250,16 +220,11 @@ export async function assertReservedTaskSessionMessageIds(
         eq(taskSessionMessageIdReservations.companyId, scope.companyId),
         eq(taskSessionMessageIdReservations.taskId, scope.taskId),
         eq(taskSessionMessageIdReservations.sessionId, scope.sessionId),
-        inArray(
-          taskSessionMessageIdReservations.messageId,
-          uniqueMessageIds,
-        ),
+        inArray(taskSessionMessageIdReservations.messageId, uniqueMessageIds),
       ),
     );
   const reserved = new Set(reservations.map((row) => row.messageId));
-  const missingMessageIds = uniqueMessageIds.filter(
-    (messageId) => !reserved.has(messageId),
-  );
+  const missingMessageIds = uniqueMessageIds.filter((messageId) => !reserved.has(messageId));
   if (missingMessageIds.length > 0) {
     throw new TaskSessionLifecycleConflict(
       "Durable Session event references an unreserved message identity",
@@ -291,10 +256,7 @@ export async function appendTaskSessionEvent(
   transaction: TaskSessionDbTransaction,
   input: {
     event: DurableEvent;
-    envelope: Omit<
-      typeof taskSessionEvents.$inferInsert,
-      "id" | "sessionId" | "seq" | "type" | "data"
-    >;
+    envelope: Omit<typeof taskSessionEvents.$inferInsert, "id" | "sessionId" | "seq" | "type" | "data">;
   },
 ): Promise<StoredTaskSessionEvent> {
   const encoded = encodeDurableTaskSessionEventRow(input.event);
@@ -310,9 +272,7 @@ export async function appendTaskSessionEvent(
     })
     .returning();
   if (!inserted[0]) {
-    throw new TaskSessionInvariantError(
-      `Task Session event ${encoded.id} was not appended`,
-    );
+    throw new TaskSessionInvariantError(`Task Session event ${encoded.id} was not appended`);
   }
   decodeStoredTaskSessionEvent(inserted[0]);
   return inserted[0];
@@ -331,9 +291,7 @@ export async function readProjectedTaskSessionSequence(
     `),
   );
   if (!rows[0]) {
-    throw new TaskSessionInvariantError(
-      `Task Session ${sessionId} is missing its projection checkpoint`,
-    );
+    throw new TaskSessionInvariantError(`Task Session ${sessionId} is missing its projection checkpoint`);
   }
   return Number(rows[0].projectedEventSeq);
 }
@@ -357,9 +315,7 @@ export async function lockTaskSessionProjectionRoot(
     `),
   );
   if (companyRows.length !== 1) {
-    throw new TaskSessionInvariantError(
-      `Company ${scope.companyId} is missing its Session projection root`,
-    );
+    throw new TaskSessionInvariantError(`Company ${scope.companyId} is missing its Session projection root`);
   }
   const taskRows = Array.from(
     await transaction.execute(sql<{ id: string }>`
@@ -371,9 +327,7 @@ export async function lockTaskSessionProjectionRoot(
     `),
   );
   if (taskRows.length !== 1) {
-    throw new TaskSessionInvariantError(
-      `Task ${scope.taskId} is missing its Session projection root`,
-    );
+    throw new TaskSessionInvariantError(`Task ${scope.taskId} is missing its Session projection root`);
   }
   return readProjectedTaskSessionSequence(transaction, scope.sessionId);
 }
@@ -386,17 +340,12 @@ export async function commitProjectedTaskSessionSequence(
   const rows = await transaction
     .update(taskSessions)
     .set({ projectedEventSeq: sequence })
-    .where(
-      and(
-        eq(taskSessions.id, sessionId),
-        eq(taskSessions.projectedEventSeq, sequence - 1),
-      ),
-    )
+    .where(and(eq(taskSessions.id, sessionId), eq(taskSessions.projectedEventSeq, sequence - 1)))
     .returning({ id: taskSessions.id });
   if (!rows[0]) {
-    throw new TaskSessionLifecycleConflict(
-      "Task Session events must project in contiguous aggregate order",
-      { sessionId, sequence },
-    );
+    throw new TaskSessionLifecycleConflict("Task Session events must project in contiguous aggregate order", {
+      sessionId,
+      sequence,
+    });
   }
 }

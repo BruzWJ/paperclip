@@ -1,29 +1,9 @@
-import {
-  Router,
-  type NextFunction,
-  type Request,
-  type Response,
-} from "express";
-import {
-  createChildTaskSchema,
-  createTaskSchema,
-} from "@paperclipai/shared";
+import { Router, type NextFunction, type Request, type Response } from "express";
+import { createChildTaskSchema, createTaskSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import {
-  OrdinaryTaskRuntimeRejected,
-  type OrdinaryTaskRuntime,
-} from "../services/ordinary-task-runtime.js";
-import {
-  conflict,
-  forbidden,
-  notFound,
-  unprocessable,
-} from "../errors.js";
-import {
-  assertBoard,
-  assertCompanyAccess,
-  getAccessibleResource,
-} from "./authz.js";
+import { OrdinaryTaskRuntimeRejected, type OrdinaryTaskRuntime } from "../services/ordinary-task-runtime.js";
+import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
+import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
 
 type TaskIngressParent = {
   id: string;
@@ -41,26 +21,17 @@ function canonicalTaskCreateError(error: unknown): never {
   if (error.reason === "parent_task_invalid") {
     throw notFound("Parent task not found");
   }
-  if (
-    error.reason === "company_inactive" ||
-    error.reason === "canonical_create_incomplete"
-  ) {
+  if (error.reason === "company_inactive" || error.reason === "canonical_create_incomplete") {
     throw conflict(error.message, details);
   }
   throw unprocessable(error.message, details);
 }
 
-function requireNamedBoardTaskCreator(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-) {
+function requireNamedBoardTaskCreator(req: Request, _res: Response, next: NextFunction) {
   try {
     assertBoard(req);
     if (!req.actor.userId || req.actor.userId.trim() !== req.actor.userId) {
-      throw forbidden(
-        "Task creation requires an exact authenticated board user ID",
-      );
+      throw forbidden("Task creation requires an exact authenticated board user ID");
     }
     next();
   } catch (error) {

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
 import {
+  type Db,
   authUsers,
   boardApiKeys,
   cliAuthChallenges,
@@ -15,8 +15,7 @@ import { conflict, forbidden, notFound } from "../errors.js";
 export const BOARD_API_KEY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const CLI_AUTH_CHALLENGE_TTL_MS = 10 * 60 * 1000;
 
-export type CliAuthChallengeStatus =
-  "pending" | "approved" | "cancelled" | "expired";
+export type CliAuthChallengeStatus = "pending" | "approved" | "cancelled" | "expired";
 
 export function hashBearerToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -25,10 +24,7 @@ export function hashBearerToken(token: string) {
 export function tokenHashesMatch(left: string, right: string) {
   const leftBytes = Buffer.from(left, "utf8");
   const rightBytes = Buffer.from(right, "utf8");
-  return (
-    leftBytes.length === rightBytes.length &&
-    timingSafeEqual(leftBytes, rightBytes)
-  );
+  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
 export function createBoardApiToken() {
@@ -47,9 +43,7 @@ export function cliAuthChallengeExpiresAt(nowMs: number = Date.now()) {
   return new Date(nowMs + CLI_AUTH_CHALLENGE_TTL_MS);
 }
 
-function challengeStatusForRow(
-  row: typeof cliAuthChallenges.$inferSelect,
-): CliAuthChallengeStatus {
+function challengeStatusForRow(row: typeof cliAuthChallenges.$inferSelect): CliAuthChallengeStatus {
   if (row.cancelledAt) return "cancelled";
   if (row.expiresAt.getTime() <= Date.now()) return "expired";
   if (row.approvedAt && row.boardApiKeyId) return "approved";
@@ -86,12 +80,7 @@ export function boardAuthService(db: Db) {
       db
         .select({ id: instanceUserRoles.id })
         .from(instanceUserRoles)
-        .where(
-          and(
-            eq(instanceUserRoles.userId, userId),
-            eq(instanceUserRoles.role, "instance_admin"),
-          ),
-        )
+        .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
         .then((rows) => rows[0] ?? null),
     ]);
 
@@ -111,19 +100,11 @@ export function boardAuthService(db: Db) {
     const access = await resolveBoardAccess(input.userId);
     const companyIds = new Set(access.companyIds);
 
-    if (
-      companyIds.size === 0 &&
-      input.requestedCompanyId &&
-      isCanonicalUuid(input.requestedCompanyId)
-    ) {
+    if (companyIds.size === 0 && input.requestedCompanyId && isCanonicalUuid(input.requestedCompanyId)) {
       companyIds.add(input.requestedCompanyId);
     }
 
-    if (
-      companyIds.size === 0 &&
-      input.boardApiKeyId &&
-      isCanonicalUuid(input.boardApiKeyId)
-    ) {
+    if (companyIds.size === 0 && input.boardApiKeyId && isCanonicalUuid(input.boardApiKeyId)) {
       const challengeCompanyIds = await db
         .select({ requestedCompanyId: cliAuthChallenges.requestedCompanyId })
         .from(cliAuthChallenges)
@@ -131,10 +112,7 @@ export function boardAuthService(db: Db) {
         .then((rows) =>
           rows
             .map((row) => row.requestedCompanyId ?? null)
-            .filter(
-              (value): value is string =>
-                typeof value === "string" && isCanonicalUuid(value),
-            ),
+            .filter((value): value is string => typeof value === "string" && isCanonicalUuid(value)),
         );
       for (const companyId of challengeCompanyIds) {
         companyIds.add(companyId);
@@ -160,25 +138,12 @@ export function boardAuthService(db: Db) {
     return db
       .select()
       .from(boardApiKeys)
-      .where(
-        and(
-          eq(boardApiKeys.keyHash, tokenHash),
-          isNull(boardApiKeys.revokedAt),
-        ),
-      )
-      .then(
-        (rows) =>
-          rows.find(
-            (row) => !row.expiresAt || row.expiresAt.getTime() > now.getTime(),
-          ) ?? null,
-      );
+      .where(and(eq(boardApiKeys.keyHash, tokenHash), isNull(boardApiKeys.revokedAt)))
+      .then((rows) => rows.find((row) => !row.expiresAt || row.expiresAt.getTime() > now.getTime()) ?? null);
   }
 
   async function touchBoardApiKey(id: string) {
-    await db
-      .update(boardApiKeys)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(boardApiKeys.id, id));
+    await db.update(boardApiKeys).set({ lastUsedAt: new Date() }).where(eq(boardApiKeys.id, id));
   }
 
   async function revokeBoardApiKey(id: string) {
@@ -191,11 +156,7 @@ export function boardAuthService(db: Db) {
       .then((rows) => rows[0] ?? null);
   }
 
-  async function createNamedBoardApiKey(input: {
-    userId: string;
-    name: string;
-    expiresAt?: Date | null;
-  }) {
+  async function createNamedBoardApiKey(input: { userId: string; name: string; expiresAt?: Date | null }) {
     const token = createBoardApiToken();
     const created = await db
       .insert(boardApiKeys)
@@ -203,10 +164,7 @@ export function boardAuthService(db: Db) {
         userId: input.userId,
         name: input.name,
         keyHash: hashBearerToken(token),
-        expiresAt:
-          input.expiresAt === undefined
-            ? boardApiKeyExpiresAt()
-            : input.expiresAt,
+        expiresAt: input.expiresAt === undefined ? boardApiKeyExpiresAt() : input.expiresAt,
       })
       .returning()
       .then((rows) => rows[0]);
@@ -222,10 +180,7 @@ export function boardAuthService(db: Db) {
     };
   }
 
-  async function listBoardApiKeys(
-    userId: string,
-    opts: { includeInactive?: boolean } = {},
-  ) {
+  async function listBoardApiKeys(userId: string, opts: { includeInactive?: boolean } = {}) {
     const conditions = [eq(boardApiKeys.userId, userId)];
     if (!opts.includeInactive) {
       const activeExpirationCondition = or(
@@ -314,8 +269,7 @@ export function boardAuthService(db: Db) {
   async function getCliAuthChallengeBySecret(id: string, token: string) {
     const challenge = await getCliAuthChallenge(id);
     if (!challenge) return null;
-    if (!tokenHashesMatch(challenge.secretHash, hashBearerToken(token)))
-      return null;
+    if (!tokenHashesMatch(challenge.secretHash, hashBearerToken(token))) return null;
     return challenge;
   }
 
@@ -349,8 +303,7 @@ export function boardAuthService(db: Db) {
       status: challengeStatusForRow(challenge),
       command: challenge.command,
       clientName: challenge.clientName ?? null,
-      requestedAccess: challenge.requestedAccess as
-        "board" | "instance_admin_required",
+      requestedAccess: challenge.requestedAccess as "board" | "instance_admin_required",
       requestedCompanyId: challenge.requestedCompanyId ?? null,
       requestedCompanyName: company?.name ?? null,
       approvedAt: challenge.approvedAt?.toISOString() ?? null,
@@ -366,11 +319,7 @@ export function boardAuthService(db: Db) {
     };
   }
 
-  async function approveCliAuthChallenge(
-    id: string,
-    token: string,
-    userId: string,
-  ) {
+  async function approveCliAuthChallenge(id: string, token: string, userId: string) {
     if (!isCanonicalUuid(id)) throw notFound("CLI auth challenge not found");
     const access = await resolveBoardAccess(userId);
     return db.transaction(async (tx) => {
@@ -383,10 +332,7 @@ export function boardAuthService(db: Db) {
         .from(cliAuthChallenges)
         .where(eq(cliAuthChallenges.id, id))
         .then((rows) => rows[0] ?? null);
-      if (
-        !challenge ||
-        !tokenHashesMatch(challenge.secretHash, hashBearerToken(token))
-      ) {
+      if (!challenge || !tokenHashesMatch(challenge.secretHash, hashBearerToken(token))) {
         throw notFound("CLI auth challenge not found");
       }
 
@@ -394,10 +340,7 @@ export function boardAuthService(db: Db) {
       if (status === "expired") return { status, challenge };
       if (status === "cancelled") return { status, challenge };
 
-      if (
-        challenge.requestedAccess === "instance_admin_required" &&
-        !access.isInstanceAdmin
-      ) {
+      if (challenge.requestedAccess === "instance_admin_required" && !access.isInstanceAdmin) {
         throw forbidden("Instance admin required");
       }
 
@@ -455,10 +398,7 @@ export function boardAuthService(db: Db) {
     return { status: "cancelled" as const, challenge: updated };
   }
 
-  async function assertCurrentBoardKey(
-    keyId: string | undefined,
-    userId: string | undefined,
-  ) {
+  async function assertCurrentBoardKey(keyId: string | undefined, userId: string | undefined) {
     if (!keyId || !userId) throw conflict("Board API key context is required");
     const key = await db
       .select()

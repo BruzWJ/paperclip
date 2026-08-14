@@ -1,155 +1,98 @@
-import express, { Router, type Request as ExpressRequest } from "express";
-import path from "node:path";
-import fs from "node:fs";
-import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure } from "@paperclipai/shared";
-import type { StorageService } from "./storage/types.js";
-import type { SecretsRuntimeConfig } from "./secrets/types.js";
-import { httpLogger, errorHandler } from "./middleware/index.js";
-import { actorMiddleware } from "./middleware/auth.js";
-import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
-import {
-  applyTrustProxy,
-  parseTrustProxyEnv,
-} from "./middleware/trust-proxy.js";
-import { staticPrecompressed } from "./middleware/static-precompressed.js";
-import { canonicalRequestTarget } from "./middleware/canonical-pathname.js";
+import express, { Router, type Request as ExpressRequest } from "express";
+import fs from "node:fs";
+import path from "node:path";
 import {
   createRequestAuthorityBoundary,
   createRequestAuthorityPolicy,
   type RequestAuthorityBoundary,
   type TrustProxyPredicate,
 } from "./http/request-authority.js";
-import { healthRoutes } from "./routes/health.js";
-import { companyRoutes } from "./routes/companies.js";
+import { actorMiddleware } from "./middleware/auth.js";
+import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
+import { canonicalRequestTarget } from "./middleware/canonical-pathname.js";
+import { errorHandler, httpLogger } from "./middleware/index.js";
+import { applyTrustProxy, parseTrustProxyEnv } from "./middleware/trust-proxy.js";
 import { changeConsentRoutes } from "./routes/change-consents.js";
-import { inboxAgentPolicyRoutes } from "./routes/inbox-agent-policy.js";
+import { companyRoutes } from "./routes/companies.js";
 import { folderRoutes } from "./routes/folders.js";
+import { healthRoutes } from "./routes/health.js";
+import { inboxAgentPolicyRoutes } from "./routes/inbox-agent-policy.js";
+import type { SecretsRuntimeConfig } from "./secrets/types.js";
+import type { StorageService } from "./storage/types.js";
 
 import { agentRoutes } from "./routes/agents.js";
 import { projectRoutes } from "./routes/projects.js";
-import { taskRoutes } from "./routes/tasks.js";
 import { taskTreeControlRoutes } from "./routes/task-tree-control.js";
+import { taskRoutes } from "./routes/tasks.js";
 
-import { routineRoutes } from "./routes/routines.js";
 import { goalRoutes } from "./routes/goals.js";
+import { routineRoutes } from "./routes/routines.js";
 
 import { approvalRoutes } from "./routes/approvals.js";
 import { secretRoutes } from "./routes/secrets.js";
 
-import { costRoutes } from "./routes/costs.js";
+import { createHostClientHandlers, type HostToWorkerMethods } from "@paperclipai/plugin-sdk";
+import { installBoardUi, type UiMode } from "./app-ui.js";
+import type { BetterAuthSessionResult } from "./auth/better-auth.js";
+import { DEFAULT_JSON_BODY_LIMIT, PORTABLE_JSON_BODY_LIMIT } from "./http/body-limits.js";
+import { apiCompression } from "./middleware/api-compression.js";
+import { rejectRunInterfaceBearerFromGenericApi } from "./middleware/prompt-capability-boundary.js";
+import { accessRoutes } from "./routes/access.js";
 import { activityRoutes } from "./routes/activity.js";
-import { runRoutes } from "./routes/runs.js";
-import { dashboardRoutes } from "./routes/dashboard.js";
+import { adapterRoutes } from "./routes/adapters.js";
+import { assetRoutes } from "./routes/assets.js";
 import { attentionRoutes } from "./routes/attention.js";
-import { userProfileRoutes } from "./routes/user-profiles.js";
-import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
-import { sidebarPreferenceRoutes } from "./routes/sidebar-preferences.js";
-import { resourceMembershipRoutes } from "./routes/resource-memberships.js";
+import { boardMcpSetupRoutes } from "./routes/board-mcp-setup.js";
+import { boardMcpRoutes } from "./routes/board-mcp.js";
+import { COMPANY_IMPORTS_API_PATH } from "./routes/company-import-paths.js";
+import { costRoutes } from "./routes/costs.js";
+import { dashboardRoutes } from "./routes/dashboard.js";
 import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { openApiRoutes } from "./routes/openapi.js";
-import { assetRoutes } from "./routes/assets.js";
-import { accessRoutes } from "./routes/access.js";
-import { pluginRoutes } from "./routes/plugins.js";
-import { boardMcpRoutes } from "./routes/board-mcp.js";
-import { boardMcpSetupRoutes } from "./routes/board-mcp-setup.js";
-import { runToolsRoutes } from "./routes/run-tools.js";
-import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
-import { readBrandedStaticIndexHtml } from "./static-index-html.js";
-import { applyUiBranding } from "./ui-branding.js";
-import { pluginLoader } from "./services/plugin-loader.js";
-import type { PluginWorkerManager } from "./services/plugin-worker-manager.js";
-import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
-import { pluginJobStore } from "./services/plugin-job-store.js";
-import type { PromptCapabilityGateway } from "./services/prompt-capability-gateway.js";
-import type { TaskExecutionRunService } from "./services/task-execution-run-service.js";
-import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
+import { pluginRoutes } from "./routes/plugins.js";
+import { resourceMembershipRoutes } from "./routes/resource-memberships.js";
+import { runToolsRoutes } from "./routes/run-tools.js";
+import { runRoutes } from "./routes/runs.js";
+import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
+import { sidebarPreferenceRoutes } from "./routes/sidebar-preferences.js";
+import { userProfileRoutes } from "./routes/user-profiles.js";
+import { createPostgresAdapterConfigurationPreflightService } from "./services/adapter-configuration-preflight.js";
+import {
+  localExecutionOrchestrator,
+  type LocalExecutionOrchestrator,
+} from "./services/local-execution-orchestrator.js";
+import type { OrdinaryTaskRuntime } from "./services/ordinary-task-runtime.js";
+import type { PaperclipManagedToolRouter } from "./services/paperclip-managed-tool-router.js";
+import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
+import type { PluginDomainEventPublisher } from "./services/plugin-domain-event-publisher.js";
+import type { PluginEventBus } from "./services/plugin-event-bus.js";
 import {
   buildHostServices,
   type PluginRunTaskContextReader,
   type PluginRuntimeRecordsReader,
 } from "./services/plugin-host-services.js";
-import { createPluginTaskControlPlane } from "./services/plugin-task-control-plane.js";
-import type { PluginEventBus } from "./services/plugin-event-bus.js";
-import type { PluginDomainEventPublisher } from "./services/plugin-domain-event-publisher.js";
-import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
+import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
+import { pluginJobStore } from "./services/plugin-job-store.js";
+import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
+import { pluginLoader } from "./services/plugin-loader.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
-import type { OrdinaryTaskRuntime } from "./services/ordinary-task-runtime.js";
-import type { PaperclipManagedToolRouter } from "./services/paperclip-managed-tool-router.js";
-import {
-  createHostClientHandlers,
-  type HostToWorkerMethods,
-} from "@paperclipai/plugin-sdk";
-import type { BetterAuthSessionResult } from "./auth/better-auth.js";
-import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
-import {
-  DEFAULT_JSON_BODY_LIMIT,
-  PORTABLE_JSON_BODY_LIMIT,
-} from "./http/body-limits.js";
-import { COMPANY_IMPORTS_API_PATH } from "./routes/company-import-paths.js";
-import { apiCompression } from "./middleware/api-compression.js";
-import { rejectRunInterfaceBearerFromGenericApi } from "./middleware/prompt-capability-boundary.js";
-import type { TaskSessionStore } from "./services/task-session/store.js";
+import { createPluginTaskControlPlane } from "./services/plugin-task-control-plane.js";
+import type { PluginWorkerManager } from "./services/plugin-worker-manager.js";
+import type { PromptCapabilityGateway } from "./services/prompt-capability-gateway.js";
 import type { TaskExecutionCancellationService } from "./services/task-execution-cancellation.js";
-import {
-  localExecutionOrchestrator,
-  type LocalExecutionOrchestrator,
-} from "./services/local-execution-orchestrator.js";
-import { createPostgresAdapterConfigurationPreflightService } from "./services/adapter-configuration-preflight.js";
+import type { TaskExecutionRunService } from "./services/task-execution-run-service.js";
+import type { TaskSessionStore } from "./services/task-session/store.js";
 
-type UiMode = "none" | "static" | "vite-dev";
-const VITE_DEV_ASSET_PREFIXES = [
-  "/@fs/",
-  "/@id/",
-  "/@react-refresh",
-  "/@vite/",
-  "/assets/",
-  "/node_modules/",
-  "/src/",
-];
-const VITE_DEV_STATIC_PATHS = new Set([
-  "/apple-touch-icon.png",
-  "/favicon-16x16.png",
-  "/favicon-32x32.png",
-  "/favicon.ico",
-  "/favicon.svg",
-  "/site.webmanifest",
-]);
-
-export function resolveViteHmrPort(serverPort: number): number {
-  if (serverPort <= 55_535) {
-    return serverPort + 10_000;
-  }
-  return Math.max(1_024, serverPort - 10_000);
-}
-
-export function resolveViteHmrHost(bindHost: string): string | undefined {
-  const normalized = bindHost.trim().toLowerCase();
-  if (normalized === "0.0.0.0" || normalized === "::") return undefined;
-  return bindHost;
-}
-
-export function shouldServeViteDevHtml(req: ExpressRequest): boolean {
-  const pathname = req.path;
-  if (VITE_DEV_STATIC_PATHS.has(pathname)) return false;
-  if (VITE_DEV_ASSET_PREFIXES.some((prefix) => pathname.startsWith(prefix)))
-    return false;
-  return req.accepts(["html"]) === "html";
-}
-
-export function requireStaticUiDist(moduleDirectory: string): string {
-  const uiDist = path.resolve(moduleDirectory, "../ui-dist");
-  const indexPath = path.join(uiDist, "index.html");
-  if (!fs.existsSync(indexPath)) {
-    throw new Error(
-      `Static UI mode requires the canonical server artifact at ${indexPath}`,
-    );
-  }
-  return uiDist;
-}
+export {
+  requireStaticUiDist,
+  resolveViteHmrHost,
+  resolveViteHmrPort,
+  shouldServeViteDevHtml,
+} from "./app-ui.js";
 
 export async function createApp(
   db: Db,
@@ -172,19 +115,14 @@ export async function createApp(
     pluginEventBus: PluginEventBus;
     pluginDomainEvents: PluginDomainEventPublisher;
     betterAuthHandler: express.RequestHandler;
-    resolveSession: (
-      req: ExpressRequest,
-    ) => Promise<BetterAuthSessionResult | null>;
+    resolveSession: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
     promptCapabilityGateway: PromptCapabilityGateway;
     paperclipManagedTools: PaperclipManagedToolRouter;
     pluginRunTaskContextReader: PluginRunTaskContextReader;
     pluginRuntimeRecordsReader: PluginRuntimeRecordsReader;
     taskSessionStore?: TaskSessionStore;
     ordinaryTaskRuntime: OrdinaryTaskRuntime;
-    taskExecutionRunService: Pick<
-      TaskExecutionRunService,
-      "readJoinedRunDetail"
-    >;
+    taskExecutionRunService: Pick<TaskExecutionRunService, "readJoinedRunDetail">;
     taskExecutionCancellation: Pick<
       TaskExecutionCancellationService,
       | "suspendBudgetScopeWork"
@@ -205,16 +143,9 @@ export async function createApp(
   app.set("case sensitive routing", true);
   app.set("strict routing", true);
   const ordinaryTasks = opts.ordinaryTaskRuntime;
-  const pluginTaskControlPlane = createPluginTaskControlPlane(
-    db,
-    ordinaryTasks,
-  );
+  const pluginTaskControlPlane = createPluginTaskControlPlane(db, ordinaryTasks);
   app.locals.paperclipDb = db;
-  const captureRawBody = (
-    req: express.Request,
-    _res: express.Response,
-    buf: Buffer,
-  ) => {
+  const captureRawBody = (req: express.Request, _res: express.Response, buf: Buffer) => {
     (req as unknown as { rawBody: Buffer }).rawBody = buf;
   };
 
@@ -262,15 +193,8 @@ export async function createApp(
   app.use("/api", runToolsRoutes(opts.promptCapabilityGateway));
   // Board MCP is a separate board-user ingress. It authenticates an existing
   // board API key and never accepts or substitutes for an ACPX run bearer.
-  app.use(
-    "/api/mcp",
-    canonicalRequestTarget(),
-    actorMiddleware(db, { resolveSession: opts.resolveSession }),
-  );
-  app.use(
-    "/api",
-    boardMcpRoutes({ db, managedTools: opts.paperclipManagedTools }),
-  );
+  app.use("/api/mcp", canonicalRequestTarget(), actorMiddleware(db, { resolveSession: opts.resolveSession }));
+  app.use("/api", boardMcpRoutes({ db, managedTools: opts.paperclipManagedTools }));
   app.use("/api", rejectRunInterfaceBearerFromGenericApi());
   app.use(
     actorMiddleware(db, {
@@ -285,12 +209,10 @@ export async function createApp(
 
   const workerManager = opts.pluginWorkerManager;
   const adapterReadinessLocalExecutionOrchestrator =
-    opts.adapterReadinessLocalExecutionOrchestrator ??
-    localExecutionOrchestrator(db);
-  const adapterConfigurationPreflight =
-    createPostgresAdapterConfigurationPreflightService(db, {
-      localExecutionOrchestrator: adapterReadinessLocalExecutionOrchestrator,
-    });
+    opts.adapterReadinessLocalExecutionOrchestrator ?? localExecutionOrchestrator(db);
+  const adapterConfigurationPreflight = createPostgresAdapterConfigurationPreflightService(db, {
+    localExecutionOrchestrator: adapterReadinessLocalExecutionOrchestrator,
+  });
 
   // Mount API routes
   const api = Router({ caseSensitive: true, strict: true });
@@ -304,10 +226,7 @@ export async function createApp(
     }),
   );
   api.use(openApiRoutes());
-  api.use(
-    "/companies",
-    companyRoutes(db, opts.storageService, ordinaryTasks, opts.secretsRuntime),
-  );
+  api.use("/companies", companyRoutes(db, opts.storageService, ordinaryTasks, opts.secretsRuntime));
   api.use(folderRoutes(db));
   api.use(changeConsentRoutes(db));
   api.use(inboxAgentPolicyRoutes(db));
@@ -349,9 +268,7 @@ export async function createApp(
     }),
   );
   api.use(activityRoutes(db));
-  api.use(
-    runRoutes(db, opts.taskExecutionRunService, adapterConfigurationPreflight),
-  );
+  api.use(runRoutes(db, opts.taskExecutionRunService, adapterConfigurationPreflight));
   api.use(dashboardRoutes(db));
   api.use(attentionRoutes(db));
   api.use(userProfileRoutes(db));
@@ -420,8 +337,6 @@ export async function createApp(
       pluginDomainEvents: opts.pluginDomainEvents,
     }),
   );
-  let viteHtmlRenderer: ReturnType<typeof createCachedViteHtmlRenderer> | null =
-    null;
   api.use(pluginRoutes(db, lifecycle, { scheduler, jobStore, workerManager }));
   api.use(adapterRoutes());
   app.use("/api", api);
@@ -433,109 +348,13 @@ export async function createApp(
   app.use(boardMcpSetupRoutes());
   app.use(pluginUiStaticRoutes(db));
 
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  if (opts.uiMode === "static") {
-    const uiDist = requireStaticUiDist(__dirname);
-    // Hashed asset files (Vite emits them under /assets/<name>.<hash>.<ext>)
-    // never change once built, so they can be cached aggressively. The UI
-    // build also emits precompressed <asset>.br / <asset>.gz sidecars;
-    // serve those when the client accepts the encoding, falling through to
-    // the plain express.static otherwise. Both paths send
-    // Vary: Accept-Encoding so a shared cache never mixes encoded and
-    // identity bodies for one URL.
-    app.use("/assets", staticPrecompressed(path.join(uiDist, "assets")));
-    app.use(
-      "/assets",
-      express.static(path.join(uiDist, "assets"), {
-        maxAge: "1y",
-        immutable: true,
-        setHeaders(res) {
-          res.setHeader("Vary", "Accept-Encoding");
-        },
-      }),
-    );
-    // Non-hashed static files (favicon.ico, manifest, robots.txt, etc.):
-    // short cache so operators who swap them out see the new version
-    // reasonably fast. Override for `index.html` specifically — it is
-    // served by this middleware for `/` and `/index.html`, and it must
-    // never outlive the asset hashes it points at.
-    app.use(
-      express.static(uiDist, {
-        maxAge: "1h",
-        setHeaders(res, filePath) {
-          if (path.basename(filePath) === "index.html") {
-            res.set("Cache-Control", "no-cache");
-          }
-        },
-      }),
-    );
-    // SPA document handler. Only for non-asset routes — if the browser asks
-    // for /assets/something.js that doesn't exist, we must NOT serve the HTML
-    // shell: the browser would try to load it as a JavaScript module, fail
-    // with a MIME-type error, and cache that broken response. Return 404
-    // instead. The index.html response itself is no-cache so a subsequent
-    // deploy's updated asset hashes are picked up on next load.
-    app.get(/.*/, (req, res) => {
-      if (req.path.startsWith("/assets/")) {
-        res.status(404).end();
-        return;
-      }
-      res
-        .status(200)
-        .set("Content-Type", "text/html")
-        .set("Cache-Control", "no-cache")
-        .end(readBrandedStaticIndexHtml(uiDist));
-    });
-  }
-
-  if (opts.uiMode === "vite-dev") {
-    const uiRoot = path.resolve(__dirname, "../../ui");
-    const publicUiRoot = path.resolve(uiRoot, "public");
-    const hmrPort = resolveViteHmrPort(opts.serverPort);
-    const hmrHost = resolveViteHmrHost(opts.bindHost);
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      root: uiRoot,
-      appType: "custom",
-      server: {
-        middlewareMode: true,
-        hmr: {
-          ...(hmrHost ? { host: hmrHost } : {}),
-          port: hmrPort,
-          clientPort: hmrPort,
-        },
-        allowedHosts:
-          opts.deploymentExposure === "private"
-            ? Array.from(
-                requestAuthorityBoundary.policy.privateAllowedHostnames,
-              )
-            : undefined,
-      },
-    });
-    viteHtmlRenderer = createCachedViteHtmlRenderer({
-      vite,
-      uiRoot,
-      brandHtml: applyUiBranding,
-    });
-    const renderViteHtml = viteHtmlRenderer;
-
-    if (fs.existsSync(publicUiRoot)) {
-      app.use(express.static(publicUiRoot, { index: false }));
-    }
-    app.get(/.*/, async (req, res, next) => {
-      if (!shouldServeViteDevHtml(req)) {
-        next();
-        return;
-      }
-      try {
-        const html = await renderViteHtml.render(req.originalUrl);
-        res.status(200).set({ "Content-Type": "text/html" }).end(html);
-      } catch (err) {
-        next(err);
-      }
-    });
-    app.use(vite.middlewares);
-  }
+  const boardUi = await installBoardUi(app, {
+    mode: opts.uiMode,
+    serverPort: opts.serverPort,
+    bindHost: opts.bindHost,
+    deploymentExposure: opts.deploymentExposure,
+    requestAuthorityBoundary,
+  });
 
   app.use(errorHandler);
 
@@ -545,9 +364,7 @@ export async function createApp(
     if (!plugin) return null;
     if (plugin.source !== "local") return null;
     if (!path.isAbsolute(plugin.packagePath)) {
-      throw new Error(
-        `Plugin installation package root is not absolute: ${pluginId}`,
-      );
+      throw new Error(`Plugin installation package root is not absolute: ${pluginId}`);
     }
     return {
       packagePath: plugin.packagePath,
@@ -559,17 +376,12 @@ export async function createApp(
     if (appServicesShutdown) return appServicesShutdown;
     appServicesShutdown = Promise.allSettled([
       Promise.resolve().then(() => devWatcher.close()),
-      Promise.resolve().then(() => viteHtmlRenderer?.dispose()),
+      Promise.resolve().then(() => boardUi.dispose()),
       loader.shutdownAll(),
     ]).then((results) => {
-      const failures = results.flatMap((result) =>
-        result.status === "rejected" ? [result.reason] : [],
-      );
+      const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
       if (failures.length > 0) {
-        throw new AggregateError(
-          failures,
-          "Failed to shut down application services",
-        );
+        throw new AggregateError(failures, "Failed to shut down application services");
       }
     });
     return appServicesShutdown;
@@ -580,10 +392,7 @@ export async function createApp(
     try {
       await shutdownAppServices();
     } catch (shutdownErr) {
-      throw new AggregateError(
-        [err, shutdownErr],
-        "Plugin startup activation and cleanup failed",
-      );
+      throw new AggregateError([err, shutdownErr], "Plugin startup activation and cleanup failed");
     }
     throw err;
   }

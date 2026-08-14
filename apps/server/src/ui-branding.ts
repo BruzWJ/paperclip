@@ -29,10 +29,7 @@ export type WorktreeUiBranding = {
 };
 
 function isTruthyEnvValue(value: string | undefined): boolean {
-  return (
-    parseOptionalBooleanEnvironmentValue(value, "PAPERCLIP_IN_WORKTREE") ??
-    false
-  );
+  return parseOptionalBooleanEnvironmentValue(value, "PAPERCLIP_IN_WORKTREE") ?? false;
 }
 
 function nonEmpty(value: string | undefined): string | null {
@@ -46,7 +43,11 @@ function normalizeHexColor(value: string | undefined): string | null {
   if (!raw) return null;
   const hex = raw.startsWith("#") ? raw.slice(1) : raw;
   if (/^[0-9a-fA-F]{3}$/.test(hex)) {
-    return `#${hex.split("").map((char) => `${char}${char}`).join("").toLowerCase()}`;
+    return `#${hex
+      .split("")
+      .map((char) => `${char}${char}`)
+      .join("")
+      .toLowerCase()}`;
   }
   if (/^[0-9a-fA-F]{6}$/.test(hex)) {
     return `#${hex.toLowerCase()}`;
@@ -63,10 +64,10 @@ function hslComponentToHex(n: number): string {
 function hslToHex(hue: number, saturation: number, lightness: number): string {
   const s = Math.max(0, Math.min(100, saturation)) / 100;
   const l = Math.max(0, Math.min(100, lightness)) / 100;
-  const c = (1 - Math.abs((2 * l) - 1)) * s;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
   const h = ((hue % 360) + 360) % 360;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - (c / 2);
+  const m = l - c / 2;
 
   let r = 0;
   let g = 0;
@@ -98,7 +99,7 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
 function deriveColorFromSeed(seed: string): string {
   let hash = 0;
   for (const char of seed) {
-    hash = ((hash * 33) + char.charCodeAt(0)) >>> 0;
+    hash = (hash * 33 + char.charCodeAt(0)) >>> 0;
   }
   return hslToHex(hash % 360, 68, 56);
 }
@@ -120,9 +121,9 @@ function relativeLuminanceChannel(value: number): number {
 function relativeLuminance(color: string): number {
   const { r, g, b } = hexToRgb(color);
   return (
-    (0.2126 * relativeLuminanceChannel(r)) +
-    (0.7152 * relativeLuminanceChannel(g)) +
-    (0.0722 * relativeLuminanceChannel(b))
+    0.2126 * relativeLuminanceChannel(r) +
+    0.7152 * relativeLuminanceChannel(g) +
+    0.0722 * relativeLuminanceChannel(b)
   );
 }
 
@@ -168,10 +169,7 @@ export function getWorktreeUiBranding(env: NodeJS.ProcessEnv = process.env): Wor
   }
 
   const instanceId =
-    parseOptionalExactNonEmptyEnvironmentValue(
-      env.PAPERCLIP_INSTANCE_ID,
-      "PAPERCLIP_INSTANCE_ID",
-    ) ?? null;
+    parseOptionalExactNonEmptyEnvironmentValue(env.PAPERCLIP_INSTANCE_ID, "PAPERCLIP_INSTANCE_ID") ?? null;
   const name = nonEmpty(env.PAPERCLIP_WORKTREE_NAME) ?? instanceId ?? "worktree";
   const color = normalizeHexColor(env.PAPERCLIP_WORKTREE_COLOR) ?? deriveColorFromSeed(name);
   const textColor = pickReadableTextColor(color);
@@ -220,16 +218,21 @@ function replaceMarkedBlock(html: string, startMarker: string, endMarker: string
   const after = html.slice(end);
   const indentedContent = content
     ? `\n${content
-      .split("\n")
-      .map((line) => `    ${line}`)
-      .join("\n")}\n    `
+        .split("\n")
+        .map((line) => `    ${line}`)
+        .join("\n")}\n    `
     : "\n    ";
   return `${before}${indentedContent}${after}`;
 }
 
 export function applyUiBranding(html: string, env: NodeJS.ProcessEnv = process.env): string {
   const branding = getWorktreeUiBranding(env);
-  const withFavicon = replaceMarkedBlock(html, FAVICON_BLOCK_START, FAVICON_BLOCK_END, renderFaviconLinks(branding));
+  const withFavicon = replaceMarkedBlock(
+    html,
+    FAVICON_BLOCK_START,
+    FAVICON_BLOCK_END,
+    renderFaviconLinks(branding),
+  );
   return replaceMarkedBlock(
     withFavicon,
     RUNTIME_BRANDING_BLOCK_START,

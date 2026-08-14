@@ -1,12 +1,6 @@
 import { taskSessions, type Db } from "@paperclipai/db";
-import type {
-  PluginJsonValue,
-  WorkerToHostMethods,
-} from "@paperclipai/plugin-sdk";
-import {
-  encodeTaskSessionEvent,
-  encodeTaskSessionMessage,
-} from "@paperclipai/shared/task-session";
+import type { PluginJsonValue, WorkerToHostMethods } from "@paperclipai/plugin-sdk";
+import { encodeTaskSessionEvent, encodeTaskSessionMessage } from "@paperclipai/shared/task-session";
 import { and, eq } from "drizzle-orm";
 import {
   TaskSessionInvalidCursor,
@@ -23,11 +17,7 @@ function iso(value: Date): string {
 }
 
 function canonicalPluginJson(value: unknown): PluginJsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean"
-  ) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
     return value;
   }
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -45,30 +35,18 @@ function canonicalPluginJson(value: unknown): PluginJsonValue {
     }
     return result;
   }
-  throw new TaskSessionInvariantError(
-    "Canonical Session record contains a non-JSON value",
-  );
+  throw new TaskSessionInvariantError("Canonical Session record contains a non-JSON value");
 }
 
 function assertSnapshotSequence(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
-    throw new TaskSessionInvalidCursor(
-      `${label} must be a non-negative safe integer`,
-    );
+    throw new TaskSessionInvalidCursor(`${label} must be a non-negative safe integer`);
   }
 }
 
-function assertAfterSequence(
-  value: number | undefined,
-  highWaterSeq: number,
-  label: string,
-): number {
+function assertAfterSequence(value: number | undefined, highWaterSeq: number, label: string): number {
   const resolved = value ?? -1;
-  if (
-    !Number.isSafeInteger(resolved) ||
-    resolved < -1 ||
-    resolved > highWaterSeq
-  ) {
+  if (!Number.isSafeInteger(resolved) || resolved < -1 || resolved > highWaterSeq) {
     throw new TaskSessionInvalidCursor(
       `${label} must be an integer from -1 through the Session snapshot high-water`,
     );
@@ -94,25 +72,15 @@ function messageWindow(input: ReadSessionInput): {
   const created = input.messages?.afterSeq;
   const changed = input.messages?.changedAfterSeq;
   if (created !== undefined && changed !== undefined) {
-    throw new TaskSessionInvalidCursor(
-      "Message afterSeq and changedAfterSeq are mutually exclusive",
-    );
+    throw new TaskSessionInvalidCursor("Message afterSeq and changedAfterSeq are mutually exclusive");
   }
   return changed !== undefined
     ? {
-        afterSeq: assertAfterSequence(
-          changed,
-          input.snapshotHighWaterSeq,
-          "Message changedAfterSeq",
-        ),
+        afterSeq: assertAfterSequence(changed, input.snapshotHighWaterSeq, "Message changedAfterSeq"),
         order: "changed",
       }
     : {
-        afterSeq: assertAfterSequence(
-          created,
-          input.snapshotHighWaterSeq,
-          "Message afterSeq",
-        ),
+        afterSeq: assertAfterSequence(created, input.snapshotHighWaterSeq, "Message afterSeq"),
         order: "created",
       };
 }
@@ -130,8 +98,7 @@ function assertMessagePage(
 ): void {
   let previous: { sequence: number; id: string } | null = null;
   for (const item of result.items) {
-    const sequence =
-      input.order === "changed" ? item.row.modelStateSeq : item.row.seq;
+    const sequence = input.order === "changed" ? item.row.modelStateSeq : item.row.seq;
     const ordered =
       previous === null ||
       sequence > previous.sequence ||
@@ -149,9 +116,7 @@ function assertMessagePage(
       item.row.id.length === 0 ||
       item.row.modelStateSeq > input.highWaterSeq
     ) {
-      throw new TaskSessionInvariantError(
-        "Canonical Session reader received a message outside its snapshot",
-      );
+      throw new TaskSessionInvariantError("Canonical Session reader received a message outside its snapshot");
     }
     previous = { sequence, id: item.row.id };
   }
@@ -183,9 +148,7 @@ function assertEventPage(
       item.row.id.length === 0 ||
       !ordered
     ) {
-      throw new TaskSessionInvariantError(
-        "Canonical Session reader received an event outside its snapshot",
-      );
+      throw new TaskSessionInvariantError("Canonical Session reader received an event outside its snapshot");
     }
     previous = { sequence: item.row.seq, id: item.row.id };
   }
@@ -203,10 +166,7 @@ export function createPluginCanonicalSessionReader(
 } {
   return {
     async readSession(input) {
-      assertSnapshotSequence(
-        input.snapshotHighWaterSeq,
-        "Session snapshot high-water",
-      );
+      assertSnapshotSequence(input.snapshotHighWaterSeq, "Session snapshot high-water");
       const messagesWindow = messageWindow(input);
       const eventAfterSeq = assertAfterSequence(
         input.events?.afterSeq,
@@ -219,17 +179,10 @@ export function createPluginCanonicalSessionReader(
           const [row] = await transaction
             .select()
             .from(taskSessions)
-            .where(
-              and(
-                eq(taskSessions.companyId, input.companyId),
-                eq(taskSessions.id, input.sessionId),
-              ),
-            )
+            .where(and(eq(taskSessions.companyId, input.companyId), eq(taskSessions.id, input.sessionId)))
             .limit(1);
           if (!row) {
-            throw new Error(
-              "Canonical Session record is unavailable in the requested company",
-            );
+            throw new Error("Canonical Session record is unavailable in the requested company");
           }
           if (input.snapshotHighWaterSeq > row.projectedEventSeq) {
             throw new TaskSessionInvalidCursor(
@@ -237,9 +190,7 @@ export function createPluginCanonicalSessionReader(
             );
           }
 
-          const store = taskSessionStore.bindReadDatabase(
-            transaction as unknown as Db,
-          );
+          const store = taskSessionStore.bindReadDatabase(transaction as unknown as Db);
           const messages = await store.pageMessages(
             {
               companyId: row.companyId,
@@ -292,9 +243,7 @@ export function createPluginCanonicalSessionReader(
                   timeCreated: iso(messageRow.timeCreated),
                   timeUpdated: iso(messageRow.timeUpdated),
                 },
-                message: canonicalPluginJson(
-                  encodeTaskSessionMessage(message),
-                ),
+                message: canonicalPluginJson(encodeTaskSessionMessage(message)),
               })),
               nextCursor: messages.nextCursor,
             },

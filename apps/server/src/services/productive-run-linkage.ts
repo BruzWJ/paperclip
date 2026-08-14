@@ -3,7 +3,6 @@
  * touches the canonical run root is owned by task-execution-run-service.
  */
 export {
-  resolveCurrentTaskOwnerRunLinkage,
   resolveCurrentTaskOwnerRunLinkages,
   resolveProductiveRunLinkage,
 } from "./task-execution-run-service.js";

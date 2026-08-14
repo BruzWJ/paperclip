@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { agentAdapterConfigRevisions, agents } from "@paperclipai/db";
+import { type Db, agentAdapterConfigRevisions, agents } from "@paperclipai/db";
 import {
   agentAdapterAcpConfigurationSchema,
   agentAdapterRevisionConfigurationSchema,
@@ -15,10 +14,7 @@ import {
   type AcpAdapterRevisionConfiguration,
 } from "@paperclipai/adapter-utils";
 import { notFound, unprocessable } from "../errors.js";
-import {
-  requireSecretMutationActor,
-  type SecretMutationActor,
-} from "./secrets.js";
+import { requireSecretMutationActor, type SecretMutationActor } from "./secrets.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -56,18 +52,12 @@ function isRecord(value: unknown): value is JsonRecord {
 }
 
 function canonicalJson(value: unknown): string {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean"
-  ) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
     return JSON.stringify(value);
   }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
-      throw unprocessable(
-        "Adapter configuration must contain only finite JSON numbers",
-      );
+      throw unprocessable("Adapter configuration must contain only finite JSON numbers");
     }
     return JSON.stringify(value);
   }
@@ -101,21 +91,15 @@ function deepFreezeJson<T>(value: T): T {
 export function deriveAgentAdapterConfigRevision(input: {
   acpConfiguration: AcpAdapterRevisionConfiguration;
 }): DerivedAgentAdapterConfigRevision {
-  const parsed = agentAdapterAcpConfigurationSchema.safeParse(
-    input.acpConfiguration,
-  );
+  const parsed = agentAdapterAcpConfigurationSchema.safeParse(input.acpConfiguration);
   if (!parsed.success) {
     throw unprocessable("Invalid immutable ACPX adapter configuration", {
       code: "invalid_adapter_acp_revision_configuration",
       diagnostics: validationDetails(parsed.error),
     });
   }
-  const acpConfiguration = deepFreezeJson(
-    parsed.data,
-  ) as AgentAdapterAcpConfiguration;
-  const digest = createHash("sha256")
-    .update(canonicalJson(acpConfiguration))
-    .digest("hex");
+  const acpConfiguration = deepFreezeJson(parsed.data) as AgentAdapterAcpConfiguration;
+  const digest = createHash("sha256").update(canonicalJson(acpConfiguration)).digest("hex");
   return { acpConfiguration, digest };
 }
 
@@ -151,9 +135,7 @@ export async function resolveRegisteredAdapterRuntimeConfiguration(input: {
     };
   } catch (error) {
     throw unprocessable(
-      error instanceof Error
-        ? error.message
-        : `ACPX agent "${input.adapterType}" configuration is invalid.`,
+      error instanceof Error ? error.message : `ACPX agent "${input.adapterType}" configuration is invalid.`,
       {
         code: "adapter_acp_configuration_invalid",
         adapterType: input.adapterType,
@@ -172,9 +154,7 @@ export async function validateRegisteredAdapterRuntimeConfiguration(input: {
 export async function deriveRegisteredAgentAdapterConfigRevision(
   input: DeriveRegisteredAgentAdapterConfigRevisionInput,
 ): Promise<DerivedAgentAdapterConfigRevision> {
-  return deriveAgentAdapterConfigRevision(
-    await resolveRegisteredAdapterRuntimeConfiguration(input),
-  );
+  return deriveAgentAdapterConfigRevision(await resolveRegisteredAdapterRuntimeConfiguration(input));
 }
 
 export async function selectAgentAdapterConfigRevision(
@@ -188,9 +168,7 @@ export async function selectAgentAdapterConfigRevision(
       currentAdapterConfigRevisionId: agents.currentAdapterConfigRevisionId,
     })
     .from(agents)
-    .where(
-      and(eq(agents.companyId, input.companyId), eq(agents.id, input.agentId)),
-    )
+    .where(and(eq(agents.companyId, input.companyId), eq(agents.id, input.agentId)))
     .limit(1)
     .for("update")
     .then((rows) => rows[0] ?? null);
@@ -204,10 +182,7 @@ export async function selectAgentAdapterConfigRevision(
           and(
             eq(agentAdapterConfigRevisions.companyId, input.companyId),
             eq(agentAdapterConfigRevisions.agentId, input.agentId),
-            eq(
-              agentAdapterConfigRevisions.id,
-              agent.currentAdapterConfigRevisionId,
-            ),
+            eq(agentAdapterConfigRevisions.id, agent.currentAdapterConfigRevisionId),
           ),
         )
         .limit(1)
@@ -215,9 +190,7 @@ export async function selectAgentAdapterConfigRevision(
         .then((rows) => rows[0] ?? null)
     : null;
   if (agent.currentAdapterConfigRevisionId && !current) {
-    throw unprocessable(
-      "Agent current adapter configuration revision is invalid",
-    );
+    throw unprocessable("Agent current adapter configuration revision is invalid");
   }
 
   const derived = await deriveRegisteredAgentAdapterConfigRevision({
@@ -254,9 +227,7 @@ export async function selectAgentAdapterConfigRevision(
       .then((rows) => rows[0] ?? null);
   }
   if (!selected) {
-    throw unprocessable(
-      "Failed to persist agent adapter configuration revision",
-    );
+    throw unprocessable("Failed to persist agent adapter configuration revision");
   }
 
   if (agent.currentAdapterConfigRevisionId !== selected.id) {
@@ -266,12 +237,7 @@ export async function selectAgentAdapterConfigRevision(
         currentAdapterConfigRevisionId: selected.id,
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(agents.companyId, input.companyId),
-          eq(agents.id, input.agentId),
-        ),
-      )
+      .where(and(eq(agents.companyId, input.companyId), eq(agents.id, input.agentId)))
       .returning({ id: agents.id })
       .then((rows) => rows[0] ?? null);
     if (!updated) throw notFound("Agent not found");
@@ -286,12 +252,7 @@ export function createAgentAdapterConfigurationService(db: Db) {
       const agent = await db
         .select({ id: agents.id })
         .from(agents)
-        .where(
-          and(
-            eq(agents.companyId, input.companyId),
-            eq(agents.id, input.agentId),
-          ),
-        )
+        .where(and(eq(agents.companyId, input.companyId), eq(agents.id, input.agentId)))
         .then((rows) => rows[0] ?? null);
       if (!agent) throw notFound("Agent not found");
       return db
@@ -315,12 +276,7 @@ export function createAgentAdapterConfigurationService(db: Db) {
           currentAdapterConfigRevisionId: agents.currentAdapterConfigRevisionId,
         })
         .from(agents)
-        .where(
-          and(
-            eq(agents.companyId, input.companyId),
-            eq(agents.id, input.agentId),
-          ),
-        )
+        .where(and(eq(agents.companyId, input.companyId), eq(agents.id, input.agentId)))
         .then((rows) => rows[0] ?? null);
       if (!agent) throw notFound("Agent not found");
       if (!agent.currentAdapterConfigRevisionId) return null;
@@ -331,10 +287,7 @@ export function createAgentAdapterConfigurationService(db: Db) {
           and(
             eq(agentAdapterConfigRevisions.companyId, input.companyId),
             eq(agentAdapterConfigRevisions.agentId, input.agentId),
-            eq(
-              agentAdapterConfigRevisions.id,
-              agent.currentAdapterConfigRevisionId,
-            ),
+            eq(agentAdapterConfigRevisions.id, agent.currentAdapterConfigRevisionId),
           ),
         )
         .then((rows) => rows[0] ?? null);
@@ -347,9 +300,7 @@ export function createAgentAdapterConfigurationService(db: Db) {
       actor: SecretMutationActor;
     }): Promise<AgentAdapterConfigurationRevisionResult> {
       const attribution = requireSecretMutationActor(input.actor);
-      const parsed = agentAdapterRevisionConfigurationSchema.safeParse(
-        input.configuration,
-      );
+      const parsed = agentAdapterRevisionConfigurationSchema.safeParse(input.configuration);
       if (!parsed.success) {
         throw unprocessable("Invalid agent adapter revision configuration", {
           code: "invalid_agent_adapter_revision_configuration",
@@ -361,43 +312,29 @@ export function createAgentAdapterConfigurationService(db: Db) {
         const locked = await tx
           .select()
           .from(agents)
-          .where(
-            and(
-              eq(agents.companyId, input.companyId),
-              eq(agents.id, input.agentId),
-            ),
-          )
+          .where(and(eq(agents.companyId, input.companyId), eq(agents.id, input.agentId)))
           .for("update")
           .then((rows) => rows[0] ?? null);
         if (!locked) throw notFound("Agent not found");
         if (locked.status === "terminated") {
-          throw unprocessable(
-            "Terminated agents cannot receive adapter configuration revisions",
-            { code: "terminated_agent_adapter_configuration" },
-          );
+          throw unprocessable("Terminated agents cannot receive adapter configuration revisions", {
+            code: "terminated_agent_adapter_configuration",
+          });
         }
 
         const previousRevisionId = locked.currentAdapterConfigRevisionId;
-        const revision = await selectAgentAdapterConfigRevision(
-          tx as unknown as Db,
-          {
-            companyId: input.companyId,
-            agentId: input.agentId,
-            adapterType: parsed.data.adapterType,
-            adapterConfig: parsed.data.adapterConfig,
-            createdByAgentId: attribution.agentId,
-            createdByUserId: attribution.userId,
-          },
-        );
+        const revision = await selectAgentAdapterConfigRevision(tx as unknown as Db, {
+          companyId: input.companyId,
+          agentId: input.agentId,
+          adapterType: parsed.data.adapterType,
+          adapterConfig: parsed.data.adapterConfig,
+          createdByAgentId: attribution.agentId,
+          createdByUserId: attribution.userId,
+        });
         const current = await tx
           .select()
           .from(agents)
-          .where(
-            and(
-              eq(agents.companyId, input.companyId),
-              eq(agents.id, input.agentId),
-            ),
-          )
+          .where(and(eq(agents.companyId, input.companyId), eq(agents.id, input.agentId)))
           .then((rows) => rows[0] ?? null);
         if (!current) throw notFound("Agent not found");
         return {

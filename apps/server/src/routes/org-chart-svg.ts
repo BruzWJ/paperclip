@@ -13,12 +13,7 @@ export interface OrgNode {
   reports: OrgNode[];
 }
 
-export type OrgChartStyle =
-  | "monochrome"
-  | "nebula"
-  | "circuit"
-  | "warmth"
-  | "schematic";
+export type OrgChartStyle = "monochrome" | "nebula" | "circuit" | "warmth" | "schematic";
 
 export const ORG_CHART_STYLES = [
   "monochrome",
@@ -127,8 +122,7 @@ function subtreeWidth(node: OrgNode): number {
   const children = normalizedReports(node);
   if (children.length === 0) return CARD_WIDTH;
   const childrenWidth = children.reduce(
-    (sum, child, index) =>
-      sum + subtreeWidth(child) + (index === 0 ? 0 : HORIZONTAL_GAP),
+    (sum, child, index) => sum + subtreeWidth(child) + (index === 0 ? 0 : HORIZONTAL_GAP),
     0,
   );
   return Math.max(CARD_WIDTH, childrenWidth);
@@ -148,9 +142,7 @@ function layoutNode(node: OrgNode, x: number, y: number): LayoutNode {
   let childX = x;
   for (const child of children) {
     const childWidth = subtreeWidth(child);
-    layout.children.push(
-      layoutNode(child, childX, y + CARD_HEIGHT + VERTICAL_GAP),
-    );
+    layout.children.push(layoutNode(child, childX, y + CARD_HEIGHT + VERTICAL_GAP));
     childX += childWidth + HORIZONTAL_GAP;
   }
   return layout;
@@ -165,10 +157,7 @@ function layoutForest(nodes: OrgNode[]): LayoutNode[] {
   });
 }
 
-function walkLayout(
-  nodes: LayoutNode[],
-  visit: (node: LayoutNode) => void,
-): void {
+function walkLayout(nodes: LayoutNode[], visit: (node: LayoutNode) => void): void {
   for (const node of nodes) {
     visit(node);
     walkLayout(node.children, visit);
@@ -186,11 +175,7 @@ function layoutBounds(nodes: LayoutNode[]) {
 }
 
 function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function initials(name: string): string {
@@ -289,7 +274,8 @@ export async function renderOrgChartPng(
 ): Promise<Buffer> {
   const svg = renderOrgChartSvg(orgTree, style, overlay);
   const sharpModule = await import("sharp");
-  return sharpModule.default(Buffer.from(svg), { density: 144 })
+  return sharpModule
+    .default(Buffer.from(svg), { density: 144 })
     .resize(TARGET_WIDTH, TARGET_HEIGHT)
     .png()
     .toBuffer();

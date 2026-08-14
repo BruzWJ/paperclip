@@ -27,16 +27,12 @@ function defaultDebugLog(fields: Record<string, unknown>, message: string): void
 }
 
 function defaultGitDescribeCommand(): string {
-  return execFileSync(
-    "git",
-    ["describe", "--tags", "--match", "v*", "--long", "--dirty"],
-    {
-      cwd: packageRoot,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 1500,
-    },
-  );
+  return execFileSync("git", ["describe", "--tags", "--match", "v*", "--long", "--dirty"], {
+    cwd: packageRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 1500,
+  });
 }
 
 function hasPathSegment(path: string, segment: string): boolean {
@@ -51,10 +47,7 @@ function safeRealpath(path: string, realpath: Realpath): string {
   }
 }
 
-function hasGitMetadataBeforeNodeModulesBoundary(
-  path: string,
-  pathExists: PathExists,
-): boolean {
+function hasGitMetadataBeforeNodeModulesBoundary(path: string, pathExists: PathExists): boolean {
   let current = path;
 
   while (true) {
@@ -69,22 +62,15 @@ function hasGitMetadataBeforeNodeModulesBoundary(
 
 function isPackagedInstall(
   path: string,
-  {
-    pathExists = existsSync,
-    realpath = realpathSync,
-  }: { pathExists?: PathExists; realpath?: Realpath } = {},
+  { pathExists = existsSync, realpath = realpathSync }: { pathExists?: PathExists; realpath?: Realpath } = {},
 ): boolean {
   const realPackageRoot = safeRealpath(path, realpath);
   const candidateRoots = Array.from(new Set([path, realPackageRoot]));
-  const hasNodeModulesSegment = candidateRoots.some((candidate) =>
-    hasPathSegment(candidate, "node_modules"),
-  );
+  const hasNodeModulesSegment = candidateRoots.some((candidate) => hasPathSegment(candidate, "node_modules"));
 
   if (!hasNodeModulesSegment) return false;
 
-  return !candidateRoots.some((candidate) =>
-    hasGitMetadataBeforeNodeModulesBoundary(candidate, pathExists),
-  );
+  return !candidateRoots.some((candidate) => hasGitMetadataBeforeNodeModulesBoundary(candidate, pathExists));
 }
 
 function normalizeErrorField(value: unknown): unknown {
@@ -94,9 +80,7 @@ function normalizeErrorField(value: unknown): unknown {
 }
 
 function compactRecord(fields: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(fields).filter(([, value]) => value !== undefined),
-  );
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
 }
 
 function summarizeError(err: unknown): Record<string, unknown> {
@@ -122,8 +106,7 @@ function summarizeError(err: unknown): Record<string, unknown> {
       stdout: normalizeErrorField(errorLike.stdout),
       stderr: normalizeErrorField(errorLike.stderr),
       stack: errorLike.stack,
-      cause:
-        errorLike.cause === undefined ? undefined : summarizeError(errorLike.cause),
+      cause: errorLike.cause === undefined ? undefined : summarizeError(errorLike.cause),
     });
   }
 
@@ -168,10 +151,7 @@ export function resolveServerVersion(
       realpath: opts.realpath,
     })
   ) {
-    debugLog(
-      { reason: "packaged_install" },
-      "falling back to package version for server version",
-    );
+    debugLog({ reason: "packaged_install" }, "falling back to package version for server version");
     return packageVersion;
   }
 
@@ -179,10 +159,7 @@ export function resolveServerVersion(
     const parsedVersion = parseGitDescribeVersion(gitDescribeCommand());
     if (parsedVersion) return parsedVersion;
 
-    debugLog(
-      { reason: "invalid_git_describe" },
-      "falling back to package version for server version",
-    );
+    debugLog({ reason: "invalid_git_describe" }, "falling back to package version for server version");
     return packageVersion;
   } catch (err) {
     debugLog(
@@ -191,10 +168,7 @@ export function resolveServerVersion(
     );
   }
 
-  const buildCommit =
-    opts.buildCommit === undefined
-      ? readBuildCommit()
-      : parseBuildCommit(opts.buildCommit);
+  const buildCommit = opts.buildCommit === undefined ? readBuildCommit() : parseBuildCommit(opts.buildCommit);
   if (buildCommit) {
     return `${packageVersion}+0.git.${buildCommit.slice(0, 7)}`;
   }

@@ -1,10 +1,5 @@
-import type {
-  AgentMentionReachGrantKey,
-} from "@paperclipai/shared";
-import {
-  evaluateAgentInvokability,
-  type AgentOrgRow,
-} from "./agent-invokability.js";
+import type { AgentMentionReachGrantKey } from "@paperclipai/shared";
+import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
 
 export interface MentionReachAgent extends AgentOrgRow {
   currentAdapterConfigRevisionId: string | null;
@@ -22,27 +17,19 @@ export interface MentionReachResolution {
   activatesTool: boolean;
 }
 
-function invokableAgentIds(
-  agents: readonly MentionReachAgent[],
-): ReadonlySet<string> {
+function invokableAgentIds(agents: readonly MentionReachAgent[]): ReadonlySet<string> {
   return new Set(
     agents
       .filter(
         (agent) =>
           agent.currentAdapterConfigRevisionId !== null &&
-          evaluateAgentInvokability(
-            agent,
-            agents as MentionReachAgent[],
-          ).invokable,
+          evaluateAgentInvokability(agent, agents as MentionReachAgent[]).invokable,
       )
       .map((agent) => agent.id),
   );
 }
 
-function orgDescendantIds(
-  sourceAgentId: string,
-  agents: readonly MentionReachAgent[],
-): ReadonlySet<string> {
+function orgDescendantIds(sourceAgentId: string, agents: readonly MentionReachAgent[]): ReadonlySet<string> {
   const childrenByParent = new Map<string, string[]>();
   for (const agent of agents) {
     if (!agent.reportsTo) continue;
@@ -94,33 +81,21 @@ export function resolveMentionReach(input: {
   sourceAgentId: string;
   companyAgents: readonly MentionReachAgent[];
   taskTree: readonly MentionReachTask[];
-  mentionReach: Readonly<
-    Partial<Record<AgentMentionReachGrantKey, boolean>>
-  >;
+  mentionReach: Readonly<Partial<Record<AgentMentionReachGrantKey, boolean>>>;
 }): MentionReachResolution {
-  const agentsById = new Map(
-    input.companyAgents.map((agent) => [agent.id, agent]),
-  );
+  const agentsById = new Map(input.companyAgents.map((agent) => [agent.id, agent]));
   const source = agentsById.get(input.sourceAgentId);
   if (!source) return { targetAgentIds: new Set(), activatesTool: false };
 
   const eligible = invokableAgentIds(input.companyAgents);
   const directChildren = input.companyAgents
-    .filter(
-      (agent) =>
-        agent.reportsTo === source.id &&
-        eligible.has(agent.id),
-    )
+    .filter((agent) => agent.reportsTo === source.id && eligible.has(agent.id))
     .map((agent) => agent.id);
 
   const root = input.taskTree.find((task) => task.parentId === null) ?? null;
   const treeOwnerIds = new Set(
     input.taskTree
-      .filter(
-        (task) =>
-          task.ownerKind === "agent" &&
-          task.ownerAgentId !== null,
-      )
+      .filter((task) => task.ownerKind === "agent" && task.ownerAgentId !== null)
       .map((task) => task.ownerAgentId!),
   );
 
@@ -142,17 +117,12 @@ export function resolveMentionReach(input: {
     }
   }
 
-  const activatesTool =
-    directChildren.length > 0 ||
-    dynamicTargets.size > 0;
+  const activatesTool = directChildren.length > 0 || dynamicTargets.size > 0;
   if (!activatesTool) {
     return { targetAgentIds: new Set(), activatesTool: false };
   }
 
-  const targetAgentIds = new Set<string>([
-    ...directChildren,
-    ...dynamicTargets,
-  ]);
+  const targetAgentIds = new Set<string>([...directChildren, ...dynamicTargets]);
   targetAgentIds.delete(source.id);
   return { targetAgentIds, activatesTool: true };
 }

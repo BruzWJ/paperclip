@@ -1,8 +1,5 @@
 import type { Request, RequestHandler } from "express";
-import {
-  canonicalizeBrowserOrigin,
-  requireRequestAuthority,
-} from "../http/request-authority.js";
+import { canonicalizeBrowserOrigin, requireRequestAuthority } from "../http/request-authority.js";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -11,10 +8,9 @@ function isTrustedBoardMutationRequest(req: Request) {
   const origin = canonicalizeBrowserOrigin(req.header("origin"));
   if (origin === requestOrigin) return true;
 
-  const refererOrigin = canonicalizeBrowserOrigin(
-    req.header("referer"),
-    { allowPath: true },
-  );
+  const refererOrigin = canonicalizeBrowserOrigin(req.header("referer"), {
+    allowPath: true,
+  });
   if (refererOrigin === requestOrigin) return true;
 
   return false;

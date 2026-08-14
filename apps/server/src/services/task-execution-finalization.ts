@@ -19,13 +19,12 @@ export type TaskExecutionFinalizationPromptIdentity =
       readonly segmentOrdinal: number;
     };
 
-export type TaskExecutionFinalizationPromptDependency =
-  TaskExecutionFinalizationPromptIdentity & {
-    readonly protocolSettlementState: TaskExecutionProtocolSettlementState;
-    readonly settlementVersion: number;
-    readonly accountingId: string | null;
-    readonly costEventId: string | null;
-  };
+export type TaskExecutionFinalizationPromptDependency = TaskExecutionFinalizationPromptIdentity & {
+  readonly protocolSettlementState: TaskExecutionProtocolSettlementState;
+  readonly settlementVersion: number;
+  readonly accountingId: string | null;
+  readonly costEventId: string | null;
+};
 
 export interface TaskExecutionFinalizationUpdateDependency {
   readonly taskUpdateId: string;
@@ -83,10 +82,7 @@ export class TaskExecutionFinalizationRejected extends Error {
 
 function exactIdentity(value: string, label: string): void {
   if (value.length === 0 || value !== value.trim()) {
-    throw new TaskExecutionFinalizationRejected(
-      `${label} must be exact and non-empty`,
-      "identity_invalid",
-    );
+    throw new TaskExecutionFinalizationRejected(`${label} must be exact and non-empty`, "identity_invalid");
   }
 }
 
@@ -99,16 +95,10 @@ function positiveVersion(value: number, label: string): void {
   }
 }
 
-function promptIdentityKey(
-  value: TaskExecutionFinalizationPromptIdentity,
-): string {
+function promptIdentityKey(value: TaskExecutionFinalizationPromptIdentity): string {
   switch (value.kind) {
     case "base":
-      if (
-        !Number.isSafeInteger(value.refOrdinal) ||
-        value.refOrdinal < 0 ||
-        value.segmentOrdinal !== 0
-      ) {
+      if (!Number.isSafeInteger(value.refOrdinal) || value.refOrdinal < 0 || value.segmentOrdinal !== 0) {
         throw new TaskExecutionFinalizationRejected(
           "Base finalization dependency has an invalid identity",
           "identity_invalid",
@@ -133,9 +123,7 @@ function promptIdentityKey(
   }
 }
 
-function assertPromptSettlement(
-  value: TaskExecutionFinalizationPromptDependency,
-): void {
+function assertPromptSettlement(value: TaskExecutionFinalizationPromptDependency): void {
   promptIdentityKey(value);
   positiveVersion(value.settlementVersion, "settlement version");
   if (value.protocolSettlementState === "settled") {
@@ -210,11 +198,7 @@ function assertBranch(input: BuildTaskExecutionFinalizationPlanInput): void {
   exactIdentity(input.progressCommentId, "progress comment id");
 
   if (input.action === "comment_only") {
-    if (
-      !input.terminalSessionEventId ||
-      !input.terminalSessionMessageId ||
-      input.updates.length !== 0
-    ) {
+    if (!input.terminalSessionEventId || !input.terminalSessionMessageId || input.updates.length !== 0) {
       throw new TaskExecutionFinalizationRejected(
         "Comment-only finalization requires one terminal Session pair and no updates",
         "branch_invalid",
@@ -250,9 +234,7 @@ function assertBranch(input: BuildTaskExecutionFinalizationPlanInput): void {
   }
 }
 
-function assertGatewayRevocation(
-  input: BuildTaskExecutionFinalizationPlanInput,
-): void {
+function assertGatewayRevocation(input: BuildTaskExecutionFinalizationPlanInput): void {
   if (!input.gatewayRevocationRequired) {
     if (input.gatewayRevocation !== null) {
       throw new TaskExecutionFinalizationRejected(
@@ -268,19 +250,11 @@ function assertGatewayRevocation(
       "gateway_revocation_invalid",
     );
   }
-  exactIdentity(
-    input.gatewayRevocation.capabilityConnectionId,
-    "gateway capability connection id",
-  );
-  positiveVersion(
-    input.gatewayRevocation.capabilityGeneration,
-    "gateway capability generation",
-  );
+  exactIdentity(input.gatewayRevocation.capabilityConnectionId, "gateway capability connection id");
+  positiveVersion(input.gatewayRevocation.capabilityGeneration, "gateway capability generation");
 }
 
-function assertUpdates(
-  updates: readonly TaskExecutionFinalizationUpdateDependency[],
-): void {
+function assertUpdates(updates: readonly TaskExecutionFinalizationUpdateDependency[]): void {
   const updateIds = new Set<string>();
   for (const update of updates) {
     exactIdentity(update.taskUpdateId, "task update id");
@@ -340,10 +314,7 @@ export function buildTaskExecutionFinalizationPlan(
   ] as const) {
     exactIdentity(value, label);
   }
-  assertPromptFrontier(
-    input.expectedPromptIdentities,
-    input.promptDependencies,
-  );
+  assertPromptFrontier(input.expectedPromptIdentities, input.promptDependencies);
   assertUpdates(input.updates);
   assertBranch(input);
   assertGatewayRevocation(input);

@@ -1,7 +1,4 @@
-import {
-  taskConsultExecutions,
-  taskExecutionRefs,
-} from "@paperclipai/db";
+import { taskConsultExecutions, taskExecutionRefs } from "@paperclipai/db";
 import { eq } from "drizzle-orm";
 import { lockTaskExecutionRunRefMembershipInTransaction } from "./task-execution-run-service.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
@@ -57,7 +54,7 @@ export async function lockAndValidateTaskConsultChain(
       .where(eq(taskExecutionRefs.id, cursorId))
       .limit(2)
       .for("update")
-      .then((rows) => rows.length === 1 ? rows[0]! : null);
+      .then((rows) => (rows.length === 1 ? rows[0]! : null));
     if (
       !cursor ||
       cursor.companyId !== first.companyId ||
@@ -71,10 +68,7 @@ export async function lockAndValidateTaskConsultChain(
       invalid("consult caller chain left its immutable task-execution scope");
     }
     if (seen.has(cursor.id)) {
-      throw new TaskConsultChainInvalid(
-        "consult caller chain contains a cycle",
-        "cycle",
-      );
+      throw new TaskConsultChainInvalid("consult caller chain contains a cycle", "cycle");
     }
     seen.add(cursor.id);
     agentIds.add(cursor.targetAgentId);
@@ -108,7 +102,7 @@ export async function lockAndValidateTaskConsultChain(
       .where(eq(taskConsultExecutions.id, cursor.consultExecutionId))
       .limit(2)
       .for("update")
-      .then((rows) => rows.length === 1 ? rows[0]! : null);
+      .then((rows) => (rows.length === 1 ? rows[0]! : null));
     if (
       !consult ||
       consult.companyId !== cursor.companyId ||
@@ -119,8 +113,7 @@ export async function lockAndValidateTaskConsultChain(
       consult.targetAgentId !== cursor.targetAgentId ||
       consult.adapterConfigRevisionId !== cursor.adapterConfigRevisionId ||
       consult.chainToken !== cursor.consultChainToken ||
-      (cursor.sourceKind === "consult_mention" &&
-        cursor.sourceRecordId !== consult.id) ||
+      (cursor.sourceKind === "consult_mention" && cursor.sourceRecordId !== consult.id) ||
       (cursor.id === first.id &&
         (input.leafState === "active"
           ? consult.state !== "active"
@@ -137,7 +130,7 @@ export async function lockAndValidateTaskConsultChain(
       .where(eq(taskExecutionRefs.id, consult.sourceRefId))
       .limit(2)
       .for("update")
-      .then((rows) => rows.length === 1 ? rows[0]! : null);
+      .then((rows) => (rows.length === 1 ? rows[0]! : null));
     if (
       !caller ||
       caller.companyId !== cursor.companyId ||
@@ -152,15 +145,12 @@ export async function lockAndValidateTaskConsultChain(
       invalid("consult execution lost its exact caller scope");
     }
 
-    const sourceRun = await lockTaskExecutionRunRefMembershipInTransaction(
-      transaction,
-      {
-        companyId: caller.companyId,
-        taskId: caller.taskId,
-        runId: consult.sourceRunId,
-        refId: caller.id,
-      },
-    );
+    const sourceRun = await lockTaskExecutionRunRefMembershipInTransaction(transaction, {
+      companyId: caller.companyId,
+      taskId: caller.taskId,
+      runId: consult.sourceRunId,
+      refId: caller.id,
+    });
     if (
       !sourceRun ||
       sourceRun.run.companyId !== caller.companyId ||
@@ -172,8 +162,7 @@ export async function lockAndValidateTaskConsultChain(
       sourceRun.run.adapterConfigRevisionId !== caller.adapterConfigRevisionId ||
       sourceRun.run.executionMode !== caller.mode ||
       (caller.mode === "owner"
-        ? sourceRun.run.taskExecutionAuthorityId !==
-            caller.taskExecutionAuthorityId ||
+        ? sourceRun.run.taskExecutionAuthorityId !== caller.taskExecutionAuthorityId ||
           sourceRun.run.consultExecutionId !== null
         : sourceRun.run.taskExecutionAuthorityId !== null ||
           sourceRun.run.consultExecutionId !== caller.consultExecutionId) ||
@@ -188,10 +177,7 @@ export async function lockAndValidateTaskConsultChain(
   }
 
   if (cursorId !== null || rootRef === null) {
-    throw new TaskConsultChainInvalid(
-      "consult caller chain exceeded its bounded depth",
-      "depth",
-    );
+    throw new TaskConsultChainInvalid("consult caller chain exceeded its bounded depth", "depth");
   }
   return Object.freeze({
     chainToken,

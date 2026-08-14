@@ -8,10 +8,7 @@ export function inboxAgentPolicyService(db: Db) {
     const row = await db
       .select()
       .from(userInboxAgentPolicies)
-      .where(and(
-        eq(userInboxAgentPolicies.companyId, companyId),
-        eq(userInboxAgentPolicies.userId, userId),
-      ))
+      .where(and(eq(userInboxAgentPolicies.companyId, companyId), eq(userInboxAgentPolicies.userId, userId)))
       .then((rows) => rows[0] ?? null);
     return row
       ? { ...row, materialized: true }
@@ -26,7 +23,11 @@ export function inboxAgentPolicyService(db: Db) {
         };
   }
 
-  async function update(companyId: string, userId: string, input: UpdateInboxAgentPolicy): Promise<InboxAgentPolicy> {
+  async function update(
+    companyId: string,
+    userId: string,
+    input: UpdateInboxAgentPolicy,
+  ): Promise<InboxAgentPolicy> {
     const allowedAgentIds = input.mode === "allowlist" ? [...new Set(input.allowedAgentIds)] : [];
     if (allowedAgentIds.length > 0) {
       const companyAgentIds = await db
@@ -45,7 +46,13 @@ export function inboxAgentPolicyService(db: Db) {
     const now = new Date();
     const [row] = await db
       .insert(userInboxAgentPolicies)
-      .values({ companyId, userId, mode: input.mode, allowedAgentIds, updatedAt: now })
+      .values({
+        companyId,
+        userId,
+        mode: input.mode,
+        allowedAgentIds,
+        updatedAt: now,
+      })
       .onConflictDoUpdate({
         target: [userInboxAgentPolicies.companyId, userInboxAgentPolicies.userId],
         set: { mode: input.mode, allowedAgentIds, updatedAt: now },

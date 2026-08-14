@@ -1,5 +1,4 @@
-import type { Db } from "@paperclipai/db";
-import { agentAdapterConfigRevisions, agents } from "@paperclipai/db";
+import { type Db, agentAdapterConfigRevisions, agents } from "@paperclipai/db";
 import {
   getAgentWorkEligibility,
   type AgentEligibilityAgent,
@@ -52,8 +51,7 @@ export type InvokableTaskOwnerRevision = Pick<
 >;
 
 export type InvokableTaskOwnerRejectionReason =
-  | `owner_not_invokable:${AgentInvokabilityBlockReason}`
-  | "owner_revision_missing";
+  `owner_not_invokable:${AgentInvokabilityBlockReason}` | "owner_revision_missing";
 
 export class InvokableTaskOwnerRejected extends Error {
   readonly code = "invokable_task_owner_rejected";
@@ -96,9 +94,7 @@ function blocked(
   return { invokable: false, reason, message, details, invalidOrgChain };
 }
 
-function statusBlockReason(
-  status: AgentStatus,
-): AgentInvokabilityBlockReason | null {
+function statusBlockReason(status: AgentStatus): AgentInvokabilityBlockReason | null {
   if (status === "paused") return "paused";
   if (status === "terminated") return "terminated";
   if (status === "pending_approval") return "pending_approval";
@@ -115,9 +111,7 @@ function toEligibilityAgent(row: AgentOrgRow): AgentEligibilityAgent {
   };
 }
 
-function invalidChainReason(
-  health: AgentOrgChainHealth,
-): AgentInvokabilityBlockReason {
+function invalidChainReason(health: AgentOrgChainHealth): AgentInvokabilityBlockReason {
   if (health.reason === "terminated_ancestor") return "manager_terminated";
   if (health.reason === "cycle") return "reporting_cycle";
   return "manager_missing";
@@ -139,9 +133,7 @@ export function evaluateAgentInvokability(
   if (eligibility.invokable) return { invokable: true };
 
   const directStatusReason =
-    eligibility.invokabilityReason === "unknown_status"
-      ? "unknown_status"
-      : statusBlockReason(agent.status);
+    eligibility.invokabilityReason === "unknown_status" ? "unknown_status" : statusBlockReason(agent.status);
   if (directStatusReason) {
     return blocked(
       directStatusReason,
@@ -177,36 +169,22 @@ export function evaluateAgentInvokability(
 export function resolveInvokableTaskOwner<
   Owner extends InvokableTaskOwnerAgent,
   Revision extends InvokableTaskOwnerRevision,
->(
-  input: InvokableTaskOwnerSnapshot<Owner, Revision>,
-): InvokableTaskOwnerResolution<Owner, Revision> {
-  const companyAgents = input.companyAgents.filter(
-    (candidate) => candidate.companyId === input.companyId,
-  );
-  const owner = companyAgents.find(
-    (candidate) => candidate.id === input.ownerAgentId,
-  );
+>(input: InvokableTaskOwnerSnapshot<Owner, Revision>): InvokableTaskOwnerResolution<Owner, Revision> {
+  const companyAgents = input.companyAgents.filter((candidate) => candidate.companyId === input.companyId);
+  const owner = companyAgents.find((candidate) => candidate.id === input.ownerAgentId);
   if (!owner) {
-    throw new InvokableTaskOwnerRejected(
-      "Agent no longer exists",
-      "owner_not_invokable:missing",
-      {
-        companyId: input.companyId,
-        ownerAgentId: input.ownerAgentId,
-      },
-    );
+    throw new InvokableTaskOwnerRejected("Agent no longer exists", "owner_not_invokable:missing", {
+      companyId: input.companyId,
+      ownerAgentId: input.ownerAgentId,
+    });
   }
   const invokability = evaluateAgentInvokability(owner, companyAgents);
   if (!invokability.invokable) {
-    throw new InvokableTaskOwnerRejected(
-      invokability.message,
-      `owner_not_invokable:${invokability.reason}`,
-      {
-        companyId: input.companyId,
-        ownerAgentId: input.ownerAgentId,
-        ...invokability.details,
-      },
-    );
+    throw new InvokableTaskOwnerRejected(invokability.message, `owner_not_invokable:${invokability.reason}`, {
+      companyId: input.companyId,
+      ownerAgentId: input.ownerAgentId,
+      ...invokability.details,
+    });
   }
   if (!owner.currentAdapterConfigRevisionId) {
     throw new InvokableTaskOwnerRejected(
@@ -250,10 +228,7 @@ export function resolveInvokableTaskOwnerCatalog<
 >(
   input: Omit<InvokableTaskOwnerSnapshot<Owner, Revision>, "ownerAgentId">,
 ): ReadonlyMap<string, InvokableTaskOwnerResolution<Owner, Revision>> {
-  const result = new Map<
-    string,
-    InvokableTaskOwnerResolution<Owner, Revision>
-  >();
+  const result = new Map<string, InvokableTaskOwnerResolution<Owner, Revision>>();
   for (const candidate of input.companyAgents) {
     if (candidate.companyId !== input.companyId) continue;
     try {
@@ -270,9 +245,7 @@ export function resolveInvokableTaskOwnerCatalog<
   return result;
 }
 
-function currentRevisionIds(
-  companyAgents: readonly InvokableTaskOwnerAgent[],
-): string[] {
+function currentRevisionIds(companyAgents: readonly InvokableTaskOwnerAgent[]): string[] {
   return [
     ...new Set(
       companyAgents
@@ -339,11 +312,7 @@ export async function resolveInvokableTaskOwnerFromDb(
     .from(agents)
     .where(eq(agents.companyId, input.companyId))
     .orderBy(asc(agents.id));
-  const adapterRevisions = await listCurrentAdapterRevisions(
-    db,
-    input.companyId,
-    companyAgents,
-  );
+  const adapterRevisions = await listCurrentAdapterRevisions(db, input.companyId, companyAgents);
   return resolveInvokableTaskOwner({
     ...input,
     companyAgents,
@@ -364,11 +333,7 @@ export async function resolveInvokableTaskOwnerCatalogFromDb(
     .from(agents)
     .where(eq(agents.companyId, input.companyId))
     .orderBy(asc(agents.id));
-  const adapterRevisions = await listCurrentAdapterRevisions(
-    db,
-    input.companyId,
-    companyAgents,
-  );
+  const adapterRevisions = await listCurrentAdapterRevisions(db, input.companyId, companyAgents);
   return resolveInvokableTaskOwnerCatalog({
     ...input,
     companyAgents,
@@ -391,11 +356,7 @@ export async function resolveInvokableTaskOwnerInTransaction(
     .where(eq(agents.companyId, input.companyId))
     .orderBy(asc(agents.id))
     .for("update");
-  const adapterRevisions = await listCurrentAdapterRevisionsForUpdate(
-    tx,
-    input.companyId,
-    companyAgents,
-  );
+  const adapterRevisions = await listCurrentAdapterRevisionsForUpdate(tx, input.companyId, companyAgents);
   return resolveInvokableTaskOwner({
     ...input,
     companyAgents,
@@ -418,11 +379,7 @@ export async function resolveInvokableTaskOwnerCatalogInTransaction(
     .where(eq(agents.companyId, input.companyId))
     .orderBy(asc(agents.id))
     .for("update");
-  const adapterRevisions = await listCurrentAdapterRevisionsForUpdate(
-    tx,
-    input.companyId,
-    companyAgents,
-  );
+  const adapterRevisions = await listCurrentAdapterRevisionsForUpdate(tx, input.companyId, companyAgents);
   return resolveInvokableTaskOwnerCatalog({
     ...input,
     companyAgents,

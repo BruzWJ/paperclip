@@ -1,7 +1,4 @@
-import {
-  taskBoardLifecycleCommands,
-  type TaskBoardLifecycleCommand,
-} from "@paperclipai/db";
+import { taskBoardLifecycleCommands, type TaskBoardLifecycleCommand } from "@paperclipai/db";
 import type { TaskBoardLifecycleCommandSubtype } from "@paperclipai/shared";
 import { and, eq } from "drizzle-orm";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
@@ -40,9 +37,7 @@ function assertExistingCommand(
     row.idempotencyKey !== input.idempotencyKey ||
     !sameInstant(row.committedAt, input.committedAt)
   ) {
-    throw new Error(
-      "Board lifecycle command source was retried with different immutable facts",
-    );
+    throw new Error("Board lifecycle command source was retried with different immutable facts");
   }
 }
 
@@ -60,17 +55,13 @@ export async function recordNamedBoardLifecycleCommandInTransaction(
   for (const task of input.affectedTasks) {
     const previous = affectedById.get(task.id);
     if (previous && previous.ownershipEpoch !== task.ownershipEpoch) {
-      throw new Error(
-        "One board lifecycle command cannot target two epochs of one task",
-      );
+      throw new Error("One board lifecycle command cannot target two epochs of one task");
     }
     affectedById.set(task.id, task);
   }
 
   const rows: TaskBoardLifecycleCommand[] = [];
-  for (const task of [...affectedById.values()].sort((left, right) =>
-    left.id.localeCompare(right.id),
-  )) {
+  for (const task of [...affectedById.values()].sort((left, right) => left.id.localeCompare(right.id))) {
     const existing = await tx
       .select()
       .from(taskBoardLifecycleCommands)
@@ -78,10 +69,7 @@ export async function recordNamedBoardLifecycleCommandInTransaction(
         and(
           eq(taskBoardLifecycleCommands.companyId, input.companyId),
           eq(taskBoardLifecycleCommands.taskId, task.id),
-          eq(
-            taskBoardLifecycleCommands.sourceCommandId,
-            input.sourceCommandId,
-          ),
+          eq(taskBoardLifecycleCommands.sourceCommandId, input.sourceCommandId),
         ),
       )
       .limit(1)

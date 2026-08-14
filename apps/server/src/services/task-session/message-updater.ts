@@ -32,10 +32,7 @@ async function updateAssistant(
 }
 
 function latestTool(message: any, callId: string): any {
-  return message.content.findLast(
-    (part: any) =>
-      part.type === "tool" && part.id === callId,
-  );
+  return message.content.findLast((part: any) => part.type === "tool" && part.id === callId);
 }
 
 export async function applyTaskSessionMessageEvent(
@@ -133,14 +130,10 @@ export async function applyTaskSessionMessageEvent(
           id: event.data.assistantMessageID,
           type: "assistant",
           agent: event.data.agent,
-          ...(event.data.model === undefined
-            ? {}
-            : { model: event.data.model }),
+          ...(event.data.model === undefined ? {} : { model: event.data.model }),
           time: { created: event.data.timestamp },
           content: [],
-          snapshot: event.data.snapshot
-            ? { start: event.data.snapshot }
-            : undefined,
+          snapshot: event.data.snapshot ? { start: event.data.snapshot } : undefined,
         }),
       );
       return;
@@ -185,8 +178,7 @@ export async function applyTaskSessionMessageEvent(
     case "session.next.text.ended":
       await updateAssistant(store, event.data.assistantMessageID, (message) => {
         const part = message.content.findLast(
-          (item: any) =>
-            item.type === "text" && item.id === event.data.textID,
+          (item: any) => item.type === "text" && item.id === event.data.textID,
         );
         if (part) part.text = event.data.text;
       });
@@ -207,8 +199,7 @@ export async function applyTaskSessionMessageEvent(
     case "session.next.reasoning.ended":
       await updateAssistant(store, event.data.assistantMessageID, (message) => {
         const part = message.content.findLast(
-          (item: any) =>
-            item.type === "reasoning" && item.id === event.data.reasoningID,
+          (item: any) => item.type === "reasoning" && item.id === event.data.reasoningID,
         );
         if (!part) return;
         part.text = event.data.text;
@@ -270,9 +261,7 @@ export async function applyTaskSessionMessageEvent(
         const tool = latestTool(message, event.data.callID);
         if (tool?.state.status !== "running") return;
         tool.provider = {
-          executed:
-            event.data.provider.executed ||
-            tool.provider?.executed === true,
+          executed: event.data.provider.executed || tool.provider?.executed === true,
           metadata: tool.provider?.metadata,
           resultMetadata: event.data.provider.metadata,
         };
@@ -282,9 +271,7 @@ export async function applyTaskSessionMessageEvent(
           input: tool.state.input,
           structured: event.data.structured,
           content: [...event.data.content],
-          outputPaths: event.data.outputPaths
-            ? [...event.data.outputPaths]
-            : [],
+          outputPaths: event.data.outputPaths ? [...event.data.outputPaths] : [],
           result: event.data.result,
         });
       });
@@ -292,18 +279,12 @@ export async function applyTaskSessionMessageEvent(
     case "session.next.tool.failed":
       await updateAssistant(store, event.data.assistantMessageID, (message) => {
         const tool = latestTool(message, event.data.callID);
-        if (
-          !tool ||
-          (tool.state.status !== "pending" &&
-            tool.state.status !== "running")
-        ) {
+        if (!tool || (tool.state.status !== "pending" && tool.state.status !== "running")) {
           return;
         }
         const prior = tool.state;
         tool.provider = {
-          executed:
-            event.data.provider.executed ||
-            tool.provider?.executed === true,
+          executed: event.data.provider.executed || tool.provider?.executed === true,
           metadata: tool.provider?.metadata,
           resultMetadata: event.data.provider.metadata,
         };

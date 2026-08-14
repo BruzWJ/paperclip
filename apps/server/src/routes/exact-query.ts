@@ -1,9 +1,6 @@
 import { badRequest } from "../errors.js";
 
-export function assertExactQueryKeys(
-  query: Record<string, unknown>,
-  allowed: readonly string[],
-) {
+export function assertExactQueryKeys(query: Record<string, unknown>, allowed: readonly string[]) {
   const unknown = Object.keys(query)
     .filter((key) => !allowed.includes(key))
     .sort();
@@ -12,11 +9,7 @@ export function assertExactQueryKeys(
   }
 }
 
-export function parseExactBooleanQuery(
-  value: unknown,
-  field: string,
-  defaultValue = false,
-) {
+export function parseExactBooleanQuery(value: unknown, field: string, defaultValue = false) {
   if (value === undefined) return defaultValue;
   if (value === "true") return true;
   if (value === "false") return false;
@@ -51,18 +44,9 @@ export function parseExactOptionalEnum<const T extends readonly string[]>(
   throw badRequest(`${field} has an unsupported value`);
 }
 
-export function parseExactOptionalNonBlankQuery(
-  value: unknown,
-  field: string,
-  maxLength = 1_000,
-) {
+export function parseExactOptionalNonBlankQuery(value: unknown, field: string, maxLength = 1_000) {
   if (value === undefined) return undefined;
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.length > maxLength ||
-    value.trim() !== value
-  ) {
+  if (typeof value !== "string" || value.length === 0 || value.length > maxLength || value.trim() !== value) {
     throw badRequest(`${field} must be exact and non-empty`);
   }
   return value;

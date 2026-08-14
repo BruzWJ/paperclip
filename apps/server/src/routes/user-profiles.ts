@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
 import {
+  type Db,
   activityLog,
   agents,
   authUsers,
@@ -11,13 +11,11 @@ import {
   taskComments,
   tasks,
 } from "@paperclipai/db";
-import type {
-  UserProfileDailyPoint,
-  UserProfileIdentity,
-  UserProfileResponse,
-  UserProfileWindowStats,
-} from "@paperclipai/shared";
 import {
+  type UserProfileDailyPoint,
+  type UserProfileIdentity,
+  type UserProfileResponse,
+  type UserProfileWindowStats,
   authUserIdSchema,
   canonicalizeMoneyAmount,
   parseBudgetCurrency,
@@ -45,11 +43,7 @@ const PROFILE_WINDOWS = [
   { key: "all", label: "All time", days: null },
 ] as const;
 
-async function getCompanyUserById(
-  db: Db,
-  companyId: string,
-  userId: string,
-): Promise<CompanyUserRow | null> {
+async function getCompanyUserById(db: Db, companyId: string, userId: string): Promise<CompanyUserRow | null> {
   return db
     .select({
       userId: authUsers.id,
@@ -115,12 +109,9 @@ function trustedAmount(value: string | null | undefined): MoneyAmount {
 
 function costAggregateSelection() {
   return {
-    knownCostAmount:
-      sql<string>`coalesce(sum(${costEvents.knownDeltaAmount}) filter (where ${costEvents.kind} = 'known'), 0)::text`,
-    pricedPromptCount:
-      sql<number>`count(*) filter (where ${costEvents.kind} = 'known')::int`,
-    unpricedPromptCount:
-      sql<number>`count(*) filter (where ${costEvents.kind} = 'unavailable')::int`,
+    knownCostAmount: sql<string>`coalesce(sum(${costEvents.knownDeltaAmount}) filter (where ${costEvents.kind} = 'known'), 0)::text`,
+    pricedPromptCount: sql<number>`count(*) filter (where ${costEvents.kind} = 'known')::int`,
+    unpricedPromptCount: sql<number>`count(*) filter (where ${costEvents.kind} = 'unavailable')::int`,
   };
 }
 
@@ -141,15 +132,15 @@ async function loadWindowStats(
       touchedTasks: sql<number>`count(distinct case when ${involvement} ${fromIso ? sql`and ${tasks.updatedAt} >= ${fromIso}` : sql``} then ${tasks.id} end)::int`,
       createdTasks: sql<number>`count(distinct case when ${tasks.creatorKind} = 'user/board' and ${tasks.creatorUserId} = ${userId} ${fromIso ? sql`and ${tasks.createdAt} >= ${fromIso}` : sql``} then ${tasks.id} end)::int`,
       completedTasks: sql<number>`count(distinct case when ${involvement} and ${tasks.boardPresentationStatus} = 'done' ${fromIso ? sql`and ${tasks.completedAt} >= ${fromIso}` : sql``} then ${tasks.id} end)::int`,
-      assignedOpenTasks: sql<number>`count(distinct case when ${tasks.ownerUserId} = ${userId} and ${tasks.boardPresentationStatus} in (${sql.join(openStatuses.map((status) => sql`${status}`), sql`, `)}) then ${tasks.id} end)::int`,
+      assignedOpenTasks: sql<number>`count(distinct case when ${tasks.ownerUserId} = ${userId} and ${tasks.boardPresentationStatus} in (${sql.join(
+        openStatuses.map((status) => sql`${status}`),
+        sql`, `,
+      )}) then ${tasks.id} end)::int`,
     })
     .from(tasks)
     .where(and(eq(tasks.companyId, companyId), visibleTaskCondition()));
 
-  const commentConditions = [
-    eq(taskComments.companyId, companyId),
-    eq(taskComments.authorUserId, userId),
-  ];
+  const commentConditions = [eq(taskComments.companyId, companyId), eq(taskComments.authorUserId, userId)];
   if (from) commentConditions.push(gte(taskComments.createdAt, from));
   const [commentStats] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -167,10 +158,7 @@ async function loadWindowStats(
     .from(activityLog)
     .where(and(...activityConditions));
 
-  const costConditions = [
-    eq(costEvents.companyId, companyId),
-    userTaskInvolvementSql(companyId, userId),
-  ];
+  const costConditions = [eq(costEvents.companyId, companyId), userTaskInvolvementSql(companyId, userId)];
   if (from) costConditions.push(gte(costEvents.occurredAt, from));
   const [costStats] = await db
     .select({
@@ -291,9 +279,7 @@ export function userProfileRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
     const parsedUserId = authUserIdSchema.safeParse(req.params.userId);
     if (!parsedUserId.success) {
-      throw badRequest(
-        "User ID must be an exact non-empty value without surrounding whitespace",
-      );
+      throw badRequest("User ID must be an exact non-empty value without surrounding whitespace");
     }
     const userId = parsedUserId.data;
 

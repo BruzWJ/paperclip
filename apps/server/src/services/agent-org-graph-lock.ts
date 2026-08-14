@@ -1,8 +1,7 @@
 import { asc, eq, sql } from "drizzle-orm";
 import { agents, companies, type Db } from "@paperclipai/db";
 
-export type AgentOrgGraphTransaction =
-  Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type AgentOrgGraphTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export type LockedCompanyAgentGraph = {
   company: typeof companies.$inferSelect | null;
@@ -44,10 +43,7 @@ export async function lockCompanyAgentGraph(
  */
 export function listCompanyAgentGraphDescendants<
   Row extends Pick<typeof agents.$inferSelect, "id" | "reportsTo">,
->(
-  rootAgentId: string,
-  companyAgents: readonly Row[],
-): Row[] {
+>(rootAgentId: string, companyAgents: readonly Row[]): Row[] {
   const byManager = new Map<string, Row[]>();
   for (const row of companyAgents) {
     if (!row.reportsTo) continue;
@@ -56,10 +52,7 @@ export function listCompanyAgentGraphDescendants<
     byManager.set(row.reportsTo, reports);
   }
   for (const reports of byManager.values()) {
-    reports.sort(
-      (left, right) =>
-        left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
-    );
+    reports.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
   }
 
   const descendants: Row[] = [];

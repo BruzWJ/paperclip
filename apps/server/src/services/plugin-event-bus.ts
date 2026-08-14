@@ -22,8 +22,10 @@
 import {
   assertPluginEventSubscription,
   pluginEventMatchesFilter,
+  type PluginEvent,
+  type EventFilter,
+  type PluginEventPattern,
 } from "@paperclipai/plugin-sdk";
-import type { PluginEvent, EventFilter, PluginEventPattern } from "@paperclipai/plugin-sdk";
 import { isCanonicalUuid } from "@paperclipai/shared";
 
 // ---------------------------------------------------------------------------
@@ -50,9 +52,10 @@ function stableFilterKey(value: unknown): string {
   }
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) =>
-      `${JSON.stringify(key)}:${stableFilterKey(record[key])}`
-    ).join(",")}}`;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableFilterKey(record[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value) ?? "undefined";
 }
@@ -179,9 +182,11 @@ export function createPluginEventBus(): PluginEventBus {
         // exceptions become rejections. Each .catch() swallows the rejection
         // and records it — the promise always resolves, so Promise.all never rejects.
         promises.push(
-          Promise.resolve().then(() => handler(event)).catch((error: unknown) => {
-            errors.push({ pluginKey, error });
-          }),
+          Promise.resolve()
+            .then(() => handler(event))
+            .catch((error: unknown) => {
+              errors.push({ pluginKey, error });
+            }),
         );
       }
     }
@@ -202,10 +207,7 @@ export function createPluginEventBus(): PluginEventBus {
    * plugin's own subscription list and enforces the plugin namespace on `emit`.
    */
   function forPlugin(pluginKey: string): ScopedPluginEventBus {
-    if (
-      pluginKey.length === 0
-      || pluginKey !== pluginKey.trim()
-    ) {
+    if (pluginKey.length === 0 || pluginKey !== pluginKey.trim()) {
       throw new Error("Plugin identity must be an exact non-empty string");
     }
     return {
@@ -238,9 +240,7 @@ export function createPluginEventBus(): PluginEventBus {
 
         const subscriptions = subsFor(pluginKey);
         const key = `${eventPattern}\0${stableFilterKey(filter)}`;
-        const existing = subscriptions.find((subscription) =>
-          subscription.key === key
-        );
+        const existing = subscriptions.find((subscription) => subscription.key === key);
         if (existing) {
           existing.filter = filter;
           existing.handler = handler;
@@ -261,9 +261,7 @@ export function createPluginEventBus(): PluginEventBus {
        */
       async emit(name: string, companyId: string, payload: unknown): Promise<PluginEventBusEmitResult> {
         if (name.length === 0 || name !== name.trim()) {
-          throw new Error(
-            `Plugin "${pluginKey}" must provide an exact non-empty event name.`,
-          );
+          throw new Error(`Plugin "${pluginKey}" must provide an exact non-empty event name.`);
         }
 
         if (!isCanonicalUuid(companyId)) {
@@ -275,7 +273,7 @@ export function createPluginEventBus(): PluginEventBus {
         if (name.startsWith("plugin.")) {
           throw new Error(
             `Plugin "${pluginKey}" must not include the "plugin." prefix when emitting events. ` +
-            `Emit the bare event name (e.g. "sync-done") and the bus will namespace it automatically.`,
+              `Emit the bare event name (e.g. "sync-done") and the bus will namespace it automatically.`,
           );
         }
 
@@ -377,7 +375,7 @@ export interface PluginEventBus {
  * than `void` so the host layer can inspect handler errors; the SDK-facing
  * `PluginEventsClient.emit()` wraps this and returns `void`.
  */
-interface ScopedPluginEventBus {
+export interface ScopedPluginEventBus {
   /**
    * Subscribe to a core domain event or a plugin-namespaced event.
    *
@@ -395,10 +393,7 @@ interface ScopedPluginEventBus {
    * An optional `EventFilter` can be passed as the second argument to perform
    * server-side pre-filtering; filtered-out events are never delivered to the handler.
    */
-  subscribe(
-    eventPattern: PluginEventPattern,
-    fn: (event: PluginEvent) => Promise<void>,
-  ): void;
+  subscribe(eventPattern: PluginEventPattern, fn: (event: PluginEvent) => Promise<void>): void;
   subscribe(
     eventPattern: PluginEventPattern,
     filter: EventFilter,

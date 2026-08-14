@@ -1,390 +1,51 @@
-import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { routineTriggers } from "@paperclipai/db";
 import {
-  agents,
-  pluginManagedResources,
-  plugins,
-  projects,
-  routines,
-  routineTriggers,
-} from "@paperclipai/db";
-import type {
-  CreateRoutineTrigger,
-  PluginManagedResourceRef,
-  PluginManagedRoutineDeclaration,
-  PluginManagedRoutineResolution,
-  Routine,
-  RoutineManagedByPlugin,
-  RoutineStatus,
+  type PluginManagedRoutineDeclaration,
+  type RoutineStatus,
+  ROUTINE_STATUSES,
 } from "@paperclipai/shared";
-import { ROUTINE_STATUSES } from "@paperclipai/shared";
+import { eq } from "drizzle-orm";
 import { notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
+import { buildPluginManagedRoutinesPluginManagedRoutineBindings } from "./plugin-managed-routine-bindings.js";
+import {
+  type PluginManagedRoutineServiceOptions,
+  type RoutineOverrides,
+  triggerInput,
+} from "./plugin-managed-routine-bindings.js";
 import { routineService } from "./routines.js";
-import type { OrdinaryTaskRuntime } from "./ordinary-task-runtime.js";
-import type { SecretsRuntimeConfig } from "../secrets/types.js";
 
-const MANAGED_ROUTINE_RESOURCE_KIND = "routine";
-
-interface PluginManagedRoutineServiceOptions {
-  pluginId: string;
-  manifest: import("@paperclipai/shared").PaperclipPluginManifestV1;
-  ordinaryTasks: OrdinaryTaskRuntime;
-  secretsRuntime: SecretsRuntimeConfig;
-}
-
-interface RoutineOverrides {
-  assigneeAgentId?: string | null;
-  projectId?: string | null;
-}
-
-function buildRoutineDefaults(declaration: PluginManagedRoutineDeclaration) {
-  return {
-    routineKey: declaration.routineKey,
-    title: declaration.title,
-    description: declaration.description ?? null,
-    assigneeRef: declaration.assigneeRef ?? null,
-    projectRef: declaration.projectRef ?? null,
-    goalId: declaration.goalId ?? null,
-    status: declaration.status ?? null,
-    priority: declaration.priority ?? "medium",
-    concurrencyPolicy: declaration.concurrencyPolicy ?? "coalesce_if_active",
-    catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
-    variables: declaration.variables ?? [],
-    triggers: declaration.triggers ?? [],
-    taskTemplate: declaration.taskTemplate ?? null,
-  };
-}
-
-function normalizeRef(
-  pluginKey: string,
-  ref: PluginManagedResourceRef | null | undefined,
-  resourceKind: "agent" | "project",
-) {
-  if (!ref) return null;
-  if (ref.resourceKind !== resourceKind) {
-    throw unprocessable(
-      `Managed routine ${resourceKind} ref must target ${resourceKind}`,
-    );
-  }
-  if (ref.pluginKey && ref.pluginKey !== pluginKey) {
-    throw unprocessable(
-      "Managed routine refs must target the declaring plugin",
-    );
-  }
-  return { ...ref, pluginKey };
-}
-
-function managedByPlugin(row: {
-  id: string;
-  pluginId: string;
-  pluginKey: string;
-  manifestJson: { displayName: string };
-  resourceKey: string;
-  defaultsJson: Record<string, unknown>;
-  createdAt: Date;
-  updatedAt: Date;
-}): RoutineManagedByPlugin {
-  return {
-    id: row.id,
-    pluginId: row.pluginId,
-    pluginKey: row.pluginKey,
-    pluginDisplayName: row.manifestJson.displayName,
-    resourceKind: "routine",
-    resourceKey: row.resourceKey,
-    defaultsJson: row.defaultsJson,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function triggerInput(
-  trigger: NonNullable<PluginManagedRoutineDeclaration["triggers"]>[number],
-): CreateRoutineTrigger {
-  if (trigger.kind === "schedule") {
-    if (!trigger.cronExpression) {
-      throw unprocessable(
-        "Managed schedule routine triggers require cronExpression",
-      );
-    }
-    return {
-      kind: "schedule",
-      label: trigger.label ?? null,
-      enabled: trigger.enabled ?? true,
-      cronExpression: trigger.cronExpression,
-      timezone: trigger.timezone ?? "UTC",
-    };
-  }
-  if (trigger.kind === "webhook") {
-    return {
-      kind: "webhook",
-      label: trigger.label ?? null,
-      enabled: trigger.enabled ?? true,
-      signingMode: (trigger.signingMode ?? "bearer") as Extract<
-        CreateRoutineTrigger,
-        { kind: "webhook" }
-      >["signingMode"],
-      replayWindowSec: trigger.replayWindowSec ?? 300,
-    };
-  }
-  return {
-    kind: "api",
-    label: trigger.label ?? null,
-    enabled: trigger.enabled ?? true,
-  };
-}
-
-export function pluginManagedRoutineService(
-  db: Db,
-  options: PluginManagedRoutineServiceOptions,
-) {
+export function createPluginManagedRoutinesContext(db: Db, options: PluginManagedRoutineServiceOptions) {
   const pluginKey = options.manifest.id;
+
   const routinesSvc = routineService(db, {
     ordinaryTasks: options.ordinaryTasks,
     secretsRuntime: options.secretsRuntime,
   });
 
-  function declarationFor(routineKey: string) {
-    const declaration = options.manifest.routines?.find(
-      (routine) => routine.routineKey === routineKey,
-    );
-    if (!declaration) {
-      throw notFound(`Managed routine declaration not found: ${routineKey}`);
-    }
-    return declaration;
-  }
+  return { db, options, pluginKey, routinesSvc };
+}
 
-  async function getBinding(companyId: string, routineKey: string) {
-    return db
-      .select({
-        id: pluginManagedResources.id,
-        companyId: pluginManagedResources.companyId,
-        pluginId: pluginManagedResources.pluginId,
-        pluginKey: pluginManagedResources.pluginKey,
-        resourceKind: pluginManagedResources.resourceKind,
-        resourceKey: pluginManagedResources.resourceKey,
-        resourceId: pluginManagedResources.resourceId,
-        defaultsJson: pluginManagedResources.defaultsJson,
-        manifestJson: plugins.manifestJson,
-        createdAt: pluginManagedResources.createdAt,
-        updatedAt: pluginManagedResources.updatedAt,
-      })
-      .from(pluginManagedResources)
-      .innerJoin(plugins, eq(pluginManagedResources.pluginId, plugins.id))
-      .where(
-        and(
-          eq(pluginManagedResources.companyId, companyId),
-          eq(pluginManagedResources.pluginId, options.pluginId),
-          eq(
-            pluginManagedResources.resourceKind,
-            MANAGED_ROUTINE_RESOURCE_KIND,
-          ),
-          eq(pluginManagedResources.resourceKey, routineKey),
-        ),
-      )
-      .then((rows) => rows[0] ?? null);
-  }
+export type PluginManagedRoutinesContext = ReturnType<typeof createPluginManagedRoutinesContext>;
 
-  async function upsertBinding(
-    companyId: string,
-    declaration: PluginManagedRoutineDeclaration,
-    routineId: string,
-  ) {
-    const defaultsJson = buildRoutineDefaults(declaration);
-    const existing = await getBinding(companyId, declaration.routineKey);
-    if (existing) {
-      return db
-        .update(pluginManagedResources)
-        .set({
-          resourceId: routineId,
-          defaultsJson,
-          updatedAt: new Date(),
-        })
-        .where(eq(pluginManagedResources.id, existing.id))
-        .returning()
-        .then((rows) => rows[0]);
-    }
-    return db
-      .insert(pluginManagedResources)
-      .values({
-        companyId,
-        pluginId: options.pluginId,
-        pluginKey,
-        resourceKind: MANAGED_ROUTINE_RESOURCE_KIND,
-        resourceKey: declaration.routineKey,
-        resourceId: routineId,
-        defaultsJson,
-      })
-      .returning()
-      .then((rows) => rows[0]);
-  }
+export function buildPluginManagedRoutinesPluginManagedRoutineCreation(
+  scope: PluginManagedRoutinesContext &
+    ReturnType<typeof buildPluginManagedRoutinesPluginManagedRoutineBindings>,
+) {
+  const {
+    db,
+    options,
+    pluginKey,
+    routinesSvc,
+    declarationFor,
+    upsertBinding,
+    getRoutineWithManagedBy,
+    resolveRefs,
+    resolution,
+  } = scope;
 
-  async function getRoutineWithManagedBy(
-    companyId: string,
-    declaration: PluginManagedRoutineDeclaration,
-  ) {
-    const binding = await getBinding(companyId, declaration.routineKey);
-    if (!binding) return null;
-    const routine = await db
-      .select()
-      .from(routines)
-      .where(
-        and(
-          eq(routines.companyId, companyId),
-          eq(routines.id, binding.resourceId),
-        ),
-      )
-      .then((rows) => rows[0] ?? null);
-    if (!routine) return null;
-    return {
-      ...routine,
-      managedByPlugin: managedByPlugin(binding),
-    } as Routine;
-  }
-
-  async function resolveAgentId(
-    companyId: string,
-    declaration: PluginManagedRoutineDeclaration,
-    overrides?: RoutineOverrides,
-  ) {
-    if (overrides?.assigneeAgentId !== undefined) {
-      if (!overrides.assigneeAgentId)
-        return { agentId: null, missingRef: null };
-      const row = await db
-        .select({ id: agents.id })
-        .from(agents)
-        .where(
-          and(
-            eq(agents.companyId, companyId),
-            eq(agents.id, overrides.assigneeAgentId),
-          ),
-        )
-        .then((rows) => rows[0] ?? null);
-      if (!row) throw notFound("Assignee agent not found");
-      return { agentId: row.id, missingRef: null };
-    }
-
-    const ref = normalizeRef(pluginKey, declaration.assigneeRef, "agent");
-    if (!ref) return { agentId: null, missingRef: null };
-    const binding = await db
-      .select({ resourceId: pluginManagedResources.resourceId })
-      .from(pluginManagedResources)
-      .where(
-        and(
-          eq(pluginManagedResources.companyId, companyId),
-          eq(pluginManagedResources.pluginId, options.pluginId),
-          eq(pluginManagedResources.resourceKind, "agent"),
-          eq(pluginManagedResources.resourceKey, ref.resourceKey),
-          eq(pluginManagedResources.lifecycleState, "active"),
-        ),
-      )
-      .then((rows) => rows[0] ?? null);
-    if (!binding) return { agentId: null, missingRef: ref };
-    const row = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(eq(agents.companyId, companyId), eq(agents.id, binding.resourceId)),
-      )
-      .then((rows) => rows[0] ?? null);
-    return row
-      ? { agentId: row.id, missingRef: null }
-      : { agentId: null, missingRef: ref };
-  }
-
-  async function resolveProjectId(
-    companyId: string,
-    declaration: PluginManagedRoutineDeclaration,
-    overrides?: RoutineOverrides,
-  ) {
-    if (overrides?.projectId !== undefined) {
-      if (!overrides.projectId) return { projectId: null, missingRef: null };
-      const row = await db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(
-          and(
-            eq(projects.companyId, companyId),
-            eq(projects.id, overrides.projectId),
-          ),
-        )
-        .then((rows) => rows[0] ?? null);
-      if (!row) throw notFound("Project not found");
-      return { projectId: row.id, missingRef: null };
-    }
-
-    const ref = normalizeRef(pluginKey, declaration.projectRef, "project");
-    if (!ref) return { projectId: null, missingRef: null };
-    const binding = await db
-      .select({ resourceId: pluginManagedResources.resourceId })
-      .from(pluginManagedResources)
-      .where(
-        and(
-          eq(pluginManagedResources.companyId, companyId),
-          eq(pluginManagedResources.pluginId, options.pluginId),
-          eq(pluginManagedResources.resourceKind, "project"),
-          eq(pluginManagedResources.resourceKey, ref.resourceKey),
-        ),
-      )
-      .then((rows) => rows[0] ?? null);
-    if (!binding) return { projectId: null, missingRef: ref };
-    const row = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(
-        and(
-          eq(projects.companyId, companyId),
-          eq(projects.id, binding.resourceId),
-        ),
-      )
-      .then((rows) => rows[0] ?? null);
-    return row
-      ? { projectId: row.id, missingRef: null }
-      : { projectId: null, missingRef: ref };
-  }
-
-  async function resolveRefs(
-    companyId: string,
-    declaration: PluginManagedRoutineDeclaration,
-    overrides?: RoutineOverrides,
-  ) {
-    const [agent, project] = await Promise.all([
-      resolveAgentId(companyId, declaration, overrides),
-      resolveProjectId(companyId, declaration, overrides),
-    ]);
-    const missingRefs: PluginManagedResourceRef[] = [];
-    if (agent.missingRef) missingRefs.push(agent.missingRef);
-    if (project.missingRef) missingRefs.push(project.missingRef);
-    return {
-      assigneeAgentId: agent.agentId,
-      projectId: project.projectId,
-      missingRefs,
-    };
-  }
-
-  function resolution(
-    companyId: string,
-    declaration: PluginManagedRoutineDeclaration,
-    routine: Routine | null,
-    status: PluginManagedRoutineResolution["status"],
-    missingRefs: PluginManagedResourceRef[] = [],
-  ): PluginManagedRoutineResolution {
-    return {
-      pluginKey,
-      resourceKind: "routine",
-      resourceKey: declaration.routineKey,
-      companyId,
-      routineId: routine?.id ?? null,
-      routine,
-      status,
-      missingRefs,
-    };
-  }
-
-  async function ensureDefaultTriggers(
-    routineId: string,
-    declaration: PluginManagedRoutineDeclaration,
-  ) {
+  async function ensureDefaultTriggers(routineId: string, declaration: PluginManagedRoutineDeclaration) {
     const triggers = declaration.triggers ?? [];
     if (triggers.length === 0) return;
     const existingCount = await db
@@ -409,13 +70,7 @@ export function pluginManagedRoutineService(
   ) {
     const refs = await resolveRefs(companyId, declaration, overrides);
     if (refs.missingRefs.length > 0) {
-      return resolution(
-        companyId,
-        declaration,
-        null,
-        "missing_refs",
-        refs.missingRefs,
-      );
+      return resolution(companyId, declaration, null, "missing_refs", refs.missingRefs);
     }
 
     const created = await routinesSvc.create(
@@ -427,10 +82,8 @@ export function pluginManagedRoutineService(
         description: declaration.description ?? null,
         assigneeAgentId: refs.assigneeAgentId,
         priority: declaration.priority ?? "medium",
-        status:
-          declaration.status ?? (refs.assigneeAgentId ? "active" : "paused"),
-        concurrencyPolicy:
-          declaration.concurrencyPolicy ?? "coalesce_if_active",
+        status: declaration.status ?? (refs.assigneeAgentId ? "active" : "paused"),
+        concurrencyPolicy: declaration.concurrencyPolicy ?? "coalesce_if_active",
         catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
         variables: declaration.variables ?? [],
       },
@@ -459,19 +112,33 @@ export function pluginManagedRoutineService(
   async function get(routineKey: string, companyId: string) {
     const declaration = declarationFor(routineKey);
     const routine = await getRoutineWithManagedBy(companyId, declaration);
-    return resolution(
-      companyId,
-      declaration,
-      routine,
-      routine ? "resolved" : "missing",
-    );
+    return resolution(companyId, declaration, routine, routine ? "resolved" : "missing");
   }
 
-  async function reconcile(
-    routineKey: string,
-    companyId: string,
-    overrides?: RoutineOverrides,
-  ) {
+  return { ensureDefaultTriggers, createManagedRoutine, get };
+}
+
+export function buildPluginManagedRoutinesPluginManagedRoutineOperations(
+  scope: PluginManagedRoutinesContext &
+    ReturnType<typeof buildPluginManagedRoutinesPluginManagedRoutineBindings> &
+    ReturnType<typeof buildPluginManagedRoutinesPluginManagedRoutineCreation>,
+) {
+  const {
+    db,
+    options,
+    pluginKey,
+    routinesSvc,
+    declarationFor,
+    upsertBinding,
+    getRoutineWithManagedBy,
+    resolveRefs,
+    resolution,
+    ensureDefaultTriggers,
+    createManagedRoutine,
+    get,
+  } = scope;
+
+  async function reconcile(routineKey: string, companyId: string, overrides?: RoutineOverrides) {
     const declaration = declarationFor(routineKey);
     const current = await get(routineKey, companyId);
     if (current.routine) {
@@ -482,11 +149,7 @@ export function pluginManagedRoutineService(
     return createManagedRoutine(companyId, declaration, overrides);
   }
 
-  async function reset(
-    routineKey: string,
-    companyId: string,
-    overrides?: RoutineOverrides,
-  ) {
+  async function reset(routineKey: string, companyId: string, overrides?: RoutineOverrides) {
     const declaration = declarationFor(routineKey);
     const current = await get(routineKey, companyId);
     if (!current.routine) {
@@ -495,30 +158,24 @@ export function pluginManagedRoutineService(
 
     const refs = await resolveRefs(companyId, declaration, overrides);
     if (refs.missingRefs.length > 0) {
-      return resolution(
-        companyId,
-        declaration,
-        current.routine,
-        "missing_refs",
-        refs.missingRefs,
-      );
+      return resolution(companyId, declaration, current.routine, "missing_refs", refs.missingRefs);
     }
     const updated = await routinesSvc.update(
       current.routine.id,
       {
-        baseRevisionId: current.routine.latestRevisionId ?? (() => {
-          throw new Error("Managed routine has no canonical revision");
-        })(),
+        baseRevisionId:
+          current.routine.latestRevisionId ??
+          (() => {
+            throw new Error("Managed routine has no canonical revision");
+          })(),
         projectId: refs.projectId,
         goalId: declaration.goalId ?? null,
         title: declaration.title,
         description: declaration.description ?? null,
         assigneeAgentId: refs.assigneeAgentId,
         priority: declaration.priority ?? "medium",
-        status:
-          declaration.status ?? (refs.assigneeAgentId ? "active" : "paused"),
-        concurrencyPolicy:
-          declaration.concurrencyPolicy ?? "coalesce_if_active",
+        status: declaration.status ?? (refs.assigneeAgentId ? "active" : "paused"),
+        concurrencyPolicy: declaration.concurrencyPolicy ?? "coalesce_if_active",
         catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
         variables: declaration.variables ?? [],
       },
@@ -545,11 +202,7 @@ export function pluginManagedRoutineService(
     return resolution(companyId, declaration, routine, "reset");
   }
 
-  async function update(
-    routineKey: string,
-    companyId: string,
-    patch: { status?: RoutineStatus },
-  ) {
+  async function update(routineKey: string, companyId: string, patch: { status?: RoutineStatus }) {
     const declaration = declarationFor(routineKey);
     const current = await get(routineKey, companyId);
     if (!current.routine) throw notFound("Managed routine not found");
@@ -590,11 +243,7 @@ export function pluginManagedRoutineService(
     return routine;
   }
 
-  async function run(
-    routineKey: string,
-    companyId: string,
-    overrides?: RoutineOverrides,
-  ) {
+  async function run(routineKey: string, companyId: string, overrides?: RoutineOverrides) {
     const declaration = declarationFor(routineKey);
     const current = await get(routineKey, companyId);
     if (!current.routine) throw notFound("Managed routine not found");
@@ -624,11 +273,39 @@ export function pluginManagedRoutineService(
     return run;
   }
 
+  return { reconcile, reset, update, run };
+}
+
+export function createPluginManagedRoutinesMethods1(
+  scope: PluginManagedRoutinesContext &
+    ReturnType<typeof buildPluginManagedRoutinesPluginManagedRoutineBindings> &
+    ReturnType<typeof buildPluginManagedRoutinesPluginManagedRoutineCreation> &
+    ReturnType<typeof buildPluginManagedRoutinesPluginManagedRoutineOperations>,
+) {
+  const { get, reconcile, reset, update, run } = scope;
+
   return {
     get,
+
     reconcile,
+
     reset,
+
     update,
+
     run,
   };
+}
+
+export function pluginManagedRoutineService(db: Db, options: PluginManagedRoutineServiceOptions) {
+  const context = createPluginManagedRoutinesContext(db, options);
+  const helpers1 = buildPluginManagedRoutinesPluginManagedRoutineBindings(context);
+  const scope1 = { ...context, ...helpers1 };
+  const helpers2 = buildPluginManagedRoutinesPluginManagedRoutineCreation(scope1);
+  const scope2 = { ...scope1, ...helpers2 };
+  const helpers3 = buildPluginManagedRoutinesPluginManagedRoutineOperations(scope2);
+  const scope3 = { ...scope2, ...helpers3 };
+  const scope = scope3;
+  const methods1 = createPluginManagedRoutinesMethods1(scope);
+  return { ...methods1 };
 }

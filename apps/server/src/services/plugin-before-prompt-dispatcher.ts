@@ -1,23 +1,10 @@
 import { and, asc, eq } from "drizzle-orm";
-import {
-  taskSessionMessages,
-  taskSessions,
-  pluginConfig,
-  plugins,
-  tasks,
-  type Db,
-} from "@paperclipai/db";
-import type {
-  PluginBeforePromptInput,
-  PluginBeforePromptResult,
-} from "@paperclipai/plugin-sdk";
+import { taskSessionMessages, taskSessions, pluginConfig, plugins, tasks, type Db } from "@paperclipai/db";
+import type { PluginBeforePromptInput, PluginBeforePromptResult } from "@paperclipai/plugin-sdk";
 import { taskSessionMessageFromRow } from "./task-session/projector.js";
 import { canonicalTaskSessionJson } from "./task-session/store.js";
 import { pluginManifestIdentity } from "./plugin-manifest-identity.js";
-import type {
-  PluginWorkerManager,
-  PluginWorkerHandle,
-} from "./plugin-worker-manager.js";
+import type { PluginWorkerManager, PluginWorkerHandle } from "./plugin-worker-manager.js";
 
 const PROMPT_OBSERVE_CAPABILITY = "runtime.prompt.observe";
 const BEFORE_PROMPT_METHOD = "beforePrompt";
@@ -26,9 +13,7 @@ const BEFORE_PROMPT_METHOD = "beforePrompt";
 export const PLUGIN_BEFORE_PROMPT_TIMEOUT_MS = 120_000;
 
 export interface PluginBeforePromptDispatcher {
-  dispatch(
-    input: PluginBeforePromptDispatchInput,
-  ): Promise<string>;
+  dispatch(input: PluginBeforePromptDispatchInput): Promise<string>;
 }
 
 /** Project id and snapshot cutoff are host-derived inside the dispatcher. */
@@ -59,9 +44,7 @@ interface PluginBeforePromptSourceResolution {
 
 /** Independently proves the caller's source against the canonical Session. */
 export interface PluginBeforePromptSourceReader {
-  resolve(
-    input: PluginBeforePromptDispatchInput,
-  ): Promise<PluginBeforePromptSourceResolution>;
+  resolve(input: PluginBeforePromptDispatchInput): Promise<PluginBeforePromptSourceResolution>;
 }
 
 class PluginBeforePromptDispatchError extends Error {
@@ -77,32 +60,19 @@ class PluginBeforePromptDispatchError extends Error {
   }
 }
 
-function fail(
-  message: string,
-  details: Record<string, unknown>,
-  cause?: unknown,
-): never {
-  throw new PluginBeforePromptDispatchError(
-    message,
-    details,
-    cause === undefined ? undefined : { cause },
+function fail(message: string, details: Record<string, unknown>, cause?: unknown): never {
+  throw new PluginBeforePromptDispatchError(message, details, cause === undefined ? undefined : { cause });
+}
+
+function hasPromptObserveCapability(installation: PluginBeforePromptInstallation): boolean {
+  return (
+    Array.isArray(installation.manifestJson.capabilities) &&
+    installation.manifestJson.capabilities.includes(PROMPT_OBSERVE_CAPABILITY)
   );
 }
 
-function hasPromptObserveCapability(
-  installation: PluginBeforePromptInstallation,
-): boolean {
-  return Array.isArray(installation.manifestJson.capabilities) &&
-    installation.manifestJson.capabilities.includes(PROMPT_OBSERVE_CAPABILITY);
-}
-
-function assertEligibleInstallation(
-  installation: PluginBeforePromptInstallation,
-): void {
-  if (
-    !Number.isSafeInteger(installation.installOrder) ||
-    installation.installOrder < 1
-  ) {
+function assertEligibleInstallation(installation: PluginBeforePromptInstallation): void {
+  if (!Number.isSafeInteger(installation.installOrder) || installation.installOrder < 1) {
     fail("Prompt-observing plugin has no valid install order", {
       pluginInstallationId: installation.id,
       pluginKey: installation.pluginKey,
@@ -120,9 +90,7 @@ function assertWorkerReady(
   installation: PluginBeforePromptInstallation,
   worker: PluginWorkerHandle | undefined,
 ): asserts worker is PluginWorkerHandle {
-  const expectedManifestIdentity = pluginManifestIdentity(
-    installation.manifestJson,
-  );
+  const expectedManifestIdentity = pluginManifestIdentity(installation.manifestJson);
   if (
     worker?.status !== "running" ||
     !worker.supportedMethods.includes(BEFORE_PROMPT_METHOD) ||
@@ -142,27 +110,25 @@ function sameInstallationSnapshot(
   before: PluginBeforePromptInstallation,
   after: PluginBeforePromptInstallation,
 ): boolean {
-  return before.id === after.id &&
+  return (
+    before.id === after.id &&
     before.pluginKey === after.pluginKey &&
     before.installOrder === after.installOrder &&
     before.updatedAt.getTime() === after.updatedAt.getTime() &&
     before.configId === after.configId &&
-    (before.configUpdatedAt?.getTime() ?? null) ===
-      (after.configUpdatedAt?.getTime() ?? null) &&
-    canonicalTaskSessionJson(before.configJson) ===
-      canonicalTaskSessionJson(after.configJson) &&
-    canonicalTaskSessionJson(before.manifestJson) ===
-      canonicalTaskSessionJson(after.manifestJson) &&
+    (before.configUpdatedAt?.getTime() ?? null) === (after.configUpdatedAt?.getTime() ?? null) &&
+    canonicalTaskSessionJson(before.configJson) === canonicalTaskSessionJson(after.configJson) &&
+    canonicalTaskSessionJson(before.manifestJson) === canonicalTaskSessionJson(after.manifestJson) &&
     hasPromptObserveCapability(after) &&
-    after.manifestJson.id === after.pluginKey;
+    after.manifestJson.id === after.pluginKey
+  );
 }
 
 function sortInstallations(
   installations: readonly PluginBeforePromptInstallation[],
 ): PluginBeforePromptInstallation[] {
   return [...installations].sort((left, right) => {
-    return left.installOrder - right.installOrder ||
-      left.id.localeCompare(right.id);
+    return left.installOrder - right.installOrder || left.id.localeCompare(right.id);
   });
 }
 
@@ -186,9 +152,7 @@ function readPromptContribution(
   return result.prependText;
 }
 
-function createPostgresPluginBeforePromptInstallationReader(
-  db: Db,
-): PluginBeforePromptInstallationReader {
+function createPostgresPluginBeforePromptInstallationReader(db: Db): PluginBeforePromptInstallationReader {
   return {
     async listReady() {
       return db
@@ -203,19 +167,14 @@ function createPostgresPluginBeforePromptInstallationReader(
           configJson: pluginConfig.configJson,
         })
         .from(plugins)
-        .leftJoin(
-          pluginConfig,
-          eq(pluginConfig.pluginId, plugins.id),
-        )
+        .leftJoin(pluginConfig, eq(pluginConfig.pluginId, plugins.id))
         .where(eq(plugins.status, "ready"))
         .orderBy(asc(plugins.installOrder), asc(plugins.id));
     },
   };
 }
 
-export function createPostgresPluginBeforePromptSourceReader(
-  db: Db,
-): PluginBeforePromptSourceReader {
+export function createPostgresPluginBeforePromptSourceReader(db: Db): PluginBeforePromptSourceReader {
   return {
     async resolve(input) {
       if (
@@ -238,13 +197,7 @@ export function createPostgresPluginBeforePromptSourceReader(
           projectId: tasks.projectId,
         })
         .from(taskSessions)
-        .innerJoin(
-          tasks,
-          and(
-            eq(tasks.companyId, taskSessions.companyId),
-            eq(tasks.id, taskSessions.taskId),
-          ),
-        )
+        .innerJoin(tasks, and(eq(tasks.companyId, taskSessions.companyId), eq(tasks.id, taskSessions.taskId)))
         .innerJoin(
           taskSessionMessages,
           and(
@@ -293,12 +246,16 @@ export function createPostgresPluginBeforePromptSourceReader(
       try {
         sourceMessage = taskSessionMessageFromRow(row.message);
       } catch (cause) {
-        fail("Before-prompt source message failed canonical decoding", {
-          companyId: input.companyId,
-          taskId: input.taskId,
-          sessionId: input.sessionId,
-          sourceMessageId: input.sourceMessageId,
-        }, cause);
+        fail(
+          "Before-prompt source message failed canonical decoding",
+          {
+            companyId: input.companyId,
+            taskId: input.taskId,
+            sessionId: input.sessionId,
+            sourceMessageId: input.sourceMessageId,
+          },
+          cause,
+        );
       }
       if (
         (sourceMessage.type !== "user" && sourceMessage.type !== "synthetic") ||
@@ -335,9 +292,7 @@ export function createPluginBeforePromptDispatcher(options: {
   return {
     async dispatch(input) {
       const loaded = await options.installations.listReady();
-      const eligible = sortInstallations(
-        loaded.filter(hasPromptObserveCapability),
-      );
+      const eligible = sortInstallations(loaded.filter(hasPromptObserveCapability));
       if (eligible.length === 0) return input.sourceText;
 
       const contributions: string[] = [];
@@ -401,10 +356,14 @@ export function createPluginBeforePromptDispatcher(options: {
             },
           );
         } catch (cause) {
-          fail("Plugin before-prompt hook failed", {
-            pluginInstallationId: installation.id,
-            pluginKey: installation.pluginKey,
-          }, cause);
+          fail(
+            "Plugin before-prompt hook failed",
+            {
+              pluginInstallationId: installation.id,
+              pluginKey: installation.pluginKey,
+            },
+            cause,
+          );
         }
 
         const contribution = readPromptContribution(result, installation);
@@ -417,9 +376,7 @@ export function createPluginBeforePromptDispatcher(options: {
       // concurrent install, upgrade, disable, reorder, or config change can
       // never cross the provider-dispatch boundary unnoticed.
       const currentRows = await options.installations.listReady();
-      const currentEligible = sortInstallations(
-        currentRows.filter(hasPromptObserveCapability),
-      );
+      const currentEligible = sortInstallations(currentRows.filter(hasPromptObserveCapability));
       if (currentEligible.length !== eligible.length) {
         fail("Prompt-observing plugin authority changed during beforePrompt", {
           beforeInstallationIds: eligible.map((entry) => entry.id),

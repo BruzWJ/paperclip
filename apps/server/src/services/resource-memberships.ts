@@ -1,18 +1,12 @@
 import { and, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import { type Db, agentMemberships, agents, projectMemberships, projects } from "@paperclipai/db";
 import {
-  agentMemberships,
-  agents,
-  projectMemberships,
-  projects,
-} from "@paperclipai/db";
-import type {
-  ResourceMembershipResourceType,
-  ResourceMembershipState,
-  ResourceMemberships,
-  ResourceMembershipUpdateResult,
+  type ResourceMembershipResourceType,
+  type ResourceMembershipState,
+  type ResourceMemberships,
+  type ResourceMembershipUpdateResult,
+  isCanonicalUuid,
 } from "@paperclipai/shared";
-import { isCanonicalUuid } from "@paperclipai/shared";
 import { forbidden, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 
@@ -133,10 +127,19 @@ async function evaluatePolicy(
     };
   } catch (err) {
     logger.warn(
-      { err, companyId: input.companyId, resourceType: input.resourceType, resourceId: input.resourceId },
+      {
+        err,
+        companyId: input.companyId,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+      },
       "resource membership policy hook failed closed",
     );
-    return { allowed: false, reason: "policy_hook_failed", source: "policy_hook" };
+    return {
+      allowed: false,
+      reason: "policy_hook_failed",
+      source: "policy_hook",
+    };
   }
 }
 
@@ -184,14 +187,14 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
             projectArchivedAt: projects.archivedAt,
           })
           .from(projectMemberships)
-          .innerJoin(projects, and(
-            eq(projects.id, projectMemberships.projectId),
-            eq(projects.companyId, projectMemberships.companyId),
-          ))
-          .where(and(
-            eq(projectMemberships.companyId, companyId),
-            eq(projectMemberships.userId, userId),
-          )),
+          .innerJoin(
+            projects,
+            and(
+              eq(projects.id, projectMemberships.projectId),
+              eq(projects.companyId, projectMemberships.companyId),
+            ),
+          )
+          .where(and(eq(projectMemberships.companyId, companyId), eq(projectMemberships.userId, userId))),
         db
           .select({
             agentId: agentMemberships.agentId,
@@ -201,17 +204,16 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
             agentStatus: agents.status,
           })
           .from(agentMemberships)
-          .innerJoin(agents, and(
-            eq(agents.id, agentMemberships.agentId),
-            eq(agents.companyId, agentMemberships.companyId),
-          ))
-          .where(and(
-            eq(agentMemberships.companyId, companyId),
-            eq(agentMemberships.userId, userId),
-          )),
+          .innerJoin(
+            agents,
+            and(eq(agents.id, agentMemberships.agentId), eq(agents.companyId, agentMemberships.companyId)),
+          )
+          .where(and(eq(agentMemberships.companyId, companyId), eq(agentMemberships.userId, userId))),
       ]);
       const starEligibleProjectRows = projectRows.filter((row) => row.starredAt && !row.projectArchivedAt);
-      const starEligibleAgentRows = agentRows.filter((row) => row.starredAt && row.agentStatus !== "terminated");
+      const starEligibleAgentRows = agentRows.filter(
+        (row) => row.starredAt && row.agentStatus !== "terminated",
+      );
       return {
         projectMemberships: defaultJoinedMap(projectRows, "projectId"),
         agentMemberships: defaultJoinedMap(agentRows, "agentId"),
@@ -243,10 +245,7 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
         throw notFound("Project not found");
       }
       const project = await db.query.projects.findFirst({
-        where: and(
-          eq(projects.id, input.projectId),
-          eq(projects.companyId, input.companyId),
-        ),
+        where: and(eq(projects.id, input.projectId), eq(projects.companyId, input.companyId)),
       });
       if (!project || project.archivedAt) throw notFound("Project not found");
 
@@ -259,14 +258,16 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
       });
       const previousState: ResourceMembershipState = existing?.state === "left" ? "left" : "joined";
       const previousStarredAt = existing?.starredAt ?? null;
-      const nextState: ResourceMembershipState = input.starred === true ? "joined" : input.state ?? previousState;
-      const nextStarredAt = nextState === "left"
-        ? null
-        : input.starred === true
-          ? previousStarredAt ?? new Date()
-          : input.starred === false
-            ? null
-            : previousStarredAt;
+      const nextState: ResourceMembershipState =
+        input.starred === true ? "joined" : (input.state ?? previousState);
+      const nextStarredAt =
+        nextState === "left"
+          ? null
+          : input.starred === true
+            ? (previousStarredAt ?? new Date())
+            : input.starred === false
+              ? null
+              : previousStarredAt;
       const stateChanged = previousState !== nextState;
       const starredChanged = (previousStarredAt?.getTime() ?? null) !== (nextStarredAt?.getTime() ?? null);
       const decision = await assertMutationAllowed({
@@ -320,9 +321,16 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
         starredAt: row?.starredAt ?? null,
         updatedAt: row?.updatedAt ?? now,
         changed: true,
-        changeKind: input.starred !== undefined && starredChanged
-          ? input.starred ? "starred" : "unstarred"
-          : stateChanged ? nextState : nextStarredAt ? "starred" : "unstarred",
+        changeKind:
+          input.starred !== undefined && starredChanged
+            ? input.starred
+              ? "starred"
+              : "unstarred"
+            : stateChanged
+              ? nextState
+              : nextStarredAt
+                ? "starred"
+                : "unstarred",
         policySource: decision.source ?? "oss_default",
       };
     },
@@ -344,10 +352,7 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
         throw notFound("Agent not found");
       }
       const agent = await db.query.agents.findFirst({
-        where: and(
-          eq(agents.id, input.agentId),
-          eq(agents.companyId, input.companyId),
-        ),
+        where: and(eq(agents.id, input.agentId), eq(agents.companyId, input.companyId)),
       });
       if (!agent || agent.status === "terminated") throw notFound("Agent not found");
 
@@ -360,14 +365,16 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
       });
       const previousState: ResourceMembershipState = existing?.state === "left" ? "left" : "joined";
       const previousStarredAt = existing?.starredAt ?? null;
-      const nextState: ResourceMembershipState = input.starred === true ? "joined" : input.state ?? previousState;
-      const nextStarredAt = nextState === "left"
-        ? null
-        : input.starred === true
-          ? previousStarredAt ?? new Date()
-          : input.starred === false
-            ? null
-            : previousStarredAt;
+      const nextState: ResourceMembershipState =
+        input.starred === true ? "joined" : (input.state ?? previousState);
+      const nextStarredAt =
+        nextState === "left"
+          ? null
+          : input.starred === true
+            ? (previousStarredAt ?? new Date())
+            : input.starred === false
+              ? null
+              : previousStarredAt;
       const stateChanged = previousState !== nextState;
       const starredChanged = (previousStarredAt?.getTime() ?? null) !== (nextStarredAt?.getTime() ?? null);
       const decision = await assertMutationAllowed({
@@ -421,9 +428,16 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
         starredAt: row?.starredAt ?? null,
         updatedAt: row?.updatedAt ?? now,
         changed: true,
-        changeKind: input.starred !== undefined && starredChanged
-          ? input.starred ? "starred" : "unstarred"
-          : stateChanged ? nextState : nextStarredAt ? "starred" : "unstarred",
+        changeKind:
+          input.starred !== undefined && starredChanged
+            ? input.starred
+              ? "starred"
+              : "unstarred"
+            : stateChanged
+              ? nextState
+              : nextStarredAt
+                ? "starred"
+                : "unstarred",
         policySource: decision.source ?? "oss_default",
       };
     },

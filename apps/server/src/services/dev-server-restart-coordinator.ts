@@ -1,4 +1,4 @@
-import { companies, type Db } from "@paperclipai/db";
+import type { Db } from "@paperclipai/db";
 import {
   readDevServerRestartRequest,
   readPersistedDevServerStatus,
@@ -7,38 +7,10 @@ import {
   type PersistedDevServerStatus,
 } from "../dev-server-status.js";
 import { logger } from "../middleware/logger.js";
-import {
-  listTaskExecutionRunsForActivity,
-  type TaskExecutionRunListCursor,
-} from "./task-execution-run-service.js";
+import { countActiveTaskExecutionRuns } from "./task-execution-run-service.js";
 import { instanceSettingsService } from "./instance-settings.js";
 
 const DEFAULT_CHECK_INTERVAL_MS = 2_500;
-const ACTIVE_RUN_STATUSES = [
-  "queued",
-  "scheduled_retry",
-  "running",
-] as const;
-
-async function countActiveTaskExecutionRuns(db: Db): Promise<number> {
-  const companyRows = await db.select({ id: companies.id }).from(companies);
-  let total = 0;
-  for (const company of companyRows) {
-    let cursor: TaskExecutionRunListCursor | null = null;
-    do {
-      const page = await listTaskExecutionRunsForActivity(db, {
-        companyId: company.id,
-        statuses: ACTIVE_RUN_STATUSES,
-        cursor,
-        limit: 200,
-      });
-      total += page.items.length;
-      cursor = page.nextCursor;
-    } while (cursor !== null);
-  }
-  return total;
-}
-
 type DevServerRestartCoordinatorDependencies = {
   readStatus: () => PersistedDevServerStatus | null;
   readRequest: () => DevServerRestartRequest | null;
@@ -67,11 +39,9 @@ export function createDevServerRestartCoordinator(
   const dependencies: DevServerRestartCoordinatorDependencies = {
     readStatus: () => readPersistedDevServerStatus(env),
     readRequest: () => readDevServerRestartRequest(env),
-    writeRequest: (request) =>
-      writeDevServerRestartRequest(request, env, { preserveExisting: true }),
+    writeRequest: (request) => writeDevServerRestartRequest(request, env, { preserveExisting: true }),
     getAutoRestartEnabled: async () =>
-      (await instanceSettingsService(db).getGeneral())
-        .autoRestartDevServerWhenIdle === true,
+      (await instanceSettingsService(db).getGeneral()).autoRestartDevServerWhenIdle === true,
     getActiveRunCount: () => countActiveTaskExecutionRuns(db),
     now: () => new Date(),
     ...opts.dependencies,

@@ -1,6 +1,5 @@
 import { and, desc, eq, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { activityLog, tasks } from "@paperclipai/db";
+import { type Db, activityLog, tasks } from "@paperclipai/db";
 import { visibleTaskCondition } from "./task-visibility.js";
 
 export interface ActivityFilters {
@@ -34,22 +33,8 @@ export function activityService(db: Db) {
       return db
         .select({ activityLog })
         .from(activityLog)
-        .leftJoin(
-          tasks,
-          and(
-            eq(activityLog.entityType, sql`'task'`),
-            eq(activityLog.entityId, taskIdAsText),
-          ),
-        )
-        .where(
-          and(
-            ...conditions,
-            or(
-              sql`${activityLog.entityType} != 'task'`,
-              visibleTaskCondition(),
-            ),
-          ),
-        )
+        .leftJoin(tasks, and(eq(activityLog.entityType, sql`'task'`), eq(activityLog.entityId, taskIdAsText)))
+        .where(and(...conditions, or(sql`${activityLog.entityType} != 'task'`, visibleTaskCondition())))
         .orderBy(desc(activityLog.createdAt))
         .limit(limit)
         .then((rows) => rows.map((row) => row.activityLog));
@@ -59,12 +44,7 @@ export function activityService(db: Db) {
       db
         .select()
         .from(activityLog)
-        .where(
-          and(
-            eq(activityLog.entityType, "task"),
-            eq(activityLog.entityId, taskId),
-          ),
-        )
+        .where(and(eq(activityLog.entityType, "task"), eq(activityLog.entityId, taskId)))
         .orderBy(desc(activityLog.createdAt)),
   };
 }

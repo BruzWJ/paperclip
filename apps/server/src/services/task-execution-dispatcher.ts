@@ -1,11 +1,6 @@
-import type {
-  TaskExecutionRef,
-  TaskExecutionSessionOperation,
-} from "@paperclipai/shared";
+import type { TaskExecutionRef, TaskExecutionSessionOperation } from "@paperclipai/shared";
 import { createTargetLaneRunCoordinator } from "./agent-execution/session-runner/coordinator.js";
-import type {
-  TaskExecutionSteeringResultBroker,
-} from "./task-execution-steering-results.js";
+import type { TaskExecutionSteeringResultBroker } from "./task-execution-steering-results.js";
 
 export interface LeasedTaskExecutionRef {
   ref: TaskExecutionRef;
@@ -67,9 +62,7 @@ export interface TaskExecutionTerminal {
   finalText?: string | null;
 }
 
-export type TaskExecutionDispatchResult =
-  | TaskExecutionRetry
-  | TaskExecutionTerminal;
+export type TaskExecutionDispatchResult = TaskExecutionRetry | TaskExecutionTerminal;
 
 export interface TaskExecutionLaneSettlement {
   readonly laneReleased: boolean;
@@ -77,35 +70,17 @@ export interface TaskExecutionLaneSettlement {
 
 /** One durable per-target execution lane inside a task ownership epoch. */
 export type TaskExecutionTargetLaneIdentity = Readonly<
-  Pick<
-    TaskExecutionRef,
-    | "companyId"
-    | "taskId"
-    | "sessionId"
-    | "ownershipEpoch"
-    | "targetAgentId"
-  >
+  Pick<TaskExecutionRef, "companyId" | "taskId" | "sessionId" | "ownershipEpoch" | "targetAgentId">
 >;
 
 export interface TaskExecutionDispatcherRepository {
-  recoverExpiredLeases(input: {
-    now: Date;
-    limit: number;
-  }): Promise<{ refIds: string[] }>;
-  listDispatchableRefIds(input: {
-    now: Date;
-    limit: number;
-  }): Promise<string[]>;
+  recoverExpiredLeases(input: { now: Date; limit: number }): Promise<{ refIds: string[] }>;
+  listDispatchableRefIds(input: { now: Date; limit: number }): Promise<string[]>;
   resolveLaneForPersistedRef(refId: string): Promise<{
     lane: TaskExecutionTargetLaneIdentity;
     mode: TaskExecutionRef["mode"];
     disposition: TaskExecutionRef["disposition"];
-    leaseState:
-      | "available"
-      | "leased"
-      | "retryable"
-      | "completed"
-      | "failed";
+    leaseState: "available" | "leased" | "retryable" | "completed" | "failed";
     leaseExpiresAt: Date | null;
   } | null>;
   leaseNextRef(input: {
@@ -144,16 +119,9 @@ export class TaskExecutionDispatchRejected extends Error {
   }
 }
 
-export type PersistedRefNotificationOutcome =
-  | "notified"
-  | "already_scheduled"
-  | "running"
-  | "settled";
+export type PersistedRefNotificationOutcome = "notified" | "already_scheduled" | "running" | "settled";
 
-function assertLeaseBatch(
-  lease: LeasedTaskExecutionRef,
-  lane: TaskExecutionTargetLaneIdentity,
-): void {
+function assertLeaseBatch(lease: LeasedTaskExecutionRef, lane: TaskExecutionTargetLaneIdentity): void {
   const members = lease.batch;
   const first = members[0];
   if (
@@ -172,22 +140,16 @@ function assertLeaseBatch(
         member.ref.companyId !== lease.ref.companyId ||
         member.ref.taskId !== lease.ref.taskId ||
         member.ref.ownershipEpoch !== lease.ref.ownershipEpoch ||
-        member.ref.executionScopeId !==
-          lease.ref.executionScopeId ||
-        member.ref.executionLineageId !==
-          lease.ref.executionLineageId ||
+        member.ref.executionScopeId !== lease.ref.executionScopeId ||
+        member.ref.executionLineageId !== lease.ref.executionLineageId ||
         member.ref.targetAgentId !== lease.ref.targetAgentId ||
-        member.ref.taskExecutionAuthorityId !==
-          lease.ref.taskExecutionAuthorityId ||
-        member.ref.adapterConfigRevisionId !==
-          lease.ref.adapterConfigRevisionId ||
+        member.ref.taskExecutionAuthorityId !== lease.ref.taskExecutionAuthorityId ||
+        member.ref.adapterConfigRevisionId !== lease.ref.adapterConfigRevisionId ||
         member.ref.contextEpoch !== lease.ref.contextEpoch,
     ) ||
     (lease.ref.mode === "consult" && members.length !== 1)
   ) {
-    throw new TaskExecutionDispatchRejected(
-      "Repository leased refs outside one active execution batch",
-    );
+    throw new TaskExecutionDispatchRejected("Repository leased refs outside one active execution batch");
   }
 }
 
@@ -195,23 +157,18 @@ function sameTargetLane(
   ref: TaskExecutionTargetLaneIdentity,
   lane: TaskExecutionTargetLaneIdentity,
 ): boolean {
-  return ref.companyId === lane.companyId &&
+  return (
+    ref.companyId === lane.companyId &&
     ref.taskId === lane.taskId &&
     ref.sessionId === lane.sessionId &&
     ref.ownershipEpoch === lane.ownershipEpoch &&
-    ref.targetAgentId === lane.targetAgentId;
+    ref.targetAgentId === lane.targetAgentId
+  );
 }
 
 /** Session is validation context; the durable lane discriminator is four-part. */
-function targetLaneCoordinatorKey(
-  lane: TaskExecutionTargetLaneIdentity,
-): string {
-  return JSON.stringify([
-    lane.companyId,
-    lane.taskId,
-    lane.ownershipEpoch,
-    lane.targetAgentId,
-  ]);
+function targetLaneCoordinatorKey(lane: TaskExecutionTargetLaneIdentity): string {
+  return JSON.stringify([lane.companyId, lane.taskId, lane.ownershipEpoch, lane.targetAgentId]);
 }
 
 function cancellationMatchesLease(
@@ -231,9 +188,7 @@ function cancellationMatchesLease(
   }
   const members = lease.batch;
   return members.some(
-    (member) =>
-      member.ref.id === input.refId &&
-      member.leaseGeneration === input.leaseGeneration,
+    (member) => member.ref.id === input.refId && member.leaseGeneration === input.leaseGeneration,
   );
 }
 
@@ -253,10 +208,7 @@ export function createTaskExecutionDispatcher(options: {
     }
   >();
 
-  const coordinator = createTargetLaneRunCoordinator<
-    TaskExecutionTargetLaneIdentity,
-    string
-  >({
+  const coordinator = createTargetLaneRunCoordinator<TaskExecutionTargetLaneIdentity, string>({
     keyOf: targetLaneCoordinatorKey,
     async drain(lane, _force, signal) {
       while (!signal.aborted) {
@@ -266,10 +218,7 @@ export function createTaskExecutionDispatcher(options: {
           now: now(),
         });
         if (!lease) return;
-        if (
-          !sameTargetLane(lease.ref, lane) ||
-          lease.ref.disposition !== "active"
-        ) {
+        if (!sameTargetLane(lease.ref, lane) || lease.ref.disposition !== "active") {
           throw new TaskExecutionDispatchRejected(
             "Repository leased a non-active ref into the target-lane drain",
           );
@@ -277,9 +226,7 @@ export function createTaskExecutionDispatcher(options: {
         assertLeaseBatch(lease, lane);
         await options.repository.assertLeaseCurrent(lease);
         if (activeAttempts.has(lease.attemptId)) {
-          throw new TaskExecutionDispatchRejected(
-            "Task-execution attempt identity is already active",
-          );
+          throw new TaskExecutionDispatchRejected("Task-execution attempt identity is already active");
         }
         const controller = new AbortController();
         const abortFromLane = () => controller.abort(signal.reason);
@@ -293,27 +240,23 @@ export function createTaskExecutionDispatcher(options: {
         const activeAttempt = { lease, controller };
         activeAttempts.set(lease.attemptId, activeAttempt);
         try {
-          const result = await options.executor.execute(
-            lease,
-            controller.signal,
-            async (settled) => {
-              await options.repository.assertLeaseCurrent(lease);
-              if (settled.kind === "retry") {
-                await options.repository.markRetryable({
-                  lease,
-                  reason: settled.reason,
-                  retryAt: settled.retryAt,
-                });
-                return;
-              }
-              await options.repository.markTerminal({
+          const result = await options.executor.execute(lease, controller.signal, async (settled) => {
+            await options.repository.assertLeaseCurrent(lease);
+            if (settled.kind === "retry") {
+              await options.repository.markRetryable({
                 lease,
-                outcome: settled.outcome,
                 reason: settled.reason,
-                finishedAt: now(),
+                retryAt: settled.retryAt,
               });
-            },
-          );
+              return;
+            }
+            await options.repository.markTerminal({
+              lease,
+              outcome: settled.outcome,
+              reason: settled.reason,
+              finishedAt: now(),
+            });
+          });
           if (lease.promptKind === "steering" && result.kind === "terminal") {
             options.steeringResults.publish({
               companyId: lease.companyId,
@@ -343,27 +286,17 @@ export function createTaskExecutionDispatcher(options: {
   async function resolvePersistedLane(refId: string): Promise<{
     lane: TaskExecutionTargetLaneIdentity;
     disposition: TaskExecutionRef["disposition"];
-    leaseState:
-      | "available"
-      | "leased"
-      | "retryable"
-      | "completed"
-      | "failed";
+    leaseState: "available" | "leased" | "retryable" | "completed" | "failed";
     leaseExpiresAt: Date | null;
   }> {
-    const persisted =
-      await options.repository.resolveLaneForPersistedRef(refId);
+    const persisted = await options.repository.resolveLaneForPersistedRef(refId);
     if (!persisted) {
-      throw new TaskExecutionDispatchRejected(
-        "Dispatcher accepts only a persisted TaskExecutionRef",
-      );
+      throw new TaskExecutionDispatchRejected("Dispatcher accepts only a persisted TaskExecutionRef");
     }
     return persisted;
   }
 
-  async function notifyPersistedRef(
-    refId: string,
-  ): Promise<PersistedRefNotificationOutcome> {
+  async function notifyPersistedRef(refId: string): Promise<PersistedRefNotificationOutcome> {
     const persisted = await resolvePersistedLane(refId);
     if (
       persisted.disposition === "terminal" ||
@@ -373,14 +306,11 @@ export function createTaskExecutionDispatcher(options: {
       return "settled";
     }
     if (persisted.disposition !== "active") {
-      throw new TaskExecutionDispatchRejected(
-        "Invalidated refs cannot be scheduled",
-      );
+      throw new TaskExecutionDispatchRejected("Invalidated refs cannot be scheduled");
     }
     if (
       persisted.leaseState === "leased" &&
-      (!persisted.leaseExpiresAt ||
-        persisted.leaseExpiresAt > now())
+      (!persisted.leaseExpiresAt || persisted.leaseExpiresAt > now())
     ) {
       return "running";
     }
@@ -401,9 +331,7 @@ export function createTaskExecutionDispatcher(options: {
       if (
         persisted.disposition !== "active" ||
         !(
-          ["available", "retryable"].includes(
-            persisted.leaseState,
-          ) ||
+          ["available", "retryable"].includes(persisted.leaseState) ||
           (persisted.leaseState === "leased" &&
             persisted.leaseExpiresAt !== null &&
             persisted.leaseExpiresAt <= now())
@@ -431,14 +359,11 @@ export function createTaskExecutionDispatcher(options: {
         now: now(),
         limit: boundedLimit,
       });
-      const discovered =
-        await options.repository.listDispatchableRefIds({
-          now: now(),
-          limit: boundedLimit,
-        });
-      const refIds = [
-        ...new Set([...recovered.refIds, ...discovered]),
-      ].slice(0, boundedLimit);
+      const discovered = await options.repository.listDispatchableRefIds({
+        now: now(),
+        limit: boundedLimit,
+      });
+      const refIds = [...new Set([...recovered.refIds, ...discovered])].slice(0, boundedLimit);
       for (const refId of refIds) {
         await notifyPersistedRef(refId);
       }
@@ -454,9 +379,7 @@ export function createTaskExecutionDispatcher(options: {
      * It never reads or writes persistence and never interrupts a whole
      * Session. A stale signal cannot reach a later lease/run.
      */
-    signalAttemptCancellation(
-      input: TaskExecutionAttemptCancellationSignal,
-    ): boolean {
+    signalAttemptCancellation(input: TaskExecutionAttemptCancellationSignal): boolean {
       if (!input.attemptId) return false;
       const active = activeAttempts.get(input.attemptId);
       if (!active || !cancellationMatchesLease(input, active.lease)) {
@@ -471,26 +394,16 @@ export function createTaskExecutionDispatcher(options: {
      * cancellation reconciler. Dispatcher lease identity remains independent
      * from ACPX's opaque runtime state.
      */
-    isAttemptActive(
-      input: TaskExecutionAttemptCancellationSignal,
-    ): boolean {
+    isAttemptActive(input: TaskExecutionAttemptCancellationSignal): boolean {
       if (!input.attemptId) return false;
       const active = activeAttempts.get(input.attemptId);
-      return Boolean(
-        active && cancellationMatchesLease(input, active.lease),
-      );
+      return Boolean(active && cancellationMatchesLease(input, active.lease));
     },
 
     async shutdown(): Promise<void> {
-      await Promise.all(
-        [...coordinator.active()].map((lane) =>
-          coordinator.interrupt(lane),
-        ),
-      );
+      await Promise.all([...coordinator.active()].map((lane) => coordinator.interrupt(lane)));
     },
   };
 }
 
-export type TaskExecutionDispatcher = ReturnType<
-  typeof createTaskExecutionDispatcher
->;
+export type TaskExecutionDispatcher = ReturnType<typeof createTaskExecutionDispatcher>;

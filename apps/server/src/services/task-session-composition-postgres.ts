@@ -6,14 +6,7 @@ import {
   tasks,
   type Db,
 } from "@paperclipai/db";
-import {
-  and,
-  asc,
-  eq,
-  inArray,
-  isNull,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type {
   TaskExecutionDispatcher,
   PersistedRefNotificationOutcome,
@@ -60,9 +53,7 @@ export class PostgresTaskSessionCompositionRejected extends Error {
 
 function exactIdentifier(value: string, label: string): void {
   if (!value || value !== value.trim()) {
-    throw new PostgresTaskSessionCompositionRejected(
-      `${label} must be exact and non-empty`,
-    );
+    throw new PostgresTaskSessionCompositionRejected(`${label} must be exact and non-empty`);
   }
 }
 
@@ -100,18 +91,14 @@ export function createPostgresTaskSessionCompositionRuntime(
       .where(eq(taskExecutionRefs.id, refId))
       .limit(2);
     if (rows.length !== 1) {
-      throw new PostgresTaskSessionCompositionRejected(
-        "execution ref is missing or ambiguous",
-      );
+      throw new PostgresTaskSessionCompositionRejected("execution ref is missing or ambiguous");
     }
     return rows[0]!;
   }
 
   async function prepareRef(ref: RefRow): Promise<boolean> {
     if (ref.disposition !== "active") {
-      throw new PostgresTaskSessionCompositionRejected(
-        "only an active execution ref can be prepared",
-      );
+      throw new PostgresTaskSessionCompositionRejected("only an active execution ref can be prepared");
     }
     const deliveryState = classifyTaskExecutionRefDelivery(ref);
     if (deliveryState === "invalid") {
@@ -163,10 +150,7 @@ export function createPostgresTaskSessionCompositionRuntime(
             taskExecutionHistoryViews,
             eq(taskExecutionHistoryViews.id, taskExecutionRefs.historyViewId),
           )
-          .innerJoin(
-            taskSessions,
-            eq(taskSessions.id, taskExecutionRefs.sessionId),
-          )
+          .innerJoin(taskSessions, eq(taskSessions.id, taskExecutionRefs.sessionId))
           .innerJoin(tasks, eq(tasks.id, taskExecutionRefs.taskId))
           .innerJoin(companies, eq(companies.id, taskExecutionRefs.companyId))
           .where(

@@ -28,11 +28,7 @@ import {
   type TaskExecutionRuntimeReadinessBinding,
 } from "./task-execution-run-service.js";
 
-const PREFLIGHTABLE_RUN_STATUSES = new Set<TaskExecutionRunStatus>([
-  "queued",
-  "scheduled_retry",
-  "running",
-]);
+const PREFLIGHTABLE_RUN_STATUSES = new Set<TaskExecutionRunStatus>(["queued", "scheduled_retry", "running"]);
 
 export interface AdapterRuntimeReadinessIdentity {
   readonly companyId: string;
@@ -51,14 +47,10 @@ export interface AdapterConfigurationPreflightRuntime {
 }
 
 export interface AdapterConfigurationPreflightService {
-  inspect(
-    identity: AdapterRuntimeReadinessIdentity,
-  ): Promise<AdapterRuntimeReadiness>;
+  inspect(identity: AdapterRuntimeReadinessIdentity): Promise<AdapterRuntimeReadiness>;
 }
 
-function createPostgresAdapterRuntimeReadinessRepository(
-  db: Db,
-): AdapterRuntimeReadinessRepository {
+function createPostgresAdapterRuntimeReadinessRepository(db: Db): AdapterRuntimeReadinessRepository {
   return {
     async loadExactBinding(identity) {
       return readTaskExecutionRuntimeReadinessBinding(db, identity);
@@ -66,9 +58,7 @@ function createPostgresAdapterRuntimeReadinessRepository(
   };
 }
 
-function readinessScope(
-  binding: TaskExecutionRuntimeReadinessBinding,
-): AdapterRuntimeReadinessScope {
+function readinessScope(binding: TaskExecutionRuntimeReadinessBinding): AdapterRuntimeReadinessScope {
   return {
     runId: binding.runId,
     agentId: binding.agentId,
@@ -98,9 +88,7 @@ function ready(
   });
 }
 
-function acquisitionFailureReason(
-  error: unknown,
-): AdapterRuntimeReadinessIncompleteReason {
+function acquisitionFailureReason(error: unknown): AdapterRuntimeReadinessIncompleteReason {
   if (!(error instanceof LocalExecutionTargetError)) {
     return "execution_target_unavailable";
   }
@@ -137,10 +125,7 @@ export function createAdapterConfigurationPreflightService(options: {
       ) {
         return incomplete(scope, "run_not_preflightable");
       }
-      if (
-        binding.currentAdapterConfigRevisionId !==
-        binding.adapterConfigRevisionId
-      ) {
+      if (binding.currentAdapterConfigRevisionId !== binding.adapterConfigRevisionId) {
         return incomplete(scope, "agent_revision_not_current");
       }
       if (!binding.absoluteCwd) {
@@ -149,9 +134,7 @@ export function createAdapterConfigurationPreflightService(options: {
 
       let acpConfiguration: AgentAdapterAcpConfiguration;
       try {
-        acpConfiguration = agentAdapterAcpConfigurationSchema.parse(
-          binding.acpConfiguration,
-        );
+        acpConfiguration = agentAdapterAcpConfigurationSchema.parse(binding.acpConfiguration);
       } catch {
         return incomplete(scope, "adapter_revision_invalid");
       }
@@ -197,10 +180,7 @@ export function createAdapterConfigurationPreflightService(options: {
         );
       }
 
-      const cleanupFailed = await releaseReadinessTarget(
-        acquired,
-        result.status !== "ready",
-      );
+      const cleanupFailed = await releaseReadinessTarget(acquired, result.status !== "ready");
       return cleanupFailed ? incomplete(scope, "target_cleanup_failed") : result;
     },
   };
@@ -209,10 +189,7 @@ export function createAdapterConfigurationPreflightService(options: {
 export function createPostgresAdapterConfigurationPreflightService(
   db: Db,
   options: {
-    readonly localExecutionOrchestrator: Pick<
-      LocalExecutionOrchestrator,
-      "acquireExecutionTargetForRun"
-    >;
+    readonly localExecutionOrchestrator: Pick<LocalExecutionOrchestrator, "acquireExecutionTargetForRun">;
   },
 ): AdapterConfigurationPreflightService {
   return createAdapterConfigurationPreflightService({

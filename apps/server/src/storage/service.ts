@@ -19,24 +19,26 @@ function sanitizeSegment(value: string): string {
 
 function requireExactNamespace(namespace: string): string {
   if (
-    namespace.length === 0
-    || namespace !== namespace.trim()
-    || namespace.startsWith("/")
-    || namespace.endsWith("/")
-    || namespace.includes("//")
+    namespace.length === 0 ||
+    namespace !== namespace.trim() ||
+    namespace.startsWith("/") ||
+    namespace.endsWith("/") ||
+    namespace.includes("//")
   ) {
     throw unprocessable("namespace must be an exact non-empty path");
   }
   const segments = namespace.split("/");
-  if (segments.some((segment) => {
-    return segment === "."
-      || segment === ".."
-      || segment.length > MAX_SEGMENT_LENGTH
-      || !/^[a-zA-Z0-9._-]+$/.test(segment);
-  })) {
-    throw unprocessable(
-      "namespace segments may contain only letters, numbers, dot, underscore, and hyphen",
-    );
+  if (
+    segments.some((segment) => {
+      return (
+        segment === "." ||
+        segment === ".." ||
+        segment.length > MAX_SEGMENT_LENGTH ||
+        !/^[a-zA-Z0-9._-]+$/.test(segment)
+      );
+    })
+  ) {
+    throw unprocessable("namespace segments may contain only letters, numbers, dot, underscore, and hyphen");
   }
   return namespace;
 }
@@ -92,9 +94,9 @@ function assertPutFileInput(input: PutFileInput): void {
   }
   requireExactNamespace(input.namespace);
   if (
-    input.contentType.length === 0
-    || input.contentType !== input.contentType.trim()
-    || input.contentType !== input.contentType.toLowerCase()
+    input.contentType.length === 0 ||
+    input.contentType !== input.contentType.trim() ||
+    input.contentType !== input.contentType.toLowerCase()
   ) {
     throw unprocessable("contentType must be exact, lowercase, and non-empty");
   }
@@ -135,7 +137,10 @@ export function createStorageService(provider: StorageProvider): StorageService 
 
     async getObject(companyId: string, objectKey: string, options) {
       const exactObjectKey = requireCompanyObjectKey(companyId, objectKey);
-      return provider.getObject({ objectKey: exactObjectKey, range: options?.range });
+      return provider.getObject({
+        objectKey: exactObjectKey,
+        range: options?.range,
+      });
     },
 
     async headObject(companyId: string, objectKey: string) {

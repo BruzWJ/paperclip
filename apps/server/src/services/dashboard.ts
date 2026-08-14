@@ -1,6 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { agents, approvals, companies, tasks } from "@paperclipai/db";
+import { type Db, agents, approvals, companies, tasks } from "@paperclipai/db";
 import { notFound } from "../errors.js";
 import { budgetService } from "./budgets.js";
 import { visibleTaskCondition } from "./task-visibility.js";
@@ -15,10 +14,6 @@ const DASHBOARD_RUN_ACTIVITY_DAYS = 14;
 
 function formatUtcDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
-}
-
-export function getUtcMonthStart(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
 }
 
 function getRecentUtcDateKeys(now: Date, days: number): string[] {
@@ -49,7 +44,10 @@ export function dashboardService(db: Db) {
         .groupBy(agents.status);
 
       const taskRows = await db
-        .select({ status: tasks.boardPresentationStatus, count: sql<number>`count(*)` })
+        .select({
+          status: tasks.boardPresentationStatus,
+          count: sql<number>`count(*)`,
+        })
         .from(tasks)
         .where(and(eq(tasks.companyId, companyId), visibleTaskCondition()))
         .groupBy(tasks.boardPresentationStatus);

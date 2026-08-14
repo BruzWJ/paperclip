@@ -5,7 +5,13 @@ import { trackErrorHandlerCrash } from "@paperclipai/shared/telemetry";
 import { getTelemetryClient } from "../telemetry.js";
 
 export interface ErrorContext {
-  error: { message: string; stack?: string; name?: string; details?: unknown; raw?: unknown };
+  error: {
+    message: string;
+    stack?: string;
+    name?: string;
+    details?: unknown;
+    raw?: unknown;
+  };
   method: string;
   url: string;
   reqBody?: unknown;
@@ -32,16 +38,12 @@ export function attachErrorContext(
   }
 }
 
-export function errorHandler(
-  err: unknown,
-  req: Request,
-  res: Response,
-  _next: NextFunction,
-) {
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
   if (err instanceof HttpError) {
-    const details = err.details && typeof err.details === "object" && !Array.isArray(err.details)
-      ? err.details as Record<string, unknown>
-      : null;
+    const details =
+      err.details && typeof err.details === "object" && !Array.isArray(err.details)
+        ? (err.details as Record<string, unknown>)
+        : null;
     const structuredConnectionError = new Set([
       "user_authorization_required",
       "grant_revoked",
@@ -54,7 +56,12 @@ export function errorHandler(
       attachErrorContext(
         req,
         res,
-        { message: err.message, stack: err.stack, name: err.name, details: err.details },
+        {
+          message: err.message,
+          stack: err.stack,
+          name: err.name,
+          details: err.details,
+        },
         err,
       );
       const tc = getTelemetryClient();
@@ -63,12 +70,15 @@ export function errorHandler(
     res.status(err.status).json({
       error: err.message,
       ...(typeof details?.code === "string" ? { code: details.code } : {}),
-      ...(typeof details?.remediation === "string" || (structuredConnectionError && details?.remediation && typeof details.remediation === "object")
+      ...(typeof details?.remediation === "string" ||
+      (structuredConnectionError && details?.remediation && typeof details.remediation === "object")
         ? { remediation: details.remediation }
         : {}),
       ...(structuredConnectionError && details?.connection ? { connection: details.connection } : {}),
       ...(structuredConnectionError && details?.subject ? { subject: details.subject } : {}),
-      ...(structuredConnectionError && typeof details?.grantId === "string" ? { grantId: details.grantId } : {}),
+      ...(structuredConnectionError && typeof details?.grantId === "string"
+        ? { grantId: details.grantId }
+        : {}),
       ...(err.details ? { details: err.details } : {}),
     });
     return;
@@ -85,7 +95,12 @@ export function errorHandler(
     res,
     err instanceof Error
       ? { message: err.message, stack: err.stack, name: err.name }
-      : { message: String(err), raw: err, stack: rootError.stack, name: rootError.name },
+      : {
+          message: String(err),
+          raw: err,
+          stack: rootError.stack,
+          name: rootError.name,
+        },
     rootError,
   );
 

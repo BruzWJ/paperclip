@@ -4,10 +4,7 @@ import {
   ListResourcesRequestSchema,
   ListResourceTemplatesRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import {
-  BOARD_MANAGED_TOOLS,
-  parseBoardManagedTool,
-} from "./paperclip-managed-tool-registry.js";
+import { BOARD_MANAGED_TOOLS, parseBoardManagedTool } from "./paperclip-managed-tool-registry.js";
 import {
   paperclipManagedToolPublicError,
   type BoardUserToolAuthority,
@@ -77,10 +74,9 @@ export function createBoardMcpServer(input: {
       async (arguments_) => {
         try {
           return successResult(
-            await input.managedTools.routeExecution(
-              parseBoardManagedTool(tool.name, arguments_),
-              { authority: input.authority },
-            ),
+            await input.managedTools.routeExecution(parseBoardManagedTool(tool.name, arguments_), {
+              authority: input.authority,
+            }),
           );
         } catch (error) {
           return errorResult(error);
@@ -90,11 +86,14 @@ export function createBoardMcpServer(input: {
   }
 
   server.server.registerCapabilities({ prompts: {}, resources: {} });
-  server.server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: [] }));
-  server.server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [] }));
-  server.server.setRequestHandler(
-    ListResourceTemplatesRequestSchema,
-    async () => ({ resourceTemplates: [] }),
-  );
+  server.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+    prompts: [],
+  }));
+  server.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: [],
+  }));
+  server.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: [],
+  }));
   return server;
 }

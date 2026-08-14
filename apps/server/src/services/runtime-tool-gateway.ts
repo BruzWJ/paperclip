@@ -1,20 +1,11 @@
 import { createHash } from "node:crypto";
-import {
-  decodeToolResult,
-  type ExecuteToolParams,
-  type ToolResult,
-} from "@paperclipai/plugin-sdk";
+import { decodeToolResult, type ExecuteToolParams, type ToolResult } from "@paperclipai/plugin-sdk";
 import {
   isPaperclipManagedToolName,
   type RuntimePaperclipManagedToolCall,
 } from "./paperclip-managed-tool-registry.js";
-import type {
-  AgentRunToolAuthority,
-  PaperclipManagedToolRouter,
-} from "./paperclip-managed-tool-router.js";
-import {
-  RuntimeInterfaceConflict,
-} from "./runtime-tool-errors.js";
+import type { AgentRunToolAuthority, PaperclipManagedToolRouter } from "./paperclip-managed-tool-router.js";
+import { RuntimeInterfaceConflict } from "./runtime-tool-errors.js";
 import type { CompiledRunToolDescriptor } from "./runtime-interface-compiler.js";
 import type {
   PromptCapabilityBinding,
@@ -45,10 +36,7 @@ export function createRuntimePluginToolPort(
   return {
     async execute(input) {
       const worker = workerManager.getWorker(input.pluginInstallationId);
-      if (
-        worker?.status !== "running" ||
-        worker.manifestIdentity !== input.pluginManifestIdentity
-      ) {
+      if (worker?.status !== "running" || worker.manifestIdentity !== input.pluginManifestIdentity) {
         throw new Error(
           `Cannot execute plugin tool "${input.toolName}" — its exact compiled plugin runtime is not running.`,
         );
@@ -76,19 +64,14 @@ export function createRuntimePluginToolPort(
 export function prepareRuntimePaperclipManagedToolCall(input: {
   descriptor: CompiledRunToolDescriptor;
   arguments: unknown;
-  scope: Pick<
-    AgentRunToolAuthority["capability"],
-    "companyId" | "taskId" | "targetAgentId"
-  >;
+  scope: Pick<AgentRunToolAuthority["capability"], "companyId" | "taskId" | "targetAgentId">;
 }): RuntimePaperclipManagedToolCall {
   if (
     input.descriptor.source !== "paperclip" ||
     !isPaperclipManagedToolName(input.descriptor.name) ||
     !input.descriptor.normalizeRuntimeCommand
   ) {
-    throw new RuntimeInterfaceConflict(
-      `Unknown Paperclip managed tool ${input.descriptor.name}`,
-    );
+    throw new RuntimeInterfaceConflict(`Unknown Paperclip managed tool ${input.descriptor.name}`);
   }
   return input.descriptor.normalizeRuntimeCommand(input.arguments, input.scope);
 }
@@ -98,13 +81,15 @@ function invocationId(
   callIdentity: PromptCapabilityCallIdentity,
 ): string {
   return `call_${createHash("sha256")
-    .update([
-      capability.capabilityConnectionId,
-      String(capability.capabilityGeneration),
-      callIdentity.source,
-      typeof callIdentity.id,
-      String(callIdentity.id),
-    ].join("\0"))
+    .update(
+      [
+        capability.capabilityConnectionId,
+        String(capability.capabilityGeneration),
+        callIdentity.source,
+        typeof callIdentity.id,
+        String(callIdentity.id),
+      ].join("\0"),
+    )
     .digest("hex")}`;
 }
 
@@ -172,18 +157,14 @@ export function createRuntimeToolGateway(options: {
             !descriptor.pluginManifestIdentity ||
             !descriptor.pluginToolName
           ) {
-            throw new RuntimeInterfaceConflict(
-              "Plugin tool is missing its immutable installation binding",
-            );
+            throw new RuntimeInterfaceConflict("Plugin tool is missing its immutable installation binding");
           }
           return {
             kind: "plugin" as const,
             toolName: descriptor.pluginToolName,
             pluginInstallationId: descriptor.pluginInstallationId,
             pluginManifestIdentity: descriptor.pluginManifestIdentity,
-            arguments: descriptor.validateArguments
-              ? descriptor.validateArguments(args)
-              : args,
+            arguments: descriptor.validateArguments ? descriptor.validateArguments(args) : args,
           };
         }
         return {
@@ -209,9 +190,8 @@ export function createRuntimeToolGateway(options: {
         });
         throw error;
       }
-      const ledgerMetadata = normalized.kind === "paperclip"
-        ? normalized.call.ledger
-        : { kind: "non_mention" as const };
+      const ledgerMetadata =
+        normalized.kind === "paperclip" ? normalized.call.ledger : { kind: "non_mention" as const };
       const claim = await options.callLedger.claim({
         capability,
         descriptor,
@@ -219,8 +199,7 @@ export function createRuntimeToolGateway(options: {
         ingressOrdinal,
         arguments: args,
         classification:
-          ledgerMetadata.kind === "mention" &&
-            ledgerMetadata.targetAgentId !== null
+          ledgerMetadata.kind === "mention" && ledgerMetadata.targetAgentId !== null
             ? {
                 classification: "validated_mention",
                 targetAgentId: ledgerMetadata.targetAgentId,
@@ -230,9 +209,7 @@ export function createRuntimeToolGateway(options: {
       if (claim.state === "completed") {
         return {
           source: descriptor.source,
-          value: descriptor.source === "plugin"
-            ? decodeToolResult(claim.result)
-            : claim.result,
+          value: descriptor.source === "plugin" ? decodeToolResult(claim.result) : claim.result,
         };
       }
       if (claim.state === "executing") throw new RuntimeToolCallInProgress();
@@ -256,9 +233,7 @@ export function createRuntimeToolGateway(options: {
         throw replayed;
       }
       if (claim.state !== "claimed") {
-        throw new RuntimeToolCallIdentityConflict(
-          "Tool call identity could not be claimed",
-        );
+        throw new RuntimeToolCallIdentityConflict("Tool call identity could not be claimed");
       }
 
       try {
@@ -271,11 +246,12 @@ export function createRuntimeToolGateway(options: {
             pluginInstallationId: normalized.pluginInstallationId,
             pluginManifestIdentity: normalized.pluginManifestIdentity,
             arguments: normalized.arguments,
-            mintPluginRunContext: () => mintPluginRunContext({
-              runInterfaceToolCallId: claim.id,
-              pluginInstallationId: normalized.pluginInstallationId,
-              pluginManifestIdentity: normalized.pluginManifestIdentity,
-            }),
+            mintPluginRunContext: () =>
+              mintPluginRunContext({
+                runInterfaceToolCallId: claim.id,
+                pluginInstallationId: normalized.pluginInstallationId,
+                pluginManifestIdentity: normalized.pluginManifestIdentity,
+              }),
           });
         } else {
           const authority = agentRunAuthority({
@@ -302,13 +278,10 @@ export function createRuntimeToolGateway(options: {
               return result;
             },
           });
-          result = await options.managedTools.routeExecution(
-            normalized.call.command,
-            {
-              authority,
-              resolveRuntimeScope: async () => runtimeScope,
-            },
-          );
+          result = await options.managedTools.routeExecution(normalized.call.command, {
+            authority,
+            resolveRuntimeScope: async () => runtimeScope,
+          });
         }
 
         if (ledgerMetadata.kind === "mention") {
@@ -318,7 +291,11 @@ export function createRuntimeToolGateway(options: {
             );
           }
         } else {
-          await options.callLedger.complete({ capability, id: claim.id, result });
+          await options.callLedger.complete({
+            capability,
+            id: claim.id,
+            result,
+          });
         }
         return { source: descriptor.source, value: result };
       } catch (error) {

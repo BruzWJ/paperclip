@@ -20,11 +20,7 @@ export interface LocalRunLease {
 type LocalRunLeaseRow = typeof localExecutionLeases.$inferSelect;
 
 function toLocalRunLease(row: LocalRunLeaseRow): LocalRunLease {
-  if (
-    row.status !== "active" &&
-    row.status !== "released" &&
-    row.status !== "failed"
-  ) {
+  if (row.status !== "active" && row.status !== "released" && row.status !== "failed") {
     throw new Error(`Unexpected local run lease status: ${row.status}`);
   }
   return {
@@ -75,10 +71,7 @@ export function localRunLeaseService(db: Db) {
           updatedAt: now,
         })
         .onConflictDoUpdate({
-          target: [
-            localExecutionLeases.companyId,
-            localExecutionLeases.runId,
-          ],
+          target: [localExecutionLeases.companyId, localExecutionLeases.runId],
           set: {
             executionWorkspaceId: input.executionWorkspaceId,
             taskId: input.taskId,
@@ -113,10 +106,7 @@ export function localRunLeaseService(db: Db) {
           releasedAt: now,
           lastUsedAt: now,
           updatedAt: now,
-          failureReason:
-            status === "failed"
-              ? input.failureReason ?? "provider execution failed"
-              : null,
+          failureReason: status === "failed" ? (input.failureReason ?? "provider execution failed") : null,
         })
         .where(
           and(

@@ -2,5 +2,5 @@ export {
   listServerAdapters,
   listAcpxAdapterProbeDiagnostics,
   refreshAcpxAdapters,
+  type AcpxAdapterProbeDiagnostic,
 } from "./registry.js";
-export type { AcpxAdapterProbeDiagnostic } from "./registry.js";

@@ -6,9 +6,10 @@ import {
 import type { ContextAttenuationMask } from "./context-dial-resolver.js";
 
 export const DENY_ALL_EXECUTION_CONTEXT_MASK = Object.freeze(
-  Object.fromEntries(
-    AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
-  ) as Record<AgentContextGrantKey, false>,
+  Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false])) as Record<
+    AgentContextGrantKey,
+    false
+  >,
 );
 
 export interface ExecutionModeContextInput {

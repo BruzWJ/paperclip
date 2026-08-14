@@ -1,7 +1,5 @@
-import { and, asc, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
-import type { SQL, SQLWrapper } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { documents, taskComments, taskDocuments, tasks } from "@paperclipai/db";
+import { and, asc, desc, eq, gte, inArray, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { type Db, documents, taskComments, taskDocuments, tasks } from "@paperclipai/db";
 import {
   type CompanySearchExtractTaskResult,
   type CompanySearchExtractMatch,
@@ -9,10 +7,12 @@ import {
   type CompanySearchExtractResponse,
   type CompanySearchExtractSourceRef,
 } from "@paperclipai/shared";
+import { updatedWithinStart } from "./company-search-query-support.js";
 import { visibleTaskCondition } from "./task-visibility.js";
 
 const EXCERPT_MAX_CHARS = 180;
-const URL_PATTERN = /(?:https?:\/\/|www\.)[^\s<>"'`]+|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\/[^\s<>"'`]+/giu;
+const URL_PATTERN =
+  /(?:https?:\/\/|www\.)[^\s<>"'`]+|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\/[^\s<>"'`]+/giu;
 
 type ExtractSource = {
   taskId: string;
@@ -41,28 +41,23 @@ function contentMatch(
   containsPattern: string,
   urlPattern: string,
 ): SQL {
-  return query.kind === "url"
-    ? sql`${column} ~* ${urlPattern}`
-    : sql`${column} ILIKE ${containsPattern}`;
+  return query.kind === "url" ? sql`${column} ~* ${urlPattern}` : sql`${column} ILIKE ${containsPattern}`;
 }
 
-function updatedWithinStart(value: string | undefined, now = new Date()): Date | null {
-  if (!value) return null;
-  const match = /^(\d+)(h|d|w|m)$/.exec(value);
-  if (!match) return null;
-  const amount = Number.parseInt(match[1]!, 10);
-  const unit = match[2];
-  const hours = unit === "h" ? amount : unit === "d" ? amount * 24 : unit === "w" ? amount * 24 * 7 : amount * 24 * 30;
-  return new Date(now.getTime() - hours * 60 * 60 * 1000);
-}
-
-function scopeIncludes(scope: CompanySearchExtractQuery["scope"], source: Exclude<CompanySearchExtractQuery["scope"], "all">) {
+function scopeIncludes(
+  scope: CompanySearchExtractQuery["scope"],
+  source: Exclude<CompanySearchExtractQuery["scope"], "all">,
+) {
   return scope === "all" || scope === source;
 }
 
 function trimUrlToken(value: string): string {
   let result = value.replace(/[.,;:!?]+$/g, "");
-  const pairs: Array<[string, string]> = [["(", ")"], ["[", "]"], ["{", "}"]];
+  const pairs: Array<[string, string]> = [
+    ["(", ")"],
+    ["[", "]"],
+    ["{", "}"],
+  ];
   for (const [open, close] of pairs) {
     while (result.endsWith(close) && result.split(close).length > result.split(open).length) {
       result = result.slice(0, -1);
@@ -79,7 +74,10 @@ function literalOccurrences(text: string, contains: string) {
   while (start <= text.length - contains.length) {
     const index = lowerText.indexOf(lowerContains, start);
     if (index < 0) break;
-    matches.push({ value: text.slice(index, index + contains.length), start: index });
+    matches.push({
+      value: text.slice(index, index + contains.length),
+      start: index,
+    });
     start = index + Math.max(contains.length, 1);
   }
   return matches;
@@ -151,15 +149,20 @@ function extractMatches(sources: ExtractSource[], query: CompanySearchExtractQue
 
 export function companySearchExtractService(db: Db) {
   return {
-    extract: async (companyId: string, query: CompanySearchExtractQuery): Promise<CompanySearchExtractResponse> => {
+    extract: async (
+      companyId: string,
+      query: CompanySearchExtractQuery,
+    ): Promise<CompanySearchExtractResponse> => {
       const containsPattern = `%${escapeLikePattern(query.contains)}%`;
       const urlPattern = urlContainsPattern(query.contains);
       const scopeConditions: SQL[] = [];
       if (scopeIncludes(query.scope, "tasks")) {
-        scopeConditions.push(or(
-          contentMatch(tasks.title, query, containsPattern, urlPattern),
-          contentMatch(tasks.request, query, containsPattern, urlPattern),
-        )!);
+        scopeConditions.push(
+          or(
+            contentMatch(tasks.title, query, containsPattern, urlPattern),
+            contentMatch(tasks.request, query, containsPattern, urlPattern),
+          )!,
+        );
       }
       if (scopeIncludes(query.scope, "comments")) {
         scopeConditions.push(sql`EXISTS (
@@ -167,9 +170,11 @@ export function companySearchExtractService(db: Db) {
           FROM task_comments extract_comments
           WHERE extract_comments.company_id = ${companyId}
             AND extract_comments.task_id = ${tasks.id}
-            AND ${query.kind === "url"
-              ? sql`extract_comments.body ~* ${urlPattern}`
-              : sql`extract_comments.body ILIKE ${containsPattern}`}
+            AND ${
+              query.kind === "url"
+                ? sql`extract_comments.body ~* ${urlPattern}`
+                : sql`extract_comments.body ILIKE ${containsPattern}`
+            }
         )`);
       }
       if (scopeIncludes(query.scope, "documents")) {
@@ -182,12 +187,16 @@ export function companySearchExtractService(db: Db) {
           WHERE extract_task_documents.company_id = ${companyId}
             AND extract_task_documents.task_id = ${tasks.id}
             AND (
-              ${query.kind === "url"
-                ? sql`extract_documents.title ~* ${urlPattern}`
-                : sql`extract_documents.title ILIKE ${containsPattern}`}
-              OR ${query.kind === "url"
-                ? sql`extract_documents.latest_body ~* ${urlPattern}`
-                : sql`extract_documents.latest_body ILIKE ${containsPattern}`}
+              ${
+                query.kind === "url"
+                  ? sql`extract_documents.title ~* ${urlPattern}`
+                  : sql`extract_documents.title ILIKE ${containsPattern}`
+              }
+              OR ${
+                query.kind === "url"
+                  ? sql`extract_documents.latest_body ~* ${urlPattern}`
+                  : sql`extract_documents.latest_body ILIKE ${containsPattern}`
+              }
             )
         )`);
       }
@@ -255,13 +264,19 @@ export function companySearchExtractService(db: Db) {
 
       if (taskIds.length > 0 && scopeIncludes(query.scope, "comments")) {
         const commentRows = await db
-          .select({ id: taskComments.id, taskId: taskComments.taskId, body: taskComments.body })
+          .select({
+            id: taskComments.id,
+            taskId: taskComments.taskId,
+            body: taskComments.body,
+          })
           .from(taskComments)
-          .where(and(
-            eq(taskComments.companyId, companyId),
-            inArray(taskComments.taskId, taskIds),
-            contentMatch(taskComments.body, query, containsPattern, urlPattern),
-          ))
+          .where(
+            and(
+              eq(taskComments.companyId, companyId),
+              inArray(taskComments.taskId, taskIds),
+              contentMatch(taskComments.body, query, containsPattern, urlPattern),
+            ),
+          )
           .orderBy(asc(taskComments.createdAt), asc(taskComments.id));
         for (const row of commentRows) {
           addSource({
@@ -284,21 +299,27 @@ export function companySearchExtractService(db: Db) {
             body: documents.latestBody,
           })
           .from(taskDocuments)
-          .innerJoin(documents, and(
-            eq(documents.id, taskDocuments.documentId),
-            eq(documents.companyId, taskDocuments.companyId),
-          ))
-          .where(and(
-            eq(taskDocuments.companyId, companyId),
-            inArray(taskDocuments.taskId, taskIds),
-            or(
-              contentMatch(documents.title, query, containsPattern, urlPattern),
-              contentMatch(documents.latestBody, query, containsPattern, urlPattern),
+          .innerJoin(
+            documents,
+            and(eq(documents.id, taskDocuments.documentId), eq(documents.companyId, taskDocuments.companyId)),
+          )
+          .where(
+            and(
+              eq(taskDocuments.companyId, companyId),
+              inArray(taskDocuments.taskId, taskIds),
+              or(
+                contentMatch(documents.title, query, containsPattern, urlPattern),
+                contentMatch(documents.latestBody, query, containsPattern, urlPattern),
+              ),
             ),
-          ))
+          )
           .orderBy(asc(taskDocuments.key), asc(documents.id));
         for (const row of documentRows) {
-          const source = { type: "document" as const, documentId: row.id, documentKey: row.key };
+          const source = {
+            type: "document" as const,
+            documentId: row.id,
+            documentKey: row.key,
+          };
           if (row.title && sourceOccurrences(row.title, query).length > 0) {
             addSource({
               taskId: row.taskId,

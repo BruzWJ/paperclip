@@ -5,30 +5,31 @@ import {
   type AcpxDiscoveredConfigOptionValue,
   probeAcpxAgent,
 } from "@paperclipai/adapter-utils/acpx-runtime";
-import type {
-  AcpAdapterConfigOption,
-  AdapterModel,
-  ServerAdapterModule,
+import {
+  type AcpAdapterConfigOption,
+  type AdapterModel,
+  type ServerAdapterModule,
+  validateServerAdapterModule,
 } from "@paperclipai/adapter-utils";
-import { validateServerAdapterModule } from "@paperclipai/adapter-utils";
 
 const DISCOVERY_CONCURRENCY = 4;
 
-type SelectableOption = {
-  readonly kind: "select";
-  readonly source: Extract<AcpxDiscoveredConfigOption, { type: "select" }>;
-  readonly values: readonly AcpxDiscoveredConfigOptionValue[];
-} | {
-  readonly kind: "toggle";
-  readonly source: Extract<AcpxDiscoveredConfigOption, { type: "boolean" }>;
-} | {
-  readonly kind: "text";
-  readonly source: Extract<AcpxDiscoveredConfigOption, { type: "text" }>;
-};
+type SelectableOption =
+  | {
+      readonly kind: "select";
+      readonly source: Extract<AcpxDiscoveredConfigOption, { type: "select" }>;
+      readonly values: readonly AcpxDiscoveredConfigOptionValue[];
+    }
+  | {
+      readonly kind: "toggle";
+      readonly source: Extract<AcpxDiscoveredConfigOption, { type: "boolean" }>;
+    }
+  | {
+      readonly kind: "text";
+      readonly source: Extract<AcpxDiscoveredConfigOption, { type: "text" }>;
+    };
 
-function selectableOptions(
-  discovery: AcpxAgentDiscovery,
-): readonly SelectableOption[] {
+function selectableOptions(discovery: AcpxAgentDiscovery): readonly SelectableOption[] {
   return Object.freeze(
     discovery.configOptions.map((source): SelectableOption => {
       if (source.type === "select") {
@@ -44,8 +45,7 @@ function selectableOptions(
 
 function modelOption(options: readonly SelectableOption[]): SelectableOption | null {
   const categorised = options.filter(
-    (option) =>
-      option.kind === "select" && option.source.category === "model",
+    (option) => option.kind === "select" && option.source.category === "model",
   );
   if (categorised.length === 1) return categorised[0]!;
   return null;
@@ -58,9 +58,7 @@ function configOption(option: SelectableOption): AcpAdapterConfigOption {
       label: option.source.name,
       type: "toggle",
       currentValue: option.source.currentValue,
-      ...(option.source.description
-        ? { description: option.source.description }
-        : {}),
+      ...(option.source.description ? { description: option.source.description } : {}),
     });
   }
   if (option.kind === "text") {
@@ -68,12 +66,8 @@ function configOption(option: SelectableOption): AcpAdapterConfigOption {
       id: option.source.id,
       label: option.source.name,
       type: "text",
-      ...(option.source.currentValue === undefined
-        ? {}
-        : { currentValue: option.source.currentValue }),
-      ...(option.source.description
-        ? { description: option.source.description }
-        : {}),
+      ...(option.source.currentValue === undefined ? {} : { currentValue: option.source.currentValue }),
+      ...(option.source.description ? { description: option.source.description } : {}),
     });
   }
   return Object.freeze({
@@ -81,21 +75,14 @@ function configOption(option: SelectableOption): AcpAdapterConfigOption {
     label: option.source.name,
     type: "select",
     values: Object.freeze(
-      option.values.map((value) =>
-        Object.freeze({ label: value.name, value: value.value }),
-      ),
+      option.values.map((value) => Object.freeze({ label: value.name, value: value.value })),
     ),
     currentValue: option.source.currentValue,
-    ...(option.source.description
-      ? { description: option.source.description }
-      : {}),
+    ...(option.source.description ? { description: option.source.description } : {}),
   });
 }
 
-function modelsFor(
-  model: SelectableOption | null,
-  discovery: AcpxAgentDiscovery,
-): readonly AdapterModel[] {
+function modelsFor(model: SelectableOption | null, discovery: AcpxAgentDiscovery): readonly AdapterModel[] {
   if (!model || model.kind !== "select") {
     const fixedModel = discovery.currentModelId;
     if (!fixedModel || !discovery.models.includes(fixedModel)) {
@@ -123,9 +110,7 @@ function modelsFor(
  * contract. Every agent name, option, option value, model, and default comes
  * from ACPX; Paperclip only supervises the ACPX-supplied execution boundary.
  */
-export function acpxDiscoveryToServerAdapter(
-  discovery: AcpxAgentDiscovery,
-): ServerAdapterModule {
+export function acpxDiscoveryToServerAdapter(discovery: AcpxAgentDiscovery): ServerAdapterModule {
   const options = selectableOptions(discovery);
   const selectedModelOption = modelOption(options);
   const models = modelsFor(selectedModelOption, discovery);
@@ -165,18 +150,11 @@ async function mapConcurrent<T, U>(
       results[index] = await mapper(value);
     }
   }
-  await Promise.all(
-    Array.from(
-      { length: Math.min(DISCOVERY_CONCURRENCY, values.length) },
-      () => worker(),
-    ),
-  );
+  await Promise.all(Array.from({ length: Math.min(DISCOVERY_CONCURRENCY, values.length) }, () => worker()));
   return Object.freeze(results);
 }
 
-export type AcpxCatalogDiagnosticCode =
-  | "acpx_probe_failed"
-  | "acpx_catalog_invalid";
+export type AcpxCatalogDiagnosticCode = "acpx_probe_failed" | "acpx_catalog_invalid";
 
 export interface AcpxCatalogDiagnostic {
   readonly code: AcpxCatalogDiagnosticCode;
@@ -194,15 +172,10 @@ type AcpxCatalogCandidate = {
   readonly diagnostic: AcpxCatalogDiagnostic | null;
 };
 
-function candidateDiagnostic(
-  code: AcpxCatalogDiagnosticCode,
-  error: unknown,
-): AcpxCatalogDiagnostic {
+function candidateDiagnostic(code: AcpxCatalogDiagnosticCode, error: unknown): AcpxCatalogDiagnostic {
   return Object.freeze({
     code,
-    message: error instanceof Error
-      ? error.message
-      : "ACPX candidate could not be admitted",
+    message: error instanceof Error ? error.message : "ACPX candidate could not be admitted",
   });
 }
 
@@ -211,14 +184,9 @@ function candidateDiagnostic(
  * only successful ACPX-resolved session initialization. Failed candidates
  * remain diagnostic metadata rather than selectable Paperclip agents.
  */
-export async function discoverLocalAcpxAdapterCatalog(
-  cwd = process.cwd(),
-): Promise<AcpxCatalogSnapshot> {
+export async function discoverLocalAcpxAdapterCatalog(cwd = process.cwd()): Promise<AcpxCatalogSnapshot> {
   const names = await listAcpxAgentNames(cwd);
-  const probes = await mapConcurrent<
-    string,
-    AcpxCatalogCandidate
-  >(names, async (agentName) => {
+  const probes = await mapConcurrent<string, AcpxCatalogCandidate>(names, async (agentName) => {
     let discovery: AcpxAgentDiscovery;
     try {
       discovery = await probeAcpxAgent({
@@ -228,10 +196,7 @@ export async function discoverLocalAcpxAdapterCatalog(
       if (!discovery.controls.includes("session/status")) {
         throw new Error("ACPX runtime does not advertise session/status");
       }
-      if (
-        discovery.configOptions.length > 0 &&
-        !discovery.controls.includes("session/set_config_option")
-      ) {
+      if (discovery.configOptions.length > 0 && !discovery.controls.includes("session/set_config_option")) {
         throw new Error(
           "ACPX runtime does not advertise session/set_config_option for its discovered settings",
         );
@@ -248,9 +213,7 @@ export async function discoverLocalAcpxAdapterCatalog(
       // Validate the generated, data-only Paperclip projection while this
       // candidate is still isolated. A malformed ACPX advertisement must not
       // erase otherwise healthy dynamically discovered agents.
-      const adapter = validateServerAdapterModule(
-        acpxDiscoveryToServerAdapter(discovery),
-      );
+      const adapter = validateServerAdapterModule(acpxDiscoveryToServerAdapter(discovery));
       return {
         agentName,
         adapter,
@@ -274,9 +237,7 @@ export async function discoverLocalAcpxAdapterCatalog(
     }
   }
   return Object.freeze({
-    adapters: Object.freeze(
-      adapters.sort((left, right) => left.type.localeCompare(right.type)),
-    ),
+    adapters: Object.freeze(adapters.sort((left, right) => left.type.localeCompare(right.type))),
     unavailable: Object.freeze(unavailable),
   });
 }

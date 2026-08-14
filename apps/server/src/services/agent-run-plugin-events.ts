@@ -21,11 +21,12 @@ export async function publishAgentRunTerminalEvent(
   publisher: PluginDomainEventPublisher,
   input: AgentRunTerminalPluginEventInput,
 ): Promise<void> {
-  const eventType = input.outcome === "succeeded"
-    ? "agent.run.finished" as const
-    : input.outcome === "cancelled"
-      ? "agent.run.cancelled" as const
-      : "agent.run.failed" as const;
+  const eventType =
+    input.outcome === "succeeded"
+      ? ("agent.run.finished" as const)
+      : input.outcome === "cancelled"
+        ? ("agent.run.cancelled" as const)
+        : ("agent.run.failed" as const);
   await publisher.publish({
     eventId: randomUUID(),
     eventType,

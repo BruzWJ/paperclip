@@ -1,10 +1,6 @@
 import type { Request, RequestHandler } from "express";
 import { and, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import {
-  companyMemberships,
-  instanceUserRoles,
-} from "@paperclipai/db";
+import { type Db, companyMemberships, instanceUserRoles } from "@paperclipai/db";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { isNonEmptyActorId } from "../http/request-actor.js";
 import { logger } from "./logger.js";
@@ -31,10 +27,10 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
         );
       }
       if (
-        isNonEmptyActorId(session?.user?.id)
-        && isNonEmptyActorId(session.session?.id)
-        && isNonEmptyActorId(session.session.userId)
-        && session.session.userId === session.user.id
+        isNonEmptyActorId(session?.user?.id) &&
+        isNonEmptyActorId(session.session?.id) &&
+        isNonEmptyActorId(session.session.userId) &&
+        session.session.userId === session.user.id
       ) {
         const userId = session.user.id;
         const sessionId = session.session.id;
@@ -84,11 +80,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
     }
 
     const boardKey = await boardAuth.findBoardApiKeyByToken(token);
-    if (
-      boardKey
-      && isNonEmptyActorId(boardKey.id)
-      && isNonEmptyActorId(boardKey.userId)
-    ) {
+    if (boardKey && isNonEmptyActorId(boardKey.id) && isNonEmptyActorId(boardKey.userId)) {
       const boardKeyId = boardKey.id;
       const boardUserId = boardKey.userId;
       const access = await boardAuth.resolveBoardAccess(boardUserId);

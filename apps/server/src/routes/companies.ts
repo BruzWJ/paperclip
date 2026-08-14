@@ -1,20 +1,20 @@
-import { Router, type Request } from "express";
-import { and, count as countFn, eq } from "drizzle-orm";
-import { z } from "zod";
-import type { Db } from "@paperclipai/db";
-import { agents as agentsTable } from "@paperclipai/db";
+import { type Db, agents as agentsTable } from "@paperclipai/db";
 import {
+  canonicalUuidSchema,
   companyArtifactsQuerySchema,
   companyPortabilityExportSchema,
   companyPortabilityImportSchema,
   companyPortabilityPreviewSchema,
-  canonicalUuidSchema,
   createCompanySchema,
   updateCompanyBrandingSchema,
   updateCompanySchema,
 } from "@paperclipai/shared";
+import { and, count as countFn, eq } from "drizzle-orm";
+import { Router, type Request } from "express";
+import { z } from "zod";
 import { badRequest, forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
+import type { SecretsRuntimeConfig } from "../secrets/types.js";
 import {
   accessService,
   companyArtifactsService,
@@ -23,15 +23,11 @@ import {
   logActivity,
   workTimelineService,
 } from "../services/index.js";
-import type { StorageService } from "../storage/types.js";
 import type { OrdinaryTaskRuntime } from "../services/ordinary-task-runtime.js";
-import {
-  assertBoard,
-  assertCompanyAccess,
-  assertInstanceAdmin,
-} from "./authz.js";
+import type { StorageService } from "../storage/types.js";
+import { assertBoard, assertCompanyAccess, assertInstanceAdmin } from "./authz.js";
+import { importedCompanyActivityContext, logImportedCompanyActivity } from "./company-import-activity.js";
 import { COMPANY_IMPORTS_ROUTE_PATH } from "./company-import-paths.js";
-import type { SecretsRuntimeConfig } from "../secrets/types.js";
 
 export function companyRoutes(
   db: Db,
@@ -41,12 +37,7 @@ export function companyRoutes(
 ) {
   const router = Router({ caseSensitive: true, strict: true });
   const svc = companyService(db);
-  const portability = companyPortabilityService(
-    db,
-    storage,
-    ordinaryTasks,
-    secretsRuntime,
-  );
+  const portability = companyPortabilityService(db, storage, ordinaryTasks, secretsRuntime);
   const access = accessService(db);
   const artifacts = companyArtifactsService(db, storage);
 
@@ -75,7 +66,11 @@ export function companyRoutes(
     .object({
       from: z.string().optional(),
       to: z.string().optional(),
-      userId: z.string().min(1).refine((value) => value.trim() === value).optional(),
+      userId: z
+        .string()
+        .min(1)
+        .refine((value) => value.trim() === value)
+        .optional(),
       goalId: canonicalUuidSchema.optional(),
       projectId: canonicalUuidSchema.optional(),
       taskId: canonicalUuidSchema.optional(),
@@ -86,8 +81,7 @@ export function companyRoutes(
 
   function assertImportTargetAccess(
     req: Request,
-    target:
-      { mode: "new_company" } | { mode: "existing_company"; companyId: string },
+    target: { mode: "new_company" } | { mode: "existing_company"; companyId: string },
   ) {
     if (target.mode === "new_company") {
       assertInstanceAdmin(req);
@@ -114,9 +108,7 @@ export function companyRoutes(
 
   router.get("/stats", async (req, res) => {
     assertBoard(req);
-    const allowed = req.actor.isInstanceAdmin
-      ? null
-      : new Set(req.actor.companyIds ?? []);
+    const allowed = req.actor.isInstanceAdmin ? null : new Set(req.actor.companyIds ?? []);
     const stats = await svc.stats();
     if (!allowed) {
       res.json(stats);
@@ -145,11 +137,9 @@ export function companyRoutes(
       resource: { type: "company", companyId },
     });
     if (!companyScopeDecision.allowed) {
-      res
-        .status(403)
-        .json({
-          error: "Timeline is outside this actor's authorization boundary",
-        });
+      res.status(403).json({
+        error: "Timeline is outside this actor's authorization boundary",
+      });
       return;
     }
 
@@ -217,21 +207,14 @@ export function companyRoutes(
     const rawImportBody: unknown = req.body;
     const importBody = companyPortabilityImportSchema.parse(rawImportBody);
     assertImportTargetAccess(req, importBody.target);
-    const activity = importedCompanyActivityContext(
-      req.actor.userId,
-      importBody.include ?? null,
-    );
-    const result = await portability.importBundle(
-      importBody,
-      req.actor.userId,
-      {
-        authorizationActor: req.actor,
-        secretMutationActor: {
-          type: "user",
-          userId: req.actor.userId,
-        },
+    const activity = importedCompanyActivityContext(req.actor.userId, importBody.include ?? null);
+    const result = await portability.importBundle(importBody, req.actor.userId, {
+      authorizationActor: req.actor,
+      secretMutationActor: {
+        type: "user",
+        userId: req.actor.userId,
       },
-    );
+    });
     await logImportedCompanyActivity(db, activity, result);
     res.json(result);
   });
@@ -256,16 +239,11 @@ export function companyRoutes(
     const companyId = req.params.companyId as string;
     assertBoardCompanyManagement(req, companyId);
     const body = companyPortabilityPreviewSchema.parse(req.body);
-    if (
-      body.target.mode === "existing_company" &&
-      body.target.companyId !== companyId
-    ) {
+    if (body.target.mode === "existing_company" && body.target.companyId !== companyId) {
       throw forbidden("Safe import route can only target the route company");
     }
     if (body.collisionStrategy === "replace") {
-      throw forbidden(
-        "Safe import route does not allow replace collision strategy",
-      );
+      throw forbidden("Safe import route does not allow replace collision strategy");
     }
     const preview = await portability.previewImport(body, {
       mode: "agent_safe",
@@ -279,16 +257,11 @@ export function companyRoutes(
     assertBoardCompanyManagement(req, companyId);
     assertBoard(req);
     const body = companyPortabilityImportSchema.parse(req.body);
-    if (
-      body.target.mode === "existing_company" &&
-      body.target.companyId !== companyId
-    ) {
+    if (body.target.mode === "existing_company" && body.target.companyId !== companyId) {
       throw forbidden("Safe import route can only target the route company");
     }
     if (body.collisionStrategy === "replace") {
-      throw forbidden(
-        "Safe import route does not allow replace collision strategy",
-      );
+      throw forbidden("Safe import route does not allow replace collision strategy");
     }
     const result = await portability.importBundle(body, req.actor.userId, {
       mode: "agent_safe",
@@ -329,24 +302,12 @@ export function companyRoutes(
     const company = await svc.create(
       {
         ...req.body,
-        defaultResponsibleUserId:
-          req.body.defaultResponsibleUserId ?? ownerPrincipalId,
+        defaultResponsibleUserId: req.body.defaultResponsibleUserId ?? ownerPrincipalId,
       },
       req.actor.userId,
     );
-    await access.ensureMembership(
-      company.id,
-      "user",
-      ownerPrincipalId,
-      "owner",
-      "active",
-    );
-    await access.stampRoleGrants(
-      company.id,
-      ownerPrincipalId,
-      "owner",
-      req.actor.userId,
-    );
+    await access.ensureMembership(company.id, "user", ownerPrincipalId, "owner", "active");
+    await access.stampRoleGrants(company.id, ownerPrincipalId, "owner", req.actor.userId);
     await logActivity(db, {
       companyId: company.id,
       actorType: "user",
@@ -372,10 +333,8 @@ export function companyRoutes(
       return;
     }
 
-    const transitionsToArchived =
-      body.status === "archived" && existingCompany.status !== "archived";
-    const transitionsArchivedToActive =
-      body.status === "active" && existingCompany.status === "archived";
+    const transitionsToArchived = body.status === "archived" && existingCompany.status !== "archived";
+    const transitionsArchivedToActive = body.status === "active" && existingCompany.status === "archived";
     let transitionsPausedToActiveWithArchivePausedAgents = false;
     if (body.status === "active" && existingCompany.status === "paused") {
       const [archivedPausedCount] = await db
@@ -388,8 +347,7 @@ export function companyRoutes(
             eq(agentsTable.pauseReason, "company_archived"),
           ),
         );
-      transitionsPausedToActiveWithArchivePausedAgents =
-        Number(archivedPausedCount?.value ?? 0) > 0;
+      transitionsPausedToActiveWithArchivePausedAgents = Number(archivedPausedCount?.value ?? 0) > 0;
     }
     const lifecycleEventEmittedByService =
       transitionsToArchived ||
@@ -470,48 +428,4 @@ export function companyRoutes(
   });
 
   return router;
-}
-
-type CompanyImportResult = {
-  company: { id: string; action: unknown };
-  agents: unknown[];
-  warnings: unknown[];
-};
-
-interface ImportedCompanyActivityContext {
-  actorType: "user";
-  actorId: string;
-  include: unknown;
-}
-
-function importedCompanyActivityContext(
-  userId: string,
-  include: unknown,
-): ImportedCompanyActivityContext {
-  return {
-    actorType: "user",
-    actorId: userId,
-    include,
-  };
-}
-
-async function logImportedCompanyActivity(
-  db: Db,
-  activity: ImportedCompanyActivityContext,
-  result: CompanyImportResult,
-) {
-  await logActivity(db, {
-    companyId: result.company.id,
-    actorType: activity.actorType,
-    actorId: activity.actorId,
-    action: "company.imported",
-    entityType: "company",
-    entityId: result.company.id,
-    details: {
-      include: activity.include,
-      agentCount: result.agents.length,
-      warningCount: result.warnings.length,
-      companyAction: result.company.action,
-    },
-  });
 }

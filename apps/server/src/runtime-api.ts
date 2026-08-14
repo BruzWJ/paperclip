@@ -13,9 +13,8 @@ function isWildcardHost(host: string): boolean {
 }
 
 function formatOrigin(protocol: string, host: string, port: number): string {
-  const normalizedHost = host.includes(":") && !host.startsWith("[") && !host.endsWith("]")
-    ? `[${host}]`
-    : host;
+  const normalizedHost =
+    host.includes(":") && !host.startsWith("[") && !host.endsWith("]") ? `[${host}]` : host;
   return `${protocol}//${normalizedHost}:${port}`;
 }
 
@@ -39,9 +38,7 @@ export function choosePrimaryRuntimeApiUrl(input: {
     return formatOrigin("http:", bindHost, input.port);
   }
 
-  const allowedHostname = input.allowedHostnames
-    .map((value) => value.trim())
-    .find(Boolean);
+  const allowedHostname = input.allowedHostnames.map((value) => value.trim()).find(Boolean);
   if (allowedHostname) {
     return formatOrigin("http:", allowedHostname, input.port);
   }

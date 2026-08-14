@@ -36,9 +36,7 @@ let shutdownPromise: Promise<void> | null = null;
  * logged, or immediately when the feature is off). Await before constructing
  * the HTTP server so trace coverage doesn't depend on incidental timing.
  */
-export const instrumentationReady: Promise<void> = endpoint
-  ? bootstrapOtel(endpoint)
-  : Promise.resolve();
+export const instrumentationReady: Promise<void> = endpoint ? bootstrapOtel(endpoint) : Promise.resolve();
 
 /**
  * Flush buffered spans and stop the SDK. Idempotent — concurrent callers
@@ -120,18 +118,17 @@ async function bootstrapOtel(endpoint: string): Promise<void> {
   try {
     // Dynamic imports so type-resolution doesn't require the packages to
     // be installed unless the operator actually opts in.
-    const [sdkNode, autoInstr, traceExporter, resources, semconv] =
-      await Promise.all([
-        // @ts-ignore optional peer dep
-        import("@opentelemetry/sdk-node"),
-        // @ts-ignore optional peer dep
-        import("@opentelemetry/auto-instrumentations-node"),
-        importExporter(protocol),
-        // @ts-ignore optional peer dep
-        import("@opentelemetry/resources"),
-        // @ts-ignore optional peer dep
-        import("@opentelemetry/semantic-conventions"),
-      ]);
+    const [sdkNode, autoInstr, traceExporter, resources, semconv] = await Promise.all([
+      // @ts-ignore optional peer dep
+      import("@opentelemetry/sdk-node"),
+      // @ts-ignore optional peer dep
+      import("@opentelemetry/auto-instrumentations-node"),
+      importExporter(protocol),
+      // @ts-ignore optional peer dep
+      import("@opentelemetry/resources"),
+      // @ts-ignore optional peer dep
+      import("@opentelemetry/semantic-conventions"),
+    ]);
 
     const { NodeSDK } = sdkNode;
     const { getNodeAutoInstrumentations } = autoInstr;
@@ -148,9 +145,7 @@ async function bootstrapOtel(endpoint: string): Promise<void> {
       // and the exporter appends /v1/traces only when it reads the env var
       // itself — an explicit `url` is used verbatim and would silently POST
       // to the wrong path. Pass `url` only for gRPC, which has no path.
-      traceExporter: protocol === "grpc"
-        ? new OTLPTraceExporter({ url: endpoint })
-        : new OTLPTraceExporter(),
+      traceExporter: protocol === "grpc" ? new OTLPTraceExporter({ url: endpoint }) : new OTLPTraceExporter(),
       instrumentations: [
         getNodeAutoInstrumentations({
           // Too chatty for this workload.
@@ -167,10 +162,7 @@ async function bootstrapOtel(endpoint: string): Promise<void> {
       // A bad gRPC endpoint, missing native bindings, or a collector that
       // rejects the SDK's handshake should not take down the server.
       // eslint-disable-next-line no-console
-      console.error(
-        "[paperclip] OpenTelemetry SDK failed to start; continuing without tracing",
-        err,
-      );
+      console.error("[paperclip] OpenTelemetry SDK failed to start; continuing without tracing", err);
       return;
     }
 

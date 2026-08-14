@@ -11,10 +11,11 @@ export class RuntimeInterfaceConflict extends Error {
 export class RuntimeToolUnavailable extends Error {
   readonly code: string = "runtime_tool_unavailable";
 
-  constructor(readonly toolName: string, message?: string) {
-    super(
-      message ?? `Tool is not available for the current task execution: ${toolName}`,
-    );
+  constructor(
+    readonly toolName: string,
+    message?: string,
+  ) {
+    super(message ?? `Tool is not available for the current task execution: ${toolName}`);
     this.name = "RuntimeToolUnavailable";
   }
 }

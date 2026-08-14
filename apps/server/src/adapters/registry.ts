@@ -1,8 +1,5 @@
 import type { ServerAdapterModule } from "@paperclipai/adapter-utils";
-import {
-  discoverLocalAcpxAdapterCatalog,
-  type AcpxCatalogDiagnosticCode,
-} from "./acpx-catalog.js";
+import { discoverLocalAcpxAdapterCatalog, type AcpxCatalogDiagnosticCode } from "./acpx-catalog.js";
 
 /**
  * An ACPX-supplied local candidate that was intentionally not admitted as an
@@ -19,10 +16,7 @@ export interface AcpxAdapterProbeDiagnostic {
 const ACPX_CATALOG_REFRESH_INTERVAL_MS = 30_000;
 
 const currentByType = new Map<string, ServerAdapterModule>();
-const currentProbeDiagnosticsByType = new Map<
-  string,
-  AcpxAdapterProbeDiagnostic
->();
+const currentProbeDiagnosticsByType = new Map<string, AcpxAdapterProbeDiagnostic>();
 let refreshInFlight: Promise<void> | null = null;
 let lastSuccessfulRefreshAt = 0;
 
@@ -81,9 +75,7 @@ export function listAcpxAdapterProbeDiagnostics(): readonly AcpxAdapterProbeDiag
 }
 
 export function listServerAdapters(): ServerAdapterModule[] {
-  return [...currentByType.values()].sort((left, right) =>
-    left.type.localeCompare(right.type),
-  );
+  return [...currentByType.values()].sort((left, right) => left.type.localeCompare(right.type));
 }
 
 export function findServerAdapter(type: string): ServerAdapterModule | null {

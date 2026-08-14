@@ -1,8 +1,4 @@
-import {
-  companies,
-  pluginCompanySettings,
-  plugins,
-} from "@paperclipai/db";
+import { companies, pluginCompanySettings, plugins } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
@@ -16,8 +12,7 @@ export interface PluginInstallationCompanyLockScope {
   company: typeof companies.$inferSelect | null;
 }
 
-interface PluginCompanySettingLockScope
-  extends PluginInstallationCompanyLockScope {
+interface PluginCompanySettingLockScope extends PluginInstallationCompanyLockScope {
   companySetting: typeof pluginCompanySettings.$inferSelect | null;
 }
 
@@ -55,20 +50,14 @@ export async function lockPluginCompanySettingScopeInTransaction(
   tx: TaskSessionDbTransaction,
   input: PluginCompanySettingLockInput,
 ): Promise<PluginCompanySettingLockScope> {
-  const scope = await lockPluginInstallationCompanyScopeInTransaction(
-    tx,
-    input,
-  );
+  const scope = await lockPluginInstallationCompanyScopeInTransaction(tx, input);
 
   const companySetting = await tx
     .select()
     .from(pluginCompanySettings)
     .where(
       and(
-        eq(
-          pluginCompanySettings.pluginId,
-          input.pluginInstallationId,
-        ),
+        eq(pluginCompanySettings.pluginId, input.pluginInstallationId),
         eq(pluginCompanySettings.companyId, input.companyId),
       ),
     )

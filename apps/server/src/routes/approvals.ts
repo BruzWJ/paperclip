@@ -9,25 +9,13 @@ import {
   resubmitApprovalSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import {
-  approvalService,
-  accessService,
-  taskApprovalService,
-  logActivity,
-} from "../services/index.js";
-import {
-  assertBoard,
-  assertCompanyAccess,
-  getAccessibleResource,
-  getBoardUserId,
-} from "./authz.js";
+import { approvalService, accessService, taskApprovalService, logActivity } from "../services/index.js";
+import { assertBoard, assertCompanyAccess, getAccessibleResource, getBoardUserId } from "./authz.js";
 import { redactEventPayload } from "../redaction.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import type { OrdinaryTaskRuntime } from "../services/ordinary-task-runtime.js";
 import type { AgentLifecycleCancellationService } from "../services/agents.js";
-import {
-  terminateAgentForHireRejectionInTransaction,
-} from "../services/plugin-managed-agents.js";
+import { terminateAgentForHireRejectionInTransaction } from "../services/plugin-managed-agents.js";
 import { unprocessable } from "../errors.js";
 import { assertExactQueryKeys, parseExactOptionalEnum } from "./exact-query.js";
 
@@ -55,8 +43,7 @@ export function approvalRoutes(
   router.use("/companies/:companyId/approvals", requireBoard);
   const svc = approvalService(db, {
     taskExecutionCancellation: options.taskExecutionCancellation,
-    terminateHireRejectionAgentInTransaction:
-      terminateAgentForHireRejectionInTransaction,
+    terminateHireRejectionAgentInTransaction: terminateAgentForHireRejectionInTransaction,
     dispatchRef: options.ordinaryTasks.dispatchRef,
   });
   const access = accessService(db);
@@ -73,7 +60,9 @@ export function approvalRoutes(
       resource: { type: "company", companyId },
     });
     if (decision.allowed) return true;
-    res.status(403).json({ error: "Approvals are outside this actor's authorization boundary" });
+    res.status(403).json({
+      error: "Approvals are outside this actor's authorization boundary",
+    });
     return false;
   }
 
@@ -238,18 +227,13 @@ export function approvalRoutes(
           authorization: req.actor,
         },
         agentId: req.body.hireAgent.agentId,
-        runtimeAgentConfigurationAuditId:
-          req.body.hireAgent.runtimeAgentConfigurationAuditId,
-        runtimeAgentConfigurationRequestDigest:
-          req.body.hireAgent
-            .runtimeAgentConfigurationRequestDigest,
+        runtimeAgentConfigurationAuditId: req.body.hireAgent.runtimeAgentConfigurationAuditId,
+        runtimeAgentConfigurationRequestDigest: req.body.hireAgent.runtimeAgentConfigurationRequestDigest,
         configuration: req.body.hireAgent.configuration,
       });
     } else {
       if (req.body.hireAgent) {
-        throw unprocessable(
-          "hireAgent is valid only for a hire approval",
-        );
+        throw unprocessable("hireAgent is valid only for a hire approval");
       }
       approval = await svc.resubmit(id, req.body.payload);
     }

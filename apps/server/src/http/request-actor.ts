@@ -44,21 +44,17 @@ export interface UnauthenticatedActor {
 export type RequestActor = BoardActor | UnauthenticatedActor;
 
 export function isNonEmptyActorId(value: unknown): value is string {
-  return (
-    typeof value === "string"
-    && value.length > 0
-    && value === value.trim()
-  );
+  return typeof value === "string" && value.length > 0 && value === value.trim();
 }
 
 export function isBoardActor(actor: unknown): actor is BoardActor {
   if (
-    !actor
-    || typeof actor !== "object"
-    || !("type" in actor)
-    || actor.type !== "board"
-    || !("userId" in actor)
-    || !isNonEmptyActorId(actor.userId)
+    !actor ||
+    typeof actor !== "object" ||
+    !("type" in actor) ||
+    actor.type !== "board" ||
+    !("userId" in actor) ||
+    !isNonEmptyActorId(actor.userId)
   ) {
     return false;
   }

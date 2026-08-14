@@ -5,10 +5,7 @@ import { pinoHttp } from "pino-http";
 import { readConfigFile } from "../config-file.js";
 import { resolveDefaultLogsDir, resolveHomeAwarePath } from "../home-paths.js";
 import { HTTP_LOG_REDACT_PATHS } from "./http-log-redaction.js";
-import {
-  shouldSilenceHttpSuccessLog,
-  shouldSuppressHttpRequestBodyLog,
-} from "./http-log-policy.js";
+import { shouldSilenceHttpSuccessLog, shouldSuppressHttpRequestBodyLog } from "./http-log-policy.js";
 import { redactSensitive } from "./redact-sensitive.js";
 
 function resolveServerLogDir(): string {
@@ -32,23 +29,36 @@ const sharedOpts = {
   singleLine: true,
 };
 
-export const logger = pino({
-  level: "debug",
-  redact: [...HTTP_LOG_REDACT_PATHS],
-}, pino.transport({
-  targets: [
-    {
-      target: "pino-pretty",
-      options: { ...sharedOpts, ignore: "pid,hostname,req,res,responseTime", colorize: true, destination: 1 },
-      level: "info",
-    },
-    {
-      target: "pino-pretty",
-      options: { ...sharedOpts, colorize: false, destination: logFile, mkdir: true },
-      level: "debug",
-    },
-  ],
-}));
+export const logger = pino(
+  {
+    level: "debug",
+    redact: [...HTTP_LOG_REDACT_PATHS],
+  },
+  pino.transport({
+    targets: [
+      {
+        target: "pino-pretty",
+        options: {
+          ...sharedOpts,
+          ignore: "pid,hostname,req,res,responseTime",
+          colorize: true,
+          destination: 1,
+        },
+        level: "info",
+      },
+      {
+        target: "pino-pretty",
+        options: {
+          ...sharedOpts,
+          colorize: false,
+          destination: logFile,
+          mkdir: true,
+        },
+        level: "debug",
+      },
+    ],
+  }),
+);
 
 export const httpLogger = pinoHttp({
   logger,

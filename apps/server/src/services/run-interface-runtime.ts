@@ -1,15 +1,9 @@
 import { tasks, type Db } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
 import { AGENT_CONTEXT_GRANT_KEYS } from "@paperclipai/shared";
-import {
-  createContextRetrievalDbRepository,
-} from "./context-retrieval-db.js";
-import {
-  createContextRetrievalService,
-} from "./context-retrieval.js";
-import {
-  createPostgresPromptCapabilityGatewayRepository,
-} from "./prompt-capability-gateway-postgres.js";
+import { createContextRetrievalDbRepository } from "./context-retrieval-db.js";
+import { createContextRetrievalService } from "./context-retrieval.js";
+import { createPostgresPromptCapabilityGatewayRepository } from "./prompt-capability-gateway-postgres.js";
 import {
   createPromptCapabilityGateway,
   PromptCapabilityAuthenticationError,
@@ -18,18 +12,10 @@ import {
   createPostgresRuntimeInterfaceCompiler,
   createRuntimeRetrievalScopeResolver,
 } from "./runtime-interface-compiler-db.js";
-import {
-  createRuntimeToolGateway,
-  type RuntimePluginToolPort,
-} from "./runtime-tool-gateway.js";
+import { createRuntimeToolGateway, type RuntimePluginToolPort } from "./runtime-tool-gateway.js";
 import type { PaperclipManagedToolRouter } from "./paperclip-managed-tool-router.js";
-import {
-  createRuntimeToolCallLedger,
-} from "./runtime-tool-call-ledger.js";
-import type {
-  PluginRunTaskContextReader,
-  PluginRuntimeRecordsReader,
-} from "./plugin-host-services.js";
+import { createRuntimeToolCallLedger } from "./runtime-tool-call-ledger.js";
+import type { PluginRunTaskContextReader, PluginRuntimeRecordsReader } from "./plugin-host-services.js";
 import type { TaskExecutionRunService } from "./task-execution-run-service.js";
 import type { TaskSessionStore } from "./task-session/store.js";
 import { createPluginCanonicalSessionReader } from "./plugin-canonical-session-reader.js";
@@ -40,10 +26,7 @@ export interface PostgresPromptCapabilityRuntimeOptions {
    * separately owned authority row directly, but never bypasses this owner for
    * the task-execution run envelope.
    */
-  runService: Pick<
-    TaskExecutionRunService,
-    "readRun" | "readJoinedRunDetail"
-  >;
+  runService: Pick<TaskExecutionRunService, "readRun" | "readJoinedRunDetail">;
   /**
    * Instance-private cursor signing secret. Retrieval cursors are scoped and
    * authenticated independently from the prompt-capability bearer.
@@ -82,11 +65,7 @@ export function createPostgresPromptCapabilityRuntime(
     pluginTools: options.pluginTools,
     callLedger: createRuntimeToolCallLedger(db),
   });
-  const repository = createPostgresPromptCapabilityGatewayRepository(
-    db,
-    compiler,
-    options.runService,
-  );
+  const repository = createPostgresPromptCapabilityGatewayRepository(db, compiler, options.runService);
   const gateway = createPromptCapabilityGateway({
     repository,
     executor: runtimeToolGateway,
@@ -94,20 +73,13 @@ export function createPostgresPromptCapabilityRuntime(
   });
   const retrievalScope = createRuntimeRetrievalScopeResolver(compiler);
 
-  async function resolvePluginScope(input: {
-    runContextHandle: string;
-    pluginInstallationId: string;
-  }) {
+  async function resolvePluginScope(input: { runContextHandle: string; pluginInstallationId: string }) {
     const resolved = await gateway.resolvePluginRunContext(
       input.runContextHandle,
       input.pluginInstallationId,
     );
-    if (
-      resolved.pluginInstallationId !== input.pluginInstallationId
-    ) {
-      throw new PromptCapabilityAuthenticationError(
-        "Invalid plugin run-context handle",
-      );
+    if (resolved.pluginInstallationId !== input.pluginInstallationId) {
+      throw new PromptCapabilityAuthenticationError("Invalid plugin run-context handle");
     }
     return {
       capability: resolved.capability,
@@ -121,17 +93,10 @@ export function createPostgresPromptCapabilityRuntime(
       const [task] = await db
         .select({ projectId: tasks.projectId })
         .from(tasks)
-        .where(
-          and(
-            eq(tasks.companyId, capability.companyId),
-            eq(tasks.id, capability.taskId),
-          ),
-        )
+        .where(and(eq(tasks.companyId, capability.companyId), eq(tasks.id, capability.taskId)))
         .limit(1);
       if (!task) {
-        throw new PromptCapabilityAuthenticationError(
-          "Plugin run-context task no longer exists",
-        );
+        throw new PromptCapabilityAuthenticationError("Plugin run-context task no longer exists");
       }
       return {
         companyId: capability.companyId,
@@ -157,8 +122,7 @@ export function createPostgresPromptCapabilityRuntime(
       }
       if (reach.descendant) {
         return {
-          visible:
-            scope.dial.list_sub_tasks || scope.dial.list_company_tasks,
+          visible: scope.dial.list_sub_tasks || scope.dial.list_company_tasks,
           relation: "descendant",
         };
       }
@@ -206,10 +170,7 @@ export function createPostgresPromptCapabilityRuntime(
   const privilegedRuntimeDial = Object.freeze(
     Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, true])),
   ) as Record<(typeof AGENT_CONTEXT_GRANT_KEYS)[number], boolean>;
-  const canonicalSessions = createPluginCanonicalSessionReader(
-    db,
-    options.taskSessionStore,
-  );
+  const canonicalSessions = createPluginCanonicalSessionReader(db, options.taskSessionStore);
   const pluginRuntimeRecordsReader: PluginRuntimeRecordsReader = {
     readSession(input) {
       return canonicalSessions.readSession(input);
@@ -261,6 +222,4 @@ export function createPostgresPromptCapabilityRuntime(
   };
 }
 
-export type PostgresPromptCapabilityRuntime = ReturnType<
-  typeof createPostgresPromptCapabilityRuntime
->;
+export type PostgresPromptCapabilityRuntime = ReturnType<typeof createPostgresPromptCapabilityRuntime>;

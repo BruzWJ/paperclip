@@ -30,10 +30,7 @@ function jsonRpcError(
 }
 
 /** Stateless, board-key-authenticated Streamable HTTP MCP transport. */
-export function boardMcpRoutes(input: {
-  db: Db;
-  managedTools: PaperclipManagedToolRouter;
-}) {
+export function boardMcpRoutes(input: { db: Db; managedTools: PaperclipManagedToolRouter }) {
   const router = Router({ caseSensitive: true, strict: true });
 
   router.post("/mcp", async (req, res) => {
@@ -45,10 +42,7 @@ export function boardMcpRoutes(input: {
       );
       return;
     }
-    if (
-      Array.isArray(req.body) &&
-      req.body.length > BOARD_MCP_MAX_JSON_RPC_BATCH_SIZE
-    ) {
+    if (Array.isArray(req.body) && req.body.length > BOARD_MCP_MAX_JSON_RPC_BATCH_SIZE) {
       res.status(400).json(
         jsonRpcError(null, -32600, "JSON-RPC batch is too large", {
           code: "board_mcp_batch_too_large",
@@ -58,17 +52,15 @@ export function boardMcpRoutes(input: {
       return;
     }
 
-    const companyRows = req.actor.companyIds.length === 0
-      ? []
-      : await input.db
-          .select({ id: companies.id, name: companies.name })
-          .from(companies)
-          .where(inArray(companies.id, req.actor.companyIds));
+    const companyRows =
+      req.actor.companyIds.length === 0
+        ? []
+        : await input.db
+            .select({ id: companies.id, name: companies.name })
+            .from(companies)
+            .where(inArray(companies.id, req.actor.companyIds));
     const membershipRoleByCompanyId = new Map(
-      req.actor.memberships.map((membership) => [
-        membership.companyId,
-        membership.membershipRole ?? null,
-      ]),
+      req.actor.memberships.map((membership) => [membership.companyId, membership.membershipRole ?? null]),
     );
     const authority = boardToolAuthority({
       actor: req.actor,

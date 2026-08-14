@@ -408,5 +408,4 @@ function checkbox(options) {
     render()
   })
 }
-`
-
+`;

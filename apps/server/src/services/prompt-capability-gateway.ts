@@ -42,8 +42,7 @@ export interface PromptCapabilityCompileScope {
 }
 
 /** One exact setup-or-active prompt capability generation. */
-export interface PromptCapabilityIngressBinding
-  extends PromptCapabilityCompileScope {
+export interface PromptCapabilityIngressBinding extends PromptCapabilityCompileScope {
   readonly capabilityConnectionId: string;
   readonly capabilityGeneration: number;
   readonly runId: string;
@@ -68,18 +67,14 @@ export interface PromptCapabilityIngressBinding
 }
 
 /** The same canonical binding after its exact provider session is active. */
-export interface PromptCapabilityBinding
-  extends PromptCapabilityIngressBinding {
+export interface PromptCapabilityBinding extends PromptCapabilityIngressBinding {
   readonly targetSessionCorrelationId: string;
   readonly activatedAt: Date;
 }
 
 /** Stable, non-secret identity of one canonical capability generation. */
 export function promptCapabilityGenerationIdentity(
-  capability: Pick<
-    PromptCapabilityBinding,
-    "capabilityConnectionId" | "capabilityGeneration"
-  >,
+  capability: Pick<PromptCapabilityBinding, "capabilityConnectionId" | "capabilityGeneration">,
 ): string {
   return `${capability.capabilityConnectionId}:${capability.capabilityGeneration}`;
 }
@@ -103,17 +98,9 @@ export type PromptCapabilityAuthenticationResult =
   | { readonly kind: "authority_invalid"; readonly reason: string };
 
 export interface PromptCapabilityGatewayRepository {
-  authenticateBearerHash(
-    bearerHash: string,
-    at: Date,
-  ): Promise<PromptCapabilityAuthenticationResult>;
-  revalidate(
-    capability: PromptCapabilityBinding,
-    at: Date,
-  ): Promise<PromptCapabilityAuthenticationResult>;
-  resolveCompileInput(
-    capability: PromptCapabilityCompileScope,
-  ): Promise<RuntimeInterfaceCompileInput>;
+  authenticateBearerHash(bearerHash: string, at: Date): Promise<PromptCapabilityAuthenticationResult>;
+  revalidate(capability: PromptCapabilityBinding, at: Date): Promise<PromptCapabilityAuthenticationResult>;
+  resolveCompileInput(capability: PromptCapabilityCompileScope): Promise<RuntimeInterfaceCompileInput>;
   createPluginRunContext(input: {
     capability: PromptCapabilityBinding;
     runInterfaceToolCallId: string;
@@ -122,20 +109,13 @@ export interface PromptCapabilityGatewayRepository {
     handleHash: string;
     createdAt: Date;
   }): Promise<void>;
-  resolvePluginRunContextHash(
-    handleHash: string,
-    at: Date,
-  ): Promise<PromptCapabilityPluginContext | null>;
+  resolvePluginRunContextHash(handleHash: string, at: Date): Promise<PromptCapabilityPluginContext | null>;
 }
 
 export interface PromptCapabilityToolExecutor {
   registerTerminalInvalid(input: {
     capability: PromptCapabilityIngressBinding;
-    descriptor: Pick<
-      CompiledRunToolDescriptor,
-      | "name"
-      | "pluginInstallationId"
-    >;
+    descriptor: Pick<CompiledRunToolDescriptor, "name" | "pluginInstallationId">;
     arguments: unknown;
     callIdentity: PromptCapabilityCallIdentity | null;
     ingressOrdinal: number;
@@ -197,18 +177,14 @@ function randomPluginRunContextHandle(): string {
  * Persistence still stores only SHA-256; this helper owns only the credential
  * class and entropy so mint and authentication cannot drift.
  */
-export function mintPromptCapabilityBearer(
-  entropy: Uint8Array = randomBytes(32),
-): string {
+export function mintPromptCapabilityBearer(entropy: Uint8Array = randomBytes(32)): string {
   if (entropy.byteLength !== 32) {
     throw new Error("Prompt-capability bearer entropy must be exactly 32 bytes");
   }
   return `${PROMPT_CAPABILITY_BEARER_PREFIX}${Buffer.from(entropy).toString("base64url")}`;
 }
 
-export function assertRunBearerRejectedByGenericApi(
-  credential: string,
-): void {
+export function assertRunBearerRejectedByGenericApi(credential: string): void {
   if (credential.startsWith(PROMPT_CAPABILITY_BEARER_PREFIX)) {
     throw new PromptCapabilityAuthenticationError(
       "Prompt-capability bearers are not valid generic API credentials",
@@ -216,9 +192,7 @@ export function assertRunBearerRejectedByGenericApi(
   }
 }
 
-export function assertPromptCapabilityCredential(
-  credential: string,
-): void {
+export function assertPromptCapabilityCredential(credential: string): void {
   if (!PROMPT_CAPABILITY_BEARER_PATTERN.test(credential)) {
     throw new PromptCapabilityAuthenticationError(
       "Only paperclip.run-tools/v1 prompt-capability bearers authenticate this interface",
@@ -228,15 +202,11 @@ export function assertPromptCapabilityCredential(
 
 function assertPluginRunContextHandle(handle: string): void {
   if (!PLUGIN_RUN_CONTEXT_HANDLE_PATTERN.test(handle)) {
-    throw new PromptCapabilityAuthenticationError(
-      "Invalid plugin run-context handle",
-    );
+    throw new PromptCapabilityAuthenticationError("Invalid plugin run-context handle");
   }
 }
 
-function authenticated(
-  result: PromptCapabilityAuthenticationResult,
-): PromptCapabilityIngressBinding {
+function authenticated(result: PromptCapabilityAuthenticationResult): PromptCapabilityIngressBinding {
   if (result.kind === "authenticated") return result.capability;
   if (result.kind === "authority_invalid") {
     throw new PromptCapabilityAuthorityError(result.reason);
@@ -244,25 +214,16 @@ function authenticated(
   throw new PromptCapabilityAuthenticationError();
 }
 
-function activeCapability(
-  capability: PromptCapabilityIngressBinding,
-): PromptCapabilityBinding {
-  if (
-    capability.activatedAt !== null &&
-    capability.targetSessionCorrelationId !== null
-  ) {
+function activeCapability(capability: PromptCapabilityIngressBinding): PromptCapabilityBinding {
+  if (capability.activatedAt !== null && capability.targetSessionCorrelationId !== null) {
     return capability as PromptCapabilityBinding;
   }
-  throw new PromptCapabilityAuthenticationError(
-    "Prompt capability setup is not active",
-  );
+  throw new PromptCapabilityAuthenticationError("Prompt capability setup is not active");
 }
 
 function assertIngressOrdinal(ingressOrdinal: number): void {
   if (!Number.isSafeInteger(ingressOrdinal) || ingressOrdinal < 0) {
-    throw new PromptCapabilityAuthenticationError(
-      "Invalid private run-tools ingress ordinal",
-    );
+    throw new PromptCapabilityAuthenticationError("Invalid private run-tools ingress ordinal");
   }
 }
 
@@ -273,23 +234,16 @@ export function createPromptCapabilityGateway(options: {
 }) {
   const now = options.now ?? (() => new Date());
 
-  async function authenticate(
-    bearer: string,
-  ): Promise<PromptCapabilityIngressBinding> {
+  async function authenticate(bearer: string): Promise<PromptCapabilityIngressBinding> {
     assertPromptCapabilityCredential(bearer);
-    const result = await options.repository.authenticateBearerHash(
-      sha256(bearer),
-      now(),
-    );
+    const result = await options.repository.authenticateBearerHash(sha256(bearer), now());
     return authenticated(result);
   }
 
   async function requireStillAuthoritative(
     capability: PromptCapabilityBinding,
   ): Promise<PromptCapabilityBinding> {
-    return activeCapability(
-      authenticated(await options.repository.revalidate(capability, now())),
-    );
+    return activeCapability(authenticated(await options.repository.revalidate(capability, now())));
   }
 
   async function mintPluginRunContext(input: {
@@ -312,12 +266,9 @@ export function createPromptCapabilityGateway(options: {
   }
 
   return {
-    async listTools(
-      bearer: string,
-    ): Promise<readonly CompiledRunToolDescriptor[]> {
+    async listTools(bearer: string): Promise<readonly CompiledRunToolDescriptor[]> {
       const capability = await authenticate(bearer);
-      const compileInput =
-        await options.repository.resolveCompileInput(capability);
+      const compileInput = await options.repository.resolveCompileInput(capability);
       await authenticate(bearer);
       const compiled = compileRuntimeInterface(compileInput);
       return compiled.descriptors;
@@ -332,8 +283,7 @@ export function createPromptCapabilityGateway(options: {
     }): Promise<PromptCapabilityToolExecutionResult> {
       assertIngressOrdinal(input.ingressOrdinal);
       const capability = activeCapability(await authenticate(input.bearer));
-      const compileInput =
-        await options.repository.resolveCompileInput(capability);
+      const compileInput = await options.repository.resolveCompileInput(capability);
       const current = await requireStillAuthoritative(capability);
       const compiled = compileRuntimeInterface(compileInput);
       const descriptor = compiled.byName.get(input.toolName);
@@ -360,8 +310,7 @@ export function createPromptCapabilityGateway(options: {
         arguments: input.arguments,
         callIdentity: input.callIdentity,
         ingressOrdinal: input.ingressOrdinal,
-        mintPluginRunContext: (pluginInput) =>
-          mintPluginRunContext({ capability: current, ...pluginInput }),
+        mintPluginRunContext: (pluginInput) => mintPluginRunContext({ capability: current, ...pluginInput }),
       });
       return result;
     },
@@ -393,17 +342,9 @@ export function createPromptCapabilityGateway(options: {
       expectedPluginInstallationId: string,
     ): Promise<PromptCapabilityPluginContext> {
       assertPluginRunContextHandle(handle);
-      const resolved = await options.repository.resolvePluginRunContextHash(
-        sha256(handle),
-        now(),
-      );
-      if (
-        !resolved ||
-        resolved.pluginInstallationId !== expectedPluginInstallationId
-      ) {
-        throw new PromptCapabilityAuthenticationError(
-          "Invalid plugin run-context handle",
-        );
+      const resolved = await options.repository.resolvePluginRunContextHash(sha256(handle), now());
+      if (!resolved || resolved.pluginInstallationId !== expectedPluginInstallationId) {
+        throw new PromptCapabilityAuthenticationError("Invalid plugin run-context handle");
       }
       const current = await requireStillAuthoritative(resolved.capability);
       return { ...resolved, capability: current };
@@ -411,6 +352,4 @@ export function createPromptCapabilityGateway(options: {
   };
 }
 
-export type PromptCapabilityGateway = ReturnType<
-  typeof createPromptCapabilityGateway
->;
+export type PromptCapabilityGateway = ReturnType<typeof createPromptCapabilityGateway>;

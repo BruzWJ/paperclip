@@ -42,7 +42,7 @@ export function parseCostDateRange(query: Record<string, unknown>) {
   };
   const from = parseDate(fromRaw, "from");
   const to = parseDate(toRaw, "to");
-  return (from || to) ? { from, to } : undefined;
+  return from || to ? { from, to } : undefined;
 }
 
 export function parseCostLimit(query: Record<string, unknown>) {
@@ -56,26 +56,25 @@ export function costRoutes(
   db: Db,
   options: {
     pluginWorkerManager?: PluginWorkerManager;
-    taskExecutionCancellation: Pick<
-      TaskExecutionCancellationService,
-      "suspendBudgetScopeWork"
-    >;
+    taskExecutionCancellation: Pick<TaskExecutionCancellationService, "suspendBudgetScopeWork">;
   },
 ) {
   const router = Router({ caseSensitive: true, strict: true });
   const budgetHooks = {
-    suspendWorkForScope:
-      options.taskExecutionCancellation.suspendBudgetScopeWork,
+    suspendWorkForScope: options.taskExecutionCancellation.suspendBudgetScopeWork,
   };
   const costs = costService(db);
   const finance = financeService(db);
   const budgets = budgetService(db, budgetHooks);
-  const agentOperationalConfigurations =
-    createAgentOperationalConfigurationService(db, budgetHooks);
+  const agentOperationalConfigurations = createAgentOperationalConfigurationService(db, budgetHooks);
   const tasks = taskService(db);
   const access = accessService(db);
 
-  async function assertCompanyCostReadAllowed(req: Parameters<typeof assertCompanyAccess>[0], res: any, companyId: string) {
+  async function assertCompanyCostReadAllowed(
+    req: Parameters<typeof assertCompanyAccess>[0],
+    res: any,
+    companyId: string,
+  ) {
     const decision = await access.decide({
       actor: req.actor,
       action: "company_scope:read",
@@ -86,15 +85,19 @@ export function costRoutes(
     return false;
   }
 
-  async function assertTaskCostReadAllowed(req: Parameters<typeof assertCompanyAccess>[0], res: any, task: {
-    id: string;
-    companyId: string;
-    projectId: string | null;
-    parentId: string | null;
-    ownerAgentId: string | null;
-    ownerUserId: string | null;
-    boardPresentationStatus: string;
-  }) {
+  async function assertTaskCostReadAllowed(
+    req: Parameters<typeof assertCompanyAccess>[0],
+    res: any,
+    task: {
+      id: string;
+      companyId: string;
+      projectId: string | null;
+      parentId: string | null;
+      ownerAgentId: string | null;
+      ownerUserId: string | null;
+      boardPresentationStatus: string;
+    },
+  ) {
     const decision = await access.decide({
       actor: req.actor,
       action: "task:read",
@@ -109,38 +112,44 @@ export function costRoutes(
       },
     });
     if (decision.allowed) return true;
-    res.status(403).json({ error: "Task costs are outside this actor's authorization boundary" });
+    res.status(403).json({
+      error: "Task costs are outside this actor's authorization boundary",
+    });
     return false;
   }
 
-  router.post("/companies/:companyId/finance-events", validate(createFinanceEventSchema), async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    assertBoard(req);
+  router.post(
+    "/companies/:companyId/finance-events",
+    validate(createFinanceEventSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
 
-    const event = await finance.createEvent(companyId, {
-      ...req.body,
-      occurredAt: new Date(req.body.occurredAt),
-    });
+      const event = await finance.createEvent(companyId, {
+        ...req.body,
+        occurredAt: new Date(req.body.occurredAt),
+      });
 
-    await logActivity(db, {
-      companyId,
-      actorType: "user",
-      actorId: req.actor.userId,
-      action: "finance_event.reported",
-      entityType: "finance_event",
-      entityId: event.id,
-      details: {
-        amount: event.amount,
-        currency: event.currency,
-        biller: event.biller,
-        eventKind: event.eventKind,
-        direction: event.direction,
-      },
-    });
+      await logActivity(db, {
+        companyId,
+        actorType: "user",
+        actorId: req.actor.userId,
+        action: "finance_event.reported",
+        entityType: "finance_event",
+        entityId: event.id,
+        details: {
+          amount: event.amount,
+          currency: event.currency,
+          biller: event.biller,
+          eventKind: event.eventKind,
+          direction: event.direction,
+        },
+      });
 
-    res.status(201).json(event);
-  });
+      res.status(201).json(event);
+    },
+  );
 
   router.get("/companies/:companyId/costs/summary", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -159,7 +168,9 @@ export function costRoutes(
     if (!(await assertTaskCostReadAllowed(req, res, task))) return;
     assertExactQueryKeys(req.query, ["excludeRoot"]);
     const excludeRoot = parseExactBooleanQuery(req.query.excludeRoot, "excludeRoot");
-    const summary = await costs.taskTreeSummary(task.companyId, task.id, { excludeRoot });
+    const summary = await costs.taskTreeSummary(task.companyId, task.id, {
+      excludeRoot,
+    });
     res.json(summary);
   });
 
@@ -241,8 +252,7 @@ export function costRoutes(
       assertCompanyAccess(req, companyId);
       if (req.body.scopeType === "agent") {
         res.status(422).json({
-          error:
-            "Agent budgets must be updated through the agent operational-configuration endpoint",
+          error: "Agent budgets must be updated through the agent operational-configuration endpoint",
           code: "agent_budget_requires_operational_configuration",
           agentId: req.body.scopeId,
         });
@@ -270,12 +280,7 @@ export function costRoutes(
               resolution: req.body,
               actorUserId: req.actor.userId,
             })
-          : await budgets.resolveIncident(
-              companyId,
-              incidentId,
-              req.body,
-              req.actor.userId,
-            );
+          : await budgets.resolveIncident(companyId, incidentId, req.body, req.actor.userId);
       res.json(incident);
     },
   );

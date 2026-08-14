@@ -38,9 +38,7 @@ function shouldSkipForCacheControl(value: unknown): boolean {
 
 function shouldSkipForStreamedResponse(res: Parameters<RequestHandler>[1]): boolean {
   return (
-    res.hasHeader("Content-Disposition") ||
-    res.hasHeader("Accept-Ranges") ||
-    res.hasHeader("Content-Range")
+    res.hasHeader("Content-Disposition") || res.hasHeader("Accept-Ranges") || res.hasHeader("Content-Range")
   );
 }
 
@@ -50,7 +48,9 @@ function statusAllowsBody(statusCode: number): boolean {
 
 function shouldPassthroughWrite(res: Parameters<RequestHandler>[1]): boolean {
   const contentType = res.getHeader("Content-Type");
-  const alreadyEncoded = res.hasHeader("Content-Encoding") && String(res.getHeader("Content-Encoding")).toLowerCase() !== "identity";
+  const alreadyEncoded =
+    res.hasHeader("Content-Encoding") &&
+    String(res.getHeader("Content-Encoding")).toLowerCase() !== "identity";
   return (
     // writeHead() may already have committed the response head (better-call
     // does this before streaming the body); headers can no longer change, so
@@ -69,9 +69,12 @@ function weakenStrongEtag(res: Parameters<RequestHandler>[1]): void {
   const etag = res.getHeader("ETag");
   if (etag === undefined) return;
 
-  const weaken = (value: string) => /^W\//i.test(value) ? value : `W/${value}`;
+  const weaken = (value: string) => (/^W\//i.test(value) ? value : `W/${value}`);
   if (Array.isArray(etag)) {
-    res.setHeader("ETag", etag.map((value) => weaken(String(value))));
+    res.setHeader(
+      "ETag",
+      etag.map((value) => weaken(String(value))),
+    );
     return;
   }
 
@@ -95,12 +98,12 @@ function normalizeEndArgs(args: unknown[]): {
   const [chunk, encodingOrCallback, callback] = args;
   return {
     chunk,
-    encoding: typeof encodingOrCallback === "string" ? encodingOrCallback as BufferEncoding : undefined,
+    encoding: typeof encodingOrCallback === "string" ? (encodingOrCallback as BufferEncoding) : undefined,
     callback:
       typeof encodingOrCallback === "function"
-        ? encodingOrCallback as () => void
+        ? (encodingOrCallback as () => void)
         : typeof callback === "function"
-          ? callback as () => void
+          ? (callback as () => void)
           : undefined,
   };
 }
@@ -141,7 +144,11 @@ export function apiCompression(options: ApiCompressionOptions = {}): RequestHand
       for (const writeCallback of writeCallbacks.splice(0)) writeCallback();
     };
 
-    res.write = ((chunk: unknown, encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void), callback?: (error?: Error | null) => void) => {
+    res.write = ((
+      chunk: unknown,
+      encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+      callback?: (error?: Error | null) => void,
+    ) => {
       if (passthrough) {
         return originalWrite(chunk as never, encodingOrCallback as never, callback as never);
       }
@@ -150,7 +157,9 @@ export function apiCompression(options: ApiCompressionOptions = {}): RequestHand
         return originalWrite(chunk as never, encodingOrCallback as never, callback as never);
       }
       if (chunk !== undefined) {
-        chunks.push(toBodyBuffer(chunk, typeof encodingOrCallback === "string" ? encodingOrCallback : undefined));
+        chunks.push(
+          toBodyBuffer(chunk, typeof encodingOrCallback === "string" ? encodingOrCallback : undefined),
+        );
       }
       const writeCallback = typeof encodingOrCallback === "function" ? encodingOrCallback : callback;
       if (writeCallback) writeCallbacks.push(() => writeCallback(null));
@@ -165,7 +174,9 @@ export function apiCompression(options: ApiCompressionOptions = {}): RequestHand
       }
 
       const body = Buffer.concat(chunks);
-      const alreadyEncoded = res.hasHeader("Content-Encoding") && String(res.getHeader("Content-Encoding")).toLowerCase() !== "identity";
+      const alreadyEncoded =
+        res.hasHeader("Content-Encoding") &&
+        String(res.getHeader("Content-Encoding")).toLowerCase() !== "identity";
       const shouldCompress =
         !passthrough &&
         !res.headersSent &&
@@ -184,9 +195,7 @@ export function apiCompression(options: ApiCompressionOptions = {}): RequestHand
 
       void (async () => {
         try {
-          const compressed = selectedEncoding === "gzip"
-            ? await gzipAsync(body)
-            : await deflateAsync(body);
+          const compressed = selectedEncoding === "gzip" ? await gzipAsync(body) : await deflateAsync(body);
           res.vary("Accept-Encoding");
           res.setHeader("Content-Encoding", selectedEncoding);
           res.setHeader("Content-Length", String(compressed.length));

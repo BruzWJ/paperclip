@@ -1,16 +1,15 @@
 import { and, asc, eq, max, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { folders, routines } from "@paperclipai/db";
-import type {
-  CreateFolder,
-  Folder,
-  FolderKind,
-  FolderListResult,
-  MoveFolder,
-  MoveFolderItem,
-  UpdateFolder,
+import { type Db, folders, routines } from "@paperclipai/db";
+import {
+  type CreateFolder,
+  type Folder,
+  type FolderKind,
+  type FolderListResult,
+  type MoveFolder,
+  type MoveFolderItem,
+  type UpdateFolder,
+  isCanonicalUuid,
 } from "@paperclipai/shared";
-import { isCanonicalUuid } from "@paperclipai/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 
 const MAX_FOLDER_DEPTH = 4;
@@ -18,12 +17,7 @@ const MAX_FOLDER_DEPTH = 4;
 type FolderRow = typeof folders.$inferSelect;
 
 function isPostgresError(error: unknown, code: string) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === code
-  );
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 export function normalizeFolderSlug(value: string) {
@@ -45,12 +39,10 @@ function buildFolderViews(rows: FolderRow[]) {
   function resolve(row: FolderRow): Folder {
     const existing = views.get(row.id);
     if (existing) return existing;
-    if (visiting.has(row.id))
-      throw unprocessable("Folder hierarchy contains a cycle");
+    if (visiting.has(row.id)) throw unprocessable("Folder hierarchy contains a cycle");
     visiting.add(row.id);
     const parent = row.parentId ? byId.get(row.parentId) : null;
-    if (row.parentId && !parent)
-      throw unprocessable("Folder hierarchy contains an invalid parent");
+    if (row.parentId && !parent) throw unprocessable("Folder hierarchy contains an invalid parent");
     const parentView = parent ? resolve(parent) : null;
     const view: Folder = {
       ...row,
@@ -70,10 +62,7 @@ function buildFolderViews(rows: FolderRow[]) {
 }
 
 export function folderService(db: Db, mutationLockHeld = false) {
-  async function withCompanyFolderLock<T>(
-    companyId: string,
-    operation: (lockedDb: Db) => Promise<T>,
-  ) {
+  async function withCompanyFolderLock<T>(companyId: string, operation: (lockedDb: Db) => Promise<T>) {
     if (mutationLockHeld) return operation(db);
     return db.transaction(async (tx) => {
       await tx.execute(
@@ -121,9 +110,7 @@ export function folderService(db: Db, mutationLockHeld = false) {
         and(
           eq(folders.companyId, companyId),
           eq(folders.kind, kind),
-          parentId === null
-            ? sql`${folders.parentId} is null`
-            : eq(folders.parentId, parentId),
+          parentId === null ? sql`${folders.parentId} is null` : eq(folders.parentId, parentId),
           eq(folders.slug, slug),
         ),
       )
@@ -133,11 +120,7 @@ export function folderService(db: Db, mutationLockHeld = false) {
     }
   }
 
-  async function nextPosition(
-    companyId: string,
-    kind: FolderKind,
-    parentId: string | null,
-  ) {
+  async function nextPosition(companyId: string, kind: FolderKind, parentId: string | null) {
     const row = await db
       .select({ value: max(folders.position) })
       .from(folders)
@@ -145,9 +128,7 @@ export function folderService(db: Db, mutationLockHeld = false) {
         and(
           eq(folders.companyId, companyId),
           eq(folders.kind, kind),
-          parentId === null
-            ? sql`${folders.parentId} is null`
-            : eq(folders.parentId, parentId),
+          parentId === null ? sql`${folders.parentId} is null` : eq(folders.parentId, parentId),
         ),
       )
       .then((rows) => rows[0] ?? null);
@@ -165,28 +146,18 @@ export function folderService(db: Db, mutationLockHeld = false) {
       .groupBy(routines.folderId);
   }
 
-  async function list(
-    companyId: string,
-    kind: FolderKind,
-  ): Promise<FolderListResult> {
-    const [folderRows, countRows] = await Promise.all([
-      getRows(companyId, kind),
-      routineCounts(companyId),
-    ]);
+  async function list(companyId: string, kind: FolderKind): Promise<FolderListResult> {
+    const [folderRows, countRows] = await Promise.all([getRows(companyId, kind), routineCounts(companyId)]);
     const views = buildFolderViews(folderRows);
     const countsByFolderId = new Map<string | null, number>();
-    for (const row of countRows)
-      countsByFolderId.set(row.folderId ?? null, Number(row.count ?? 0));
+    for (const row of countRows) countsByFolderId.set(row.folderId ?? null, Number(row.count ?? 0));
     return {
       kind,
       folders: folderRows.map((row) => ({
         ...views.get(row.id)!,
         itemCount: countsByFolderId.get(row.id) ?? 0,
       })),
-      allCount: Array.from(countsByFolderId.values()).reduce(
-        (sum, count) => sum + count,
-        0,
-      ),
+      allCount: Array.from(countsByFolderId.values()).reduce((sum, count) => sum + count, 0),
       unfiledCount: countsByFolderId.get(null) ?? 0,
     };
   }
@@ -197,24 +168,15 @@ export function folderService(db: Db, mutationLockHeld = false) {
     }
   }
 
-  async function validateParent(
-    companyId: string,
-    kind: FolderKind,
-    parentId: string | null,
-  ) {
+  async function validateParent(companyId: string, kind: FolderKind, parentId: string | null) {
     if (!parentId) return null;
     const parent = await getFolder(companyId, parentId);
-    if (!parent || parent.kind !== kind)
-      throw notFound("Parent folder not found");
-    if (parent.systemKey)
-      throw forbidden("System-managed folders are read-only");
+    if (!parent || parent.kind !== kind) throw notFound("Parent folder not found");
+    if (parent.systemKey) throw forbidden("System-managed folders are read-only");
     return parent;
   }
 
-  async function create(
-    companyId: string,
-    input: CreateFolder,
-  ): Promise<Folder> {
+  async function create(companyId: string, input: CreateFolder): Promise<Folder> {
     if (!mutationLockHeld) {
       return withCompanyFolderLock(companyId, (lockedDb) =>
         folderService(lockedDb, true).create(companyId, input),
@@ -228,8 +190,7 @@ export function folderService(db: Db, mutationLockHeld = false) {
     const name = input.name;
     const slug = input.slug ?? normalizeFolderSlug(name);
     await assertNoSlugConflict(companyId, input.kind, parentId, slug);
-    const position =
-      input.position ?? (await nextPosition(companyId, input.kind, parentId));
+    const position = input.position ?? (await nextPosition(companyId, input.kind, parentId));
     let row: FolderRow;
     try {
       row = await db
@@ -246,18 +207,13 @@ export function folderService(db: Db, mutationLockHeld = false) {
         .returning()
         .then((rows) => rows[0]!);
     } catch (error) {
-      if (isPostgresError(error, "23505"))
-        throw conflict("Folder slug already exists under this parent");
+      if (isPostgresError(error, "23505")) throw conflict("Folder slug already exists under this parent");
       throw error;
     }
     return (await getFolder(companyId, row.id))!;
   }
 
-  async function update(
-    companyId: string,
-    folderId: string,
-    patch: UpdateFolder,
-  ): Promise<Folder | null> {
+  async function update(companyId: string, folderId: string, patch: UpdateFolder): Promise<Folder | null> {
     if (!mutationLockHeld) {
       return withCompanyFolderLock(companyId, (lockedDb) =>
         folderService(lockedDb, true).update(companyId, folderId, patch),
@@ -267,16 +223,8 @@ export function folderService(db: Db, mutationLockHeld = false) {
     if (!existing) return null;
     assertMutableFolder(existing);
     const name = patch.name ?? existing.name;
-    const slug =
-      patch.slug ??
-      (patch.name === undefined ? existing.slug : normalizeFolderSlug(name));
-    await assertNoSlugConflict(
-      companyId,
-      existing.kind,
-      existing.parentId,
-      slug,
-      existing.id,
-    );
+    const slug = patch.slug ?? (patch.name === undefined ? existing.slug : normalizeFolderSlug(name));
+    await assertNoSlugConflict(companyId, existing.kind, existing.parentId, slug, existing.id);
     try {
       await db
         .update(folders)
@@ -289,31 +237,25 @@ export function folderService(db: Db, mutationLockHeld = false) {
         })
         .where(and(eq(folders.companyId, companyId), eq(folders.id, folderId)));
     } catch (error) {
-      if (isPostgresError(error, "23505"))
-        throw conflict("Folder slug already exists under this parent");
+      if (isPostgresError(error, "23505")) throw conflict("Folder slug already exists under this parent");
       throw error;
     }
     return getFolder(companyId, folderId);
   }
 
   function descendantIdsFromRows(rows: FolderRow[], folderId: string) {
-    if (!rows.some((row) => row.id === folderId))
-      throw notFound("Folder not found");
+    if (!rows.some((row) => row.id === folderId)) throw notFound("Folder not found");
     const children = new Map<string, string[]>();
     for (const row of rows) {
       if (!row.parentId) continue;
-      children.set(row.parentId, [
-        ...(children.get(row.parentId) ?? []),
-        row.id,
-      ]);
+      children.set(row.parentId, [...(children.get(row.parentId) ?? []), row.id]);
     }
     const result = new Set([folderId]);
     const queue = [folderId];
     while (queue.length > 0) {
       const current = queue.shift()!;
       for (const childId of children.get(current) ?? []) {
-        if (result.has(childId))
-          throw unprocessable("Folder hierarchy contains a cycle");
+        if (result.has(childId)) throw unprocessable("Folder hierarchy contains a cycle");
         result.add(childId);
         queue.push(childId);
       }
@@ -321,11 +263,7 @@ export function folderService(db: Db, mutationLockHeld = false) {
     return result;
   }
 
-  async function moveFolder(
-    companyId: string,
-    folderId: string,
-    input: MoveFolder,
-  ): Promise<Folder | null> {
+  async function moveFolder(companyId: string, folderId: string, input: MoveFolder): Promise<Folder | null> {
     if (!mutationLockHeld) {
       return withCompanyFolderLock(companyId, (lockedDb) =>
         folderService(lockedDb, true).moveFolder(companyId, folderId, input),
@@ -334,10 +272,8 @@ export function folderService(db: Db, mutationLockHeld = false) {
     const existing = await getFolder(companyId, folderId);
     if (!existing) return null;
     assertMutableFolder(existing);
-    const parentId =
-      input.parentId === undefined ? existing.parentId : input.parentId;
-    if (parentId === existing.id)
-      throw unprocessable("A folder cannot be its own parent");
+    const parentId = input.parentId === undefined ? existing.parentId : input.parentId;
+    if (parentId === existing.id) throw unprocessable("A folder cannot be its own parent");
     const rows = await getRows(companyId, existing.kind);
     const descendants = descendantIdsFromRows(rows, existing.id);
     if (parentId && descendants.has(parentId))
@@ -345,39 +281,26 @@ export function folderService(db: Db, mutationLockHeld = false) {
     const parent = await validateParent(companyId, existing.kind, parentId);
     const views = buildFolderViews(rows);
     const relativeDepth = Math.max(
-      ...Array.from(descendants).map(
-        (id) => views.get(id)!.depth - existing.depth + 1,
-      ),
+      ...Array.from(descendants).map((id) => views.get(id)!.depth - existing.depth + 1),
     );
     if ((parent?.depth ?? 0) + relativeDepth > MAX_FOLDER_DEPTH) {
       throw unprocessable(`Folder depth cannot exceed ${MAX_FOLDER_DEPTH}`);
     }
-    await assertNoSlugConflict(
-      companyId,
-      existing.kind,
-      parentId,
-      existing.slug,
-      existing.id,
-    );
+    await assertNoSlugConflict(companyId, existing.kind, parentId, existing.slug, existing.id);
     try {
       await db
         .update(folders)
         .set({ parentId, position: input.position, updatedAt: new Date() })
         .where(and(eq(folders.companyId, companyId), eq(folders.id, folderId)));
     } catch (error) {
-      if (isPostgresError(error, "23505"))
-        throw conflict("Folder slug already exists under this parent");
-      if (isPostgresError(error, "23503"))
-        throw conflict("Parent folder changed during move");
+      if (isPostgresError(error, "23505")) throw conflict("Folder slug already exists under this parent");
+      if (isPostgresError(error, "23503")) throw conflict("Parent folder changed during move");
       throw error;
     }
     return getFolder(companyId, folderId);
   }
 
-  async function deleteFolder(
-    companyId: string,
-    folderId: string,
-  ): Promise<Folder | null> {
+  async function deleteFolder(companyId: string, folderId: string): Promise<Folder | null> {
     if (!mutationLockHeld) {
       return withCompanyFolderLock(companyId, (lockedDb) =>
         folderService(lockedDb, true).deleteFolder(companyId, folderId),
@@ -389,18 +312,13 @@ export function folderService(db: Db, mutationLockHeld = false) {
     const child = await db
       .select({ id: folders.id })
       .from(folders)
-      .where(
-        and(eq(folders.companyId, companyId), eq(folders.parentId, folderId)),
-      )
+      .where(and(eq(folders.companyId, companyId), eq(folders.parentId, folderId)))
       .then((rows) => rows[0] ?? null);
     if (child) throw conflict("Move or delete nested folders first");
     try {
-      await db
-        .delete(folders)
-        .where(and(eq(folders.companyId, companyId), eq(folders.id, folderId)));
+      await db.delete(folders).where(and(eq(folders.companyId, companyId), eq(folders.id, folderId)));
     } catch (error) {
-      if (isPostgresError(error, "23503"))
-        throw conflict("Move or delete nested folders first");
+      if (isPostgresError(error, "23503")) throw conflict("Move or delete nested folders first");
       throw error;
     }
     return existing;
@@ -410,17 +328,13 @@ export function folderService(db: Db, mutationLockHeld = false) {
     if (input.folderId) {
       const target = await getFolder(companyId, input.folderId);
       if (!target) throw notFound("Folder not found");
-      if (target.kind !== input.kind)
-        throw unprocessable("Folder kind must match item kind");
-      if (target.systemKey)
-        throw forbidden("System-managed folders are read-only");
+      if (target.kind !== input.kind) throw unprocessable("Folder kind must match item kind");
+      if (target.systemKey) throw forbidden("System-managed folders are read-only");
     }
     const row = await db
       .update(routines)
       .set({ folderId: input.folderId ?? null, updatedAt: new Date() })
-      .where(
-        and(eq(routines.companyId, companyId), eq(routines.id, input.itemId)),
-      )
+      .where(and(eq(routines.companyId, companyId), eq(routines.id, input.itemId)))
       .returning({ id: routines.id, folderId: routines.folderId })
       .then((rows) => rows[0] ?? null);
     if (!row) throw notFound("Routine not found");
