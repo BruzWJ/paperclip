@@ -173,12 +173,12 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Contr
           // the Button's default size adds `has-[>svg]:px-3`, so with the chevron
           // svg present (expanded) it was already 12px but without it (rail) it fell
           // back to 8px — a 4px horizontal jump on collapse (PAP-10676).
-          className="h-9 flex-1 justify-start gap-2 px-3 text-left"
+          className="h-9 flex-1 justify-start gap-2 text-left"
           aria-label={
             selectedCompany ? `Open ${selectedCompany.name} company switcher` : "Open company switcher"
           }
         >
-          <span className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="flex min-w-0 flex-1 items-center">
             {selectedCompany ? (
               <Avatar size="sm">
                 <AvatarImage
