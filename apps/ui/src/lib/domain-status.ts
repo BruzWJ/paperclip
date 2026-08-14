@@ -1,0 +1,118 @@
+export type DomainStatusTone = "online" | "offline" | "maintenance" | "degraded";
+
+const offlineStatuses = new Set([
+  "blocked",
+  "conflict",
+  "crashed",
+  "deleted",
+  "denied",
+  "destroyed",
+  "error",
+  "expired",
+  "failed",
+  "hard_stop",
+  "missing",
+  "missing_refs",
+  "quarantined",
+  "rejected",
+  "revoked",
+  "runtime-error",
+  "suspended",
+  "terminated",
+  "timed_out",
+  "unhealthy",
+]);
+
+const maintenanceStatuses = new Set([
+  "archived",
+  "backlog",
+  "cancelled",
+  "coming_soon",
+  "disabled",
+  "dismissed",
+  "draft",
+  "hidden",
+  "idle",
+  "info",
+  "interrupted",
+  "planned",
+  "previous",
+  "removed",
+  "duplicate",
+  "inactive",
+  "skipped",
+  "stopped",
+  "unchecked",
+]);
+
+const degradedStatuses = new Set([
+  "deferred",
+  "degraded",
+  "backoff",
+  "coalesced",
+  "incomplete",
+  "in_review",
+  "installing",
+  "low_trust_review",
+  "needs_attention",
+  "needs_followup",
+  "open",
+  "paused",
+  "pending",
+  "pending_approval",
+  "queued",
+  "rate-limit",
+  "redacted",
+  "received",
+  "require-approval",
+  "revision_requested",
+  "scheduled_retry",
+  "saving",
+  "starting",
+  "stopping",
+  "todo",
+  "unknown",
+  "warning",
+  "not_set",
+]);
+
+const onlineStatuses = new Set([
+  "accepted",
+  "achieved",
+  "active",
+  "advanced",
+  "approved",
+  "complete",
+  "completed",
+  "created",
+  "current",
+  "done",
+  "healthy",
+  "imported",
+  "in_progress",
+  "new",
+  "ok",
+  "processed",
+  "promoted",
+  "ready",
+  "released",
+  "relinked",
+  "reset",
+  "resolved",
+  "running",
+  "saved",
+  "set",
+  "success",
+  "succeeded",
+  "task_created",
+  "working",
+]);
+
+/** Maps Paperclip's open-ended domain statuses onto Kibo Status's four tones. */
+export function domainStatusTone(status: string): DomainStatusTone {
+  if (offlineStatuses.has(status)) return "offline";
+  if (degradedStatuses.has(status)) return "degraded";
+  if (onlineStatuses.has(status)) return "online";
+  if (maintenanceStatuses.has(status)) return "maintenance";
+  return "maintenance";
+}
