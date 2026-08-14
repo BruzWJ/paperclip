@@ -26,6 +26,7 @@ import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns
 interface UseTaskPropertiesMonitorOptions {
   task: Task;
   onUpdate: (data: Record<string, unknown>) => void;
+  inline?: boolean;
   state: TaskPropertiesState;
   data: TaskPropertiesData;
 }
@@ -35,7 +36,13 @@ interface ExecutionStageDecision {
   body: string;
 }
 
-export function useTaskPropertiesMonitor({ task, onUpdate, state, data }: UseTaskPropertiesMonitorOptions) {
+export function useTaskPropertiesMonitor({
+  task,
+  onUpdate,
+  inline,
+  state,
+  data,
+}: UseTaskPropertiesMonitorOptions) {
   const [executionDecision, setExecutionDecision] = useState<ExecutionStageDecision | null>(null);
   const currentExecutionLabel = (() => {
     if (!task.executionState?.currentStageType) return null;
@@ -264,14 +271,14 @@ export function useTaskPropertiesMonitor({ task, onUpdate, state, data }: UseTas
         <Input
           aria-label="Schedule monitor reminder"
           type="datetime-local"
-          className="h-8 text-xs"
+          className={cn("text-xs", inline ? "min-h-11" : "h-8")}
           value={state.monitorAtInput}
           onChange={(event) => state.setMonitorAtInput(event.target.value)}
         />
         <Input
           aria-label="Monitor reminder notes"
           type="text"
-          className="h-8 min-w-0 flex-1 text-xs"
+          className={cn("min-w-0 flex-1 text-xs", inline ? "min-h-11" : "h-8")}
           placeholder="What should be reviewed?"
           value={state.monitorNotesInput}
           onChange={(event) => state.setMonitorNotesInput(event.target.value)}
@@ -281,7 +288,7 @@ export function useTaskPropertiesMonitor({ task, onUpdate, state, data }: UseTas
         <Input
           aria-label="External service to monitor"
           type="text"
-          className="h-8 min-w-0 flex-1 text-xs"
+          className={cn("min-w-0 flex-1 text-xs", inline ? "min-h-11" : "h-8")}
           placeholder="External service"
           value={state.monitorServiceInput}
           onChange={(event) => state.setMonitorServiceInput(event.target.value)}
@@ -290,14 +297,21 @@ export function useTaskPropertiesMonitor({ task, onUpdate, state, data }: UseTas
           <Button
             type="button"
             variant="outline"
-            size="xs"
+            size={inline ? "default" : "xs"}
+            className={inline ? "min-h-11" : undefined}
             disabled={!state.monitorAtInput}
             onClick={saveMonitor}
           >
             Schedule
           </Button>
           {task.executionPolicy?.monitor ? (
-            <Button type="button" variant="outline" size="xs" onClick={clearMonitor}>
+            <Button
+              type="button"
+              variant="outline"
+              size={inline ? "default" : "xs"}
+              className={inline ? "min-h-11" : undefined}
+              onClick={clearMonitor}
+            >
               Clear
             </Button>
           ) : null}

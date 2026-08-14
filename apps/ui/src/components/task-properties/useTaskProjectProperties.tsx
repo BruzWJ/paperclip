@@ -3,6 +3,7 @@ import { orderItemsBySelectedAndRecent } from "../../lib/recent-selections";
 import { trackRecentProject } from "../../lib/recent-projects";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import type { TaskPropertiesData } from "./useTaskPropertiesData";
 import type { TaskPropertiesState } from "./useTaskPropertiesState";
 
@@ -62,7 +63,7 @@ export function useTaskProjectProperties({
     <>
       <Input
         aria-label="Search projects"
-        className="mb-1 h-8 text-xs"
+        className={cn("mb-1 text-xs", inline ? "min-h-11" : "h-8")}
         placeholder="Search projects..."
         value={state.projectSearch}
         onChange={(event) => state.setProjectSearch(event.target.value)}
@@ -80,8 +81,8 @@ export function useTaskProjectProperties({
               type="button"
               key={option.id || "__none__"}
               variant={option.id === (task.projectId ?? "") ? "secondary" : "ghost"}
-              size="sm"
-              className="w-full justify-start whitespace-nowrap text-xs"
+              size={inline ? "default" : "sm"}
+              className={cn("w-full justify-start whitespace-nowrap text-xs", inline && "min-h-11")}
               onClick={() => {
                 if (option.kind === "project") {
                   trackRecentProject(option.project.id);

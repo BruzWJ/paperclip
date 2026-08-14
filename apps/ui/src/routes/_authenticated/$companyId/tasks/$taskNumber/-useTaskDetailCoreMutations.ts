@@ -113,6 +113,8 @@ export function useTaskDetailCoreMutations({
       });
     },
   });
+  const { mutate: mutateTaskTitle } = updateTaskTitle;
+  const { mutate: mutateTaskExecutionPolicy } = updateTaskExecutionPolicy;
   const reassignTask = useMutation({
     mutationFn: (ownerAgentId: string) =>
       tasksApi.creatorReassign(taskId, {
@@ -218,7 +220,7 @@ export function useTaskDetailCoreMutations({
         keys[0] === "title" &&
         (typeof data.title === "string" || data.title === null)
       ) {
-        updateTaskTitle.mutate(data.title);
+        mutateTaskTitle(data.title);
         return;
       }
       if (
@@ -227,7 +229,7 @@ export function useTaskDetailCoreMutations({
         (data.executionPolicy === null ||
           (typeof data.executionPolicy === "object" && !Array.isArray(data.executionPolicy)))
       ) {
-        updateTaskExecutionPolicy.mutate(data.executionPolicy as NonNullable<Task["executionPolicy"]> | null);
+        mutateTaskExecutionPolicy(data.executionPolicy as NonNullable<Task["executionPolicy"]> | null);
         return;
       }
       toast.error("Property is read-only", {
@@ -235,7 +237,7 @@ export function useTaskDetailCoreMutations({
           "The board can edit title and execution-policy controls. Lifecycle changes belong to the owner runtime.",
       });
     },
-    [updateTaskExecutionPolicy, updateTaskTitle],
+    [mutateTaskExecutionPolicy, mutateTaskTitle],
   );
 
   return {

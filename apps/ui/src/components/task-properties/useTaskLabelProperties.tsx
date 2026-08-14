@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { HexColorPicker } from "@/components/patterns/BrandColorPicker";
+import { cn } from "@/lib/utils";
 import type { useTaskPropertiesData } from "./useTaskPropertiesData";
 import type { useTaskPropertiesState } from "./useTaskPropertiesState";
 
@@ -34,7 +35,7 @@ export function useTaskLabelProperties({
 
   const labelsTrigger =
     selectedTaskLabels.length > 0 ? (
-      <div className="flex items-center gap-1 flex-wrap">
+      <span className="flex flex-wrap items-center gap-1">
         {selectedTaskLabels.slice(0, 3).map((label) => (
           <Badge
             key={label.id}
@@ -54,7 +55,7 @@ export function useTaskLabelProperties({
             +{selectedTaskLabels.length - 3} more
           </Badge>
         )}
-      </div>
+      </span>
     ) : (
       <span className="text-sm text-muted-foreground">None</span>
     );
@@ -63,7 +64,8 @@ export function useTaskLabelProperties({
       <Button
         type="button"
         variant="outline"
-        size="xs"
+        size={inline ? "default" : "xs"}
+        className={inline ? "min-h-11" : undefined}
         onClick={() => state.setLabelsOpen(true)}
         aria-label="Add label"
         title="Add label"
@@ -77,7 +79,7 @@ export function useTaskLabelProperties({
     <>
       <Input
         aria-label="Search labels"
-        className="mb-1 h-8 text-xs"
+        className={cn("mb-1 text-xs", inline ? "min-h-11" : "h-8")}
         placeholder="Search labels..."
         value={state.labelSearch}
         onChange={(event) => state.setLabelSearch(event.target.value)}
@@ -96,15 +98,15 @@ export function useTaskLabelProperties({
                 type="button"
                 key={label.id}
                 variant={selected ? "secondary" : "ghost"}
-                size="sm"
-                className="w-full justify-start text-xs"
+                size={inline ? "default" : "sm"}
+                className={cn("w-full justify-start text-xs", inline && "min-h-11")}
                 onClick={() => data.toggleLabel(label.id)}
               >
                 <span
                   className="h-2.5 w-2.5 rounded-full shrink-0"
                   style={{ backgroundColor: label.color }}
                 />
-                <span className="truncate flex-1">{label.name}</span>
+                <span className="flex-1 truncate text-left">{label.name}</span>
                 {selected && <Check className="h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true" />}
               </Button>
             );
@@ -120,7 +122,7 @@ export function useTaskLabelProperties({
           />
           <Input
             aria-label="New label name"
-            className="h-8 flex-1 text-xs"
+            className={cn("flex-1 text-xs", inline ? "min-h-11" : "h-8")}
             placeholder="New label"
             value={state.newLabelName}
             onChange={(event) => state.setNewLabelName(event.target.value)}
@@ -129,8 +131,8 @@ export function useTaskLabelProperties({
         <Button
           type="button"
           variant="outline"
-          size="sm"
-          className="w-full text-xs"
+          size={inline ? "default" : "sm"}
+          className={cn("w-full text-xs", inline && "min-h-11")}
           disabled={!state.newLabelName.trim() || data.createLabel.isPending}
           onClick={() =>
             data.createLabel.mutate({

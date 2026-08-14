@@ -145,6 +145,35 @@ describe("owner transition views", () => {
     expect(view.textContent).toContain("Run active");
   });
 
+  it("keeps compact owner-change warnings readable and actionable", () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    const copy = describeOwnerChangeInterrupt({ runningAgentName: "ClaudeCoder" });
+    const view = mount(
+      <>
+        <OwnerRunningBanner copy={copy} compact />
+        <InterruptOwnerChangeConfirm
+          copy={copy}
+          to={{ ownerKind: "agent", ownerAgentId: "agent-qa", ownerUserId: null }}
+          resolvers={resolvers}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+          compact
+        />
+      </>,
+    );
+
+    expect(view.querySelector("[data-testid='owner-running-banner']")?.textContent).not.toContain(
+      "Run active",
+    );
+    view.querySelector<HTMLButtonElement>("[data-testid='interrupt-owner-change-confirm-action']")!.click();
+    [...view.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === copy.cancelAction)!
+      .click();
+    expect(onConfirm).toHaveBeenCalledOnce();
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
   it("shows run and pause status without legacy singleton state", () => {
     const view = mount(
       <>

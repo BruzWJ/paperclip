@@ -2,6 +2,7 @@ import { Check, User } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { trackRecentAssignee } from "../../lib/recent-assignees";
 import { AgentIcon } from "../AgentIconPicker";
 import { InterruptOwnerChangeConfirm, OwnerRunningBanner } from "../owner-transition/OwnerTransitionViews";
@@ -89,18 +90,19 @@ export function useTaskPropertiesOwnership({
         resolvers={ownerResolvers}
         onConfirm={() => applyOwner(pendingOwner.ownerAgentId, pendingOwner.track)}
         onCancel={() => setPendingOwner(null)}
+        compact
       />
     </div>
   ) : (
     <>
       {hasActiveRun ? (
         <div className="px-1 pt-1">
-          <OwnerRunningBanner copy={ownerChangeInterruptCopy} />
+          <OwnerRunningBanner copy={ownerChangeInterruptCopy} compact />
         </div>
       ) : null}
       <Input
         aria-label="Search owners"
-        className="mb-1 h-8 text-xs"
+        className={cn("mb-1 text-xs", inline ? "min-h-11" : "h-8")}
         placeholder="Search owners..."
         value={ownerSearch}
         onChange={(event) => setOwnerSearch(event.target.value)}
@@ -112,14 +114,14 @@ export function useTaskPropertiesOwnership({
             type="button"
             key={option.value}
             variant={option.value === selectedOwnerAgentId ? "secondary" : "ghost"}
-            size="sm"
-            className="w-full justify-start text-xs"
+            size={inline ? "default" : "sm"}
+            className={cn("w-full justify-start text-xs", inline && "min-h-11")}
             onClick={() =>
               selectOwner(option.agent.id, option.label, () => trackRecentAssignee(option.agent.id))
             }
           >
             <AgentIcon icon={option.agent.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate">{option.label}</span>
+            <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
             {option.value === selectedOwnerAgentId ? (
               <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true" />
             ) : null}
@@ -142,7 +144,7 @@ export function useTaskPropertiesOwnership({
     <>
       <Input
         aria-label="Search reviewers or approvers"
-        className="mb-1 h-8 text-xs"
+        className={cn("mb-1 text-xs", inline ? "min-h-11" : "h-8")}
         placeholder={`Search ${stageType === "review" ? "reviewers" : "approvers"}...`}
         value={search}
         onChange={(event) => setSearch(event.target.value)}
@@ -152,8 +154,8 @@ export function useTaskPropertiesOwnership({
         <Button
           type="button"
           variant={values.length === 0 ? "secondary" : "ghost"}
-          size="sm"
-          className="w-full justify-start text-xs"
+          size={inline ? "default" : "sm"}
+          className={cn("w-full justify-start text-xs", inline && "min-h-11")}
           onClick={onClear}
         >
           No {stageType === "review" ? "reviewers" : "approvers"}
@@ -162,8 +164,8 @@ export function useTaskPropertiesOwnership({
           <Button
             type="button"
             variant={values.includes(`user:${currentUserId}`) ? "secondary" : "ghost"}
-            size="sm"
-            className="w-full justify-start text-xs"
+            size={inline ? "default" : "sm"}
+            className={cn("w-full justify-start text-xs", inline && "min-h-11")}
             onClick={() => toggleExecutionParticipant(stageType, `user:${currentUserId}`)}
           >
             <User className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -174,8 +176,8 @@ export function useTaskPropertiesOwnership({
           <Button
             type="button"
             variant={values.includes(`user:${creatorUserId}`) ? "secondary" : "ghost"}
-            size="sm"
-            className="w-full justify-start text-xs"
+            size={inline ? "default" : "sm"}
+            className={cn("w-full justify-start text-xs", inline && "min-h-11")}
             onClick={() => toggleExecutionParticipant(stageType, `user:${creatorUserId}`)}
           >
             <User className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -192,8 +194,8 @@ export function useTaskPropertiesOwnership({
               type="button"
               key={`${stageType}:${option.id}`}
               variant={values.includes(option.id) ? "secondary" : "ghost"}
-              size="sm"
-              className="w-full justify-start text-xs"
+              size={inline ? "default" : "sm"}
+              className={cn("w-full justify-start text-xs", inline && "min-h-11")}
               onClick={() => toggleExecutionParticipant(stageType, option.id)}
             >
               <User className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -212,8 +214,8 @@ export function useTaskPropertiesOwnership({
                 type="button"
                 key={`${stageType}:${agent.id}`}
                 variant={values.includes(encoded) ? "secondary" : "ghost"}
-                size="sm"
-                className="w-full justify-start text-xs"
+                size={inline ? "default" : "sm"}
+                className={cn("w-full justify-start text-xs", inline && "min-h-11")}
                 onClick={() => toggleExecutionParticipant(stageType, encoded)}
               >
                 <AgentIcon icon={agent.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />

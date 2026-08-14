@@ -1,7 +1,6 @@
-import { AvatarStack } from "@/components/kibo-ui/avatar-stack";
+import { AgentIcon } from "@/components/AgentIconPicker";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatUserLabel } from "@/lib/task-owners";
 import { cn } from "@/lib/utils";
 import { deriveOriginatingActor, type ActivityEvent, type Agent, type Task } from "@paperclipai/shared";
@@ -18,8 +17,11 @@ export function ActorIdentity({
   const id = evt.actorId;
   let name: string;
   let avatarUrl: string | null | undefined;
+  let agentIcon: string | null | undefined;
   if (evt.actorType === "agent") {
-    name = agentMap.get(id)?.name ?? id.slice(0, 8);
+    const agent = agentMap.get(id);
+    name = agent?.name ?? id.slice(0, 8);
+    agentIcon = agent?.icon;
   } else if (evt.actorType === "system") {
     name = "System";
   } else if (evt.actorType === "user") {
@@ -31,9 +33,17 @@ export function ActorIdentity({
   }
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5" title={name}>
-      <Avatar size="sm">
-        <AvatarImage src={avatarUrl ?? undefined} alt={name} />
-        <AvatarFallback>{deriveInitials(name)}</AvatarFallback>
+      <Avatar size="sm" className={cn(evt.actorType === "agent" && "rounded-md")}>
+        {evt.actorType === "agent" ? (
+          <AvatarFallback className="rounded-md">
+            <AgentIcon icon={agentIcon} className="size-3" />
+          </AvatarFallback>
+        ) : (
+          <>
+            {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
+            <AvatarFallback>{deriveInitials(name)}</AvatarFallback>
+          </>
+        )}
       </Avatar>
       <span className="truncate text-xs">{name}</span>
     </span>
@@ -45,6 +55,7 @@ export type AttributionActor = {
   id: string;
   name: string;
   avatarUrl?: string | null;
+  agentIcon?: string | null;
 };
 
 export function AttributionAvatar({
@@ -52,53 +63,57 @@ export function AttributionAvatar({
   actor,
   via,
 }: {
-  label: "Owner" | "Originating";
+  label: "Owner" | "Originator";
   actor: AttributionActor;
   via?: string | null;
 }) {
-  const accessibleLabel = via ? `${label}: ${actor.name} · via ${via}` : `${label}: ${actor.name}`;
+  const accessibleLabel = via ? `${label}: ${actor.name}, via ${via}` : `${label}: ${actor.name}`;
   const testIdLabel = label.toLowerCase();
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Avatar
-          size="sm"
-          className={cn("ring-2 ring-background", actor.kind === "agent" && "rounded-md")}
-          aria-label={accessibleLabel}
-          data-testid={`task-${testIdLabel}-avatar`}
-        >
+    <Avatar
+      size="sm"
+      className={cn("ring-1 ring-border", actor.kind === "agent" && "rounded-md")}
+      role="img"
+      aria-label={accessibleLabel}
+      data-testid={`task-${testIdLabel}-avatar`}
+    >
+      {actor.kind === "agent" ? (
+        <AvatarFallback className="rounded-md bg-secondary text-secondary-foreground">
+          <AgentIcon icon={actor.agentIcon} className="size-3" />
+        </AvatarFallback>
+      ) : (
+        <>
           {actor.avatarUrl ? <AvatarImage src={actor.avatarUrl} alt="" /> : null}
           <AvatarFallback>{deriveInitials(actor.name)}</AvatarFallback>
-        </Avatar>
-      </TooltipTrigger>
-      <TooltipContent side="top" sideOffset={6} className="px-2 py-1.5">
-        <div className="flex items-center gap-2" data-testid={`task-${testIdLabel}-tooltip`}>
-          <Avatar
-            size="sm"
-            className={cn("ring-1 ring-background/30", actor.kind === "agent" && "rounded-md")}
-          >
-            {actor.avatarUrl ? <AvatarImage src={actor.avatarUrl} alt="" /> : null}
-            <AvatarFallback className="bg-background/20 text-background">
-              {deriveInitials(actor.name)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <div className="text-(length:--text-nano) font-medium uppercase leading-none text-background/70">
-              {label}
-            </div>
-            <div className="max-w-48 truncate text-xs font-medium leading-4 text-background">
-              {actor.name}
-            </div>
-            {via ? (
-              <div className="max-w-48 truncate text-(length:--text-nano) leading-3 text-background/60">
-                via {via}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </TooltipContent>
-    </Tooltip>
+        </>
+      )}
+    </Avatar>
+  );
+}
+
+function AttributionIdentity({
+  label,
+  actor,
+  via,
+}: {
+  label: "Owner" | "Originator";
+  actor: AttributionActor;
+  via?: string | null;
+}) {
+  const testIdLabel = label.toLowerCase();
+
+  return (
+    <div className="flex min-w-0 items-center gap-1.5" data-testid={`task-${testIdLabel}-attribution`}>
+      <span className="text-(length:--text-nano) font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+        {label}
+      </span>
+      <AttributionAvatar label={label} actor={actor} via={via} />
+      <span className="max-w-40 truncate text-xs font-medium text-foreground">{actor.name}</span>
+      {via ? (
+        <span className="max-w-36 truncate text-(length:--text-micro) text-muted-foreground">via {via}</span>
+      ) : null}
+    </div>
   );
 }
 
@@ -107,17 +122,21 @@ export function TaskAttributionByline({
   agentMap,
   userProfileMap,
   userLabelMap,
+  className,
 }: {
   task: Task;
   agentMap: Map<string, Agent>;
   userProfileMap: ReadonlyMap<string, import("@/lib/company-members").CompanyUserProfile>;
   userLabelMap: ReadonlyMap<string, string>;
+  className?: string;
 }) {
+  const ownerAgent = task.ownerAgentId ? agentMap.get(task.ownerAgentId) : null;
   const owner: AttributionActor | null = task.ownerAgentId
     ? {
         kind: "agent",
         id: task.ownerAgentId,
-        name: agentMap.get(task.ownerAgentId)?.name ?? task.ownerAgentId.slice(0, 8),
+        name: ownerAgent?.name ?? task.ownerAgentId.slice(0, 8),
+        agentIcon: ownerAgent?.icon,
       }
     : task.ownerUserId
       ? {
@@ -131,12 +150,14 @@ export function TaskAttributionByline({
         }
       : null;
   const originatingActor = deriveOriginatingActor(task);
+  const originatorAgent = originatingActor?.kind === "agent" ? agentMap.get(originatingActor.id) : null;
   const originator: AttributionActor | null = originatingActor
     ? originatingActor.kind === "agent"
       ? {
           kind: "agent",
           id: originatingActor.id,
-          name: agentMap.get(originatingActor.id)?.name ?? originatingActor.id.slice(0, 8),
+          name: originatorAgent?.name ?? originatingActor.id.slice(0, 8),
+          agentIcon: originatorAgent?.icon,
         }
       : {
           kind: "user",
@@ -155,9 +176,14 @@ export function TaskAttributionByline({
   if (!owner && !originator) return null;
 
   return (
-    <AvatarStack aria-label="Task people" data-testid="task-attribution-avatar-stack">
-      {owner ? <AttributionAvatar label="Owner" actor={owner} /> : null}
-      {originator ? <AttributionAvatar label="Originating" actor={originator} via={originatorVia} /> : null}
-    </AvatarStack>
+    <div
+      className={cn("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5", className)}
+      role="group"
+      aria-label="Task attribution"
+      data-testid="task-attribution-byline"
+    >
+      {owner ? <AttributionIdentity label="Owner" actor={owner} /> : null}
+      {originator ? <AttributionIdentity label="Originator" actor={originator} via={originatorVia} /> : null}
+    </div>
   );
 }

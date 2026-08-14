@@ -5,6 +5,7 @@ import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { taskDisplayTitle } from "../../lib/task-display";
+import { cn } from "../../lib/utils";
 import { TaskLinkQuicklook } from "../TaskLinkQuicklook";
 import type { TaskPropertiesData } from "./useTaskPropertiesData";
 import type { TaskPropertiesState } from "./useTaskPropertiesState";
@@ -113,7 +114,12 @@ export function useTaskRelationProperties({
     <span className="text-sm text-muted-foreground">None</span>
   );
   const parentLink = parentTaskId ? (
-    <Button asChild variant="ghost" size="icon-xs">
+    <Button
+      asChild
+      variant="ghost"
+      size={inline ? "icon-lg" : "icon-xs"}
+      className={inline ? "size-11!" : undefined}
+    >
       <TaskLinkQuicklook
         taskId={parentTaskId}
         taskNumber={parentTaskNumber}
@@ -139,7 +145,7 @@ export function useTaskRelationProperties({
     <>
       <Input
         aria-label="Search parent tasks"
-        className="mb-1 h-8 text-xs"
+        className={cn("mb-1 text-xs", inline ? "min-h-11" : "h-8")}
         placeholder="Search tasks..."
         value={parentSearch}
         onChange={(event) => setParentSearch(event.target.value)}
@@ -149,8 +155,8 @@ export function useTaskRelationProperties({
         <Button
           type="button"
           variant={!task.parentId ? "secondary" : "ghost"}
-          size="sm"
-          className="w-full justify-start text-xs"
+          size={inline ? "default" : "sm"}
+          className={cn("w-full justify-start text-xs", inline && "min-h-11")}
           onClick={() => {
             onUpdate({ parentId: null });
             setParentOpen(false);
@@ -163,8 +169,8 @@ export function useTaskRelationProperties({
             type="button"
             key={candidate.id}
             variant={candidate.id === task.parentId ? "secondary" : "ghost"}
-            size="sm"
-            className="w-full justify-start text-xs"
+            size={inline ? "default" : "sm"}
+            className={cn("w-full justify-start text-xs", inline && "min-h-11")}
             onClick={() => {
               onUpdate({ parentId: candidate.id });
               setParentOpen(false);
@@ -207,7 +213,7 @@ export function useTaskRelationProperties({
   const blockedByContent = (
     <>
       <Input
-        className="mb-1 h-8 text-xs"
+        className={cn("mb-1 text-xs", inline ? "min-h-11" : "h-8")}
         placeholder="Search tasks..."
         value={blockedBySearch}
         onChange={(event) => setBlockedBySearch(event.target.value)}
@@ -218,8 +224,8 @@ export function useTaskRelationProperties({
         <Button
           type="button"
           variant={blockedByIds.length === 0 ? "secondary" : "ghost"}
-          size="sm"
-          className="w-full justify-start text-xs"
+          size={inline ? "default" : "sm"}
+          className={cn("w-full justify-start text-xs", inline && "min-h-11")}
           onClick={() => {
             onUpdate({ blockedByTaskIds: [] });
             setBlockedByOpen(false);
@@ -235,8 +241,8 @@ export function useTaskRelationProperties({
               type="button"
               key={candidate.id}
               variant={selected ? "secondary" : "ghost"}
-              size="sm"
-              className="w-full justify-start text-xs"
+              size={inline ? "default" : "sm"}
+              className={cn("w-full justify-start text-xs", inline && "min-h-11")}
               onClick={() => toggleBlockedBy(candidate.id)}
             >
               <DomainStatus
@@ -262,7 +268,13 @@ export function useTaskRelationProperties({
     </>
   );
   const renderAddBlockedByButton = (onClick?: () => void) => (
-    <Button type="button" variant="outline" size="xs" onClick={onClick}>
+    <Button
+      type="button"
+      variant="outline"
+      size={inline ? "default" : "xs"}
+      className={inline ? "min-h-11" : undefined}
+      onClick={onClick}
+    >
       <Plus className="h-3 w-3" />
       Add blocker
     </Button>

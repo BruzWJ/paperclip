@@ -67,60 +67,67 @@ export function TaskDetailLoadingState({
   return (
     <div className="max-w-3xl space-y-6">
       <div className="space-y-3">
-        <Skeleton className="h-3 w-40" />
-
-        <div className="flex items-center gap-2 min-w-0 flex-wrap">
-          {headerSeed ? (
-            <>
-              <DomainStatus status={headerSeed.boardPresentationStatus}>
-                {taskValueLabel(headerSeed.boardPresentationStatus)}
-              </DomainStatus>
-              <Badge variant="secondary">{taskValueLabel(headerSeed.priority)}</Badge>
-              {identifier ? (
-                <span className="text-sm font-mono text-muted-foreground shrink-0">{identifier}</span>
-              ) : null}
-              {headerSeed.originKind === "routine_execution" && headerSeed.originId ? (
-                <Badge variant="secondary" title={`Routine execution from routine ${headerSeed.originId}`}>
-                  <Repeat className="h-3 w-3" />
-                  Routine
-                </Badge>
-              ) : null}
-              {headerSeed.projectId ? (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground rounded px-1 -mx-1 py-0.5 min-w-0">
-                  <Hexagon className="h-3 w-3 shrink-0" />
-                  <span className="truncate">
-                    {headerSeed.projectName ?? headerSeed.projectId.slice(0, 8)}
+        <div className="flex min-w-0 items-start gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">
+            {headerSeed ? (
+              <>
+                {identifier ? (
+                  <span className="shrink-0 font-mono text-xs font-medium text-muted-foreground">
+                    {identifier}
                   </span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground opacity-50 px-1 -mx-1 py-0.5">
-                  <Hexagon className="h-3 w-3 shrink-0" />
-                  No project
-                </span>
-              )}
-            </>
-          ) : (
-            <>
-              <Skeleton className="h-6 w-6" />
-              <Skeleton className="h-6 w-6" />
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="h-4 w-28" />
-            </>
-          )}
+                ) : null}
+                {headerSeed.projectId ? (
+                  <span className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                    <Hexagon className="size-3 shrink-0" />
+                    <span className="truncate">
+                      {headerSeed.projectName ?? headerSeed.projectId.slice(0, 8)}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60">
+                    <Hexagon className="size-3 shrink-0" />
+                    No project
+                  </span>
+                )}
+                {headerSeed.originKind === "routine_execution" && headerSeed.originId ? (
+                  <Badge variant="secondary" title={`Routine execution from routine ${headerSeed.originId}`}>
+                    <Repeat />
+                    Routine
+                  </Badge>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-28" />
+              </>
+            )}
+          </div>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <Skeleton className="size-8 rounded-md" />
+            <Skeleton className="size-8 rounded-md" />
+          </div>
         </div>
 
         {headerSeed ? (
           <>
-            <h2 className="text-xl font-bold leading-tight">{headerSeed.title}</h2>
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-full max-w-xl" />
-              <Skeleton className="h-4 w-(--pct-72)" />
+            <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{headerSeed.title}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <DomainStatus status={headerSeed.boardPresentationStatus}>
+                {taskValueLabel(headerSeed.boardPresentationStatus)}
+              </DomainStatus>
+              <Badge variant="secondary">{taskValueLabel(headerSeed.priority)} priority</Badge>
+              <Skeleton className="h-6 w-28" />
             </div>
           </>
         ) : (
           <>
             <Skeleton className="h-8 w-(--sz-calc-37)" />
-            <Skeleton className="h-16 w-full" />
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-6 w-20" />
+              <Skeleton className="h-6 w-24" />
+              <Skeleton className="h-6 w-28" />
+            </div>
           </>
         )}
       </div>

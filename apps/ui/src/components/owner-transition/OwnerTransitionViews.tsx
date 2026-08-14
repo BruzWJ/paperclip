@@ -213,15 +213,23 @@ export function ComposerMentionCoach({
 export function OwnerRunningBanner({
   copy,
   className,
+  compact = false,
 }: {
   copy: OwnerChangeInterruptCopy;
   className?: string;
+  compact?: boolean;
 }) {
   return (
-    <Banner role="status" aria-live="polite" data-testid="owner-running-banner" className={className} inset>
+    <Banner
+      role="status"
+      aria-live="polite"
+      data-testid="owner-running-banner"
+      className={cn(compact && "items-start", className)}
+      inset
+    >
       <BannerIcon icon={AlertTriangle} />
       <BannerTitle>{copy.banner}</BannerTitle>
-      <DomainStatus status="running">Run active</DomainStatus>
+      {compact ? null : <DomainStatus status="running">Run active</DomainStatus>}
     </Banner>
   );
 }
@@ -234,6 +242,7 @@ export function InterruptOwnerChangeConfirm({
   resolvers,
   onConfirm,
   onCancel,
+  compact = false,
 }: {
   copy: OwnerChangeInterruptCopy;
   /** The target the operator selected. */
@@ -241,7 +250,39 @@ export function InterruptOwnerChangeConfirm({
   resolvers: OwnerChipResolvers;
   onConfirm: () => void;
   onCancel: () => void;
+  compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <Banner data-testid="interrupt-owner-change-confirm" className="flex-col items-stretch! gap-3" inset>
+        <div className="flex min-w-0 items-start gap-2">
+          <BannerIcon icon={AlertTriangle} />
+          <BannerTitle>
+            <span className="block font-medium">{copy.confirmTitle}</span>
+            <span className="mt-1 flex flex-wrap items-center gap-1">
+              <span>Change owner to</span>
+              <OwnerChip owner={to} resolvers={resolvers} />
+            </span>
+          </BannerTitle>
+        </div>
+        <div className="flex w-full flex-col gap-2">
+          <BannerAction
+            type="button"
+            size="default"
+            className="min-h-11 w-full"
+            onClick={onConfirm}
+            data-testid="interrupt-owner-change-confirm-action"
+          >
+            {copy.confirmAction}
+          </BannerAction>
+          <BannerAction type="button" size="default" className="min-h-11 w-full" onClick={onCancel}>
+            {copy.cancelAction}
+          </BannerAction>
+        </div>
+      </Banner>
+    );
+  }
+
   return (
     <Banner data-testid="interrupt-owner-change-confirm" inset>
       <BannerIcon icon={AlertTriangle} />
