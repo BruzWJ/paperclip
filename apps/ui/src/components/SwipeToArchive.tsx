@@ -194,8 +194,8 @@ export function SwipeToArchive({
         aria-hidden="true"
         // Visible only while actually swiping: the selected row surface is
         // translucent (matching the task-list hover), so a resting opacity
-        // floor would tint the whole row green and ghost the label through.
-        className="pointer-events-none absolute inset-0 flex items-center justify-end rounded-lg bg-emerald-600 px-4 text-white"
+        // floor would tint the whole row and ghost the label through.
+        className="pointer-events-none absolute inset-0 flex items-center justify-end rounded-lg bg-secondary px-4 text-secondary-foreground"
         style={{ opacity: archiveReveal }}
       >
         <span className="inline-flex items-center gap-2 text-sm font-medium">

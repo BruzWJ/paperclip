@@ -1,6 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { useLocation, useRouter } from "@tanstack/react-router";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 
 type RouteErrorBoundaryInnerProps = {
   resetKey: string;
@@ -20,7 +22,10 @@ class RouteErrorBoundaryInner extends Component<RouteErrorBoundaryInnerProps, Ro
   }
 
   override componentDidCatch(error: unknown, info: ErrorInfo): void {
-    console.error("Page render failed", { error, componentStack: info.componentStack });
+    console.error("Page render failed", {
+      error,
+      componentStack: info.componentStack,
+    });
   }
 
   override componentDidUpdate(prevProps: RouteErrorBoundaryInnerProps): void {
@@ -37,24 +42,33 @@ class RouteErrorBoundaryInner extends Component<RouteErrorBoundaryInnerProps, Ro
     if (!error) return this.props.children;
 
     return (
-      <div className="mx-auto max-w-2xl space-y-4 px-4 py-10">
-        <div>
-          <h1 className="text-lg font-semibold">This page hit an error</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Something went wrong while rendering this page. You can go back and try again, or reload.
-          </p>
-        </div>
-        <pre className="overflow-auto rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive whitespace-pre-wrap">
-          {error.message}
-        </pre>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={this.props.onReset}>
-            Go back
-          </Button>
-          <Button size="sm" onClick={() => window.location.reload()}>
-            Reload page
-          </Button>
-        </div>
+      <div className="mx-auto max-w-2xl px-4 py-10">
+        <Empty className="border">
+          <EmptyHeader>
+            <EmptyTitle role="heading" aria-level={1}>
+              This page hit an error
+            </EmptyTitle>
+            <EmptyDescription>
+              Something went wrong while rendering this page. You can go back and try again, or reload.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Alert variant="destructive">
+              <AlertTitle>Render error</AlertTitle>
+              <AlertDescription>
+                <pre className="overflow-auto whitespace-pre-wrap text-xs">{error.message}</pre>
+              </AlertDescription>
+            </Alert>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={this.props.onReset}>
+                Go back
+              </Button>
+              <Button size="sm" onClick={() => window.location.reload()}>
+                Reload page
+              </Button>
+            </div>
+          </EmptyContent>
+        </Empty>
       </div>
     );
   }

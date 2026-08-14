@@ -6,7 +6,7 @@ import type {
   ResourceMemberships,
 } from "@paperclipai/shared";
 import { resourceMembershipsApi } from "../api/resourceMemberships";
-import { useToastActions } from "../context/ToastContext";
+import { toast } from "sonner";
 import { queryKeys } from "../lib/queryKeys";
 import { useCurrentUserId } from "./useCurrentUserId";
 
@@ -34,8 +34,16 @@ function emptyMemberships(): ResourceMemberships {
 
 function starKeys(resourceType: ResourceMembershipResourceType) {
   return resourceType === "project"
-    ? { ids: "starredProjectIds", at: "projectStarredAt", state: "projectMemberships" }
-    : { ids: "starredAgentIds", at: "agentStarredAt", state: "agentMemberships" };
+    ? {
+        ids: "starredProjectIds",
+        at: "projectStarredAt",
+        state: "projectMemberships",
+      }
+    : {
+        ids: "starredAgentIds",
+        at: "agentStarredAt",
+        state: "agentMemberships",
+      };
 }
 
 /**
@@ -56,10 +64,9 @@ function applyMembershipChange(
 
   // Resolve next join/leave state (starring implies joined).
   const currentStateMap = base[keys.state as "projectMemberships"] ?? {};
-  const previousState: ResourceMembershipState =
-    currentStateMap[resourceId] === "left" ? "left" : "joined";
+  const previousState: ResourceMembershipState = currentStateMap[resourceId] === "left" ? "left" : "joined";
   const nextState: ResourceMembershipState =
-    change.starred === true ? "joined" : change.state ?? previousState;
+    change.starred === true ? "joined" : (change.state ?? previousState);
 
   // Resolve next starred set.
   const currentStarredIds = base[keys.ids as "starredProjectIds"] ?? [];
@@ -101,9 +108,10 @@ export function resourceMembershipState(
   resourceType: ResourceMembershipResourceType,
   resourceId: string,
 ): ResourceMembershipState {
-  const state = resourceType === "project"
-    ? memberships?.projectMemberships[resourceId]
-    : memberships?.agentMemberships[resourceId];
+  const state =
+    resourceType === "project"
+      ? memberships?.projectMemberships[resourceId]
+      : memberships?.agentMemberships[resourceId];
   return state === "left" ? "left" : "joined";
 }
 
@@ -113,9 +121,7 @@ export function isStarred(
   resourceType: ResourceMembershipResourceType,
   resourceId: string,
 ): boolean {
-  const ids = resourceType === "project"
-    ? memberships?.starredProjectIds
-    : memberships?.starredAgentIds;
+  const ids = resourceType === "project" ? memberships?.starredProjectIds : memberships?.starredAgentIds;
   return Array.isArray(ids) && ids.includes(resourceId);
 }
 
@@ -124,18 +130,17 @@ export function starredResourceIds(
   memberships: ResourceMemberships | undefined,
   resourceType: ResourceMembershipResourceType,
 ): string[] {
-  const ids = resourceType === "project"
-    ? memberships?.starredProjectIds
-    : memberships?.starredAgentIds;
+  const ids = resourceType === "project" ? memberships?.starredProjectIds : memberships?.starredAgentIds;
   return Array.isArray(ids) ? ids : [];
 }
 
 export function useResourceMemberships(companyId: string | null | undefined) {
   const userId = useCurrentUserId();
   return useQuery({
-    queryKey: companyId && userId
-      ? queryKeys.resourceMemberships.forUser(companyId, userId)
-      : ["resource-memberships", companyId ?? null, userId] as const,
+    queryKey:
+      companyId && userId
+        ? queryKeys.resourceMemberships.forUser(companyId, userId)
+        : (["resource-memberships", companyId ?? null, userId] as const),
     queryFn: () => resourceMembershipsApi.listForUser(companyId!, userId!),
     enabled: Boolean(companyId && userId),
   });
@@ -143,81 +148,77 @@ export function useResourceMemberships(companyId: string | null | undefined) {
 
 export function useResourceMembershipMutation(companyId: string | null | undefined) {
   const queryClient = useQueryClient();
-  const { pushToast } = useToastActions();
   const userId = useCurrentUserId();
-  const queryKey = companyId && userId
-    ? queryKeys.resourceMemberships.forUser(companyId, userId)
-    : ["resource-memberships", companyId ?? null, userId] as const;
+  const queryKey =
+    companyId && userId
+      ? queryKeys.resourceMemberships.forUser(companyId, userId)
+      : (["resource-memberships", companyId ?? null, userId] as const);
   const [pendingRequests, setPendingRequests] = useState<MutationVariables[]>([]);
 
-  const mutate = useCallback((variables: MutationVariables) => {
-    if (!companyId || !userId) {
-      pushToast({
-        title: companyId ? "Sign in first." : "Select a company first.",
-        tone: "error",
-      });
-      return;
-    }
+  const mutate = useCallback(
+    (variables: MutationVariables) => {
+      if (!companyId || !userId) {
+        toast.error(companyId ? "Sign in first." : "Select a company first.");
+        return;
+      }
 
-    setPendingRequests((requests) => [...requests, variables]);
-    void (async () => {
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<ResourceMemberships>(queryKey);
-      queryClient.setQueryData<ResourceMemberships>(
-        queryKey,
-        applyMembershipChange(previous, variables.resourceType, variables.resourceId, {
-          state: variables.state,
-          starred: variables.starred,
-        }),
-      );
-
-      try {
-        const body = { state: variables.state, starred: variables.starred };
-        const result = variables.resourceType === "project"
-          ? await resourceMembershipsApi.updateProject(
-            companyId,
-            userId,
-            variables.resourceId,
-            body,
-          )
-          : await resourceMembershipsApi.updateAgent(
-            companyId,
-            userId,
-            variables.resourceId,
-            body,
-          );
+      setPendingRequests((requests) => [...requests, variables]);
+      void (async () => {
+        await queryClient.cancelQueries({ queryKey });
+        const previous = queryClient.getQueryData<ResourceMemberships>(queryKey);
         queryClient.setQueryData<ResourceMemberships>(
           queryKey,
-          // Loose null-check: a missing or null starredAt both mean "not starred".
-          (current) => applyMembershipChange(current, variables.resourceType, result.resourceId, {
-            state: result.state,
-            starred: result.starredAt != null,
+          applyMembershipChange(previous, variables.resourceType, variables.resourceId, {
+            state: variables.state,
+            starred: variables.starred,
           }),
         );
-      } catch (error) {
-        if (previous) {
-          queryClient.setQueryData(queryKey, previous);
-        }
-        const verb = variables.starred !== undefined
-          ? variables.starred ? "star" : "unstar"
-          : variables.state === "left" ? "leave" : "join";
-        pushToast({
-          title: `Couldn't ${verb} ${variables.resourceName}.`,
-          body: error instanceof Error ? error.message : "Try again.",
-          tone: "error",
-        });
-      } finally {
-        queryClient.invalidateQueries({ queryKey });
-        setPendingRequests((requests) =>
-          requests.filter((request) => request !== variables),
-        );
-      }
-    })();
-  }, [companyId, pushToast, queryClient, queryKey, userId]);
 
-  return useMemo(() => ({
-    mutate,
-    isPending: pendingRequests.length > 0,
-    variables: pendingRequests.at(-1),
-  }), [mutate, pendingRequests]);
+        try {
+          const body = { state: variables.state, starred: variables.starred };
+          const result =
+            variables.resourceType === "project"
+              ? await resourceMembershipsApi.updateProject(companyId, userId, variables.resourceId, body)
+              : await resourceMembershipsApi.updateAgent(companyId, userId, variables.resourceId, body);
+          queryClient.setQueryData<ResourceMemberships>(
+            queryKey,
+            // Loose null-check: a missing or null starredAt both mean "not starred".
+            (current) =>
+              applyMembershipChange(current, variables.resourceType, result.resourceId, {
+                state: result.state,
+                starred: result.starredAt != null,
+              }),
+          );
+        } catch (error) {
+          if (previous) {
+            queryClient.setQueryData(queryKey, previous);
+          }
+          const verb =
+            variables.starred !== undefined
+              ? variables.starred
+                ? "star"
+                : "unstar"
+              : variables.state === "left"
+                ? "leave"
+                : "join";
+          toast.error(`Couldn't ${verb} ${variables.resourceName}.`, {
+            description: error instanceof Error ? error.message : "Try again.",
+          });
+        } finally {
+          queryClient.invalidateQueries({ queryKey });
+          setPendingRequests((requests) => requests.filter((request) => request !== variables));
+        }
+      })();
+    },
+    [companyId, queryClient, queryKey, userId],
+  );
+
+  return useMemo(
+    () => ({
+      mutate,
+      isPending: pendingRequests.length > 0,
+      variables: pendingRequests.at(-1),
+    }),
+    [mutate, pendingRequests],
+  );
 }

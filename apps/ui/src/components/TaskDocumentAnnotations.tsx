@@ -1,9 +1,6 @@
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Agent, DocumentAnnotationThreadWithComments, TaskDocument } from "@paperclipai/shared";
-import { MessageSquare } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { documentAnnotationsApi, type DocumentAnnotationTarget } from "@/api/document-annotations";
 import { queryKeys } from "@/lib/queryKeys";
 import { parseDocumentAnnotationHash } from "@/lib/document-annotation-hash";
@@ -139,19 +136,17 @@ export function TaskDocumentAnnotations({
       // Clamp the panel below the sticky top nav (the scroll container's top edge)
       // so the comments thread never tucks under the nav bar while scrolling.
       const boundaryTop = boundaryRect?.top ?? DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN;
-      const minTop = Math.max(DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN, boundaryTop)
-        + DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN;
+      const minTop =
+        Math.max(DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN, boundaryTop) +
+        DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN;
       const top = Math.max(minTop, rect.top);
       const desiredLeft = rect.right + DESKTOP_ANNOTATION_PANEL_GAP;
-      const spaceRightOfDocument = boundaryRight
-        - desiredLeft
-        - DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN;
-      const width = spaceRightOfDocument >= DESKTOP_ANNOTATION_PANEL_MIN_WIDTH
-        ? Math.min(desiredWidth, spaceRightOfDocument)
-        : desiredWidth;
-      const maxVisibleLeft = boundaryRight
-        - width
-        - DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN;
+      const spaceRightOfDocument = boundaryRight - desiredLeft - DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN;
+      const width =
+        spaceRightOfDocument >= DESKTOP_ANNOTATION_PANEL_MIN_WIDTH
+          ? Math.min(desiredWidth, spaceRightOfDocument)
+          : desiredWidth;
+      const maxVisibleLeft = boundaryRight - width - DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN;
       setDesktopPanelFrame({
         left: Math.max(
           boundaryLeft + DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN,
@@ -166,9 +161,8 @@ export function TaskDocumentAnnotations({
     updatePanelFrame();
     window.addEventListener("resize", updatePanelFrame);
     window.addEventListener("scroll", updatePanelFrame, true);
-    const resizeObserver = typeof window.ResizeObserver === "function"
-      ? new window.ResizeObserver(updatePanelFrame)
-      : null;
+    const resizeObserver =
+      typeof window.ResizeObserver === "function" ? new window.ResizeObserver(updatePanelFrame) : null;
     const observedContainer = containerRef.current;
     if (resizeObserver && observedContainer) {
       resizeObserver.observe(observedContainer);
@@ -183,10 +177,15 @@ export function TaskDocumentAnnotations({
   }, [doc.key, isMobile, panelOpen]);
 
   const annotationsQuery = useQuery({
-    queryKey: target.kind === "routine"
-      ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
-      : queryKeys.tasks.documentAnnotations(target.taskId, target.documentKey, "all"),
-    queryFn: () => documentAnnotationsApi.list(target, { status: "all", includeComments: true }),
+    queryKey:
+      target.kind === "routine"
+        ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
+        : queryKeys.tasks.documentAnnotations(target.taskId, target.documentKey, "all"),
+    queryFn: () =>
+      documentAnnotationsApi.list(target, {
+        status: "all",
+        includeComments: true,
+      }),
     staleTime: 30_000,
   });
   const allThreads = annotationsQuery.data ?? [];
@@ -224,12 +223,15 @@ export function TaskDocumentAnnotations({
     setComposerAnchor(null);
   }, []);
 
-  const handleRequestComment = useCallback((anchor: PendingAnchor) => {
-    if (newCommentDisabled) return;
-    setSelectionAnchor(null);
-    setComposerAnchor(anchor);
-    onPanelOpenChange(true);
-  }, [newCommentDisabled, onPanelOpenChange]);
+  const handleRequestComment = useCallback(
+    (anchor: PendingAnchor) => {
+      if (newCommentDisabled) return;
+      setSelectionAnchor(null);
+      setComposerAnchor(anchor);
+      onPanelOpenChange(true);
+    },
+    [newCommentDisabled, onPanelOpenChange],
+  );
 
   useEffect(() => {
     if (!initialComposerAnchor) return;
@@ -241,13 +243,16 @@ export function TaskDocumentAnnotations({
     onInitialComposerAnchorConsumed?.();
   }, [initialComposerAnchor, newCommentDisabled, onInitialComposerAnchorConsumed, onPanelOpenChange]);
 
-  const handleThreadFocus = useCallback((threadId: string | null) => {
-    setFocusedThreadId(threadId);
-    if (threadId) {
-      onPanelOpenChange(true);
-      setFocusedCommentId(null);
-    }
-  }, [onPanelOpenChange]);
+  const handleThreadFocus = useCallback(
+    (threadId: string | null) => {
+      setFocusedThreadId(threadId);
+      if (threadId) {
+        onPanelOpenChange(true);
+        setFocusedCommentId(null);
+      }
+    },
+    [onPanelOpenChange],
+  );
 
   const handleRequestCommentFromSelection = useCallback(() => {
     if (newCommentDisabled) return;
@@ -282,12 +287,13 @@ export function TaskDocumentAnnotations({
   }, [allThreads, focusedThreadId]);
 
   const overlayThreads = useMemo(
-    () => allThreads.map((thread) => ({
-      id: thread.id,
-      selectedText: thread.selectedText,
-      status: thread.status,
-      anchorState: thread.anchorState,
-    })),
+    () =>
+      allThreads.map((thread) => ({
+        id: thread.id,
+        selectedText: thread.selectedText,
+        status: thread.status,
+        anchorState: thread.anchorState,
+      })),
     [allThreads],
   );
 
@@ -306,10 +312,7 @@ export function TaskDocumentAnnotations({
         window.innerWidth - width - DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN,
       ),
       top: DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN,
-      maxHeight: Math.max(
-        240,
-        window.innerHeight - DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN * 2,
-      ),
+      maxHeight: Math.max(240, window.innerHeight - DESKTOP_ANNOTATION_PANEL_VIEWPORT_MARGIN * 2),
       width,
     };
   }, [desktopPanelFrame, isMobile, panelOpen]);
@@ -359,9 +362,7 @@ export function TaskDocumentAnnotations({
         className="relative min-w-0"
         data-testid={`document-annotation-body-${doc.key}`}
       >
-        <div className="relative z-(--z-1)">
-          {children}
-        </div>
+        <div className="relative z-(--z-1)">{children}</div>
         {!historicalPreview && doc.latestRevisionId ? (
           <DocumentAnnotationLayer
             containerRef={containerRef}
@@ -402,60 +403,9 @@ export function TaskDocumentAnnotations({
     <Profiler id="TaskDocumentAnnotations" onRender={recordAnnotationCommit}>
       {content}
     </Profiler>
-  ) : content;
-}
-
-export interface DocumentAnnotationsCountChipProps {
-  target: DocumentAnnotationTarget;
-  panelOpen: boolean;
-  onToggle: () => void;
-}
-
-/**
- * Renders the unresolved-count chip for a document. Lives in the document header row
- * (next to `rev N ▾`) so it stays visible when the document is folded.
- */
-export function DocumentAnnotationsCountChip({
-  target,
-  panelOpen,
-  onToggle,
-}: DocumentAnnotationsCountChipProps) {
-  const annotationsQuery = useQuery({
-    queryKey: target.kind === "routine"
-      ? queryKeys.routines.documentAnnotations(target.routineId, target.documentKey, "all")
-      : queryKeys.tasks.documentAnnotations(target.taskId, target.documentKey, "all"),
-    queryFn: () => documentAnnotationsApi.list(target, { status: "all", includeComments: true }),
-    staleTime: 30_000,
-  });
-  const threads = annotationsQuery.data ?? [];
-  const openCount = useMemo(
-    () => threads.filter((thread) => thread.status === "open" && thread.anchorState !== "orphaned").length,
-    [threads],
-  );
-
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant="ghost"
-      data-state={panelOpen ? "open" : "closed"}
-      className={cn(
-        "h-auto gap-1 rounded-md px-1.5 py-0 text-(length:--text-micro) font-normal text-muted-foreground hover:text-foreground",
-        panelOpen && "bg-muted text-foreground",
-        openCount > 0 && "text-foreground",
-      )}
-      onClick={onToggle}
-      data-testid={`document-annotation-count-${target.documentKey}`}
-      aria-label={openCount === 0
-        ? `Open comments on ${target.documentKey}`
-        : `Open ${openCount} unresolved comments on ${target.documentKey}`}
-      aria-expanded={panelOpen}
-    >
-      <MessageSquare className="h-3 w-3" aria-hidden="true" />
-      <span className="tabular-nums">{openCount}</span>
-      <span className="hidden sm:inline">
-        {openCount === 1 ? "comment" : "comments"}
-      </span>
-    </Button>
+  ) : (
+    content
   );
 }
+
+export { DocumentAnnotationsCountChip } from "./DocumentAnnotationsCountChip";

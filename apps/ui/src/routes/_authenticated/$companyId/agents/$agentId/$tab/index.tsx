@@ -1,11 +1,9 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
-import { AgentDetail } from "@/routes/_authenticated/$companyId/agents/$agentId";
+import { AgentDetailScreen } from "@/components/agents/AgentDetailScreen";
 import { isAgentDetailTab } from "@/lib/agent-detail-tabs";
 import { loadCompanyAgent } from "@/routes/-company-entity-loader";
+import { createFileRoute, notFound } from "@tanstack/react-router";
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/agents/$agentId/$tab/",
-)({
+export const Route = createFileRoute("/_authenticated/$companyId/agents/$agentId/$tab/")({
   loader: async ({ abortController, context, params }) => {
     if (!isAgentDetailTab(params.tab)) {
       throw notFound();
@@ -24,5 +22,5 @@ export const Route = createFileRoute(
 function AgentTabRoute() {
   const { companyId, agentId } = Route.useParams();
   const { tab } = Route.useLoaderData();
-  return <AgentDetail companyId={companyId} agentId={agentId} urlTab={tab} />;
+  return <AgentDetailScreen companyId={companyId} agentId={agentId} urlTab={tab} />;
 }

@@ -1,43 +1,17 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import type {
-  Agent,
-  AgentAdapterConfigRevision,
-  AgentAdapterConfigurationTestResult,
-} from "@paperclipai/shared";
-import { agentsApi } from "../api/agents";
-import { adaptersApi } from "../api/adapters";
-import { assetsApi } from "../api/assets";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
-import { ChevronDown } from "lucide-react";
-import { cn } from "../lib/utils";
-import { queryKeys } from "../lib/queryKeys";
 import { useOptionalCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import {
-  Field,
-  DraftInput,
-  DraftTextarea,
-  help,
-} from "./agent-config-primitives";
-import { defaultCreateValues } from "./agent-config-defaults";
+import { Button } from "@/components/ui/button";
+import { Item, ItemActions, ItemContent, ItemDescription } from "@/components/ui/item";
+import type { Agent, AgentAdapterConfigRevision } from "@paperclipai/shared";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findUIAdapter } from "../adapters";
-import { MarkdownEditor } from "./MarkdownEditor";
-import { ReportsToPicker } from "./ReportsToPicker";
-import { listAdapterOptions } from "../adapters/metadata";
 import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
-import { adapterConfigOptionErrors } from "../adapters/acpx-config-options";
+import { agentsApi } from "../api/agents";
+import { assetsApi } from "../api/assets";
+import { buildAgentUpdatePatch, type AgentConfigOverlay } from "../lib/agent-config-patch";
+import { queryKeys } from "../lib/queryKeys";
+import { defaultCreateValues } from "./agent-config-defaults";
 import {
-  buildAgentUpdatePatch,
-  type AgentConfigOverlay,
-} from "../lib/agent-config-patch";
-import { publicRuntimeMessage } from "../lib/public-runtime-message";
-import {
-  RuntimeAgentConfigurationFields,
   createEmptyRuntimeAgentConfigurationValues,
   type RuntimeAgentConfigurationValues,
 } from "./RuntimeAgentConfigurationFields";
@@ -45,6 +19,28 @@ import {
 /* ---- Create mode values ---- */
 
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
+
+import {
+  AgentAdapterSection,
+  AgentIdentitySection,
+  AgentRuntimeAccessSection,
+} from "./AgentConfigFormSections";
+import { useAgentConfigDraftTest } from "./useAgentConfigDraftTest";
+
+export const emptyOverlay: AgentConfigOverlay = {
+  identity: {},
+  adapterConfig: {},
+  runtime: {},
+};
+
+export function isOverlayDirty(overlay: AgentConfigOverlay): boolean {
+  return (
+    Object.keys(overlay.identity).length > 0 ||
+    overlay.adapterType !== undefined ||
+    Object.keys(overlay.adapterConfig).length > 0 ||
+    Object.keys(overlay.runtime).length > 0
+  );
+}
 
 /* ---- Props ---- */
 
@@ -71,47 +67,19 @@ type AgentConfigFormProps = {
     }
 );
 
-/* ---- Edit mode overlay (dirty tracking) ---- */
-
-const emptyOverlay: AgentConfigOverlay = {
-  identity: {},
-  adapterConfig: {},
-  runtime: {},
-};
-
-function isOverlayDirty(o: AgentConfigOverlay): boolean {
-  return (
-    Object.keys(o.identity).length > 0 ||
-    o.adapterType !== undefined ||
-    Object.keys(o.adapterConfig).length > 0 ||
-    Object.keys(o.runtime).length > 0
-  );
-}
-
-/* ---- Shared input class ---- */
-const inputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
-
 /* ---- Form ---- */
 
 export function AgentConfigForm(props: AgentConfigFormProps) {
   const { mode } = props;
   const isCreate = mode === "create";
   const editProps = mode === "edit" ? props : null;
-  const cards = props.sectionLayout === "cards";
   const showAdapterTypeField = props.showAdapterTypeField ?? true;
   const companyId = useOptionalCompanyRouteId();
 
   const { adapters: admittedAdapters } = useAdapterCatalogSyncState();
 
   const uploadMarkdownImage = useMutation({
-    mutationFn: async ({
-      file,
-      namespace,
-    }: {
-      file: File;
-      namespace: string;
-    }) => {
+    mutationFn: async ({ file, namespace }: { file: File; namespace: string }) => {
       if (!companyId) throw new Error("Select a company to upload images");
       return assetsApi.uploadImage(companyId, file, namespace);
     },
@@ -196,67 +164,48 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       props.onCancelActionChange?.(null);
       props.onDirtyChange?.(false);
     };
-  }, [
-    isCreate,
-    props.onDirtyChange,
-    props.onSaveActionChange,
-    props.onCancelActionChange,
-  ]);
+  }, [isCreate, props.onDirtyChange, props.onSaveActionChange, props.onCancelActionChange]);
 
   const currentRevisionQuery = useQuery({
     queryKey: editProps
       ? queryKeys.agents.currentAdapterConfigRevisionRoot(editProps.agent.id)
       : ["agents", "none", "adapter-config-revision-current"],
-    queryFn: () =>
-      agentsApi.getCurrentAdapterConfigRevision(editProps!.agent.id),
-    enabled:
-      editProps !== null &&
-      editProps.agent.currentAdapterConfigRevisionId !== null,
+    queryFn: () => agentsApi.getCurrentAdapterConfigRevision(editProps!.agent.id),
+    enabled: editProps !== null && editProps.agent.currentAdapterConfigRevisionId !== null,
   });
   const currentRevision = !isCreate
-    ? (currentRevisionQuery.data as
-        AgentAdapterConfigRevision | null | undefined)
+    ? (currentRevisionQuery.data as AgentAdapterConfigRevision | null | undefined)
     : null;
   const config = currentRevision
     ? Object.fromEntries(
-        currentRevision.acpConfiguration.sessionConfigSelections.map(
-          (selection) => [selection.configId, selection.value],
-        ),
+        currentRevision.acpConfiguration.sessionConfigSelections.map((selection) => [
+          selection.configId,
+          selection.value,
+        ]),
       )
     : {};
 
   const adapterType = isCreate
     ? props.values.adapterType
-    : (overlay.adapterType ??
-      currentRevision?.acpConfiguration.launchProfile.registryName ??
-      "");
-  const hasAdapterType =
-    adapterType.length > 0 && adapterType === adapterType.trim();
+    : (overlay.adapterType ?? currentRevision?.acpConfiguration.launchProfile.registryName ?? "");
+  const hasAdapterType = adapterType.length > 0 && adapterType === adapterType.trim();
 
   const uiAdapter = findUIAdapter(adapterType);
   const catalogAdapter = useMemo(
-    () =>
-      admittedAdapters.find((adapter) => adapter.type === adapterType) ?? null,
+    () => admittedAdapters.find((adapter) => adapter.type === adapterType) ?? null,
     [adapterType, admittedAdapters],
   );
   const val = isCreate ? props.values : null;
-  const set = isCreate
-    ? (patch: Partial<CreateConfigValues>) => props.onChange(patch)
-    : null;
+  const set = isCreate ? (patch: Partial<CreateConfigValues>) => props.onChange(patch) : null;
 
   const { data: companyAgents = [] } = useQuery({
-    queryKey: companyId
-      ? queryKeys.agents.list(companyId)
-      : ["agents", "none", "list"],
+    queryKey: companyId ? queryKeys.agents.list(companyId) : ["agents", "none", "list"],
     queryFn: () => agentsApi.list(companyId!),
     enabled: Boolean(!isCreate && companyId),
   });
   const runtimeAccessQuery = useQuery({
     queryKey: editProps
-      ? queryKeys.agents.runtimeConfiguration(
-          editProps.agent.id,
-          editProps.agent.companyId,
-        )
+      ? queryKeys.agents.runtimeConfiguration(editProps.agent.id, editProps.agent.companyId)
       : ["agents", "none", "runtime-configuration"],
     queryFn: () => agentsApi.getRuntimeConfiguration(editProps!.agent.id),
     enabled: !isCreate,
@@ -278,12 +227,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       ? (overlay.runtime as RuntimeAgentConfigurationValues)
       : runtimeAccess;
 
-  const markRuntimeAccess = useCallback(
-    (runtime: RuntimeAgentConfigurationValues) => {
-      setOverlay((prev) => ({ ...prev, runtime }));
-    },
-    [],
-  );
+  const markRuntimeAccess = useCallback((runtime: RuntimeAgentConfigurationValues) => {
+    setOverlay((prev) => ({ ...prev, runtime }));
+  }, []);
 
   /** Props passed to adapter-specific config field components */
   const adapterFieldProps = {
@@ -291,16 +237,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     isCreate,
     adapterType,
     values: isCreate ? props.values : null,
-    set: isCreate
-      ? (patch: Partial<CreateConfigValues>) => props.onChange(patch)
-      : null,
+    set: isCreate ? (patch: Partial<CreateConfigValues>) => props.onChange(patch) : null,
     config,
     eff: eff as <T>(group: "adapterConfig", field: string, original: T) => T,
-    mark: mark as (
-      group: "adapterConfig",
-      field: string,
-      value: unknown,
-    ) => void,
+    mark: mark as (group: "adapterConfig", field: string, value: unknown) => void,
     applySchemaDefaults: props.applyAdapterSchemaDefaults ?? true,
   };
 
@@ -330,453 +270,98 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     } catch (error) {
       return {
         adapterConfig: null,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Adapter configuration could not be built.",
+        error: error instanceof Error ? error.message : "Adapter configuration could not be built.",
       };
     }
   }, [config, hasAdapterType, isCreate, overlay, props, uiAdapter, val]);
-  const draftTestFingerprint = useMemo(
-    () =>
-      draftTestConfiguration.adapterConfig === null
-        ? null
-        : JSON.stringify([
-            companyId,
-            isCreate ? "create" : props.agent.id,
-            adapterType,
-            draftTestConfiguration.adapterConfig,
-          ]),
-    [
-      adapterType,
-      draftTestConfiguration.adapterConfig,
-      isCreate,
-      props,
-      companyId,
-    ],
-  );
-  const draftTestContextToken = useMemo(
-    () => Object.freeze({ fingerprint: draftTestFingerprint }),
-    [catalogAdapter, draftTestFingerprint, uiAdapter],
-  );
-  const currentDraftTestContextToken = useRef(draftTestContextToken);
-  currentDraftTestContextToken.current = draftTestContextToken;
-  const [draftTestFeedback, setDraftTestFeedback] = useState<{
-    contextToken: object;
-    result: AgentAdapterConfigurationTestResult | null;
-    error: string | null;
-  } | null>(null);
-  useEffect(() => {
-    setDraftTestFeedback(null);
-  }, [draftTestContextToken]);
-  const testDraftConfiguration = useMutation({
-    mutationFn: async (input: {
-      companyId: string;
-      adapterType: string;
-      adapterConfig: Record<string, string | boolean>;
-      contextToken: object;
-    }) =>
-      await adaptersApi.testConfiguration(input.companyId, input.adapterType, {
-        adapterConfig: input.adapterConfig,
-      }),
-    onSuccess: (result, input) => {
-      if (currentDraftTestContextToken.current !== input.contextToken) return;
-      setDraftTestFeedback({
-        contextToken: input.contextToken,
-        result,
-        error: null,
-      });
-    },
-    onError: (error, input) => {
-      if (currentDraftTestContextToken.current !== input.contextToken) return;
-      setDraftTestFeedback({
-        contextToken: input.contextToken,
-        result: null,
-        error:
-          error instanceof Error
-            ? publicRuntimeMessage(
-                error.message,
-                "Agent configuration test failed.",
-              )
-            : "Agent configuration test failed.",
-      });
-    },
+  const draftTest = useAgentConfigDraftTest({
+    adapterConfig: draftTestConfiguration.adapterConfig,
+    adapterType,
+    catalogConfigOptions: catalogAdapter?.configOptions ?? null,
+    companyId,
+    contextId: isCreate ? "create" : props.agent.id,
+    draftError: draftTestConfiguration.error,
+    hasAdapter: Boolean(catalogAdapter && uiAdapter),
+    isSavePending,
   });
-  const visibleDraftTestFeedback =
-    draftTestFeedback?.contextToken === draftTestContextToken
-      ? draftTestFeedback
-      : null;
-  const visibleDraftTestResult = visibleDraftTestFeedback?.result ?? null;
-  const draftTestFieldErrors = useMemo(
-    () =>
-      catalogAdapter && draftTestConfiguration.adapterConfig
-        ? adapterConfigOptionErrors(
-            catalogAdapter.configOptions,
-            draftTestConfiguration.adapterConfig,
-          )
-        : [],
-    [catalogAdapter, draftTestConfiguration.adapterConfig],
-  );
-  const draftTestValidationError =
-    draftTestFieldErrors.length > 0
-      ? `Complete the required ACPX settings before testing: ${draftTestFieldErrors
-          .map(({ message }) => message)
-          .join(" ")}`
-      : null;
-  const draftTestDisabled =
-    !companyId ||
-    !hasAdapterType ||
-    !catalogAdapter ||
-    draftTestConfiguration.adapterConfig === null ||
-    draftTestFieldErrors.length > 0 ||
-    draftTestFingerprint === null ||
-    testDraftConfiguration.isPending ||
-    isSavePending;
-
-  function handleTestAgent() {
-    if (
-      draftTestDisabled ||
-      !companyId ||
-      draftTestConfiguration.adapterConfig === null ||
-      draftTestFingerprint === null
-    )
-      return;
-    setDraftTestFeedback(null);
-    testDraftConfiguration.mutate({
-      companyId: companyId,
-      adapterType,
-      adapterConfig: draftTestConfiguration.adapterConfig,
-      contextToken: draftTestContextToken,
-    });
-  }
-
   return (
-    <div className={cn("relative", cards && "space-y-6")}>
-      {/* ---- Floating Save button (edit mode, when dirty) ---- */}
-      {isDirty && !props.hideInlineSave && (
-        <div className="sticky top-0 z-10 flex items-center justify-end px-4 py-2 bg-background/90 backdrop-blur-sm border-b border-primary/20">
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              Unsaved changes
-            </span>
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={!isCreate && props.isSaving}
-            >
-              {!isCreate && props.isSaving ? "Saving..." : "Save"}
+    <div className="relative space-y-6">
+      {isDirty && !props.hideInlineSave ? (
+        <Item variant="outline" size="sm" className="sticky top-0 z-10 justify-end bg-background">
+          <ItemContent className="flex-none">
+            <ItemDescription>Unsaved changes</ItemDescription>
+          </ItemContent>
+          <ItemActions>
+            <Button size="sm" onClick={handleSave} disabled={isSavePending}>
+              {isSavePending ? "Saving..." : "Save"}
             </Button>
-          </div>
-        </div>
-      )}
+          </ItemActions>
+        </Item>
+      ) : null}
 
-      {/* ---- Identity (edit only) ---- */}
-      {!isCreate && (
-        <div className={cn(!cards && "border-b border-border")}>
-          {cards ? (
-            <h3 className="text-sm font-medium mb-3">Identity</h3>
-          ) : (
-            <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
-              Identity
-            </div>
-          )}
-          <div
-            className={cn(
-              cards
-                ? "border border-border rounded-lg p-4 space-y-3"
-                : "px-4 pb-3 space-y-3",
-            )}
-          >
-            <Field label="Name" hint={help.name}>
-              <DraftInput
-                value={eff("identity", "name", props.agent.name)}
-                onCommit={(v) => mark("identity", "name", v)}
-                immediate
-                className={inputClass}
-                placeholder="Agent name"
-              />
-            </Field>
-            <Field label="Title" hint={help.title}>
-              <DraftInput
-                value={eff("identity", "title", props.agent.title ?? "")}
-                onCommit={(v) => mark("identity", "title", v || null)}
-                immediate
-                className={inputClass}
-                placeholder="e.g. VP of Engineering"
-              />
-            </Field>
-            <Field label="Reports to" hint={help.reportsTo}>
-              <ReportsToPicker
-                agents={companyAgents}
-                value={eff(
-                  "identity",
-                  "reportsTo",
-                  props.agent.reportsTo ?? null,
-                )}
-                onChange={(id) => mark("identity", "reportsTo", id)}
-                excludeAgentIds={[props.agent.id]}
-                chooseLabel="Choose manager…"
-              />
-            </Field>
-            <Field label="Capabilities" hint={help.capabilities}>
-              <div aria-busy={uploadMarkdownImage.isPending}>
-                <fieldset
-                  disabled={uploadMarkdownImage.isPending}
-                  className="min-w-0 border-0 p-0"
-                >
-                  <legend className="sr-only">Capabilities</legend>
-                  <MarkdownEditor
-                    value={
-                      eff(
-                        "identity",
-                        "capabilities",
-                        props.agent.capabilities ?? "",
-                      ) ?? ""
-                    }
-                    onChange={(v) =>
-                      mark("identity", "capabilities", v || null)
-                    }
-                    placeholder="Describe what this agent can do..."
-                    contentClassName="min-h-(--sz-44px) text-sm font-mono"
-                    readOnly={uploadMarkdownImage.isPending}
-                    imageUploadHandler={async (file) => {
-                      const asset = await uploadMarkdownImage.mutateAsync({
-                        file,
-                        namespace: `agents/${props.agent.id}/capabilities`,
-                      });
-                      return asset.contentPath;
-                    }}
-                  />
-                </fieldset>
-                {uploadMarkdownImage.isPending ? (
-                  <p
-                    role="status"
-                    className="mt-1 text-xs text-muted-foreground"
-                  >
-                    Uploading image…
-                  </p>
-                ) : null}
-              </div>
-            </Field>
-            <Field label="Instructions" hint={help.instruction}>
-              <DraftTextarea
-                value={
-                  eff(
-                    "identity",
-                    "instruction",
-                    props.agent.instruction ?? "",
-                  ) ?? ""
-                }
-                onCommit={(v) =>
-                  mark("identity", "instruction", v.trim() ? v : null)
-                }
-                immediate
-                minRows={4}
-                placeholder="Describe this agent's role, priorities, and durable operating guidance..."
-              />
-            </Field>
-          </div>
-        </div>
-      )}
+      {!isCreate ? (
+        <AgentIdentitySection
+          agent={props.agent}
+          agents={companyAgents}
+          capabilities={eff("identity", "capabilities", props.agent.capabilities ?? "") ?? ""}
+          instruction={eff("identity", "instruction", props.agent.instruction ?? "") ?? ""}
+          name={eff("identity", "name", props.agent.name)}
+          onCapabilitiesChange={(value) => mark("identity", "capabilities", value || null)}
+          onInstructionChange={(value) => mark("identity", "instruction", value.trim() ? value : null)}
+          onNameChange={(value) => mark("identity", "name", value)}
+          onReportsToChange={(value) => mark("identity", "reportsTo", value)}
+          onTitleChange={(value) => mark("identity", "title", value || null)}
+          onUploadCapabilitiesImage={async (file) => {
+            const asset = await uploadMarkdownImage.mutateAsync({
+              file,
+              namespace: "agents/" + props.agent.id + "/capabilities",
+            });
+            return asset.contentPath;
+          }}
+          reportsTo={eff("identity", "reportsTo", props.agent.reportsTo ?? null)}
+          title={eff("identity", "title", props.agent.title ?? "")}
+          uploadPending={uploadMarkdownImage.isPending}
+        />
+      ) : null}
 
-      {/* ---- Runtime access (edit only) ---- */}
-      {!isCreate && (
-        <div className={cn(!cards && "border-b border-border")}>
-          <div
-            className={cn(
-              cards
-                ? "border border-border rounded-lg p-4 space-y-3"
-                : "px-4 pb-3 space-y-3",
-            )}
-          >
-            {runtimeAccessQuery.isError ? (
-              <p role="alert" className="text-xs text-destructive">
-                Runtime access could not be loaded. Refresh the page and try
-                again.
-              </p>
-            ) : effectiveRuntimeAccess ? (
-              <RuntimeAgentConfigurationFields
-                value={effectiveRuntimeAccess}
-                onChange={markRuntimeAccess}
-                disabled={isSavePending}
-              />
-            ) : runtimeAccessQuery.isLoading ? (
-              <p role="status" className="text-xs text-muted-foreground">
-                Loading runtime access…
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Runtime access is unavailable for this agent.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
+      {!isCreate ? (
+        <AgentRuntimeAccessSection
+          disabled={isSavePending}
+          error={runtimeAccessQuery.isError}
+          loading={runtimeAccessQuery.isLoading}
+          onChange={markRuntimeAccess}
+          value={effectiveRuntimeAccess}
+        />
+      ) : null}
 
-      {/* ---- Adapter ---- */}
-      <div
-        className={cn(
-          !cards &&
-            (isCreate ? "border-t border-border" : "border-b border-border"),
-        )}
-      >
-        <div
-          className={cn(
-            cards
-              ? "flex items-center justify-between mb-3"
-              : "px-4 py-2 flex items-center justify-between gap-2",
-          )}
-        >
-          {cards ? (
-            <h3 className="text-sm font-medium">Adapter</h3>
-          ) : (
-            <span className="text-xs font-medium text-muted-foreground">
-              Adapter
-            </span>
-          )}
-        </div>
-        <div
-          className={cn(
-            cards
-              ? "border border-border rounded-lg p-4 space-y-3"
-              : "px-4 pb-3 space-y-3",
-          )}
-        >
-          {showAdapterTypeField && (
-            <Field label="Adapter type" hint={help.adapterType}>
-              <AdapterTypeDropdown
-                value={adapterType}
-                onChange={(t) => {
-                  if (isCreate) {
-                    // Reset all adapter-specific fields to defaults when switching adapter type
-                    const { adapterType: _at, ...defaults } =
-                      defaultCreateValues;
-                    const nextValues: CreateConfigValues = {
-                      ...defaults,
-                      adapterType: t,
-                    };
-                    set!(nextValues);
-                  } else {
-                    setOverlay((prev) => ({
-                      ...prev,
-                      adapterType: t,
-                      adapterConfig: {},
-                    }));
-                  }
-                }}
-              />
-            </Field>
-          )}
-
-          {hasAdapterType && uiAdapter && (
-            <uiAdapter.ConfigFields {...adapterFieldProps} />
-          )}
-
-          {hasAdapterType && !uiAdapter && (
-            <p className="text-xs text-destructive">
-              This adapter is not available from the local agent catalog.
-            </p>
-          )}
-
-          {!hasAdapterType && (
-            <p className="text-xs text-muted-foreground">
-              Nothing to show yet. Select an adapter to create this agent's
-              first immutable configuration revision.
-            </p>
-          )}
-
-          {hasAdapterType && uiAdapter ? (
-            <div className="space-y-2 rounded-md border border-border bg-muted p-3">
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-xs text-muted-foreground">
-                  Test the exact unsaved model and other runtime settings in a
-                  disposable no-prompt session. This does not save the agent or
-                  verify local execution readiness.
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  disabled={draftTestDisabled}
-                  onClick={handleTestAgent}
-                >
-                  {testDraftConfiguration.isPending ? "Testing…" : "Test Agent"}
-                </Button>
-              </div>
-              {draftTestConfiguration.error ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {draftTestConfiguration.error}
-                </p>
-              ) : draftTestValidationError ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {draftTestValidationError}
-                </p>
-              ) : visibleDraftTestFeedback?.error ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {visibleDraftTestFeedback.error}
-                </p>
-              ) : visibleDraftTestResult?.status === "failed" ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {publicRuntimeMessage(visibleDraftTestResult.message)}
-                </p>
-              ) : visibleDraftTestResult?.status === "ready" ? (
-                <p role="status" className="text-xs text-foreground">
-                  The local agent accepted this exact draft configuration.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </div>
+      <AgentAdapterSection
+        adapterFields={hasAdapterType && uiAdapter ? <uiAdapter.ConfigFields {...adapterFieldProps} /> : null}
+        adapterType={adapterType}
+        hasAdapter={Boolean(uiAdapter)}
+        hasAdapterType={hasAdapterType}
+        isTesting={draftTest.isTesting}
+        onAdapterTypeChange={(nextAdapterType) => {
+          if (isCreate) {
+            const { adapterType: _adapterType, ...defaults } = defaultCreateValues;
+            const nextValues: CreateConfigValues = {
+              ...defaults,
+              adapterType: nextAdapterType,
+            };
+            set!(nextValues);
+          } else {
+            setOverlay((previous) => ({
+              ...previous,
+              adapterType: nextAdapterType,
+              adapterConfig: {},
+            }));
+          }
+        }}
+        onTest={draftTest.test}
+        showAdapterTypeField={showAdapterTypeField}
+        testDisabled={draftTest.disabled}
+        testMessage={draftTest.message}
+        testMessageIsError={draftTest.messageIsError}
+      />
     </div>
-  );
-}
-
-/* ---- Internal sub-components ---- */
-
-export function AdapterTypeDropdown({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (type: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const adapterList = listAdapterOptions();
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
-          <span className={cn("truncate", !value && "text-muted-foreground")}>
-            {value
-              ? (findUIAdapter(value)?.label ?? value)
-              : "Select an adapter"}
-          </span>
-          <ChevronDown className="h-3 w-3 text-muted-foreground" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="max-h-(--radix-popover-content-available-height) w-(--radix-popover-trigger-width) overflow-y-auto p-1"
-        align="start"
-      >
-        {adapterList.map((item) => (
-          <button
-            key={item.value}
-            className={cn(
-              "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
-              item.value === value && "bg-accent",
-            )}
-            onClick={() => {
-              onChange(item.value);
-              setOpen(false);
-            }}
-          >
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </PopoverContent>
-    </Popover>
   );
 }

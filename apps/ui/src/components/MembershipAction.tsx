@@ -1,7 +1,8 @@
 import type { MouseEvent } from "react";
-import { Loader2, LogIn, LogOut } from "lucide-react";
+import { LogIn, LogOut } from "lucide-react";
 import type { ResourceMembershipState } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "../lib/utils";
 
 interface MembershipActionProps {
@@ -24,11 +25,9 @@ export function MembershipAction({
   onLeave,
 }: MembershipActionProps) {
   const isLeft = state === "left";
-  const label = pending
-    ? pendingState === "left" ? "Leaving..." : "Joining..."
-    : isLeft ? "Join" : "Leave";
+  const label = pending ? (pendingState === "left" ? "Leaving..." : "Joining...") : isLeft ? "Join" : "Leave";
   const ariaLabel = `${isLeft ? "Join" : "Leave"} ${resourceName}`;
-  const Icon = pending ? Loader2 : isLeft ? LogIn : LogOut;
+  const Icon = isLeft ? LogIn : LogOut;
 
   function handleClick(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -57,7 +56,7 @@ export function MembershipAction({
         onClick={handleClick}
         className="w-(--sz-66px)"
       >
-        <Icon className={cn("h-3 w-3", pending && "motion-safe:animate-spin")} />
+        {pending ? <Spinner className="h-3 w-3" /> : <Icon className="h-3 w-3" />}
         <span>{label}</span>
       </Button>
     </span>

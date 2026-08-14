@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 import type { TaskWorkMode } from "@paperclipai/shared";
 
 interface NewTaskDefaults {
@@ -69,118 +62,64 @@ type DialogActionsValue = Omit<DialogContextValue, keyof DialogStateValue>;
 const DialogStateContext = createContext<DialogStateValue | null>(null);
 const DialogActionsContext = createContext<DialogActionsValue | null>(null);
 
+const initialDialogState: DialogStateValue = {
+  newTaskOpen: false,
+  newTaskDefaults: {},
+  newProjectOpen: false,
+  newGoalOpen: false,
+  newGoalDefaults: {},
+  newAgentOpen: false,
+  onboardingOpen: false,
+  onboardingRouteDismissed: false,
+};
+
 export function DialogProvider({ children }: { children: ReactNode }) {
-  const [newTaskOpen, setNewTaskOpen] = useState(false);
-  const [newTaskDefaults, setNewTaskDefaults] = useState<NewTaskDefaults>({});
-  const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [newGoalOpen, setNewGoalOpen] = useState(false);
-  const [newGoalDefaults, setNewGoalDefaults] = useState<NewGoalDefaults>({});
-  const [newAgentOpen, setNewAgentOpen] = useState(false);
-  const [onboardingOpen, setOnboardingOpen] = useState(false);
-  const [onboardingRouteDismissed, setOnboardingRouteDismissed] =
-    useState(false);
-
-  const openNewTask = useCallback((defaults: NewTaskDefaults = {}) => {
-    setNewTaskDefaults(defaults);
-    setNewTaskOpen(true);
-  }, []);
-
-  const closeNewTask = useCallback(() => {
-    setNewTaskOpen(false);
-    setNewTaskDefaults({});
-  }, []);
-
-  const openNewProject = useCallback(() => {
-    setNewProjectOpen(true);
-  }, []);
-
-  const closeNewProject = useCallback(() => {
-    setNewProjectOpen(false);
-  }, []);
-
-  const openNewGoal = useCallback((defaults: NewGoalDefaults = {}) => {
-    setNewGoalDefaults(defaults);
-    setNewGoalOpen(true);
-  }, []);
-
-  const closeNewGoal = useCallback(() => {
-    setNewGoalOpen(false);
-    setNewGoalDefaults({});
-  }, []);
-
-  const openNewAgent = useCallback(() => {
-    setNewAgentOpen(true);
-  }, []);
-
-  const closeNewAgent = useCallback(() => {
-    setNewAgentOpen(false);
-  }, []);
-
-  const openOnboarding = useCallback(() => {
-    setOnboardingOpen(true);
-  }, []);
-
-  const closeOnboarding = useCallback(() => {
-    setOnboardingOpen(false);
-  }, []);
-
-  const stateValue = useMemo<DialogStateValue>(
-    () => ({
-      newTaskOpen,
-      newTaskDefaults,
-      newProjectOpen,
-      newGoalOpen,
-      newGoalDefaults,
-      newAgentOpen,
-      onboardingOpen,
-      onboardingRouteDismissed,
-    }),
-    [
-      newTaskOpen,
-      newTaskDefaults,
-      newProjectOpen,
-      newGoalOpen,
-      newGoalDefaults,
-      newAgentOpen,
-      onboardingOpen,
-      onboardingRouteDismissed,
-    ],
-  );
+  const [state, setState] = useState(initialDialogState);
 
   const actionsValue = useMemo<DialogActionsValue>(
     () => ({
-      openNewTask,
-      closeNewTask,
-      openNewProject,
-      closeNewProject,
-      openNewGoal,
-      closeNewGoal,
-      openNewAgent,
-      closeNewAgent,
-      openOnboarding,
-      closeOnboarding,
-      setOnboardingRouteDismissed,
+      openNewTask: (defaults = {}) =>
+        setState((current) => ({
+          ...current,
+          newTaskOpen: true,
+          newTaskDefaults: defaults,
+        })),
+      closeNewTask: () =>
+        setState((current) => ({
+          ...current,
+          newTaskOpen: false,
+          newTaskDefaults: {},
+        })),
+      openNewProject: () => setState((current) => ({ ...current, newProjectOpen: true })),
+      closeNewProject: () => setState((current) => ({ ...current, newProjectOpen: false })),
+      openNewGoal: (defaults = {}) =>
+        setState((current) => ({
+          ...current,
+          newGoalOpen: true,
+          newGoalDefaults: defaults,
+        })),
+      closeNewGoal: () =>
+        setState((current) => ({
+          ...current,
+          newGoalOpen: false,
+          newGoalDefaults: {},
+        })),
+      openNewAgent: () => setState((current) => ({ ...current, newAgentOpen: true })),
+      closeNewAgent: () => setState((current) => ({ ...current, newAgentOpen: false })),
+      openOnboarding: () => setState((current) => ({ ...current, onboardingOpen: true })),
+      closeOnboarding: () => setState((current) => ({ ...current, onboardingOpen: false })),
+      setOnboardingRouteDismissed: (onboardingRouteDismissed) =>
+        setState((current) => ({
+          ...current,
+          onboardingRouteDismissed,
+        })),
     }),
-    [
-      openNewTask,
-      closeNewTask,
-      openNewProject,
-      closeNewProject,
-      openNewGoal,
-      closeNewGoal,
-      openNewAgent,
-      closeNewAgent,
-      openOnboarding,
-      closeOnboarding,
-      setOnboardingRouteDismissed,
-    ],
+    [],
   );
 
   return (
     <DialogActionsContext.Provider value={actionsValue}>
-      <DialogStateContext.Provider value={stateValue}>
-        {children}
-      </DialogStateContext.Provider>
+      <DialogStateContext.Provider value={state}>{children}</DialogStateContext.Provider>
     </DialogActionsContext.Provider>
   );
 }

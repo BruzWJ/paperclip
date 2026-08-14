@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Dialog as DialogPrimitive } from "radix-ui";
-import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Download } from "lucide-react";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { Button } from "@/components/ui/button";
+import {
+  Carousel,
+  type CarouselApi,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { attachmentDownloadPath, attachmentFilename } from "@/lib/task-attachments";
 import { isVideoLikeOutput } from "@/lib/task-output";
 
@@ -20,163 +30,115 @@ interface ImageGalleryModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function ImageGalleryModal({
-  items,
-  initialIndex,
-  open,
-  onOpenChange,
-}: ImageGalleryModalProps) {
-  const [currentIndex, setCurrentIndex] = useState(initialIndex);
-  const mediaRef = useRef<HTMLImageElement | HTMLVideoElement | null>(null);
-  const setMediaRef = useCallback((node: HTMLImageElement | HTMLVideoElement | null) => {
-    mediaRef.current = node;
-  }, []);
+export function ImageGalleryModal({ items, initialIndex, open, onOpenChange }: ImageGalleryModalProps) {
+  const [api, setApi] = useState<CarouselApi>();
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const startIndex = useMemo(() => {
+    if (items.length === 0) return 0;
+    return Math.min(Math.max(initialIndex, 0), items.length - 1);
+  }, [initialIndex, items.length]);
+  const selectIndex = useCallback(
+    (index: number) => {
+      if (items.length === 0) return;
+      const nextIndex = (index + items.length) % items.length;
+      api?.scrollTo(nextIndex);
+      setCurrentIndex(nextIndex);
+    },
+    [api, items.length],
+  );
 
   useEffect(() => {
-    if (open) setCurrentIndex(initialIndex);
-  }, [open, initialIndex]);
-
-  const goNext = useCallback(() => {
-    setCurrentIndex((i) => (i + 1) % items.length);
-  }, [items.length]);
-
-  const goPrev = useCallback(() => {
-    setCurrentIndex((i) => (i - 1 + items.length) % items.length);
-  }, [items.length]);
-
-  useEffect(() => {
-    if (currentIndex < items.length) return;
-    setCurrentIndex(0);
-  }, [currentIndex, items.length]);
+    if (!api) return;
+    const updateSelection = () => {
+      // Embla cannot calculate snaps without layout. The explicit state update
+      // in `selectIndex` remains authoritative in jsdom and while a dialog is
+      // being laid out; once measurable, Embla selection events take over.
+      if (api.rootNode().clientWidth === 0) return;
+      setCurrentIndex(api.selectedScrollSnap());
+    };
+    updateSelection();
+    api.on("select", updateSelection);
+    return () => {
+      api.off("select", updateSelection);
+    };
+  }, [api]);
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") goNext();
-      else if (e.key === "ArrowLeft") goPrev();
-      else if (e.key === "Escape") onOpenChange(false);
+    setCurrentIndex(startIndex);
+  }, [open, startIndex]);
+
+  useEffect(() => {
+    if (!api || !open) return;
+    api.scrollTo(startIndex, true);
+  }, [api, open, startIndex]);
+
+  useEffect(() => {
+    if (!open || items.length < 2) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.key === "ArrowRight") selectIndex(currentIndex + 1);
+      if (event.key === "ArrowLeft") selectIndex(currentIndex - 1);
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, goNext, goPrev, onOpenChange]);
-
-  /** Close when clicking empty curtain space (not interactive elements or the image) */
-  const handleBackdropClick = useCallback(
-    (e: React.MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (
-        target.closest("button") ||
-        target.closest("a") ||
-        target === mediaRef.current
-      )
-        return;
-      onOpenChange(false);
-    },
-    [onOpenChange],
-  );
-
-  if (items.length === 0) return null;
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [api, currentIndex, items.length, open, selectIndex]);
 
   const current = items[currentIndex];
   if (!current) return null;
   const filename = attachmentFilename(current);
-  const isVideo = isVideoLikeOutput(current.contentType, current.originalFilename);
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
-        {/* Full-screen curtain */}
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/90 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200" />
-        <DialogPrimitive.Content
-          className="fixed inset-0 z-50 flex flex-col outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200"
-          onClick={handleBackdropClick}
-        >
-          {/* Top bar */}
-          <div className="flex items-center justify-between px-5 py-3 text-white/80 text-sm shrink-0">
-            <span className="truncate max-w-(--pct-50) font-medium" title={filename}>
-              {filename}
-            </span>
-            <div className="flex items-center gap-4">
-              <span className="text-white/40 tabular-nums text-xs">
-                {currentIndex + 1} / {items.length}
-              </span>
-              <a
-                href={attachmentDownloadPath(current)}
-                download={filename}
-                className="text-white/50 hover:text-white transition-colors"
-                title="Download"
-                aria-label={`Download ${filename}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Download className="h-4.5 w-4.5" />
-              </a>
-              <button
-                type="button"
-                onClick={() => onOpenChange(false)}
-                className="text-white/50 hover:text-white transition-colors"
-                title="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Main area: nav buttons outside image */}
-          <div className="flex-1 flex items-center min-h-0">
-            {/* Left nav zone */}
-            <div className="w-16 md:w-24 shrink-0 flex items-center justify-center h-full">
-              {items.length > 1 && (
-                <button
-                  type="button"
-                  onClick={goPrev}
-                  className="rounded-full bg-white/10 p-3 text-white/60 hover:text-white hover:bg-white/20 transition-colors"
-                  title="Previous"
-                >
-                  <ChevronLeft className="h-7 w-7" />
-                </button>
-              )}
-            </div>
-
-            {/* Media */}
-            <div className="flex-1 flex items-center justify-center min-w-0 min-h-0 h-full px-2">
-              {isVideo ? (
-                <video
-                  ref={setMediaRef}
-                  src={current.contentPath}
-                  className="max-w-full max-h-full rounded-lg"
-                  controls
-                  playsInline
-                />
-              ) : (
-                <img
-                  ref={setMediaRef}
-                  src={current.contentPath}
-                  alt={filename}
-                  className="max-w-full max-h-full object-contain select-none rounded-lg"
-                  draggable={false}
-                />
-              )}
-            </div>
-
-            {/* Right nav zone */}
-            <div className="w-16 md:w-24 shrink-0 flex items-center justify-center h-full">
-              {items.length > 1 && (
-                <button
-                  type="button"
-                  onClick={goNext}
-                  className="rounded-full bg-white/10 p-3 text-white/60 hover:text-white hover:bg-white/20 transition-colors"
-                  title="Next"
-                >
-                  <ChevronRight className="h-7 w-7" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Bottom padding for balance */}
-          <div className="h-6 shrink-0" />
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>{filename}</DialogTitle>
+          <DialogDescription>
+            {currentIndex + 1} / {items.length}
+          </DialogDescription>
+        </DialogHeader>
+        <Carousel className="mx-12" opts={{ loop: items.length > 1, startIndex }} setApi={setApi}>
+          <CarouselContent>
+            {items.map((item, index) => {
+              const itemFilename = attachmentFilename(item);
+              return (
+                <CarouselItem key={item.id} aria-label={`${index + 1} of ${items.length}`}>
+                  <AspectRatio ratio={16 / 9}>
+                    {isVideoLikeOutput(item.contentType, item.originalFilename) ? (
+                      <video
+                        src={item.contentPath}
+                        className="size-full object-contain"
+                        controls
+                        playsInline
+                        aria-label={itemFilename}
+                      />
+                    ) : (
+                      <img
+                        src={item.contentPath}
+                        alt={itemFilename}
+                        className="size-full object-contain"
+                        draggable={false}
+                      />
+                    )}
+                  </AspectRatio>
+                </CarouselItem>
+              );
+            })}
+          </CarouselContent>
+          {items.length > 1 ? (
+            <>
+              <CarouselPrevious onClick={() => selectIndex(currentIndex - 1)} />
+              <CarouselNext onClick={() => selectIndex(currentIndex + 1)} />
+            </>
+          ) : null}
+        </Carousel>
+        <Button variant="outline" asChild>
+          <a href={attachmentDownloadPath(current)} download={filename} aria-label={`Download ${filename}`}>
+            <Download />
+            Download
+          </a>
+        </Button>
+      </DialogContent>
+    </Dialog>
   );
 }

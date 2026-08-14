@@ -1,32 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  ChevronDown,
-  KeyRound,
-  MoreHorizontal,
-  ShieldAlert,
-  Type as TypeIcon,
-  UserRound,
-  X,
-} from "lucide-react";
+import { MoreHorizontal, X } from "lucide-react";
 import type { CompanySecret, UserSecretDefinition } from "@paperclipai/shared";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Item } from "@/components/ui/item";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { SecretPicker } from "./SecretPicker";
-import { CreateSecretPopover, ConvertToSecretPopover } from "./CreateSecretPopover";
 import { isSensitiveEnv } from "./sensitive";
 import {
   computeRowHealth,
@@ -37,14 +21,8 @@ import {
   type NameDiagnostic,
   type RowSource,
 } from "./model";
+import { EnvironmentVariableValueCell, type SecretPopoverState } from "./EnvironmentVariableValueCell";
 
-const nameInputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-ring/40";
-
-const valueTextInputClass =
-  "min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm font-mono outline-none placeholder:text-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-ring";
-
-type SecretPopoverState = { mode: "create" | "store"; name: string; value: string } | null;
 export interface EnvironmentVariableDirtyFields {
   name: boolean;
   value: boolean;
@@ -63,13 +41,10 @@ export interface EnvironmentVariableRowProps {
   onPatch: (patch: Partial<EnvRow>) => void;
   onRemove: () => void;
   onNameBlur: () => void;
-  /** Handle a multi-line dotenv paste into the (empty) name field. Returns true if consumed. */
   onNamePaste: (text: string) => boolean;
-  /** Enter pressed in the value of the last row — append a fresh row and focus it. */
   onEnterInValueLast: () => void;
   onCreateSecret: (name: string, value: string) => Promise<CompanySecret>;
   onToast: (message: string) => void;
-  /** Parent-driven focus request for this row (append flow, source switch). */
   focusRequest: "name" | "value" | null;
   onFocusConsumed: () => void;
 }
@@ -103,12 +78,12 @@ export function EnvironmentVariableRow({
   const [isPending, setIsPending] = useState(false);
 
   const health = computeRowHealth(row, secrets) ?? computeUserSecretRowHealth(row, userSecretDefinitions);
-  const boundSecret = row.source === "secret" ? secrets.find((s) => s.id === row.secretId) ?? null : null;
+  const boundSecret =
+    row.source === "secret" ? (secrets.find((secret) => secret.id === row.secretId) ?? null) : null;
   const userSecretsEnabled = (userSecretDefinitions?.length ?? 0) > 0;
   const sensitive =
     row.source === "text" && !row.sensitiveDismissed && isSensitiveEnv(row.name, row.textValue);
 
-  // Consume parent focus requests (append / source-switch flows).
   useEffect(() => {
     if (!focusRequest) return;
     if (focusRequest === "name") {
@@ -116,7 +91,6 @@ export function EnvironmentVariableRow({
     } else if (row.source === "text") {
       valueInputRef.current?.focus();
     } else if (row.source === "secret") {
-      // Focusing the combobox trigger opens SearchableSelect (non-pointer focus).
       valueCellRef.current?.querySelector<HTMLElement>("[role=combobox]")?.focus();
     } else {
       valueCellRef.current?.querySelector<HTMLElement>("select,input")?.focus();
@@ -124,7 +98,6 @@ export function EnvironmentVariableRow({
     onFocusConsumed();
   }, [focusRequest, onFocusConsumed, row.source]);
 
-  // Auto-expire the 5s "Undo" affordance after a Secret→Text switch (§6.3).
   useEffect(() => {
     if (!undoPrev) return;
     const handle = window.setTimeout(() => setUndoPrev(null), 5000);
@@ -143,30 +116,33 @@ export function EnvironmentVariableRow({
     switch (plan.kind) {
       case "noop":
         return;
-      case "open-store": {
-        // Defer to the next macrotask so the source DropdownMenu fully closes
-        // (and Radix returns focus to its trigger) before we open the anchored
-        // store-as-secret popover. Opening synchronously inside the menu-item's
-        // onSelect lets the menu's focus-return land as a `focusOutside` /
-        // `interactOutside` on the just-opened popover, which Radix would
-        // immediately dismiss — the same nested open-while-closing race as the
-        // ⋯ path and the picker's + Create item (PAP-12476/12477/12478).
-        const { name, value } = plan;
-        window.setTimeout(() => setSecretPopover({ mode: "store", name, value }), 0);
+      case "open-store":
+        window.setTimeout(
+          () =>
+            setSecretPopover({
+              mode: "store",
+              name: plan.name,
+              value: plan.value,
+            }),
+          0,
+        );
         return;
-      }
       case "to-secret":
         onPatch({ source: "secret", userSecretKey: "", required: true });
-        // Auto-open the picker.
         window.setTimeout(() => {
           valueCellRef.current?.querySelector<HTMLElement>("[role=combobox]")?.focus();
         }, 0);
         return;
       case "to-text":
         if (plan.undoFrom) setUndoPrev(plan.undoFrom);
-        onPatch({ source: "text", secretId: "", userSecretKey: "", required: true, version: "latest" });
+        onPatch({
+          source: "text",
+          secretId: "",
+          userSecretKey: "",
+          required: true,
+          version: "latest",
+        });
         window.setTimeout(() => valueInputRef.current?.focus(), 0);
-        return;
     }
   }
 
@@ -192,8 +168,15 @@ export function EnvironmentVariableRow({
 
   function openStoreAsSecret() {
     const name = secretNameFromKey(row.name) || "secret";
-    const { textValue } = row;
-    window.setTimeout(() => setSecretPopover({ mode: "store", name, value: textValue }), 0);
+    window.setTimeout(
+      () =>
+        setSecretPopover({
+          mode: "store",
+          name,
+          value: row.textValue,
+        }),
+      0,
+    );
   }
 
   const sourceLabel =
@@ -205,29 +188,31 @@ export function EnvironmentVariableRow({
   const nameErrorId = `${row.id}-name-error`;
   const healthId = `${row.id}-health`;
   const isDirty = dirtyFields.name || dirtyFields.value;
-
   const versions = boundSecret ? Math.max(0, boundSecret.latestVersion) : 0;
   const versionTagLabel = row.version === "latest" ? "latest" : `v${row.version}`;
   const versionPinned = row.version !== "latest";
 
   return (
-    <div
+    <Item
       aria-busy={isPending}
+      variant={isDirty ? "muted" : "default"}
       className={cn(
-        "group/row grid grid-cols-(--gtc-13) items-start gap-x-1.5 gap-y-1 rounded-md px-1 py-1",
+        "group/row grid grid-cols-(--gtc-13) items-start gap-x-1.5 gap-y-1 border-0 px-1 py-1",
         "@[40rem]/env:grid-cols-(--gtc-14) @[40rem]/env:items-center",
-        isDirty && "bg-amber-500/[0.06] ring-1 ring-amber-500/20",
       )}
     >
-      {/* Name cell — mobile col 1 / desktop col 1 */}
       <div className="col-start-1 row-start-1 min-w-0 @[40rem]/env:row-start-1 @[40rem]/env:self-start">
-        <input
+        <Input
           ref={nameInputRef}
           className={cn(
-            nameInputClass,
+            "font-mono",
             dirtyFields.name && "border-amber-500/70 bg-amber-500/10 focus-visible:ring-amber-500/40",
-            showNameDiagnostic && nameDiagnostic?.level === "error" && "border-destructive focus-visible:ring-destructive/40",
-            showNameDiagnostic && nameDiagnostic?.level === "warn" && "border-amber-500 focus-visible:ring-amber-500/40",
+            showNameDiagnostic &&
+              nameDiagnostic?.level === "error" &&
+              "border-destructive focus-visible:ring-destructive/40",
+            showNameDiagnostic &&
+              nameDiagnostic?.level === "warn" &&
+              "border-amber-500 focus-visible:ring-amber-500/40",
           )}
           placeholder="KEY"
           value={row.name}
@@ -253,328 +238,47 @@ export function EnvironmentVariableRow({
         />
       </div>
 
-      {/* Value cell — mobile full-width line 2 / desktop col 2 */}
-      <div className="col-span-2 col-start-1 row-start-2 min-w-0 @[40rem]/env:col-span-1 @[40rem]/env:col-start-2 @[40rem]/env:row-start-1">
-        <Popover
-          open={secretPopover !== null}
-          onOpenChange={(open) => {
-            if (!open) setSecretPopover(null);
-          }}
-        >
-          <PopoverAnchor asChild>
-            <div
-              ref={valueCellRef}
-              className={cn(
-                "relative flex items-stretch overflow-hidden rounded-md border border-border bg-transparent focus-within:ring-2 focus-within:ring-ring/40",
-                dirtyFields.value && "border-amber-500/70 bg-amber-500/10 focus-within:ring-amber-500/40",
-                disabled && "opacity-60",
-              )}
-            >
-              {/* Source switch (inside the field) */}
-              <DropdownMenu>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild disabled={disabled || isPending}>
-                      <button
-                        type="button"
-                        aria-label="Value source"
-                        className="flex shrink-0 items-center gap-0.5 border-r border-border px-2 text-muted-foreground hover:bg-accent/50 disabled:pointer-events-none"
-                      >
-                        {row.source === "text" ? (
-                          <TypeIcon className="size-3.5" />
-                        ) : row.source === "secret" ? (
-                          <KeyRound className="size-3.5" />
-                        ) : (
-                          <UserRound className="size-3.5" />
-                        )}
-                        <ChevronDown className="size-3 opacity-60" />
-                      </button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">{sourceLabel}</TooltipContent>
-                </Tooltip>
-                <DropdownMenuContent align="start" className="w-56">
-                  <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => switchSource("text")}>
-                    <span className="text-sm">Text value</span>
-                    <span className="text-(length:--text-micro) text-muted-foreground">Store the value inline as plain text.</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => switchSource("secret")}>
-                    <span className="text-sm">Company secret</span>
-                    <span className="text-(length:--text-micro) text-muted-foreground">Resolve a stored company secret at run start.</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => switchSource("user_secret")}>
-                    <span className="text-sm">User secret</span>
-                    <span className="text-(length:--text-micro) text-muted-foreground">
-                      Resolve the responsible user&apos;s own value at run start.
-                    </span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              {row.source === "text" ? (
-                <>
-                  <input
-                    ref={valueInputRef}
-                    className={valueTextInputClass}
-                    placeholder="value"
-                    value={row.textValue}
-                    type={sensitive ? "password" : "text"}
-                    spellCheck={false}
-                    disabled={disabled || isPending}
-                    aria-label="Variable value"
-                    onChange={(event) => onPatch({ textValue: event.target.value })}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && isLast) {
-                        event.preventDefault();
-                        onEnterInValueLast();
-                      }
-                    }}
-                  />
-                  {sensitive ? (
-                    <div className="flex shrink-0 items-stretch border-l border-border">
-                      <button
-                        type="button"
-                        onClick={openStoreAsSecret}
-                        disabled={disabled || isPending}
-                        className="flex items-center gap-1 px-2 text-(length:--text-micro) text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
-                        title="This value looks sensitive — store it as a secret"
-                      >
-                        <ShieldAlert className="size-3.5" />
-                        <span className="hidden @[30rem]/env:inline">Store as secret</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onPatch({ sensitiveDismissed: true })}
-                        disabled={disabled || isPending}
-                        aria-label="Dismiss sensitive-value suggestion"
-                        title="Dismiss — keep this value as plain text"
-                        className="flex items-center px-1.5 text-amber-700/60 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400/60 dark:hover:text-amber-400"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    </div>
-                  ) : null}
-                </>
-              ) : row.source === "secret" ? (
-                <div className="relative min-w-0 flex-1">
-                  <SecretPicker
-                    secretId={row.secretId}
-                    secrets={secrets}
-                    recentlyUsedSecrets={recentlyUsedSecrets}
-                    disabled={disabled || isPending}
-                    onSelect={(id) => onPatch({ secretId: id, version: "latest" })}
-                    onCreateNew={(query) =>
-                      setSecretPopover({ mode: "create", name: secretNameFromKey(query) || query.trim(), value: "" })
-                    }
-                    triggerClassName={cn(
-                      "rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0",
-                      boundSecret && boundSecret.status === "active" && "pr-24 has-[>svg]:!pr-24",
-                    )}
-                  />
-                  {boundSecret && boundSecret.status === "active" ? (
-                    <Popover open={versionOpen} onOpenChange={setVersionOpen}>
-                      <PopoverAnchor asChild>
-                        <button
-                          type="button"
-                          disabled={disabled || isPending}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            setVersionOpen((prev) => !prev);
-                          }}
-                          aria-label="Version"
-                          className={cn(
-                            "absolute right-8 top-1/2 z-10 -translate-y-1/2 rounded px-1.5 py-0.5 text-(length:--text-nano) font-medium",
-                            versionPinned
-                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                              : "text-muted-foreground hover:bg-accent",
-                          )}
-                        >
-                          {versionTagLabel}
-                        </button>
-                      </PopoverAnchor>
-                      <PopoverContent align="end" className="w-44 p-1" role="radiogroup" aria-label="Secret version">
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={row.version === "latest"}
-                          onClick={() => {
-                            onPatch({ version: "latest" });
-                            setVersionOpen(false);
-                          }}
-                          className={cn(
-                            "flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-accent",
-                            row.version === "latest" && "font-medium",
-                          )}
-                        >
-                          latest <span className="text-(length:--text-micro) text-muted-foreground">(recommended)</span>
-                        </button>
-                        {Array.from({ length: versions }, (_, idx) => versions - idx)
-                          .filter((v) => v > 0)
-                          .map((v) => (
-                            <button
-                              key={v}
-                              type="button"
-                              role="radio"
-                              aria-checked={row.version === v}
-                              onClick={() => {
-                                onPatch({ version: v });
-                                setVersionOpen(false);
-                              }}
-                              className={cn(
-                                "flex w-full items-center rounded px-2 py-1.5 text-sm hover:bg-accent",
-                                row.version === v && "font-medium text-amber-700 dark:text-amber-400",
-                              )}
-                            >
-                              v{v}
-                            </button>
-                          ))}
-                      </PopoverContent>
-                    </Popover>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="grid min-w-0 flex-1 grid-cols-(--gtc-13)">
-                  {userSecretsEnabled ? (
-                    <Select
-                      value={row.userSecretKey}
-                      onValueChange={(key) => {
-                        const definition = userSecretDefinitions?.find((candidate) => candidate.key === key);
-                        onPatch({
-                          userSecretKey: key,
-                          ...(definition && !row.name.trim() ? { name: definition.key.toUpperCase() } : {}),
-                        });
-                      }}
-                      disabled={disabled || isPending}
-                    >
-                      <SelectTrigger className="min-w-0 bg-transparent border-0 px-2 py-1.5 text-sm font-mono outline-none h-auto" aria-label="User secret">
-                        <SelectValue placeholder="Select user secret..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {row.userSecretKey && !userSecretDefinitions?.some((definition) => definition.key === row.userSecretKey) ? (
-                          <SelectItem value={row.userSecretKey}>Unknown ({row.userSecretKey})</SelectItem>
-                        ) : null}
-                        {(userSecretDefinitions ?? []).map((definition) => (
-                          <SelectItem key={definition.id} value={definition.key}>
-                            {definition.name}
-                            {definition.status !== "active" ? ` (${definition.status})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <input
-                      className={valueTextInputClass}
-                      placeholder="user-secret key"
-                      value={row.userSecretKey}
-                      spellCheck={false}
-                      disabled={disabled || isPending}
-                      aria-label="User secret key"
-                      onChange={(event) => onPatch({ userSecretKey: event.target.value })}
-                    />
-                  )}
-                  <Select
-                    value={row.required ? "required" : "optional"}
-                    onValueChange={(v) => onPatch({ required: v === "required" })}
-                    disabled={disabled || isPending}
-                  >
-                    <SelectTrigger className="border-l border-border bg-transparent px-2 py-1.5 text-xs font-medium text-muted-foreground border-0 rounded-none h-auto" aria-label="Requirement">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="required">Required</SelectItem>
-                      <SelectItem value="optional">Optional</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-          </PopoverAnchor>
-          <PopoverContent
-            align="start"
-            className="w-auto p-3"
-            onInteractOutside={(event) => {
-              // Keep the create/store popover open when the dismissal
-              // originates from inside the value cell — i.e. the picker's
-              // combobox trigger or the source-switch dropdown trigger, both
-              // anchored here. Those controls close by returning focus to
-              // themselves; because the value cell is this popover's *anchor*
-              // (outside its content), Radix reads that focus-return as a
-              // `focusOutside` and would dismiss the just-opened popover.
-              //
-              // The picker's close animation can delay its focus-return past
-              // any single macrotask, so the `setTimeout(0)` open-defers
-              // (SearchableSelect / switchSource) cannot reliably win the race
-              // (PAP-12492). Guarding the interaction here makes the create /
-              // store popover survive that focus-return deterministically,
-              // independent of timing. Dismissals from anywhere *outside* the
-              // value cell (real outside clicks, Escape) are untouched.
-              const target = event.detail.originalEvent.target as Node | null;
-              if (target && valueCellRef.current?.contains(target)) {
-                event.preventDefault();
-              }
-            }}
-          >
-            {secretPopover?.mode === "store" ? (
-              <ConvertToSecretPopover
-                initialName={secretPopover.name}
-                initialValue={secretPopover.value}
-                existingSecretNames={secrets.map((s) => s.name)}
-                onCancel={() => setSecretPopover(null)}
-                onSubmit={submitSecretPopover}
-              />
-            ) : secretPopover?.mode === "create" ? (
-              <CreateSecretPopover
-                initialName={secretPopover.name}
-                initialValue={secretPopover.value}
-                existingSecretNames={secrets.map((s) => s.name)}
-                onCancel={() => setSecretPopover(null)}
-                onSubmit={submitSecretPopover}
-              />
-            ) : null}
-          </PopoverContent>
-        </Popover>
-
-        {/* Inline secret-health message */}
-        {isPending ? (
-          <p
-            aria-live="polite"
-            role="status"
-            className="mt-0.5 text-(length:--text-micro) text-muted-foreground"
-          >
-            Creating and binding secret…
-          </p>
-        ) : null}
-        {health ? (
-          <p
-            id={healthId}
-            role="status"
-            className={cn(
-              "mt-0.5 text-(length:--text-micro)",
-              health.level === "error" ? "text-destructive" : "text-amber-600 dark:text-amber-400",
-            )}
-          >
-            {health.message}
-          </p>
-        ) : null}
-
-        {/* 5s undo after Secret→Text */}
-        {undoPrev ? (
-          <p className="mt-0.5 inline-flex items-center gap-2 text-(length:--text-micro) text-muted-foreground">
-            Reverted to text —{" "}
-            <button
-              type="button"
-              className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
-              onClick={() => {
-                onPatch({ source: "secret", secretId: undoPrev.secretId, version: undoPrev.version, textValue: "" });
-                setUndoPrev(null);
-              }}
-            >
-              Undo
-            </button>
-          </p>
-        ) : null}
-      </div>
+      <EnvironmentVariableValueCell
+        row={row}
+        isLast={isLast}
+        secrets={secrets}
+        userSecretDefinitions={userSecretDefinitions}
+        recentlyUsedSecrets={recentlyUsedSecrets}
+        disabled={disabled}
+        dirtyFields={dirtyFields}
+        isPending={isPending}
+        sensitive={sensitive}
+        boundSecret={boundSecret}
+        userSecretsEnabled={userSecretsEnabled}
+        sourceLabel={sourceLabel}
+        versions={versions}
+        versionTagLabel={versionTagLabel}
+        versionPinned={versionPinned}
+        health={health}
+        healthId={healthId}
+        undoPrev={undoPrev}
+        valueInputRef={valueInputRef}
+        valueCellRef={valueCellRef}
+        secretPopover={secretPopover}
+        setSecretPopover={setSecretPopover}
+        versionOpen={versionOpen}
+        setVersionOpen={setVersionOpen}
+        onPatch={onPatch}
+        onEnterInValueLast={onEnterInValueLast}
+        onSwitchSource={switchSource}
+        onOpenStoreAsSecret={openStoreAsSecret}
+        onSubmitSecretPopover={submitSecretPopover}
+        onUndo={() => {
+          if (!undoPrev) return;
+          onPatch({
+            source: "secret",
+            secretId: undoPrev.secretId,
+            version: undoPrev.version,
+            textValue: "",
+          });
+          setUndoPrev(null);
+        }}
+      />
 
       {showNameDiagnostic && nameDiagnostic ? (
         <p
@@ -588,47 +292,39 @@ export function EnvironmentVariableRow({
         </p>
       ) : null}
 
-      {/* Actions cell — mobile col 2 line 1 / desktop col 3 */}
       <div className="col-start-2 row-start-1 flex items-center justify-end gap-0.5 self-start @[40rem]/env:col-start-3 @[40rem]/env:self-center">
         {row.source === "text" && !sensitive && (row.name.trim() || row.textValue) ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild disabled={disabled || isPending}>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
                 aria-label="More actions"
-                className="rounded p-1 text-muted-foreground opacity-100 hover:bg-accent hover:text-foreground @[40rem]/env:opacity-0 @[40rem]/env:group-hover/row:opacity-100 @[40rem]/env:group-focus-within/row:opacity-100"
+                className="opacity-100 @[40rem]/env:opacity-0 @[40rem]/env:group-hover/row:opacity-100 @[40rem]/env:group-focus-within/row:opacity-100"
               >
                 <MoreHorizontal className="size-4" />
-              </button>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onSelect={() => {
-                  // Defer to the next macrotask so this menu fully closes (and
-                  // Radix returns focus to the ⋯ trigger, which sits outside the
-                  // row's Popover) before we open the anchored store-as-secret
-                  // popover. Opening synchronously lets the menu's focus-return
-                  // land as a `focusOutside` on the just-opened popover, which
-                  // Radix would immediately dismiss — the same nested open-while-
-                  // closing race as the picker's + Create item (PAP-12476/12477).
-                  window.setTimeout(openStoreAsSecret, 0);
-                }}
-              >
+              <DropdownMenuItem onSelect={() => window.setTimeout(openStoreAsSecret, 0)}>
                 Store as secret…
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           onClick={onRemove}
           disabled={disabled || isPending}
           aria-label={`Remove ${row.name.trim() || "variable"}`}
-          className="rounded p-1 text-muted-foreground opacity-100 hover:bg-destructive/10 hover:text-destructive @[40rem]/env:opacity-0 @[40rem]/env:group-hover/row:opacity-100 @[40rem]/env:group-focus-within/row:opacity-100"
+          className="opacity-100 hover:text-destructive @[40rem]/env:opacity-0 @[40rem]/env:group-hover/row:opacity-100 @[40rem]/env:group-focus-within/row:opacity-100"
         >
           <X className="size-4" />
-        </button>
+        </Button>
       </div>
-    </div>
+    </Item>
   );
 }

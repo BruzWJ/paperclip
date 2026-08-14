@@ -4,15 +4,17 @@ import type { CompanySecret } from "@paperclipai/shared";
 import { AlertCircle, KeyRound, Trash2, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/EmptyState";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { FieldLegend, FieldSet } from "@/components/ui/field";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { secretsApi, type MyUserSecretEntry } from "@/api/secrets";
 import { queryKeys } from "@/lib/queryKeys";
-import { cn } from "@/lib/utils";
-import { useToastActions } from "@/context/ToastContext";
+import { toast } from "sonner";
 import { useCurrentUserId } from "@/hooks/useCurrentUserId";
 import { SetMyUserSecretDialog } from "./SetMyUserSecretDialog";
-import { SecretPathName } from "./SecretPathName";
-import { myValueLabel, myValueState, myValueTone } from "./my-value-state";
+import { getRelativeSecretPath } from "./secret-path";
+import { myValueLabel, myValueState } from "./my-value-state";
 
 /**
  * Secrets → My secrets tab. Lists every company user-secret definition paired
@@ -22,7 +24,6 @@ import { myValueLabel, myValueState, myValueTone } from "./my-value-state";
  */
 export function MyUserSecretsTab({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
-  const { pushToast } = useToastActions();
   const userId = useCurrentUserId();
   const [dialogFor, setDialogFor] = useState<MyUserSecretEntry | null>(null);
   const clearInFlightRef = useRef(false);
@@ -50,13 +51,11 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
           queryKey: queryKeys.secrets.userSecrets(companyId, userId),
         });
       }
-      pushToast({ title: "Value cleared", tone: "info" });
+      toast.info("Value cleared");
     },
     onError: (err) =>
-      pushToast({
-        title: "Could not clear value",
-        body: err instanceof Error ? err.message : undefined,
-        tone: "error",
+      toast.error("Could not clear value", {
+        description: err instanceof Error ? err.message : undefined,
       }),
     onSettled: () => {
       clearInFlightRef.current = false;
@@ -77,10 +76,7 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
   ).length;
 
   return (
-    <div
-      className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
-      aria-busy={isPending}
-    >
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden" aria-busy={isPending}>
       {mySecretsQuery.isPending || isPending ? (
         <p className="text-xs text-muted-foreground" role="status">
           {isPending
@@ -88,12 +84,12 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
             : "Loading your secret values."}
         </p>
       ) : null}
-      <div className="flex items-start gap-2 rounded-md border border-violet-500/30 bg-violet-500/5 px-4 py-3 text-xs text-violet-800 dark:text-violet-200">
-        <UserRound className="h-4 w-4 mt-0.5 shrink-0" />
-        <p>
-          These are credentials only you provide. Each value is yours alone —
-          used when you are the user responsible for a run — and is never shown
-          back to anyone, including admins.
+      <Alert>
+        <UserRound />
+        <AlertTitle>Your secret values</AlertTitle>
+        <AlertDescription>
+          These are credentials only you provide. Each value is yours alone — used when you are the user
+          responsible for a run — and is never shown back to anyone, including admins.
           {missingCount > 0 ? (
             <span className="font-medium">
               {" "}
@@ -101,37 +97,37 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
               {missingCount === 1 ? " still needs" : "s still need"} your value.
             </span>
           ) : null}
-        </p>
-      </div>
+        </AlertDescription>
+      </Alert>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {mySecretsQuery.isError ? (
-          <div
-            className="flex items-center gap-2 py-4 text-sm text-destructive"
-            role="alert"
-          >
-            <AlertCircle className="h-4 w-4" /> Failed to load your secrets:{" "}
-            {(mySecretsQuery.error as Error).message}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => mySecretsQuery.refetch()}
-            >
-              Retry
-            </Button>
-          </div>
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>Failed to load your secrets</AlertTitle>
+            <AlertDescription>
+              {(mySecretsQuery.error as Error).message}
+              <Button size="sm" onClick={() => mySecretsQuery.refetch()}>
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
         ) : entries.length === 0 && !mySecretsQuery.isPending ? (
-          <EmptyState
-            icon={KeyRound}
-            message="No user secrets are defined for this company yet. An admin defines which credentials each member supplies."
-          />
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <KeyRound />
+              </EmptyMedia>
+              <EmptyTitle>
+                No user secrets are defined for this company yet. An admin defines which credentials each
+                member supplies.
+              </EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         ) : (
-          <fieldset
-            aria-label="Your secret values"
-            className="contents"
-            disabled={isPending}
-          >
-            <ul className="space-y-2">
+          <FieldSet className="contents" disabled={isPending}>
+            <FieldLegend className="sr-only">Your secret values</FieldLegend>
+            <ItemGroup>
               {entries.map((entry) => (
                 <MyUserSecretRow
                   key={entry.definition.id}
@@ -145,8 +141,8 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
                   clearing={isPending}
                 />
               ))}
-            </ul>
-          </fieldset>
+            </ItemGroup>
+          </FieldSet>
         )}
       </div>
 
@@ -178,69 +174,44 @@ function MyUserSecretRow({
   const { definition, secret } = entry;
   const state = myValueState(definition, secret);
   const disabledDefinition = definition.status !== "active";
+  const { directory, leaf } = getRelativeSecretPath(definition.name);
 
   return (
-    <li
-      className={cn(
-        "flex items-start gap-3 rounded-md border p-3",
-        state === "not_set" && !disabledDefinition
-          ? "border-amber-500/40 bg-amber-500/5"
-          : "border-border",
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <SecretPathName name={definition.name} />
-          <code className="rounded bg-muted px-1.5 py-0.5 text-(length:--text-micro) text-muted-foreground">
-            {definition.key}
-          </code>
-          {disabledDefinition ? (
-            <Badge variant="outline" className="text-(length:--text-nano)">
-              {definition.status}
-            </Badge>
-          ) : null}
-        </div>
-        {definition.description ? (
-          <p className="mt-1 text-xs text-muted-foreground">
-            {definition.description}
-          </p>
-        ) : null}
-        {definition.usageGuidance ? (
-          <p className="mt-1 text-(length:--text-micro) text-muted-foreground/80">
-            {definition.usageGuidance}
-          </p>
-        ) : null}
-      </div>
+    <Item asChild variant="outline">
+      <li>
+        <ItemContent>
+          <ItemTitle>
+            <span className="min-w-0 truncate">
+              {directory ? <span className="text-muted-foreground">{directory}/</span> : null}
+              <span className="font-medium text-foreground">{leaf}</span>
+            </span>
+            <Badge variant="secondary">{definition.key}</Badge>
+            {disabledDefinition ? <Badge variant="outline">{definition.status}</Badge> : null}
+          </ItemTitle>
+          {definition.description ? <ItemDescription>{definition.description}</ItemDescription> : null}
+          {definition.usageGuidance ? <ItemDescription>{definition.usageGuidance}</ItemDescription> : null}
+        </ItemContent>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <Badge
-          variant="outline"
-          className={cn("text-(length:--text-micro)", myValueTone(state))}
-        >
-          {myValueLabel(state)}
-        </Badge>
-        {!disabledDefinition ? (
-          <Button
-            size="sm"
-            variant={secret ? "outline" : "default"}
-            onClick={onSet}
-          >
-            {secret ? "Update" : "Set value"}
-          </Button>
-        ) : null}
-        {secret ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-muted-foreground hover:text-destructive"
-            onClick={onClear}
-            disabled={clearing}
-            title="Clear my value"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        ) : null}
-      </div>
-    </li>
+        <ItemActions>
+          <Badge variant="outline">{myValueLabel(state)}</Badge>
+          {!disabledDefinition ? (
+            <Button size="sm" variant={secret ? "outline" : "default"} onClick={onSet}>
+              {secret ? "Update" : "Set value"}
+            </Button>
+          ) : null}
+          {secret ? (
+            <Button
+              size="icon-sm"
+              variant="destructive"
+              onClick={onClear}
+              disabled={clearing}
+              aria-label="Clear my value"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+        </ItemActions>
+      </li>
+    </Item>
   );
 }

@@ -1,6 +1,10 @@
 import type { TaskRelatedWorkItem, TaskRelatedWorkSummary } from "@paperclipai/shared";
-import { TaskReferencePill } from "./TaskReferencePill";
+import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
+import { taskDisplayTitle, taskReferenceLabel } from "@/lib/task-display";
 
 type GroupedSource = {
   label: string;
@@ -25,87 +29,82 @@ function groupSourcesByLabel(sources: TaskRelatedWorkItem["sources"]): GroupedSo
   return Array.from(groups.values());
 }
 
-function Section({
-  title,
-  description,
-  items,
-  emptyLabel,
-}: {
-  title: string;
-  description: string;
-  items: TaskRelatedWorkItem[];
-  emptyLabel: string;
-}) {
-  return (
-    <section className="space-y-3 rounded-lg border border-border p-3">
-      <div className="space-y-1">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-
-      {items.length === 0 ? (
-        <p className="text-xs text-muted-foreground">{emptyLabel}</p>
-      ) : (
-        <ul className="-mx-1 flex flex-col">
-          {items.map((item) => {
-            const groupedSources = groupSourcesByLabel(item.sources);
-            const showTitle = item.task.identifier !== item.task.title;
-            return (
-              <li
-                key={item.task.id}
-                className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md px-1 py-1.5 hover:bg-accent/40"
-              >
-                <TaskReferencePill task={item.task} />
-                {showTitle ? (
-                  <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-                    {item.task.title}
-                  </span>
-                ) : null}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {groupedSources.map((group) => (
-                    <Badge variant="outline"
-                      key={`${item.task.id}:${group.label}`}
-                      className="border-border bg-muted/40 text-muted-foreground"
-                      title={group.sampleMatchedText ?? undefined}
-                    >
-                      <span>{group.label}</span>
-                      {group.count > 1 ? (
-                        <span className="tabular-nums text-(length:--text-nano) font-medium opacity-80">×{group.count}</span>
-                      ) : null}
-                    </Badge>
-                  ))}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-export function TaskRelatedWorkPanel({
-  relatedWork,
-}: {
-  relatedWork?: TaskRelatedWorkSummary | null;
-}) {
+export function TaskRelatedWorkPanel({ relatedWork }: { relatedWork?: TaskRelatedWorkSummary | null }) {
   const outbound = relatedWork?.outbound ?? [];
   const inbound = relatedWork?.inbound ?? [];
+  const sections = [
+    {
+      title: "References",
+      description:
+        "Other tasks this task currently points at in its title, description, comments, or documents.",
+      items: outbound,
+      emptyLabel: "This task does not reference any other tasks yet.",
+    },
+    {
+      title: "Referenced by",
+      description: "Other tasks that currently point at this task.",
+      items: inbound,
+      emptyLabel: "No other tasks reference this task yet.",
+    },
+  ];
 
   return (
     <div className="space-y-3">
-      <Section
-        title="References"
-        description="Other tasks this task currently points at in its title, description, comments, or documents."
-        items={outbound}
-        emptyLabel="This task does not reference any other tasks yet."
-      />
-      <Section
-        title="Referenced by"
-        description="Other tasks that currently point at this task."
-        items={inbound}
-        emptyLabel="No other tasks reference this task yet."
-      />
+      {sections.map(({ title, description, items, emptyLabel }) => (
+        <Card key={title}>
+          <CardHeader>
+            <CardTitle>{title}</CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {items.length === 0 ? (
+              <Empty className="py-6">
+                <EmptyDescription>{emptyLabel}</EmptyDescription>
+              </Empty>
+            ) : (
+              <ItemGroup>
+                {items.map((item) => {
+                  const groupedSources = groupSourcesByLabel(item.sources);
+                  const showTitle = item.task.identifier !== item.task.title;
+                  const taskLabel = taskReferenceLabel(item.task);
+                  const displayTitle = taskDisplayTitle(item.task);
+                  return (
+                    <Item key={item.task.id} size="sm">
+                      <ItemContent>
+                        <ItemTitle>
+                          <Badge asChild variant="outline">
+                            <TaskLinkQuicklook
+                              taskId={item.task.id}
+                              taskNumber={item.task.taskNumber}
+                              title={displayTitle}
+                              aria-label={`Task ${taskLabel}: ${displayTitle}`}
+                            >
+                              <span>{taskLabel}</span>
+                            </TaskLinkQuicklook>
+                          </Badge>
+                        </ItemTitle>
+                        {showTitle ? <ItemDescription>{item.task.title}</ItemDescription> : null}
+                      </ItemContent>
+                      <ItemActions className="flex-wrap">
+                        {groupedSources.map((group) => (
+                          <Badge
+                            variant="outline"
+                            key={`${item.task.id}:${group.label}`}
+                            title={group.sampleMatchedText ?? undefined}
+                          >
+                            <span>{group.label}</span>
+                            {group.count > 1 ? <span className="tabular-nums">×{group.count}</span> : null}
+                          </Badge>
+                        ))}
+                      </ItemActions>
+                    </Item>
+                  );
+                })}
+              </ItemGroup>
+            )}
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 }

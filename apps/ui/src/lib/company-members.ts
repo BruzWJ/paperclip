@@ -1,29 +1,20 @@
 import type { CompanyMember, CompanyUserDirectoryEntry } from "@/api/access";
-import type { InlineEntityOption } from "@/components/InlineEntitySelector";
+import type { EntityOption } from "@/lib/entity-selector";
 import type { MentionOption } from "@/components/MarkdownEditor";
-import {
-  isAgentStatusInvokable,
-  type Agent,
-  type Task,
-  type Project,
-} from "@paperclipai/shared";
+import { isAgentStatusInvokable, type Agent, type Task, type Project } from "@paperclipai/shared";
 
 export interface CompanyUserProfile {
   label: string;
   image: string | null;
 }
 
-type CompanyUserRecord =
-  | Pick<CompanyMember, "principalId" | "status" | "user">
-  | CompanyUserDirectoryEntry;
+type CompanyUserRecord = Pick<CompanyMember, "principalId" | "status" | "user"> | CompanyUserDirectoryEntry;
 
 function fallbackUserLabel(userId: string): string {
   return userId.slice(0, 5);
 }
 
-function baseMemberLabel(
-  member: Pick<CompanyUserRecord, "principalId" | "user">,
-): string {
+function baseMemberLabel(member: Pick<CompanyUserRecord, "principalId" | "user">): string {
   const name = member.user?.name?.trim();
   if (name) return name;
   const email = member.user?.email?.trim();
@@ -70,11 +61,9 @@ export function buildCompanyUserProfileMap(
 export function buildCompanyUserInlineOptions(
   members: CompanyUserRecord[] | null | undefined,
   options?: { excludeUserIds?: Iterable<string | null | undefined> },
-): InlineEntityOption[] {
+): EntityOption[] {
   const exclude = new Set(
-    [...(options?.excludeUserIds ?? [])].filter((value): value is string =>
-      Boolean(value),
-    ),
+    [...(options?.excludeUserIds ?? [])].filter((value): value is string => Boolean(value)),
   );
 
   return activeUniqueMembers(members)
@@ -82,9 +71,7 @@ export function buildCompanyUserInlineOptions(
     .map((member) => ({
       id: `user:${member.principalId}`,
       label: baseMemberLabel(member),
-      searchText: [member.user?.name, member.user?.email, member.principalId]
-        .filter(Boolean)
-        .join(" "),
+      searchText: [member.user?.name, member.user?.email, member.principalId].filter(Boolean).join(" "),
     }));
 }
 
@@ -110,8 +97,7 @@ export function isAgentTaskTarget(
 }
 
 export function isAgentTaskOwnerTarget(
-  agent: Pick<Agent, "status" | "currentAdapterConfigRevisionId"> &
-    Partial<Pick<Agent, "orgChainHealth">>,
+  agent: Pick<Agent, "status" | "currentAdapterConfigRevisionId"> & Partial<Pick<Agent, "orgChainHealth">>,
 ): boolean {
   return (
     isAgentTaskTarget(agent) &&
@@ -142,10 +128,7 @@ export function buildTaskMentionOptions(
 
 export function buildMarkdownMentionOptions(args: {
   agents?:
-    | Array<
-        Pick<Agent, "id" | "name" | "status" | "icon"> &
-          Partial<Pick<Agent, "orgChainHealth">>
-      >
+    | Array<Pick<Agent, "id" | "name" | "status" | "icon"> & Partial<Pick<Agent, "orgChainHealth">>>
     | null
     | undefined;
   projects?: Array<Pick<Project, "id" | "name" | "color">> | null | undefined;

@@ -1,34 +1,41 @@
-import { useCallback, useMemo, useState } from "react";
-import { CornerUpLeft, Folder, KeyRound, Plus } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, CornerUpLeft, Folder, KeyRound, Plus } from "lucide-react";
 import type { CompanySecret, SecretStatus } from "@paperclipai/shared";
-import {
-  SearchableSelect,
-  type SearchableSelectGroup,
-  type SearchableSelectOption,
-} from "@/components/SearchableSelect";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { normalizeSearchText } from "@/lib/searchable-select";
 import { cn } from "@/lib/utils";
 
-interface SecretOption extends SearchableSelectOption {
+interface SecretOption {
+  key: string;
+  value: string;
+  label: string;
+  title?: string;
+  searchText?: string;
   kind?: "secret" | "folder" | "back";
-  secret?: CompanySecret;
   missing?: boolean;
   status?: SecretStatus;
   folderPath?: string;
   pathHint?: string;
+  disabled?: boolean;
+}
+
+interface SecretGroup {
+  id: string;
+  label?: string;
+  options: SecretOption[];
 }
 
 const FOLDER_VALUE_PREFIX = "__secret_folder__:";
-
-function statusBadge(status: SecretStatus | undefined) {
-  if (!status || status === "active") return null;
-  return (
-    <Badge variant="outline" className="ml-auto text-(length:--text-nano) font-normal text-muted-foreground">
-      {status}
-    </Badge>
-  );
-}
 
 function splitSecretPath(name: string) {
   return name.split("/").filter((part) => part.length > 0);
@@ -43,8 +50,7 @@ function pathLabel(parts: readonly string[]) {
 }
 
 function pathStartsWith(parts: readonly string[], prefix: readonly string[]) {
-  if (parts.length < prefix.length) return false;
-  return prefix.every((part, index) => parts[index] === part);
+  return parts.length >= prefix.length && prefix.every((part, index) => parts[index] === part);
 }
 
 function folderValue(parts: readonly string[]) {
@@ -55,7 +61,7 @@ function buildFolderGroup(
   secrets: readonly CompanySecret[],
   currentPath: readonly string[],
   currentSecretId: string,
-): SearchableSelectGroup<string, SecretOption> {
+): SecretGroup {
   const currentLength = currentPath.length;
   const folders = new Map<string, SecretOption>();
   const leafSecrets: SecretOption[] = [];
@@ -68,7 +74,7 @@ function buildFolderGroup(
       const folderParts = parts.slice(0, currentLength + 1);
       const key = pathKey(folderParts);
       if (!folders.has(key)) {
-        const label = folderParts[folderParts.length - 1] ?? "/";
+        const label = folderParts.at(-1) ?? "/";
         const fullPath = pathLabel(folderParts);
         folders.set(key, {
           key: `folder-${key || "root"}`,
@@ -92,7 +98,6 @@ function buildFolderGroup(
         label,
         title: secret.name,
         searchText: `${secret.key} ${secret.name}`,
-        secret,
         status: secret.status,
         kind: "secret",
         pathHint: secret.name,
@@ -116,7 +121,6 @@ function buildFolderGroup(
     });
   }
   options.push(...folders.values(), ...leafSecrets);
-
   return {
     id: "browse-secrets",
     label: currentPath.length > 0 ? pathLabel(currentPath) : "Browse secrets",
@@ -124,24 +128,24 @@ function buildFolderGroup(
   };
 }
 
+function optionMatches(option: SecretOption, query: string) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized) return true;
+  return normalizeSearchText(`${option.label} ${option.title ?? ""} ${option.searchText ?? ""}`).includes(
+    normalized,
+  );
+}
+
 export interface SecretPickerProps {
-  /** Currently-bound secret id, or "" when unbound. */
   secretId: string;
   secrets: readonly CompanySecret[];
   recentlyUsedSecrets?: readonly CompanySecret[];
   disabled?: boolean;
   onSelect: (secretId: string) => void;
-  /** Open the create-secret popover, seeded with the current query. */
   onCreateNew: (query: string) => void;
   triggerClassName?: string;
 }
 
-/**
- * Fuzzy secret combobox (plan §6.4). Reuses {@link SearchableSelect}, adds the
- * Recently-used group, greys non-active secrets (non-selectable for new
- * bindings), surfaces a missing-secret sentinel, and pins a `+ Create secret`
- * creatable item.
- */
 export function SecretPicker({
   secretId,
   secrets,
@@ -151,20 +155,25 @@ export function SecretPicker({
   onCreateNew,
   triggerClassName,
 }: SecretPickerProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [currentPathKey, setCurrentPathKey] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const pointerFocusRef = useRef(false);
+  const suppressNextTriggerFocusRef = useRef(false);
   const boundSecret = useMemo(
     () => secrets.find((secret) => secret.id === secretId) ?? null,
     [secrets, secretId],
   );
   const boundMissing = Boolean(secretId) && !boundSecret;
   const currentPath = useMemo(() => (currentPathKey ? currentPathKey.split("/") : []), [currentPathKey]);
-  const hasFolderPaths = useMemo(() => secrets.some((secret) => splitSecretPath(secret.name).length > 1), [secrets]);
+  const hasFolderPaths = useMemo(
+    () => secrets.some((secret) => splitSecretPath(secret.name).length > 1),
+    [secrets],
+  );
 
-  const groups = useMemo<SearchableSelectGroup<string, SecretOption>[]>(() => {
-    const result: SearchableSelectGroup<string, SecretOption>[] = [];
-
-    // Missing (deleted) secret still needs a resolvable option so the trigger
-    // can render the destructive "Missing secret" chip.
+  const groups = useMemo<SecretGroup[]>(() => {
+    const result: SecretGroup[] = [];
     if (boundMissing) {
       result.push({
         id: "current-missing",
@@ -195,7 +204,6 @@ export function SecretPicker({
           label: secret.name,
           title: secret.name,
           searchText: `${secret.key} ${secret.name}`,
-          secret,
           status: secret.status,
           kind: "secret",
         })),
@@ -211,123 +219,205 @@ export function SecretPicker({
         label: secret.name,
         title: secret.name,
         searchText: `${secret.key} ${secret.name}`,
-        secret,
         status: secret.status,
         kind: "secret",
-        // Non-active secrets are not selectable for new bindings, but the
-        // already-bound one stays selectable (it's the current value).
         disabled: secret.status !== "active" && secret.id !== secretId,
       })),
     });
-
     return result;
   }, [boundMissing, recentlyUsedSecrets, secretId, secrets]);
 
-  const deriveGroups = useCallback(
-    (query: string, baseGroups: readonly SearchableSelectGroup<string, SecretOption>[]) => {
-      if (!hasFolderPaths) return baseGroups;
-      if (normalizeSearchText(query)) return baseGroups;
+  const visibleGroups = useMemo(() => {
+    if (hasFolderPaths && !normalizeSearchText(query)) {
+      const stable = groups.filter((group) => group.id === "current-missing" || group.id === "recently-used");
+      const browse = buildFolderGroup(secrets, currentPath, secretId);
+      return browse.options.length > 0 ? [...stable, browse] : stable;
+    }
+    return groups
+      .map((group) => ({
+        ...group,
+        options: group.options.filter((option) => optionMatches(option, query)),
+      }))
+      .filter((group) => group.options.length > 0);
+  }, [currentPath, groups, hasFolderPaths, query, secretId, secrets]);
 
-      const browseGroup = buildFolderGroup(secrets, currentPath, secretId);
-      const stableGroups = baseGroups.filter((group) => group.id === "current-missing" || group.id === "recently-used");
-      return browseGroup.options.length > 0 ? [...stableGroups, browseGroup] : stableGroups;
-    },
-    [currentPath, hasFolderPaths, secretId, secrets],
-  );
+  function choose(option: SecretOption) {
+    if (option.disabled) return;
+    if (option.folderPath !== undefined) {
+      setCurrentPathKey(option.folderPath);
+      setQuery("");
+      window.setTimeout(() => searchRef.current?.focus(), 0);
+      return;
+    }
+    setCurrentPathKey("");
+    setQuery("");
+    suppressNextTriggerFocusRef.current = true;
+    setOpen(false);
+    onSelect(option.value);
+  }
+
+  const triggerLabel = boundMissing ? `Missing secret (${secretId.slice(0, 8)}…)` : boundSecret?.name;
 
   return (
-    <SearchableSelect<string, SecretOption>
-      value={secretId || ""}
-      groups={groups}
-      onValueChange={(next, option) => {
-        if (option.folderPath !== undefined) {
-          setCurrentPathKey(option.folderPath);
-          return false;
-        }
-        setCurrentPathKey("");
-        onSelect(next);
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setQuery("");
       }}
-      deriveGroups={deriveGroups}
-      disabled={disabled}
-      placeholder="Select secret…"
-      searchPlaceholder="Search secrets…"
-      emptyMessage="No matching secrets"
-      triggerClassName={cn(
-        "h-(--sz-34px) min-h-(--sz-34px) font-mono text-sm",
-        boundMissing && "border-destructive text-destructive",
-        boundSecret && boundSecret.status !== "active" && "border-amber-500/60",
-        triggerClassName,
-      )}
-      renderValue={(option) => {
-        if (!option) {
-          return <span className="text-muted-foreground">Select secret…</span>;
-        }
-        if (option.missing) {
-          return (
-            <span className="flex w-full min-w-0 items-center gap-1.5 text-destructive">
-              <KeyRound className="size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
-            </span>
-          );
-        }
-        const nonActive = option.status && option.status !== "active";
-        return (
-          <span className="flex w-full min-w-0 items-center gap-1.5" title={option.title}>
-            <KeyRound className={cn("size-3.5 shrink-0", nonActive ? "text-amber-600" : "text-muted-foreground")} />
-            <span className="min-w-0 flex-1 truncate">{option.label}</span>
-            {nonActive ? <span className="text-amber-600">({option.status})</span> : null}
-          </span>
-        );
-      }}
-      renderOption={(option, { selected }) => {
-        if (option.kind === "folder" || option.kind === "back") {
-          const Icon = option.kind === "back" ? CornerUpLeft : Folder;
-          return (
-            <span className="flex min-w-0 flex-1 items-center gap-1.5" title={option.title ?? option.label}>
-              <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="flex min-w-0 flex-col">
-                <span className={cn("truncate text-sm", selected && "font-medium")}>{option.label}</span>
-                {option.pathHint ? (
-                  <span className="truncate font-mono text-(length:--text-micro) text-muted-foreground">{option.pathHint}</span>
-                ) : null}
-              </span>
-            </span>
-          );
-        }
-
-        return (
-          <span
-            className={cn("flex min-w-0 flex-1 items-center gap-1.5", option.disabled && "opacity-60")}
-            title={option.title ?? option.label}
-          >
-            <KeyRound className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="flex min-w-0 flex-col">
-              <span className={cn("min-w-0 truncate font-mono text-sm", selected && "font-medium")}>
-                {option.label}
-              </span>
-              {option.pathHint && option.pathHint !== option.label ? (
-                <span className="truncate font-mono text-(length:--text-micro) text-muted-foreground">{option.pathHint}</span>
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          onPointerDown={() => {
+            pointerFocusRef.current = true;
+          }}
+          onFocus={() => {
+            const shouldIgnoreFocus = pointerFocusRef.current || suppressNextTriggerFocusRef.current;
+            pointerFocusRef.current = false;
+            suppressNextTriggerFocusRef.current = false;
+            if (!disabled && !shouldIgnoreFocus) setOpen(true);
+          }}
+          className={cn(
+            "h-(--sz-34px) min-h-(--sz-34px) w-full justify-between font-mono text-sm",
+            boundMissing && "border-destructive text-destructive",
+            boundSecret && boundSecret.status !== "active" && "border-amber-500/60",
+            triggerClassName,
+          )}
+        >
+          {triggerLabel ? (
+            <span
+              className={cn("flex w-full min-w-0 items-center gap-1.5", boundMissing && "text-destructive")}
+              title={boundMissing ? `Missing secret (${secretId})` : triggerLabel}
+            >
+              <KeyRound
+                className={cn(
+                  "size-3.5 shrink-0",
+                  boundSecret && boundSecret.status !== "active" ? "text-amber-600" : "text-muted-foreground",
+                )}
+              />
+              <span className="min-w-0 flex-1 truncate">{triggerLabel}</span>
+              {boundSecret && boundSecret.status !== "active" ? (
+                <span className="text-amber-600">({boundSecret.status})</span>
               ) : null}
             </span>
-            {statusBadge(option.status)}
-          </span>
-        );
-      }}
-      createItem={{
-        render: (query) => (
-          <span className="flex items-center gap-1.5 text-sm">
-            <Plus className="size-3.5 shrink-0" />
-            {query.trim() ? (
-              <span>
-                Create secret <span className="font-mono">&ldquo;{query.trim()}&rdquo;</span>…
-              </span>
-            ) : (
-              <span>Create new secret…</span>
-            )}
-          </span>
-        ),
-        onSelect: (query) => onCreateNew(query),
-      }}
-    />
+          ) : (
+            <span className="text-muted-foreground">Select secret…</span>
+          )}
+          <ChevronDown className="size-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-(--radix-popover-trigger-width) min-w-64 p-0"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          searchRef.current?.focus();
+        }}
+      >
+        <Command shouldFilter={false}>
+          <CommandInput
+            ref={searchRef}
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Search secrets…"
+          />
+          <CommandList>
+            {visibleGroups.length === 0 ? <CommandEmpty>No matching secrets</CommandEmpty> : null}
+            {visibleGroups.map((group) => (
+              <CommandGroup key={group.id} heading={group.label}>
+                {group.options.map((option) => {
+                  const selected = option.value === secretId;
+                  const FolderIcon = option.kind === "back" ? CornerUpLeft : Folder;
+                  return (
+                    <CommandItem
+                      key={option.key}
+                      value={option.key}
+                      disabled={option.disabled}
+                      onSelect={() => choose(option)}
+                    >
+                      {option.kind === "folder" || option.kind === "back" ? (
+                        <span
+                          className="flex min-w-0 flex-1 items-center gap-1.5"
+                          title={option.title ?? option.label}
+                        >
+                          <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                          <span className="flex min-w-0 flex-col">
+                            <span className={cn("truncate text-sm", selected && "font-medium")}>
+                              {option.label}
+                            </span>
+                            {option.pathHint ? (
+                              <span className="truncate font-mono text-(length:--text-micro) text-muted-foreground">
+                                {option.pathHint}
+                              </span>
+                            ) : null}
+                          </span>
+                        </span>
+                      ) : (
+                        <span
+                          className={cn(
+                            "flex min-w-0 flex-1 items-center gap-1.5",
+                            option.disabled && "opacity-60",
+                          )}
+                          title={option.title ?? option.label}
+                        >
+                          <KeyRound className="size-3.5 shrink-0 text-muted-foreground" />
+                          <span className="flex min-w-0 flex-col">
+                            <span
+                              className={cn("min-w-0 truncate font-mono text-sm", selected && "font-medium")}
+                            >
+                              {option.label}
+                            </span>
+                            {option.pathHint && option.pathHint !== option.label ? (
+                              <span className="truncate font-mono text-(length:--text-micro) text-muted-foreground">
+                                {option.pathHint}
+                              </span>
+                            ) : null}
+                          </span>
+                          {option.status && option.status !== "active" ? (
+                            <Badge
+                              variant="outline"
+                              className="ml-auto text-(length:--text-nano) font-normal text-muted-foreground"
+                            >
+                              {option.status}
+                            </Badge>
+                          ) : null}
+                          {selected ? <Check className="ml-auto size-4" /> : null}
+                        </span>
+                      )}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            ))}
+            <CommandGroup>
+              <CommandItem
+                value={`create-${query}`}
+                onSelect={() => {
+                  const createQuery = query;
+                  suppressNextTriggerFocusRef.current = true;
+                  setOpen(false);
+                  setQuery("");
+                  window.setTimeout(() => onCreateNew(createQuery), 0);
+                }}
+              >
+                <Plus className="size-3.5 shrink-0" />
+                {query.trim() ? (
+                  <span>
+                    Create secret <span className="font-mono">&ldquo;{query.trim()}&rdquo;</span>…
+                  </span>
+                ) : (
+                  <span>Create new secret…</span>
+                )}
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }

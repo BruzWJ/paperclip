@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { Clock3, FileDiff, GitCommit, type LucideIcon } from "lucide-react";
+import { Clock3, FileDiff, GitCommit } from "lucide-react";
 import { healthApi, type HealthStatus } from "@/api/health";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { queryKeys } from "@/lib/queryKeys";
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "@/components/ui/item";
+import { Separator } from "@/components/ui/separator";
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) return "Unavailable";
@@ -19,9 +21,7 @@ function isValidTimestamp(value: string | null | undefined): value is string {
 }
 
 function restartTimestamp(health: HealthStatus | undefined): string | null {
-  return (
-    health?.devServer?.lastRestartAt ?? health?.serverInfo?.processStartedAt ?? null
-  );
+  return health?.devServer?.lastRestartAt ?? health?.serverInfo?.processStartedAt ?? null;
 }
 
 function commitLabel(health: HealthStatus | undefined): string {
@@ -45,46 +45,7 @@ function localChangesLabel(health: HealthStatus | undefined): string {
     .filter(([count]) => Number(count) > 0)
     .map(([count, label]) => `${count} ${label}`);
 
-  return parts.length > 0
-    ? `Local changes present (${parts.join(", ")})`
-    : "Local changes present";
-}
-
-function ServerInfoRow({
-  icon: Icon,
-  label,
-  value,
-  dateTime,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  dateTime?: string | null;
-}) {
-  return (
-    <div className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left">
-      <span className="mt-0.5 rounded-lg border border-border bg-background/70 p-2 text-muted-foreground">
-        <Icon className="size-4" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-foreground">
-          {label}
-        </span>
-        {dateTime ? (
-          <time
-            dateTime={dateTime}
-            className="block break-words text-xs text-muted-foreground"
-          >
-            {value}
-          </time>
-        ) : (
-          <span className="block break-words text-xs text-muted-foreground">
-            {value}
-          </span>
-        )}
-      </span>
-    </div>
-  );
+  return parts.length > 0 ? `Local changes present (${parts.join(", ")})` : "Local changes present";
 }
 
 export function SidebarServerInfo() {
@@ -124,28 +85,47 @@ export function SidebarServerInfo() {
     : isWaitingForHealth
       ? "Loading..."
       : localChangesLabel(health);
+  const rows = [
+    {
+      icon: Clock3,
+      label: "Last restarted",
+      value: lastRestartedLabel,
+      dateTime: !healthUnavailable && !isWaitingForHealth && restartedAtIsValid ? restartedAt : null,
+    },
+    { icon: GitCommit, label: "Running commit", value: commit, dateTime: null },
+    {
+      icon: FileDiff,
+      label: "Checkout state",
+      value: localChanges,
+      dateTime: null,
+    },
+  ];
 
   return (
-    <div className="mt-2 border-t border-border pt-2">
+    <div className="mt-2 pt-2">
+      <Separator />
       <p className="px-3 pb-1 pt-1 text-(length:--text-micro) font-medium uppercase tracking-wide text-muted-foreground">
         Server
       </p>
-      <ServerInfoRow
-        icon={Clock3}
-        label="Last restarted"
-        value={lastRestartedLabel}
-        dateTime={
-          !healthUnavailable && !isWaitingForHealth && restartedAtIsValid
-            ? restartedAt
-            : null
-        }
-      />
-      <ServerInfoRow icon={GitCommit} label="Running commit" value={commit} />
-      <ServerInfoRow
-        icon={FileDiff}
-        label="Checkout state"
-        value={localChanges}
-      />
+      <ItemGroup>
+        {rows.map((row) => (
+          <Item key={row.label} size="sm">
+            <ItemMedia variant="icon">
+              <row.icon className="size-4" />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>{row.label}</ItemTitle>
+              {row.dateTime ? (
+                <time dateTime={row.dateTime} className="break-words text-xs text-muted-foreground">
+                  {row.value}
+                </time>
+              ) : (
+                <ItemDescription className="line-clamp-none break-words text-xs">{row.value}</ItemDescription>
+              )}
+            </ItemContent>
+          </Item>
+        ))}
+      </ItemGroup>
     </div>
   );
 }

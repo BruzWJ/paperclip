@@ -1,80 +1,32 @@
-import { memo, useState, type KeyboardEvent } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  AlarmClock,
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  Loader2,
-  MoreHorizontal,
-  RotateCcw,
-  X,
-} from "lucide-react";
-import type { AttentionDetailImage, AttentionItem, CompanyBoardRouteTarget } from "@paperclipai/shared";
-import { CompanyBoardLink } from "./CompanyBoardLink";
-import { accessApi } from "../api/access";
-import { approvalsApi } from "../api/approvals";
-import { useToastActions } from "../context/ToastContext";
-import { queryKeys } from "../lib/queryKeys";
-import {
-  attentionDetailImages,
-  attentionDetailLine,
-  attentionImageUrl,
-  attentionToneStyle,
-  isInlineResolvable,
-  severityBadge,
-  sourceMeta,
-} from "../lib/attention";
+import type { AttentionItem } from "@paperclipai/shared";
+import { ChevronDown, ChevronRight, ExternalLink, MoreHorizontal, RotateCcw, X } from "lucide-react";
+import { memo } from "react";
+import { attentionDetailImages, attentionDetailLine, isInlineResolvable, sourceMeta } from "../lib/attention";
 import { cn, relativeTime } from "../lib/utils";
-import { Button, buttonVariants } from "./ui/button";
-import { JoinRequestApprovalControls } from "./JoinRequestApprovalControls";
-import { Textarea } from "./ui/textarea";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "./ui/alert-dialog";
+import { CompanyBoardLink } from "./CompanyBoardLink";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
+import { Item, ItemActions, ItemContent } from "./ui/item";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { ProjectTile } from "./ProjectTile";
 
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
+import { CompactDecisionActions, InlineResolver, collectCompactActions } from "./AttentionQueueDecisions";
+
+import { SnoozeSubmenu, reappearLabel } from "./AttentionQueueSnooze";
+
+import { ExpandedImages, ProjectMeta, ThumbnailStack } from "./AttentionQueueMedia";
 
 // Decision-action buttons: a comfortable tap target when the row is narrow
 // (h-9 / text-sm), shrinking back to the dense pill (h-6 / text-xs) once the
 // row's own container is wide enough (`@xl` ≈ 576px). Container-query driven so
 // the row also reflows correctly inside narrow side panels, not just on phones.
 const ACTION_BTN = "h-9 gap-1.5 px-3 text-sm @xl:h-6 @xl:gap-1 @xl:px-2 @xl:text-xs";
-
-/** Tomorrow at 9am local time. */
-function tomorrowMorningIso(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
-  return d.toISOString();
-}
-
-/** Snooze presets, resolved to a future ISO timestamp at click time. */
-const SNOOZE_PRESETS: ReadonlyArray<{ label: string; resolve: () => string }> = [
-  { label: "1 hour", resolve: () => new Date(Date.now() + HOUR_MS).toISOString() },
-  { label: "4 hours", resolve: () => new Date(Date.now() + 4 * HOUR_MS).toISOString() },
-  { label: "Tomorrow morning", resolve: tomorrowMorningIso },
-  { label: "Next week", resolve: () => new Date(Date.now() + 7 * DAY_MS).toISOString() },
-];
 
 interface AttentionQueueRowProps {
   item: AttentionItem;
@@ -112,8 +64,6 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   const meta = sourceMeta(item.sourceKind);
   const dismissHandler = onDismiss;
   const snoozeHandler = onSnooze;
-  const tone = attentionToneStyle(item);
-  const sevBadge = severityBadge(item.severity);
   const Icon = meta.icon;
   const isHidden = variant === "hidden";
   const inline = !isHidden && isInlineResolvable(item);
@@ -124,27 +74,17 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   const hasImages = images.length > 0;
   // The task (or source) this row points at — used as the target for the
   // "n more" affordance in the expanded gallery.
-  const imageTaskTarget = item.relatedTask?.routeTarget?.kind === "task"
-    ? item.relatedTask.routeTarget
-    : routeTarget?.kind === "task"
-      ? routeTarget
-      : null;
+  const imageTaskTarget =
+    item.relatedTask?.routeTarget?.kind === "task"
+      ? item.relatedTask.routeTarget
+      : routeTarget?.kind === "task"
+        ? routeTarget
+        : null;
   // Inline-resolvable active rows expand to reveal their resolver; rows with
   // images expand to reveal a larger gallery (PAP-13544). Either case gives a
   // header/thumbnail click somewhere to go. Non-inline, image-less rows keep the
   // explicit Open button and never toggle on a stray click.
   const expandable = inline || (!isHidden && hasImages);
-  const activate = () => {
-    if (expandable) onToggleExpand(item);
-  };
-  const onHeaderKeyDown = (e: KeyboardEvent) => {
-    if (!expandable) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onToggleExpand(item);
-    }
-  };
-
   // Which rows contribute an action bar. Inline rows carry compact decision
   // verbs; deep-link rows carry an Open button; curtain rows carry Restore.
   const compactActions = !isHidden ? collectCompactActions(item) : [];
@@ -157,635 +97,202 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   const gutterIndent = "@xl:pl-6";
 
   return (
-    <div
-      className={cn(
-        "@container relative flex flex-col overflow-hidden border border-border bg-card",
-        // The feed is uncapped, so off-screen rows must not cost layout/paint
-        // while scrolling. The intrinsic-size estimate only matters before a
-        // row's first paint; `auto` keeps the real measured height afterwards.
-        "[content-visibility:auto] [contain-intrinsic-size:auto_104px]",
-        "motion-safe:transition-[opacity,transform,border-color,background-color] motion-safe:duration-200 motion-safe:ease-out hover:border-border/80",
-        isHidden && "bg-muted/30 opacity-80 hover:opacity-100",
-        selected && "border-ring ring-1 ring-ring",
-      )}
-      id={`attention-row-${item.id}`}
-      data-attention-row
-      data-attention-row-id={item.id}
-      data-attention-source={item.sourceKind}
-      data-attention-severity={item.severity}
+    <Collapsible
+      open={expanded}
+      onOpenChange={(open) => {
+        if (expandable && open !== expanded) onToggleExpand(item);
+      }}
     >
-      {/* Type accent bar (canonical color map — never severity). */}
-      <span className={cn("absolute inset-y-0 left-0 w-1", tone.accent)} aria-hidden />
-
-      <div className="flex items-start gap-2 py-3 pl-4 pr-3">
-        {/* Expand affordance / spacer gutter — keeps headlines aligned across the list. */}
-        {expandable ? (
-          <button
-            type="button"
-            className="mt-0.5 shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground focus-visible:ring-ring focus-visible:ring-(length:--rad-3) focus-visible:outline-none"
-            aria-label={expanded ? "Collapse decision" : "Expand decision"}
-            aria-expanded={expanded}
-            onClick={activate}
-          >
-            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
-        ) : (
-          <span className="mt-0.5 hidden h-4 w-4 shrink-0 @xl:block" aria-hidden />
+      <Item
+        variant={isHidden ? "muted" : "outline"}
+        size="sm"
+        className={cn(
+          "@container flex-col items-stretch",
+          "[content-visibility:auto] [contain-intrinsic-size:auto_104px]",
+          selected && "ring-1 ring-ring",
         )}
-
-        {/* Content column: a single vertical stack that fills the full width on
-            mobile (no competing right-hand controls) and reads top-to-bottom. */}
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          {/* Meta band: identity on the left, recency + overflow on the right.
-              Not part of the clickable headline, so the menu never toggles it. */}
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                <Icon className={cn("h-3.5 w-3.5", tone.icon)} />
-                {meta.label}
-              </span>
-              {sevBadge && (
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-sm border px-1.5 py-px text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-eyebrow)",
-                    sevBadge.className,
-                  )}
-                >
-                  {sevBadge.label}
-                </span>
-              )}
-              {item.relatedTask?.identifier && item.relatedTask.routeTarget ? (
-                <CompanyBoardLink
-                  routeTarget={item.relatedTask.routeTarget}
-                  className="font-mono text-(length:--text-nano) text-muted-foreground hover:text-foreground"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {item.relatedTask.identifier}
-                </CompanyBoardLink>
-              ) : null}
-            </div>
-
-            <div className="flex shrink-0 items-center gap-1" data-attention-menu="true">
-              {isHidden && snoozedUntil ? (
-                <span
-                  className="text-(length:--text-nano) text-muted-foreground"
-                  title={`Reappears ${new Date(snoozedUntil).toLocaleString()}`}
-                >
-                  Reappears {reappearLabel(snoozedUntil)}
-                </span>
-              ) : (
-                <span className="text-(length:--text-nano) text-muted-foreground">{relativeTime(item.activityAt)}</span>
-              )}
-              {!isHidden && (dismissHandler || snoozeHandler || routeTarget) && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      className="text-muted-foreground"
-                      aria-label="Row actions"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {snoozeHandler && <SnoozeSubmenu onSnooze={(iso) => snoozeHandler(item, iso)} />}
-                    {dismissHandler && (
-                      <DropdownMenuItem onClick={() => dismissHandler(item)}>
-                        <X className="h-4 w-4" />
-                        Dismiss
-                      </DropdownMenuItem>
-                    )}
-                    {routeTarget && (
-                      <>
-                        {(dismissHandler || snoozeHandler) && <DropdownMenuSeparator />}
-                        <DropdownMenuItem asChild>
-                          <CompanyBoardLink routeTarget={routeTarget}>
-                            Open source
-                          </CompanyBoardLink>
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-          </div>
-
-          {/* Headline — the primary expand target for inline rows. Title now wraps
-              to two lines instead of truncating to a sliver on narrow screens. */}
-          <div
-            className={cn(
-              "min-w-0 rounded-md",
-              expandable && "cursor-pointer focus-visible:ring-ring focus-visible:ring-(length:--rad-3) focus-visible:outline-none",
-            )}
-            {...(expandable
-              ? {
-                  role: "button",
-                  tabIndex: 0,
-                  "aria-expanded": expanded,
-                  "aria-label": expanded ? "Collapse decision" : "Expand decision",
-                  onClick: activate,
-                  onKeyDown: onHeaderKeyDown,
-                }
-              : {})}
-          >
-            <span className="line-clamp-2 text-sm font-medium text-foreground" title={item.subject.title ?? undefined}>
-              {item.subject.title ?? meta.label}
-            </span>
-            <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{detailLine}</p>
-          </div>
-
-          {/* Context row: project identity and evidence thumbnails move below the
-              text so they never squeeze the headline on mobile. */}
-          {(item.project || (hasImages && !expanded)) && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              {item.project && <ProjectMeta project={item.project} />}
-              {hasImages && !expanded && <ThumbnailStack images={images} />}
-            </div>
+        id={`attention-row-${item.id}`}
+        data-attention-row
+        data-attention-row-id={item.id}
+        data-attention-source={item.sourceKind}
+        data-attention-severity={item.severity}
+      >
+        <div className="flex items-start gap-2">
+          {/* Expand affordance / spacer gutter — keeps headlines aligned across the list. */}
+          {expandable ? (
+            <CollapsibleTrigger asChild>
+              <Button
+                type="button"
+                role="button"
+                variant="ghost"
+                size="icon-xs"
+                className="mt-0.5 shrink-0 text-muted-foreground"
+                aria-label={expanded ? "Collapse decision" : "Expand decision"}
+              >
+                {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </Button>
+            </CollapsibleTrigger>
+          ) : (
+            <span className="mt-0.5 hidden h-4 w-4 shrink-0 @xl:block" aria-hidden />
           )}
 
-          {/* Action bar: full-width, thumb-reachable buttons on mobile;
-              right-aligned dense pills on desktop. Sibling of the headline so
-              taps never toggle expand. */}
-          {showActionBar && (
-            <div
-              className={cn("flex flex-wrap items-center gap-2 @xl:justify-end", gutterIndent)}
-              data-attention-actions="true"
-            >
-              {showCompact && (
-                <CompactDecisionActions
-                  item={item}
-                  companyId={companyId}
-                />
-              )}
-
-              {showOpen && routeTarget ? (
-                <Button asChild variant="outline" size="xs" className={cn(ACTION_BTN, "w-full @xl:w-auto")}>
-                  <CompanyBoardLink routeTarget={routeTarget}>
-                    Open
-                    <ExternalLink className="h-3 w-3" data-icon="inline-end" />
+          {/* Content column: a single vertical stack that fills the full width on
+            mobile (no competing right-hand controls) and reads top-to-bottom. */}
+          <ItemContent className="gap-2">
+            {/* Meta band: identity on the left, recency + overflow on the right.
+              Not part of the clickable headline, so the menu never toggles it. */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                  <Icon className="h-3.5 w-3.5" />
+                  {meta.label}
+                </span>
+                {(item.severity === "critical" || item.severity === "high") && (
+                  <Badge variant={item.severity === "critical" ? "destructive" : "secondary"}>
+                    {item.severity === "critical" ? "Critical" : "High"}
+                  </Badge>
+                )}
+                {item.relatedTask?.identifier && item.relatedTask.routeTarget ? (
+                  <CompanyBoardLink
+                    routeTarget={item.relatedTask.routeTarget}
+                    className="font-mono text-(length:--text-nano) text-muted-foreground hover:text-foreground"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {item.relatedTask.identifier}
                   </CompanyBoardLink>
-                </Button>
-              ) : null}
+                ) : null}
+              </div>
 
-              {showRestore && (
+              <ItemActions className="flex shrink-0 items-center gap-1" data-attention-menu="true">
+                {isHidden && snoozedUntil ? (
+                  <span
+                    className="text-(length:--text-nano) text-muted-foreground"
+                    title={`Reappears ${new Date(snoozedUntil).toLocaleString()}`}
+                  >
+                    Reappears {reappearLabel(snoozedUntil)}
+                  </span>
+                ) : (
+                  <span className="text-(length:--text-nano) text-muted-foreground">
+                    {relativeTime(item.activityAt)}
+                  </span>
+                )}
+                {!isHidden && (dismissHandler || snoozeHandler || routeTarget) && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="text-muted-foreground"
+                        aria-label="Row actions"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {snoozeHandler && <SnoozeSubmenu onSnooze={(iso) => snoozeHandler(item, iso)} />}
+                      {dismissHandler && (
+                        <DropdownMenuItem onClick={() => dismissHandler(item)}>
+                          <X className="h-4 w-4" />
+                          Dismiss
+                        </DropdownMenuItem>
+                      )}
+                      {routeTarget && (
+                        <>
+                          {(dismissHandler || snoozeHandler) && <DropdownMenuSeparator />}
+                          <DropdownMenuItem asChild>
+                            <CompanyBoardLink routeTarget={routeTarget}>Open source</CompanyBoardLink>
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </ItemActions>
+            </div>
+
+            {/* Headline — the primary expand target for inline rows. Title now wraps
+              to two lines instead of truncating to a sliver on narrow screens. */}
+            {expandable ? (
+              <CollapsibleTrigger asChild>
                 <Button
                   type="button"
-                  variant="outline"
-                  size="xs"
-                  className={cn(ACTION_BTN, "w-full @xl:w-auto")}
-                  onClick={() => onRestore(item)}
+                  variant="ghost"
+                  className="h-auto min-w-0 w-full flex-col items-start whitespace-normal p-0 text-left hover:bg-transparent"
+                  aria-label={expanded ? "Collapse decision" : "Expand decision"}
                 >
-                  <RotateCcw className="h-3 w-3" data-icon="inline-start" />
-                  Restore
+                  <span
+                    className="line-clamp-2 text-sm font-medium text-foreground"
+                    title={item.subject.title ?? undefined}
+                  >
+                    {item.subject.title ?? meta.label}
+                  </span>
+                  <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{detailLine}</span>
                 </Button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+              </CollapsibleTrigger>
+            ) : (
+              <div className="min-w-0 rounded-md">
+                <span
+                  className="line-clamp-2 text-sm font-medium text-foreground"
+                  title={item.subject.title ?? undefined}
+                >
+                  {item.subject.title ?? meta.label}
+                </span>
+                <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{detailLine}</p>
+              </div>
+            )}
 
-      {expanded && (hasImages || inline) && (
-        <div className="space-y-3 border-t border-border/60 bg-muted/20 px-4 py-3 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-200">
-          {hasImages && (
-            <ExpandedImages
-              images={images}
-              taskRouteTarget={imageTaskTarget}
-            />
-          )}
-          {inline && (
-            <InlineResolver
-              item={item}
-              companyId={companyId}
-            />
-          )}
+            {/* Context row: project identity and evidence thumbnails move below the
+              text so they never squeeze the headline on mobile. */}
+            {(item.project || (hasImages && !expanded)) && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                {item.project && <ProjectMeta project={item.project} />}
+                {hasImages && !expanded && <ThumbnailStack images={images} />}
+              </div>
+            )}
+
+            {/* Action bar: full-width, thumb-reachable buttons on mobile;
+              right-aligned dense pills on desktop. Sibling of the headline so
+              taps never toggle expand. */}
+            {showActionBar && (
+              <div
+                className={cn("flex flex-wrap items-center gap-2 @xl:justify-end", gutterIndent)}
+                data-attention-actions="true"
+              >
+                {showCompact && <CompactDecisionActions item={item} companyId={companyId} />}
+
+                {showOpen && routeTarget ? (
+                  <Button asChild variant="outline" size="xs" className={cn(ACTION_BTN, "w-full @xl:w-auto")}>
+                    <CompanyBoardLink routeTarget={routeTarget}>
+                      Open
+                      <ExternalLink className="h-3 w-3" data-icon="inline-end" />
+                    </CompanyBoardLink>
+                  </Button>
+                ) : null}
+
+                {showRestore && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    className={cn(ACTION_BTN, "w-full @xl:w-auto")}
+                    onClick={() => onRestore(item)}
+                  >
+                    <RotateCcw className="h-3 w-3" data-icon="inline-start" />
+                    Restore
+                  </Button>
+                )}
+              </div>
+            )}
+          </ItemContent>
         </div>
-      )}
-    </div>
+
+        {(hasImages || inline) && (
+          <CollapsibleContent className="space-y-3 border-t border-border/60 bg-muted/20 px-4 py-3 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-200">
+            {hasImages && <ExpandedImages images={images} taskRouteTarget={imageTaskTarget} />}
+            {inline && <InlineResolver item={item} companyId={companyId} />}
+          </CollapsibleContent>
+        )}
+      </Item>
+    </Collapsible>
   );
 });
-
-type CompactDecisionAction = "approve" | "reject" | "request_revision";
-
-function compactDecisionAction(item: AttentionItem, verbId: string): CompactDecisionAction | null {
-  if (item.sourceKind === "approval" && (verbId === "approve" || verbId === "reject" || verbId === "request_revision")) {
-    return verbId;
-  }
-  if (item.sourceKind === "join_request" && (verbId === "approve" || verbId === "reject")) {
-    return verbId;
-  }
-  return null;
-}
-
-/** The compact accept/reject verbs a collapsed row can resolve in place. */
-function collectCompactActions(item: AttentionItem): Array<{ action: CompactDecisionAction; label: string; id: string }> {
-  return item.decisionVerbs.slice(0, 3).flatMap((verb) => {
-    const action = compactDecisionAction(item, verb.id);
-    return action ? [{ action, label: verb.label, id: verb.id }] : [];
-  });
-}
-
-function CompactDecisionActions({
-  item,
-  companyId,
-}: {
-  item: AttentionItem;
-  companyId: string;
-}) {
-  const queryClient = useQueryClient();
-  const { pushToast } = useToastActions();
-  const actions = collectCompactActions(item);
-
-  const decision = useMutation<unknown, Error, CompactDecisionAction>({
-    mutationFn: (action: CompactDecisionAction) => {
-      if (item.sourceKind === "approval") {
-        if (action === "approve") return approvalsApi.approve(item.subject.id);
-        if (action === "reject") return approvalsApi.reject(item.subject.id);
-        return approvalsApi.requestRevision(item.subject.id);
-      }
-      if (item.sourceKind === "join_request") {
-        return action === "approve"
-          ? accessApi.approveJoinRequest(companyId, item.subject.id)
-          : accessApi.rejectJoinRequest(companyId, item.subject.id);
-      }
-      throw new Error("This decision must be completed from its detail view.");
-    },
-    onSuccess: (_result, action) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
-      if (item.sourceKind === "approval") {
-        queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(companyId) });
-      } else {
-        queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(companyId) });
-      }
-      pushToast({
-        title: compactDecisionSuccessLabel(item.sourceKind, action),
-        tone: "success",
-      });
-    },
-    onError: (error, action) => {
-      pushToast({
-        title: `Could not ${decisionLabel(action)}`,
-        body: error instanceof Error ? error.message : "Please try again.",
-        tone: "error",
-      });
-    },
-  });
-
-  if (actions.length === 0) return null;
-
-  return (
-    <div className="flex w-full flex-wrap items-center gap-2 @xl:w-auto @xl:justify-end @xl:gap-1" aria-label="Decision actions">
-      {actions.map(({ action, id, label }) => (
-        <Button
-          key={id}
-          type="button"
-          variant={decisionVerbVariant({ id, label, description: "" })}
-          size="xs"
-          className={cn(ACTION_BTN, "min-w-0 flex-1 @xl:flex-none")}
-          disabled={decision.isPending}
-          onClick={(event) => {
-            event.stopPropagation();
-            decision.mutate(action);
-          }}
-        >
-          {decision.isPending && decision.variables === action && <Loader2 className="h-3 w-3 animate-spin" />}
-          {label}
-        </Button>
-      ))}
-    </div>
-  );
-}
-
-function decisionLabel(action: CompactDecisionAction): string {
-  if (action === "request_revision") return "sent for revision";
-  if (action === "approve") return "approved";
-  return "rejected";
-}
-
-function compactDecisionSuccessLabel(sourceKind: AttentionItem["sourceKind"], action: CompactDecisionAction): string {
-  if (sourceKind === "approval") return `Approval ${decisionLabel(action)}`;
-  if (sourceKind === "join_request") return `Join request ${decisionLabel(action)}`;
-  return `Decision ${decisionLabel(action)}`;
-}
-
-function decisionVerbVariant(verb: AttentionItem["decisionVerbs"][number]): "default" | "outline" | "destructive" {
-  const text = `${verb.label} ${verb.description ?? ""}`.toLowerCase();
-  if (/\b(reject|decline|deny|delete|remove)\b/.test(text)) return "destructive";
-  if (/\b(accept|approve|confirm|apply)\b/.test(text)) return "default";
-  return "outline";
-}
-
-/** Inline project identity keeps useful context without a competing badge. */
-function ProjectMeta({ project }: { project: NonNullable<AttentionItem["project"]> }) {
-  return (
-    <span
-      className="inline-flex max-w-(--sz-12rem) items-center gap-1.5 text-(length:--text-nano) text-muted-foreground"
-      title={project.name}
-      data-testid="attention-project-meta"
-    >
-      <ProjectTile color={project.color} icon={project.icon} size="xs" />
-      <span className="truncate">{project.name}</span>
-    </span>
-  );
-}
-
-/** Square screenshot thumbnails at the right of the description (plan §10). */
-function ThumbnailStack({ images }: { images: AttentionDetailImage[] }) {
-  const visible = images.slice(0, 3);
-  const extra = images.length - visible.length;
-  return (
-    <div className="flex shrink-0 items-center">
-      <div className="flex -space-x-3">
-        {visible.map((img, index) => (
-          <img
-            key={`${img.assetId}-${index}`}
-            src={attentionImageUrl(img.assetId)}
-            alt="Visual evidence attachment"
-            aria-label={img.alt?.trim() || "Visual evidence attachment"}
-            loading="lazy"
-            style={{ zIndex: visible.length - index }}
-            className="h-11 w-11 rounded-md border border-border bg-muted object-cover shadow-sm"
-          />
-        ))}
-      </div>
-      {extra > 0 && (
-        <span className="ml-1 inline-flex h-6 items-center rounded-md border border-border bg-muted px-1.5 text-(length:--text-nano) font-medium text-muted-foreground">
-          +{extra}
-        </span>
-      )}
-    </div>
-  );
-}
-
-/**
- * Larger image gallery shown when a row is expanded (PAP-13544). Shows the
- * first three screenshots at a readable size; if more exist, an "n more" tile
- * links through to the task where the full set lives.
- */
-function ExpandedImages({
-  images,
-  taskRouteTarget,
-}: {
-  images: AttentionDetailImage[];
-  taskRouteTarget: Extract<CompanyBoardRouteTarget, { kind: "task" }> | null;
-}) {
-  const visible = images.slice(0, 3);
-  const extra = images.length - visible.length;
-  return (
-    <div className="flex flex-wrap items-stretch gap-2" data-attention-expanded-images="true">
-      {visible.map((img, index) => {
-        const src = attentionImageUrl(img.assetId);
-        const key = `${img.assetId}-${index}`;
-        const image = (
-          <img
-            src={src}
-            alt="Visual evidence attachment"
-            aria-label={img.alt?.trim() || "Visual evidence attachment"}
-            loading="lazy"
-            className="h-32 w-44 rounded-md border border-border bg-muted object-cover shadow-sm"
-          />
-        );
-        return taskRouteTarget ? (
-          <CompanyBoardLink
-            key={key}
-            routeTarget={taskRouteTarget}
-            className="block rounded-md focus-visible:ring-ring focus-visible:ring-(length:--rad-3) focus-visible:outline-none"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {image}
-          </CompanyBoardLink>
-        ) : (
-          <span key={key} className="block">
-            {image}
-          </span>
-        );
-      })}
-      {extra > 0 && (taskRouteTarget ? (
-        <CompanyBoardLink
-          routeTarget={taskRouteTarget}
-          onClick={(e) => e.stopPropagation()}
-          className="flex h-32 w-24 flex-col items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-ring focus-visible:ring-(length:--rad-3) focus-visible:outline-none"
-        >
-          <span className="text-base font-semibold">{extra} more</span>
-          <span className="mt-0.5 inline-flex items-center gap-1 text-(length:--text-nano)">
-            View task
-            <ExternalLink className="h-3 w-3" />
-          </span>
-        </CompanyBoardLink>
-      ) : (
-        <span className="flex h-32 w-24 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-sm font-semibold text-muted-foreground">
-          {extra} more
-        </span>
-      ))}
-    </div>
-  );
-}
-
-/** Snooze submenu: presets + a custom date-time (plan §6). */
-function SnoozeSubmenu({ onSnooze }: { onSnooze: (snoozedUntil: string) => void }) {
-  const [customValue, setCustomValue] = useState("");
-  const applyCustom = () => {
-    if (!customValue) return;
-    const ts = new Date(customValue);
-    if (Number.isNaN(ts.getTime())) return;
-    onSnooze(ts.toISOString());
-  };
-  return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
-        <AlarmClock className="h-4 w-4" />
-        Snooze
-      </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent>
-        {SNOOZE_PRESETS.map((preset) => (
-          <DropdownMenuItem key={preset.label} onClick={() => onSnooze(preset.resolve())}>
-            {preset.label}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        {/* Custom picker: a non-menu-item region so interacting with the input
-            doesn't close the menu (guard keydown/select against Radix typeahead). */}
-        <div className="flex flex-col gap-1.5 px-2 py-1.5">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-(length:--text-nano) font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
-              Custom
-            </span>
-            <input
-              type="datetime-local"
-              value={customValue}
-              onChange={(e) => setCustomValue(e.target.value)}
-              onKeyDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full rounded-sm border border-border bg-background px-2 py-1 text-xs"
-            />
-          </label>
-          <Button
-            type="button"
-            size="xs"
-            disabled={!customValue}
-            onClick={(event) => {
-              event.stopPropagation();
-              applyCustom();
-            }}
-          >
-            Snooze until…
-          </Button>
-        </div>
-      </DropdownMenuSubContent>
-    </DropdownMenuSub>
-  );
-}
-
-/** Compact "when does this snooze end" label, e.g. `in 2h`, `in 3d`. */
-function reappearLabel(snoozedUntil: string): string {
-  const diffMs = new Date(snoozedUntil).getTime() - Date.now();
-  if (!Number.isFinite(diffMs) || diffMs <= 0) return "soon";
-  const diffMin = Math.round(diffMs / 60000);
-  if (diffMin < 60) return `in ${diffMin}m`;
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return `in ${diffHr}h`;
-  const diffDay = Math.round(diffHr / 24);
-  return `in ${diffDay}d`;
-}
-
-function InlineResolver({
-  item,
-  companyId,
-}: {
-  item: AttentionItem;
-  companyId: string;
-}) {
-  if (item.sourceKind === "approval") {
-    return <ApprovalResolver item={item} companyId={companyId} />;
-  }
-
-  if (item.sourceKind === "join_request") {
-    return <JoinRequestResolver item={item} companyId={companyId} />;
-  }
-
-  return null;
-}
-
-function ApprovalResolver({ item, companyId }: { item: AttentionItem; companyId: string }) {
-  const queryClient = useQueryClient();
-  const [note, setNote] = useState("");
-  const [rejectConfirmationOpen, setRejectConfirmationOpen] = useState(false);
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(companyId) });
-  };
-  const approve = useMutation({
-    mutationFn: () => approvalsApi.approve(item.subject.id, note.trim() || undefined),
-    onSuccess: invalidate,
-  });
-  const reject = useMutation({
-    mutationFn: () => approvalsApi.reject(item.subject.id, note.trim() || undefined),
-    onSuccess: invalidate,
-  });
-  const revise = useMutation({
-    mutationFn: () => approvalsApi.requestRevision(item.subject.id, note.trim() || undefined),
-    onSuccess: invalidate,
-  });
-  const pending = approve.isPending || reject.isPending || revise.isPending;
-
-  return (
-    <div className="space-y-3">
-      <Textarea
-        aria-label="Optional decision note"
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        placeholder="Optional decision note…"
-        className="min-h-16 text-sm"
-      />
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => approve.mutate()} disabled={pending}>
-          {approve.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Approve
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => revise.mutate()} disabled={pending}>
-          {revise.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Request revision
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={() => setRejectConfirmationOpen(true)}
-          disabled={pending}
-        >
-          {reject.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Reject
-        </Button>
-      </div>
-      {pending ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          {approve.isPending
-            ? "Approving request…"
-            : revise.isPending
-              ? "Requesting revision…"
-              : "Rejecting request…"}
-        </p>
-      ) : null}
-      <AlertDialog open={rejectConfirmationOpen} onOpenChange={setRejectConfirmationOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reject this approval?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This records a rejection for this request. Review the approval details before continuing.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={pending}
-              onClick={() => reject.mutate()}
-              className={buttonVariants({ variant: "destructive" })}
-            >
-              {reject.isPending ? "Rejecting…" : "Reject approval"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-function JoinRequestResolver({ item, companyId }: { item: AttentionItem; companyId: string }) {
-  const queryClient = useQueryClient();
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(companyId) });
-  };
-  const approve = useMutation({
-    mutationFn: () => accessApi.approveJoinRequest(companyId, item.subject.id),
-    onSuccess: invalidate,
-  });
-  const reject = useMutation({
-    mutationFn: () => accessApi.rejectJoinRequest(companyId, item.subject.id),
-    onSuccess: invalidate,
-  });
-  const pending = approve.isPending || reject.isPending;
-
-  return (
-    <>
-      <div aria-busy={pending}>
-        <fieldset
-          disabled={pending}
-          aria-label="Join request actions"
-          className="m-0 min-w-0 border-0 p-0"
-        >
-          <JoinRequestApprovalControls
-            onApprove={() => approve.mutate()}
-            onReject={() => reject.mutate()}
-            isPending={pending}
-          />
-        </fieldset>
-      </div>
-      {pending ? (
-        <p role="status" className="mt-2 text-xs text-muted-foreground">
-          Updating join request…
-        </p>
-      ) : null}
-    </>
-  );
-}

@@ -1,19 +1,13 @@
 import { Layers } from "lucide-react";
 import type { CompanyArtifactGroup } from "@/api/artifacts";
-import {
-  Link,
-  type RegisteredRouter,
-  type ValidateLinkOptions,
-} from "@tanstack/react-router";
+import { Link, type RegisteredRouter, type ValidateLinkOptions } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { ArtifactPreview } from "@/components/artifacts/ArtifactCard";
 import { formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 
-interface ArtifactGroupCardProps<
-  TRouter extends RegisteredRouter = RegisteredRouter,
-  TOptions = unknown,
-> {
+interface ArtifactGroupCardProps<TRouter extends RegisteredRouter = RegisteredRouter, TOptions = unknown> {
   group: CompanyArtifactGroup;
   /** Native destination for opening this stack while preserving active search state. */
   linkOptions: ValidateLinkOptions<TRouter, TOptions>;
@@ -25,10 +19,9 @@ interface ArtifactGroupCardProps<
  * layers a subtle "stack" effect behind the card only when it represents more
  * than one artifact.
  */
-export function ArtifactGroupCard<
-  TRouter extends RegisteredRouter,
-  TOptions,
->(props: ArtifactGroupCardProps<TRouter, TOptions>): ReactNode;
+export function ArtifactGroupCard<TRouter extends RegisteredRouter, TOptions>(
+  props: ArtifactGroupCardProps<TRouter, TOptions>,
+): ReactNode;
 export function ArtifactGroupCard({ group, linkOptions }: ArtifactGroupCardProps) {
   const stacked = group.count > 1;
   const preview = group.previewArtifacts[0];
@@ -51,16 +44,18 @@ export function ArtifactGroupCard({ group, linkOptions }: ArtifactGroupCardProps
         </>
       ) : null}
 
-      {/* design-allow(card-pattern): navigation <Link> card; Card renders a div and would break anchor semantics (C5a Run 3) */}
-      <Link
-        {...linkOptions}
-        title={countLabel}
-        data-testid="artifact-group-card"
-        data-group-id={group.id}
-        data-count={group.count}
-        data-stacked={stacked ? "true" : "false"}
-        className="group relative flex flex-col overflow-hidden rounded-lg border border-border bg-card cursor-pointer transition-colors hover:border-foreground/20 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
+      <Card title={countLabel} className="group relative cursor-pointer gap-0 overflow-hidden py-0">
+        <Link
+          {...linkOptions}
+          aria-label={`Open ${group.title}`}
+          data-testid="artifact-group-card"
+          data-group-id={group.id}
+          data-count={group.count}
+          data-stacked={stacked ? "true" : "false"}
+          className="absolute inset-0 z-10 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span className="sr-only">{countLabel}</span>
+        </Link>
         <div className="relative">
           {preview ? (
             <ArtifactPreview artifact={preview} />
@@ -69,13 +64,16 @@ export function ArtifactGroupCard({ group, linkOptions }: ArtifactGroupCardProps
               <Layers className="h-7 w-7" aria-hidden="true" />
             </div>
           )}
-          <Badge variant="ghost" className="absolute right-2 top-2 bg-background/85 text-(length:--text-micro) text-foreground/90 shadow-sm backdrop-blur">
+          <Badge
+            variant="ghost"
+            className="absolute right-2 top-2 bg-background/85 text-(length:--text-micro) text-foreground/90 shadow-sm backdrop-blur"
+          >
             <Layers className="h-3 w-3" aria-hidden="true" />
             {group.count}
           </Badge>
         </div>
 
-        <div className="flex flex-1 flex-col gap-1 p-3">
+        <CardContent className="flex flex-1 flex-col gap-1 p-3">
           <div className="flex h-7 items-center gap-2">
             <span className="shrink-0 font-mono text-(length:--text-micro) text-muted-foreground">
               {group.task.identifier}
@@ -93,8 +91,8 @@ export function ArtifactGroupCard({ group, linkOptions }: ArtifactGroupCardProps
             <span className="text-muted-foreground/50">·</span>
             <span>Updated {formatDate(group.updatedAt)}</span>
           </div>
-        </div>
-      </Link>
+        </CardContent>
+      </Card>
     </div>
   );
 }

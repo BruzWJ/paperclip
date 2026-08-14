@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import {
   Activity as ActivityIcon,
   Circle,
@@ -11,11 +10,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { cn } from "@/lib/utils";
-import {
-  ROUTINE_SECTION_KEYS,
-  type RoutineSectionKey,
-} from "./routine-sections/context";
+import { ROUTINE_SECTION_KEYS, type RoutineSectionKey } from "./routine-sections/context";
 import {
   Select,
   SelectContent,
@@ -25,6 +20,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sidebar as ShadcnSidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
 
 type NavItem = {
   key: RoutineSectionKey;
@@ -58,8 +66,6 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-const ALL_ITEMS: NavItem[] = NAV_GROUPS.flatMap((group) => group.items);
-
 export function RoutineSubSidebar({
   activeSection,
   companyId,
@@ -73,101 +79,60 @@ export function RoutineSubSidebar({
   isSectionDirty: (section: RoutineSectionKey) => boolean;
   hasLiveRun: boolean;
 }) {
-  const itemRefs = useRef<Array<HTMLAnchorElement | null>>([]);
-
-  const focusItem = (index: number) => {
-    const clamped = (index + ALL_ITEMS.length) % ALL_ITEMS.length;
-    itemRefs.current[clamped]?.focus();
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent, index: number) => {
-    switch (event.key) {
-      case "ArrowDown":
-        event.preventDefault();
-        focusItem(index + 1);
-        break;
-      case "ArrowUp":
-        event.preventDefault();
-        focusItem(index - 1);
-        break;
-      case "Home":
-        event.preventDefault();
-        focusItem(0);
-        break;
-      case "End":
-        event.preventDefault();
-        focusItem(ALL_ITEMS.length - 1);
-        break;
-      default:
-        break;
-    }
-  };
-
-  let flatIndex = -1;
-
   return (
-    <nav
-      aria-label="Routine sections"
-      className="hidden h-full w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-background px-3 py-4 md:flex"
-    >
-      {NAV_GROUPS.map((group) => (
-        <div key={group.label} className="flex flex-col gap-0.5">
-          <p className="mx-2 px-2 pb-1 text-(length:--text-nano) font-medium uppercase tracking-widest font-mono text-muted-foreground/60">
-            {group.label}
-          </p>
-          {group.items.map((item) => {
-            flatIndex += 1;
-            const index = flatIndex;
-            const isActive = item.key === activeSection;
-            const Icon = item.icon;
-            const dirty = isSectionDirty(item.key);
-            const showLiveDot = item.key === "runs" && hasLiveRun;
-            return (
-              <Link
-                key={item.key}
-                ref={(node) => {
-                  itemRefs.current[index] = node;
-                }}
-                to={
-                  item.key === "overview"
-                    ? "/$companyId/routines/$routineId"
-                    : "/$companyId/routines/$routineId/$section"
-                }
-                params={
-                  item.key === "overview"
-                    ? { companyId, routineId }
-                    : { companyId, routineId, section: item.key }
-                }
-                replace
-                role="tab"
-                aria-current={isActive ? "page" : undefined}
-                tabIndex={isActive ? 0 : -1}
-                onKeyDown={(event) => handleKeyDown(event, index)}
-                className={cn(
-                  // Match the primary nav rows (SidebarNavItem): same rhythm,
-                  // inset pill, type scale, and icon size.
-                  "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors motion-safe:duration-150",
-                  isActive
-                    ? "bg-accent text-foreground"
-                    : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className="truncate">{item.label}</span>
-                {showLiveDot ? (
-                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500 motion-safe:animate-pulse" />
-                ) : dirty ? (
-                  <span
-                    aria-label="Unsaved changes"
-                    className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 ring-2 ring-background"
-                  />
-                ) : null}
-              </Link>
-            );
-          })}
-        </div>
-      ))}
-    </nav>
+    <ShadcnSidebar collapsible="none" className="hidden h-full !w-52 shrink-0 border-r border-border md:flex">
+      <SidebarContent>
+        <nav aria-label="Routine sections">
+          {NAV_GROUPS.map((group) => (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.items.map((item) => {
+                    const isActive = item.key === activeSection;
+                    const Icon = item.icon;
+                    const dirty = isSectionDirty(item.key);
+                    const showLiveDot = item.key === "runs" && hasLiveRun;
+                    return (
+                      <SidebarMenuItem key={item.key}>
+                        <SidebarMenuButton asChild isActive={isActive}>
+                          <Link
+                            to={
+                              item.key === "overview"
+                                ? "/$companyId/routines/$routineId"
+                                : "/$companyId/routines/$routineId/$section"
+                            }
+                            params={
+                              item.key === "overview"
+                                ? { companyId, routineId }
+                                : { companyId, routineId, section: item.key }
+                            }
+                            replace
+                            aria-current={isActive ? "page" : undefined}
+                          >
+                            <Icon />
+                            <span>{item.label}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                        {showLiveDot || dirty ? (
+                          <SidebarMenuBadge aria-label={dirty ? "Unsaved changes" : "Live run"}>
+                            {showLiveDot ? (
+                              <Spinner className="size-3" aria-hidden="true" />
+                            ) : (
+                              <Badge variant="secondary" className="size-2 p-0" aria-hidden="true" />
+                            )}
+                          </SidebarMenuBadge>
+                        ) : null}
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
+        </nav>
+      </SidebarContent>
+    </ShadcnSidebar>
   );
 }
 
@@ -206,7 +171,7 @@ export function RoutineSectionPicker({
                     <item.icon className="h-3.5 w-3.5" />
                     {item.label}
                     {isSectionDirty(item.key) ? (
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                      <Badge variant="secondary" className="size-2 p-0" aria-label="Unsaved changes" />
                     ) : null}
                   </span>
                 </SelectItem>

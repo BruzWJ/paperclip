@@ -1,6 +1,9 @@
 import type { ActivityEvent } from "@paperclipai/shared";
 import { Plus, Minus } from "lucide-react";
-import { TaskReferencePill } from "./TaskReferencePill";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { taskDisplayTitle, taskReferenceLabel } from "@/lib/task-display";
+import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 
 type ActivityTaskReference = {
   id: string;
@@ -9,54 +12,21 @@ type ActivityTaskReference = {
   title?: string | null;
 };
 
-function readTaskReferences(details: Record<string, unknown> | null | undefined, key: string): ActivityTaskReference[] {
+function readTaskReferences(
+  details: Record<string, unknown> | null | undefined,
+  key: string,
+): ActivityTaskReference[] {
   const value = details?.[key];
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is ActivityTaskReference => (
-    !!item
-    && typeof item === "object"
-    && typeof (item as { id?: unknown }).id === "string"
-    && typeof (item as { identifier?: unknown }).identifier === "string"
-    && typeof (item as { taskNumber?: unknown }).taskNumber === "number"
-    && Number.isInteger((item as { taskNumber: number }).taskNumber)
-    && (item as { taskNumber: number }).taskNumber > 0
-  ));
-}
-
-function Section({
-  label,
-  icon,
-  items,
-  strikethrough,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  items: ActivityTaskReference[];
-  strikethrough?: boolean;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span
-        aria-label={label}
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground"
-      >
-        {icon}
-        <span className="sr-only">{label}</span>
-      </span>
-      {items.map((task) => (
-        <TaskReferencePill
-          key={`${label}:${task.id}`}
-          strikethrough={strikethrough}
-          task={{
-            id: task.id,
-            taskNumber: task.taskNumber,
-            identifier: task.identifier,
-            title: task.title ?? task.identifier,
-          }}
-        />
-      ))}
-    </div>
+  return value.filter(
+    (item): item is ActivityTaskReference =>
+      !!item &&
+      typeof item === "object" &&
+      typeof (item as { id?: unknown }).id === "string" &&
+      typeof (item as { identifier?: unknown }).identifier === "string" &&
+      typeof (item as { taskNumber?: unknown }).taskNumber === "number" &&
+      Number.isInteger((item as { taskNumber: number }).taskNumber) &&
+      (item as { taskNumber: number }).taskNumber > 0,
   );
 }
 
@@ -64,20 +34,52 @@ export function TaskReferenceActivitySummary({ event }: { event: Pick<ActivityEv
   const added = readTaskReferences(event.details, "addedReferencedTasks");
   const removed = readTaskReferences(event.details, "removedReferencedTasks");
   if (added.length === 0 && removed.length === 0) return null;
+  const sections = [
+    {
+      label: "Added references",
+      icon: Plus,
+      items: added,
+      strikethrough: false,
+    },
+    {
+      label: "Removed references",
+      icon: Minus,
+      items: removed,
+      strikethrough: true,
+    },
+  ].filter((section) => section.items.length > 0);
 
   return (
     <div className="mt-2 space-y-1">
-      <Section
-        label="Added references"
-        icon={<Plus className="h-3 w-3 text-green-600 dark:text-green-400" aria-hidden="true" />}
-        items={added}
-      />
-      <Section
-        label="Removed references"
-        icon={<Minus className="h-3 w-3 text-red-600 dark:text-red-400" aria-hidden="true" />}
-        items={removed}
-        strikethrough
-      />
+      {sections.map(({ label, icon: Icon, items, strikethrough }) => (
+        <div key={label} className="flex flex-wrap items-center gap-1.5">
+          <span aria-label={label} className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <Icon className="size-3" aria-hidden="true" />
+            <span className="sr-only">{label}</span>
+          </span>
+          {items.map((task) => {
+            const taskLabel = taskReferenceLabel(task);
+            const displayTitle = taskDisplayTitle(task);
+            return (
+              <Badge
+                key={`${label}:${task.id}`}
+                asChild
+                variant="outline"
+                className={cn(strikethrough && "line-through")}
+              >
+                <TaskLinkQuicklook
+                  taskId={task.id}
+                  taskNumber={task.taskNumber}
+                  title={displayTitle}
+                  aria-label={`Task ${taskLabel}: ${displayTitle}`}
+                >
+                  <span>{taskLabel}</span>
+                </TaskLinkQuicklook>
+              </Badge>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

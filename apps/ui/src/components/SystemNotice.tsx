@@ -1,15 +1,11 @@
 import { useId, useState, type ReactNode } from "react";
-import {
-  ChevronDown,
-  CircleCheck,
-  Info,
-  OctagonAlert,
-  TriangleAlert,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronDown, CircleCheck, Info, OctagonAlert, TriangleAlert, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 export type SystemNoticeTone = "neutral" | "info" | "success" | "warning" | "danger";
 
@@ -33,7 +29,13 @@ export type SystemNoticeMetadataRow =
       title?: string;
     }
   | { kind: "agent"; label: string; name: string; agentId?: string }
-  | { kind: "run"; label: string; runId: string; agentId?: string; status?: string };
+  | {
+      kind: "run";
+      label: string;
+      runId: string;
+      agentId?: string;
+      status?: string;
+    };
 
 export type SystemNoticeMetadataSection = {
   title?: string;
@@ -57,61 +59,12 @@ export type SystemNoticeProps = {
   className?: string;
 };
 
-type ToneTokens = {
-  container: string;
-  iconWrap: string;
-  icon: LucideIcon;
-  iconClass: string;
-  label: string;
-  divider: string;
-};
-
-const TONE_TOKENS: Record<SystemNoticeTone, ToneTokens> = {
-  neutral: {
-    container:
-      "border-border bg-muted/35 dark:bg-muted/20",
-    iconWrap: "bg-muted text-foreground/70",
-    icon: Info,
-    iconClass: "text-muted-foreground",
-    label: "text-muted-foreground",
-    divider: "border-border/70",
-  },
-  info: {
-    container:
-      "border-sky-300/70 bg-sky-50/70 dark:border-sky-500/30 dark:bg-sky-500/10",
-    iconWrap: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200",
-    icon: Info,
-    iconClass: "text-sky-700 dark:text-sky-300",
-    label: "text-sky-800 dark:text-sky-200",
-    divider: "border-sky-300/50 dark:border-sky-500/30",
-  },
-  success: {
-    container:
-      "border-emerald-300/70 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/10",
-    iconWrap: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200",
-    icon: CircleCheck,
-    iconClass: "text-emerald-700 dark:text-emerald-300",
-    label: "text-emerald-800 dark:text-emerald-200",
-    divider: "border-emerald-300/50 dark:border-emerald-500/30",
-  },
-  warning: {
-    container:
-      "border-amber-300/70 bg-amber-50/80 dark:border-amber-500/30 dark:bg-amber-500/10",
-    iconWrap: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200",
-    icon: TriangleAlert,
-    iconClass: "text-amber-700 dark:text-amber-300",
-    label: "text-amber-900 dark:text-amber-200",
-    divider: "border-amber-300/60 dark:border-amber-500/30",
-  },
-  danger: {
-    container:
-      "border-red-400/60 bg-red-50/80 dark:border-red-500/35 dark:bg-red-500/10",
-    iconWrap: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200",
-    icon: OctagonAlert,
-    iconClass: "text-red-700 dark:text-red-300",
-    label: "text-red-900 dark:text-red-200",
-    divider: "border-red-400/50 dark:border-red-500/30",
-  },
+const TONE_ICONS: Record<SystemNoticeTone, LucideIcon> = {
+  neutral: Info,
+  info: Info,
+  success: CircleCheck,
+  warning: TriangleAlert,
+  danger: OctagonAlert,
 };
 
 function formatTimestamp(ts: string) {
@@ -127,7 +80,7 @@ function formatTimestamp(ts: string) {
   }
 }
 
-function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTokens }) {
+function MetadataRow({ row }: { row: SystemNoticeMetadataRow }) {
   const companyId = useCompanyRouteId();
   return (
     <div className="grid grid-cols-(--gtc-8) gap-x-3 gap-y-0.5 px-3 py-1.5 text-xs">
@@ -149,9 +102,7 @@ function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTo
               const taskLabel = (
                 <>
                   <span>{row.identifier ?? "Task unavailable"}</span>
-                  {row.title ? (
-                    <span className="text-muted-foreground">— {row.title}</span>
-                  ) : null}
+                  {row.title ? <span className="text-muted-foreground">— {row.title}</span> : null}
                 </>
               );
               if (row.link && row.taskNumber != null) {
@@ -159,49 +110,43 @@ function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTo
                   <Link
                     to="/$companyId/tasks/$taskNumber"
                     params={{ companyId, taskNumber: String(row.taskNumber) }}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-sm font-medium underline-offset-2 hover:underline",
-                      tone.label,
-                    )}
+                    className="inline-flex items-center gap-1 rounded-sm font-medium underline-offset-2 hover:underline"
                   >
                     {taskLabel}
                   </Link>
                 );
               }
-              return (
-                <span className={cn("inline-flex items-center gap-1 font-medium", tone.label)}>
-                  {taskLabel}
-                </span>
-              );
+              return <span className="inline-flex items-center gap-1 font-medium">{taskLabel}</span>;
             }
             case "agent":
               return row.agentId ? (
                 <Link
                   to="/$companyId/agents/$agentId"
                   params={{ companyId, agentId: row.agentId }}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-sm font-medium underline-offset-2 hover:underline",
-                    tone.label,
-                  )}
+                  className="inline-flex items-center gap-1 rounded-sm font-medium underline-offset-2 hover:underline"
                 >
                   {row.name}
                 </Link>
-              ) : <span className={cn("font-medium", tone.label)}>{row.name}</span>;
+              ) : (
+                <span className="font-medium">{row.name}</span>
+              );
             case "run": {
               const runShort = row.runId.length > 12 ? `${row.runId.slice(0, 8)}…` : row.runId;
               const inner = (
                 <>
                   <code className="rounded bg-muted px-1.5 py-0.5 text-foreground/80">{runShort}</code>
-                  {row.status ? (
-                    <span className={cn("font-sans", tone.label)}>{row.status}</span>
-                  ) : null}
+                  {row.status ? <span className="font-sans text-muted-foreground">{row.status}</span> : null}
                 </>
               );
               if (row.agentId) {
                 return (
                   <Link
                     to="/$companyId/agents/$agentId/runs/$runId"
-                    params={{ companyId, agentId: row.agentId, runId: row.runId }}
+                    params={{
+                      companyId,
+                      agentId: row.agentId,
+                      runId: row.runId,
+                    }}
                     className="inline-flex items-center gap-2 rounded-sm font-mono text-(length:--text-micro) underline-offset-2 hover:underline"
                   >
                     {inner}
@@ -232,8 +177,7 @@ export function SystemNotice({
   className,
 }: SystemNoticeProps) {
   const companyId = useCompanyRouteId();
-  const tokens = TONE_TOKENS[tone];
-  const ToneIcon = tokens.icon;
+  const ToneIcon = TONE_ICONS[tone];
   const [open, setOpen] = useState(detailsDefaultOpen);
   const detailsId = useId();
   const hasDetails = Boolean(metadata && metadata.length > 0);
@@ -248,105 +192,93 @@ export function SystemNotice({
     }[tone];
 
   return (
-    <section
+    <Alert
       role="status"
       aria-label={resolvedLabel}
-      className={cn(
-        "relative w-full overflow-hidden rounded-lg border text-sm shadow-(--shadow-extract-8)",
-        tokens.container,
-        className,
-      )}
+      variant={tone === "danger" ? "destructive" : "default"}
+      className={cn("relative block w-full overflow-hidden p-0 text-sm", className)}
     >
-      <header className="flex items-start gap-3 px-3 py-2.5 sm:px-4">
-        <span
-          className={cn(
-            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
-            tokens.iconWrap,
-          )}
-          aria-hidden
-        >
-          <ToneIcon className={cn("h-4 w-4", tokens.iconClass)} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow)">
-            <span className={tokens.label}>{resolvedLabel}</span>
-            {source ? (
-              <>
-                <span className="text-muted-foreground/60" aria-hidden>·</span>
-                {source.agentId && source.runId ? (
-                  <Link
-                    to="/$companyId/agents/$agentId/runs/$runId"
-                    params={{ companyId, agentId: source.agentId, runId: source.runId }}
-                    className="rounded-sm font-medium normal-case tracking-normal text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                  >
-                    {source.label}
-                  </Link>
-                ) : (
-                  <span className="font-medium normal-case tracking-normal text-muted-foreground">
-                    {source.label}
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <header className="flex items-start gap-3 px-3 py-2.5 sm:px-4">
+          <ToneIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow)">
+              <AlertTitle>{resolvedLabel}</AlertTitle>
+              {source ? (
+                <>
+                  <span className="text-muted-foreground/60" aria-hidden>
+                    ·
                   </span>
-                )}
-              </>
-            ) : null}
-            {timestamp ? (
-              <>
-                <span className="text-muted-foreground/60" aria-hidden>·</span>
-                <span className="font-medium normal-case tracking-normal text-muted-foreground">
-                  {formatTimestamp(timestamp)}
-                </span>
-              </>
-            ) : null}
+                  {source.agentId && source.runId ? (
+                    <Link
+                      to="/$companyId/agents/$agentId/runs/$runId"
+                      params={{
+                        companyId,
+                        agentId: source.agentId,
+                        runId: source.runId,
+                      }}
+                      className="rounded-sm font-medium normal-case tracking-normal text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    >
+                      {source.label}
+                    </Link>
+                  ) : (
+                    <span className="font-medium normal-case tracking-normal text-muted-foreground">
+                      {source.label}
+                    </span>
+                  )}
+                </>
+              ) : null}
+              {timestamp ? (
+                <>
+                  <span className="text-muted-foreground/60" aria-hidden>
+                    ·
+                  </span>
+                  <span className="font-medium normal-case tracking-normal text-muted-foreground">
+                    {formatTimestamp(timestamp)}
+                  </span>
+                </>
+              ) : null}
+            </div>
+            <AlertDescription className="mt-1 break-words leading-6">{body}</AlertDescription>
           </div>
-          <div className="mt-1 break-words text-sm leading-6 text-foreground">{body}</div>
-        </div>
+          {hasDetails ? (
+            <CollapsibleTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-controls={detailsId}
+                className="ml-1 h-7 shrink-0 gap-1 px-2 text-(length:--text-micro) uppercase tracking-(--tracking-eyebrow) text-muted-foreground"
+              >
+                <span>{open ? "Hide details" : "Details"}</span>
+                <ChevronDown
+                  className={cn("h-3.5 w-3.5 transition-transform duration-150", open && "rotate-180")}
+                />
+              </Button>
+            </CollapsibleTrigger>
+          ) : null}
+        </header>
         {hasDetails ? (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            aria-controls={detailsId}
-            className={cn(
-              "ml-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-transparent px-2 text-(length:--text-micro) font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground transition-(--tp-background-color-border-color-color)",
-              "hover:border-border/70 hover:bg-background/70 hover:text-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-            )}
-          >
-            <span>{open ? "Hide details" : "Details"}</span>
-            <ChevronDown
-              className={cn(
-                "h-3.5 w-3.5 transition-transform duration-150",
-                open && "rotate-180",
-              )}
-            />
-          </button>
-        ) : null}
-      </header>
-      {hasDetails && open ? (
-        <div
-          id={detailsId}
-          className={cn(
-            "border-t bg-background/50 dark:bg-background/30",
-            tokens.divider,
-          )}
-        >
-          <div className="divide-y divide-border/50 px-1 py-1">
-            {metadata!.map((section, sectionIdx) => (
-              <div key={sectionIdx} className="py-1.5 first:pt-2 last:pb-2">
-                {section.title ? (
-                  <div className="px-3 pb-1 pt-0.5 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-caps) text-muted-foreground">
-                    {section.title}
+          <CollapsibleContent id={detailsId} className="border-t bg-background/50 dark:bg-background/30">
+            <div className="divide-y divide-border/50 px-1 py-1">
+              {metadata!.map((section, sectionIdx) => (
+                <div key={sectionIdx} className="py-1.5 first:pt-2 last:pb-2">
+                  {section.title ? (
+                    <div className="px-3 pb-1 pt-0.5 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-caps) text-muted-foreground">
+                      {section.title}
+                    </div>
+                  ) : null}
+                  <div>
+                    {section.rows.map((row, rowIdx) => (
+                      <MetadataRow key={rowIdx} row={row} />
+                    ))}
                   </div>
-                ) : null}
-                <div>
-                  {section.rows.map((row, rowIdx) => (
-                    <MetadataRow key={rowIdx} row={row} tone={tokens} />
-                  ))}
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </section>
+              ))}
+            </div>
+          </CollapsibleContent>
+        ) : null}
+      </Collapsible>
+    </Alert>
   );
 }

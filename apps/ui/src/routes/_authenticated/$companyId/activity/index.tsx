@@ -9,18 +9,13 @@ import { buildCompanyUserProfileMap } from "@/lib/company-members";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { EmptyState } from "@/components/EmptyState";
 import { ActivityRow } from "@/components/ActivityRow";
-import { PageSkeleton } from "@/components/PageSkeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { History } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 
 export const Route = createFileRoute("/_authenticated/$companyId/activity/")({
   component: Activity,
@@ -38,18 +33,14 @@ function detailString(event: ActivityEvent, ...keys: string[]) {
 }
 
 function activityEntityName(event: ActivityEvent) {
-  if (event.entityType === "task")
-    return detailString(event, "identifier", "taskIdentifier");
-  if (event.entityType === "project")
-    return detailString(event, "projectName", "name", "title");
-  if (event.entityType === "goal")
-    return detailString(event, "goalTitle", "title", "name");
+  if (event.entityType === "task") return detailString(event, "identifier", "taskIdentifier");
+  if (event.entityType === "project") return detailString(event, "projectName", "name", "title");
+  if (event.entityType === "goal") return detailString(event, "goalTitle", "title", "name");
   return detailString(event, "name", "title");
 }
 
 function activityEntityTitle(event: ActivityEvent) {
-  if (event.entityType === "task")
-    return detailString(event, "taskTitle", "title");
+  if (event.entityType === "task") return detailString(event, "taskTitle", "title");
   return null;
 }
 
@@ -63,10 +54,7 @@ function Activity() {
   }, [setBreadcrumbs]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: [
-      ...queryKeys.activity(companyId),
-      { limit: ACTIVITY_PAGE_LIMIT },
-    ],
+    queryKey: [...queryKeys.activity(companyId), { limit: ACTIVITY_PAGE_LIMIT }],
     queryFn: () => activityApi.list(companyId, { limit: ACTIVITY_PAGE_LIMIT }),
   });
 
@@ -111,26 +99,18 @@ function Activity() {
   }, [data]);
 
   if (isLoading) {
-    return <PageSkeleton variant="list" />;
+    return <Skeleton className="h-32 w-full" />;
   }
 
-  const filtered =
-    data && filter !== "all"
-      ? data.filter((e) => e.entityType === filter)
-      : data;
+  const filtered = data && filter !== "all" ? data.filter((e) => e.entityType === filter) : data;
 
-  const entityTypes = data
-    ? [...new Set(data.map((e) => e.entityType))].sort()
-    : [];
+  const entityTypes = data ? [...new Set(data.map((e) => e.entityType))].sort() : [];
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end">
         <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger
-            aria-label="Filter activity by type"
-            className="w-(--sz-140px) h-8 text-xs"
-          >
+          <SelectTrigger aria-label="Filter activity by type" className="w-(--sz-140px) h-8 text-xs">
             <SelectValue placeholder="Filter by type" />
           </SelectTrigger>
           <SelectContent>
@@ -144,10 +124,21 @@ function Activity() {
         </Select>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
+      )}
 
       {filtered && filtered.length === 0 && (
-        <EmptyState icon={History} message="No activity yet." />
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <History />
+            </EmptyMedia>
+            <EmptyTitle>No activity yet.</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       )}
 
       {filtered && filtered.length > 0 && (

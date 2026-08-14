@@ -1,6 +1,5 @@
 export type SecretPathRow =
-  | { kind: "company"; secret: { name: string } }
-  | { kind: "user"; definition: { name: string } };
+  { kind: "company"; secret: { name: string } } | { kind: "user"; definition: { name: string } };
 
 export interface SecretPathFolder {
   name: string;
@@ -32,10 +31,22 @@ export function splitSecretPath(path: string): string[] {
   return path.split("/").filter((segment) => segment.length > 0);
 }
 
-function startsWithSegments(
-  segments: readonly string[],
-  prefix: readonly string[],
-): boolean {
+export function getRelativeSecretPath(name: string, basePath = ""): { directory: string; leaf: string } {
+  const segments = splitSecretPath(name);
+  const baseSegments = splitSecretPath(basePath);
+  const withinBase =
+    baseSegments.length > 0 &&
+    baseSegments.every((segment, index) => segments[index] === segment) &&
+    segments.length > baseSegments.length;
+  const relative = withinBase ? segments.slice(baseSegments.length) : segments;
+  const effective = relative.length > 0 ? relative : [name];
+  return {
+    directory: effective.slice(0, -1).join("/"),
+    leaf: effective.at(-1) ?? name,
+  };
+}
+
+function startsWithSegments(segments: readonly string[], prefix: readonly string[]): boolean {
   return prefix.every((segment, index) => segments[index] === segment);
 }
 
@@ -60,8 +71,7 @@ export function buildSecretPathListing<Row extends SecretPathRow>(
     if (!startsWithSegments(entry.segments, pathSegments)) continue;
     const relativeDepth = entry.segments.length - pathSegments.length;
     if (relativeDepth === 0 || relativeDepth === 1) secrets.push(entry.row);
-    if (relativeDepth >= 2)
-      folderNames.add(entry.segments[pathSegments.length]);
+    if (relativeDepth >= 2) folderNames.add(entry.segments[pathSegments.length]);
   }
 
   const folders = [...folderNames].map((name): SecretPathFolder => {
@@ -76,9 +86,7 @@ export function buildSecretPathListing<Row extends SecretPathRow>(
       secretCount += 1;
       for (let depth = 1; depth < relativeDepth; depth += 1) {
         descendantFolderPaths.add(
-          entry.segments
-            .slice(folderSegments.length, folderSegments.length + depth)
-            .join("/"),
+          entry.segments.slice(folderSegments.length, folderSegments.length + depth).join("/"),
         );
       }
     }
@@ -92,16 +100,12 @@ export function buildSecretPathListing<Row extends SecretPathRow>(
   });
 
   folders.sort((left, right) => compareNames(left.name, right.name));
-  secrets.sort((left, right) =>
-    compareNames(getSecretPathRowName(left), getSecretPathRowName(right)),
-  );
+  secrets.sort((left, right) => compareNames(getSecretPathRowName(left), getSecretPathRowName(right)));
 
   return { folders, secrets };
 }
 
-export function buildSecretPathBreadcrumbs(
-  path: string,
-): SecretPathBreadcrumb[] {
+export function buildSecretPathBreadcrumbs(path: string): SecretPathBreadcrumb[] {
   const segments = splitSecretPath(path);
   return segments.map((name, index) => ({
     name,
@@ -111,8 +115,7 @@ export function buildSecretPathBreadcrumbs(
 
 export function validateSecretFolderSegment(value: string): string | null {
   if (value.trim().length === 0) return "Folder name is required.";
-  if (value.trim() !== value)
-    return "Folder name must not contain surrounding whitespace.";
+  if (value.trim() !== value) return "Folder name must not contain surrounding whitespace.";
   if (value.includes("/")) return "Folder name cannot contain slashes.";
   return null;
 }

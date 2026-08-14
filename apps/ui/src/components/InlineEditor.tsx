@@ -4,6 +4,10 @@ import { MarkdownBody } from "./MarkdownBody";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { useAutosaveIndicator } from "../hooks/useAutosaveIndicator";
 import { FoldCurtain } from "./FoldCurtain";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { FieldLegend, FieldSet } from "@/components/ui/field";
+import { autoResizeTextarea } from "@/lib/textarea";
 
 interface InlineEditorProps {
   value: string;
@@ -70,12 +74,7 @@ export function InlineEditor({
   const justEnteredEditRef = useRef(false);
   const hasBeenFocusedRef = useRef(false);
   const [isPending, setIsPending] = useState(false);
-  const {
-    state: autosaveState,
-    markDirty,
-    reset,
-    runSave,
-  } = useAutosaveIndicator();
+  const { state: autosaveState, markDirty, reset, runSave } = useAutosaveIndicator();
 
   useEffect(() => {
     const previousValue = lastPropValueRef.current;
@@ -104,21 +103,15 @@ export function InlineEditor({
     };
   }, []);
 
-  const autoSize = useCallback((el: HTMLTextAreaElement | null) => {
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, []);
-
   useEffect(() => {
     if (editing && inputRef.current) {
       inputRef.current.focus();
       inputRef.current.select();
       if (inputRef.current instanceof HTMLTextAreaElement) {
-        autoSize(inputRef.current);
+        autoResizeTextarea(inputRef.current);
       }
     }
-  }, [editing, autoSize]);
+  }, [editing]);
 
   useEffect(() => {
     if (!multilineEditing || !multiline) return;
@@ -154,34 +147,37 @@ export function InlineEditor({
     setMultilineEditing(false);
   }, [multiline, multilineEditing, multilineFocused, autosaveState]);
 
+  const commit = useCallback(
+    async (nextValue = draft) => {
+      const valueToSave = nextValue.trim();
+      const valueChanged = valueToSave !== value;
+      const shouldSave = nullable ? valueChanged : Boolean(valueToSave && valueChanged);
+      if (shouldSave) {
+        await Promise.resolve(onSave(valueToSave));
+      } else {
+        setDraft(value);
+      }
+      if (!multiline) {
+        setEditing(false);
+      }
+    },
+    [draft, multiline, nullable, onSave, value],
+  );
 
-  const commit = useCallback(async (nextValue = draft) => {
-    const valueToSave = nextValue.trim();
-    const valueChanged = valueToSave !== value;
-    const shouldSave = nullable
-      ? valueChanged
-      : Boolean(valueToSave && valueChanged);
-    if (shouldSave) {
-      await Promise.resolve(onSave(valueToSave));
-    } else {
-      setDraft(value);
-    }
-    if (!multiline) {
-      setEditing(false);
-    }
-  }, [draft, multiline, nullable, onSave, value]);
-
-  const savePendingWork = useCallback(async (save: () => Promise<void>) => {
-    if (saveInFlightRef.current) return;
-    saveInFlightRef.current = true;
-    setIsPending(true);
-    try {
-      await runSave(save);
-    } finally {
-      saveInFlightRef.current = false;
-      setIsPending(false);
-    }
-  }, [runSave]);
+  const savePendingWork = useCallback(
+    async (save: () => Promise<void>) => {
+      if (saveInFlightRef.current) return;
+      saveInFlightRef.current = true;
+      setIsPending(true);
+      try {
+        await runSave(save);
+      } finally {
+        saveInFlightRef.current = false;
+        setIsPending(false);
+      }
+    },
+    [runSave],
+  );
 
   /** Multiline blur/submit: show autosave indicator when persisting */
   const finalizeMultilineBlurOrSubmit = useCallback(() => {
@@ -205,17 +201,20 @@ export function InlineEditor({
     blurCommitFrameRef.current = null;
   }, []);
 
-  const scheduleBlurCommit = useCallback((container: HTMLDivElement) => {
-    cancelPendingBlurCommit();
-    blurCommitFrameRef.current = queueContainedBlurCommit(container, () => {
-      blurCommitFrameRef.current = null;
-      if (autosaveDebounceRef.current) {
-        clearTimeout(autosaveDebounceRef.current);
-      }
-      setMultilineFocused(false);
-      finalizeMultilineBlurOrSubmit();
-    });
-  }, [cancelPendingBlurCommit, finalizeMultilineBlurOrSubmit]);
+  const scheduleBlurCommit = useCallback(
+    (container: HTMLDivElement) => {
+      cancelPendingBlurCommit();
+      blurCommitFrameRef.current = queueContainedBlurCommit(container, () => {
+        blurCommitFrameRef.current = null;
+        if (autosaveDebounceRef.current) {
+          clearTimeout(autosaveDebounceRef.current);
+        }
+        setMultilineFocused(false);
+        finalizeMultilineBlurOrSubmit();
+      });
+    },
+    [cancelPendingBlurCommit, finalizeMultilineBlurOrSubmit],
+  );
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !multiline) {
@@ -265,7 +264,18 @@ export function InlineEditor({
         clearTimeout(autosaveDebounceRef.current);
       }
     };
-  }, [autosaveState, commit, draft, markDirty, multiline, multilineFocused, nullable, reset, savePendingWork, value]);
+  }, [
+    autosaveState,
+    commit,
+    draft,
+    markDirty,
+    multiline,
+    multilineFocused,
+    nullable,
+    reset,
+    savePendingWork,
+    value,
+  ]);
 
   if (multiline) {
     const previewValue = autosaveState === "saved" || autosaveState === "idle" ? draft : value;
@@ -283,26 +293,24 @@ export function InlineEditor({
           className={cn(markdownPad, "relative rounded transition-colors hover:bg-accent/20")}
           onDragEnter={() => enterEditMode()}
         >
-          <button
+          <Button
             type="button"
-            className="absolute right-1 top-1 z-10 rounded px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            variant="ghost"
+            size="xs"
+            className="absolute right-1 top-1 z-10 text-xs text-muted-foreground"
             onClick={enterEditMode}
           >
             Edit
-          </button>
+          </Button>
           <div className="pr-12">
             {foldable ? (
               <FoldCurtain>
-                <MarkdownBody
-                  className={cn("paperclip-edit-in-place-content", className)}
-                >
+                <MarkdownBody className={cn("paperclip-edit-in-place-content", className)}>
                   {previewValue}
                 </MarkdownBody>
               </FoldCurtain>
             ) : (
-              <MarkdownBody
-                className={cn("paperclip-edit-in-place-content", className)}
-              >
+              <MarkdownBody className={cn("paperclip-edit-in-place-content", className)}>
                 {previewValue}
               </MarkdownBody>
             )}
@@ -336,12 +344,8 @@ export function InlineEditor({
         }}
         onKeyDown={handleKeyDown}
       >
-        <fieldset
-          aria-busy={isPending}
-          aria-label="Inline markdown editor"
-          className="contents"
-          disabled={isPending}
-        >
+        <FieldSet aria-busy={isPending} className="contents" disabled={isPending}>
+          <FieldLegend className="sr-only">Inline markdown editor</FieldLegend>
           <MarkdownEditor
             ref={markdownRef}
             value={draft}
@@ -377,22 +381,21 @@ export function InlineEditor({
                     : "Idle"}
             </span>
           </div>
-        </fieldset>
+        </FieldSet>
       </div>
     );
   }
 
   if (editing) {
-
     return (
-      <textarea
+      <Textarea
         ref={inputRef}
         aria-label={placeholder}
         value={draft}
         rows={1}
         onChange={(e) => {
           setDraft(e.target.value);
-          autoSize(e.target);
+          autoResizeTextarea(e.target);
         }}
         onBlur={() => {
           void commit();
@@ -401,7 +404,7 @@ export function InlineEditor({
         className={cn(
           "w-full rounded bg-transparent outline-none resize-none overflow-hidden focus-visible:ring-2 focus-visible:ring-ring",
           pad,
-          className
+          className,
         )}
       />
     );
@@ -410,23 +413,15 @@ export function InlineEditor({
   const DisplayTag = Tag;
 
   return (
-    <DisplayTag
-      className={cn(
-        "overflow-hidden",
-        !value && "text-muted-foreground italic",
-        className,
-      )}
-    >
-      <button
+    <DisplayTag className={cn("overflow-hidden", !value && "text-muted-foreground italic", className)}>
+      <Button
         type="button"
-        className={cn(
-          "cursor-pointer rounded border-0 bg-transparent py-0 text-left font-inherit text-inherit transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          pad,
-        )}
+        variant="ghost"
+        className={cn("h-auto whitespace-normal py-0 text-left font-inherit text-inherit", pad)}
         onClick={() => setEditing(true)}
       >
         {value || placeholder}
-      </button>
+      </Button>
     </DisplayTag>
   );
 }

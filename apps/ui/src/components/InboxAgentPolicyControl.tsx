@@ -1,16 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Inbox, LoaderCircle, Save } from "lucide-react";
+import { Inbox, Save } from "lucide-react";
 import type { InboxAgentPolicy, InboxAgentPolicyMode } from "@paperclipai/shared";
 import { agentsApi } from "@/api/agents";
 import { inboxAgentPolicyApi } from "@/api/inbox-agent-policy";
 import { queryKeys } from "@/lib/queryKeys";
 import { isAgentTaskTarget } from "@/lib/company-members";
 import { AgentIcon } from "./AgentIconPicker";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  FieldSet,
+  FieldTitle,
+} from "@/components/ui/field";
+import { Item, ItemContent, ItemGroup, ItemMedia, ItemTitle } from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const MODE_OPTIONS: { value: string; title: string; description?: string }[] = [
   {
@@ -58,9 +69,7 @@ export function InboxAgentPolicyControl({
   const lastServerKeyRef = useRef<string | null>(null);
 
   const policyQuery = useQuery({
-    queryKey: companyId
-      ? queryKeys.inboxAgentPolicy(companyId, userId)
-      : ["inbox-agent-policy", "none"],
+    queryKey: companyId ? queryKeys.inboxAgentPolicy(companyId, userId) : ["inbox-agent-policy", "none"],
     queryFn: () => inboxAgentPolicyApi.get(companyId!, userId),
     enabled: !!companyId,
   });
@@ -98,27 +107,30 @@ export function InboxAgentPolicyControl({
         allowedAgentIds: next.mode === "allowlist" ? next.allowedAgentIds : [],
       }),
     onSuccess: (saved) => {
-      queryClient.setQueryData<InboxAgentPolicy>(
-        queryKeys.inboxAgentPolicy(companyId!, userId),
-        saved,
-      );
+      queryClient.setQueryData<InboxAgentPolicy>(queryKeys.inboxAgentPolicy(companyId!, userId), saved);
     },
   });
 
   const isDirty = Boolean(
-    draft && policy && policyKey(draft.mode, draft.allowedAgentIds) !== policyKey(policy.mode, policy.allowedAgentIds),
+    draft &&
+    policy &&
+    policyKey(draft.mode, draft.allowedAgentIds) !== policyKey(policy.mode, policy.allowedAgentIds),
   );
 
   if (policyQuery.error) {
     return (
-      <div className="text-sm text-destructive">
-        {policyQuery.error instanceof Error ? policyQuery.error.message : "Failed to load inbox agent policy."}
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription>
+          {policyQuery.error instanceof Error
+            ? policyQuery.error.message
+            : "Failed to load inbox agent policy."}
+        </AlertDescription>
+      </Alert>
     );
   }
 
   if (policyQuery.isLoading || !draft) {
-    return <div className="text-sm text-muted-foreground">Loading inbox agent policy…</div>;
+    return <Skeleton className="h-40 max-w-2xl" aria-label="Loading inbox agent policy" />;
   }
 
   const toggleAgent = (agentId: string, checked: boolean) => {
@@ -144,80 +156,86 @@ export function InboxAgentPolicyControl({
         </p>
       </div>
 
-      <RadioGroup
-        aria-label="Inbox agent archiving policy"
-        value={draft.mode}
-        onValueChange={(value) => setDraft((current) => (current ? { ...current, mode: value as InboxAgentPolicyMode } : current))}
-        className="max-w-2xl gap-2"
-      >
-        {MODE_OPTIONS.map((option) => (
-          <label
-            key={option.value}
-            className={cn(
-              "flex cursor-pointer flex-col items-start gap-1 rounded-md border px-4 py-3 transition-colors",
-              draft.mode === option.value
-                ? "border-primary bg-primary/5 ring-1 ring-primary"
-                : "border-border hover:border-border hover:bg-accent/40",
-            )}
-          >
-            <div className="flex w-full items-center justify-between gap-2">
-              <span className="text-sm font-medium">{option.title}</span>
-              <RadioGroupItem value={option.value} id={option.value} />
-            </div>
-            {option.description ? (
-              <span className="text-xs text-muted-foreground">{option.description}</span>
-            ) : null}
-          </label>
-        ))}
-      </RadioGroup>
+      <FieldSet className="max-w-2xl">
+        <RadioGroup
+          aria-label="Inbox agent archiving policy"
+          value={draft.mode}
+          onValueChange={(value) =>
+            setDraft((current) => (current ? { ...current, mode: value as InboxAgentPolicyMode } : current))
+          }
+        >
+          {MODE_OPTIONS.map((option) => (
+            <FieldLabel key={option.value} htmlFor={option.value}>
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle>{option.title}</FieldTitle>
+                  {option.description ? <FieldDescription>{option.description}</FieldDescription> : null}
+                </FieldContent>
+                <RadioGroupItem value={option.value} id={option.value} />
+              </Field>
+            </FieldLabel>
+          ))}
+        </RadioGroup>
+      </FieldSet>
 
       {draft.mode === "allowlist" ? (
-        <div className="max-w-2xl space-y-2 rounded-md border border-border p-3">
+        <FieldSet className="max-w-2xl rounded-md border p-3">
           <div className="text-sm font-medium">Agents allowed to tidy my inbox</div>
           {selectableAgents.length === 0 ? (
             <p className="text-xs text-muted-foreground">You don&apos;t manage any agents yet.</p>
           ) : (
-            <ul className="space-y-1.5">
+            <ItemGroup>
               {selectableAgents.map((agent) => {
                 const checked = draft.allowedAgentIds.includes(agent.id);
                 return (
-                  <li key={agent.id}>
-                    <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors hover:bg-accent/40">
+                  <Item key={agent.id} size="sm">
+                    <FieldLabel htmlFor={`inbox-agent-${agent.id}`} className="w-full">
                       <Checkbox
+                        id={`inbox-agent-${agent.id}`}
                         checked={checked}
                         onCheckedChange={(next) => toggleAgent(agent.id, next === true)}
                         aria-label={`Allow ${agent.name} to tidy my inbox`}
                       />
-                      <AgentIcon icon={agent.icon} className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 truncate text-sm">{agent.name}</span>
+                      <ItemMedia>
+                        <AgentIcon icon={agent.icon} />
+                      </ItemMedia>
+                      <ItemContent>
+                        <ItemTitle>{agent.name}</ItemTitle>
+                      </ItemContent>
                       {agent.title ? (
                         <span className="shrink-0 text-xs text-muted-foreground">{agent.title}</span>
                       ) : null}
-                    </label>
-                  </li>
+                    </FieldLabel>
+                  </Item>
                 );
               })}
-            </ul>
+            </ItemGroup>
           )}
-        </div>
+        </FieldSet>
       ) : null}
 
       {updateMutation.error ? (
-        <div className="max-w-2xl rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {updateMutation.error instanceof Error ? updateMutation.error.message : "Failed to save inbox agent policy."}
-        </div>
+        <Alert variant="destructive" className="max-w-2xl">
+          <AlertDescription>
+            {updateMutation.error instanceof Error
+              ? updateMutation.error.message
+              : "Failed to save inbox agent policy."}
+          </AlertDescription>
+        </Alert>
       ) : null}
 
       <div className="flex max-w-2xl items-center justify-end gap-3">
         {updateMutation.isSuccess && !isDirty ? (
-          <span className="text-xs text-muted-foreground" role="status">Saved</span>
+          <span className="text-xs text-muted-foreground" role="status">
+            Saved
+          </span>
         ) : null}
         <Button
           type="button"
           disabled={!isDirty || updateMutation.isPending}
           onClick={() => draft && updateMutation.mutate(draft)}
         >
-          {updateMutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+          {updateMutation.isPending ? <Spinner /> : <Save className="size-4" />}
           {updateMutation.isPending ? "Saving…" : "Save"}
         </Button>
       </div>

@@ -1,20 +1,18 @@
+import { Spinner } from "@/components/ui/spinner";
 import { useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, KeyRound, Loader2, Plus, X } from "lucide-react";
+import { AlertCircle, KeyRound, Plus, X } from "lucide-react";
 import type { CompanySecret, SecretVersionSelector } from "@paperclipai/shared";
 import { secretsApi } from "../api/secrets";
 import { queryKeys } from "../lib/queryKeys";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "../lib/utils";
 
@@ -47,21 +45,6 @@ function describeSecret(secret: CompanySecret): string {
     return `External · ${provider}`;
   }
   return provider;
-}
-
-function statusTone(status: CompanySecret["status"]): string {
-  switch (status) {
-    case "active":
-      return "text-emerald-600 dark:text-emerald-400";
-    case "disabled":
-      return "text-amber-600 dark:text-amber-400";
-    case "archived":
-      return "text-muted-foreground";
-    case "deleted":
-      return "text-destructive";
-    default:
-      return "text-muted-foreground";
-  }
 }
 
 export function SecretBindingPicker({
@@ -110,7 +93,9 @@ export function SecretBindingPicker({
         description: createDescription.trim() || null,
       }),
     onSuccess: (created) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(companyId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.secrets.list(companyId),
+      });
       onChange({ secretId: created.id, version: VERSION_LATEST });
       setCreateOpen(false);
       setCreateName("");
@@ -135,112 +120,124 @@ export function SecretBindingPicker({
           Loading secret choices.
         </p>
       ) : null}
-      {label ? (
-        <div className="flex items-center justify-between text-xs font-medium text-foreground/80">
-          <label htmlFor={secretSelectId}>{label}</label>
-          {value ? (
-            <button
-              type="button"
-              className="text-(length:--text-micro) text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-              onClick={() => onChange(null)}
-              disabled={disabled}
-            >
-              <X className="h-3 w-3" /> Clear
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="flex items-center gap-1.5">
-        <div className="relative flex-1">
-          <KeyRound className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground z-10" />
-          <Select
-            value={value?.secretId ?? ""}
-            onValueChange={(next) => {
-              if (!next) {
-                onChange(null);
-                return;
-              }
-              onChange({ secretId: next, version: value?.version ?? VERSION_LATEST });
-            }}
-            disabled={disabled || secretsQuery.isPending}
-          >
-            <SelectTrigger
-              id={secretSelectId}
-              className={cn(
-                "h-9 w-full pl-7",
-                selectedMissing && "border-destructive text-destructive",
-              )}
-            >
-              <SelectValue placeholder={secretsQuery.isPending ? "Loading…" : placeholder} />
-            </SelectTrigger>
-            <SelectContent>
-              {selectedMissing && value ? (
-                <SelectItem value={value.secretId}>
-                  Missing secret ({value.secretId.slice(0, 8)}…)
-                </SelectItem>
-              ) : null}
-              {filteredSecrets.map((secret) => (
-                <SelectItem key={secret.id} value={secret.id}>
-                  {secret.name} — {describeSecret(secret)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {allowVersionSelector ? (
-          <Select
-            value={value?.version === undefined || value?.version === VERSION_LATEST ? "latest" : String(value.version)}
-            onValueChange={(raw) => {
-              if (!value) return;
-              const next: SecretVersionSelector = raw === VERSION_LATEST ? VERSION_LATEST : Number.parseInt(raw, 10);
-              onChange({ ...value, version: next });
-            }}
-            disabled={disabled || !value || !selectedSecret}
-          >
-            <SelectTrigger className="h-9 w-auto min-w-(--sz-80px) px-2 text-xs" aria-label="Version">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={"latest"}>latest</SelectItem>
-              {selectedSecret
-                ? Array.from({ length: Math.max(0, selectedSecret.latestVersion) }, (_, index) => {
-                    const version = selectedSecret.latestVersion - index;
-                    if (version <= 0) return null;
-                    return (
-                      <SelectItem key={version} value={String(version)}>
-                        v{version}
-                      </SelectItem>
-                    );
-                  })
-                : null}
-            </SelectContent>
-          </Select>
+      <Field>
+        {label ? (
+          <div className="flex items-center justify-between">
+            <FieldLabel htmlFor={secretSelectId}>{label}</FieldLabel>
+            {value ? (
+              <Button
+                type="button"
+                variant="link"
+                size="xs"
+                onClick={() => onChange(null)}
+                disabled={disabled}
+              >
+                <X className="h-3 w-3" /> Clear
+              </Button>
+            ) : null}
+          </div>
         ) : null}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setCreateOpen(true)}
-          disabled={disabled}
-          aria-label="Create secret"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
-      </div>
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1">
+            <KeyRound className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground z-10" />
+            <Select
+              value={value?.secretId ?? ""}
+              onValueChange={(next) => {
+                if (!next) {
+                  onChange(null);
+                  return;
+                }
+                onChange({
+                  secretId: next,
+                  version: value?.version ?? VERSION_LATEST,
+                });
+              }}
+              disabled={disabled || secretsQuery.isPending}
+            >
+              <SelectTrigger
+                id={secretSelectId}
+                className={cn("h-9 w-full pl-7", selectedMissing && "border-destructive text-destructive")}
+              >
+                <SelectValue placeholder={secretsQuery.isPending ? "Loading…" : placeholder} />
+              </SelectTrigger>
+              <SelectContent>
+                {selectedMissing && value ? (
+                  <SelectItem value={value.secretId}>
+                    Missing secret ({value.secretId.slice(0, 8)}…)
+                  </SelectItem>
+                ) : null}
+                {filteredSecrets.map((secret) => (
+                  <SelectItem key={secret.id} value={secret.id}>
+                    {secret.name} — {describeSecret(secret)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {allowVersionSelector ? (
+            <Select
+              value={
+                value?.version === undefined || value?.version === VERSION_LATEST
+                  ? "latest"
+                  : String(value.version)
+              }
+              onValueChange={(raw) => {
+                if (!value) return;
+                const next: SecretVersionSelector =
+                  raw === VERSION_LATEST ? VERSION_LATEST : Number.parseInt(raw, 10);
+                onChange({ ...value, version: next });
+              }}
+              disabled={disabled || !value || !selectedSecret}
+            >
+              <SelectTrigger className="h-9 w-auto min-w-(--sz-80px) px-2 text-xs" aria-label="Version">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={"latest"}>latest</SelectItem>
+                {selectedSecret
+                  ? Array.from({ length: Math.max(0, selectedSecret.latestVersion) }, (_, index) => {
+                      const version = selectedSecret.latestVersion - index;
+                      if (version <= 0) return null;
+                      return (
+                        <SelectItem key={version} value={String(version)}>
+                          v{version}
+                        </SelectItem>
+                      );
+                    })
+                  : null}
+              </SelectContent>
+            </Select>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setCreateOpen(true)}
+            disabled={disabled}
+            aria-label="Create secret"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </div>
 
-      {selectedSecret ? (
-        <p className={cn("text-(length:--text-micro) text-muted-foreground", statusTone(selectedSecret.status))}>
-          {selectedSecret.status !== "active" ? `Status: ${selectedSecret.status}. ` : null}
-          Bound to {versionDisplay(value?.version)} · {selectedSecret.key}
-        </p>
-      ) : selectedMissing ? (
-        <p className="text-(length:--text-micro) text-destructive flex items-center gap-1" role="alert">
-          <AlertCircle className="h-3 w-3" />
-          The previously selected secret is no longer available. Pick another or remove the binding.
-        </p>
-      ) : (filteredSecrets.length === 0 && !secretsQuery.isPending) ? (
-        <p className="text-(length:--text-micro) text-muted-foreground">{emptyHint}</p>
-      ) : null}
+        {selectedSecret ? (
+          <FieldDescription>
+            {selectedSecret.status !== "active" ? (
+              <Badge variant="outline">{selectedSecret.status}</Badge>
+            ) : null}{" "}
+            Bound to {versionDisplay(value?.version)} · {selectedSecret.key}
+          </FieldDescription>
+        ) : selectedMissing ? (
+          <Alert variant="destructive">
+            <AlertCircle className="h-3 w-3" />
+            <AlertDescription>
+              The previously selected secret is no longer available. Pick another or remove the binding.
+            </AlertDescription>
+          </Alert>
+        ) : filteredSecrets.length === 0 && !secretsQuery.isPending ? (
+          <FieldDescription>{emptyHint}</FieldDescription>
+        ) : null}
+      </Field>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
@@ -253,8 +250,8 @@ export function SecretBindingPicker({
             <DialogTitle>Create new secret</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-foreground/80" htmlFor="secret-name">Name</label>
+            <Field>
+              <FieldLabel htmlFor="secret-name">Name</FieldLabel>
               <Input
                 id="secret-name"
                 value={createName}
@@ -262,9 +259,9 @@ export function SecretBindingPicker({
                 placeholder="OPENAI_API_KEY"
                 autoFocus
               />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-foreground/80" htmlFor="secret-value">Value</label>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="secret-value">Value</FieldLabel>
               <Textarea
                 id="secret-value"
                 value={createValue}
@@ -273,29 +270,31 @@ export function SecretBindingPicker({
                 placeholder="Paste the secret value"
                 className="font-mono text-xs"
               />
-              <p className="text-(length:--text-micro) text-muted-foreground mt-1">
+              <FieldDescription>
                 The value is stored once and never re-displayed. Rotate to replace.
-              </p>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-foreground/80" htmlFor="secret-description">Description</label>
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="secret-description">Description</FieldLabel>
               <Input
                 id="secret-description"
                 value={createDescription}
                 onChange={(event) => setCreateDescription(event.target.value)}
                 placeholder="Optional notes (no values)"
               />
-            </div>
-            {createError ? <p className="text-xs text-destructive" role="alert">{createError}</p> : null}
+            </Field>
+            <FieldError>{createError}</FieldError>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
             <Button
               type="button"
               onClick={() => createMutation.mutate()}
               disabled={!createName.trim() || !createValue || createMutation.isPending}
             >
-              {createMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {createMutation.isPending ? <Spinner className="h-3.5 w-3.5" /> : null}
               Create &amp; bind
             </Button>
           </DialogFooter>

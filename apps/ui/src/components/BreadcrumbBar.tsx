@@ -21,8 +21,16 @@ type GlobalToolbarContext = { companyId: string | null };
 function GlobalToolbar({ context }: { context: GlobalToolbarContext }) {
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1 pl-2 empty:hidden">
-      <PluginSlotOutlet slotTypes={["globalToolbarButton"]} context={context} className="flex items-center gap-1" />
-      <PluginLauncherOutlet placementZones={["globalToolbarButton"]} context={context} className="flex items-center gap-1" />
+      <PluginSlotOutlet
+        slotTypes={["globalToolbarButton"]}
+        context={context}
+        className="flex items-center gap-1"
+      />
+      <PluginLauncherOutlet
+        placementZones={["globalToolbarButton"]}
+        context={context}
+        className="flex items-center gap-1"
+      />
     </div>
   );
 }
@@ -42,11 +50,7 @@ export function BreadcrumbBar() {
   const globalToolbarSlots = <GlobalToolbar context={globalToolbarSlotContext} />;
 
   if (isMobile && mobileToolbar) {
-    return (
-      <div className="border-b border-border px-2 h-12 shrink-0 flex items-center">
-        {mobileToolbar}
-      </div>
-    );
+    return <div className="border-b border-border px-2 h-12 shrink-0 flex items-center">{mobileToolbar}</div>;
   }
 
   if (breadcrumbs.length === 0) {
@@ -83,7 +87,9 @@ export function BreadcrumbBar() {
               breadcrumb.leading && "flex items-center gap-1.5",
             )}
           >
-            {breadcrumb.leading ? <span className="flex shrink-0 items-center">{breadcrumb.leading}</span> : null}
+            {breadcrumb.leading ? (
+              <span className="flex shrink-0 items-center">{breadcrumb.leading}</span>
+            ) : null}
             <span className={breadcrumb.leading ? "truncate" : undefined}>{breadcrumb.label}</span>
           </h1>
         </div>
@@ -119,10 +125,12 @@ export function BreadcrumbBar() {
                         {crumb.renderLink(
                           crumb.leading ? (
                             <span className="inline-flex items-center gap-1.5">
-                            <span className="flex shrink-0 items-center">{crumb.leading}</span>
-                            <span className="truncate">{crumb.label}</span>
+                              <span className="flex shrink-0 items-center">{crumb.leading}</span>
+                              <span className="truncate">{crumb.label}</span>
                             </span>
-                          ) : crumb.label,
+                          ) : (
+                            crumb.label
+                          ),
                         )}
                       </BreadcrumbLink>
                     )}

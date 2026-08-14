@@ -1,4 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Kbd } from "@/components/ui/kbd";
+import { Item, ItemActions, ItemGroup } from "@/components/ui/item";
 
 interface ShortcutEntry {
   keys: string[];
@@ -13,7 +15,9 @@ interface ShortcutEntry {
 // work — Cmd/Ctrl+B toggles the rail).
 function getPlatformLabel() {
   if (typeof navigator === "undefined") return "";
-  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const nav = navigator as Navigator & {
+    userAgentData?: { platform?: string };
+  };
   return nav.userAgentData?.platform || navigator.userAgent || "";
 }
 
@@ -66,20 +70,16 @@ const sections: ShortcutSection[] = [
       { keys: ["/"], label: "Search current page or quick search" },
       { keys: ["c"], label: "New task" },
       { keys: ["["], label: "Toggle sidebar" },
-      { keys: [META_KEY, "B"], label: "Collapse or expand sidebar", combo: true },
+      {
+        keys: [META_KEY, "B"],
+        label: "Collapse or expand sidebar",
+        combo: true,
+      },
       { keys: ["]"], label: "Toggle panel" },
       { keys: ["?"], label: "Show keyboard shortcuts" },
     ],
   },
 ];
-
-function KeyCap({ children }: { children: string }) {
-  return (
-    <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded border border-border bg-muted px-1.5 font-mono text-xs font-medium text-foreground shadow-(--shadow-extract-10)">
-      {children}
-    </kbd>
-  );
-}
 
 export function KeyboardShortcutsCheatsheetContent() {
   return (
@@ -90,14 +90,15 @@ export function KeyboardShortcutsCheatsheetContent() {
             <h3 className="mb-2 text-(length:--text-micro) font-semibold uppercase tracking-wider text-muted-foreground">
               {section.title}
             </h3>
-            <div className="space-y-1.5">
+            <ItemGroup className="gap-1.5">
               {section.shortcuts.map((shortcut) => (
-                <div
+                <Item
                   key={shortcut.label + shortcut.keys.join()}
-                  className="flex items-center justify-between gap-4"
+                  size="sm"
+                  className="flex-nowrap justify-between border-0 px-0 py-0"
                 >
                   <span className="text-sm text-foreground/90">{shortcut.label}</span>
-                  <div className="flex items-center gap-1">
+                  <ItemActions>
                     {shortcut.keys.map((key, i) => (
                       <span key={key} className="flex items-center gap-1">
                         {i > 0 && (
@@ -105,19 +106,25 @@ export function KeyboardShortcutsCheatsheetContent() {
                             {shortcut.combo ? "+" : "then"}
                           </span>
                         )}
-                        <KeyCap>{key}</KeyCap>
+                        <Kbd className="h-6 min-w-6 border border-border px-1.5 font-mono text-foreground shadow-(--shadow-extract-10)">
+                          {key}
+                        </Kbd>
                       </span>
                     ))}
-                  </div>
-                </div>
+                  </ItemActions>
+                </Item>
               ))}
-            </div>
+            </ItemGroup>
           </div>
         ))}
       </div>
       <div className="border-t border-border px-5 py-3">
         <p className="text-xs text-muted-foreground">
-          Press <KeyCap>Esc</KeyCap> to close &middot; Shortcuts are disabled in text fields
+          Press{" "}
+          <Kbd className="h-6 min-w-6 border border-border px-1.5 font-mono text-foreground shadow-(--shadow-extract-10)">
+            Esc
+          </Kbd>{" "}
+          to close &middot; Shortcuts are disabled in text fields
         </p>
       </div>
     </>

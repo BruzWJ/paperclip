@@ -6,34 +6,31 @@ import { UserPlus2 } from "lucide-react";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Card } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { JoinRequestApprovalControls } from "@/components/JoinRequestApprovalControls";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Field, FieldLabel, FieldSet } from "@/components/ui/field";
+import { Spinner } from "@/components/ui/spinner";
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
-import { useToast } from "@/context/ToastContext";
+import { toast } from "sonner";
 import { queryKeys } from "@/lib/queryKeys";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/inbox/requests/",
-)({ component: JoinRequestQueue });
+export const Route = createFileRoute("/_authenticated/$companyId/inbox/requests/")({
+  component: JoinRequestQueue,
+});
 
 function JoinRequestQueue() {
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const { pushToast } = useToast();
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<
-    "pending_approval" | "approved" | "rejected"
-  >("pending_approval");
+  const [status, setStatus] = useState<"pending_approval" | "approved" | "rejected">("pending_approval");
 
   useEffect(() => {
     setBreadcrumbs([
@@ -63,8 +60,7 @@ function JoinRequestQueue() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (requestId: string) =>
-      accessApi.approveJoinRequest(companyId, requestId),
+    mutationFn: (requestId: string) => accessApi.approveJoinRequest(companyId, requestId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.access.joinRequests(companyId, status),
@@ -75,24 +71,24 @@ function JoinRequestQueue() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.access.companyUserDirectory(companyId),
       });
-      pushToast({ title: "Join request approved", tone: "success" });
+      toast.success("Join request approved");
     },
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (requestId: string) =>
-      accessApi.rejectJoinRequest(companyId, requestId),
+    mutationFn: (requestId: string) => accessApi.rejectJoinRequest(companyId, requestId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.access.joinRequests(companyId, status),
       });
-      pushToast({ title: "Join request rejected", tone: "success" });
+      toast.success("Join request rejected");
     },
   });
 
   if (requestsQuery.isLoading) {
     return (
-      <div className="text-sm text-muted-foreground" role="status">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner />
         Loading join requests…
       </div>
     );
@@ -100,16 +96,15 @@ function JoinRequestQueue() {
 
   if (requestsQuery.error) {
     const message =
-      requestsQuery.error instanceof ApiError &&
-      requestsQuery.error.status === 403
+      requestsQuery.error instanceof ApiError && requestsQuery.error.status === 403
         ? "You do not have permission to review join requests for this company."
         : requestsQuery.error instanceof Error
           ? requestsQuery.error.message
           : "Failed to load join requests.";
     return (
-      <div className="text-sm text-destructive" role="alert">
-        {message}
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription>{message}</AlertDescription>
+      </Alert>
     );
   }
 
@@ -125,9 +120,10 @@ function JoinRequestQueue() {
   return (
     <div className="max-w-6xl space-y-6" aria-busy={isPending}>
       {isPending ? (
-        <p className="text-sm text-muted-foreground" role="status">
-          {requestStatus}
-        </p>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner />
+          {requestStatus ?? "Loading..."}
+        </div>
       ) : null}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
@@ -135,19 +131,17 @@ function JoinRequestQueue() {
           <h1 className="text-lg font-semibold">Join Request Queue</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
-          Review user join requests outside the mixed inbox feed. This queue
-          uses the same approval mutations as the inline inbox cards.
+          Review user join requests outside the mixed inbox feed. This queue uses the same approval mutations
+          as the inline inbox cards.
         </p>
       </div>
 
       <Card className="flex-row flex-wrap gap-3 p-4">
-        <label className="space-y-2 text-sm">
-          <span className="font-medium">Status</span>
+        <Field>
+          <FieldLabel>Status</FieldLabel>
           <Select
             value={status}
-            onValueChange={(v) =>
-              setStatus(v as "pending_approval" | "approved" | "rejected")
-            }
+            onValueChange={(v) => setStatus(v as "pending_approval" | "approved" | "rejected")}
           >
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -158,14 +152,20 @@ function JoinRequestQueue() {
               <SelectItem value="rejected">Rejected</SelectItem>
             </SelectContent>
           </Select>
-        </label>
+        </Field>
       </Card>
 
       <div className="space-y-4">
         {(requestsQuery.data ?? []).length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
-            No join requests match the current filters.
-          </div>
+          <Empty className="border">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <UserPlus2 />
+              </EmptyMedia>
+              <EmptyTitle>No matching join requests</EmptyTitle>
+              <EmptyDescription>No join requests match the current filters.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           requestsQuery.data!.map((request) => (
             <Card key={request.id} className="block p-4">
@@ -200,42 +200,53 @@ function JoinRequestQueue() {
                 </div>
 
                 {request.status === "pending_approval" ? (
-                  <fieldset
+                  <FieldSet
                     aria-label="Join request approval actions"
                     className="contents"
                     disabled={isPending}
                   >
-                    <JoinRequestApprovalControls
-                      onApprove={() => approveMutation.mutate(request.id)}
-                      onReject={() => rejectMutation.mutate(request.id)}
-                      isPending={isPending}
-                      className="flex max-w-sm flex-wrap items-end justify-end gap-2"
-                    />
-                  </fieldset>
+                    <ButtonGroup className="max-w-sm flex-wrap justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => approveMutation.mutate(request.id)}
+                        disabled={isPending}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => rejectMutation.mutate(request.id)}
+                        disabled={isPending}
+                      >
+                        Reject
+                      </Button>
+                    </ButtonGroup>
+                  </FieldSet>
                 ) : null}
               </div>
 
-              <div className="mt-4 grid gap-3 text-sm text-muted-foreground md:grid-cols-2">
-                <div className="rounded-lg border border-border bg-background px-3 py-2">
-                  <div className="text-xs font-medium uppercase tracking-wide">
-                    Invite context
-                  </div>
-                  <div className="mt-2">
-                    {request.invite
-                      ? `User invite${request.invite.userRole ? ` • default role ${request.invite.userRole}` : ""}`
-                      : "Invite metadata unavailable"}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-border bg-background px-3 py-2">
-                  <div className="text-xs font-medium uppercase tracking-wide">
-                    Request details
-                  </div>
-                  <div className="mt-2">
-                    Submitted {new Date(request.createdAt).toLocaleString()}
-                  </div>
-                  <div>Source IP {request.requestIp}</div>
-                </div>
-              </div>
+              <ItemGroup className="mt-4 grid gap-3 md:grid-cols-2">
+                <Item variant="outline" size="sm">
+                  <ItemContent>
+                    <ItemTitle>Invite context</ItemTitle>
+                    <ItemDescription>
+                      {request.invite
+                        ? `User invite${request.invite.userRole ? ` • default role ${request.invite.userRole}` : ""}`
+                        : "Invite metadata unavailable"}
+                    </ItemDescription>
+                  </ItemContent>
+                </Item>
+                <Item variant="outline" size="sm">
+                  <ItemContent>
+                    <ItemTitle>Request details</ItemTitle>
+                    <ItemDescription>
+                      Submitted {new Date(request.createdAt).toLocaleString()}
+                    </ItemDescription>
+                    <ItemDescription>Source IP {request.requestIp}</ItemDescription>
+                  </ItemContent>
+                </Item>
+              </ItemGroup>
             </Card>
           ))
         )}

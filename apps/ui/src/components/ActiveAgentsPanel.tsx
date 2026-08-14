@@ -9,17 +9,19 @@ import type {
   TaskExecutionRunListPageRecord,
 } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
-import {
-  ACTIVE_TASK_EXECUTION_RUN_STATUSES,
-  runsApi,
-} from "../api/runs";
+import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
 import { tasksApi } from "../api/tasks";
 import { queryKeys } from "../lib/queryKeys";
+import { statusBadgeVariant } from "../lib/status-variant";
 import { cn, relativeTime } from "../lib/utils";
 import { Bot, ExternalLink } from "lucide-react";
-import { Identity } from "./Identity";
-import { StatusBadge } from "./StatusBadge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { deriveInitials } from "@/lib/identity";
 import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 
 const MIN_DASHBOARD_RUNS = 4;
 const DASHBOARD_RUN_CARD_LIMIT = 4;
@@ -37,22 +39,6 @@ interface ActiveAgentsPanelProps {
   showMoreLink?: boolean;
 }
 
-function ActiveAgentsEmptyState({ message }: { message: string }) {
-  return (
-    <div className="rounded-xl border border-border p-4" role="status">
-      <div className="flex items-start gap-2.5">
-        <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <div>
-          <p className="text-sm font-medium text-foreground">{message}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Agent activity will appear here when a task run starts.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function ActiveAgentsPanel({
   companyId,
   title = "Agents",
@@ -67,11 +53,7 @@ export function ActiveAgentsPanel({
 }: ActiveAgentsPanelProps) {
   const limit = Math.max(1, fetchLimit ?? minRunCount, cardLimit);
   const status = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
-  const runsQueryKey = [
-    ...queryKeys.runs(companyId, { status }),
-    queryScope,
-    limit,
-  ] as const;
+  const runsQueryKey = [...queryKeys.runs(companyId, { status }), queryScope, limit] as const;
   const { data: runPage } = useQuery<TaskExecutionRunListPageRecord>({
     queryKey: runsQueryKey,
     queryFn: () => runsApi.listForCompany(companyId, { status, limit }),
@@ -83,18 +65,12 @@ export function ActiveAgentsPanel({
     queryFn: () => agentsApi.list(companyId),
     enabled: Boolean(companyId),
   });
-  const agentById = useMemo(
-    () => new Map(agents.map((agent) => [agent.id, agent])),
-    [agents],
-  );
+  const agentById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
 
   const runs = runPage?.items ?? [];
   const visibleRuns = useMemo(() => runs.slice(0, cardLimit), [cardLimit, runs]);
   const hiddenRunCount = Math.max(0, runs.length - visibleRuns.length);
-  const visibleTaskIds = useMemo(
-    () => [...new Set(visibleRuns.map((run) => run.taskId))],
-    [visibleRuns],
-  );
+  const visibleTaskIds = useMemo(() => [...new Set(visibleRuns.map((run) => run.taskId))], [visibleRuns]);
   const taskQueries = useQueries({
     queries: visibleTaskIds.map((taskId) => ({
       queryKey: queryKeys.tasks.detail(taskId),
@@ -113,16 +89,19 @@ export function ActiveAgentsPanel({
 
   return (
     <div>
-      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h3>
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
       {runs.length === 0 ? (
-        <ActiveAgentsEmptyState message={emptyMessage} />
+        <Empty className="border" role="status">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Bot aria-hidden="true" />
+            </EmptyMedia>
+            <EmptyTitle>{emptyMessage}</EmptyTitle>
+            <EmptyDescription>Agent activity will appear here when a task run starts.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
-        <div className={cn(
-          "grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4",
-          gridClassName,
-        )}>
+        <div className={cn("grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4", gridClassName)}>
           {visibleRuns.map((run) => (
             <AgentRunCard
               key={run.id}
@@ -164,38 +143,38 @@ const AgentRunCard = memo(function AgentRunCard({
   const agentRef = agent?.id ?? null;
   const agentName = agent?.name ?? run.targetAgentId.slice(0, 8);
   return (
-    <div className={cn(
-      "flex min-h-52 flex-col overflow-hidden rounded-xl border border-blue-500/25 bg-blue-500/[0.04] shadow-sm",
-      className,
-    )}>
-      <div className="border-b border-border/60 px-3 py-3">
+    <Card className={cn("min-h-52 overflow-hidden", className)}>
+      <CardHeader>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="relative flex h-2.5 w-2.5 shrink-0">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-70" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500" />
+              <Badge variant="secondary">Live</Badge>
+              <span className="inline-flex min-w-0 items-center gap-1.5" title={agentName}>
+                <Avatar size="sm">
+                  <AvatarFallback>{deriveInitials(agentName)}</AvatarFallback>
+                </Avatar>
+                <span className="truncate text-(length:--text-micro)">{agentName}</span>
               </span>
-              <Identity name={agentName} size="sm" className="[&>span:last-child]:!text-(length:--text-micro)" />
             </div>
             <div className="mt-2 flex items-center gap-2 text-(length:--text-micro) text-muted-foreground">
-              <StatusBadge status={run.status} />
+              <Badge variant={statusBadgeVariant(run.status)}>{run.status.replace(/[_-]/g, " ")}</Badge>
               <span>{relativeTime(run.createdAt)}</span>
             </div>
           </div>
           {agentRef ? (
-            <Link
-              to="/$companyId/agents/$agentId/runs/$runId"
-              params={{ companyId, agentId: agentRef, runId: run.id }}
-              className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-(length:--text-nano) text-muted-foreground transition-colors hover:text-foreground"
-              aria-label={`Open ${agentName}'s ${run.kind} run`}
-            >
-              <ExternalLink className="h-2.5 w-2.5" aria-hidden="true" />
-            </Link>
+            <Button asChild variant="outline" size="icon-sm">
+              <Link
+                to="/$companyId/agents/$agentId/runs/$runId"
+                params={{ companyId, agentId: agentRef, runId: run.id }}
+                aria-label={`Open ${agentName}'s ${run.kind} run`}
+              >
+                <ExternalLink aria-hidden="true" />
+              </Link>
+            </Button>
           ) : null}
         </div>
-      </div>
-      <div className="flex flex-1 flex-col justify-between gap-3 p-3 text-xs">
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col justify-between gap-3 text-xs">
         <div>
           <p className="font-medium capitalize">{run.kind} run</p>
           <p className="mt-1 font-mono text-muted-foreground">{run.id}</p>
@@ -205,17 +184,15 @@ const AgentRunCard = memo(function AgentRunCard({
             taskId={task.id}
             taskNumber={task.taskNumber}
             taskPrefetch={task}
-            className="rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 text-blue-700 hover:underline dark:text-blue-300"
+            className="text-primary hover:underline"
           >
             {task.identifier}
             {task.title ? " - " + task.title : ""}
           </TaskLinkQuicklook>
         ) : (
-          <div className="rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 text-muted-foreground">
-            Task unavailable
-          </div>
+          <div className="text-muted-foreground">Task unavailable</div>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 });

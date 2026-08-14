@@ -12,18 +12,19 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { GoalProperties } from "@/components/GoalProperties";
 import { GoalTree } from "@/components/GoalTree";
-import { StatusBadge } from "@/components/StatusBadge";
 import { InlineEditor } from "@/components/InlineEditor";
-import { EntityRow } from "@/components/EntityRow";
-import { PageSkeleton } from "@/components/PageSkeleton";
-import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { statusBadgeVariant } from "@/lib/status-variant";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
+import { FieldLegend, FieldSet } from "@/components/ui/field";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, SlidersHorizontal } from "lucide-react";
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/goals/$goalId/",
-)({
+export const Route = createFileRoute("/_authenticated/$companyId/goals/$goalId/")({
   loader: ({ abortController, context, params }) =>
     loadCompanyGoal({
       queryClient: context.queryClient,
@@ -35,33 +36,6 @@ export const Route = createFileRoute(
 });
 
 const route = getRouteApi("/_authenticated/$companyId/goals/$goalId/");
-
-interface GoalPropertiesToggleButtonProps {
-  panelVisible: boolean;
-  onShowProperties: () => void;
-}
-
-export function GoalPropertiesToggleButton({
-  panelVisible,
-  onShowProperties,
-}: GoalPropertiesToggleButtonProps) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon-xs"
-      className={cn(
-        "hidden md:inline-flex shrink-0 transition-opacity duration-200",
-        panelVisible
-          ? "opacity-0 pointer-events-none w-0 overflow-hidden"
-          : "opacity-100",
-      )}
-      onClick={onShowProperties}
-      title="Show properties"
-    >
-      <SlidersHorizontal className="h-4 w-4" />
-    </Button>
-  );
-}
 
 function GoalDetail() {
   const { companyId, goalId } = route.useParams();
@@ -90,8 +64,7 @@ function GoalDetail() {
   });
 
   const updateGoal = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      goalsApi.update(goalId!, data),
+    mutationFn: (data: Record<string, unknown>) => goalsApi.update(goalId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.goals.detail(goalId!),
@@ -104,11 +77,7 @@ function GoalDetail() {
 
   const uploadImage = useMutation({
     mutationFn: async (file: File) => {
-      return assetsApi.uploadImage(
-        companyId,
-        file,
-        `goals/${goalId ?? "draft"}`,
-      );
+      return assetsApi.uploadImage(companyId, file, `goals/${goalId ?? "draft"}`);
     },
   });
   const isPending = updateGoal.isPending || uploadImage.isPending;
@@ -154,28 +123,36 @@ function GoalDetail() {
     return () => closePanel();
   }, [goal]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (isLoading) return <Skeleton className="h-32 w-full" />;
+  if (error)
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>{error.message}</AlertDescription>
+      </Alert>
+    );
   if (!goal) return null;
 
   return (
     <div className="space-y-6">
       <div className="space-y-3" aria-busy={isPending}>
         <div className="flex items-center gap-2">
-          <span className="text-xs uppercase text-muted-foreground">
-            {goal.level}
-          </span>
-          <StatusBadge status={goal.status} />
+          <span className="text-xs uppercase text-muted-foreground">{goal.level}</span>
+          <Badge variant={statusBadgeVariant(goal.status)}>{goal.status.replace(/[_-]/g, " ")}</Badge>
           <div className="ml-auto">
-            <GoalPropertiesToggleButton
-              panelVisible={panelVisible}
-              onShowProperties={() => setPanelVisible(true)}
-            />
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={`hidden shrink-0 overflow-hidden transition-opacity duration-200 md:inline-flex ${panelVisible ? "pointer-events-none w-0 opacity-0" : "opacity-100"}`}
+              onClick={() => setPanelVisible(true)}
+              title="Show properties"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
-        <fieldset className="contents" disabled={isPending}>
-          <legend className="sr-only">Goal details</legend>
+        <FieldSet className="contents" disabled={isPending}>
+          <FieldLegend className="sr-only">Goal details</FieldLegend>
           <InlineEditor
             value={goal.title}
             onSave={(title) => updateGoal.mutateAsync({ title })}
@@ -195,39 +172,31 @@ function GoalDetail() {
               return asset.contentPath;
             }}
           />
-        </fieldset>
+        </FieldSet>
         {isPending ? (
           <p className="text-xs text-muted-foreground" role="status">
-            {uploadImage.isPending
-              ? "Uploading goal image…"
-              : "Saving goal changes…"}
+            {uploadImage.isPending ? "Uploading goal image…" : "Saving goal changes…"}
           </p>
         ) : null}
       </div>
 
       <Tabs defaultValue="children">
         <TabsList>
-          <TabsTrigger value="children">
-            Sub-Goals ({childGoals.length})
-          </TabsTrigger>
-          <TabsTrigger value="projects">
-            Projects ({linkedProjects.length})
-          </TabsTrigger>
+          <TabsTrigger value="children">Sub-Goals ({childGoals.length})</TabsTrigger>
+          <TabsTrigger value="projects">Projects ({linkedProjects.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="children" className="mt-4 space-y-3">
           <div className="flex items-center justify-start">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => openNewGoal({ parentId: goalId })}
-            >
+            <Button size="sm" variant="outline" onClick={() => openNewGoal({ parentId: goalId })}>
               <Plus data-icon="inline-start" className="h-3.5 w-3.5 mr-1.5" />
               Sub Goal
             </Button>
           </div>
           {childGoals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sub-goals.</p>
+            <Empty className="border-0 p-4 md:p-4">
+              <EmptyDescription>No sub-goals.</EmptyDescription>
+            </Empty>
           ) : (
             <GoalTree goals={childGoals} linkGoals />
           )}
@@ -235,22 +204,31 @@ function GoalDetail() {
 
         <TabsContent value="projects" className="mt-4">
           {linkedProjects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked projects.</p>
+            <Empty className="border-0 p-4 md:p-4">
+              <EmptyDescription>No linked projects.</EmptyDescription>
+            </Empty>
           ) : (
-            <div className="border border-border">
+            <ItemGroup className="overflow-hidden rounded-md border">
               {linkedProjects.map((project) => (
-                <EntityRow
-                  key={project.id}
-                  title={project.name}
-                  subtitle={project.description ?? undefined}
-                  linkOptions={{
-                    to: "/$companyId/projects/$projectId",
-                    params: { companyId, projectId: project.id },
-                  }}
-                  trailing={<StatusBadge status={project.status} />}
-                />
+                <Item key={project.id} asChild size="sm">
+                  <Link
+                    to="/$companyId/projects/$projectId"
+                    params={{ companyId, projectId: project.id }}
+                    className="no-underline"
+                  >
+                    <ItemContent>
+                      <ItemTitle>{project.name}</ItemTitle>
+                      {project.description ? <ItemDescription>{project.description}</ItemDescription> : null}
+                    </ItemContent>
+                    <ItemActions>
+                      <Badge variant={statusBadgeVariant(project.status)}>
+                        {project.status.replace(/[_-]/g, " ")}
+                      </Badge>
+                    </ItemActions>
+                  </Link>
+                </Item>
               ))}
-            </div>
+            </ItemGroup>
           )}
         </TabsContent>
       </Tabs>

@@ -1,14 +1,18 @@
-import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { ActivityEvent } from "@paperclipai/shared";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import * as Collapse from "@/components/ui/collapsible";
+import * as ItemUI from "@/components/ui/item";
 
 export type RoutineActivityEvent = Pick<ActivityEvent, "id" | "action" | "details" | "createdAt">;
 
 function formatTime(value: string | Date): string {
   try {
-    return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return new Date(value).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   } catch {
     return String(value);
   }
@@ -34,45 +38,41 @@ function formatDetailValue(value: unknown): string {
   }
 }
 
-/** Activity log row with an expandable JSON payload (§3.7). */
 export function RoutineActivityRow({ event }: { event: RoutineActivityEvent }) {
-  const [expanded, setExpanded] = useState(false);
   const hasPayload = event.details != null && Object.keys(event.details).length > 0;
 
   return (
-    <div className="border-b border-border/60 last:border-b-0">
-      <button
-        type="button"
-        disabled={!hasPayload}
-        onClick={() => setExpanded((value) => !value)}
-        className={cn(
-          "flex w-full items-center gap-3 px-1 py-2 text-left text-xs",
-          hasPayload ? "hover:bg-accent/30" : "cursor-default",
-        )}
-      >
-        <span className="w-12 shrink-0 font-mono text-muted-foreground/70">
-          {formatTime(event.createdAt)}
-        </span>
-        <Badge variant="outline" className="shrink-0 font-mono">
-          {event.action}
-        </Badge>
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-          {summarizeDetails(event.details)}
-        </span>
+    <Collapse.Collapsible className="group border-b border-border/60 last:border-b-0">
+      <Collapse.CollapsibleTrigger asChild>
+        <ItemUI.Item asChild size="sm">
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-auto w-full justify-start"
+            disabled={!hasPayload}
+          >
+            <ItemUI.ItemMedia className="w-12 font-mono text-muted-foreground">
+              {formatTime(event.createdAt)}
+            </ItemUI.ItemMedia>
+            <ItemUI.ItemContent className="min-w-0 flex-row items-center">
+              <Badge variant="outline" className="shrink-0 font-mono">
+                {event.action}
+              </Badge>
+              <ItemUI.ItemDescription className="truncate">
+                {summarizeDetails(event.details)}
+              </ItemUI.ItemDescription>
+            </ItemUI.ItemContent>
+            {hasPayload ? <ChevronRight className="size-3.5 group-data-[state=open]:rotate-90" /> : null}
+          </Button>
+        </ItemUI.Item>
+      </Collapse.CollapsibleTrigger>
+      <Collapse.CollapsibleContent>
         {hasPayload ? (
-          <ChevronRight
-            className={cn(
-              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-              expanded && "rotate-90",
-            )}
-          />
+          <pre className="mx-1 mb-2 overflow-x-auto rounded-md bg-neutral-950 p-3 font-mono text-xs text-neutral-200">
+            {JSON.stringify(event.details, null, 2)}
+          </pre>
         ) : null}
-      </button>
-      {expanded && hasPayload ? (
-        <pre className="mx-1 mb-2 overflow-x-auto rounded-md bg-neutral-950 p-3 font-mono text-xs text-neutral-200">
-          {JSON.stringify(event.details, null, 2)}
-        </pre>
-      ) : null}
-    </div>
+      </Collapse.CollapsibleContent>
+    </Collapse.Collapsible>
   );
 }

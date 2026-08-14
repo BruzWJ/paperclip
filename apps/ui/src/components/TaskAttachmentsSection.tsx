@@ -3,11 +3,23 @@ import { useQuery } from "@tanstack/react-query";
 import type { TaskAttachment } from "@paperclipai/shared";
 import { Download, ExternalLink, FileText, Maximize2, Paperclip, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Attachment as AttachmentShell,
+  AttachmentAction,
+  AttachmentActions as AttachmentActionGroup,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentMedia,
+  AttachmentTitle,
+  AttachmentTrigger,
+} from "@/components/ui/attachment";
+import { Card } from "@/components/ui/card";
 import { FoldCurtain } from "./FoldCurtain";
 import { MarkdownBody } from "./MarkdownBody";
-import { OutputFileTile } from "./task-output/OutputFileTile";
-import { OutputVideoPlayer } from "./task-output/OutputVideoPlayer";
-import { formatBytes } from "@/lib/task-output";
+import { formatBytes, getOutputFileGlyph } from "@/lib/task-output";
 import {
   attachmentDownloadPath,
   attachmentFilename,
@@ -18,7 +30,16 @@ import {
 } from "@/lib/task-attachments";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
-import { Card } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface TaskAttachmentsSectionProps {
   attachments: TaskAttachment[];
@@ -70,7 +91,12 @@ function AttachmentActions({
         </Button>
       ) : null}
       <Button asChild variant="ghost" size="icon-sm" title="Open in new tab">
-        <a href={attachmentOpenPath(attachment)} target="_blank" rel="noreferrer" aria-label={`Open ${filename}`}>
+        <a
+          href={attachmentOpenPath(attachment)}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`Open ${filename}`}
+        >
           <ExternalLink className="h-4 w-4" />
         </a>
       </Button>
@@ -119,31 +145,40 @@ function MarkdownAttachmentCard({
   });
 
   return (
-    <div id={`attachment-${attachment.id}`} className="scroll-mt-20 rounded-lg border border-border p-3">
+    <Card id={`attachment-${attachment.id}`} className="scroll-mt-20 gap-3 p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="truncate text-sm font-medium" title={filename}>{filename}</span>
+            <span className="truncate text-sm font-medium" title={filename}>
+              {filename}
+            </span>
           </div>
           <AttachmentMeta attachment={attachment} />
         </div>
         <AttachmentActions attachment={attachment} onDelete={onDelete} deletePending={deletePending} />
       </div>
-      <div className="mt-3 rounded-md hover:bg-accent/10">
+      <div className="rounded-md hover:bg-accent/10">
         {isLoading ? (
-          <p className="px-1 py-2 text-xs text-muted-foreground" role="status">Loading preview...</p>
+          <p className="px-1 py-2 text-xs text-muted-foreground" role="status">
+            Loading preview...
+          </p>
         ) : error ? (
-          <p className="px-1 py-2 text-xs text-destructive" role="alert">Could not load markdown preview.</p>
+          <Alert variant="destructive">
+            <AlertDescription>Could not load markdown preview.</AlertDescription>
+          </Alert>
         ) : (
           <FoldCurtain>
-            <MarkdownBody className="paperclip-edit-in-place-content min-h-(--sz-220px) text-sm leading-7" softBreaks={false}>
+            <MarkdownBody
+              className="paperclip-edit-in-place-content min-h-(--sz-220px) text-sm leading-7"
+              softBreaks={false}
+            >
               {data ?? ""}
             </MarkdownBody>
           </FoldCurtain>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -161,7 +196,16 @@ function VideoAttachmentCard({
   const filename = attachmentFilename(attachment);
   return (
     <Card id={`attachment-${attachment.id}`} className="block scroll-mt-20 overflow-hidden py-0">
-      <OutputVideoPlayer src={attachment.contentPath} title={filename} />
+      <AspectRatio ratio={16 / 9} className="overflow-hidden bg-black">
+        <video
+          src={attachment.contentPath}
+          controls
+          preload="metadata"
+          playsInline
+          aria-label={`Video output: ${filename}`}
+          className="size-full"
+        />
+      </AspectRatio>
       <div className="flex flex-col gap-2 p-3 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
           <p className="break-words text-sm font-semibold text-foreground">{filename}</p>
@@ -189,24 +233,36 @@ function GenericAttachmentRow({
 }) {
   const filename = attachmentFilename(attachment);
   return (
-    <Card id={`attachment-${attachment.id}`} className="flex-row scroll-mt-20 items-center gap-2.5 p-2">
-      <OutputFileTile contentType={attachment.contentType} />
-      <div className="min-w-0 flex-1">
-        <a
-          href={attachmentOpenPath(attachment)}
-          target="_blank"
-          rel="noreferrer"
-          className="block truncate text-sm font-medium text-foreground hover:underline"
-          title={filename}
+    <AttachmentShell id={`attachment-${attachment.id}`} className="w-full flex-nowrap scroll-mt-20">
+      <AttachmentMedia>
+        <Badge
+          variant="secondary"
+          className="size-8 shrink-0 justify-center rounded-md border-0 p-0 text-(length:--text-nano) tabular-nums"
+          aria-hidden="true"
         >
-          {filename}
-        </a>
-        <p className="truncate text-(length:--text-micro) text-muted-foreground">
+          {getOutputFileGlyph(attachment.contentType).label}
+        </Badge>
+      </AttachmentMedia>
+      <AttachmentContent>
+        <AttachmentTitle>
+          <a
+            href={attachmentOpenPath(attachment)}
+            target="_blank"
+            rel="noreferrer"
+            className="block truncate text-sm font-medium text-foreground hover:underline"
+            title={filename}
+          >
+            {filename}
+          </a>
+        </AttachmentTitle>
+        <AttachmentDescription className="text-(length:--text-micro)">
           Attachment · {attachment.contentType} · {formatBytes(attachment.byteSize)}
-        </p>
-      </div>
-      <AttachmentActions attachment={attachment} onDelete={onDelete} deletePending={deletePending} />
-    </Card>
+        </AttachmentDescription>
+      </AttachmentContent>
+      <AttachmentActionGroup>
+        <AttachmentActions attachment={attachment} onDelete={onDelete} deletePending={deletePending} />
+      </AttachmentActionGroup>
+    </AttachmentShell>
   );
 }
 
@@ -254,10 +310,7 @@ export function TaskAttachmentsSection({
 
   return (
     <div
-      className={cn(
-        "space-y-3 rounded-lg transition-colors",
-        dragActive && "bg-primary/5",
-      )}
+      className={cn("space-y-3 rounded-lg transition-colors", dragActive && "bg-primary/5")}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -272,72 +325,41 @@ export function TaskAttachmentsSection({
         {uploadButton}
       </div>
 
-      {error && (
-        <p className="text-xs text-destructive">{error}</p>
-      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
 
       {imageAttachments.length > 0 && (
         <div className="grid grid-cols-4 gap-2">
           {imageAttachments.map((attachment) => (
-            <div
+            <AttachmentShell
               key={attachment.id}
               id={`attachment-${attachment.id}`}
-              className="group relative aspect-square scroll-mt-20 overflow-hidden rounded-lg border border-border bg-accent/10"
+              orientation="vertical"
+              className="aspect-square w-full scroll-mt-20 overflow-hidden p-0"
             >
-              <button
-                type="button"
-                className="absolute inset-0 block h-full w-full cursor-pointer border-0 bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => onImageClick(attachment)}
-                aria-label={`Preview ${attachment.originalFilename ?? "image attachment"}`}
-              >
+              <AttachmentMedia variant="image" className="h-full rounded-none">
                 <img
                   src={attachment.contentPath}
                   alt={attachment.originalFilename ?? "attachment"}
                   className="h-full w-full object-cover"
                   loading="lazy"
                 />
-                <span aria-hidden="true" className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/30" />
-              </button>
-              {onDelete && confirmDeleteId === attachment.id ? (
-                <div
-                  className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 bg-black/60"
-                >
-                  <p className="text-xs font-medium text-white">Delete?</p>
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      className="rounded bg-destructive px-2 py-0.5 text-xs text-white hover:bg-destructive/80"
-                      onClick={() => {
-                        confirmDelete(attachment.id);
-                      }}
-                      disabled={deletePending}
-                    >
-                      Yes
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded bg-muted px-2 py-0.5 text-xs hover:bg-muted/80"
-                      onClick={() => {
-                        setConfirmDeleteId(null);
-                      }}
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
-              ) : onDelete ? (
-                <button
-                  type="button"
-                  className="absolute right-1.5 top-1.5 z-10 rounded-md bg-black/50 p-1 text-white opacity-0 transition-opacity hover:bg-destructive group-hover:opacity-100"
-                  onClick={() => {
-                    requestDelete(attachment.id);
-                  }}
-                  title="Delete attachment"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+              </AttachmentMedia>
+              <AttachmentTrigger
+                onClick={() => onImageClick(attachment)}
+                aria-label={`Preview ${attachment.originalFilename ?? "image attachment"}`}
+              />
+              {onDelete ? (
+                <AttachmentActionGroup className="opacity-0 transition-opacity group-hover/attachment:opacity-100 focus-within:opacity-100">
+                  <AttachmentAction
+                    variant="destructive"
+                    onClick={() => requestDelete(attachment.id)}
+                    title="Delete attachment"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </AttachmentAction>
+                </AttachmentActionGroup>
               ) : null}
-            </div>
+            </AttachmentShell>
           ))}
         </div>
       )}
@@ -382,18 +404,25 @@ export function TaskAttachmentsSection({
         </div>
       )}
 
-      {onDelete && confirmDeleteId && !imageAttachments.some((attachment) => attachment.id === confirmDeleteId) ? (
-        <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3">
-          <p className="text-sm font-medium text-destructive">Delete this attachment? This cannot be undone.</p>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)} disabled={deletePending}>
-              Cancel
-            </Button>
-            <Button variant="destructive" size="sm" onClick={() => confirmDelete(confirmDeleteId)} disabled={deletePending}>
-              {deletePending ? "Deleting..." : "Delete"}
-            </Button>
-          </div>
-        </div>
+      {onDelete && confirmDeleteId ? (
+        <AlertDialog open onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete attachment?</AlertDialogTitle>
+              <AlertDialogDescription>This attachment will be permanently deleted.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deletePending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={deletePending}
+                onClick={() => confirmDelete(confirmDeleteId)}
+              >
+                {deletePending ? "Deleting…" : "Delete"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       ) : null}
     </div>
   );

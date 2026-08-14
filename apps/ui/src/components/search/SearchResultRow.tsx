@@ -1,12 +1,64 @@
 import { memo, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { Bot, FileText, Hexagon, MessageSquare, Paperclip, Quote } from "lucide-react";
-import type { Agent, CompanySearchResult } from "@paperclipai/shared";
+import type { Agent, CompanySearchHighlight, CompanySearchResult } from "@paperclipai/shared";
 import { CompanyBoardLink } from "@/components/CompanyBoardLink";
 import { cn } from "@/lib/utils";
-import { StatusIcon } from "../StatusIcon";
-import { Identity } from "../Identity";
-import { HighlightedText, type HighlightedTextProps } from "./HighlightedText";
+import { taskValueLabel } from "@/lib/task-blockers";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { deriveInitials } from "@/lib/identity";
 import { taskDisplayTitle } from "@/lib/task-display";
+import { Badge } from "@/components/ui/badge";
+import * as ItemUI from "@/components/ui/item";
+
+export interface HighlightedTextProps {
+  text: string;
+  highlights?: readonly CompanySearchHighlight[] | null;
+  className?: string;
+  markClassName?: string;
+}
+
+function clampedRanges(text: string, highlights: readonly CompanySearchHighlight[]) {
+  const ranges = highlights
+    .map((range) => ({
+      start: Math.max(0, Math.min(text.length, range.start)),
+      end: Math.max(0, Math.min(text.length, range.end)),
+    }))
+    .filter((range) => range.end > range.start)
+    .sort((a, b) => a.start - b.start);
+  return ranges.reduce<Array<{ start: number; end: number }>>((merged, range) => {
+    const last = merged.at(-1);
+    if (last && range.start <= last.end) {
+      last.end = Math.max(last.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
+    return merged;
+  }, []);
+}
+
+export function HighlightedText({ text, highlights, className, markClassName }: HighlightedTextProps) {
+  const ranges = highlights?.length ? clampedRanges(text, highlights) : [];
+  if (ranges.length === 0) return <span className={className}>{text}</span>;
+  let cursor = 0;
+  return (
+    <span className={className}>
+      {ranges.flatMap((range, index) => {
+        const before = text.slice(cursor, range.start);
+        const match = text.slice(range.start, range.end);
+        cursor = range.end;
+        return [
+          before ? <span key={`text-${index}`}>{before}</span> : null,
+          <mark key={`mark-${index}`} className={cn("bg-accent text-accent-foreground", markClassName)}>
+            {match}
+          </mark>,
+          index === ranges.length - 1 && cursor < text.length ? (
+            <span key="text-end">{text.slice(cursor)}</span>
+          ) : null,
+        ];
+      })}
+    </span>
+  );
+}
 
 type SnippetStyle = {
   Icon: ComponentType<SVGProps<SVGSVGElement>>;
@@ -53,7 +105,7 @@ export interface SearchResultRowProps {
 }
 
 const ROW_BASE =
-  "group flex items-start gap-3 rounded-md px-3 transition-colors no-underline text-inherit hover:bg-muted/40";
+  "group items-start rounded-md border-0 transition-colors no-underline text-inherit hover:bg-muted/40";
 
 function SearchResultTarget({
   result,
@@ -65,34 +117,28 @@ function SearchResultTarget({
   children: ReactNode;
 }) {
   if (!result.routeTarget) {
-    return <div className={className}>{children}</div>;
+    return (
+      <ItemUI.Item size="sm" className={className}>
+        {children}
+      </ItemUI.Item>
+    );
   }
   return (
-    <CompanyBoardLink routeTarget={result.routeTarget} className={className}>
-      {children}
-    </CompanyBoardLink>
+    <ItemUI.Item asChild size="sm" className={className}>
+      <CompanyBoardLink routeTarget={result.routeTarget}>{children}</CompanyBoardLink>
+    </ItemUI.Item>
   );
 }
 
-function SearchResultRowImpl({
-  result,
-  agentsById,
-  isActive,
-  className,
-}: SearchResultRowProps) {
+function SearchResultRowImpl({ result, agentsById, isActive, className }: SearchResultRowProps) {
   if (result.type === "agent") {
     return (
-      <SearchResultTarget
-        result={result}
-        className={cn(ROW_BASE, "py-3", isActive && "bg-muted/40", className)}
-      >
-        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+      <SearchResultTarget result={result} className={cn(ROW_BASE, isActive && "bg-muted/40", className)}>
+        <ItemUI.ItemMedia variant="icon">
           <Bot className="h-3 w-3" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-medium">{result.title}</span>
-          </div>
+        </ItemUI.ItemMedia>
+        <ItemUI.ItemContent className="min-w-0">
+          <ItemUI.ItemTitle className="max-w-full truncate">{result.title}</ItemUI.ItemTitle>
           {result.snippet ? (
             <SnippetLine
               text={result.snippets[0]?.text ?? result.snippet}
@@ -101,20 +147,19 @@ function SearchResultRowImpl({
               fallbackLabel={result.sourceLabel ?? "Agent"}
             />
           ) : null}
-        </div>
+        </ItemUI.ItemContent>
       </SearchResultTarget>
     );
   }
 
   if (result.type === "project") {
     return (
-      <SearchResultTarget
-        result={result}
-        className={cn(ROW_BASE, "py-3", isActive && "bg-muted/40", className)}
-      >
-        <Hexagon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <span className="truncate text-sm font-medium">{result.title}</span>
+      <SearchResultTarget result={result} className={cn(ROW_BASE, isActive && "bg-muted/40", className)}>
+        <ItemUI.ItemMedia>
+          <Hexagon className="h-4 w-4 text-muted-foreground" />
+        </ItemUI.ItemMedia>
+        <ItemUI.ItemContent className="min-w-0">
+          <ItemUI.ItemTitle className="max-w-full truncate">{result.title}</ItemUI.ItemTitle>
           {result.snippet ? (
             <SnippetLine
               text={result.snippets[0]?.text ?? result.snippet}
@@ -123,7 +168,7 @@ function SearchResultRowImpl({
               fallbackLabel={result.sourceLabel ?? "Project"}
             />
           ) : null}
-        </div>
+        </ItemUI.ItemContent>
       </SearchResultTarget>
     );
   }
@@ -133,18 +178,15 @@ function SearchResultRowImpl({
     if (!artifact) return null;
     const updated = formatRelativeTime(result.updatedAt ?? artifact.updatedAt);
     return (
-      <SearchResultTarget
-        result={result}
-        className={cn(ROW_BASE, "py-4", isActive && "bg-muted/40", className)}
-      >
-        <Paperclip className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
+      <SearchResultTarget result={result} className={cn(ROW_BASE, isActive && "bg-muted/40", className)}>
+        <ItemUI.ItemMedia>
+          <Paperclip className="h-4 w-4 text-muted-foreground" />
+        </ItemUI.ItemMedia>
+        <ItemUI.ItemContent className="min-w-0">
+          <ItemUI.ItemTitle className="w-full flex-wrap">
             <span className="truncate text-sm font-medium text-foreground">{result.title}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {artifact.taskIdentifier}
-            </span>
-          </div>
+            <span className="shrink-0 text-xs text-muted-foreground">{artifact.taskIdentifier}</span>
+          </ItemUI.ItemTitle>
           {result.snippet ? (
             <SnippetLine
               text={result.snippets[0]?.text ?? result.snippet}
@@ -158,8 +200,8 @@ function SearchResultRowImpl({
             <span className="truncate">{artifact.taskTitle}</span>
             {updated ? <span className="ml-auto shrink-0 tabular-nums">{updated}</span> : null}
           </div>
-        </div>
-        <div className="ml-2 hidden shrink-0 flex-col items-end gap-2 sm:flex">
+        </ItemUI.ItemContent>
+        <ItemUI.ItemActions className="ml-2 hidden flex-col items-end gap-2 sm:flex">
           {updated ? <span className="text-xs tabular-nums text-muted-foreground">{updated}</span> : null}
           {result.previewImageUrl ? (
             <img
@@ -170,16 +212,14 @@ function SearchResultRowImpl({
               className="h-(--sz-88px) w-(--sz-88px) shrink-0 rounded-md border border-border bg-muted object-cover"
             />
           ) : null}
-        </div>
+        </ItemUI.ItemActions>
       </SearchResultTarget>
     );
   }
 
   const task = result.task;
   if (!task) return null;
-  const ownerName = task.ownerAgentId
-    ? agentsById?.get(task.ownerAgentId)?.name ?? null
-    : null;
+  const ownerName = task.ownerAgentId ? (agentsById?.get(task.ownerAgentId)?.name ?? null) : null;
   const updated = formatRelativeTime(result.updatedAt ?? task.updatedAt);
   const titleHighlights = result.snippets.find((snippet) => snippet.field === "title")?.highlights;
   const bodySnippets = result.snippets.filter((snippet) => snippet.field !== "title").slice(0, 2);
@@ -187,15 +227,12 @@ function SearchResultRowImpl({
   const hasRightRail = previewImageUrl || ownerName || updated;
 
   return (
-    <SearchResultTarget
-      result={result}
-      className={cn(ROW_BASE, "py-4", isActive && "bg-muted/40", className)}
-    >
-      <div className="mt-1 shrink-0">
-        <StatusIcon status={task.boardPresentationStatus} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
+    <SearchResultTarget result={result} className={cn(ROW_BASE, isActive && "bg-muted/40", className)}>
+      <ItemUI.ItemMedia>
+        <Badge variant="secondary">{taskValueLabel(task.boardPresentationStatus)}</Badge>
+      </ItemUI.ItemMedia>
+      <ItemUI.ItemContent className="min-w-0">
+        <ItemUI.ItemTitle className="w-full flex-wrap">
           <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
             {task.identifier}
           </span>
@@ -204,7 +241,7 @@ function SearchResultRowImpl({
             highlights={titleHighlights}
             className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground"
           />
-        </div>
+        </ItemUI.ItemTitle>
         {bodySnippets.map((snippet, index) => (
           <SnippetLine
             key={`${snippet.field}-${index}`}
@@ -221,12 +258,19 @@ function SearchResultRowImpl({
             {updated ? <span className="ml-auto tabular-nums">{updated}</span> : null}
           </div>
         ) : null}
-      </div>
+      </ItemUI.ItemContent>
       {hasRightRail ? (
-        <div className="ml-2 hidden shrink-0 flex-col items-end gap-2 sm:flex">
+        <ItemUI.ItemActions className="ml-2 hidden flex-col items-end gap-2 sm:flex">
           {ownerName || updated ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {ownerName ? <Identity name={ownerName} size="sm" /> : null}
+              {ownerName ? (
+                <span className="inline-flex min-w-0 items-center gap-1.5" title={ownerName}>
+                  <Avatar size="sm">
+                    <AvatarFallback>{deriveInitials(ownerName)}</AvatarFallback>
+                  </Avatar>
+                  <span className="truncate">{ownerName}</span>
+                </span>
+              ) : null}
               {updated ? <span className="tabular-nums">{updated}</span> : null}
             </div>
           ) : null}
@@ -239,7 +283,7 @@ function SearchResultRowImpl({
               className="h-(--sz-88px) w-(--sz-88px) shrink-0 rounded-md border border-border bg-muted object-cover"
             />
           ) : null}
-        </div>
+        </ItemUI.ItemActions>
       ) : null}
     </SearchResultTarget>
   );
@@ -258,7 +302,7 @@ interface SnippetLineProps {
 function SnippetLine({ text, highlights, field, fallbackLabel, multiline = false }: SnippetLineProps) {
   const { Icon, label } = snippetStyle(field, fallbackLabel);
   return (
-    <div
+    <ItemUI.ItemDescription
       className={cn(
         "mt-2.5 flex min-w-0 gap-1.5 text-xs text-muted-foreground",
         multiline ? "items-start" : "items-center",
@@ -268,16 +312,17 @@ function SnippetLine({ text, highlights, field, fallbackLabel, multiline = false
         className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground/60", multiline && "mt-0.5")}
         aria-hidden
       />
-      <span
-        className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-wide text-muted-foreground"
+      <Badge
+        variant="outline"
+        className="shrink-0 bg-muted px-1.5 py-0.5 text-(length:--text-nano) uppercase tracking-wide text-muted-foreground"
       >
         {label}
-      </span>
+      </Badge>
       <HighlightedText
         text={text}
         highlights={highlights}
         className={multiline ? "line-clamp-2 leading-relaxed" : "line-clamp-1 truncate"}
       />
-    </div>
+    </ItemUI.ItemDescription>
   );
 }

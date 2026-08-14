@@ -1,4 +1,8 @@
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
 import {
   RoutineListRow,
   type RoutineListAgentSummary,
@@ -68,12 +72,13 @@ function managedRoutineToRow(routine: ManagedRoutinesListItem): RoutineListRowIt
     status: routine.status,
     projectId: routine.projectId ?? null,
     assigneeAgentId: routine.assigneeAgentId ?? null,
-    lastRun: routine.lastRunAt || routine.lastRunStatus
-      ? {
-          triggeredAt: routine.lastRunAt ?? null,
-          status: routine.lastRunStatus ?? null,
-        }
-      : null,
+    lastRun:
+      routine.lastRunAt || routine.lastRunStatus
+        ? {
+            triggeredAt: routine.lastRunAt ?? null,
+            status: routine.lastRunStatus ?? null,
+          }
+        : null,
   };
 }
 
@@ -101,14 +106,16 @@ export function ManagedRoutinesList({
 
   if (routines.length === 0) {
     return (
-      <div className="rounded-lg border border-border px-3 py-8 text-center text-sm text-muted-foreground">
-        {emptyMessage}
-      </div>
+      <Empty className="border py-8">
+        <EmptyHeader>
+          <EmptyDescription>{emptyMessage}</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
   return (
-    <div className="rounded-lg border border-border">
+    <Card className="gap-0 py-0">
       {routines.map((routine) => {
         const row = managedRoutineToRow(routine);
         const missingRefs = routine.missingRefs ?? [];
@@ -141,41 +148,43 @@ export function ManagedRoutinesList({
               onToggleEnabled={() => onToggleEnabled?.(routine, row.status === "active")}
             />
             {hasRepairActions ? (
-              <div
-                className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 pb-3 text-xs text-muted-foreground last:border-b-0"
-              >
-                <span>
-                  {missingRefs.length
-                    ? `Missing ${missingRefs.map((ref) => `${ref.resourceKind}:${ref.resourceKey}`).join(", ")}`
-                    : "Routine defaults can be repaired."}
-                </span>
-                <span className="flex items-center gap-2">
-                  {onReconcile ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={reconcilingRoutineKey === routine.key}
-                      onClick={() => onReconcile(routine)}
-                    >
-                      {reconcilingRoutineKey === routine.key ? "Reconciling..." : "Reconcile"}
-                    </Button>
-                  ) : null}
-                  {onReset ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={resettingRoutineKey === routine.key}
-                      onClick={() => onReset(routine)}
-                    >
-                      {resettingRoutineKey === routine.key ? "Resetting..." : "Reset"}
-                    </Button>
-                  ) : null}
-                </span>
-              </div>
+              <Alert className="rounded-none border-x-0 border-t-0 last:border-b-0">
+                <AlertDescription className="flex w-full flex-row items-center justify-between gap-2">
+                  <span>
+                    {missingRefs.length
+                      ? `Missing ${missingRefs.map((ref) => `${ref.resourceKind}:${ref.resourceKey}`).join(", ")}`
+                      : "Routine defaults can be repaired."}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    {onReconcile ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={reconcilingRoutineKey === routine.key}
+                        onClick={() => onReconcile(routine)}
+                      >
+                        {reconcilingRoutineKey === routine.key ? <Spinner /> : null}
+                        {reconcilingRoutineKey === routine.key ? "Reconciling…" : "Reconcile"}
+                      </Button>
+                    ) : null}
+                    {onReset ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={resettingRoutineKey === routine.key}
+                        onClick={() => onReset(routine)}
+                      >
+                        {resettingRoutineKey === routine.key ? <Spinner /> : null}
+                        {resettingRoutineKey === routine.key ? "Resetting…" : "Reset"}
+                      </Button>
+                    ) : null}
+                  </span>
+                </AlertDescription>
+              </Alert>
             ) : null}
           </div>
         );
       })}
-    </div>
+    </Card>
   );
 }

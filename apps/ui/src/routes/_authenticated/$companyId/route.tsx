@@ -1,12 +1,19 @@
 import { isCanonicalUuid } from "@paperclipai/shared";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { Layout } from "@/components/Layout";
-import { NotFoundPage } from "@/components/NotFoundPage";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 
 export const Route = createFileRoute("/_authenticated/$companyId")({
   loader: ({ params }) => {
     if (!isCanonicalUuid(params.companyId)) throw notFound();
   },
   component: Layout,
-  notFoundComponent: () => <NotFoundPage scope="board" />,
+  notFoundComponent: () => (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>Page not found</EmptyTitle>
+        <EmptyDescription>This company page does not exist.</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  ),
 });

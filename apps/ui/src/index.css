@@ -125,50 +125,6 @@
   --paperclip-doc-annotation-highlight-stale: #fef08a;
   --paperclip-doc-annotation-highlight-resolved: #fef9c3;
 
-  /* Status colors — one base hue per status, consumed by the agent / task
-     status chips and the task status icons. Mode-independent: the `.status-chip`,
-     `.status-fill` and inline icon helpers derive the light vs dark
-     fill/text/border from these via color-mix, so a single hue covers both
-  modes. Values mirror the PAP-75 brand palette (gray inert, blue liveness,
-     amber queued, violet review, green done, red blocked). */
-  --status-agent-idle: #a8aeb2;
-  --status-agent-paused: #f59e0b;
-  --status-agent-error: #dc2626;
-  --status-task-backlog: #a8aeb2;
-  --status-task-todo: #f59e0b;
-  --status-task-in_progress: #2563eb;
-  --status-task-in_review: #7c3aed;
-  --status-task-done: #22c55e;
-  --status-task-blocked: #dc2626;
-  --status-task-cancelled: #a8aeb2;
-
-  /* Task status ICON hues (PAP-238 3b) — AA-tuned (every glyph ≥ 3:1 against
-     its surface, WCAG 2.1 AA, both modes). Distinct from the
-     `--status-task-*` chip base hues: a status chip carries its own bg/text
-     tint, but a bare glyph sitting next to text on the page needs a stronger
-     hue to clear 3:1. Where the chip base already passes (blue liveness, red
-     blocked, light violet review) the icon var simply re-points at it; the
-     gray / amber / green statuses are pinned to the board-approved AA hexes.
-     `in_queue` is the BLOCKED shape recoloured to the in_progress blue
-     (replaces the bespoke teal "covered" state). Light values here; the
-     `.dark` block below overrides the four that need a mode-specific hue. */
-  --status-task-icon-backlog: #52585d; /* gray darkened — 7.21:1 on paper */
-  --status-task-icon-todo: #cc7a00; /* amber darkened — clears 3:1 */
-  --status-task-icon-in_progress: var(
-    --status-task-in_progress
-  ); /* #2563eb both modes */
-  --status-task-icon-in_review: var(
-    --status-task-in_review
-  ); /* #7c3aed (light) */
-  --status-task-icon-done: #16a34a; /* green darkened — clears 3:1 */
-  --status-task-icon-blocked: var(
-    --status-task-blocked
-  ); /* #dc2626 both modes */
-  --status-task-icon-cancelled: #52585d;
-  --status-task-icon-in_queue: var(
-    --status-task-in_progress
-  ); /* blocked shape, blue */
-
   --folder-color-indigo: #6366f1;
   --folder-color-violet: #8b5cf6;
   --folder-color-emerald: #10b981;
@@ -232,15 +188,6 @@
   --paperclip-doc-annotation-highlight-focused: #ca8a04;
   --paperclip-doc-annotation-highlight-stale: #854d0e;
   --paperclip-doc-annotation-highlight-resolved: #713f12;
-
-  /* Dark-mode AA overrides for the status-icon hues that need a mode-specific
-     value (PAP-238). in_progress / blocked stay identical (same blue / red both
-     modes) and in_queue tracks in_progress, so they need no override. */
-  --status-task-icon-backlog: #9a958a;
-  --status-task-icon-todo: #fbbf24;
-  --status-task-icon-in_review: #9474f0; /* deeper than violet-400, reads purple */
-  --status-task-icon-done: #34d06f;
-  --status-task-icon-cancelled: #9a958a;
 }
 
 ::highlight(paperclip-doc-annotation-open) {
@@ -561,30 +508,6 @@
     animation: none;
     -webkit-text-fill-color: unset;
     background: none;
-  }
-}
-
-/* Agent status capsule motion (PAP-75).
-   `hb-blink` marks a broken agent (error). The blink alternates the fill between brand red and the page
-   background so the capsule reads as a faltering status signal. */
-@keyframes hb-blink {
-  0%,
-  49.9% {
-    background-color: #dc2626;
-  }
-  50%,
-  100% {
-    background-color: var(--background);
-  }
-}
-
-.hb-blink {
-  animation: hb-blink 1.2s step-end infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hb-blink {
-    animation: none;
   }
 }
 
@@ -942,65 +865,8 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   background: none;
 }
 
-/* Actions for fenced and indented preformatted markdown blocks */
 .paperclip-markdown-codeblock {
   position: relative;
-}
-
-.paperclip-markdown-codeblock-actions {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-
-.paperclip-markdown-codeblock-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
-  min-height: 1.55rem;
-  padding: 0.2rem 0.4rem;
-  border-radius: calc(var(--radius) - 4px);
-  border: 1px solid color-mix(in oklab, var(--foreground) 14%, transparent);
-  background-color: color-mix(in oklab, var(--muted) 92%, var(--background) 8%);
-  color: var(--muted-foreground);
-  font-size: 0.7rem;
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    background-color 0.12s ease,
-    color 0.12s ease,
-    border-color 0.12s ease;
-}
-
-.paperclip-markdown-codeblock:hover .paperclip-markdown-codeblock-actions,
-.paperclip-markdown-codeblock-actions:focus-within,
-.paperclip-markdown-codeblock-actions[data-active] {
-  opacity: 1;
-}
-
-.paperclip-markdown-codeblock-action:hover {
-  background-color: var(--accent);
-  color: var(--accent-foreground);
-}
-
-.paperclip-markdown-codeblock-action[data-active],
-.paperclip-markdown-codeblock-action[data-copied] {
-  border-color: color-mix(in oklab, var(--primary) 38%, transparent);
-  color: var(--primary);
-}
-
-.paperclip-markdown-codeblock-action[data-failed] {
-  color: var(--destructive);
-}
-
-.paperclip-markdown-codeblock-action-label {
-  font-weight: 500;
 }
 
 /* Remove backtick pseudo-elements from inline code (prose default adds them) */
@@ -1089,7 +955,7 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
 }
 
 .paperclip-markdown
-  :where(p, ul, ol, blockquote, pre, .paperclip-markdown-table-scroll) {
+  :where(p, ul, ol, blockquote, pre, [data-slot="table-container"]) {
   margin-top: 0.7rem;
   margin-bottom: 0.7rem;
 }
@@ -1238,30 +1104,6 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
     color-mix(in oklab, var(--foreground) 10%, transparent);
 }
 
-.paperclip-markdown-table-scroll {
-  max-width: 100%;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
-.paperclip-markdown-table-scroll:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-.paperclip-markdown-table-scroll table {
-  width: max-content;
-  min-width: 100%;
-  margin: 0;
-}
-
-.paperclip-markdown-table-scroll :where(th, td) {
-  min-width: 8rem;
-  max-width: 18rem;
-  vertical-align: top;
-}
-
 .paperclip-markdown th {
   font-weight: 600;
   text-align: left;
@@ -1282,23 +1124,6 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   max-width: none;
   min-width: 100%;
   height: auto;
-}
-
-.paperclip-mermaid-status {
-  margin: 0 0 0.45rem;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-
-.paperclip-mermaid-status-error {
-  color: var(--destructive);
-}
-
-.paperclip-mermaid-source {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
 }
 
 /* Mention chips rendered inline in prose (MarkdownBody or inline anchors) */
@@ -1367,27 +1192,6 @@ span.paperclip-project-mention-chip {
 [class*="_toolbarButtonDropdownContainer_"],
 [class*="_toolbarNodeKindSelectContainer_"] {
   z-index: 81 !important;
-}
-
-/* Status chip/fill helpers.
-   Each consumer sets a local `--sc` to the status' base hue (e.g.
-   `--sc: var(--status-task-in_progress)`); these rules derive the rendered
-   fill / text / border from it. `.status-chip` is the bordered chip (agent +
-   task chips); `.status-fill` a solid swatch (status capsule). Light mixes
-   the hue toward white for a soft fill; dark layers the hue at low alpha so it
-   reads on dark surfaces. A single hue covers both modes. */
-.status-chip {
-  background-color: color-mix(in srgb, var(--sc) 15%, white);
-  color: color-mix(in srgb, var(--sc) 82%, black);
-  border-color: var(--sc);
-}
-.dark .status-chip {
-  background-color: color-mix(in srgb, var(--sc) 22%, transparent);
-  color: color-mix(in srgb, var(--sc) 80%, white);
-  border-color: color-mix(in srgb, var(--sc) 48%, transparent);
-}
-.status-fill {
-  background-color: var(--sc);
 }
 
 /* ── Extracted verbatim tokens (Phase 2, design/token-extraction) ── */
@@ -1525,14 +1329,8 @@ span.paperclip-project-mention-chip {
   --sz-80vh: 80vh; /* Extracted from apps/ui/src/components/DocumentAnnotationPanel.tsx (max-h-[80vh]). */
   --sz-360px: 360px; /* Extracted from apps/ui/src/components/DocumentAnnotationPanel.tsx (w-[360px]). */
   --sz-85vh: 85vh; /* Extracted from apps/ui/src/components/DocumentDiffModal.tsx (max-h-[85vh]). */
-  --sz-6rem: 6rem; /* Extracted from apps/ui/src/components/EntityRow.tsx (min-w-[6rem]). */
-  --sz-1px: 1px; /* Extracted from apps/ui/src/components/EntityRow.tsx (top-[1px]). */
   --sz-100px: 100px; /* Shared compact field minimum size. */
   --sz-60vh: 60vh; /* Extracted from apps/ui/src/components/FrontDoor.tsx (min-h-[60vh]). */
-  --sz-calc-6: min(
-    20rem,
-    calc(100vw - 2rem)
-  ); /* Extracted from apps/ui/src/components/InlineEntitySelector.tsx (w-[min(20rem,calc(100vw-2rem))]). */
   --sz-18rem: 18rem; /* Extracted from apps/ui/src/components/TaskBlockedNotice.tsx (max-w-[18rem]). */
   --sz-70vh: 70vh; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (max-h-[70vh]). */
   --sz-calc-7: calc(
@@ -1580,9 +1378,6 @@ span.paperclip-project-mention-chip {
   --sz-8_5rem: 8.5rem; /* Extracted from apps/ui/src/components/NewTaskDialog.tsx (min-w-[8.5rem]). */
   --sz-160px: 160px; /* Extracted from apps/ui/src/components/NewProjectDialog.tsx (max-w-[160px]). */
   --sz-80px: 80px; /* Extracted from apps/ui/src/components/OnboardingWizard.tsx (min-h-[80px]). */
-  --sz-calc-17: calc(
-    100vh - 4rem
-  ); /* Extracted from apps/ui/src/components/PageSkeleton.tsx (h-[calc(100vh-4rem)]). */
   --sz-calc-18: calc(100dvh - 2rem); /* Used by full-height dialogs. */
   --sz-calc-19: calc(
     1rem + env(safe-area-inset-bottom)
@@ -1653,12 +1448,11 @@ span.paperclip-project-mention-chip {
   --pct-72: 72%; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx (w-[72%]). */
   --shadow-extract-1: 0 16px 40px rgba(37, 99, 235, 0.08); /* ActiveAgentsPanel.tsx live-box glow. Gallery feedback r2: liveness glow recolored cyan->status blue (value edit, site unchanged; originally extracted as rgba(6,182,212,0.08)). */
   --shadow-extract-2: 0 20px 80px -40px rgba(0, 0, 0, 0.55); /* Extracted from apps/ui/src/components/BudgetPolicyCard.tsx (shadow-[0_20px_80px_-40px_rgba(0,0,0,0.55)]). */
-  --shadow-extract-3: 0 0 0 1px rgba(255, 255, 255, 0.08); /* Extracted from apps/ui/src/components/BudgetSidebarMarker.tsx (shadow-[0_0_0_1px_rgba(255,255,255,0.08)]). */
   --shadow-extract-4: 0 -12px 28px rgba(15, 23, 42, 0.08);
   --shadow-extract-5: 0 -12px 28px rgba(0, 0, 0, 0.28);
   --shadow-extract-6: 0 0 0 1px var(--color-background); /* Extracted from apps/ui/src/components/DocumentAnnotationLayer.tsx (shadow-[0_0_0_1px_var(--color-background)]). */
   --shadow-extract-7:
-    0 -12px 28px rgba(15, 23, 42, 0.08), 0 0 0 1px hsl(var(--primary)/0.16); /* Extracted from apps/ui/src/components/TaskChatThread.tsx (shadow-[0_-12px_28px_rgba(15,23,42,0.08),0_0_0_1px_hsl(var(--primary)/0.16)]). */
+    0 -12px 28px rgba(15, 23, 42, 0.08), 0 0 0 1px hsl(var(--primary) / 0.16); /* Extracted from apps/ui/src/components/TaskChatThread.tsx (shadow-[0_-12px_28px_rgba(15,23,42,0.08),0_0_0_1px_hsl(var(--primary)/0.16)]). */
   --shadow-extract-8: 0 1px 0 rgba(15, 23, 42, 0.02); /* Shared inset card shadow. */
   --shadow-extract-10: 0 1px 0 1px hsl(var(--border)); /* Extracted from apps/ui/src/components/KeyboardShortcutsCheatsheet.tsx (shadow-[0_1px_0_1px_hsl(var(--border))]). */
   --shadow-extract-11: 0 18px 50px rgba(37, 99, 235, 0.08); /* LiveRunWidget.tsx glow. Gallery feedback r2: liveness glow recolored cyan->status blue (value edit, site unchanged; originally extracted as rgba(6,182,212,0.08)). */
@@ -1746,8 +1540,6 @@ span.paperclip-project-mention-chip {
     background-color, right; /* Extracted from apps/ui/src/components/ScrollToBottom.tsx (transition-[background-color,right]). */
   --tp-background-color-border-color-color:
     background-color, border-color, color; /* Extracted from apps/ui/src/components/SystemNotice.tsx (transition-[background-color,border-color,color]). */
-  --tp-transform-opacity:
-    transform, opacity; /* Extracted from apps/ui/src/components/ToastViewport.tsx (transition-[transform,opacity]). */
   --tp-border-color-background-color:
     border-color, background-color; /* Extracted from apps/ui/src/components/ui/radio-card.tsx (transition-[border-color,background-color]). */
   --tp-color-background-color-border-color-box-shadow:
@@ -1762,7 +1554,6 @@ span.paperclip-project-mention-chip {
   --z-1: 1; /* Extracted from apps/ui/src/components/TaskDocumentAnnotations.tsx (z-[1]). */
   --z-200: 200; /* Extracted from apps/ui/src/components/Layout.tsx (z-[200]). */
   --z-9999: 9999; /* Extracted from apps/ui/src/components/MarkdownEditor.tsx (z-[9999]). */
-  --z-120: 120; /* Extracted from apps/ui/src/components/ToastViewport.tsx (z-[120]). */
   --s-0_98: 0.98; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/inbox/index.tsx (scale-[0.98]). */
   --va-0_125em: -0.125em; /* Shared inline-icon alignment. */
   --sw-2_3: 2.3; /* Extracted from apps/ui/src/components/MobileBottomNav.tsx (stroke-[2.3]). */
@@ -1803,8 +1594,8 @@ span.paperclip-project-mention-chip {
    of the file being checked (repo-relative, POSIX-style).
    * allow apps/ui/src/routes/_authenticated/$companyId/company/settings/index.tsx — <input type="color"> value; the DOM color-picker control requires a real hex string
    * allow apps/ui/src/components/task-properties/TaskProperties.tsx — newLabelColor color-picker seed state persisted into the label-create payload sent to the backend; a var() string would corrupt that payload
+   * allow apps/ui/src/components/task-properties/useTaskPropertiesState.ts — extracted home of the same newLabelColor color-picker seed state; the persisted API payload still requires a real hex string
    * allow apps/ui/src/components/TaskColumns.tsx — accentColor fallback also feeds pickTextColorForPillBg() contrast math (lib/color-contrast.ts), which needs a real hex string to compute luminance
-   * allow apps/ui/src/components/CompanyPatternIcon.tsx — canvas 2D fillStyle built from a runtime-computed template literal, not a static literal at all
    * allow apps/ui/src/components/ui/scroll-area.tsx — rounded-[inherit] is a CSS keyword, not a literal value; nothing to extract
    * allow apps/ui/src/components/ui/dialog.tsx — tw-animate-css plugin utilities (zoom-in-[0.97], zoom-out-[0.97], slide-in-from-top-[1%], slide-out-to-top-[1%], animate-in, animate-out, fade-in-0, fade-out-0) are dead/no-op classes today (the tw-animate-css plugin is not installed and no matching @utility exists in this file; confirmed via grep of the built storybook-static CSS — none of these class names emit any rule); nothing to tokenize without visually changing a currently-inert class
    * allow apps/ui/src/components/ui/alert-dialog.tsx — same tw-animate-css dead-class situation as dialog.tsx (zoom-out-[0.97], zoom-in-[0.97])
@@ -1826,12 +1617,19 @@ span.paperclip-project-mention-chip {
    * allow apps/ui/src/components/TaskProperties.test.tsx — mock label/project color fixtures
    * allow apps/ui/src/components/MarkdownBody.test.tsx — mock project color fed through a mention-href builder
    * allow apps/ui/src/components/MarkdownEditor.test.tsx — mock projectColor mention fixture
+   * allow apps/ui/src/components/MarkdownEditor.dropzone-and-menu-position.test.tsx — focused split of MarkdownEditor.test.tsx retaining the same mock projectColor mention fixture
+   * allow apps/ui/src/components/MarkdownEditor.markdown-editor-02.test.tsx — focused split of MarkdownEditor.test.tsx retaining the same mock projectColor mention fixture
+   * allow apps/ui/src/components/MarkdownEditor.test-support.tsx — shared support for the focused MarkdownEditor splits retaining the same mock projectColor mention fixture
+   * allow apps/ui/src/components/MarkdownEditor.value-sync-and-fallbacks.test.tsx — focused split of MarkdownEditor.test.tsx retaining the same mock projectColor mention fixture
    * allow apps/ui/src/components/NewTaskDialog.test.tsx — mock brandColor/label color fixtures
    * allow apps/ui/src/components/ProjectTile.test.tsx — mock project color prop
    * allow apps/ui/src/components/RoutineRunVariablesDialog.test.tsx — mock label color fixture
    * allow apps/ui/src/components/SidebarCompanyMenu.test.tsx — mock brandColor company fixtures
    * allow apps/ui/src/components/SidebarStarredProjects.test.tsx — mock project color fixture
    * allow apps/ui/src/routes/invite/$token/InviteLanding.test.tsx — mock companyBrandColor fixtures
+   * allow apps/ui/src/routes/invite/$token/InviteLanding.invite-landing-page-01.test.tsx — focused split of InviteLanding.test.tsx retaining the same mock companyBrandColor fixtures
+   * allow apps/ui/src/routes/invite/$token/InviteLanding.invite-landing-page-02.test.tsx — focused split of InviteLanding.test.tsx retaining the same mock companyBrandColor fixtures
+   * allow apps/ui/src/routes/invite/$token/-InviteLanding-test-support.tsx — shared support for the focused InviteLanding splits retaining the same mock companyBrandColor fixture
    * allow apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/TaskDetail.test.tsx — mock project color fixture
    * allow apps/ui/src/routes/_authenticated/$companyId/projects/$projectId/ProjectDetail.test.tsx — mock project color fixture
    * allow apps/ui/src/routes/_authenticated/$companyId/projects/Projects.test.tsx — mock project color fixture

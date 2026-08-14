@@ -1,10 +1,15 @@
 import type { Goal } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import { StatusBadge } from "./StatusBadge";
+import { statusBadgeVariant } from "../lib/status-variant";
 import { ChevronRight } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import * as Collapse from "@/components/ui/collapsible";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
+import { Item, ItemGroup } from "@/components/ui/item";
 
 interface GoalTreeProps {
   goals: Goal[];
@@ -14,30 +19,30 @@ interface GoalTreeProps {
 
 interface GoalNodeProps {
   goal: Goal;
-  children: Goal[];
   allGoals: Goal[];
   depth: number;
   linkGoals?: boolean;
   onSelect?: (goal: Goal) => void;
 }
 
-function GoalNode({ goal, children, allGoals, depth, linkGoals, onSelect }: GoalNodeProps) {
+function GoalNode({ goal, allGoals, depth, linkGoals, onSelect }: GoalNodeProps) {
   const companyId = useCompanyRouteId();
   const [expanded, setExpanded] = useState(true);
+  const children = allGoals.filter((item) => item.parentId === goal.id);
   const hasChildren = children.length > 0;
 
   const treeToggle = hasChildren ? (
-    <button
-      type="button"
-      className="shrink-0 rounded-sm p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      onClick={() => setExpanded((current) => !current)}
-      aria-label={`${expanded ? "Collapse" : "Expand"} ${goal.title} subtree`}
-      aria-expanded={expanded}
-    >
-      <ChevronRight
-        className={cn("h-3 w-3 transition-transform", expanded && "rotate-90")}
-      />
-    </button>
+    <Collapse.CollapsibleTrigger asChild>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="size-4 shrink-0"
+        aria-label={`${expanded ? "Collapse" : "Expand"} ${goal.title} subtree`}
+      >
+        <ChevronRight className={cn("size-3 transition-transform", expanded && "rotate-90")} />
+      </Button>
+    </Collapse.CollapsibleTrigger>
   ) : (
     <span className="w-4 shrink-0" />
   );
@@ -46,64 +51,60 @@ function GoalNode({ goal, children, allGoals, depth, linkGoals, onSelect }: Goal
     <>
       <span className="text-xs text-muted-foreground capitalize">{goal.level}</span>
       <span className="min-w-0 flex-1 truncate">{goal.title}</span>
-      <StatusBadge status={goal.status} />
+      <Badge variant={statusBadgeVariant(goal.status)}>{goal.status.replace(/[_-]/g, " ")}</Badge>
     </>
   );
 
-  const rowClasses = "flex items-center gap-2 px-3 py-1.5 text-sm";
   const interactiveContentClasses =
     "flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const rowContent = linkGoals ? (
+    <Link
+      to="/$companyId/goals/$goalId"
+      params={{ companyId, goalId: goal.id }}
+      className={cn(interactiveContentClasses, "no-underline text-inherit")}
+    >
+      {goalContent}
+    </Link>
+  ) : onSelect ? (
+    <Button
+      type="button"
+      variant="ghost"
+      className={cn(interactiveContentClasses, "h-auto p-0")}
+      onClick={() => onSelect(goal)}
+    >
+      {goalContent}
+    </Button>
+  ) : (
+    <div className="flex min-w-0 flex-1 items-center gap-2">{goalContent}</div>
+  );
 
   return (
-    <div>
-      {linkGoals ? (
-        <div
-          className={rowClasses}
-          style={{ paddingLeft: `${depth * 16 + 12}px` }}
-        >
-          {treeToggle}
-          <Link
-            to="/$companyId/goals/$goalId"
-            params={{ companyId, goalId: goal.id }}
-            className={cn(interactiveContentClasses, "no-underline text-inherit")}
-          >
-            {goalContent}
-          </Link>
-        </div>
-      ) : (
-        <div className={rowClasses} style={{ paddingLeft: `${depth * 16 + 12}px` }}>
-          {treeToggle}
-          {onSelect ? (
-            <button
-              type="button"
-              className={cn(interactiveContentClasses, "border-0 bg-transparent p-0")}
-              onClick={() => onSelect(goal)}
-            >
-              {goalContent}
-            </button>
-          ) : (
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              {goalContent}
-            </div>
-          )}
-        </div>
-      )}
-      {hasChildren && expanded && (
-        <div>
-          {children.map((child) => (
-            <GoalNode
-              key={child.id}
-              goal={child}
-              children={allGoals.filter((g) => g.parentId === child.id)}
-              allGoals={allGoals}
-              depth={depth + 1}
-              linkGoals={linkGoals}
-              onSelect={onSelect}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+    <Collapse.Collapsible open={expanded} onOpenChange={setExpanded} role="listitem">
+      <Item
+        size="sm"
+        className="flex-nowrap gap-2 rounded-none border-0 px-3 py-1.5"
+        style={{ paddingLeft: `${depth * 16 + 12}px` }}
+      >
+        {treeToggle}
+        {rowContent}
+      </Item>
+      {hasChildren ? (
+        <Collapse.CollapsibleContent>
+          <ItemGroup>
+            {children.map((child) => (
+              <GoalNode
+                key={child.id}
+                goal={child}
+                allGoals={allGoals}
+                depth={depth + 1}
+                linkGoals={linkGoals}
+                onSelect={onSelect}
+              />
+            ))}
+          </ItemGroup>
+        </Collapse.CollapsibleContent>
+      ) : null}
+    </Collapse.Collapsible>
   );
 }
 
@@ -112,22 +113,25 @@ export function GoalTree({ goals, linkGoals, onSelect }: GoalTreeProps) {
   const roots = goals.filter((g) => !g.parentId || !goalIds.has(g.parentId));
 
   if (goals.length === 0) {
-    return <p className="text-sm text-muted-foreground">No goals.</p>;
+    return (
+      <Empty className="border-0 p-4 md:p-4">
+        <EmptyDescription>No goals.</EmptyDescription>
+      </Empty>
+    );
   }
 
   return (
-    <div className="border border-border py-1">
+    <ItemGroup className="overflow-hidden rounded-md border py-1">
       {roots.map((goal) => (
         <GoalNode
           key={goal.id}
           goal={goal}
-          children={goals.filter((g) => g.parentId === goal.id)}
           allGoals={goals}
           depth={0}
           linkGoals={linkGoals}
           onSelect={onSelect}
         />
       ))}
-    </div>
+    </ItemGroup>
   );
 }

@@ -2,11 +2,7 @@ import { useState, type ComponentType, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "../context/SidebarContext";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useSidebarNavExpanded } from "./SidebarNavItem";
+import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel } from "@/components/ui/sidebar";
 
 type SidebarSectionIcon = ComponentType<{ className?: string }>;
 
@@ -70,10 +67,9 @@ function SidebarSectionHeader({
 }: Pick<SidebarSectionProps, "collapsible" | "headerAction" | "label" | "menu">) {
   const { isMobile } = useSidebar();
   const [menuOpen, setMenuOpen] = useState(false);
-  const hasMenu = Boolean(
-    menu && ((menu.actions?.length ?? 0) > 0 || (menu.radioChoices?.length ?? 0) > 0),
-  );
-  const labelClassName = "text-(length:--text-nano) font-medium uppercase tracking-widest font-mono text-muted-foreground/60";
+  const hasMenu = Boolean(menu && ((menu.actions?.length ?? 0) > 0 || (menu.radioChoices?.length ?? 0) > 0));
+  const labelClassName =
+    "text-(length:--text-nano) font-medium uppercase tracking-widest font-mono text-muted-foreground/60";
   const headerControlVisibilityClassName = isMobile
     ? "opacity-100"
     : "opacity-0 group-hover/sidebar-section:opacity-100 group-focus-within/sidebar-section:opacity-100";
@@ -93,18 +89,14 @@ function SidebarSectionHeader({
   const headingControl = hasMenu ? (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          data-slot="icon-button"
-          className={cn(
-            "inline-flex min-w-0 max-w-full items-center rounded-md px-1 py-0.5 text-left outline-none transition-colors",
-            "hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-            menuOpen && "bg-accent/50",
-          )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-auto min-w-0 max-w-full px-1 py-0.5"
           aria-label={menu?.ariaLabel ?? `${label} actions`}
         >
           {headerContent}
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
         {menu?.actions?.map((action, index) => {
@@ -147,52 +139,43 @@ function SidebarSectionHeader({
       </DropdownMenuContent>
     </DropdownMenu>
   ) : (
-    <div className="inline-flex min-w-0 max-w-full items-center px-1 py-0.5">{headerContent}</div>
+    headerContent
   );
 
   return (
-    <div className="group/sidebar-section px-3 py-1.5 pointer-coarse:py-1">
-      <div className="relative flex min-h-6 min-w-0 items-center gap-1">
-        {collapsible ? (
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              data-slot="icon-button"
-              className="absolute -left-4 flex h-5 w-5 items-center justify-center rounded-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-              aria-label={collapsible.open ? `Collapse ${label}` : `Expand ${label}`}
-            >
-              <ChevronRight className={caretClassName} aria-hidden="true" />
-            </button>
-          </CollapsibleTrigger>
-        ) : null}
-        {headingControl}
-        {headerAction && HeaderActionIcon ? (
+    <SidebarGroupLabel className="group/sidebar-section gap-1">
+      {collapsible ? (
+        <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
             size="icon-xs"
-            className={actionClassName}
-            aria-label={headerAction.ariaLabel}
-            onClick={headerAction.onClick}
+            aria-label={collapsible.open ? `Collapse ${label}` : `Expand ${label}`}
           >
-            <HeaderActionIcon className="h-3.5 w-3.5" />
+            <ChevronRight className={caretClassName} aria-hidden="true" />
           </Button>
-        ) : null}
-      </div>
-    </div>
+        </CollapsibleTrigger>
+      ) : null}
+      {headingControl}
+      {headerAction && HeaderActionIcon ? (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className={actionClassName}
+          aria-label={headerAction.ariaLabel}
+          onClick={headerAction.onClick}
+        >
+          <HeaderActionIcon className="h-3.5 w-3.5" />
+        </Button>
+      ) : null}
+    </SidebarGroupLabel>
   );
 }
 
-export function SidebarSection({
-  label,
-  children,
-  collapsible,
-  menu,
-  headerAction,
-}: SidebarSectionProps) {
+export function SidebarSection({ label, children, collapsible, menu, headerAction }: SidebarSectionProps) {
   const { collapsed, peeking } = useSidebar();
   const forceExpanded = useSidebarNavExpanded();
   const rail = collapsed && !peeking && !forceExpanded;
-  const content = <div className="flex flex-col gap-0.5 mt-0.5">{children}</div>;
+  const content = <SidebarGroupContent className="flex flex-col gap-0.5">{children}</SidebarGroupContent>;
 
   // Collapsed rail: the section header would only show a clipped sliver of its
   // label, so replace it with a thin divider. The label stays in the a11y tree,
@@ -205,36 +188,35 @@ export function SidebarSection({
   // (PAP-10676). The divider is vertically centered within that same row.
   if (rail) {
     return (
-      <div>
-        <div className="px-3 py-1.5 pointer-coarse:py-1">
-          <div className="flex min-h-6 items-center">
-            <span className="sr-only">{label}</span>
-            <div className="h-px w-full bg-border/60" aria-hidden="true" />
-          </div>
-        </div>
+      <SidebarGroup>
+        <SidebarGroupLabel>
+          <span className="sr-only">{label}</span>
+        </SidebarGroupLabel>
         {content}
-      </div>
+      </SidebarGroup>
     );
   }
 
   if (collapsible) {
     return (
-      <Collapsible open={collapsible.open} onOpenChange={collapsible.onOpenChange}>
-        <SidebarSectionHeader
-          label={label}
-          collapsible={collapsible}
-          menu={menu}
-          headerAction={headerAction}
-        />
-        <CollapsibleContent>{content}</CollapsibleContent>
+      <Collapsible asChild open={collapsible.open} onOpenChange={collapsible.onOpenChange}>
+        <SidebarGroup>
+          <SidebarSectionHeader
+            label={label}
+            collapsible={collapsible}
+            menu={menu}
+            headerAction={headerAction}
+          />
+          <CollapsibleContent>{content}</CollapsibleContent>
+        </SidebarGroup>
       </Collapsible>
     );
   }
 
   return (
-    <div>
+    <SidebarGroup>
       <SidebarSectionHeader label={label} menu={menu} headerAction={headerAction} />
       {content}
-    </div>
+    </SidebarGroup>
   );
 }

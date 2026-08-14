@@ -1,26 +1,23 @@
+import { Spinner } from "@/components/ui/spinner";
+import { Kbd } from "@/components/ui/kbd";
 import { useEffect, useState } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Item, ItemContent, ItemGroup, ItemTitle } from "@/components/ui/item";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { DirtyFieldDescriptor } from "./RoutineHistoryTab";
 
 /**
@@ -68,127 +65,96 @@ export function RoutineSaveBar({
 
   return (
     <>
-      <div
-        className={cn(
-          "sticky bottom-0 z-10 -mx-8 mt-6 flex h-14 items-center justify-between border-t px-8 backdrop-blur",
-          "motion-safe:transition-colors motion-safe:duration-200",
-          "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2",
-          saveConflict
-            ? "border-amber-500/30 bg-amber-500/5"
-            : "border-border bg-background/95",
-        )}
-      >
-        {saveConflict ? (
-          <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200">
-            <AlertTriangle className="h-4 w-4" />
-            <span>Routine changed elsewhere. Reload to merge.</span>
-          </div>
-        ) : (
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="flex items-center gap-2 text-sm text-foreground hover:text-foreground"
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                <span className="font-medium">
-                  {dirtyCount} unsaved {dirtyCount === 1 ? "change" : "changes"}
-                </span>
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-64">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
-                Pending changes
-              </p>
-              <ul className="space-y-1 text-sm">
-                {dirtyFields.map((field) => (
-                  <li key={field.key} className="flex items-center gap-2">
-                    <span className="h-1 w-1 rounded-full bg-amber-500" />
-                    <span className="capitalize">{field.label}</span>
-                  </li>
-                ))}
-              </ul>
-            </PopoverContent>
-          </Popover>
-        )}
-
-        <div className="flex items-center gap-2">
+      <Card className="sticky bottom-0 z-10 -mx-8 mt-6 rounded-none py-0">
+        <CardContent className="flex min-h-14 items-center justify-between px-8 py-2">
           {saveConflict ? (
-            <>
-              <Button variant="outline" size="sm" onClick={onReload}>
-                Reload latest
-              </Button>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      disabled={isSaving || disabled}
-                      onClick={onSave}
-                    >
-                      {isSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                      Overwrite anyway
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Replaces the newer revision with your local edits.
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </>
+            <Alert variant="destructive" className="w-auto border-0 p-0 shadow-none">
+              <AlertTriangle />
+              <AlertTitle>Routine changed elsewhere. Reload to merge.</AlertTitle>
+            </Alert>
           ) : (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isSaving || disabled}
-                onClick={() => setConfirmDiscardOpen(true)}
-              >
-                Discard
-              </Button>
-              <Button
-                size="sm"
-                disabled={isSaving || disabled}
-                onClick={onSave}
-              >
-                {isSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                Save changes
-                <kbd className="ml-2 hidden rounded bg-foreground/10 px-1 text-(length:--text-nano) font-medium sm:inline">
-                  ⌘S
-                </kbd>
-              </Button>
-            </>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <span>
+                    {dirtyCount} unsaved {dirtyCount === 1 ? "change" : "changes"}
+                  </span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64">
+                <ItemGroup aria-label="Pending changes">
+                  {dirtyFields.map((field) => (
+                    <Item key={field.key} size="sm">
+                      <ItemContent>
+                        <ItemTitle className="capitalize">{field.label}</ItemTitle>
+                      </ItemContent>
+                    </Item>
+                  ))}
+                </ItemGroup>
+              </PopoverContent>
+            </Popover>
           )}
-        </div>
-      </div>
 
-      <Dialog open={confirmDiscardOpen} onOpenChange={setConfirmDiscardOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Discard changes?</DialogTitle>
-            <DialogDescription>
-              This will revert {dirtyCount} unsaved{" "}
-              {dirtyCount === 1 ? "change" : "changes"} in this section.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={() => setConfirmDiscardOpen(false)}>
-              Keep editing
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                onDiscard();
-                setConfirmDiscardOpen(false);
-              }}
-            >
+          <div className="flex items-center gap-2">
+            {saveConflict ? (
+              <>
+                <Button variant="outline" size="sm" onClick={onReload}>
+                  Reload latest
+                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={isSaving || disabled}
+                        onClick={onSave}
+                      >
+                        {isSaving ? <Spinner className="mr-1.5 h-3.5 w-3.5" /> : null}
+                        Overwrite anyway
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Replaces the newer revision with your local edits.</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isSaving || disabled}
+                  onClick={() => setConfirmDiscardOpen(true)}
+                >
+                  Discard
+                </Button>
+                <Button size="sm" disabled={isSaving || disabled} onClick={onSave}>
+                  {isSaving ? <Spinner className="mr-1.5 h-3.5 w-3.5" /> : null}
+                  Save changes
+                  <Kbd className="ml-2 hidden sm:inline-flex">⌘S</Kbd>
+                </Button>
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={confirmDiscardOpen} onOpenChange={setConfirmDiscardOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will revert {dirtyCount} unsaved {dirtyCount === 1 ? "change" : "changes"} in this section.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={onDiscard}>
               Discard changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

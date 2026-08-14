@@ -1,8 +1,18 @@
-import { type ReactNode, useMemo, useState } from "react";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { type ReactNode, useState } from "react";
+import { Check, ChevronDown } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
 export interface FilterMenuOption {
@@ -68,15 +78,6 @@ export function SearchFilterMenu(props: SearchFilterMenuProps) {
     align = "start",
   } = props;
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-
-  const normalized = query.trim().toLowerCase();
-  const visibleOptions = useMemo(() => {
-    if (!normalized) return options;
-    return options.filter((option) =>
-      `${option.label} ${option.searchText ?? ""}`.toLowerCase().includes(normalized),
-    );
-  }, [normalized, options]);
 
   const active = selected.length > 0;
 
@@ -89,6 +90,25 @@ export function SearchFilterMenu(props: SearchFilterMenuProps) {
     props.onSelect(selected.includes(value) ? undefined : value);
     setOpen(false);
   }
+
+  function applyPreset(preset: FilterMenuPreset) {
+    if (!props.multi) return;
+    const presetIsActive =
+      preset.values.length === selected.length && preset.values.every((value) => selected.includes(value));
+    for (const value of options.map((option) => option.value)) {
+      const wantSelected = !presetIsActive && preset.values.includes(value);
+      if (wantSelected !== selected.includes(value)) props.onToggle(value);
+    }
+  }
+
+  const activePreset =
+    props.multi && props.presets
+      ? props.presets.find(
+          (preset) =>
+            preset.values.length === selected.length &&
+            preset.values.every((value) => selected.includes(value)),
+        )
+      : undefined;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -105,9 +125,9 @@ export function SearchFilterMenu(props: SearchFilterMenuProps) {
         >
           <span className="truncate">{summarizeTrigger(label, selected, options)}</span>
           {active ? (
-            <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-(length:--text-nano) font-semibold tabular-nums text-primary-foreground">
+            <Badge className="ml-0.5 h-4 min-w-4 px-1 text-(length:--text-nano) tabular-nums">
               {selected.length}
-            </span>
+            </Badge>
           ) : (
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
           )}
@@ -117,108 +137,85 @@ export function SearchFilterMenu(props: SearchFilterMenuProps) {
         <div className="flex items-center justify-between px-3 py-2">
           <span className="text-xs font-medium text-muted-foreground">{label}</span>
           {props.multi && active ? (
-            <button
-              type="button"
-              className="text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => props.onClear()}
-            >
+            <Button variant="ghost" size="sm" onClick={props.onClear}>
               Clear
-            </button>
+            </Button>
           ) : null}
         </div>
 
         {props.multi && props.presets && props.presets.length > 0 ? (
-          <div className="flex flex-wrap gap-1 px-3 pb-2">
-            {props.presets.map((preset) => {
-              const isActive =
-                preset.values.length === selected.length &&
-                preset.values.every((value) => selected.includes(value));
-              return (
-                <button
-                  key={preset.label}
-                  type="button"
-                  className={cn(
-                    "rounded-full border px-2 py-0.5 text-(length:--text-micro) transition-colors",
-                    isActive
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
-                  )}
-                  onClick={() => {
-                    // Replace selection with the preset (toggle off when already exact).
-                    for (const value of options.map((option) => option.value)) {
-                      const wantSelected = !isActive && preset.values.includes(value);
-                      const currentlySelected = selected.includes(value);
-                      if (wantSelected !== currentlySelected) props.onToggle(value);
-                    }
-                  }}
-                >
-                  {preset.label}
-                </button>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            spacing={1}
+            value={activePreset?.label ?? ""}
+            onValueChange={(value) => {
+              const preset = props.presets?.find(
+                (candidate) => candidate.label === (value || activePreset?.label),
               );
-            })}
-          </div>
+              if (preset) applyPreset(preset);
+            }}
+            className="flex flex-wrap px-3 pb-2"
+          >
+            {props.presets.map((preset) => (
+              <ToggleGroupItem key={preset.label} value={preset.label}>
+                {preset.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         ) : null}
 
-        {searchable ? (
-          <div className="px-3 pb-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                aria-label="Search filter options"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={searchPlaceholder}
-                className="h-8 pl-7 text-xs"
-              />
-            </div>
-          </div>
-        ) : null}
-
-        <div className="max-h-72 overflow-y-auto overscroll-contain border-t border-border py-1">
-          {visibleOptions.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-muted-foreground">{emptyMessage}</div>
-          ) : (
-            visibleOptions.map((option) => {
-              const isSelected = selected.includes(option.value);
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left hover:bg-accent/50"
-                  onClick={() => handleOptionClick(option.value)}
-                >
-                  {props.multi ? (
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "grid h-4 w-4 shrink-0 place-content-center rounded-(--rad-4) border border-input shadow-xs dark:bg-input/30",
-                        isSelected && "border-primary bg-primary text-primary-foreground dark:bg-primary",
-                      )}
-                    >
-                      {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
-                    </span>
-                  ) : (
-                    <span className="flex h-4 w-4 items-center justify-center">
-                      {isSelected ? <Check className="h-3.5 w-3.5 text-primary" /> : null}
-                    </span>
-                  )}
-                  {option.icon ? <span className="flex h-4 w-4 items-center justify-center">{option.icon}</span> : null}
-                  {option.swatch ? (
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: option.swatch }}
-                      aria-hidden
-                    />
-                  ) : null}
-                  <span className="min-w-0 flex-1 truncate text-sm">{option.label}</span>
-                  {typeof option.count === "number" ? (
-                    <span className="ml-1 text-xs tabular-nums text-muted-foreground">{option.count}</span>
-                  ) : null}
-                </button>
-              );
-            })
-          )}
-        </div>
+        <Command>
+          {searchable ? (
+            <CommandInput aria-label="Search filter options" placeholder={searchPlaceholder} />
+          ) : null}
+          <CommandList>
+            <CommandEmpty>{emptyMessage}</CommandEmpty>
+            <CommandGroup>
+              {options.map((option) => {
+                const isSelected = selected.includes(option.value);
+                return (
+                  <CommandItem
+                    key={option.value}
+                    value={option.value}
+                    keywords={[option.label, option.searchText ?? ""]}
+                    onSelect={() => handleOptionClick(option.value)}
+                  >
+                    {props.multi ? (
+                      <Checkbox
+                        checked={isSelected}
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        className="pointer-events-none"
+                      />
+                    ) : (
+                      <span className="flex h-4 w-4 items-center justify-center">
+                        {isSelected ? <Check className="h-3.5 w-3.5 text-primary" /> : null}
+                      </span>
+                    )}
+                    {option.icon ? (
+                      <span className="flex h-4 w-4 items-center justify-center">{option.icon}</span>
+                    ) : null}
+                    {option.swatch ? (
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: option.swatch }}
+                        aria-hidden
+                      />
+                    ) : null}
+                    <span className="min-w-0 flex-1 truncate text-sm">{option.label}</span>
+                    {typeof option.count === "number" ? (
+                      <Badge variant="secondary" className="ml-auto tabular-nums">
+                        {option.count}
+                      </Badge>
+                    ) : null}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
       </PopoverContent>
     </Popover>
   );

@@ -10,23 +10,25 @@ import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Maximize2,
-  Minimize2,
-  Target,
-  Layers,
-} from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { FieldError } from "@/components/ui/field";
+import { Spinner } from "@/components/ui/spinner";
+import { Layers, Maximize2, Minimize2, Target } from "lucide-react";
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
-import { StatusBadge } from "./StatusBadge";
 
 const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const satisfies readonly GoalStatus[];
 const GOAL_LEVELS = ["company", "team", "agent", "task"] as const satisfies readonly GoalLevel[];
@@ -50,9 +52,6 @@ export function NewGoalDialog() {
   const [parentId, setParentId] = useState("");
   const [expanded, setExpanded] = useState(false);
 
-  const [statusOpen, setStatusOpen] = useState(false);
-  const [levelOpen, setLevelOpen] = useState(false);
-  const [parentOpen, setParentOpen] = useState(false);
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
   // Apply defaults when dialog opens
@@ -65,10 +64,11 @@ export function NewGoalDialog() {
   });
 
   const createGoal = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      goalsApi.create(companyId, data),
+    mutationFn: (data: Record<string, unknown>) => goalsApi.create(companyId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(companyId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.goals.list(companyId),
+      });
       reset();
       closeNewGoal();
     },
@@ -120,49 +120,30 @@ export function NewGoalDialog() {
       }}
     >
       <DialogContent
-        showCloseButton={false}
-        className={cn("p-0 gap-0", expanded ? "sm:max-w-2xl" : "sm:max-w-lg")}
+        className={cn("gap-0 p-0", expanded ? "sm:max-w-2xl" : "sm:max-w-lg")}
         onKeyDown={handleKeyDown}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {selectedCompany && (
-              <span className="bg-muted px-1.5 py-0.5 rounded text-xs font-medium">
-                {selectedCompany.name.slice(0, 3).toUpperCase()}
-              </span>
-            )}
-            <span className="text-muted-foreground/60">&rsaquo;</span>
-            <DialogTitle className="text-sm font-normal text-muted-foreground">
-              {newGoalDefaults.parentId ? "New sub-goal" : "New goal"}
-            </DialogTitle>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground"
-              onClick={() => setExpanded(!expanded)}
-              aria-label="Toggle expanded layout"
-            >
-              {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground"
-              onClick={() => { reset(); closeNewGoal(); }}
-              aria-label="Close new goal dialog"
-            >
-              <span className="text-lg leading-none">&times;</span>
-            </Button>
-          </div>
-        </div>
+        <DialogHeader className="border-b p-4 pr-20">
+          <DialogTitle>{newGoalDefaults.parentId ? "New sub-goal" : "New goal"}</DialogTitle>
+          <DialogDescription>
+            {selectedCompany ? `Create a goal for ${selectedCompany.name}.` : "Create a company goal."}
+          </DialogDescription>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={expanded ? "Restore dialog size" : "Expand dialog"}
+            onClick={() => setExpanded(!expanded)}
+            className="absolute right-12 top-3"
+          >
+            {expanded ? <Minimize2 /> : <Maximize2 />}
+          </Button>
+        </DialogHeader>
 
         {/* Title */}
         <div className="px-4 pt-4 pb-2 shrink-0">
-          <input
-            className="w-full rounded-sm bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
+          <Input
+            className="h-auto border-0 px-0 text-lg font-semibold shadow-none focus-visible:ring-0"
             placeholder="Goal title"
             aria-label="Goal title"
             value={title}
@@ -185,7 +166,10 @@ export function NewGoalDialog() {
             onChange={setDescription}
             placeholder="Add description..."
             bordered={false}
-            contentClassName={cn("text-sm text-muted-foreground", expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)")}
+            contentClassName={cn(
+              "text-sm text-muted-foreground",
+              expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)",
+            )}
             imageUploadHandler={async (file) => {
               const asset = await uploadDescriptionImage.mutateAsync(file);
               return asset.contentPath;
@@ -196,115 +180,70 @@ export function NewGoalDialog() {
         {/* Property chips */}
         <div className="flex items-center gap-1.5 px-4 py-2 border-t border-border flex-wrap">
           {/* Status */}
-          <Popover open={statusOpen} onOpenChange={setStatusOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
-                aria-label="Set goal status"
-              >
-                <StatusBadge status={status} />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-40 p-1" align="start">
-              {GOAL_STATUSES.map((s) => (
-                <button
-                  key={s}
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 capitalize",
-                    s === status && "bg-accent"
-                  )}
-                  onClick={() => { setStatus(s); setStatusOpen(false); }}
-                >
-                  {s}
-                </button>
-              ))}
-            </PopoverContent>
-          </Popover>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="xs" aria-label="Set goal status">
+                {status.replaceAll("_", " ")}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuRadioGroup value={status} onValueChange={setStatus}>
+                {GOAL_STATUSES.map((option) => (
+                  <DropdownMenuRadioItem key={option} value={option}>
+                    {option.replaceAll("_", " ")}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Level */}
-          <Popover open={levelOpen} onOpenChange={setLevelOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
-                aria-label="Set goal level"
-              >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="xs" aria-label="Set goal level">
                 <Layers className="h-3 w-3 text-muted-foreground" />
                 {levelLabels[level] ?? level}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-40 p-1" align="start">
-              {GOAL_LEVELS.map((l) => (
-                <button
-                  key={l}
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    l === level && "bg-accent"
-                  )}
-                  onClick={() => { setLevel(l); setLevelOpen(false); }}
-                >
-                  {levelLabels[l] ?? l}
-                </button>
-              ))}
-            </PopoverContent>
-          </Popover>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuRadioGroup value={level} onValueChange={setLevel}>
+                {GOAL_LEVELS.map((option) => (
+                  <DropdownMenuRadioItem key={option} value={option}>
+                    {levelLabels[option] ?? option}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Parent goal */}
-          <Popover open={parentOpen} onOpenChange={setParentOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
-                aria-label="Set parent goal"
-              >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="xs" aria-label="Set parent goal">
                 <Target className="h-3 w-3 text-muted-foreground" />
                 {currentParent ? currentParent.title : "Parent goal"}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-48 p-1" align="start">
-              <button
-                className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                  !appliedParentId && "bg-accent"
-                )}
-                onClick={() => { setParentId(""); setParentOpen(false); }}
-              >
-                No parent
-              </button>
-              {(goals ?? []).map((g) => (
-                <button
-                  key={g.id}
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 truncate",
-                    g.id === appliedParentId && "bg-accent"
-                  )}
-                  onClick={() => { setParentId(g.id); setParentOpen(false); }}
-                >
-                  {g.title}
-                </button>
-              ))}
-            </PopoverContent>
-          </Popover>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto">
+              <DropdownMenuRadioGroup value={appliedParentId} onValueChange={setParentId}>
+                <DropdownMenuRadioItem value="">No parent</DropdownMenuRadioItem>
+                {(goals ?? []).map((goal) => (
+                  <DropdownMenuRadioItem key={goal.id} value={goal.id}>
+                    <span className="truncate">{goal.title}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end px-4 py-2.5 border-t border-border">
-          <div className="mr-auto">
-            {createGoal.isPending ? (
-              <p role="status" className="text-xs text-muted-foreground">Creating goal…</p>
-            ) : createGoal.isError ? (
-              <p role="alert" className="text-xs text-destructive">Couldn't create goal. Try again.</p>
-            ) : null}
-          </div>
-          <Button
-            size="sm"
-            disabled={!title.trim() || createGoal.isPending}
-            onClick={handleSubmit}
-          >
-            {createGoal.isPending ? "Creating…" : newGoalDefaults.parentId ? "Create sub-goal" : "Create goal"}
+        <DialogFooter className="items-center border-t p-4 sm:justify-between">
+          {createGoal.isError ? <FieldError>Couldn&apos;t create goal. Try again.</FieldError> : <span />}
+          <Button size="sm" disabled={!title.trim() || createGoal.isPending} onClick={handleSubmit}>
+            {createGoal.isPending ? <Spinner /> : null}
+            {newGoalDefaults.parentId ? "Create sub-goal" : "Create goal"}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

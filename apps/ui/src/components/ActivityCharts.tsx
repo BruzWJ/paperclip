@@ -1,121 +1,64 @@
-import type {
-  DashboardRunActivityDay,
-  TaskExecutionRunEnvelopeRecord,
-} from "@paperclipai/shared";
-
-/* ---- Utilities ---- */
+import type { DashboardRunActivityDay, TaskExecutionRunEnvelopeRecord } from "@paperclipai/shared";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 
 export function getLast14Days(): string[] {
-  return Array.from({ length: 14 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (13 - i));
-    return d.toISOString().slice(0, 10);
+  return Array.from({ length: 14 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (13 - index));
+    return date.toISOString().slice(0, 10);
   });
 }
 
-function formatDayLabel(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00");
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+function formatDayLabel(date: string): string {
+  const value = new Date(`${date}T12:00:00`);
+  return `${value.getMonth() + 1}/${value.getDate()}`;
 }
 
 function emptyRunDay(date: string): DashboardRunActivityDay {
-  return { date, succeeded: 0, failed: 0, recovered: 0, other: 0, total: 0, failedByErrorCode: {} };
+  return {
+    date,
+    succeeded: 0,
+    failed: 0,
+    recovered: 0,
+    other: 0,
+    total: 0,
+    failedByErrorCode: {},
+  };
 }
-
-const runSegmentColors = {
-  succeeded: "var(--hex-10b981)",
-  recovered: "var(--status-task-todo)",
-  failed: "var(--hex-ef4444)",
-  other: "var(--hex-737373)",
-} as const;
-
-// Compact per-day tooltip that also attributes failures to their error class.
-function runDayTooltip(entry: DashboardRunActivityDay): string {
-  const lines = [`${entry.date}: ${entry.total} run${entry.total === 1 ? "" : "s"}`];
-  if (entry.succeeded > 0) lines.push(`  succeeded: ${entry.succeeded}`);
-  if (entry.recovered > 0) lines.push(`  recovered: ${entry.recovered} (retry succeeded)`);
-  if (entry.failed > 0) {
-    lines.push(`  failed: ${entry.failed}`);
-    const codes = Object.entries(entry.failedByErrorCode ?? {}).sort((a, b) => b[1] - a[1]);
-    for (const [code, count] of codes) lines.push(`    ${code}: ${count}`);
-  }
-  if (entry.other > 0) lines.push(`  other: ${entry.other}`);
-  return lines.join("\n");
-}
-
-/* ---- Sub-components ---- */
-
-function DateLabels({ days }: { days: string[] }) {
-  return (
-    <div className="flex gap-(--sz-3px) mt-1.5">
-      {days.map((day, i) => (
-        <div key={day} className="flex-1 text-center">
-          {(i === 0 || i === 6 || i === 13) ? (
-            <span className="text-(length:--text-nano) text-muted-foreground tabular-nums">{formatDayLabel(day)}</span>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ChartLegend({ items }: { items: { color: string; label: string }[] }) {
-  return (
-    <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-2">
-      {items.map(item => (
-        <span key={item.label} className="flex items-center gap-1 text-(length:--text-nano) text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-          {item.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-export function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <div className="border border-border rounded-lg p-4 space-y-3">
-      <div>
-        <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
-        {subtitle && <span className="text-(length:--text-nano) text-muted-foreground/60">{subtitle}</span>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-/* ---- Chart Components ---- */
 
 type RunChartProps =
   | { activity?: DashboardRunActivityDay[] | null; runs?: never }
   | { runs?: TaskExecutionRunEnvelopeRecord[] | null; activity?: never };
 
-function aggregateRuns(
-  runs: readonly TaskExecutionRunEnvelopeRecord[] = [],
-): DashboardRunActivityDay[] {
-  const days = getLast14Days();
-  const grouped = new Map<string, DashboardRunActivityDay>();
-  for (const day of days) grouped.set(day, emptyRunDay(day));
+function aggregateRuns(runs: readonly TaskExecutionRunEnvelopeRecord[] = []): DashboardRunActivityDay[] {
+  const grouped = new Map(getLast14Days().map((date) => [date, emptyRunDay(date)]));
+
   for (const run of runs) {
-    const day = new Date(run.createdAt).toISOString().slice(0, 10);
-    const entry = grouped.get(day);
+    const date = new Date(run.createdAt).toISOString().slice(0, 10);
+    const entry = grouped.get(date);
     if (!entry) continue;
+
     if (run.status === "succeeded") {
-      entry.succeeded++;
+      entry.succeeded += 1;
     } else if (run.status === "failed" || run.status === "timed_out") {
-      // A flat run list has no retry-chain linkage, so recovery can't be derived
-      // here (the company dashboard computes it server-side). Attribute the
-      // failure to its error class so the breakdown still renders.
-      entry.failed++;
-      const code = run.terminalReasonCode && run.terminalReasonCode.length > 0
-        ? run.terminalReasonCode
-        : "unknown";
+      entry.failed += 1;
+      const code = run.terminalReasonCode?.trim() || "unknown";
       entry.failedByErrorCode[code] = (entry.failedByErrorCode[code] ?? 0) + 1;
     } else {
-      entry.other++;
+      entry.other += 1;
     }
-    entry.total++;
+    entry.total += 1;
   }
+
   return Array.from(grouped.values());
 }
 
@@ -125,210 +68,192 @@ function resolveRunActivity(props: RunChartProps): DashboardRunActivityDay[] {
   return [];
 }
 
+type ChartSeries = {
+  key: string;
+  stacked?: boolean;
+};
+
+function ActivityBarChart<TData extends { date: string }>({
+  config,
+  data,
+  series,
+  domain,
+}: {
+  config: ChartConfig;
+  data: TData[];
+  series: ChartSeries[];
+  domain?: [number, number];
+}) {
+  const dates = data.map((entry) => String(entry.date));
+  const ticks = [dates.at(0), dates.at(6), dates.at(-1)].filter((date): date is string => Boolean(date));
+
+  return (
+    <ChartContainer config={config} className="h-32 w-full aspect-auto">
+      <BarChart accessibilityLayer data={data}>
+        <CartesianGrid vertical={false} />
+        <XAxis
+          dataKey="date"
+          ticks={ticks}
+          tickFormatter={formatDayLabel}
+          tickLine={false}
+          axisLine={false}
+        />
+        {domain ? <YAxis hide domain={domain} /> : null}
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <ChartLegend content={<ChartLegendContent />} />
+        {series.map(({ key, stacked }) => (
+          <Bar key={key} dataKey={key} fill={`var(--color-${key})`} stackId={stacked ? "total" : undefined} />
+        ))}
+      </BarChart>
+    </ChartContainer>
+  );
+}
+
+const RUN_CONFIG = {
+  succeeded: { label: "Succeeded", color: "var(--chart-1)" },
+  recovered: { label: "Recovered", color: "var(--chart-2)" },
+  failed: { label: "Failed", color: "var(--chart-3)" },
+  other: { label: "Other", color: "var(--chart-4)" },
+} satisfies ChartConfig;
+
 export function RunActivityChart(props: RunChartProps) {
   const activity = resolveRunActivity(props);
-  const days = activity.length > 0 ? activity.map((day) => day.date) : getLast14Days();
-  const grouped = new Map(activity.map((day) => [day.date, day]));
+  if (!activity.some((entry) => entry.total > 0)) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>No runs yet</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
 
-  const maxValue = Math.max(...activity.map(v => v.total), 1);
-  const hasData = activity.some(v => v.total > 0);
-  const hasRecovered = activity.some(v => v.recovered > 0);
-
-  if (!hasData) return <p className="text-xs text-muted-foreground">No runs yet</p>;
-
-  const legendItems = [
-    { color: runSegmentColors.succeeded, label: "Succeeded" },
-    ...(hasRecovered ? [{ color: runSegmentColors.recovered, label: "Recovered" }] : []),
-    { color: runSegmentColors.failed, label: "Failed" },
-    { color: runSegmentColors.other, label: "Other" },
-  ];
-
+  const hasRecovered = activity.some((entry) => entry.recovered > 0);
   return (
-    <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
-        {days.map(day => {
-          const entry = grouped.get(day) ?? emptyRunDay(day);
-          const total = entry.total;
-          const heightPct = (total / maxValue) * 100;
-          return (
-            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={runDayTooltip(entry)}>
-              {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
-                  {entry.succeeded > 0 && <div style={{ flex: entry.succeeded, backgroundColor: runSegmentColors.succeeded }} />}
-                  {entry.recovered > 0 && <div style={{ flex: entry.recovered, backgroundColor: runSegmentColors.recovered }} />}
-                  {entry.failed > 0 && <div style={{ flex: entry.failed, backgroundColor: runSegmentColors.failed }} />}
-                  {entry.other > 0 && <div style={{ flex: entry.other, backgroundColor: runSegmentColors.other }} />}
-                </div>
-              ) : (
-                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <DateLabels days={days} />
-      <ChartLegend items={legendItems} />
-    </div>
+    <ActivityBarChart
+      config={RUN_CONFIG}
+      data={activity}
+      series={[
+        { key: "succeeded", stacked: true },
+        ...(hasRecovered ? [{ key: "recovered", stacked: true }] : []),
+        { key: "failed", stacked: true },
+        { key: "other", stacked: true },
+      ]}
+    />
   );
 }
 
-const priorityColors: Record<string, string> = {
-  critical: "var(--hex-ef4444)",
-  high: "var(--hex-f97316)",
-  medium: "var(--hex-eab308)",
-  low: "var(--hex-6b7280)",
-};
-
-const priorityOrder = ["critical", "high", "medium", "low"] as const;
+const PRIORITIES = ["critical", "high", "medium", "low"] as const;
+const PRIORITY_CONFIG = {
+  critical: { label: "Critical", color: "var(--chart-1)" },
+  high: { label: "High", color: "var(--chart-2)" },
+  medium: { label: "Medium", color: "var(--chart-3)" },
+  low: { label: "Low", color: "var(--chart-4)" },
+} satisfies ChartConfig;
 
 export function PriorityChart({ tasks }: { tasks: { priority: string; createdAt: Date }[] }) {
-  const days = getLast14Days();
-  const grouped = new Map<string, Record<string, number>>();
-  for (const day of days) grouped.set(day, { critical: 0, high: 0, medium: 0, low: 0 });
+  const grouped = new Map(
+    getLast14Days().map((date) => [date, { date, critical: 0, high: 0, medium: 0, low: 0 }]),
+  );
+
   for (const task of tasks) {
-    const day = new Date(task.createdAt).toISOString().slice(0, 10);
-    const entry = grouped.get(day);
-    if (!entry) continue;
-    if (task.priority in entry) entry[task.priority]++;
+    const entry = grouped.get(new Date(task.createdAt).toISOString().slice(0, 10));
+    if (entry && PRIORITIES.includes(task.priority as (typeof PRIORITIES)[number])) {
+      entry[task.priority as (typeof PRIORITIES)[number]] += 1;
+    }
   }
 
-  const maxValue = Math.max(...Array.from(grouped.values()).map(v => Object.values(v).reduce((a, b) => a + b, 0)), 1);
-  const hasData = Array.from(grouped.values()).some(v => Object.values(v).reduce((a, b) => a + b, 0) > 0);
-
-  if (!hasData) return <p className="text-xs text-muted-foreground">No tasks</p>;
+  const data = Array.from(grouped.values());
+  if (!data.some((entry) => PRIORITIES.some((key) => entry[key] > 0))) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>No tasks</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
 
   return (
-    <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
-        {days.map(day => {
-          const entry = grouped.get(day)!;
-          const total = Object.values(entry).reduce((a, b) => a + b, 0);
-          const heightPct = (total / maxValue) * 100;
-          return (
-            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} tasks`}>
-              {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
-                  {priorityOrder.map(p => entry[p] > 0 ? (
-                    <div key={p} style={{ flex: entry[p], backgroundColor: priorityColors[p] }} />
-                  ) : null)}
-                </div>
-              ) : (
-                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <DateLabels days={days} />
-      <ChartLegend items={priorityOrder.map(p => ({ color: priorityColors[p], label: p.charAt(0).toUpperCase() + p.slice(1) }))} />
-    </div>
+    <ActivityBarChart
+      config={PRIORITY_CONFIG}
+      data={data}
+      series={PRIORITIES.map((key) => ({ key, stacked: true }))}
+    />
   );
 }
 
-// DECISION-SHEET.md B5: chart status colors re-pointed at the canonical
-// --status-task-* system (DESIGN.md principle 5 — an operator learns one
-// status vocabulary; badge, row, chart, and log agree). Previously an
-// independent palette (todo blue, in_progress violet, etc.). `backlog`
-// deliberately keeps --project-none (pre-B5, per user ruling); the
-// priority series and success-rate tints below are not status hues and
-// are left alone.
-const statusColors: Record<string, string> = {
-  todo: "var(--status-task-todo)",
-  in_progress: "var(--status-task-in_progress)",
-  in_review: "var(--status-task-in_review)",
-  done: "var(--status-task-done)",
-  blocked: "var(--status-task-blocked)",
-  cancelled: "var(--status-task-cancelled)",
-  backlog: "var(--project-none)",
-};
+const STATUS_ORDER = ["todo", "in_progress", "in_review", "done", "blocked", "cancelled", "backlog"] as const;
 
-const statusLabels: Record<string, string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  in_review: "In Review",
-  done: "Done",
-  blocked: "Blocked",
-  cancelled: "Cancelled",
-  backlog: "Backlog",
-};
+const STATUS_CONFIG = Object.fromEntries(
+  STATUS_ORDER.map((status, index) => [
+    status,
+    {
+      label: status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase()),
+      color: `var(--chart-${(index % 5) + 1})`,
+    },
+  ]),
+) satisfies ChartConfig;
 
-export function TaskStatusChart({ tasks }: { tasks: { boardPresentationStatus: string; createdAt: Date }[] }) {
-  const days = getLast14Days();
-  const allStatuses = new Set<string>();
-  const grouped = new Map<string, Record<string, number>>();
-  for (const day of days) grouped.set(day, {});
+export function TaskStatusChart({
+  tasks,
+}: {
+  tasks: { boardPresentationStatus: string; createdAt: Date }[];
+}) {
+  const grouped = new Map<string, { date: string } & Record<string, string | number>>(
+    getLast14Days().map((date) => [date, { date }]),
+  );
+  const presentStatuses = new Set<string>();
+
   for (const task of tasks) {
-    const day = new Date(task.createdAt).toISOString().slice(0, 10);
-    const entry = grouped.get(day);
+    const entry = grouped.get(new Date(task.createdAt).toISOString().slice(0, 10));
     if (!entry) continue;
-    entry[task.boardPresentationStatus] = (entry[task.boardPresentationStatus] ?? 0) + 1;
-    allStatuses.add(task.boardPresentationStatus);
+    const status = task.boardPresentationStatus;
+    entry[status] = Number(entry[status] ?? 0) + 1;
+    presentStatuses.add(status);
   }
 
-  const statusOrder = ["todo", "in_progress", "in_review", "done", "blocked", "cancelled", "backlog"].filter(s => allStatuses.has(s));
-  const maxValue = Math.max(...Array.from(grouped.values()).map(v => Object.values(v).reduce((a, b) => a + b, 0)), 1);
-  const hasData = allStatuses.size > 0;
-
-  if (!hasData) return <p className="text-xs text-muted-foreground">No tasks</p>;
+  if (presentStatuses.size === 0)
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>No tasks</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
+    );
+  const series = STATUS_ORDER.filter((status) => presentStatuses.has(status));
 
   return (
-    <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
-        {days.map(day => {
-          const entry = grouped.get(day)!;
-          const total = Object.values(entry).reduce((a, b) => a + b, 0);
-          const heightPct = (total / maxValue) * 100;
-          return (
-            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} tasks`}>
-              {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
-                  {statusOrder.map(s => (entry[s] ?? 0) > 0 ? (
-                    <div key={s} style={{ flex: entry[s], backgroundColor: statusColors[s] ?? "var(--hex-6b7280)" }} />
-                  ) : null)}
-                </div>
-              ) : (
-                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <DateLabels days={days} />
-      <ChartLegend items={statusOrder.map(s => ({ color: statusColors[s] ?? "var(--hex-6b7280)", label: statusLabels[s] ?? s }))} />
-    </div>
+    <ActivityBarChart
+      config={STATUS_CONFIG}
+      data={Array.from(grouped.values())}
+      series={series.map((key) => ({ key, stacked: true }))}
+    />
   );
 }
+
+const SUCCESS_CONFIG = {
+  rate: { label: "Success rate (%)", color: "var(--chart-1)" },
+} satisfies ChartConfig;
 
 export function SuccessRateChart(props: RunChartProps) {
   const activity = resolveRunActivity(props);
-  const days = activity.length > 0 ? activity.map((day) => day.date) : getLast14Days();
-  const grouped = new Map(activity.map((day) => [day.date, day]));
+  if (!activity.some((entry) => entry.total > 0)) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>No runs yet</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
 
-  const hasData = activity.some(v => v.total > 0);
-  if (!hasData) return <p className="text-xs text-muted-foreground">No runs yet</p>;
+  const data = activity.map((entry) => ({
+    date: entry.date,
+    rate: entry.total > 0 ? Math.round(((entry.succeeded + entry.recovered) / entry.total) * 100) : 0,
+  }));
 
   return (
-    <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
-        {days.map(day => {
-          const entry = grouped.get(day) ?? emptyRunDay(day);
-          // Recovered runs ultimately succeeded, so they count toward the rate
-          // rather than dragging it down as failures.
-          const effectiveSucceeded = entry.succeeded + entry.recovered;
-          const rate = entry.total > 0 ? effectiveSucceeded / entry.total : 0;
-          const color = entry.total === 0 ? undefined : rate >= 0.8 ? "var(--hex-10b981)" : rate >= 0.5 ? "var(--hex-eab308)" : "var(--hex-ef4444)";
-          return (
-            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${entry.total > 0 ? Math.round(rate * 100) : 0}% (${effectiveSucceeded}/${entry.total})`}>
-              {entry.total > 0 ? (
-                <div style={{ height: `${rate * 100}%`, minHeight: 2, backgroundColor: color }} />
-              ) : (
-                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <DateLabels days={days} />
-    </div>
+    <ActivityBarChart config={SUCCESS_CONFIG} data={data} series={[{ key: "rate" }]} domain={[0, 100]} />
   );
 }

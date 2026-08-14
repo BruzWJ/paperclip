@@ -1,13 +1,12 @@
 import { useId, useState } from "react";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { PopoverTitle, PopoverDescription } from "@/components/ui/popover";
 
 const SECRET_NAME_RE = /^[a-z][a-z0-9_]*$/;
-
-const fieldClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-ring/40";
 
 export interface SecretPopoverFormProps {
   /** Popover heading / body copy differ between the two flows. */
@@ -84,10 +83,10 @@ export function SecretPopoverForm({
         ) : null}
       </div>
 
-      <label className="block space-y-1">
-        <span className="text-(length:--text-micro) font-medium text-muted-foreground">Name</span>
-        <input
-          className={cn(fieldClass, nameError && "border-destructive focus-visible:ring-destructive/40")}
+      <Field data-invalid={Boolean(nameError)}>
+        <FieldLabel>Secret name</FieldLabel>
+        <Input
+          className="font-mono"
           value={name}
           autoFocus
           spellCheck={false}
@@ -104,18 +103,14 @@ export function SecretPopoverForm({
             }
           }}
         />
-        {nameError ? (
-          <span id={nameErrorId} className="block text-(length:--text-micro) text-destructive">
-            {nameError}
-          </span>
-        ) : null}
-      </label>
+        <FieldError id={nameErrorId}>{nameError}</FieldError>
+      </Field>
 
-      <label className="block space-y-1">
-        <span className="text-(length:--text-micro) font-medium text-muted-foreground">Value</span>
-        <div className="relative">
-          <input
-            className={cn(fieldClass, "pr-8", valueError && "border-destructive focus-visible:ring-destructive/40")}
+      <Field data-invalid={Boolean(valueError)}>
+        <FieldLabel>Secret value</FieldLabel>
+        <InputGroup>
+          <InputGroupInput
+            className="font-mono"
             type={reveal ? "text" : "password"}
             value={value}
             readOnly={mode === "store"}
@@ -126,21 +121,18 @@ export function SecretPopoverForm({
             aria-describedby={valueError ? valueErrorId : undefined}
             onChange={mode === "create" ? (event) => setValue(event.target.value) : undefined}
           />
-          <button
-            type="button"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
-            aria-label={reveal ? "Hide value" : "Show value"}
-            onClick={() => setReveal((prev) => !prev)}
-          >
-            {reveal ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-        {valueError ? (
-          <span id={valueErrorId} className="block text-(length:--text-micro) text-destructive">
-            {valueError}
-          </span>
-        ) : null}
-      </label>
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton
+              size="icon-xs"
+              aria-label={reveal ? "Hide value" : "Show value"}
+              onClick={() => setReveal((prev) => !prev)}
+            >
+              {reveal ? <EyeOff /> : <Eye />}
+            </InputGroupButton>
+          </InputGroupAddon>
+        </InputGroup>
+        <FieldError id={valueErrorId}>{valueError}</FieldError>
+      </Field>
 
       {error ? <p className="text-(length:--text-micro) text-destructive">{error}</p> : null}
 

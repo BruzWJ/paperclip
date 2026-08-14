@@ -1,50 +1,23 @@
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { ChevronDown, ChevronRight, FileCode2, FileText, Folder, FolderOpen } from "lucide-react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
+import { statusBadgeVariant } from "../lib/status-variant";
 import { cn } from "../lib/utils";
-import {
-  ChevronDown,
-  ChevronRight,
-  FileCode2,
-  FileText,
-  Folder,
-  FolderOpen,
-} from "lucide-react";
-import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 
-// -- Tree types --------------------------------------------------------------
-
-export type FileTreeNode = {
-  name: string;
-  path: string;
-  kind: "dir" | "file";
-  children: FileTreeNode[];
-  /** Optional per-node metadata (e.g. import action) */
-  action?: string | null;
-};
-
-export type FileTreeBadgeVariant =
-  "ok" | "warning" | "error" | "info" | "pending";
-
-export type FileTreeBadge = {
-  label: string;
-  status: FileTreeBadgeVariant;
-  tooltip?: string;
-};
-
-export type FileTreeTone = "default" | "warning" | "error" | "muted";
-
-export type FileTreeEmptyState = {
-  title?: string;
-  description?: string;
-};
-
-export type FileTreeErrorState = {
-  message: string;
-  retry?: () => void;
-};
+import {
+  FileTreeBadge,
+  FileTreeEmptyState,
+  FileTreeErrorState,
+  FileTreeNode,
+  FileTreeTone,
+  collectAllPaths,
+} from "./FileTreeModel";
 
 type VisibleFileTreeNode = {
   node: FileTreeNode;
@@ -52,116 +25,17 @@ type VisibleFileTreeNode = {
 };
 
 const TREE_BASE_INDENT = 16;
+
 const TREE_STEP_INDENT = 24;
+
 const TREE_ROW_HEIGHT_CLASS = "min-h-9";
 
 const fileTreeToneClass: Record<FileTreeTone, string | undefined> = {
   default: undefined,
-  warning: "bg-amber-500/5 text-amber-700 dark:text-amber-300",
+  warning: "bg-muted text-foreground",
   error: "bg-destructive/5 text-destructive",
   muted: "opacity-50",
 };
-
-// -- Helpers -----------------------------------------------------------------
-
-export function buildFileTree(
-  files: Record<string, unknown>,
-  actionMap?: Map<string, string>,
-): FileTreeNode[] {
-  const root: FileTreeNode = { name: "", path: "", kind: "dir", children: [] };
-
-  for (const filePath of Object.keys(files)) {
-    const segments = filePath.split("/").filter(Boolean);
-    let current = root;
-    let currentPath = "";
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i];
-      currentPath = currentPath ? `${currentPath}/${segment}` : segment;
-      const isLeaf = i === segments.length - 1;
-      let next = current.children.find((c) => c.name === segment);
-      if (!next) {
-        next = {
-          name: segment,
-          path: currentPath,
-          kind: isLeaf ? "file" : "dir",
-          children: [],
-          action: isLeaf ? (actionMap?.get(filePath) ?? null) : null,
-        };
-        current.children.push(next);
-      }
-      current = next;
-    }
-  }
-
-  function sortNode(node: FileTreeNode) {
-    node.children.sort((a, b) => {
-      // Files before directories so PROJECT.md appears above tasks/
-      if (a.kind !== b.kind) return a.kind === "file" ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-    node.children.forEach(sortNode);
-  }
-
-  sortNode(root);
-  return root.children;
-}
-
-export function countFiles(nodes: FileTreeNode[]): number {
-  let count = 0;
-  for (const node of nodes) {
-    if (node.kind === "file") count++;
-    else count += countFiles(node.children);
-  }
-  return count;
-}
-
-export function collectAllPaths(
-  nodes: FileTreeNode[],
-  type: "file" | "dir" | "all" = "all",
-): Set<string> {
-  const paths = new Set<string>();
-  for (const node of nodes) {
-    if (type === "all" || node.kind === type) paths.add(node.path);
-    for (const p of collectAllPaths(node.children, type)) paths.add(p);
-  }
-  return paths;
-}
-
-function findFileTreeNode(
-  nodes: FileTreeNode[],
-  path: string,
-): FileTreeNode | null {
-  for (const node of nodes) {
-    if (node.path === path) return node;
-    const match = findFileTreeNode(node.children, path);
-    if (match) return match;
-  }
-  return null;
-}
-
-export function toggleFileTreeCheckedFiles(
-  nodes: FileTreeNode[],
-  checkedFiles: Set<string>,
-  path: string,
-  kind: "file" | "dir",
-): Set<string> {
-  const next = new Set(checkedFiles);
-  if (kind === "file") {
-    if (next.has(path)) next.delete(path);
-    else next.add(path);
-    return next;
-  }
-
-  const directory = findFileTreeNode(nodes, path);
-  if (!directory) return next;
-  const childFiles = collectAllPaths(directory.children, "file");
-  const allChecked = [...childFiles].every((childPath) => next.has(childPath));
-  for (const childPath of childFiles) {
-    if (allChecked) next.delete(childPath);
-    else next.add(childPath);
-  }
-  return next;
-}
 
 function fileIcon(name: string) {
   if (name.endsWith(".yaml") || name.endsWith(".yml")) return FileCode2;
@@ -177,9 +51,7 @@ function flattenVisibleNodes(
   for (const node of nodes) {
     flattened.push({ node, depth });
     if (node.kind === "dir" && expandedDirs.has(node.path)) {
-      flattened.push(
-        ...flattenVisibleNodes(node.children, expandedDirs, depth + 1),
-      );
+      flattened.push(...flattenVisibleNodes(node.children, expandedDirs, depth + 1));
     }
   }
   return flattened;
@@ -195,65 +67,9 @@ function checkboxState(node: FileTreeNode, checkedFiles: Set<string>) {
 
   const childFiles = collectAllPaths(node.children, "file");
   const childFilePaths = [...childFiles];
-  const allChecked =
-    childFilePaths.length > 0 &&
-    childFilePaths.every((p) => checkedFiles.has(p));
+  const allChecked = childFilePaths.length > 0 && childFilePaths.every((p) => checkedFiles.has(p));
   const someChecked = childFilePaths.some((p) => checkedFiles.has(p));
   return { allChecked, someChecked: someChecked && !allChecked };
-}
-
-type FrontmatterData = Record<string, string | string[]>;
-
-export function parseFrontmatter(
-  content: string,
-): { data: FrontmatterData; body: string } | null {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!match) return null;
-
-  const data: FrontmatterData = {};
-  const rawYaml = match[1];
-  const body = match[2];
-  let currentKey: string | null = null;
-  let currentList: string[] | null = null;
-
-  for (const line of rawYaml.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    if (trimmed.startsWith("- ") && currentKey) {
-      if (!currentList) currentList = [];
-      currentList.push(
-        trimmed
-          .slice(2)
-          .trim()
-          .replace(/^["']|["']$/g, ""),
-      );
-      continue;
-    }
-
-    if (currentKey && currentList) {
-      data[currentKey] = currentList;
-      currentList = null;
-      currentKey = null;
-    }
-
-    const kvMatch = trimmed.match(/^([a-zA-Z_][\w-]*)\s*:\s*(.*)$/);
-    if (kvMatch) {
-      const key = kvMatch[1];
-      const value = kvMatch[2].trim().replace(/^["']|["']$/g, "");
-      if (value === "null") {
-        currentKey = null;
-      } else if (value) {
-        data[key] = value;
-        currentKey = null;
-      } else {
-        currentKey = key;
-      }
-    }
-  }
-
-  if (currentKey && currentList) data[currentKey] = currentList;
-  return Object.keys(data).length > 0 ? { data, body } : null;
 }
 
 // -- File tree component -----------------------------------------------------
@@ -300,10 +116,7 @@ export function FileTree({
   ariaLabel = "Files",
 }: FileTreeProps) {
   const effectiveCheckedFiles = checkedFiles ?? new Set<string>();
-  const visibleNodes = useMemo(
-    () => flattenVisibleNodes(nodes, expandedDirs),
-    [expandedDirs, nodes],
-  );
+  const visibleNodes = useMemo(() => flattenVisibleNodes(nodes, expandedDirs), [expandedDirs, nodes]);
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
 
@@ -319,11 +132,7 @@ export function FileTree({
     else onSelectFile(node.path);
   }
 
-  function handleRowKeyDown(
-    event: KeyboardEvent<HTMLButtonElement>,
-    index: number,
-    node: FileTreeNode,
-  ) {
+  function handleRowKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number, node: FileTreeNode) {
     switch (event.key) {
       case "ArrowDown": {
         event.preventDefault();
@@ -368,13 +177,7 @@ export function FileTree({
     return (
       <div aria-busy="true" aria-label={ariaLabel} role="tree" className="py-1">
         {[0, 1, 2, 3].map((row) => (
-          <div
-            key={row}
-            className={cn(
-              "flex items-center gap-2 px-4",
-              TREE_ROW_HEIGHT_CLASS,
-            )}
-          >
+          <div key={row} className={cn("flex items-center gap-2 px-4", TREE_ROW_HEIGHT_CLASS)}>
             <Skeleton className="h-4 w-4 shrink-0 rounded-sm" />
             <Skeleton className={cn("h-3.5", row === 1 ? "w-3/5" : "w-4/5")} />
           </div>
@@ -386,31 +189,14 @@ export function FileTree({
   if (error) {
     return (
       <div aria-label={ariaLabel} role="tree" className="p-3">
-        <div
-          role="treeitem"
-          aria-level={1}
-          className="flex min-h-9 items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm"
-        >
-          <div className="flex min-w-0 items-center gap-2">
-            <Badge
-              variant="ghost"
-              className={cn("px-2.5", statusBadge.error ?? statusBadgeDefault)}
-            >
-              error
-            </Badge>
-            <span className="min-w-0 text-destructive">{error.message}</span>
-          </div>
+        <Alert variant="destructive" role="treeitem" aria-level={1}>
+          <AlertDescription>{error.message}</AlertDescription>
           {error.retry && (
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              onClick={error.retry}
-            >
+            <Button type="button" size="xs" variant="outline" onClick={error.retry}>
               Retry
             </Button>
           )}
-        </div>
+        </Alert>
       </div>
     );
   }
@@ -418,15 +204,14 @@ export function FileTree({
   if (nodes.length === 0) {
     return (
       <div aria-label={ariaLabel} role="tree" className="p-3">
-        <div className="rounded-md border border-dashed border-border px-4 py-8 text-center">
-          <div className="text-sm font-medium">
-            {empty?.title ?? "No files"}
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {empty?.description ??
-              "Files will appear here when they are available."}
-          </div>
-        </div>
+        <Empty className="p-6">
+          <EmptyHeader>
+            <EmptyTitle>{empty?.title ?? "No files"}</EmptyTitle>
+            <EmptyDescription>
+              {empty?.description ?? "Files will appear here when they are available."}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       </div>
     );
   }
@@ -435,10 +220,7 @@ export function FileTree({
     <div aria-label={ariaLabel} role="tree">
       {visibleNodes.map(({ node, depth }, index) => {
         const expanded = node.kind === "dir" && expandedDirs.has(node.path);
-        const { allChecked, someChecked } = checkboxState(
-          node,
-          effectiveCheckedFiles,
-        );
+        const { allChecked, someChecked } = checkboxState(node, effectiveCheckedFiles);
         const badge = fileBadges?.[node.path];
         const tone = fileTones?.[node.path] ?? "default";
         const FileIcon = node.kind === "file" ? fileIcon(node.name) : null;
@@ -463,22 +245,20 @@ export function FileTree({
             }}
           >
             {showCheckboxes && (
-              <label className="flex items-center pl-2">
-                <input
-                  type="checkbox"
+              <div className="flex items-center pl-2">
+                <Checkbox
                   aria-label={`Select ${node.name}`}
                   data-file-tree-checkbox={node.path}
-                  checked={allChecked}
-                  ref={(element) => {
-                    if (element) element.indeterminate = someChecked;
-                  }}
-                  onChange={() => onToggleCheck?.(node.path, node.kind)}
-                  className="mr-2 accent-foreground"
+                  checked={someChecked ? "indeterminate" : allChecked}
+                  onCheckedChange={() => onToggleCheck?.(node.path, node.kind)}
+                  className="mr-2"
                 />
-              </label>
+              </div>
             )}
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               ref={(element) => {
                 if (element) rowRefs.current.set(node.path, element);
                 else rowRefs.current.delete(node.path);
@@ -487,19 +267,9 @@ export function FileTree({
               aria-level={depth + 1}
               aria-expanded={node.kind === "dir" ? expanded : undefined}
               aria-selected={node.kind === "file" ? isSelected : undefined}
-              aria-checked={
-                showCheckboxes
-                  ? someChecked
-                    ? "mixed"
-                    : allChecked
-                  : undefined
-              }
-              tabIndex={
-                (focusedPath ?? visibleNodes[0]?.node.path) === node.path
-                  ? 0
-                  : -1
-              }
-              className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
+              aria-checked={showCheckboxes ? (someChecked ? "mixed" : allChecked) : undefined}
+              tabIndex={(focusedPath ?? visibleNodes[0]?.node.path) === node.path ? 0 : -1}
+              className="h-auto min-w-0 flex-1 justify-start py-1"
               onFocus={() => setFocusedPath(node.path)}
               onClick={() => toggleNode(node)}
               onKeyDown={(event) => handleRowKeyDown(event, index, node)}
@@ -516,22 +286,14 @@ export function FileTree({
                   <FileIcon className="h-3.5 w-3.5" />
                 ) : null}
               </span>
-              <span
-                className={cn(
-                  "min-w-0",
-                  wrapLabels ? "break-all leading-4" : "truncate",
-                )}
-              >
+              <span className={cn("min-w-0", wrapLabels ? "break-all leading-4" : "truncate")}>
                 {node.name}
               </span>
-            </button>
+            </Button>
             {badge && (
               <Badge
-                variant="ghost"
-                className={cn(
-                  "ml-3 text-(length:--text-nano) uppercase tracking-wide",
-                  statusBadge[badge.status] ?? statusBadgeDefault,
-                )}
+                variant={statusBadgeVariant(badge.status)}
+                className="ml-3 text-(length:--text-nano) uppercase tracking-wide"
                 title={badge.tooltip}
               >
                 {badge.label}
@@ -556,3 +318,5 @@ export function FileTree({
     </div>
   );
 }
+
+export * from "./FileTreeModel";

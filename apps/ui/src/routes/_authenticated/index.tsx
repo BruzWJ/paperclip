@@ -4,16 +4,21 @@ import {
   resolveRootRedirectCompanyId,
   useCompany,
 } from "@/context/CompanyContext";
-import { RouteLoadingFallback } from "../-route-ui";
+import { Spinner } from "@/components/ui/spinner";
 
 function CompanyRootRedirect() {
   const { companies, loading } = useCompany();
 
-  if (loading) return <RouteLoadingFallback />;
+  if (loading) {
+    return (
+      <div className="mx-auto flex max-w-xl items-center gap-2 py-10 text-sm text-muted-foreground">
+        <Spinner />
+        Loading...
+      </div>
+    );
+  }
 
-  const sidebarCompanies = companies.filter(
-    (company) => company.status !== "archived",
-  );
+  const sidebarCompanies = companies.filter((company) => company.status !== "archived");
   const targetCompanyId = resolveRootRedirectCompanyId({
     companies,
     sidebarCompanies,
@@ -23,13 +28,7 @@ function CompanyRootRedirect() {
     return <Navigate to="/onboarding" replace />;
   }
 
-  return (
-    <Navigate
-      to="/$companyId/dashboard"
-      params={{ companyId: targetCompanyId }}
-      replace
-    />
-  );
+  return <Navigate to="/$companyId/dashboard" params={{ companyId: targetCompanyId }} replace />;
 }
 
 export const Route = createFileRoute("/_authenticated/")({

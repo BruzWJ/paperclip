@@ -2,13 +2,12 @@ import type { ReactNode } from "react";
 import type { Task } from "@paperclipai/shared";
 import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 import { Archive, Flag } from "lucide-react";
-import {
-  withTaskDetailHeaderSeed,
-} from "../lib/taskDetailBreadcrumb";
+import { withTaskDetailHeaderSeed } from "../lib/taskDetailBreadcrumb";
 import { cn } from "../lib/utils";
-import { StatusIcon } from "./StatusIcon";
-import { hasAssignedBacklogBlocker } from "../lib/task-blockers";
+import { hasAssignedBacklogBlocker, taskStatusAccessibleLabel, taskValueLabel } from "../lib/task-blockers";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Item } from "@/components/ui/item";
 
 type UnreadState = "hidden" | "visible" | "fading";
 
@@ -81,28 +80,25 @@ export function TaskRow({
   const showUnreadSlot = unreadState != null;
   const showUnreadDot = unreadState === "visible" || unreadState === "fading";
   const unreadDotButton = (
-    <button
+    <Button
       type="button"
-      data-slot="icon-button"
+      variant="ghost"
+      size="icon-xs"
       onClick={() => {
         onMarkRead?.();
       }}
-      className={cn(
-        "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
-        selected ? "hover:bg-muted/80" : "hover:bg-blue-500/20",
-      )}
+      className={cn(selected ? "hover:bg-muted/80" : "hover:bg-primary/10")}
       aria-label="Mark as read"
     >
       <span
         className={cn(
           "block h-2 w-2 rounded-full transition-opacity duration-300",
-          selected ? "bg-muted-foreground/70" : "bg-blue-600 dark:bg-blue-400",
+          selected ? "bg-muted-foreground/70" : "bg-primary",
           unreadState === "fading" ? "opacity-0" : "opacity-100",
         )}
       />
-    </button>
+    </Button>
   );
-  const selectedStatusClass = selected ? "!text-muted-foreground !border-muted-foreground" : undefined;
   const detailState = withTaskDetailHeaderSeed(taskLinkState, task);
   const hasChecklistStep = checklistStepNumber !== null;
   const checklistStep = hasChecklistStep ? (
@@ -111,9 +107,9 @@ export function TaskRow({
     </span>
   ) : null;
   const parkedBlockerIndicator = hasAssignedBacklogBlocker(task.blockedBy) ? (
-    <Badge variant="outline"
+    <Badge
+      variant="destructive"
       data-testid="task-row-parked-blocker"
-      className="[&>svg]:size-2.5 ml-1.5 gap-0.5 border-amber-500/60 bg-amber-500/15 text-(length:--text-nano) text-amber-700 dark:text-amber-300"
       title="Blocked by parked work — at least one owned blocker is in backlog and will not dispatch its owner."
     >
       <Flag className="h-2.5 w-2.5" aria-hidden />
@@ -122,12 +118,13 @@ export function TaskRow({
   ) : null;
 
   return (
-    <div
+    <Item
+      size="sm"
       className={cn(
         // No color transition on the row band: hover/selection must snap
         // instantly. A fade (transition-colors) leaves a trail of fading bands
         // when scrubbing the mouse fast across the list.
-        "group relative flex items-start gap-2 rounded-lg py-2.5 pl-2 pr-3 text-sm no-underline text-inherit sm:items-center sm:py-2 sm:pl-1",
+        "group relative flex-nowrap items-start text-inherit sm:items-center",
         !hideDivider && "border-b border-border last:border-b-0",
         selected ? "hover:bg-transparent" : "hover:bg-accent/50",
         checklistCurrentStep ? "bg-primary/5" : null,
@@ -154,11 +151,23 @@ export function TaskRow({
         className="absolute inset-0 z-10 rounded-lg"
       />
       <span className="relative z-20 flex shrink-0 items-center gap-1 pt-px sm:hidden">
-        {mobileLeading ?? <StatusIcon status={task.boardPresentationStatus} blockerAttention={task.blockerAttention} size="md" className={selectedStatusClass} />}
+        {mobileLeading ?? (
+          <Badge
+            variant="secondary"
+            aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, task.blockerAttention)}
+          >
+            {taskValueLabel(task.boardPresentationStatus)}
+          </Badge>
+        )}
         {parkedBlockerIndicator}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
-        <span className={cn("line-clamp-2 text-sm sm:order-2 sm:min-w-0 sm:flex-1 sm:truncate sm:line-clamp-none", titleClassName)}>
+        <span
+          className={cn(
+            "line-clamp-2 text-sm sm:order-2 sm:min-w-0 sm:flex-1 sm:truncate sm:line-clamp-none",
+            titleClassName,
+          )}
+        >
           {task.title}
           {titleSuffix ? <span className="relative z-20">{titleSuffix}</span> : null}
         </span>
@@ -183,51 +192,56 @@ export function TaskRow({
           ) : null}
           {treeGuides > 0
             ? Array.from({ length: treeGuides }, (_, level) => {
-              // The innermost guide lands on THIS row's own chevron column; if
-              // the row has a chevron, break the line around it so it isn't
-              // crossed out.
-              const gapForChevron = chevronInGuide && level === treeGuides - 1;
-              return (
-              // Tree guide: occupies the same flex slot as the parent's
-              // chevron column so the line lands under the parent's status
-              // column; stretched past the row padding so consecutive rows
-              // read as one continuous line.
-              <span key={`guide-${level}`} aria-hidden="true" className="relative hidden w-4 shrink-0 self-stretch sm:block">
-                {/* The connector drops from under the ancestor's STATUS icon,
+                // The innermost guide lands on THIS row's own chevron column; if
+                // the row has a chevron, break the line around it so it isn't
+                // crossed out.
+                const gapForChevron = chevronInGuide && level === treeGuides - 1;
+                return (
+                  // Tree guide: occupies the same flex slot as the parent's
+                  // chevron column so the line lands under the parent's status
+                  // column; stretched past the row padding so consecutive rows
+                  // read as one continuous line.
+                  <span
+                    key={`guide-${level}`}
+                    aria-hidden="true"
+                    className="relative hidden w-4 shrink-0 self-stretch sm:block"
+                  >
+                    {/* The connector drops from under the ancestor's STATUS icon,
                     not its chevron: the status column sits one level (w-4 slot
                     + gap-2 = 2rem) right of this guide slot's left edge.
                     bg-background underlay: dark-mode --border is translucent,
                     so overlapping row segments would stack brighter without
                     an opaque base. */}
-                <span className="absolute -inset-y-3 left-8 w-px bg-background">
-                  {gapForChevron ? (
-                    // Two border segments centering a 14px (h-3.5) transparent
-                    // gap for the row's own chevron.
-                    <span className="absolute inset-0 flex flex-col">
-                      <span className="flex-1 bg-border" />
-                      <span className="h-3.5 shrink-0" />
-                      <span className="flex-1 bg-border" />
+                    <span className="absolute -inset-y-3 left-8 w-px bg-background">
+                      {gapForChevron ? (
+                        // Two border segments centering a 14px (h-3.5) transparent
+                        // gap for the row's own chevron.
+                        <span className="absolute inset-0 flex flex-col">
+                          <span className="flex-1 bg-border" />
+                          <span className="h-3.5 shrink-0" />
+                          <span className="flex-1 bg-border" />
+                        </span>
+                      ) : (
+                        <span className="absolute inset-0 bg-border" />
+                      )}
                     </span>
-                  ) : (
-                    <span className="absolute inset-0 bg-border" />
-                  )}
-                </span>
-              </span>
-              );
-            })
+                  </span>
+                );
+              })
             : null}
-          {desktopLeadingSpacer ? (
-            <span className="hidden w-3.5 shrink-0 sm:block" />
-          ) : null}
+          {desktopLeadingSpacer ? <span className="hidden w-3.5 shrink-0 sm:block" /> : null}
           {desktopMetaLeading ?? (
             <>
               <span className="hidden shrink-0 items-center gap-1 sm:inline-flex">
-                <StatusIcon status={task.boardPresentationStatus} blockerAttention={task.blockerAttention} size="md" className={selectedStatusClass} />
+                <Badge
+                  variant="secondary"
+                  aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, task.blockerAttention)}
+                >
+                  {taskValueLabel(task.boardPresentationStatus)}
+                </Badge>
               </span>
               {checklistStep}
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                {identifier}
-              </span>
+              <span className="shrink-0 font-mono text-xs text-muted-foreground">{identifier}</span>
               {parkedBlockerIndicator}
             </>
           )}
@@ -241,27 +255,26 @@ export function TaskRow({
           ) : null}
         </span>
       </span>
-      {(onArchive || desktopTrailing || trailingMeta) ? (
+      {onArchive || desktopTrailing || trailingMeta ? (
         <span className="relative z-20 ml-auto hidden shrink-0 items-center gap-2 sm:order-3 sm:flex sm:gap-3">
           {onArchive ? (
-            <button
+            <Button
               type="button"
-              data-slot="icon-button"
+              variant="ghost"
+              size="xs"
               onClick={() => {
                 onArchive();
               }}
               disabled={archiveDisabled}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-30"
+              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
               aria-label="Archive"
             >
               <Archive className="h-3.5 w-3.5" />
               Archive
-            </button>
+            </Button>
           ) : null}
           {desktopTrailing}
-          {trailingMeta ? (
-            <span className="text-xs text-muted-foreground">{trailingMeta}</span>
-          ) : null}
+          {trailingMeta ? <span className="text-xs text-muted-foreground">{trailingMeta}</span> : null}
         </span>
       ) : null}
       {showUnreadDot ? (
@@ -272,6 +285,6 @@ export function TaskRow({
           {unreadDotButton}
         </span>
       ) : null}
-    </div>
+    </Item>
   );
 }

@@ -1,48 +1,16 @@
-import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { useQuery } from "@tanstack/react-query";
-import {
-  Outlet,
-  useLocation,
-  useMatch,
-  useMatchRoute,
-  useNavigate,
-  useRouterState,
-} from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useNavigationAction } from "@/lib/navigation-action";
-import { Sidebar } from "./Sidebar";
-import { CompanySettingsSidebar } from "./CompanySettingsSidebar";
-import { CompanySettingsNav } from "./access/CompanySettingsNav";
-import { BreadcrumbBar } from "./BreadcrumbBar";
-import { PropertiesPanel } from "./PropertiesPanel";
-import { CommandPalette } from "./CommandPalette";
-import { NewAgentDialog } from "./NewAgentDialog";
-import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
-import { ToastViewport } from "./ToastViewport";
-import { MobileBottomNav } from "./MobileBottomNav";
-import { DevRestartBanner } from "./DevRestartBanner";
-import { WorktreeBanner } from "./WorktreeBanner";
-import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
-import { RouteErrorBoundary } from "./RouteErrorBoundary";
-import { SidebarShell } from "./SidebarShell";
-import { SecondarySidebar } from "./SecondarySidebar";
-import { SidebarAccountMenu } from "./SidebarAccountMenu";
-import { useDialogActions } from "../context/DialogContext";
-import { GeneralSettingsProvider } from "../context/GeneralSettingsContext";
-import { usePanel } from "../context/PanelContext";
-import { useCompany } from "../context/CompanyContext";
-import { useSidebar } from "../context/SidebarContext";
-import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { useQuery } from "@tanstack/react-query";
+import { useLocation, useMatch, useMatchRoute, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { healthApi } from "../api/health";
 import { instanceSettingsApi } from "../api/instanceSettings";
+import { useCompany } from "../context/CompanyContext";
+import { useDialogActions } from "../context/DialogContext";
+import { usePanel } from "../context/PanelContext";
+import { useSidebar } from "../context/SidebarContext";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { scheduleMainContentFocus } from "../lib/main-content-focus";
 import {
   applyMainContentScrollTop,
   NavigationScrollMemory,
@@ -50,40 +18,17 @@ import {
   shouldResetScrollOnNavigation,
   type NavigationScrollRoute,
 } from "../lib/navigation-scroll";
-import { lazyPage } from "../lib/lazy-page";
-import { queryKeys } from "../lib/queryKeys";
-import { scheduleMainContentFocus } from "../lib/main-content-focus";
 import { pinDocumentScrollToZero } from "../lib/pin-document-scroll";
-import { cn } from "../lib/utils";
-import { NotFoundPage } from "@/components/NotFoundPage";
-import {
-  PluginSlotMount,
-  resolveRouteSidebarSlot,
-  usePluginSlots,
-} from "../plugins/slots";
+import { queryKeys } from "../lib/queryKeys";
+import { PluginSlotMount, resolveRouteSidebarSlot, usePluginSlots } from "../plugins/slots";
+import { CompanySettingsSidebar } from "./CompanySettingsSidebar";
+import { LayoutView } from "./LayoutView";
 
-// These dialogs statically import MarkdownEditor (MDXEditor + lexical, over a
-// megabyte minified), so they are code-split out of the entry chunk. They stay
-// mounted like before — each renders null while closed — so the Suspense
-// fallback of null is never user-visible and open/close behavior is unchanged.
-const NewTaskDialog = lazyPage(
-  () => import("./NewTaskDialog"),
-  "NewTaskDialog",
-);
-const NewProjectDialog = lazyPage(
-  () => import("./NewProjectDialog"),
-  "NewProjectDialog",
-);
-const NewGoalDialog = lazyPage(
-  () => import("./NewGoalDialog"),
-  "NewGoalDialog",
-);
 export function Layout() {
   const {
     sidebarOpen,
     setSidebarOpen,
     toggleSidebar,
-    toggleCollapsed,
     collapsed,
     peeking,
     setPeeking,
@@ -92,11 +37,7 @@ export function Layout() {
   } = useSidebar();
   const { openNewTask, openOnboarding } = useDialogActions();
   const { togglePanelVisible } = usePanel();
-  const {
-    companies,
-    loading: companiesLoading,
-    selectedCompany,
-  } = useCompany();
+  const { companies, loading: companiesLoading, selectedCompany } = useCompany();
   const companyId = useCompanyRouteId();
   const pluginRouteMatch = useMatch({
     from: "/_authenticated/$companyId/$pluginRoutePath/$/",
@@ -146,8 +87,7 @@ export function Layout() {
   const activeScrollKey = useRef<string>(locationKey);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const hasUnknownCompanyId =
-    !companiesLoading && companies.length > 0 && !selectedCompany;
+  const hasUnknownCompanyId = !companiesLoading && companies.length > 0 && !selectedCompany;
   const pluginRoutePath = pluginRouteMatch?.params.pluginRoutePath ?? null;
   const routeSidebarCompanyId = companyId;
   const { slots: routeSidebarSlots } = usePluginSlots({
@@ -167,7 +107,7 @@ export function Layout() {
   // Takeover routes (company settings, plugin `routeSidebar`) no longer replace
   // the app `<Sidebar/>`. Instead the host collapses it to its rail and renders
   // the contextual sidebar in a second pane (PAP-10695). One resolver drives
-  // both desktop (SecondarySidebar) and mobile (off-canvas drawer).
+  // both desktop (secondary sidebar) and mobile (off-canvas drawer).
   const secondarySidebar = isCompanySettingsRoute ? (
     <CompanySettingsSidebar />
   ) : routeSidebarSlot ? (
@@ -183,8 +123,7 @@ export function Layout() {
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
     retry: false,
-    refetchInterval: (query) =>
-      query.state.data?.devServer?.enabled ? 2000 : false,
+    refetchInterval: (query) => (query.state.data?.devServer?.enabled ? 2000 : false),
   });
   const keyboardShortcutsEnabled =
     useQuery({
@@ -212,15 +151,6 @@ export function Layout() {
   }, [companies, companiesLoading, openOnboarding]);
 
   const togglePanel = togglePanelVisible;
-  // Cmd/Ctrl+B: collapse/expand the pinned rail on desktop; on mobile keep
-  // toggling the off-canvas drawer.
-  const toggleCollapse = useCallback(() => {
-    if (isMobile) {
-      toggleSidebar();
-    } else {
-      toggleCollapsed();
-    }
-  }, [isMobile, toggleSidebar, toggleCollapsed]);
   const openSearch = useCallback(() => {
     document.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -333,7 +263,6 @@ export function Layout() {
     onNewTask: () => openNewTask(),
     onSearch: openSearch,
     onToggleSidebar: toggleSidebar,
-    onToggleCollapse: toggleCollapse,
     onTogglePanel: togglePanel,
     onShowShortcuts: () => setShortcutsOpen(true),
     onGoToInbox: () =>
@@ -419,9 +348,7 @@ export function Layout() {
     }
 
     const onScroll = () => {
-      updateMobileNavVisibility(
-        window.scrollY || document.documentElement.scrollTop || 0,
-      );
+      updateMobileNavVisibility(window.scrollY || document.documentElement.scrollTop || 0);
     };
 
     onScroll();
@@ -483,18 +410,14 @@ export function Layout() {
     previousScrollRoute.current = currentScrollRoute;
 
     const isHistoryPop = navigationType === "POP";
-    const restoredScrollTop = isHistoryPop
-      ? scrollMemory.current.recall(locationKey)
-      : 0;
+    const restoredScrollTop = isHistoryPop ? scrollMemory.current.recall(locationKey) : 0;
     activeScrollKey.current = locationKey;
 
     if (isHistoryPop) {
       applyMainContentScrollTop(main, restoredScrollTop);
       // Cached page content can finish laying out a frame after commit; re-apply
       // once it has so the restored offset isn't clamped to a shorter interim height.
-      const raf = requestAnimationFrame(() =>
-        applyMainContentScrollTop(main, restoredScrollTop),
-      );
+      const raf = requestAnimationFrame(() => applyMainContentScrollTop(main, restoredScrollTop));
       return () => cancelAnimationFrame(raf);
     }
 
@@ -504,152 +427,26 @@ export function Layout() {
   }, [currentScrollRoute, location.state, locationKey, navigationType]);
 
   return (
-    <GeneralSettingsProvider value={{ keyboardShortcutsEnabled }}>
-      <div
-        className={cn(
-          "bg-background text-foreground pt-(--sz-safe-top)",
-          // overflow-x-clip on mobile keeps a stray wide descendant from making the
-          // whole viewport scroll horizontally. clip (not hidden) leaves overflow-y
-          // computed as visible, so native body scroll + the sticky breadcrumb keep
-          // working.
-          isMobile
-            ? "min-h-dvh overflow-x-clip"
-            : "flex h-dvh flex-col overflow-clip",
-        )}
-      >
-        <a
-          href="#main-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-(--z-200) focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          Skip to Main Content
-        </a>
-        <WorktreeBanner />
-        <DevRestartBanner devServer={health?.devServer} />
-        <div
-          className={cn(
-            "min-h-0 flex-1",
-            isMobile ? "w-full" : "flex overflow-clip",
-          )}
-        >
-          {isMobile && sidebarOpen && (
-            <button
-              type="button"
-              className="fixed inset-0 z-40 bg-black/50"
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Close sidebar"
-            />
-          )}
-
-          {isMobile ? (
-            <div
-              className={cn(
-                "fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out",
-                sidebarOpen ? "translate-x-0" : "-translate-x-full",
-              )}
-            >
-              <div className="flex flex-1 min-h-0 overflow-hidden">
-                <div className="w-60 shrink-0 overflow-hidden">
-                  {hasSecondarySidebar ? secondarySidebar : <Sidebar />}
-                </div>
-              </div>
-              <SidebarAccountMenu />
-            </div>
-          ) : (
-            <SidebarShell
-              open={sidebarOpen}
-              collapsed={collapsed}
-              peeking={peeking}
-              resizable
-              onPanelMouseEnter={handlePanelPointerEnter}
-              onPanelMouseLeave={handlePanelPointerLeave}
-              onPanelFocusCapture={collapsed ? handlePanelFocus : undefined}
-              onPanelBlurCapture={collapsed ? handlePanelBlur : undefined}
-            >
-              <div className="flex flex-1 min-h-0">
-                <Sidebar />
-              </div>
-              <SidebarAccountMenu />
-            </SidebarShell>
-          )}
-
-          {!isMobile && hasSecondarySidebar ? (
-            <SecondarySidebar>{secondarySidebar}</SecondarySidebar>
-          ) : null}
-
-          <div
-            className={cn(
-              "flex min-w-0 flex-col",
-              isMobile ? "w-full" : "h-full flex-1",
-            )}
-          >
-            <div
-              className={cn(
-                isMobile &&
-                  "sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85",
-              )}
-            >
-              <StandaloneBrowserControls mobile={isMobile} />
-              <BreadcrumbBar />
-              {isMobile && isCompanySettingsRoute ? (
-                <div className="border-b border-border px-4 pb-3">
-                  <CompanySettingsNav />
-                </div>
-              ) : null}
-            </div>
-            <div className={cn(isMobile ? "block" : "flex flex-1 min-h-0")}>
-              <main
-                id="main-content"
-                ref={mainContentRef}
-                tabIndex={-1}
-                className={cn(
-                  "flex-1 p-4 outline-none md:p-6",
-                  // Reserve the scrollbar gutter on desktop so dynamic page height
-                  // changes don't widen or shift the content area.
-                  isMobile
-                    ? "overflow-visible pb-(--sz-calc-14)"
-                    : "overflow-auto [scrollbar-gutter:stable]",
-                )}
-              >
-                {hasUnknownCompanyId ? (
-                  <NotFoundPage
-                    scope="invalid_company_id"
-                    requestedCompanyId={companyId}
-                  />
-                ) : (
-                  <RouteErrorBoundary>
-                    {/* TanStack Router loads page chunks lazily while the shell
-                        stays mounted. Keep the suspension point inside the error
-                        boundary so chunk-load failures surface there. */}
-                    <Suspense
-                      fallback={
-                        <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
-                          Loading...
-                        </div>
-                      }
-                    >
-                      <Outlet />
-                    </Suspense>
-                  </RouteErrorBoundary>
-                )}
-              </main>
-              <PropertiesPanel />
-            </div>
-          </div>
-        </div>
-        {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
-        <CommandPalette />
-        <Suspense fallback={null}>
-          <NewTaskDialog />
-          <NewProjectDialog />
-          <NewGoalDialog />
-        </Suspense>
-        <NewAgentDialog />
-        <KeyboardShortcutsCheatsheet
-          open={shortcutsOpen}
-          onOpenChange={setShortcutsOpen}
-        />
-        <ToastViewport />
-      </div>
-    </GeneralSettingsProvider>
+    <LayoutView
+      keyboardShortcutsEnabled={keyboardShortcutsEnabled}
+      isMobile={isMobile}
+      sidebarOpen={sidebarOpen}
+      collapsed={collapsed}
+      peeking={peeking}
+      hasSecondarySidebar={hasSecondarySidebar}
+      secondarySidebar={secondarySidebar}
+      isCompanySettingsRoute={isCompanySettingsRoute}
+      hasUnknownCompanyId={hasUnknownCompanyId}
+      companyId={companyId}
+      mainContentRef={mainContentRef}
+      mobileNavVisible={mobileNavVisible}
+      shortcutsOpen={shortcutsOpen}
+      setShortcutsOpen={setShortcutsOpen}
+      devServer={health?.devServer}
+      onPanelMouseEnter={handlePanelPointerEnter}
+      onPanelMouseLeave={handlePanelPointerLeave}
+      onPanelFocusCapture={handlePanelFocus}
+      onPanelBlurCapture={handlePanelBlur}
+    />
   );
 }

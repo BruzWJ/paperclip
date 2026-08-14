@@ -7,12 +7,9 @@ import type {
   RoutineVariable,
 } from "@paperclipai/shared";
 import type { MarkdownEditorRef, MentionOption } from "../MarkdownEditor";
-import type { InlineEntityOption } from "../InlineEntitySelector";
+import type { EntityOption } from "@/lib/entity-selector";
 import type { DirtyFieldDescriptor } from "../RoutineHistoryTab";
-import type {
-  RoutineTriggerResponse,
-  RotateRoutineTriggerResponse,
-} from "../../api/routines";
+import type { RoutineTriggerResponse, RotateRoutineTriggerResponse } from "../../api/routines";
 import type { agentsApi } from "../../api/agents";
 import type { projectsApi } from "../../api/projects";
 import type { secretsApi } from "../../api/secrets";
@@ -84,9 +81,7 @@ type AgentList = Awaited<ReturnType<typeof agentsApi.list>>;
 type ProjectList = Awaited<ReturnType<typeof projectsApi.list>>;
 type SecretList = Awaited<ReturnType<typeof secretsApi.list>>;
 type RoutineRunList = Awaited<ReturnType<typeof import("../../api/routines").routinesApi.listRuns>>;
-type RoutineActivityList = Awaited<
-  ReturnType<typeof import("../../api/routines").routinesApi.activity>
->;
+type RoutineActivityList = Awaited<ReturnType<typeof import("../../api/routines").routinesApi.activity>>;
 
 export type RoutineDetailContextValue = {
   routine: RoutineDetailType;
@@ -111,7 +106,6 @@ export type RoutineDetailContextValue = {
   // header / automation
   automationEnabled: boolean;
   automationLabel: string;
-  automationLabelClassName: string;
   automationToggleDisabled: boolean;
   onToggleAutomation: () => void;
   onOpenRunDialog: () => void;
@@ -137,8 +131,8 @@ export type RoutineDetailContextValue = {
   projects: ProjectList;
   agentById: Map<string, AgentList[number]>;
   projectById: Map<string, ProjectList[number]>;
-  assigneeOptions: InlineEntityOption[];
-  projectOptions: InlineEntityOption[];
+  assigneeOptions: EntityOption[];
+  projectOptions: EntityOption[];
   recentAssigneeIds: string[];
   recentProjectIds: string[];
   mentionOptions: MentionOption[];
@@ -161,9 +155,7 @@ export type RoutineDetailContextValue = {
   onHistoryRestoreSecretMaterials: (
     response: import("../../api/routines").RestoreRoutineRevisionResponse,
   ) => void;
-  onHistoryRestored: (
-    response: import("../../api/routines").RestoreRoutineRevisionResponse,
-  ) => void;
+  onHistoryRestored: (response: import("../../api/routines").RestoreRoutineRevisionResponse) => void;
 
   navigateToSection: (section: RoutineSectionKey, options?: { replace?: boolean }) => void;
 };

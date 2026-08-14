@@ -1,11 +1,7 @@
-import { useId, useMemo, useState } from "react";
+import { useState } from "react";
 import { AGENT_ICON_NAMES, type AgentIconName } from "@paperclipai/shared";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Input } from "@/components/ui/input";
+import * as PopoverUI from "@/components/ui/popover";
+import * as CommandUI from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { AGENT_ICONS, getAgentIcon } from "../lib/agent-icons";
 
@@ -30,55 +26,47 @@ interface AgentIconPickerProps {
 export function AgentIconPicker({ value, onChange, children }: AgentIconPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const searchInputId = useId();
-
-  const filtered = useMemo(() => {
-    const entries = AGENT_ICON_NAMES.map((name) => [name, AGENT_ICONS[name]] as const);
-    if (!search) return entries;
-    const q = search.toLowerCase();
-    return entries.filter(([name]) => name.includes(q));
-  }, [search]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent className="w-72 p-3" align="start">
-        <label htmlFor={searchInputId} className="sr-only">
-          Search icons
-        </label>
-        <Input
-          id={searchInputId}
-          placeholder="Search icons..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="mb-2 h-8 text-sm"
-          autoFocus
-        />
-        <div className="grid grid-cols-7 gap-1 max-h-48 overflow-y-auto">
-          {filtered.map(([name, Icon]) => (
-            <button
-              key={name}
-              type="button"
-              aria-label={name}
-              onClick={() => {
-                onChange(name);
-                setOpen(false);
-                setSearch("");
-              }}
-              className={cn(
-                "flex items-center justify-center h-8 w-8 rounded hover:bg-accent transition-colors",
-                (value ?? DEFAULT_ICON) === name && "bg-accent ring-1 ring-primary"
-              )}
-              title={name}
-            >
-              <Icon className="h-4 w-4" />
-            </button>
-          ))}
-          {filtered.length === 0 && (
-            <p className="col-span-7 text-xs text-muted-foreground text-center py-2">No icons match</p>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <PopoverUI.Popover open={open} onOpenChange={setOpen}>
+      <PopoverUI.PopoverTrigger asChild>{children}</PopoverUI.PopoverTrigger>
+      <PopoverUI.PopoverContent className="w-72 p-0" align="start">
+        <CommandUI.Command>
+          <CommandUI.CommandInput
+            placeholder="Search icons..."
+            value={search}
+            onValueChange={setSearch}
+            autoFocus
+          />
+          <CommandUI.CommandList className="max-h-48">
+            <CommandUI.CommandEmpty>No icons match</CommandUI.CommandEmpty>
+            <CommandUI.CommandGroup className="[&_[cmdk-group-items]]:grid [&_[cmdk-group-items]]:grid-cols-7 [&_[cmdk-group-items]]:gap-1">
+              {AGENT_ICON_NAMES.map((name) => {
+                const Icon = AGENT_ICONS[name];
+                return (
+                  <CommandUI.CommandItem
+                    key={name}
+                    value={name}
+                    aria-label={name}
+                    onSelect={() => {
+                      onChange(name);
+                      setOpen(false);
+                      setSearch("");
+                    }}
+                    className={cn(
+                      "size-8 justify-center p-0",
+                      (value ?? DEFAULT_ICON) === name && "bg-accent ring-1 ring-primary",
+                    )}
+                    title={name}
+                  >
+                    <Icon className="size-4" />
+                  </CommandUI.CommandItem>
+                );
+              })}
+            </CommandUI.CommandGroup>
+          </CommandUI.CommandList>
+        </CommandUI.Command>
+      </PopoverUI.PopoverContent>
+    </PopoverUI.Popover>
   );
 }

@@ -5,30 +5,42 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Shield, ShieldCheck } from "lucide-react";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemGroup,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { useCompany } from "@/context/CompanyContext";
-import { useToast } from "@/context/ToastContext";
+import { toast } from "sonner";
 import { queryKeys } from "@/lib/queryKeys";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/company/settings/instance/access/",
-)({ component: InstanceAccess });
+export const Route = createFileRoute("/_authenticated/$companyId/company/settings/instance/access/")({
+  component: InstanceAccess,
+});
 
 function InstanceAccess() {
   const companyId = useCompanyRouteId();
   const { companies } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [selectedCompanyIds, setSelectedCompanyIds] = useState<Set<string>>(
-    new Set(),
-  );
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setBreadcrumbs([
@@ -43,10 +55,7 @@ function InstanceAccess() {
       {
         label: "Instance settings",
         renderLink: (content) => (
-          <Link
-            to="/$companyId/company/settings/instance"
-            params={{ companyId }}
-          >
+          <Link to="/$companyId/company/settings/instance" params={{ companyId }}>
             {content}
           </Link>
         ),
@@ -89,8 +98,7 @@ function InstanceAccess() {
   }, [userAccessQuery.data]);
 
   const updateCompanyAccessMutation = useMutation({
-    mutationFn: () =>
-      accessApi.setUserCompanyAccess(selectedUserId!, [...selectedCompanyIds]),
+    mutationFn: () => accessApi.setUserCompanyAccess(selectedUserId!, [...selectedCompanyIds]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.access.userCompanyAccess(selectedUserId!),
@@ -98,7 +106,7 @@ function InstanceAccess() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.access.adminUsers(search),
       });
-      pushToast({ title: "Company access updated", tone: "success" });
+      toast.success("Company access updated");
     },
   });
 
@@ -117,7 +125,7 @@ function InstanceAccess() {
           queryKey: queryKeys.access.userCompanyAccess(selectedUserId),
         });
       }
-      pushToast({ title: "Instance role updated", tone: "success" });
+      toast.success("Instance role updated");
     },
   });
 
@@ -129,7 +137,8 @@ function InstanceAccess() {
 
   if (usersQuery.isLoading) {
     return (
-      <div className="text-sm text-muted-foreground" role="status">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner />
         Loading instance users…
       </div>
     );
@@ -143,9 +152,9 @@ function InstanceAccess() {
           ? usersQuery.error.message
           : "Failed to load users.";
     return (
-      <div className="text-sm text-destructive" role="alert">
-        {message}
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription>{message}</AlertDescription>
+      </Alert>
     );
   }
 
@@ -162,175 +171,164 @@ function InstanceAccess() {
           <h1 className="text-lg font-semibold">Instance Access</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
-          Search users, manage instance-admin status, and control which
-          companies they can access.
+          Search users, manage instance-admin status, and control which companies they can access.
         </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-(--gtc-34)">
-        <Card className="block space-y-4 p-4">
-          <label className="block space-y-2 text-sm">
-            <span className="font-medium">Search users</span>
-            <input
-              className="w-full rounded-md border border-border bg-background px-3 py-2"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by name or email"
-            />
-          </label>
-          <div className="space-y-2">
-            {(usersQuery.data ?? []).map((user) => (
-              <button
-                key={user.id}
-                type="button"
-                onClick={() => setSelectedUserId(user.id)}
-                className={`w-full rounded-lg border px-3 py-3 text-left transition-colors ${
-                  user.id === selectedUserId
-                    ? "border-foreground bg-accent"
-                    : "border-border hover:bg-accent/40"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">
-                      {user.name || user.email || user.id}
-                    </div>
-                    <div className="truncate text-sm text-muted-foreground">
-                      {user.email || user.id}
-                    </div>
-                  </div>
-                  {user.isInstanceAdmin ? (
-                    <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                  ) : null}
-                </div>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  {user.activeCompanyMembershipCount} active company memberships
-                </div>
-              </button>
-            ))}
-          </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Users</CardTitle>
+            <CardDescription>Select an account to manage its instance access.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Field>
+              <FieldLabel htmlFor="instance-user-search">Search users</FieldLabel>
+              <Input
+                id="instance-user-search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by name or email"
+              />
+            </Field>
+            <ToggleGroup
+              type="single"
+              value={selectedUserId ?? ""}
+              onValueChange={(value) => {
+                if (value) setSelectedUserId(value);
+              }}
+              className="flex-col items-stretch gap-2"
+            >
+              {(usersQuery.data ?? []).map((user) => (
+                <ToggleGroupItem
+                  key={user.id}
+                  value={user.id}
+                  variant="outline"
+                  className="h-auto w-full justify-start p-0 text-left"
+                >
+                  <Item size="sm" className="w-full border-0">
+                    <ItemContent className="min-w-0">
+                      <ItemTitle className="truncate">{user.name || user.email || user.id}</ItemTitle>
+                      <ItemDescription className="truncate">{user.email || user.id}</ItemDescription>
+                    </ItemContent>
+                    <ItemActions>
+                      {user.isInstanceAdmin ? <ShieldCheck className="h-4 w-4" /> : null}
+                    </ItemActions>
+                    <ItemFooter className="text-xs text-muted-foreground">
+                      {user.activeCompanyMembershipCount} active company memberships
+                    </ItemFooter>
+                  </Item>
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </CardContent>
         </Card>
 
-        <Card className="block space-y-4 p-5">
-          {!selectedUserId ? (
-            <div className="text-sm text-muted-foreground">
-              Select a user to inspect instance access.
-            </div>
-          ) : userAccessQuery.isLoading ? (
-            <div className="text-sm text-muted-foreground" role="status">
-              Loading user access…
-            </div>
-          ) : userAccessQuery.error ? (
-            <div className="text-sm text-destructive" role="alert">
-              {userAccessQuery.error instanceof Error
-                ? userAccessQuery.error.message
-                : "Failed to load user access."}
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <div className="text-lg font-semibold">
-                    {selectedUser?.name ||
-                      selectedUser?.email ||
-                      selectedUserId}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {selectedUser?.email || selectedUserId}
-                  </div>
-                </div>
-                <Button
-                  variant={
-                    selectedUser?.isInstanceAdmin ? "outline" : "default"
-                  }
-                  onClick={() =>
-                    setAdminMutation.mutate(
-                      !(selectedUser?.isInstanceAdmin ?? false),
-                    )
-                  }
-                  disabled={setAdminMutation.isPending}
-                >
-                  {selectedUser?.isInstanceAdmin
-                    ? "Remove instance admin"
-                    : "Promote to instance admin"}
-                </Button>
+        <Card>
+          <CardContent className="space-y-4">
+            {!selectedUserId ? (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>No user selected</EmptyTitle>
+                  <EmptyDescription>Select a user to inspect instance access.</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : userAccessQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner />
+                Loading user access…
               </div>
-
-              <div className="space-y-3">
-                <div>
-                  <h2 className="text-sm font-semibold">Company access</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Toggle company membership for this user. New access defaults
-                    to an active operator membership.
-                  </p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {companies.map((company) => (
-                    <label
-                      key={company.id}
-                      className="flex items-start gap-3 rounded-lg border border-border px-3 py-3"
-                    >
-                      <Checkbox
-                        checked={selectedCompanyIds.has(company.id)}
-                        onCheckedChange={(checked) => {
-                          setSelectedCompanyIds((current) => {
-                            const next = new Set(current);
-                            if (checked) next.add(company.id);
-                            else next.delete(company.id);
-                            return next;
-                          });
-                        }}
-                      />
-                      <span className="space-y-1">
-                        <span className="block text-sm font-medium">
-                          {company.name}
-                        </span>
-                        <span className="block text-xs text-muted-foreground">
-                          {company.taskPrefix}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                <div className="flex justify-end">
+            ) : userAccessQuery.error ? (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  {userAccessQuery.error instanceof Error
+                    ? userAccessQuery.error.message
+                    : "Failed to load user access."}
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="text-lg font-semibold">
+                      {selectedUser?.name || selectedUser?.email || selectedUserId}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {selectedUser?.email || selectedUserId}
+                    </div>
+                  </div>
                   <Button
-                    onClick={() => updateCompanyAccessMutation.mutate()}
-                    disabled={updateCompanyAccessMutation.isPending}
+                    variant={selectedUser?.isInstanceAdmin ? "outline" : "default"}
+                    onClick={() => setAdminMutation.mutate(!(selectedUser?.isInstanceAdmin ?? false))}
+                    disabled={setAdminMutation.isPending}
                   >
-                    {updateCompanyAccessMutation.isPending
-                      ? "Saving…"
-                      : "Save company access"}
+                    {selectedUser?.isInstanceAdmin ? "Remove instance admin" : "Promote to instance admin"}
                   </Button>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <h2 className="text-sm font-semibold">Current memberships</h2>
-                <div className="space-y-2">
-                  {(userAccessQuery.data?.companyAccess ?? []).map(
-                    (membership) => (
-                      <div
-                        key={membership.id}
-                        className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
-                      >
-                        <div>
-                          <div className="font-medium">
-                            {membership.companyName || membership.companyId}
-                          </div>
-                          <div className="text-muted-foreground">
-                            {membership.membershipRole} • {membership.status}
-                          </div>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {new Date(membership.updatedAt).toLocaleDateString()}
-                        </div>
-                      </div>
-                    ),
-                  )}
+                <div className="space-y-3">
+                  <div>
+                    <h2 className="text-sm font-semibold">Company access</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Toggle company membership for this user. New access defaults to an active operator
+                      membership.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {companies.map((company) => (
+                      <FieldLabel key={company.id}>
+                        <Field orientation="horizontal">
+                          <Checkbox
+                            id={`company-access-${company.id}`}
+                            checked={selectedCompanyIds.has(company.id)}
+                            onCheckedChange={(checked) => {
+                              setSelectedCompanyIds((current) => {
+                                const next = new Set(current);
+                                if (checked) next.add(company.id);
+                                else next.delete(company.id);
+                                return next;
+                              });
+                            }}
+                          />
+                          <FieldContent>
+                            <FieldTitle>{company.name}</FieldTitle>
+                            <FieldDescription>{company.taskPrefix}</FieldDescription>
+                          </FieldContent>
+                        </Field>
+                      </FieldLabel>
+                    ))}
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={() => updateCompanyAccessMutation.mutate()}
+                      disabled={updateCompanyAccessMutation.isPending}
+                    >
+                      {updateCompanyAccessMutation.isPending ? "Saving…" : "Save company access"}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </>
-          )}
+
+                <div className="space-y-2">
+                  <h2 className="text-sm font-semibold">Current memberships</h2>
+                  <ItemGroup className="gap-2">
+                    {(userAccessQuery.data?.companyAccess ?? []).map((membership) => (
+                      <Item key={membership.id} variant="outline" size="sm">
+                        <ItemContent>
+                          <ItemTitle>{membership.companyName || membership.companyId}</ItemTitle>
+                          <ItemDescription>
+                            {membership.membershipRole} • {membership.status}
+                          </ItemDescription>
+                        </ItemContent>
+                        <ItemActions className="text-xs text-muted-foreground">
+                          {new Date(membership.updatedAt).toLocaleDateString()}
+                        </ItemActions>
+                      </Item>
+                    ))}
+                  </ItemGroup>
+                </div>
+              </>
+            )}
+          </CardContent>
         </Card>
       </div>
     </div>

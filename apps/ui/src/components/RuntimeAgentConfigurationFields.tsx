@@ -7,13 +7,9 @@ import {
   type PaperclipActionKey,
 } from "@paperclipai/shared";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldContent, FieldDescription, FieldTitle } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ContextAccessMatrix } from "./ContextAccessMatrix";
 
 export type RuntimeAgentConfigurationValues = {
@@ -22,21 +18,12 @@ export type RuntimeAgentConfigurationValues = {
   mentionReachGrants: Record<AgentMentionReachGrantKey, boolean>;
 };
 
-type ContextAccessPreset =
-  | "heads_down"
-  | "focused"
-  | "supervisor"
-  | "investigator"
-  | "situational";
+type ContextAccessPreset = "heads_down" | "focused" | "supervisor" | "investigator" | "situational";
 
-const ACTION_LABELS: Record<
-  PaperclipActionKey,
-  { label: string; description: string }
-> = {
+const ACTION_LABELS: Record<PaperclipActionKey, { label: string; description: string }> = {
   task_create: {
     label: "Create and assign tasks",
-    description:
-      "Create direct child tasks and reassign eligible direct children created by this execution.",
+    description: "Create direct child tasks and reassign eligible direct children created by this execution.",
   },
   mention_board: {
     label: "Can mention Board",
@@ -52,18 +39,17 @@ const ACTION_LABELS: Record<
   },
   list_all_agents: {
     label: "List all agents",
-    description: "List all non-terminated agents in the company with their identity, capabilities, and reporting hierarchy.",
+    description:
+      "List all non-terminated agents in the company with their identity, capabilities, and reporting hierarchy.",
   },
   list_parent_agents: {
     label: "List team agents",
-    description: "List agents under the current agent's parent, scoped to the reporting team. Can also target a specific agent within the team subtree.",
+    description:
+      "List agents under the current agent's parent, scoped to the reporting team. Can also target a specific agent within the team subtree.",
   },
 };
 
-const MENTION_LABELS: Record<
-  AgentMentionReachGrantKey,
-  { label: string; description: string }
-> = {
+const MENTION_LABELS: Record<AgentMentionReachGrantKey, { label: string; description: string }> = {
   mention_any_descendant: {
     label: "Mention any descendant",
     description: "Add eligible descendants that own work in the current task tree.",
@@ -87,20 +73,12 @@ function booleanMap<Key extends string>(
   enabled: readonly Key[] = [],
 ): Record<Key, boolean> {
   const enabledSet = new Set(enabled);
-  return Object.fromEntries(
-    keys.map((key) => [key, enabledSet.has(key)]),
-  ) as Record<Key, boolean>;
+  return Object.fromEntries(keys.map((key) => [key, enabledSet.has(key)])) as Record<Key, boolean>;
 }
 
-const CONTEXT_ACCESS_PRESETS: Record<
-  ContextAccessPreset,
-  Record<AgentContextGrantKey, boolean>
-> = {
+const CONTEXT_ACCESS_PRESETS: Record<ContextAccessPreset, Record<AgentContextGrantKey, boolean>> = {
   heads_down: booleanMap(AGENT_CONTEXT_GRANT_KEYS),
-  focused: booleanMap(AGENT_CONTEXT_GRANT_KEYS, [
-    "carry_context",
-    "read_task_comments",
-  ]),
+  focused: booleanMap(AGENT_CONTEXT_GRANT_KEYS, ["carry_context", "read_task_comments"]),
   supervisor: booleanMap(AGENT_CONTEXT_GRANT_KEYS, [
     "carry_context",
     "read_task_comments",
@@ -136,43 +114,11 @@ function matchingContextAccessPreset(
   contextGrants: Record<AgentContextGrantKey, boolean>,
 ): ContextAccessPreset | "custom" {
   for (const preset of Object.keys(CONTEXT_ACCESS_PRESETS) as ContextAccessPreset[]) {
-    if (
-      AGENT_CONTEXT_GRANT_KEYS.every(
-        (key) => CONTEXT_ACCESS_PRESETS[preset][key] === contextGrants[key],
-      )
-    ) {
+    if (AGENT_CONTEXT_GRANT_KEYS.every((key) => CONTEXT_ACCESS_PRESETS[preset][key] === contextGrants[key])) {
       return preset;
     }
   }
   return "custom";
-}
-
-function ConfigurationRow({
-  label,
-  description,
-  checked,
-  disabled,
-  onCheckedChange,
-}: {
-  label: string;
-  description: string;
-  checked: boolean;
-  disabled: boolean;
-  onCheckedChange: (checked: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-2">
-      <div className="min-w-0">
-        <div className="text-sm">{label}</div>
-        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-      </div>
-      <Switch
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={onCheckedChange}
-      />
-    </div>
-  );
 }
 
 export function RuntimeAgentConfigurationFields({
@@ -191,20 +137,18 @@ export function RuntimeAgentConfigurationFields({
       <div>
         <h3 className="text-sm font-medium">Runtime access</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Context access controls what this agent can see; actions control what it
-          can do. The two dials are independent.
+          Context access controls what this agent can see; actions control what it can do. The two dials are
+          independent.
         </p>
       </div>
 
-      <div className="rounded-lg border border-border p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
+      <Card className="gap-3 py-4">
+        <CardHeader className="flex-row items-center justify-between px-4">
           <div>
-            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Context access
-            </h4>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <CardTitle className="text-sm">Context access</CardTitle>
+            <CardDescription className="text-xs">
               Presets stamp concrete cells once; later edits do not stay linked.
-            </p>
+            </CardDescription>
           </div>
           <Select
             value={activePreset}
@@ -222,9 +166,7 @@ export function RuntimeAgentConfigurationFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {activePreset === "custom" ? (
-                <SelectItem value="custom">Custom</SelectItem>
-              ) : null}
+              {activePreset === "custom" ? <SelectItem value="custom">Custom</SelectItem> : null}
               {(Object.keys(PRESET_LABELS) as ContextAccessPreset[]).map((preset) => (
                 <SelectItem key={preset} value={preset}>
                   {PRESET_LABELS[preset]}
@@ -232,80 +174,94 @@ export function RuntimeAgentConfigurationFields({
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <ContextAccessMatrix
-          value={value.contextGrants}
-          disabled={disabled}
-          enabledLabel="allowed"
-          disabledLabel="blocked"
-          description="Checked cells grant this agent that level of context access. Unchecked cells remain unavailable."
-          testId="agent-context-access-matrix"
-          onCellChange={(key, enabled) =>
-            onChange({
-              ...value,
-              contextGrants: {
-                ...value.contextGrants,
-                [key]: enabled,
-              },
-            })
-          }
-        />
-      </div>
-
-      <div className="rounded-lg border border-border p-4">
-        <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Paperclip actions
-        </h4>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Task updates are relationship-derived: the owner updates its active
-          task, and the creator can message or set open/blocked on eligible
-          direct children through the same canonical action. Terminal updates
-          remain owner-only. Each update canonically mentions its counterpart
-          automatically, so no lifecycle or separate comment control is
-          configured here.
-        </p>
-        {PAPERCLIP_ACTION_KEYS.map((key) => (
-          <ConfigurationRow
-            key={key}
-            {...ACTION_LABELS[key]}
-            checked={value.actionGrants[key]}
+        </CardHeader>
+        <CardContent className="px-4">
+          <ContextAccessMatrix
+            value={value.contextGrants}
             disabled={disabled}
-            onCheckedChange={(checked) =>
+            enabledLabel="allowed"
+            disabledLabel="blocked"
+            description="Checked cells grant this agent that level of context access. Unchecked cells remain unavailable."
+            testId="agent-context-access-matrix"
+            onCellChange={(key, enabled) =>
               onChange({
                 ...value,
-                actionGrants: {
-                  ...value.actionGrants,
-                  [key]: checked,
+                contextGrants: {
+                  ...value.contextGrants,
+                  [key]: enabled,
                 },
               })
             }
           />
-        ))}
-      </div>
+        </CardContent>
+      </Card>
 
-      <div className="rounded-lg border border-border p-4">
-        <h4 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Mention reach
-        </h4>
-        {AGENT_MENTION_REACH_GRANT_KEYS.map((key) => (
-          <ConfigurationRow
-            key={key}
-            {...MENTION_LABELS[key]}
-            checked={value.mentionReachGrants[key]}
-            disabled={disabled}
-            onCheckedChange={(checked) =>
-              onChange({
-                ...value,
-                mentionReachGrants: {
-                  ...value.mentionReachGrants,
-                  [key]: checked,
-                },
-              })
-            }
-          />
-        ))}
-      </div>
+      <Card className="gap-3 py-4">
+        <CardHeader className="gap-1 px-4">
+          <CardTitle className="text-sm">Paperclip actions</CardTitle>
+          <CardDescription className="text-xs">
+            Task updates are relationship-derived: the owner updates its active task, and the creator can
+            message or set open/blocked on eligible direct children through the same canonical action.
+            Terminal updates remain owner-only. Each update canonically mentions its counterpart
+            automatically, so no lifecycle or separate comment control is configured here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 px-4">
+          {PAPERCLIP_ACTION_KEYS.map((key) => {
+            const presentation = ACTION_LABELS[key];
+            return (
+              <Field key={key} orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle>{presentation.label}</FieldTitle>
+                  <FieldDescription>{presentation.description}</FieldDescription>
+                </FieldContent>
+                <Switch
+                  checked={value.actionGrants[key]}
+                  disabled={disabled}
+                  onCheckedChange={(checked) =>
+                    onChange({
+                      ...value,
+                      actionGrants: { ...value.actionGrants, [key]: checked },
+                    })
+                  }
+                />
+              </Field>
+            );
+          })}
+        </CardContent>
+      </Card>
 
+      <Card className="gap-3 py-4">
+        <CardHeader className="px-4">
+          <CardTitle className="text-sm">Mention reach</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 px-4">
+          {AGENT_MENTION_REACH_GRANT_KEYS.map((key) => {
+            const presentation = MENTION_LABELS[key];
+            return (
+              <Field key={key} orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle>{presentation.label}</FieldTitle>
+                  <FieldDescription>{presentation.description}</FieldDescription>
+                </FieldContent>
+                <Switch
+                  checked={value.mentionReachGrants[key]}
+                  disabled={disabled}
+                  onCheckedChange={(checked) =>
+                    onChange({
+                      ...value,
+                      mentionReachGrants: {
+                        ...value.mentionReachGrants,
+                        [key]: checked,
+                      },
+                    })
+                  }
+                />
+              </Field>
+            );
+          })}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -20,16 +20,16 @@ import { PanelProvider } from "@/context/PanelContext";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { DialogProvider } from "@/context/DialogContext";
 import { EditorAutocompleteProvider } from "@/context/EditorAutocompleteContext";
-import { ToastProvider } from "@/context/ToastContext";
+import { Toaster } from "@/components/ui/sonner";
+import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { PluginLauncherProvider } from "@/plugins/launchers";
-import { NotFoundPage } from "@/components/NotFoundPage";
 import { lazyPage } from "@/lib/lazy-page";
 import type { AppRouterContext } from "./-router-context";
-import { RouteLoadingFallback } from "./-route-ui";
 
 const OnboardingWizardVariant = lazyPage(
-  () => import("@/components/OnboardingWizardVariant"),
+  () => import("@/components/OnboardingWizard"),
   "OnboardingWizardVariant",
 );
 
@@ -49,39 +49,41 @@ function browserRawHref(locationHref: string): string {
 
 function CompanyAwareBreadcrumbProvider({ children }: { children: ReactNode }) {
   const { selectedCompany } = useCompany();
-  return (
-    <BreadcrumbProvider companyName={selectedCompany?.name ?? null}>
-      {children}
-    </BreadcrumbProvider>
-  );
+  return <BreadcrumbProvider companyName={selectedCompany?.name ?? null}>{children}</BreadcrumbProvider>;
 }
 
 function RootComponent() {
   return (
     <CompanyProvider>
       <EditorAutocompleteProvider>
-        <ToastProvider>
-          <LiveUpdatesProvider>
-            <TooltipProvider>
-              <CompanyAwareBreadcrumbProvider>
-                <SidebarProvider>
-                  <PanelProvider>
-                    <PluginLauncherProvider>
-                      <DialogProvider>
-                        <Suspense fallback={<RouteLoadingFallback />}>
-                          <Outlet />
-                        </Suspense>
-                        <Suspense fallback={null}>
-                          <OnboardingWizardVariant />
-                        </Suspense>
-                      </DialogProvider>
-                    </PluginLauncherProvider>
-                  </PanelProvider>
-                </SidebarProvider>
-              </CompanyAwareBreadcrumbProvider>
-            </TooltipProvider>
-          </LiveUpdatesProvider>
-        </ToastProvider>
+        <LiveUpdatesProvider>
+          <TooltipProvider>
+            <CompanyAwareBreadcrumbProvider>
+              <SidebarProvider>
+                <PanelProvider>
+                  <PluginLauncherProvider>
+                    <DialogProvider>
+                      <Suspense
+                        fallback={
+                          <div className="mx-auto flex max-w-xl items-center gap-2 py-10 text-sm text-muted-foreground">
+                            <Spinner />
+                            Loading...
+                          </div>
+                        }
+                      >
+                        <Outlet />
+                      </Suspense>
+                      <Suspense fallback={null}>
+                        <OnboardingWizardVariant />
+                      </Suspense>
+                    </DialogProvider>
+                  </PluginLauncherProvider>
+                </PanelProvider>
+              </SidebarProvider>
+            </CompanyAwareBreadcrumbProvider>
+          </TooltipProvider>
+        </LiveUpdatesProvider>
+        <Toaster position="bottom-left" visibleToasts={5} />
       </EditorAutocompleteProvider>
     </CompanyProvider>
   );
@@ -102,5 +104,12 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
     }
   },
   component: RootComponent,
-  notFoundComponent: () => <NotFoundPage scope="global" />,
+  notFoundComponent: () => (
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>Page not found</EmptyTitle>
+        <EmptyDescription>This route does not exist.</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  ),
 });

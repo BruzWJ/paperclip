@@ -2,8 +2,7 @@ import { useMemo } from "react";
 import { Clock } from "lucide-react";
 import type { Task } from "@paperclipai/shared";
 
-import { InlineBanner } from "@/components/InlineBanner";
-import { cn } from "@/lib/utils";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   deriveMonitorState,
   formatMonitorAbsolute,
@@ -21,12 +20,7 @@ type MonitorDate = Date | string;
  * are shown. `cleared` and `none` hide both surfaces entirely — see
  * wireframe 04 (PAP-14557).
  */
-const WAITING_STATES: readonly MonitorDisplayState[] = [
-  "scheduled",
-  "retrying",
-  "due-now",
-  "overdue",
-];
+const WAITING_STATES: readonly MonitorDisplayState[] = ["scheduled", "retrying", "due-now", "overdue"];
 
 export function isWaitingMonitorState(state: MonitorDisplayState): boolean {
   return WAITING_STATES.includes(state);
@@ -94,8 +88,8 @@ export function buildMonitorSurfaceCopy(
   const bannerMeta = [statusHint, `${absolute} (your time)`, attemptLabel, serviceLabel].filter(
     (piece): piece is string => Boolean(piece),
   );
-  const stripMeta = [statusHint, absolute, attemptLabel, serviceLabel].filter(
-    (piece): piece is string => Boolean(piece),
+  const stripMeta = [statusHint, absolute, attemptLabel, serviceLabel].filter((piece): piece is string =>
+    Boolean(piece),
   );
 
   return {
@@ -130,14 +124,11 @@ export function TaskMonitorBanner({ task }: TaskMonitorSurfaceProps) {
   if (!copy) return null;
 
   return (
-    <InlineBanner
-      tone={copy.tone}
-      icon={Clock}
-      title={copy.bannerTitle}
-      className="my-3"
-    >
-      <span>{copy.bannerMeta.join("  ·  ")}</span>
-    </InlineBanner>
+    <Alert role="note" className="my-3">
+      <Clock aria-hidden="true" />
+      <AlertTitle>{copy.bannerTitle}</AlertTitle>
+      <AlertDescription>{copy.bannerMeta.join("  ·  ")}</AlertDescription>
+    </Alert>
   );
 }
 
@@ -155,23 +146,13 @@ export function TaskMonitorComposerStrip({
   if (!copy) return null;
 
   return (
-    <div
-      role="note"
-      data-testid="task-monitor-composer-strip"
-      className={cn("rounded-lg border border-border bg-muted/30 px-3 py-2", className)}
-    >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-2">
-          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-foreground">{copy.stripTitle}</div>
-            <div className="text-xs text-muted-foreground">{copy.stripMeta.join(" · ")}</div>
-          </div>
-        </div>
-      </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        Use an explicit @mention to queue the agent; this reminder does not trigger a run.
-      </p>
-    </div>
+    <Alert role="note" data-testid="task-monitor-composer-strip" className={className}>
+      <Clock aria-hidden="true" />
+      <AlertTitle>{copy.stripTitle}</AlertTitle>
+      <AlertDescription>
+        <p>{copy.stripMeta.join(" · ")}</p>
+        <p>Use an explicit @mention to queue the agent; this reminder does not trigger a run.</p>
+      </AlertDescription>
+    </Alert>
   );
 }

@@ -2,8 +2,10 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Task } from "@paperclipai/shared";
 import type { TaskSiblingNavigation as TaskSiblingNavigationState } from "@/lib/task-detail-subtasks";
 import { withTaskDetailHeaderSeed } from "@/lib/taskDetailBreadcrumb";
+import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
 import { cn } from "@/lib/utils";
-import { StatusIcon } from "./StatusIcon";
+import { Badge } from "@/components/ui/badge";
+import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { TaskLinkQuicklook } from "./TaskLinkQuicklook";
 
 type TaskSiblingNavigationProps = {
@@ -15,10 +17,7 @@ export function TaskSiblingNavigation({ navigation, linkState }: TaskSiblingNavi
   if (!navigation) return null;
 
   return (
-    <nav
-      aria-label="Sub-task navigation"
-      className="mt-4 flex flex-col gap-3 sm:mt-6 sm:grid sm:grid-cols-2"
-    >
+    <nav aria-label="Sub-task navigation" className="mt-4 flex flex-col gap-3 sm:mt-6 sm:grid sm:grid-cols-2">
       {navigation.previous ? (
         <SiblingLink direction="previous" task={navigation.previous} linkState={linkState} />
       ) : null}
@@ -50,34 +49,40 @@ function SiblingLink({
   const identifier = task.identifier;
   const Icon = direction === "previous" ? ChevronLeft : ChevronRight;
   const cardClassName = cn(
-    "group min-w-0 rounded-lg border border-border bg-card px-3 py-2.5 text-left no-underline transition-colors",
-    "hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
+    "group min-w-0 rounded-lg text-left no-underline transition-colors hover:bg-accent/50 focus-visible:ring-(length:--rad-3) focus-visible:ring-ring focus-visible:outline-none",
     direction === "next" && "sm:text-right",
     className,
   );
   const content = (
-    <>
-      <div className="min-w-0 space-y-1.5">
-        <div className={cn(
-          "flex items-center gap-1.5 text-xs text-muted-foreground transition-colors group-hover:text-foreground",
-          direction === "next" && "sm:justify-end",
-        )}>
+    <Item variant="outline" size="sm" className="h-full">
+      <ItemContent className="min-w-0">
+        <ItemDescription
+          className={cn(
+            "flex items-center gap-1.5 text-xs text-muted-foreground transition-colors group-hover:text-foreground",
+            direction === "next" && "sm:justify-end",
+          )}
+        >
           {direction === "previous" ? <Icon className="h-3.5 w-3.5 shrink-0" /> : null}
           <span>{label}</span>
           {direction === "next" ? <Icon className="h-3.5 w-3.5 shrink-0" /> : null}
-        </div>
-        <div className={cn(
-          "flex min-w-0 items-center gap-1.5 text-xs font-mono text-muted-foreground transition-colors group-hover:text-foreground",
-          direction === "next" && "sm:justify-end",
-        )}>
-          <StatusIcon status={task.boardPresentationStatus} blockerAttention={task.blockerAttention} />
+        </ItemDescription>
+        <ItemDescription
+          className={cn(
+            "flex min-w-0 items-center gap-1.5 text-xs font-mono text-muted-foreground transition-colors group-hover:text-foreground",
+            direction === "next" && "sm:justify-end",
+          )}
+        >
+          <Badge
+            variant="secondary"
+            aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, task.blockerAttention)}
+          >
+            {taskValueLabel(task.boardPresentationStatus)}
+          </Badge>
           <span className="shrink-0">{identifier}</span>
-        </div>
-        <div className="truncate text-sm text-foreground">
-          {task.title}
-        </div>
-      </div>
-    </>
+        </ItemDescription>
+        <ItemTitle className={cn("truncate", direction === "next" && "sm:ml-auto")}>{task.title}</ItemTitle>
+      </ItemContent>
+    </Item>
   );
 
   return (

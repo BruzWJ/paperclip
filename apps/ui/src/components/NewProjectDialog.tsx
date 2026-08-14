@@ -1,9 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  isAbsoluteProjectFolder,
-  isCanonicalProjectRepositoryUrl,
-} from "@paperclipai/shared";
+import { isAbsoluteProjectFolder, isCanonicalProjectRepositoryUrl } from "@paperclipai/shared";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
@@ -14,8 +11,20 @@ import { goalsApi } from "../api/goals";
 import { assetsApi } from "../api/assets";
 import { buildMarkdownMentionOptions } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { FieldError } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,27 +33,10 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Maximize2,
-  Minimize2,
-  Target,
-  Calendar,
-  HelpCircle,
-  Plus,
-  X,
-} from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Target, HelpCircle, Maximize2, Minimize2, Plus, X } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "../lib/utils";
-import {
-  MarkdownEditor,
-  type MarkdownEditorRef,
-  type MentionOption,
-} from "./MarkdownEditor";
-import { StatusBadge } from "./StatusBadge";
+import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { ChoosePathButton } from "./PathInstructionsModal";
 
 const projectStatuses = [
@@ -98,8 +90,7 @@ export function NewProjectDialog() {
   }, [agents, companyMembers?.users]);
 
   const createProject = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      projectsApi.create(companyId, data),
+    mutationFn: (data: Record<string, unknown>) => projectsApi.create(companyId, data),
   });
 
   const uploadDescriptionImage = useMutation({
@@ -187,55 +178,30 @@ export function NewProjectDialog() {
       }}
     >
       <DialogContent
-        showCloseButton={false}
-        className={cn("p-0 gap-0", expanded ? "sm:max-w-2xl" : "sm:max-w-lg")}
+        className={cn("gap-0 p-0", expanded ? "sm:max-w-2xl" : "sm:max-w-lg")}
         onKeyDown={handleKeyDown}
       >
-        <DialogTitle className="sr-only">New project</DialogTitle>
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {selectedCompany && (
-              <span className="bg-muted px-1.5 py-0.5 rounded text-xs font-medium">
-                {selectedCompany.name.slice(0, 3).toUpperCase()}
-              </span>
-            )}
-            <span className="text-muted-foreground/60">&rsaquo;</span>
-            <span>New project</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground"
-              onClick={() => setExpanded(!expanded)}
-              aria-label="Toggle expanded layout"
-            >
-              {expanded ? (
-                <Minimize2 className="h-3.5 w-3.5" />
-              ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground"
-              onClick={() => {
-                reset();
-                closeNewProject();
-              }}
-              aria-label="Close new project dialog"
-            >
-              <span className="text-lg leading-none">&times;</span>
-            </Button>
-          </div>
-        </div>
+        <DialogHeader className="border-b p-4 pr-20">
+          <DialogTitle>New project</DialogTitle>
+          <DialogDescription>
+            {selectedCompany ? `Create a project for ${selectedCompany.name}.` : "Create a company project."}
+          </DialogDescription>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={expanded ? "Restore dialog size" : "Expand dialog"}
+            onClick={() => setExpanded(!expanded)}
+            className="absolute right-12 top-3"
+          >
+            {expanded ? <Minimize2 /> : <Maximize2 />}
+          </Button>
+        </DialogHeader>
 
         {/* Name */}
         <div className="px-4 pt-4 pb-2 shrink-0">
-          <input
-            className="w-full rounded-sm bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
+          <Input
+            className="h-auto border-0 bg-transparent px-0 py-0 text-lg font-semibold shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
             placeholder="Project name"
             aria-label="Project name"
             value={name}
@@ -271,31 +237,27 @@ export function NewProjectDialog() {
         </div>
 
         <div className="space-y-3 border-t border-border px-4 pb-3 pt-3">
-          <div>
+          <Field className="gap-1">
             <div className="mb-1 flex items-center gap-1.5">
-              <label
+              <FieldLabel
                 htmlFor="new-project-repo-url"
-                className="block text-xs text-muted-foreground"
+                className="text-xs font-normal text-muted-foreground"
               >
                 Repo URL
-              </label>
+              </FieldLabel>
               <span className="text-xs text-muted-foreground/50">optional</span>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
                   <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/50" />
                 </TooltipTrigger>
-                <TooltipContent
-                  side="top"
-                  className="max-w-(--sz-240px) text-xs"
-                >
-                  Record the HTTPS repository that owns this project&apos;s
-                  source code.
+                <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
+                  Record the HTTPS repository that owns this project&apos;s source code.
                 </TooltipContent>
               </Tooltip>
             </div>
-            <input
+            <Input
               id="new-project-repo-url"
-              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-7 px-2 text-xs"
               value={repoUrl}
               onChange={(event) => {
                 setRepoUrl(event.target.value);
@@ -303,34 +265,30 @@ export function NewProjectDialog() {
               }}
               placeholder="https://github.com/org/repo"
             />
-          </div>
+          </Field>
 
-          <div>
+          <Field className="gap-1">
             <div className="mb-1 flex items-center gap-1.5">
-              <label
+              <FieldLabel
                 htmlFor="new-project-local-folder"
-                className="block text-xs text-muted-foreground"
+                className="text-xs font-normal text-muted-foreground"
               >
                 Local folder
-              </label>
+              </FieldLabel>
               <span className="text-xs text-muted-foreground/50">optional</span>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
                   <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/50" />
                 </TooltipTrigger>
-                <TooltipContent
-                  side="top"
-                  className="max-w-(--sz-240px) text-xs"
-                >
-                  Set the absolute directory where agents assigned to this
-                  project run and write files.
+                <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
+                  Set the absolute directory where agents assigned to this project run and write files.
                 </TooltipContent>
               </Tooltip>
             </div>
             <div className="flex items-center gap-2">
-              <input
+              <Input
                 id="new-project-local-folder"
-                className="w-full rounded border border-border bg-transparent px-2 py-1 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-7 px-2 font-mono text-xs"
                 value={localFolder}
                 onChange={(event) => {
                   setLocalFolder(event.target.value);
@@ -340,13 +298,9 @@ export function NewProjectDialog() {
               />
               <ChoosePathButton />
             </div>
-          </div>
+          </Field>
 
-          {codebaseError ? (
-            <p className="text-xs text-destructive" role="alert">
-              {codebaseError}
-            </p>
-          ) : null}
+          {codebaseError ? <FieldError>{codebaseError}</FieldError> : null}
         </div>
 
         {/* Property chips */}
@@ -354,22 +308,20 @@ export function NewProjectDialog() {
           {/* Status */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
+              <Button
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
+                variant="outline"
+                size="xs"
+                className="h-auto gap-1.5 px-2 py-1 text-xs"
                 aria-label="Set project status"
               >
-                <StatusBadge status={status} />
-              </button>
+                {projectStatuses.find((option) => option.value === status)?.label ?? status}
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               <DropdownMenuRadioGroup value={status} onValueChange={setStatus}>
                 {projectStatuses.map((s) => (
-                  <DropdownMenuRadioItem
-                    key={s.value}
-                    value={s.value}
-                    className="text-xs"
-                  >
+                  <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
                     {s.label}
                   </DropdownMenuRadioItem>
                 ))}
@@ -378,32 +330,30 @@ export function NewProjectDialog() {
           </DropdownMenu>
 
           {selectedGoals.map((goal) => (
-            <span
-              key={goal.id}
-              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs"
-            >
+            <Badge key={goal.id} variant="secondary" className="gap-1">
               <Target className="h-3 w-3 text-muted-foreground" />
               <span className="max-w-(--sz-160px) truncate">{goal.title}</span>
-              <button
-                className="text-muted-foreground hover:text-foreground"
-                onClick={() =>
-                  setGoalIds((prev) => prev.filter((id) => id !== goal.id))
-                }
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="size-3 text-muted-foreground hover:text-foreground"
+                onClick={() => setGoalIds((prev) => prev.filter((id) => id !== goal.id))}
                 aria-label={`Remove goal ${goal.title}`}
                 type="button"
               >
                 <X className="h-3 w-3" />
-              </button>
-            </span>
+              </Button>
+            </Badge>
           ))}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors disabled:opacity-60"
-                disabled={
-                  selectedGoals.length > 0 && availableGoals.length === 0
-                }
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="h-auto gap-1.5 px-2 py-1 text-xs"
+                disabled={selectedGoals.length > 0 && availableGoals.length === 0}
               >
                 {selectedGoals.length > 0 ? (
                   <Plus className="h-3 w-3 text-muted-foreground" />
@@ -411,14 +361,11 @@ export function NewProjectDialog() {
                   <Target className="h-3 w-3 text-muted-foreground" />
                 )}
                 {selectedGoals.length > 0 ? "+ Goal" : "Goal"}
-              </button>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="start">
               {selectedGoals.length === 0 && (
-                <DropdownMenuItem
-                  className="text-xs text-muted-foreground"
-                  disabled
-                >
+                <DropdownMenuItem className="text-xs text-muted-foreground" disabled>
                   No goal
                 </DropdownMenuItem>
               )}
@@ -432,10 +379,7 @@ export function NewProjectDialog() {
                 </DropdownMenuItem>
               ))}
               {selectedGoals.length > 0 && availableGoals.length === 0 && (
-                <DropdownMenuItem
-                  className="text-xs text-muted-foreground"
-                  disabled
-                >
+                <DropdownMenuItem className="text-xs text-muted-foreground" disabled>
                   All goals already selected.
                 </DropdownMenuItem>
               )}
@@ -443,40 +387,22 @@ export function NewProjectDialog() {
           </DropdownMenu>
 
           {/* Target date */}
-          <div className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs">
-            <Calendar className="h-3 w-3 text-muted-foreground" />
-            <input
-              type="date"
-              className="w-24 rounded-sm bg-transparent text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="Target date"
-              value={targetDate}
-              onChange={(e) => setTargetDate(e.target.value)}
-              placeholder="Target date"
-            />
-          </div>
+          <Input
+            type="date"
+            value={targetDate}
+            onChange={(event) => setTargetDate(event.target.value)}
+            aria-label="Target date"
+            className="h-7 w-auto px-2 text-xs"
+          />
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
-          {createProject.isPending ? (
-            <p role="status" className="text-xs text-muted-foreground">
-              Creating project…
-            </p>
-          ) : createProject.isError ? (
-            <p role="alert" className="text-xs text-destructive">
-              Failed to create project.
-            </p>
-          ) : (
-            <span />
-          )}
-          <Button
-            size="sm"
-            disabled={!name.trim() || createProject.isPending}
-            onClick={handleSubmit}
-          >
-            {createProject.isPending ? "Creating…" : "Create project"}
+        <DialogFooter className="items-center border-t p-4 sm:justify-between">
+          {createProject.isError ? <FieldError>Failed to create project.</FieldError> : <span />}
+          <Button size="sm" disabled={!name.trim() || createProject.isPending} onClick={handleSubmit}>
+            {createProject.isPending ? <Spinner /> : null}
+            Create project
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

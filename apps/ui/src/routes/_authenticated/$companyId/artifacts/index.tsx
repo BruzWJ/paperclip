@@ -8,29 +8,28 @@ import {
 } from "@/routes/-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, Layers, Package, Search, X } from "lucide-react";
+import { ArrowLeft, Layers, Package, Search, X } from "lucide-react";
 import { getRouteApi, Link } from "@tanstack/react-router";
-import {
-  artifactsApi,
-  type ArtifactGroupBy,
-  type ArtifactKindFilter,
-} from "@/api/artifacts";
+import { artifactsApi, type ArtifactGroupBy, type ArtifactKindFilter } from "@/api/artifacts";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { EmptyState } from "@/components/EmptyState";
-import { PageSkeleton } from "@/components/PageSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ArtifactCard } from "@/components/artifacts/ArtifactCard";
 import { ArtifactGroupCard } from "@/components/artifacts/ArtifactGroupCard";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 
 type ArtifactsSearch = {
   kind?: "all" | "image" | "video" | "document" | "text" | "file";
@@ -41,35 +40,20 @@ type ArtifactsSearch = {
 
 const ARTIFACT_SEARCH_KEYS = ["kind", "q", "groupBy", "groupTaskId"] as const;
 
-const ARTIFACT_KINDS = [
-  "all",
-  "image",
-  "video",
-  "document",
-  "text",
-  "file",
-] as const;
+const ARTIFACT_KINDS = ["all", "image", "video", "document", "text", "file"] as const;
 
 const ARTIFACT_GROUPS = ["none", "task", "parent_task"] as const;
 
-export function validateArtifactsSearch(
-  search: Record<string, unknown>,
-): ArtifactsSearch {
+export function validateArtifactsSearch(search: Record<string, unknown>): ArtifactsSearch {
   assertOnlySearchKeys(search, ARTIFACT_SEARCH_KEYS);
   const validated = {
     kind: optionalSearchEnum(search.kind, ARTIFACT_KINDS, "kind"),
-    q: optionalExactSearchString(
-      search.q,
-      "q",
-      COMPANY_ARTIFACTS_MAX_QUERY_LENGTH,
-    ),
+    q: optionalExactSearchString(search.q, "q", COMPANY_ARTIFACTS_MAX_QUERY_LENGTH),
     groupBy: optionalSearchEnum(search.groupBy, ARTIFACT_GROUPS, "groupBy"),
     groupTaskId: optionalCanonicalUuidSearch(search.groupTaskId, "groupTaskId"),
   };
   if (validated.groupBy === "none" && validated.groupTaskId !== undefined) {
-    throw new Error(
-      'Invalid search parameters: "groupTaskId" requires artifact grouping',
-    );
+    throw new Error('Invalid search parameters: "groupTaskId" requires artifact grouping');
   }
   return validated;
 }
@@ -105,10 +89,7 @@ export const ARTIFACT_GROUP_OPTIONS: {
 ];
 
 export function artifactGroupByLabel(value: ArtifactGroupBy): string {
-  return (
-    ARTIFACT_GROUP_OPTIONS.find((option) => option.value === value)?.label ??
-    "None"
-  );
+  return ARTIFACT_GROUP_OPTIONS.find((option) => option.value === value)?.label ?? "None";
 }
 
 function Artifacts() {
@@ -196,34 +177,21 @@ function Artifacts() {
     [groupBy, search],
   );
 
-  const {
-    data,
-    isLoading,
-    isFetching,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-    error,
-  } = useInfiniteQuery({
-    queryKey: queryKeys.artifacts.list(
-      companyId,
-      kind,
-      query,
-      groupBy,
-      groupTaskId,
-    ),
-    queryFn: ({ pageParam }) =>
-      artifactsApi.list(companyId, {
-        kind,
-        q: query || undefined,
-        groupBy,
-        groupTaskId,
-        limit: ARTIFACTS_PAGE_SIZE,
-        cursor: pageParam,
-      }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-  });
+  const { data, isLoading, isFetching, isFetchingNextPage, hasNextPage, fetchNextPage, error } =
+    useInfiniteQuery({
+      queryKey: queryKeys.artifacts.list(companyId, kind, query, groupBy, groupTaskId),
+      queryFn: ({ pageParam }) =>
+        artifactsApi.list(companyId, {
+          kind,
+          q: query || undefined,
+          groupBy,
+          groupTaskId,
+          limit: ARTIFACTS_PAGE_SIZE,
+          cursor: pageParam,
+        }),
+      initialPageParam: undefined as string | undefined,
+      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    });
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -240,14 +208,8 @@ function Artifacts() {
     return () => observer.disconnect();
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
-  const artifacts = useMemo(
-    () => data?.pages.flatMap((page) => page.artifacts) ?? [],
-    [data],
-  );
-  const groups = useMemo(
-    () => data?.pages.flatMap((page) => page.groups ?? []) ?? [],
-    [data],
-  );
+  const artifacts = useMemo(() => data?.pages.flatMap((page) => page.artifacts) ?? [], [data]);
+  const groups = useMemo(() => data?.pages.flatMap((page) => page.groups ?? []) ?? [], [data]);
   const selectedGroup = useMemo(
     () => data?.pages.map((page) => page.selectedGroup).find(Boolean) ?? null,
     [data],
@@ -260,11 +222,7 @@ function Artifacts() {
         {
           label: "Artifacts",
           renderLink: (content) => (
-            <Link
-              to="/$companyId/artifacts"
-              params={{ companyId }}
-              search={search}
-            >
+            <Link to="/$companyId/artifacts" params={{ companyId }} search={search}>
               {content}
             </Link>
           ),
@@ -294,26 +252,28 @@ function Artifacts() {
   return (
     <div className="w-full max-w-6xl space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
+        <InputGroup className="w-full sm:max-w-sm">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
             value={draftQuery}
             onChange={(event) => setDraftQuery(event.currentTarget.value)}
             placeholder="Search artifacts..."
             aria-label="Search artifacts"
-            className="h-9 pl-9 pr-9 text-sm"
           />
           {draftQuery.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => setDraftQuery("")}
-              aria-label="Clear artifact search"
-              className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-xs"
+                onClick={() => setDraftQuery("")}
+                aria-label="Clear artifact search"
+              >
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
           ) : null}
-        </div>
+        </InputGroup>
 
         <div className="flex flex-wrap items-center gap-1.5">
           <DropdownMenu>
@@ -333,66 +293,58 @@ function Artifacts() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuLabel>Group by</DropdownMenuLabel>
-              {ARTIFACT_GROUP_OPTIONS.map((option) => (
-                <DropdownMenuItem
-                  key={option.value}
-                  data-testid={`artifact-group-option-${option.value}`}
-                  aria-selected={groupBy === option.value}
-                  onSelect={() => selectGroupBy(option.value)}
-                  className="justify-between"
-                >
-                  {option.label}
-                  {groupBy === option.value ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : null}
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuRadioGroup
+                value={groupBy}
+                onValueChange={(value) => selectGroupBy(value as ArtifactGroupBy)}
+              >
+                {ARTIFACT_GROUP_OPTIONS.map((option) => (
+                  <DropdownMenuRadioItem
+                    key={option.value}
+                    value={option.value}
+                    data-testid={`artifact-group-option-${option.value}`}
+                  >
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <div
-            className="flex flex-wrap items-center gap-1.5"
-            role="tablist"
+          <ToggleGroup
+            type="single"
+            value={kind}
+            variant="outline"
+            size="sm"
             aria-label="Filter artifacts by type"
+            onValueChange={(value) => {
+              if (value) selectKind(value as ArtifactKindFilter);
+            }}
           >
             {ARTIFACT_KIND_FILTERS.map((filter) => (
-              <button
-                key={filter.value}
-                type="button"
-                role="tab"
-                aria-selected={kind === filter.value}
-                onClick={() => selectKind(filter.value)}
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                  kind === filter.value
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                )}
-              >
+              <ToggleGroupItem key={filter.value} value={filter.value}>
                 {filter.label}
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
         </div>
       </div>
 
       {viewingSelectedStack ? (
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Link
-            to="/$companyId/artifacts"
-            params={{ companyId }}
-            search={backToStacksSearch}
-            data-testid="artifact-stack-back"
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-            All stacks
-          </Link>
+          <Button asChild variant="ghost" size="sm">
+            <Link
+              to="/$companyId/artifacts"
+              params={{ companyId }}
+              search={backToStacksSearch}
+              data-testid="artifact-stack-back"
+            >
+              <ArrowLeft aria-hidden="true" />
+              All stacks
+            </Link>
+          </Button>
           {selectedGroup ? (
             <span className="truncate text-muted-foreground">
-              <span className="text-foreground/80">
-                {selectedGroup.task.identifier}
-              </span>{" "}
+              <span className="text-foreground/80">{selectedGroup.task.identifier}</span>{" "}
               {selectedGroup.title}
             </span>
           ) : null}
@@ -400,21 +352,23 @@ function Artifacts() {
       ) : null}
 
       {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error.message}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
       )}
 
       {isLoading ? (
         <div role="status">
           <span className="sr-only">Loading artifacts…</span>
-          <PageSkeleton variant="list" />
+          <Skeleton className="h-32 w-full" />
         </div>
       ) : items.length === 0 ? (
-        <EmptyState
-          icon={showGroupCards ? Layers : Package}
-          message={emptyMessage}
-        />
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">{showGroupCards ? <Layers /> : <Package />}</EmptyMedia>
+            <EmptyTitle>{emptyMessage}</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -431,10 +385,7 @@ function Artifacts() {
                   />
                 ))
               : artifacts.map((artifact) => (
-                  <ArtifactCard
-                    key={`${artifact.source}:${artifact.id}`}
-                    artifact={artifact}
-                  />
+                  <ArtifactCard key={`${artifact.source}:${artifact.id}`} artifact={artifact} />
                 ))}
           </div>
           <div

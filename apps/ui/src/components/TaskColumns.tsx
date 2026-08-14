@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { deriveOriginatingActor, type Task } from "@paperclipai/shared";
-import { Columns3 } from "lucide-react";
+import { Columns3, Radio } from "lucide-react";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -15,13 +16,19 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatOwnerUserLabel } from "../lib/task-owners";
 import type { InboxTaskColumn } from "../lib/inbox";
-import { cn } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
-import { Identity } from "./Identity";
-import { StatusIcon } from "./StatusIcon";
+import { deriveInitials } from "@/lib/identity";
+import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
 import { Badge } from "@/components/ui/badge";
 
-export const taskTrailingColumns: InboxTaskColumn[] = ["owner", "kickedOffBy", "project", "parent", "labels", "updated"];
+export const taskTrailingColumns: InboxTaskColumn[] = [
+  "owner",
+  "kickedOffBy",
+  "project",
+  "parent",
+  "labels",
+  "updated",
+];
 
 const taskColumnLabels: Record<InboxTaskColumn, string> = {
   status: "Status",
@@ -91,15 +98,16 @@ export function TaskColumnPicker({
           {!iconOnly && "Columns"}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-(--sz-300px) rounded-xl border-border/70 p-1.5 shadow-xl shadow-black/10">
+      <DropdownMenuContent
+        align="end"
+        className="w-(--sz-300px) rounded-xl border-border/70 p-1.5 shadow-xl shadow-black/10"
+      >
         <DropdownMenuLabel className="px-2 pb-1 pt-1.5">
           <div className="space-y-1">
             <div className="text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-caps) text-muted-foreground">
               Desktop task rows
             </div>
-            <div className="text-sm font-medium text-foreground">
-              {title}
-            </div>
+            <div className="text-sm font-medium text-foreground">{title}</div>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -112,9 +120,7 @@ export function TaskColumnPicker({
             className="items-start rounded-lg px-3 py-2.5 pl-8"
           >
             <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-foreground">
-                {taskColumnLabels[column]}
-              </span>
+              <span className="text-sm font-medium text-foreground">{taskColumnLabels[column]}</span>
               <span className="text-xs leading-relaxed text-muted-foreground">
                 {taskColumnDescriptions[column]}
               </span>
@@ -122,10 +128,7 @@ export function TaskColumnPicker({
           </DropdownMenuCheckboxItem>
         ))}
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={onResetColumns}
-          className="rounded-lg px-3 py-2 text-sm"
-        >
+        <DropdownMenuItem onSelect={onResetColumns} className="rounded-lg px-3 py-2 text-sm">
           Reset defaults
           <span className="ml-auto text-xs text-muted-foreground">status, id, updated</span>
         </DropdownMenuItem>
@@ -157,7 +160,14 @@ export function InboxTaskMetaLeading({
     <>
       {showStatus ? (
         <span className="hidden shrink-0 items-center sm:inline-flex">
-          {statusSlot ?? <StatusIcon status={task.boardPresentationStatus} blockerAttention={task.blockerAttention} />}
+          {statusSlot ?? (
+            <Badge
+              variant="secondary"
+              aria-label={taskStatusAccessibleLabel(task.boardPresentationStatus, task.blockerAttention)}
+            >
+              {taskValueLabel(task.boardPresentationStatus)}
+            </Badge>
+          )}
         </span>
       ) : null}
       {checklistStepNumber !== null ? (
@@ -166,54 +176,21 @@ export function InboxTaskMetaLeading({
         </span>
       ) : null}
       {showIdentifier ? (
-        <span className="shrink-0 font-mono text-xs text-muted-foreground">
-          {task.identifier}
-        </span>
+        <span className="shrink-0 font-mono text-xs text-muted-foreground">{task.identifier}</span>
       ) : null}
       {isLive && (
-        <Badge variant="ghost"
-          className={cn(
-            "px-1.5 sm:gap-1.5 sm:px-2",
-            "bg-blue-500/10",
-          )}
-        >
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-blue-400 opacity-75" />
-            <span
-              className={cn(
-                "relative inline-flex h-2 w-2 rounded-full",
-                "bg-blue-500",
-              )}
-            />
-          </span>
-          <span
-            className={cn(
-              "hidden text-(length:--text-micro) font-medium sm:inline",
-              "text-blue-600 dark:text-blue-400",
-            )}
-          >
-            Live
-          </span>
+        <Badge variant="secondary" className="px-1.5 sm:px-2">
+          <Radio aria-hidden="true" />
+          <span className="hidden sm:inline">Live</span>
         </Badge>
       )}
       {showSubtreeLiveChip && !isLive && subtreeLiveCount > 0 && (
-        <Badge variant="outline"
-          className={cn(
-            "px-1.5 sm:gap-1.5 sm:px-2",
-            "border-border bg-transparent",
-          )}
+        <Badge
+          variant="outline"
+          className="px-1.5 sm:px-2"
           title={`${subtreeLiveCount} sub-task${subtreeLiveCount === 1 ? "" : "s"} running below`}
         >
-          <span
-            className={cn(
-              "h-2 w-2 shrink-0 rounded-full border",
-              "border-muted-foreground/60 bg-transparent",
-            )}
-            aria-hidden="true"
-          />
-          <span className="hidden text-(length:--text-micro) font-medium text-muted-foreground sm:inline">
-            {subtreeLiveCount} live below
-          </span>
+          <span className="hidden sm:inline">{subtreeLiveCount} live below</span>
         </Badge>
       )}
     </>
@@ -257,7 +234,8 @@ export function InboxTaskTrailingColumns({
   const userLabel = ownerUserName ?? formatOwnerUserLabel(task.ownerUserId, currentUserId) ?? "User";
   const originatingActor = deriveOriginatingActor(task);
   const originatingUserId = originatingActor?.kind === "user" ? originatingActor.id : null;
-  const creatorUserLabel = creatorUserName ?? formatOwnerUserLabel(originatingUserId, currentUserId) ?? "User";
+  const creatorUserLabel =
+    creatorUserName ?? formatOwnerUserLabel(originatingUserId, currentUserId) ?? "User";
 
   return (
     <span
@@ -267,30 +245,41 @@ export function InboxTaskTrailingColumns({
       {columns.map((column) => {
         if (column === "owner") {
           if (ownerContent) {
-            return <span key={column} className="min-w-0">{ownerContent}</span>;
+            return (
+              <span key={column} className="min-w-0">
+                {ownerContent}
+              </span>
+            );
           }
 
           if (task.ownerAgentId) {
+            const name = ownerName ?? task.ownerAgentId.slice(0, 8);
             return (
-              <span key={column} className="min-w-0 text-xs text-foreground">
-                <Identity
-                  name={ownerName ?? task.ownerAgentId.slice(0, 8)}
-                  size="sm"
-                  className="min-w-0"
-                />
+              <span
+                key={column}
+                className="inline-flex min-w-0 items-center gap-1.5 text-xs text-foreground"
+                title={name}
+              >
+                <Avatar size="sm">
+                  <AvatarFallback>{deriveInitials(name)}</AvatarFallback>
+                </Avatar>
+                <span className="truncate">{name}</span>
               </span>
             );
           }
 
           if (task.ownerUserId) {
             return (
-              <span key={column} className="min-w-0 text-xs text-foreground">
-                <Identity
-                  name={userLabel}
-                  avatarUrl={ownerUserAvatarUrl}
-                  size="sm"
-                  className="min-w-0"
-                />
+              <span
+                key={column}
+                className="inline-flex min-w-0 items-center gap-1.5 text-xs text-foreground"
+                title={userLabel}
+              >
+                <Avatar size="sm">
+                  <AvatarImage src={ownerUserAvatarUrl ?? undefined} alt={userLabel} />
+                  <AvatarFallback>{deriveInitials(userLabel)}</AvatarFallback>
+                </Avatar>
+                <span className="truncate">{userLabel}</span>
               </span>
             );
           }
@@ -308,15 +297,16 @@ export function InboxTaskTrailingColumns({
             return (
               <Tooltip key={column}>
                 <TooltipTrigger asChild>
-                  <span className="min-w-0 text-xs text-foreground">
-                    <Identity
-                      name={name}
-                      size="sm"
-                      className="min-w-0"
-                    />
+                  <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-foreground">
+                    <Avatar size="sm">
+                      <AvatarFallback>{deriveInitials(name)}</AvatarFallback>
+                    </Avatar>
+                    <span className="truncate">{name}</span>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent side="top" sideOffset={6}>{name}</TooltipContent>
+                <TooltipContent side="top" sideOffset={6}>
+                  {name}
+                </TooltipContent>
               </Tooltip>
             );
           }
@@ -326,16 +316,17 @@ export function InboxTaskTrailingColumns({
             return (
               <Tooltip key={column}>
                 <TooltipTrigger asChild>
-                  <span className="min-w-0 text-xs text-foreground">
-                    <Identity
-                      name={creatorUserLabel}
-                      avatarUrl={creatorUserAvatarUrl}
-                      size="sm"
-                      className="min-w-0"
-                    />
+                  <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-foreground">
+                    <Avatar size="sm">
+                      <AvatarImage src={creatorUserAvatarUrl ?? undefined} alt={creatorUserLabel} />
+                      <AvatarFallback>{deriveInitials(creatorUserLabel)}</AvatarFallback>
+                    </Avatar>
+                    <span className="truncate">{creatorUserLabel}</span>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent side="top" sideOffset={6}>{tooltipText}</TooltipContent>
+                <TooltipContent side="top" sideOffset={6}>
+                  {tooltipText}
+                </TooltipContent>
               </Tooltip>
             );
           }
@@ -378,7 +369,8 @@ export function InboxTaskTrailingColumns({
             return (
               <span key={column} className="flex min-w-0 items-center gap-1 overflow-hidden">
                 {(task.labels ?? []).slice(0, 2).map((label) => (
-                  <Badge variant="outline"
+                  <Badge
+                    variant="outline"
                     key={label.id}
                     className="min-w-0 max-w-full px-1.5 py-0 text-(length:--text-nano)"
                     style={{
@@ -408,7 +400,11 @@ export function InboxTaskTrailingColumns({
           }
 
           return (
-            <span key={column} className="min-w-0 truncate text-xs text-muted-foreground" title={parentTitle ?? undefined}>
+            <span
+              key={column}
+              className="min-w-0 truncate text-xs text-muted-foreground"
+              title={parentTitle ?? undefined}
+            >
               {parentIdentifier ? (
                 <span className="font-mono">{parentIdentifier}</span>
               ) : (
@@ -420,7 +416,10 @@ export function InboxTaskTrailingColumns({
 
         if (column === "updated") {
           return (
-            <span key={column} className="min-w-0 truncate text-right text-(length:--text-micro) font-medium text-muted-foreground">
+            <span
+              key={column}
+              className="min-w-0 truncate text-right text-(length:--text-micro) font-medium text-muted-foreground"
+            >
               {activityText}
             </span>
           );

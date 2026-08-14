@@ -4,32 +4,27 @@ import type { CompanyArtifact } from "@/api/artifacts";
 import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { cn, formatDate } from "@/lib/utils";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 interface ArtifactCardProps {
   artifact: CompanyArtifact;
 }
 
-/**
- * Stable, fixed-height preview region shared by every card variant. The fixed
- * aspect ratio is what keeps image / video / text / placeholder cards from
- * shifting layout as previews load (or fail to load).
- */
-function PreviewFrame({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn("relative aspect-video w-full overflow-hidden bg-accent/20", className)}>
-      {children}
-    </div>
-  );
-}
-
 function PlaceholderPreview({ label }: { label?: string }) {
   return (
-    <PreviewFrame className="flex items-center justify-center">
+    <AspectRatio
+      ratio={16 / 9}
+      className="relative flex w-full items-center justify-center overflow-hidden bg-muted"
+    >
       <div className="flex flex-col items-center gap-1.5 text-muted-foreground/50">
         <Paperclip className="h-7 w-7" aria-hidden="true" />
-        {label ? <span className="text-(length:--text-micro) font-medium uppercase tracking-wide">{label}</span> : null}
+        {label ? (
+          <span className="text-(length:--text-micro) font-medium uppercase tracking-wide">{label}</span>
+        ) : null}
       </div>
-    </PreviewFrame>
+    </AspectRatio>
   );
 }
 
@@ -39,7 +34,7 @@ function ImagePreview({ artifact }: { artifact: CompanyArtifact }) {
     return <PlaceholderPreview label="Image" />;
   }
   return (
-    <PreviewFrame>
+    <AspectRatio ratio={16 / 9} className="relative w-full overflow-hidden bg-muted">
       <img
         src={artifact.contentPath}
         alt={artifact.title}
@@ -47,7 +42,7 @@ function ImagePreview({ artifact }: { artifact: CompanyArtifact }) {
         className="h-full w-full object-cover"
         onError={() => setErrored(true)}
       />
-    </PreviewFrame>
+    </AspectRatio>
   );
 }
 
@@ -65,11 +60,14 @@ function VideoPreview({ artifact }: { artifact: CompanyArtifact }) {
   }, []);
   if (errored || !artifact.contentPath) {
     return (
-      <PreviewFrame className="flex items-center justify-center bg-black/80">
+      <AspectRatio
+        ratio={16 / 9}
+        className="relative flex w-full items-center justify-center overflow-hidden bg-black/80"
+      >
         <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15">
           <Play className="h-5 w-5 translate-x-0.5 text-white" aria-hidden="true" />
         </div>
-      </PreviewFrame>
+      </AspectRatio>
     );
   }
 
@@ -110,14 +108,17 @@ function VideoPreview({ artifact }: { artifact: CompanyArtifact }) {
   };
 
   return (
-    <PreviewFrame className="bg-black">
+    <AspectRatio ratio={16 / 9} className="relative w-full overflow-hidden bg-black">
       <video
         src={artifact.contentPath}
         preload="metadata"
         muted
         playsInline
         data-frame-ready={frameReady ? "true" : "false"}
-        className={cn("h-full w-full object-contain transition-opacity", frameReady ? "opacity-100" : "opacity-0")}
+        className={cn(
+          "h-full w-full object-contain transition-opacity",
+          frameReady ? "opacity-100" : "opacity-0",
+        )}
         onLoadedMetadata={loadThumbnailFrame}
         onLoadedData={handleLoadedData}
         onSeeked={markFrameReady}
@@ -128,7 +129,7 @@ function VideoPreview({ artifact }: { artifact: CompanyArtifact }) {
           <Play className="h-5 w-5 translate-x-0.5 text-white" aria-hidden="true" />
         </div>
       </div>
-    </PreviewFrame>
+    </AspectRatio>
   );
 }
 
@@ -138,14 +139,14 @@ function TextPreview({ artifact }: { artifact: CompanyArtifact }) {
     return <PlaceholderPreview label={artifact.source === "document" ? "Document" : "Text"} />;
   }
   return (
-    <PreviewFrame className="bg-card">
+    <AspectRatio ratio={16 / 9} className="relative w-full overflow-hidden bg-card">
       <div className="absolute inset-0 overflow-hidden p-3">
         <p className="max-h-full overflow-hidden whitespace-pre-wrap break-words text-base leading-6 text-muted-foreground/75">
           {preview}
         </p>
       </div>
       <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-card to-transparent" />
-    </PreviewFrame>
+    </AspectRatio>
   );
 }
 
@@ -166,38 +167,13 @@ export function ArtifactPreview({ artifact }: { artifact: CompanyArtifact }) {
   }
 }
 
-function SecondaryAction({
-  href,
-  download,
-  title,
-  children,
-}: {
-  href: string;
-  download?: boolean;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <a
-      href={href}
-      {...(download ? { download: "" } : { target: "_blank", rel: "noreferrer" })}
-      title={title}
-      aria-label={title}
-      onClick={(event) => event.stopPropagation()}
-      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-    >
-      {children}
-    </a>
-  );
-}
-
 export function ArtifactCard({ artifact }: ArtifactCardProps) {
   const companyId = useCompanyRouteId();
   return (
-    <div
+    <Card
       data-testid="artifact-card"
       data-media-kind={artifact.mediaKind}
-      className="group relative flex flex-col overflow-hidden rounded-lg border border-border bg-card cursor-pointer transition-colors hover:border-foreground/20 hover:shadow-md"
+      className="group relative cursor-pointer gap-0 overflow-hidden py-0"
     >
       <Link
         to="/$companyId/tasks/$taskNumber"
@@ -208,7 +184,7 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
       />
       <ArtifactPreview artifact={artifact} />
 
-      <div className="flex flex-1 flex-col gap-1 p-3">
+      <CardContent className="flex flex-1 flex-col gap-1 p-3">
         <div className="flex h-7 items-start justify-between gap-2">
           <h3
             className="min-w-0 flex-1 truncate text-sm font-medium leading-7 text-foreground/85"
@@ -218,14 +194,31 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
           </h3>
           <div className="relative z-20 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             {artifact.openPath ? (
-              <SecondaryAction href={artifact.openPath} title="Open file in new tab">
-                <ExternalLink className="h-3.5 w-3.5" />
-              </SecondaryAction>
+              <Button asChild variant="ghost" size="icon-sm">
+                <a
+                  href={artifact.openPath}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open file in new tab"
+                  aria-label="Open file in new tab"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </Button>
             ) : null}
             {artifact.downloadPath ? (
-              <SecondaryAction href={artifact.downloadPath} download title="Download file">
-                <Download className="h-3.5 w-3.5" />
-              </SecondaryAction>
+              <Button asChild variant="ghost" size="icon-sm">
+                <a
+                  href={artifact.downloadPath}
+                  download=""
+                  title="Download file"
+                  aria-label="Download file"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </a>
+              </Button>
             ) : null}
           </div>
         </div>
@@ -239,7 +232,7 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
             </>
           ) : null}
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

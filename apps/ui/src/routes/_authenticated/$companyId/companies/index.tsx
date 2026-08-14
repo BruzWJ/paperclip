@@ -1,18 +1,27 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "@/context/CompanyContext";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import { useNavigate } from "@tanstack/react-router";
 import { useDialogActions } from "@/context/DialogContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { companiesApi } from "@/api/companies";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { queryKeys } from "@/lib/queryKeys";
-import { formatMoneyAmount, relativeTime } from "@/lib/utils";
+import { cn, formatMoneyAmount, relativeTime } from "@/lib/utils";
 import { compareMoneyAmounts, parseMoneyAmount } from "@paperclipai/shared";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Item } from "@/components/ui/item";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +30,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Pencil,
   Check,
@@ -43,7 +54,6 @@ const ZERO_AMOUNT = parseMoneyAmount("0");
 function Companies() {
   const { companies, loading, error } = useCompany();
   const companyId = useCompanyRouteId();
-  const navigate = useNavigate();
   const { openOnboarding } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
@@ -116,14 +126,14 @@ function Companies() {
 
       <div className="h-6">
         {loading && (
-          <p className="text-sm text-muted-foreground" role="status">
-            Loading companies...
-          </p>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+            <Spinner /> Loading companies...
+          </div>
         )}
         {error && (
-          <p className="text-sm text-destructive" role="alert">
-            {error.message}
-          </p>
+          <Alert variant="destructive">
+            <AlertDescription>{error.message}</AlertDescription>
+          </Alert>
         )}
       </div>
 
@@ -135,46 +145,25 @@ function Companies() {
           const companyStats = stats?.[company.id];
           const agentCount = companyStats?.agentCount ?? 0;
           const taskCount = companyStats?.taskCount ?? 0;
-          const hasBudget =
-            compareMoneyAmounts(company.budgetMonthlyAmount, ZERO_AMOUNT) > 0;
+          const hasBudget = compareMoneyAmounts(company.budgetMonthlyAmount, ZERO_AMOUNT) > 0;
 
           return (
-            <Card
+            <Item
               key={company.id}
-              role="button"
-              tabIndex={0}
-              onClick={(event) => {
-                if (
-                  event.target instanceof Element &&
-                  event.target.closest(
-                    "button, input, textarea, select, a, [role='menuitem'], [role='combobox']",
-                  )
-                ) {
-                  return;
-                }
-                void navigate({
-                  to: "/$companyId/dashboard",
-                  params: { companyId: company.id },
-                });
-              }}
-              onKeyDown={(e) => {
-                if (e.target !== e.currentTarget) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  void navigate({
-                    to: "/$companyId/dashboard",
-                    params: { companyId: company.id },
-                  });
-                }
-              }}
-              className={`block group text-left p-5 ${
-                selected
-                  ? "border-primary ring-1 ring-primary hover:border-primary"
-                  : ""
-              }`}
+              variant="outline"
+              className={cn(
+                "group relative block p-5 text-left",
+                selected && "border-primary ring-1 ring-primary hover:border-primary",
+              )}
             >
+              <Link
+                to="/$companyId/dashboard"
+                params={{ companyId: company.id }}
+                aria-label={`Open ${company.name} dashboard`}
+                className="absolute inset-0 z-0 rounded-md outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50"
+              />
               {/* Header row: name + menu */}
-              <div className="flex items-start justify-between gap-3">
+              <div className="pointer-events-none relative z-10 flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   {isEditing ? (
                     <div className="flex items-center gap-2">
@@ -182,7 +171,7 @@ function Companies() {
                         aria-label="Company name"
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
-                        className="h-7 text-sm"
+                        className="pointer-events-auto h-7 text-sm"
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === "Enter") saveEdit();
@@ -192,15 +181,17 @@ function Companies() {
                       <Button
                         variant="ghost"
                         size="icon-xs"
+                        className="pointer-events-auto"
                         onClick={saveEdit}
                         disabled={editMutation.isPending}
                         aria-label="Save company name"
                       >
-                        <Check className="h-3.5 w-3.5 text-green-500" />
+                        <Check className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon-xs"
+                        className="pointer-events-auto"
                         onClick={cancelEdit}
                         aria-label="Cancel company rename"
                       >
@@ -209,25 +200,12 @@ function Companies() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-base">
-                        {company.name}
-                      </h3>
-                      <Badge
-                        variant="ghost"
-                        className={`text-(length:--text-micro) ${
-                          company.status === "active"
-                            ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                            : company.status === "paused"
-                              ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
-                              : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {company.status}
-                      </Badge>
+                      <h3 className="font-semibold text-base">{company.name}</h3>
+                      <Badge variant="secondary">{company.status}</Badge>
                       <Button
                         variant="ghost"
                         size="icon-xs"
-                        className="text-muted-foreground opacity-0 group-hover:opacity-100"
+                        className="pointer-events-auto text-muted-foreground opacity-0 group-hover:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation();
                           startEdit(company.id, company.name);
@@ -239,9 +217,7 @@ function Companies() {
                     </div>
                   )}
                   {company.description && !isEditing && (
-                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                      {company.description}
-                    </p>
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{company.description}</p>
                   )}
                 </div>
 
@@ -252,24 +228,19 @@ function Companies() {
                       <Button
                         variant="ghost"
                         size="icon-xs"
-                        className="text-muted-foreground opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+                        className="pointer-events-auto text-muted-foreground opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
                         aria-label="Company actions"
                       >
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={() => startEdit(company.id, company.name)}
-                      >
+                      <DropdownMenuItem onClick={() => startEdit(company.id, company.name)}>
                         <Pencil className="h-3.5 w-3.5" />
                         Rename
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => setConfirmDeleteId(company.id)}
-                      >
+                      <DropdownMenuItem variant="destructive" onClick={() => setConfirmDeleteId(company.id)}>
                         <Trash2 className="h-3.5 w-3.5" />
                         Delete Company
                       </DropdownMenuItem>
@@ -279,7 +250,7 @@ function Companies() {
               </div>
 
               {/* Stats row */}
-              <div className="flex items-center gap-3 sm:gap-5 mt-4 text-sm text-muted-foreground flex-wrap">
+              <div className="pointer-events-none relative z-10 mt-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground sm:gap-5">
                 <div className="flex items-center gap-1.5">
                   <Users className="h-3.5 w-3.5" />
                   <span>
@@ -295,19 +266,9 @@ function Companies() {
                 <div className="flex items-center gap-1.5 tabular-nums">
                   <DollarSign className="h-3.5 w-3.5" />
                   <span>
-                    {formatMoneyAmount(
-                      company.knownSpendAmount,
-                      company.budgetCurrency,
-                    )}
+                    {formatMoneyAmount(company.knownSpendAmount, company.budgetCurrency)}
                     {hasBudget ? (
-                      <>
-                        {" "}
-                        /{" "}
-                        {formatMoneyAmount(
-                          company.budgetMonthlyAmount,
-                          company.budgetCurrency,
-                        )}
-                      </>
+                      <> / {formatMoneyAmount(company.budgetMonthlyAmount, company.budgetCurrency)}</>
                     ) : (
                       <span className="text-xs ml-1">Unlimited budget</span>
                     )}
@@ -319,33 +280,35 @@ function Companies() {
                 </div>
               </div>
 
-              {/* Delete confirmation */}
-              {isConfirmingDelete && (
-                <div className="mt-4 flex items-center justify-between bg-destructive/5 border border-destructive/20 rounded-md px-4 py-3">
-                  <p className="text-sm text-destructive font-medium">
-                    Delete this company and all its data? This cannot be undone.
-                  </p>
-                  <div className="flex items-center gap-2 ml-4 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setConfirmDeleteId(null)}
-                      disabled={deleteMutation.isPending}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
+              <AlertDialog
+                open={isConfirmingDelete}
+                onOpenChange={(open) => {
+                  if (!open) setConfirmDeleteId(null);
+                }}
+              >
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete {company.name}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This deletes the company and all of its data. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
                       variant="destructive"
-                      size="sm"
-                      onClick={() => deleteMutation.mutate(company.id)}
                       disabled={deleteMutation.isPending}
+                      onClick={(event) => {
+                        if (deleteMutation.isPending) event.preventDefault();
+                        deleteMutation.mutate(company.id);
+                      }}
                     >
                       {deleteMutation.isPending ? "Deleting…" : "Delete"}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </Card>
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </Item>
           );
         })}
       </div>

@@ -1,76 +1,60 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { Check, Copy, ExternalLink, MailPlus } from "lucide-react";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+  FieldTitle,
+} from "@/components/ui/field";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
-import { useToast } from "@/context/ToastContext";
-import { Link } from "@tanstack/react-router";
-import { queryKeys } from "@/lib/queryKeys";
-import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { queryKeys } from "@/lib/queryKeys";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Check, Copy, ExternalLink, MailPlus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/company/settings/invites/",
-)({ component: CompanyInvites });
+import {
+  formatInviteAudience,
+  formatInviteState,
+  INVITE_HISTORY_PAGE_SIZE,
+  inviteRoleOptions,
+  isInviteHistoryRow,
+} from "./-invite-presentation";
 
-const inviteRoleOptions = [
-  {
-    value: "viewer",
-    label: "Viewer",
-    description: "Can view company work and follow along.",
-    gets: "View-only company membership.",
-  },
-  {
-    value: "operator",
-    label: "Operator",
-    description:
-      "Recommended for people who need to help run work without managing access.",
-    gets: "Can assign tasks.",
-  },
-  {
-    value: "admin",
-    label: "Admin",
-    description:
-      "Recommended for operators who need to invite people, create agents, and approve joins.",
-    gets: "Can create agents, invite users, assign tasks, and approve join requests.",
-  },
-  {
-    value: "owner",
-    label: "Owner",
-    description: "Full company access, including membership management.",
-    gets: "Everything in Admin, plus managing members.",
-  },
-] as const;
-
-const INVITE_HISTORY_PAGE_SIZE = 5;
-
-function isInviteHistoryRow(
-  value: unknown,
-): value is Awaited<
-  ReturnType<typeof accessApi.listInvites>
->["invites"][number] {
-  if (!value || typeof value !== "object") return false;
-  return "id" in value && "state" in value && "createdAt" in value;
-}
+export const Route = createFileRoute("/_authenticated/$companyId/company/settings/invites/")({
+  component: CompanyInvites,
+});
 
 function CompanyInvites() {
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const { pushToast } = useToast();
   const queryClient = useQueryClient();
-  const [userRole, setUserRole] = useState<
-    "owner" | "admin" | "operator" | "viewer"
-  >("operator");
+  const [userRole, setUserRole] = useState<"owner" | "admin" | "operator" | "viewer">("operator");
   const [latestInviteUrl, setLatestInviteUrl] = useState<string | null>(null);
   const [latestInviteCopied, setLatestInviteCopied] = useState(false);
   const latestInviteInputRef = useRef<HTMLInputElement | null>(null);
@@ -88,21 +72,13 @@ function CompanyInvites() {
     latestInviteInputRef.current?.select();
   }
 
-  async function copyText(
-    text: string,
-    unavailableBody: string,
-    onUnavailable?: () => void,
-  ) {
+  async function copyText(text: string, unavailableBody: string, onUnavailable?: () => void) {
     try {
       await copyTextToClipboard(text);
       return true;
     } catch {
       onUnavailable?.();
-      pushToast({
-        title: "Clipboard unavailable",
-        body: unavailableBody,
-        tone: "warn",
-      });
+      toast.warning("Clipboard unavailable", { description: unavailableBody });
       return false;
     }
   }
@@ -137,11 +113,7 @@ function CompanyInvites() {
     ]);
   }, [companyId, selectedCompany?.name, setBreadcrumbs]);
 
-  const inviteHistoryQueryKey = queryKeys.access.invites(
-    companyId,
-    "all",
-    INVITE_HISTORY_PAGE_SIZE,
-  );
+  const inviteHistoryQueryKey = queryKeys.access.invites(companyId, "all", INVITE_HISTORY_PAGE_SIZE);
   const invitesQuery = useInfiniteQuery({
     queryKey: inviteHistoryQueryKey,
     queryFn: ({ pageParam }) =>
@@ -155,9 +127,7 @@ function CompanyInvites() {
   const inviteHistory = useMemo(
     () =>
       invitesQuery.data?.pages.flatMap((page) =>
-        Array.isArray(page?.invites)
-          ? page.invites.filter(isInviteHistoryRow)
-          : [],
+        Array.isArray(page?.invites) ? page.invites.filter(isInviteHistoryRow) : [],
       ) ?? [],
     [invitesQuery.data?.pages],
   );
@@ -170,25 +140,16 @@ function CompanyInvites() {
     onSuccess: async (invite) => {
       setLatestInviteUrl(invite.inviteUrl);
       setLatestInviteCopied(false);
-      const copied = await copyText(
-        invite.inviteUrl,
-        "Copy the invite URL manually from the field below.",
-      );
+      const copied = await copyText(invite.inviteUrl, "Copy the invite URL manually from the field below.");
 
       await queryClient.invalidateQueries({ queryKey: inviteHistoryQueryKey });
-      pushToast({
-        title: "Invite created",
-        body: copied
-          ? "Invite ready below and copied to clipboard."
-          : "Invite ready below.",
-        tone: "success",
+      toast.success("Invite created", {
+        description: copied ? "Invite ready below and copied to clipboard." : "Invite ready below.",
       });
     },
     onError: (error) => {
-      pushToast({
-        title: "Failed to create invite",
-        body: error instanceof Error ? error.message : "Unknown error",
-        tone: "error",
+      toast.error("Failed to create invite", {
+        description: error instanceof Error ? error.message : "Unknown error",
       });
     },
   });
@@ -197,20 +158,19 @@ function CompanyInvites() {
     mutationFn: (inviteId: string) => accessApi.revokeInvite(inviteId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: inviteHistoryQueryKey });
-      pushToast({ title: "Invite revoked", tone: "success" });
+      toast.success("Invite revoked");
     },
     onError: (error) => {
-      pushToast({
-        title: "Failed to revoke invite",
-        body: error instanceof Error ? error.message : "Unknown error",
-        tone: "error",
+      toast.error("Failed to revoke invite", {
+        description: error instanceof Error ? error.message : "Unknown error",
       });
     },
   });
 
   if (invitesQuery.isLoading) {
     return (
-      <div className="text-sm text-muted-foreground" role="status">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner />
         Loading invites…
       </div>
     );
@@ -218,16 +178,15 @@ function CompanyInvites() {
 
   if (invitesQuery.error) {
     const message =
-      invitesQuery.error instanceof ApiError &&
-      invitesQuery.error.status === 403
+      invitesQuery.error instanceof ApiError && invitesQuery.error.status === 403
         ? "You do not have permission to manage company invites."
         : invitesQuery.error instanceof Error
           ? invitesQuery.error.message
           : "Failed to load invites.";
     return (
-      <div className="text-sm text-destructive" role="alert">
-        {message}
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription>{message}</AlertDescription>
+      </Alert>
     );
   }
 
@@ -250,220 +209,162 @@ function CompanyInvites() {
           <h1 className="text-lg font-semibold">Company Invites</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
-          Invite people to request access to this company. New invite links are
-          copied to your clipboard when they are generated.
+          Invite people to request access to this company. New invite links are copied to your clipboard when
+          they are generated.
         </p>
       </div>
 
-      <section className="space-y-4 rounded-xl border border-border p-5">
-        <div className="space-y-1">
-          <h2 className="text-sm font-semibold">Invite a person</h2>
-          <p className="text-sm text-muted-foreground">
-            Generate a user invite link and choose the default access it should
-            request.
-          </p>
-        </div>
-
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-medium">Choose a role</legend>
-          <div className="rounded-xl border border-border">
-            {inviteRoleOptions.map((option, index) => {
-              const checked = userRole === option.value;
-              return (
-                <label
-                  key={option.value}
-                  className={`flex cursor-pointer gap-3 px-4 py-4 ${index > 0 ? "border-t border-border" : ""}`}
-                >
-                  <input
-                    type="radio"
-                    name="invite-role"
-                    value={option.value}
-                    checked={checked}
-                    onChange={() => setUserRole(option.value)}
-                    className="mt-1 h-4 w-4 border-border text-foreground"
-                  />
-                  <span className="min-w-0 space-y-1">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium">
+      <Card>
+        <CardHeader>
+          <CardTitle>Invite a person</CardTitle>
+          <CardDescription>
+            Generate a user invite link and choose the default access it should request.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <FieldSet className="space-y-3">
+            <FieldLegend>Choose a role</FieldLegend>
+            <RadioGroup
+              value={userRole}
+              onValueChange={(value) => setUserRole(value as "owner" | "admin" | "operator" | "viewer")}
+            >
+              {inviteRoleOptions.map((option) => (
+                <FieldLabel key={option.value} htmlFor={`invite-role-${option.value}`}>
+                  <Field orientation="horizontal">
+                    <RadioGroupItem id={`invite-role-${option.value}`} value={option.value} />
+                    <FieldContent>
+                      <FieldTitle>
                         {option.label}
-                      </span>
-                      {option.value === "operator" ? (
-                        <Badge
-                          variant="outline"
-                          className="border-border text-muted-foreground"
-                        >
-                          Default
-                        </Badge>
-                      ) : null}
-                    </span>
-                    <span className="block max-w-2xl text-sm text-muted-foreground">
-                      {option.description}
-                    </span>
-                    <span className="block text-sm text-foreground">
-                      {option.gets}
-                    </span>
-                  </span>
-                </label>
-              );
-            })}
+                        {option.value === "operator" ? <Badge variant="outline">Default</Badge> : null}
+                      </FieldTitle>
+                      <FieldDescription>{option.description}</FieldDescription>
+                    </FieldContent>
+                  </Field>
+                </FieldLabel>
+              ))}
+            </RadioGroup>
+          </FieldSet>
+
+          <Alert>
+            <AlertDescription>
+              Each invite link is single-use. Invitees get the selected role immediately after sign-in.
+            </AlertDescription>
+          </Alert>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={() => createInviteMutation.mutate()} disabled={createInviteMutation.isPending}>
+              {createInviteMutation.isPending ? "Creating…" : "Create invite"}
+            </Button>
+            <span className="text-sm text-muted-foreground">Invite history below keeps the audit trail.</span>
           </div>
-        </fieldset>
 
-        <div className="rounded-lg border border-border px-4 py-3 text-sm text-muted-foreground">
-          Each invite link is single-use. Invitees get the selected role
-          immediately after sign-in.
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            onClick={() => createInviteMutation.mutate()}
-            disabled={createInviteMutation.isPending}
-          >
-            {createInviteMutation.isPending ? "Creating…" : "Create invite"}
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Invite history below keeps the audit trail.
-          </span>
-        </div>
-
-        {latestInviteUrl ? (
-          <div className="space-y-3 rounded-lg border border-border px-4 py-4">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium">Latest invite link</div>
+          {latestInviteUrl ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Latest invite link</CardTitle>
+                <CardDescription>
+                  This URL includes the current Paperclip domain returned by the server.
+                </CardDescription>
                 {latestInviteCopied ? (
-                  <div
-                    className="inline-flex items-center gap-1 text-xs font-medium text-foreground"
-                    role="status"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Copied
-                  </div>
+                  <CardAction>
+                    <Badge variant="secondary" role="status">
+                      <Check />
+                      Copied
+                    </Badge>
+                  </CardAction>
                 ) : null}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                This URL includes the current Paperclip domain returned by the
-                server.
-              </div>
-            </div>
-            <label className="block space-y-1">
-              <span className="sr-only">Latest invite URL</span>
-              <input
-                ref={latestInviteInputRef}
-                readOnly
-                value={latestInviteUrl}
-                onFocus={(event) => event.currentTarget.select()}
-                onClick={(event) => event.currentTarget.select()}
-                className="w-full rounded-md border border-border bg-muted/60 px-3 py-2 text-sm text-foreground outline-none transition-colors selection:bg-primary selection:text-primary-foreground focus:border-ring"
-                aria-label="Latest invite URL"
-              />
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  const copied = await copyInviteUrl(latestInviteUrl);
-                  setLatestInviteCopied(copied);
-                }}
-              >
-                <Copy data-icon="inline-start" className="h-4 w-4" />
-                Copy link
-              </Button>
-              <Button size="sm" variant="outline" asChild>
-                <a href={latestInviteUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink data-icon="inline-start" className="h-4 w-4" />
-                  Open invite
-                </a>
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </section>
+              </CardHeader>
+              <CardContent>
+                <InputGroup>
+                  <InputGroupInput
+                    ref={latestInviteInputRef}
+                    readOnly
+                    value={latestInviteUrl}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onClick={(event) => event.currentTarget.select()}
+                    aria-label="Latest invite URL"
+                  />
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupButton
+                      onClick={async () => {
+                        const copied = await copyInviteUrl(latestInviteUrl);
+                        setLatestInviteCopied(copied);
+                      }}
+                    >
+                      <Copy />
+                      Copy link
+                    </InputGroupButton>
+                    <InputGroupButton asChild>
+                      <a href={latestInviteUrl} target="_blank" rel="noreferrer">
+                        <ExternalLink />
+                        Open invite
+                      </a>
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                </InputGroup>
+              </CardContent>
+            </Card>
+          ) : null}
+        </CardContent>
+      </Card>
 
-      <section className="rounded-xl border border-border">
-        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-          <div className="space-y-1">
-            <h2 className="text-sm font-semibold">Invite history</h2>
-            <p className="text-sm text-muted-foreground">
-              Review invite status, audience, inviter, and any linked join
-              request.
-            </p>
-          </div>
-          <Link
-            to="/$companyId/inbox/requests"
-            params={{ companyId }}
-            className="text-sm underline underline-offset-4"
-          >
-            Open join request queue
-          </Link>
-        </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Invite history</CardTitle>
+          <CardDescription>
+            Review invite status, audience, inviter, and any linked join request.
+          </CardDescription>
+          <CardAction>
+            <Button variant="link" asChild>
+              <Link to="/$companyId/inbox/requests" params={{ companyId }}>
+                Open join request queue
+              </Link>
+            </Button>
+          </CardAction>
+        </CardHeader>
 
         {inviteHistory.length === 0 ? (
-          <div className="border-t border-border px-5 py-8 text-sm text-muted-foreground">
-            No invites have been created for this company yet.
-          </div>
+          <CardContent>
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>No invites yet</EmptyTitle>
+                <EmptyDescription>No invites have been created for this company yet.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
         ) : (
-          <div className="border-t border-border">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="px-5 py-3 font-medium text-muted-foreground">
-                      State
-                    </th>
-                    <th className="px-5 py-3 font-medium text-muted-foreground">
-                      For
-                    </th>
-                    <th className="px-5 py-3 font-medium text-muted-foreground">
-                      Invited by
-                    </th>
-                    <th className="px-5 py-3 font-medium text-muted-foreground">
-                      Created
-                    </th>
-                    <th className="px-5 py-3 font-medium text-muted-foreground">
-                      Join request
-                    </th>
-                    <th className="px-5 py-3 text-right font-medium text-muted-foreground">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+          <>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>State</TableHead>
+                    <TableHead>For</TableHead>
+                    <TableHead>Invited by</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Join request</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {inviteHistory.map((invite) => (
-                    <tr
-                      key={invite.id}
-                      className="border-b border-border last:border-b-0"
-                    >
-                      <td className="px-5 py-3 align-top">
-                        <Badge
-                          variant="outline"
-                          className="border-border text-muted-foreground"
-                        >
-                          {formatInviteState(invite.state)}
-                        </Badge>
-                      </td>
-                      <td className="px-5 py-3 align-top">
-                        {formatInviteAudience(invite)}
-                      </td>
-                      <td className="px-5 py-3 align-top">
+                    <TableRow key={invite.id}>
+                      <TableCell>
+                        <Badge variant="outline">{formatInviteState(invite.state)}</Badge>
+                      </TableCell>
+                      <TableCell>{formatInviteAudience(invite)}</TableCell>
+                      <TableCell>
                         <div>
-                          {invite.invitedByUser?.name ||
-                            invite.invitedByUser?.email ||
-                            "Unknown inviter"}
+                          {invite.invitedByUser?.name || invite.invitedByUser?.email || "Unknown inviter"}
                         </div>
-                        {invite.invitedByUser?.email &&
-                        invite.invitedByUser.name ? (
-                          <div className="text-xs text-muted-foreground">
-                            {invite.invitedByUser.email}
-                          </div>
+                        {invite.invitedByUser?.email && invite.invitedByUser.name ? (
+                          <div className="text-xs text-muted-foreground">{invite.invitedByUser.email}</div>
                         ) : null}
-                      </td>
-                      <td className="px-5 py-3 align-top text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
                         {new Date(invite.createdAt).toLocaleString()}
-                      </td>
-                      <td className="px-5 py-3 align-top">
+                      </TableCell>
+                      <TableCell>
                         {invite.relatedJoinRequestId ? (
                           <Link
                             to="/$companyId/inbox/requests"
@@ -475,8 +376,8 @@ function CompanyInvites() {
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
-                      </td>
-                      <td className="px-5 py-3 text-right align-top">
+                      </TableCell>
+                      <TableCell className="text-right">
                         {invite.state === "active" ? (
                           <Button
                             size="sm"
@@ -487,45 +388,29 @@ function CompanyInvites() {
                             Revoke
                           </Button>
                         ) : (
-                          <span className="text-xs text-muted-foreground">
-                            Inactive
-                          </span>
+                          <span className="text-xs text-muted-foreground">Inactive</span>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
+            </CardContent>
             {invitesQuery.hasNextPage ? (
-              <div className="flex justify-center border-t border-border px-5 py-4">
+              <CardFooter className="justify-center border-t">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => invitesQuery.fetchNextPage()}
                   disabled={invitesQuery.isFetchingNextPage}
                 >
-                  {invitesQuery.isFetchingNextPage
-                    ? "Loading more…"
-                    : "View more"}
+                  {invitesQuery.isFetchingNextPage ? "Loading more…" : "View more"}
                 </Button>
-              </div>
+              </CardFooter>
             ) : null}
-          </div>
+          </>
         )}
-      </section>
+      </Card>
     </div>
   );
-}
-
-function formatInviteState(
-  state: "active" | "accepted" | "expired" | "revoked",
-) {
-  return state.charAt(0).toUpperCase() + state.slice(1);
-}
-
-function formatInviteAudience(
-  invite: Awaited<ReturnType<typeof accessApi.listInvites>>["invites"][number],
-) {
-  return invite.userRole ?? "User";
 }

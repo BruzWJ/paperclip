@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import type { CompanyPortabilityFileEntry } from "@paperclipai/shared";
 import { Package } from "lucide-react";
-import {
-  getPortableFileDataUrl,
-  getPortableFileText,
-  isPortableImageFile,
-} from "../lib/portable-files";
-import { EmptyState } from "./EmptyState";
+import { getPortableFileDataUrl, getPortableFileText, isPortableImageFile } from "../lib/portable-files";
+import { Alert, AlertDescription } from "./ui/alert";
+import { Badge } from "./ui/badge";
+import { Card, CardContent } from "./ui/card";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
+import { Table, TableBody, TableCell, TableRow } from "./ui/table";
 import { parseFrontmatter } from "./FileTree";
 import { MarkdownBody } from "./MarkdownBody";
 
@@ -28,33 +28,34 @@ const FRONTMATTER_FIELD_LABELS: Record<string, string> = {
 
 function FrontmatterCard({ data }: { data: FrontmatterData }) {
   return (
-    <div className="mb-4 rounded-md border border-border bg-accent/20 px-4 py-3">
-      <dl className="grid grid-cols-(--gtc-5) gap-x-4 gap-y-1.5 text-sm">
-        {Object.entries(data).map(([key, value]) => (
-          <div key={key} className="contents">
-            <dt className="whitespace-nowrap py-0.5 text-muted-foreground">
-              {FRONTMATTER_FIELD_LABELS[key] ?? key}
-            </dt>
-            <dd className="py-0.5">
-              {Array.isArray(value) ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {value.map((item) => (
-                    <span
-                      key={item}
-                      className="inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-xs"
-                    >
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <span>{value}</span>
-              )}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </div>
+    <Card className="mb-4 gap-0 py-0">
+      <CardContent className="p-0">
+        <Table>
+          <TableBody>
+            {Object.entries(data).map(([key, value]) => (
+              <TableRow key={key}>
+                <TableCell className="w-min text-muted-foreground">
+                  {FRONTMATTER_FIELD_LABELS[key] ?? key}
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  {Array.isArray(value) ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {value.map((item) => (
+                        <Badge key={item} variant="outline">
+                          {item}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <span>{value}</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -71,17 +72,20 @@ export function CompanyPortabilityFilePreview({
 }) {
   if (!selectedFile || content === null) {
     return (
-      <EmptyState
-        icon={Package}
-        message="Select a file to preview its contents."
-      />
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Package />
+          </EmptyMedia>
+          <EmptyTitle>Select a file to preview its contents.</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
   const textContent = getPortableFileText(content);
   const isMarkdown = selectedFile.endsWith(".md") && textContent !== null;
-  const parsed =
-    isMarkdown && textContent ? parseFrontmatter(textContent) : null;
+  const parsed = isMarkdown && textContent ? parseFrontmatter(textContent) : null;
   const imageSrc = isPortableImageFile(selectedFile, content)
     ? getPortableFileDataUrl(selectedFile, content)
     : null;
@@ -94,58 +98,41 @@ export function CompanyPortabilityFilePreview({
         const resolved = dir + src;
         const entry = allFiles[resolved] ?? allFiles[src];
         if (!entry) return null;
-        return getPortableFileDataUrl(
-          resolved in allFiles ? resolved : src,
-          entry,
-        );
+        return getPortableFileDataUrl(resolved in allFiles ? resolved : src, entry);
       }
     : undefined;
 
   return (
     <div className="min-w-0">
       <div className="border-b border-border px-5 py-3">
-        {header ?? (
-          <div className="truncate font-mono text-sm">{selectedFile}</div>
-        )}
+        {header ?? <div className="truncate font-mono text-sm">{selectedFile}</div>}
       </div>
       <div className="min-h-(--sz-560px) px-5 py-5">
         {parsed ? (
           <>
             <FrontmatterCard data={parsed.data} />
             {parsed.body.trim() && (
-              <MarkdownBody
-                resolveImageSrc={resolveImageSrc}
-                softBreaks={false}
-                linkTaskReferences={false}
-              >
+              <MarkdownBody resolveImageSrc={resolveImageSrc} softBreaks={false} linkTaskReferences={false}>
                 {parsed.body}
               </MarkdownBody>
             )}
           </>
         ) : isMarkdown ? (
-          <MarkdownBody
-            resolveImageSrc={resolveImageSrc}
-            softBreaks={false}
-            linkTaskReferences={false}
-          >
+          <MarkdownBody resolveImageSrc={resolveImageSrc} softBreaks={false} linkTaskReferences={false}>
             {textContent ?? ""}
           </MarkdownBody>
         ) : imageSrc ? (
-          <div className="flex min-h-(--sz-520px) items-center justify-center rounded-lg border border-border bg-accent/10 p-6">
-            <img
-              src={imageSrc}
-              alt={selectedFile}
-              className="max-h-(--sz-480px) max-w-full object-contain"
-            />
-          </div>
+          <Card className="min-h-(--sz-520px) items-center justify-center p-6">
+            <img src={imageSrc} alt={selectedFile} className="max-h-(--sz-480px) max-w-full object-contain" />
+          </Card>
         ) : textContent !== null ? (
           <pre className="overflow-x-auto whitespace-pre-wrap break-words border-0 bg-transparent p-0 font-mono text-sm text-foreground">
             <code>{textContent}</code>
           </pre>
         ) : (
-          <div className="rounded-lg border border-border bg-accent/10 px-4 py-3 text-sm text-muted-foreground">
-            Binary asset preview is not available for this file type.
-          </div>
+          <Alert>
+            <AlertDescription>Binary asset preview is not available for this file type.</AlertDescription>
+          </Alert>
         )}
       </div>
     </div>

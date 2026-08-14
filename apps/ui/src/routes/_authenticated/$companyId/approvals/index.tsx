@@ -7,13 +7,13 @@ import { approvalsApi } from "@/api/approvals";
 import { agentsApi } from "@/api/agents";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { cn } from "@/lib/utils";
-import { PageTabBar } from "@/components/PageTabBar";
-import { Tabs } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldCheck } from "lucide-react";
 import { ApprovalCard } from "@/components/ApprovalCard";
-import { PageSkeleton } from "@/components/PageSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { useApprovalMutations } from "@/hooks/useApprovalMutations";
 
 export const Route = createFileRoute("/_authenticated/$companyId/approvals/")({
@@ -46,22 +46,11 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
     queryFn: () => agentsApi.list(companyId),
   });
 
-  const { approveMutation, rejectMutation } = useApprovalMutations(
-    companyId,
-    setActionError,
-  );
+  const { approveMutation, rejectMutation } = useApprovalMutations(companyId, setActionError);
 
   const filtered = (data ?? [])
-    .filter(
-      (a) =>
-        statusFilter === "all" ||
-        a.status === "pending" ||
-        a.status === "revision_requested",
-    )
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    .filter((a) => statusFilter === "all" || a.status === "pending" || a.status === "revision_requested")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const pendingCount = (data ?? []).filter(
     (a) => a.status === "pending" || a.status === "revision_requested",
@@ -76,7 +65,7 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
     return (
       <div role="status">
         <span className="sr-only">Loading approvals…</span>
-        <PageSkeleton variant="approvals" />
+        <Skeleton className="h-32 w-full" />
       </div>
     );
   }
@@ -100,30 +89,17 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
             }
           }}
         >
-          <PageTabBar
-            items={[
-              {
-                value: "pending",
-                label: (
-                  <>
-                    Pending
-                    {pendingCount > 0 && (
-                      <Badge
-                        variant="ghost"
-                        className={cn(
-                          "ml-1.5 px-1.5 text-(length:--text-nano)",
-                          "bg-yellow-500/20 text-yellow-500",
-                        )}
-                      >
-                        {pendingCount}
-                      </Badge>
-                    )}
-                  </>
-                ),
-              },
-              { value: "all", label: "All" },
-            ]}
-          />
+          <TabsList variant="line">
+            <TabsTrigger value="pending">
+              Pending
+              {pendingCount > 0 ? (
+                <Badge variant="ghost" className="ml-1.5 px-1.5 text-(length:--text-nano)">
+                  {pendingCount}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+            <TabsTrigger value="all">All</TabsTrigger>
+          </TabsList>
         </Tabs>
       </div>
 
@@ -133,25 +109,32 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
         </p>
       ) : null}
       {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error.message}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
       )}
       {actionError && (
-        <p role="alert" className="text-sm text-destructive">
-          {actionError}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
       )}
 
       {filtered.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <ShieldCheck className="h-8 w-8 text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-muted-foreground">
-            {statusFilter === "pending"
-              ? "No pending approvals."
-              : "No approvals yet."}
-          </p>
-        </div>
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <ShieldCheck />
+            </EmptyMedia>
+            <EmptyTitle>
+              {statusFilter === "pending" ? "No pending approvals" : "No approvals yet"}
+            </EmptyTitle>
+            <EmptyDescription>
+              {statusFilter === "pending"
+                ? "New approval requests will appear here."
+                : "Approval history will appear here."}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
 
       {filtered.length > 0 && (
@@ -162,9 +145,7 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
               approval={approval}
               requesterAgent={
                 approval.requestedByAgentId
-                  ? ((agents ?? []).find(
-                      (a) => a.id === approval.requestedByAgentId,
-                    ) ?? null)
+                  ? ((agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null)
                   : null
               }
               onApprove={() => approveMutation.mutate(approval.id)}
@@ -172,11 +153,7 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
               linkToDetails
               isPending={approveMutation.isPending || rejectMutation.isPending}
               pendingAction={
-                approveMutation.isPending
-                  ? "approve"
-                  : rejectMutation.isPending
-                    ? "reject"
-                    : null
+                approveMutation.isPending ? "approve" : rejectMutation.isPending ? "reject" : null
               }
             />
           ))}

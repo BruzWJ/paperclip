@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
-import { SlidersHorizontal } from "lucide-react";
 import { COMPANY_SEARCH_SORTS, type CompanySearchSort } from "@paperclipai/shared";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetClose, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { cn } from "@/lib/utils";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
+import { FieldLegend, FieldSet } from "@/components/ui/field";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   applyOwnerSelectionId,
   ownerSelectionId,
@@ -12,54 +20,6 @@ import {
   type SearchFilters,
 } from "@/lib/search-filters";
 import { buildSearchFilterOptions, type SearchFilterDataProps } from "./SearchFilterBar";
-import type { FilterMenuOption } from "./SearchFilterMenu";
-
-function ChipToggleGroup({
-  title,
-  options,
-  selected,
-  onToggle,
-}: {
-  title: string;
-  options: FilterMenuOption[];
-  selected: string[];
-  onToggle: (value: string) => void;
-}) {
-  if (options.length === 0) return null;
-  return (
-    <div className="space-y-1.5">
-      <div className="text-xs font-medium text-muted-foreground">{title}</div>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((option) => {
-          const isActive = selected.includes(option.value);
-          return (
-            <button
-              key={option.value}
-              type="button"
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
-                isActive
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
-              )}
-              onClick={() => onToggle(option.value)}
-            >
-              {option.swatch ? (
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: option.swatch }} aria-hidden />
-              ) : null}
-              <span>{option.label}</span>
-              {typeof option.count === "number" ? (
-                <span className={cn("tabular-nums", isActive ? "opacity-80" : "text-muted-foreground/70")}>
-                  {option.count}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 export function SearchFilterSheet({
   open,
@@ -101,110 +61,219 @@ export function SearchFilterSheet({
     onDraftChange(next);
   }
 
-  function toggleMulti(dimension: "status" | "priority", value: string) {
-    const current = (draft[dimension] ?? []) as string[];
-    const next = current.includes(value) ? current.filter((entry) => entry !== value) : [...current, value];
-    update({ ...draft, [dimension]: next });
-  }
-
-  function toggleOwner(token: string) {
-    const current = ownerSelectionId(draft);
-    update(applyOwnerSelectionId(draft, current === token ? undefined : token, data.currentUserId));
-  }
-
-  function toggleSingle(dimension: "projectId" | "labelId" | "updatedWithin", value: string) {
-    const current = draft[dimension];
-    update({ ...draft, [dimension]: current === value ? undefined : value });
-  }
-
   const activeCount = countActiveFilters(draft);
   const selectedOwner = ownerSelectionId(draft);
   const applyLabel =
-    previewTotal === null ? "Show results" : `Show ${previewTotal} ${previewTotal === 1 ? "result" : "results"}`;
+    previewTotal === null
+      ? "Show results"
+      : `Show ${previewTotal} ${previewTotal === 1 ? "result" : "results"}`;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="max-h-(--sz-85vh) gap-0 rounded-t-xl p-0"
-        data-testid="search-filter-sheet"
-      >
-        <SheetHeader className="flex-row items-center justify-between border-b border-border">
-          <SheetTitle className="text-base">Filters</SheetTitle>
-          <button
-            type="button"
-            className={cn("text-xs text-muted-foreground hover:text-foreground", activeCount === 0 && "invisible")}
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="max-h-(--sz-85vh) gap-0 rounded-t-xl p-0" data-testid="search-filter-sheet">
+        <DrawerHeader className="flex-row items-center justify-between border-b border-border">
+          <div>
+            <DrawerTitle className="text-base">Filters</DrawerTitle>
+            <DrawerDescription>Refine company search results.</DrawerDescription>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={activeCount === 0 ? "invisible" : undefined}
             onClick={() => update({})}
           >
             Clear all
-          </button>
-        </SheetHeader>
+          </Button>
+        </DrawerHeader>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          <ChipToggleGroup
-            title="Status"
-            options={options.status}
-            selected={draft.status ?? []}
-            onToggle={(value) => toggleMulti("status", value)}
-          />
-          <ChipToggleGroup
-            title="Priority"
-            options={options.priority}
-            selected={draft.priority ?? []}
-            onToggle={(value) => toggleMulti("priority", value)}
-          />
-          <ChipToggleGroup
-            title="Owner"
-            options={options.owner}
-            selected={selectedOwner ? [selectedOwner] : []}
-            onToggle={toggleOwner}
-          />
-          <ChipToggleGroup
-            title="Project"
-            options={options.project}
-            selected={draft.projectId ? [draft.projectId] : []}
-            onToggle={(value) => toggleSingle("projectId", value)}
-          />
-          <ChipToggleGroup
-            title="Label"
-            options={options.label}
-            selected={draft.labelId ? [draft.labelId] : []}
-            onToggle={(value) => toggleSingle("labelId", value)}
-          />
-          <ChipToggleGroup
-            title="Updated"
-            options={options.updated}
-            selected={draft.updatedWithin ? [draft.updatedWithin] : []}
-            onToggle={(value) => toggleSingle("updatedWithin", value)}
-          />
-          <div className="space-y-1.5">
-            <div className="text-xs font-medium text-muted-foreground">Sort by</div>
-            <div className="flex flex-wrap gap-1.5">
+          {options.status.length > 0 ? (
+            <FieldSet className="gap-2">
+              <FieldLegend variant="label">Status</FieldLegend>
+              <ToggleGroup
+                type="multiple"
+                variant="outline"
+                spacing={1}
+                value={draft.status ?? []}
+                onValueChange={(status) =>
+                  update({ ...draft, status: status as NonNullable<SearchFilters["status"]> })
+                }
+                className="flex flex-wrap"
+              >
+                {options.status.map((option) => (
+                  <ToggleGroupItem key={option.value} value={option.value}>
+                    <span>{option.label}</span>
+                    {typeof option.count === "number" ? (
+                      <Badge variant="secondary" className="ml-1 tabular-nums">
+                        {option.count}
+                      </Badge>
+                    ) : null}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </FieldSet>
+          ) : null}
+          {options.priority.length > 0 ? (
+            <FieldSet className="gap-2">
+              <FieldLegend variant="label">Priority</FieldLegend>
+              <ToggleGroup
+                type="multiple"
+                variant="outline"
+                spacing={1}
+                value={draft.priority ?? []}
+                onValueChange={(priority) =>
+                  update({ ...draft, priority: priority as NonNullable<SearchFilters["priority"]> })
+                }
+                className="flex flex-wrap"
+              >
+                {options.priority.map((option) => (
+                  <ToggleGroupItem key={option.value} value={option.value}>
+                    <span>{option.label}</span>
+                    {typeof option.count === "number" ? (
+                      <Badge variant="secondary" className="ml-1 tabular-nums">
+                        {option.count}
+                      </Badge>
+                    ) : null}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </FieldSet>
+          ) : null}
+          {options.owner.length > 0 ? (
+            <FieldSet className="gap-2">
+              <FieldLegend variant="label">Owner</FieldLegend>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                spacing={1}
+                value={selectedOwner ?? ""}
+                onValueChange={(owner) =>
+                  update(applyOwnerSelectionId(draft, owner || undefined, data.currentUserId))
+                }
+                className="flex flex-wrap"
+              >
+                {options.owner.map((option) => (
+                  <ToggleGroupItem key={option.value} value={option.value}>
+                    <span>{option.label}</span>
+                    {typeof option.count === "number" ? (
+                      <Badge variant="secondary" className="ml-1 tabular-nums">
+                        {option.count}
+                      </Badge>
+                    ) : null}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </FieldSet>
+          ) : null}
+          {options.project.length > 0 ? (
+            <FieldSet className="gap-2">
+              <FieldLegend variant="label">Project</FieldLegend>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                spacing={1}
+                value={draft.projectId ?? ""}
+                onValueChange={(projectId) => update({ ...draft, projectId: projectId || undefined })}
+                className="flex flex-wrap"
+              >
+                {options.project.map((option) => (
+                  <ToggleGroupItem key={option.value} value={option.value}>
+                    <span>{option.label}</span>
+                    {typeof option.count === "number" ? (
+                      <Badge variant="secondary" className="ml-1 tabular-nums">
+                        {option.count}
+                      </Badge>
+                    ) : null}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </FieldSet>
+          ) : null}
+          {options.label.length > 0 ? (
+            <FieldSet className="gap-2">
+              <FieldLegend variant="label">Label</FieldLegend>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                spacing={1}
+                value={draft.labelId ?? ""}
+                onValueChange={(labelId) => update({ ...draft, labelId: labelId || undefined })}
+                className="flex flex-wrap"
+              >
+                {options.label.map((option) => (
+                  <ToggleGroupItem key={option.value} value={option.value}>
+                    {option.swatch ? (
+                      <span
+                        className="size-2 rounded-full"
+                        style={{ backgroundColor: option.swatch }}
+                        aria-hidden
+                      />
+                    ) : null}
+                    <span>{option.label}</span>
+                    {typeof option.count === "number" ? (
+                      <Badge variant="secondary" className="ml-1 tabular-nums">
+                        {option.count}
+                      </Badge>
+                    ) : null}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </FieldSet>
+          ) : null}
+          {options.updated.length > 0 ? (
+            <FieldSet className="gap-2">
+              <FieldLegend variant="label">Updated</FieldLegend>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                spacing={1}
+                value={draft.updatedWithin ?? ""}
+                onValueChange={(updatedWithin) =>
+                  update({
+                    ...draft,
+                    updatedWithin: (updatedWithin || undefined) as SearchFilters["updatedWithin"],
+                  })
+                }
+                className="flex flex-wrap"
+              >
+                {options.updated.map((option) => (
+                  <ToggleGroupItem key={option.value} value={option.value}>
+                    <span>{option.label}</span>
+                    {typeof option.count === "number" ? (
+                      <Badge variant="secondary" className="ml-1 tabular-nums">
+                        {option.count}
+                      </Badge>
+                    ) : null}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </FieldSet>
+          ) : null}
+          <FieldSet className="gap-2">
+            <FieldLegend variant="label">Sort by</FieldLegend>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              spacing={1}
+              value={sort}
+              onValueChange={(value) => {
+                if (value) onSortChange(value as CompanySearchSort);
+              }}
+              className="flex flex-wrap"
+            >
               {COMPANY_SEARCH_SORTS.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={cn(
-                    "rounded-full border px-2.5 py-1 text-xs transition-colors",
-                    value === sort
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
-                  )}
-                  onClick={() => onSortChange(value)}
-                >
+                <ToggleGroupItem key={value} value={value}>
                   {SORT_LABELS[value]}
-                </button>
+                </ToggleGroupItem>
               ))}
-            </div>
-          </div>
+            </ToggleGroup>
+          </FieldSet>
         </div>
 
-        <SheetFooter className="flex-row gap-2 border-t border-border">
-          <SheetClose asChild>
-            <Button variant="outline" className="flex-1">
-              Cancel
-            </Button>
-          </SheetClose>
+        <DrawerFooter className="flex-row gap-2 border-t border-border">
+          <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
           <Button
             className="flex-1"
             onClick={() => {
@@ -214,23 +283,8 @@ export function SearchFilterSheet({
           >
             {applyLabel}
           </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-/** The compact "Filters · n" trigger button shown on mobile. */
-export function SearchFilterSheetTrigger({ activeCount, onClick }: { activeCount: number; onClick: () => void }) {
-  return (
-    <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-normal" onClick={onClick}>
-      <SlidersHorizontal className="h-3.5 w-3.5" />
-      Filters
-      {activeCount > 0 ? (
-        <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-(length:--text-nano) font-semibold tabular-nums text-primary-foreground">
-          {activeCount}
-        </span>
-      ) : null}
-    </Button>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   );
 }

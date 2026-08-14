@@ -7,9 +7,10 @@ import { useDialogActions } from "@/context/DialogContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { GoalTree } from "@/components/GoalTree";
-import { EmptyState } from "@/components/EmptyState";
-import { PageSkeleton } from "@/components/PageSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Target, Plus } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/$companyId/goals/")({
@@ -35,20 +36,32 @@ function Goals() {
   });
 
   if (isLoading) {
-    return <PageSkeleton variant="list" />;
+    return <Skeleton className="h-32 w-full" />;
   }
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
+      )}
 
       {goals && goals.length === 0 && (
-        <EmptyState
-          icon={Target}
-          message="No goals yet."
-          action="Add Goal"
-          onAction={() => openNewGoal()}
-        />
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Target />
+            </EmptyMedia>
+            <EmptyTitle>No goals yet.</EmptyTitle>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button onClick={() => openNewGoal()}>
+              <Plus />
+              Add Goal
+            </Button>
+          </EmptyContent>
+        </Empty>
       )}
 
       {goals && goals.length > 0 && (

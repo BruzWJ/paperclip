@@ -1,12 +1,7 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
 interface FoldCurtainProps {
@@ -31,9 +26,7 @@ function useResponsiveCollapsedHeight(explicit?: number) {
   const [height, setHeight] = useState<number>(() => {
     if (explicit != null) return explicit;
     if (typeof window === "undefined") return DEFAULT_COLLAPSED_HEIGHT;
-    return window.innerWidth < MOBILE_BREAKPOINT
-      ? MOBILE_COLLAPSED_HEIGHT
-      : DEFAULT_COLLAPSED_HEIGHT;
+    return window.innerWidth < MOBILE_BREAKPOINT ? MOBILE_COLLAPSED_HEIGHT : DEFAULT_COLLAPSED_HEIGHT;
   });
 
   useEffect(() => {
@@ -43,11 +36,7 @@ function useResponsiveCollapsedHeight(explicit?: number) {
     }
     if (typeof window === "undefined") return;
     const compute = () =>
-      setHeight(
-        window.innerWidth < MOBILE_BREAKPOINT
-          ? MOBILE_COLLAPSED_HEIGHT
-          : DEFAULT_COLLAPSED_HEIGHT,
-      );
+      setHeight(window.innerWidth < MOBILE_BREAKPOINT ? MOBILE_COLLAPSED_HEIGHT : DEFAULT_COLLAPSED_HEIGHT);
     compute();
     window.addEventListener("resize", compute);
     return () => window.removeEventListener("resize", compute);
@@ -97,8 +86,18 @@ export function FoldCurtain({
     : undefined;
 
   return (
-    <div className={cn("fold-curtain", className)} data-expanded={expanded ? "true" : "false"}>
-      <div
+    <Collapsible
+      open={!shouldCurtain || expanded}
+      onOpenChange={(open) => {
+        if (!shouldCurtain) return;
+        setAllowTransition(true);
+        setExpanded(open);
+      }}
+      className={cn("fold-curtain", className)}
+      data-expanded={expanded ? "true" : "false"}
+    >
+      <CollapsibleContent
+        forceMount
         ref={contentRef}
         className={cn(
           "fold-curtain__content relative overflow-hidden",
@@ -106,40 +105,29 @@ export function FoldCurtain({
           contentClassName,
         )}
         style={{
-          maxHeight: isClipped
-            ? `${collapsedHeight}px`
-            : shouldCurtain
-              ? `${naturalHeight}px`
-              : undefined,
+          maxHeight: isClipped ? `${collapsedHeight}px` : shouldCurtain ? `${naturalHeight}px` : undefined,
           transitionDuration: allowTransition ? `${EXPAND_TRANSITION_MS}ms` : undefined,
           transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
           ...maskStyle,
         }}
       >
         {children}
-      </div>
+      </CollapsibleContent>
       {shouldCurtain ? (
         <div className="fold-curtain__toggle mt-2 flex justify-center print:hidden">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-expanded={expanded}
-            onClick={() => {
-              setAllowTransition(true);
-              setExpanded((v) => !v);
-            }}
-            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-          >
-            {expanded ? lessLabel : moreLabel}
-            {expanded ? (
-              <ChevronUp className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronDown className="h-3.5 w-3.5" />
-            )}
-          </Button>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              {expanded ? lessLabel : moreLabel}
+              {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </Button>
+          </CollapsibleTrigger>
         </div>
       ) : null}
-    </div>
+    </Collapsible>
   );
 }

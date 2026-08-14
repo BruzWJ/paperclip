@@ -1,40 +1,32 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import { useQuery } from "@tanstack/react-query";
-import { agentsApi, type OrgNode } from "@/api/agents";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
-import { queryKeys } from "@/lib/queryKeys";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/EmptyState";
-import { PageSkeleton } from "@/components/PageSkeleton";
-import { AgentIcon } from "@/components/AgentIconPicker";
+import { agentsApi } from "@/api/agents";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import {
-  Download,
-  Maximize2,
-  Minus,
-  Network,
-  Plus,
-  Upload,
-} from "lucide-react";
+  OrgChartActions,
+  OrgChartAgentCard,
+  OrgChartEdges,
+  OrgChartZoomControls,
+} from "@/components/org/OrgChartParts";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useBreadcrumbs } from "@/context/BreadcrumbContext";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { queryKeys } from "@/lib/queryKeys";
 import { type Agent } from "@paperclipai/shared";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Network } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ORG_CARD_HEIGHT,
+  ORG_CARD_WIDTH,
+  ORG_PADDING,
+  collectOrgEdges,
+  flattenOrgLayout,
+  layoutOrgForest,
+} from "./-org-layout";
 
 export const Route = createFileRoute("/_authenticated/$companyId/org/")({
   component: OrgChart,
 });
-
-// Layout constants
-const CARD_W = 200;
-
-const CARD_H = 100;
-
-const GAP_X = 32;
-
-const GAP_Y = 80;
-
-const PADDING = 60;
 
 const MIN_ZOOM = 0.2;
 
@@ -43,16 +35,6 @@ const MAX_ZOOM = 2;
 const TOUCH_MOVE_THRESHOLD = 6;
 
 // ── Tree layout types ───────────────────────────────────────────────────
-
-interface LayoutNode {
-  id: string;
-  name: string;
-  subtitle: string;
-  status: string;
-  x: number;
-  y: number;
-  children: LayoutNode[];
-}
 
 interface Point {
   x: number;
@@ -69,88 +51,6 @@ interface TouchGesture {
   moved: boolean;
 }
 
-// ── Layout algorithm ────────────────────────────────────────────────────
-
-/** Compute the width each subtree needs. */
-function subtreeWidth(node: OrgNode): number {
-  if (node.reports.length === 0) return CARD_W;
-  const childrenW = node.reports.reduce((sum, c) => sum + subtreeWidth(c), 0);
-  const gaps = (node.reports.length - 1) * GAP_X;
-  return Math.max(CARD_W, childrenW + gaps);
-}
-
-/** Recursively assign x,y positions. */
-function layoutTree(node: OrgNode, x: number, y: number): LayoutNode {
-  const totalW = subtreeWidth(node);
-  const layoutChildren: LayoutNode[] = [];
-
-  if (node.reports.length > 0) {
-    const childrenW = node.reports.reduce((sum, c) => sum + subtreeWidth(c), 0);
-    const gaps = (node.reports.length - 1) * GAP_X;
-    let cx = x + (totalW - childrenW - gaps) / 2;
-
-    for (const child of node.reports) {
-      const cw = subtreeWidth(child);
-      layoutChildren.push(layoutTree(child, cx, y + CARD_H + GAP_Y));
-      cx += cw + GAP_X;
-    }
-  }
-
-  return {
-    id: node.id,
-    name: node.name,
-    subtitle: node.subtitle,
-    status: node.status,
-    x: x + (totalW - CARD_W) / 2,
-    y,
-    children: layoutChildren,
-  };
-}
-
-/** Layout all root nodes side by side. */
-function layoutForest(roots: OrgNode[]): LayoutNode[] {
-  if (roots.length === 0) return [];
-
-  let x = PADDING;
-  const y = PADDING;
-
-  const result: LayoutNode[] = [];
-  for (const root of roots) {
-    const w = subtreeWidth(root);
-    result.push(layoutTree(root, x, y));
-    x += w + GAP_X;
-  }
-
-  // Compute bounds and return
-  return result;
-}
-
-/** Flatten layout tree to list of nodes. */
-function flattenLayout(nodes: LayoutNode[]): LayoutNode[] {
-  const result: LayoutNode[] = [];
-  function walk(n: LayoutNode) {
-    result.push(n);
-    n.children.forEach(walk);
-  }
-  nodes.forEach(walk);
-  return result;
-}
-
-/** Collect all parent→child edges. */
-function collectEdges(
-  nodes: LayoutNode[],
-): Array<{ parent: LayoutNode; child: LayoutNode }> {
-  const edges: Array<{ parent: LayoutNode; child: LayoutNode }> = [];
-  function walk(n: LayoutNode) {
-    for (const c of n.children) {
-      edges.push({ parent: n, child: c });
-      walk(c);
-    }
-  }
-  nodes.forEach(walk);
-  return edges;
-}
-
 function clampZoom(value: number): number {
   return Math.min(Math.max(value, MIN_ZOOM), MAX_ZOOM);
 }
@@ -165,28 +65,13 @@ function touchDistance(a: React.Touch, b: React.Touch): number {
   return Math.hypot(dx, dy);
 }
 
-function touchCenter(
-  a: React.Touch,
-  b: React.Touch,
-  container: HTMLDivElement,
-): Point {
+function touchCenter(a: React.Touch, b: React.Touch, container: HTMLDivElement): Point {
   const rect = container.getBoundingClientRect();
   return {
     x: (a.clientX + b.clientX) / 2 - rect.left,
     y: (a.clientY + b.clientY) / 2 - rect.top,
   };
 }
-
-// ── Status dot colors (raw hex for SVG) ─────────────────────────────────
-
-const statusDotColor: Record<string, string> = {
-  paused: "var(--hex-facc15)",
-  idle: "var(--hex-facc15)",
-  error: "var(--hex-f87171)",
-  terminated: "var(--hex-a3a3a3)",
-};
-
-const defaultDotColor = "var(--hex-a3a3a3)";
 
 // ── Main component ──────────────────────────────────────────────────────
 
@@ -216,9 +101,9 @@ function OrgChart() {
   }, [setBreadcrumbs]);
 
   // Layout computation
-  const layout = useMemo(() => layoutForest(orgTree ?? []), [orgTree]);
-  const allNodes = useMemo(() => flattenLayout(layout), [layout]);
-  const edges = useMemo(() => collectEdges(layout), [layout]);
+  const layout = useMemo(() => layoutOrgForest(orgTree ?? []), [orgTree]);
+  const allNodes = useMemo(() => flattenOrgLayout(layout), [layout]);
+  const edges = useMemo(() => collectOrgEdges(layout), [layout]);
 
   // Compute SVG bounds
   const bounds = useMemo(() => {
@@ -226,10 +111,10 @@ function OrgChart() {
     let maxX = 0,
       maxY = 0;
     for (const n of allNodes) {
-      maxX = Math.max(maxX, n.x + CARD_W);
-      maxY = Math.max(maxY, n.y + CARD_H);
+      maxX = Math.max(maxX, n.x + ORG_CARD_WIDTH);
+      maxY = Math.max(maxY, n.y + ORG_CARD_HEIGHT);
     }
-    return { width: maxX + PADDING, height: maxY + PADDING };
+    return { width: maxX + ORG_PADDING, height: maxY + ORG_PADDING };
   }, [allNodes]);
 
   // Pan & zoom state
@@ -261,12 +146,7 @@ function OrgChart() {
   // Center the chart on first load
   const hasInitialized = useRef(false);
   useEffect(() => {
-    if (
-      hasInitialized.current ||
-      allNodes.length === 0 ||
-      !containerRef.current
-    )
-      return;
+    if (hasInitialized.current || allNodes.length === 0 || !containerRef.current) return;
     hasInitialized.current = true;
 
     const container = containerRef.current;
@@ -413,10 +293,7 @@ function OrgChart() {
         const distance = touchDistance(first, second);
         const center = touchCenter(first, second, container);
 
-        if (
-          touchGesture.current.mode !== "pinch" ||
-          touchGesture.current.startDistance === 0
-        ) {
+        if (touchGesture.current.mode !== "pinch" || touchGesture.current.startDistance === 0) {
           touchGesture.current = {
             mode: "pinch",
             startPoint: { x: 0, y: 0 },
@@ -430,9 +307,7 @@ function OrgChart() {
         }
 
         const gesture = touchGesture.current;
-        const nextZoom = clampZoom(
-          gesture.startZoom * (distance / gesture.startDistance),
-        );
+        const nextZoom = clampZoom(gesture.startZoom * (distance / gesture.startDistance));
         const scale = nextZoom / gesture.startZoom;
         const dx = center.x - gesture.startCenter.x;
         const dy = center.y - gesture.startCenter.y;
@@ -452,8 +327,7 @@ function OrgChart() {
       if (!touch || touchGesture.current.mode !== "pan") return;
       const dx = touch.clientX - touchGesture.current.startPoint.x;
       const dy = touch.clientY - touchGesture.current.startPoint.y;
-      touchGesture.current.moved =
-        touchGesture.current.moved || Math.hypot(dx, dy) > TOUCH_MOVE_THRESHOLD;
+      touchGesture.current.moved = touchGesture.current.moved || Math.hypot(dx, dy) > TOUCH_MOVE_THRESHOLD;
       setPan({
         x: touchGesture.current.startPan.x + dx,
         y: touchGesture.current.startPan.y + dy,
@@ -485,37 +359,25 @@ function OrgChart() {
   }, [pan, zoom]);
 
   if (isLoading) {
-    return <PageSkeleton variant="org-chart" />;
+    return <Skeleton className="h-32 w-full" />;
   }
 
   if (orgTree && orgTree.length === 0) {
     return (
-      <EmptyState
-        icon={Network}
-        message="No organizational hierarchy defined."
-      />
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Network />
+          </EmptyMedia>
+          <EmptyTitle>No organizational hierarchy defined.</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
   return (
     <div className="flex h-(--sz-calc-38) min-h-(--sz-420px) flex-col md:h-full md:min-h-0">
-      <div className="mb-2 flex shrink-0 flex-wrap items-center justify-start gap-2">
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/$companyId/company/import" params={{ companyId }}>
-            <Upload data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
-            Import company
-          </Link>
-        </Button>
-        <Button variant="outline" size="sm" asChild>
-          <Link
-            to="/$companyId/company/export/$"
-            params={{ companyId, _splat: "" }}
-          >
-            <Download data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
-            Export company
-          </Link>
-        </Button>
-      </div>
+      <OrgChartActions companyId={companyId} />
       <div
         ref={containerRef}
         data-testid="org-chart-viewport"
@@ -535,78 +397,30 @@ function OrgChart() {
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
       >
-        {/* Zoom controls */}
-        <div className="absolute top-3 right-3 z-10 flex flex-col gap-1.5">
-          <button
-            className="flex size-9 items-center justify-center rounded border border-border bg-background text-sm transition-colors hover:bg-accent sm:size-7"
-            onClick={() => {
-              const container = containerRef.current;
-              if (container) {
-                zoomTowardPoint(zoom * 1.2, {
-                  x: container.clientWidth / 2,
-                  y: container.clientHeight / 2,
-                });
-              }
-            }}
-            title="Zoom in"
-            aria-label="Zoom in"
-          >
-            <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-          </button>
-          <button
-            className="flex size-9 items-center justify-center rounded border border-border bg-background text-sm transition-colors hover:bg-accent sm:size-7"
-            onClick={() => {
-              const container = containerRef.current;
-              if (container) {
-                zoomTowardPoint(zoom * 0.8, {
-                  x: container.clientWidth / 2,
-                  y: container.clientHeight / 2,
-                });
-              }
-            }}
-            title="Zoom out"
-            aria-label="Zoom out"
-          >
-            <Minus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-          </button>
-          <button
-            className="flex size-9 items-center justify-center rounded border border-border bg-background text-(length:--text-nano) transition-colors hover:bg-accent sm:size-7"
-            onClick={fitToScreen}
-            title="Fit to screen"
-            aria-label="Fit chart to screen"
-          >
-            <Maximize2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-          </button>
-        </div>
+        <OrgChartZoomControls
+          onZoomIn={() => {
+            const container = containerRef.current;
+            if (container) {
+              zoomTowardPoint(zoom * 1.2, {
+                x: container.clientWidth / 2,
+                y: container.clientHeight / 2,
+              });
+            }
+          }}
+          onZoomOut={() => {
+            const container = containerRef.current;
+            if (container) {
+              zoomTowardPoint(zoom * 0.8, {
+                x: container.clientWidth / 2,
+                y: container.clientHeight / 2,
+              });
+            }
+          }}
+          onFit={fitToScreen}
+        />
 
         {/* SVG layer for edges */}
-        <svg
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            width: "100%",
-            height: "100%",
-          }}
-        >
-          <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-            {edges.map(({ parent, child }) => {
-              const x1 = parent.x + CARD_W / 2;
-              const y1 = parent.y + CARD_H;
-              const x2 = child.x + CARD_W / 2;
-              const y2 = child.y;
-              const midY = (y1 + y2) / 2;
-
-              return (
-                <path
-                  key={`${parent.id}-${child.id}`}
-                  d={`M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`}
-                  fill="none"
-                  stroke="var(--border)"
-                  strokeWidth={1.5}
-                />
-              );
-            })}
-          </g>
-        </svg>
+        <OrgChartEdges edges={edges} pan={pan} zoom={zoom} />
 
         {/* Card layer */}
         <div
@@ -619,19 +433,16 @@ function OrgChart() {
         >
           {allNodes.map((node) => {
             const agent = agentMap.get(node.id);
-            const dotColor = statusDotColor[node.status] ?? defaultDotColor;
-
             return (
-              <Card
+              <OrgChartAgentCard
                 key={node.id}
-                data-org-card
-                className="block absolute py-0 hover:shadow-md hover:border-foreground/20 transition-(--tp-box-shadow-border-color) duration-150 cursor-pointer select-none"
-                style={{
-                  left: node.x,
-                  top: node.y,
-                  width: CARD_W,
-                  minHeight: CARD_H,
-                }}
+                agent={agent}
+                name={node.name}
+                status={node.status}
+                x={node.x}
+                y={node.y}
+                width={ORG_CARD_WIDTH}
+                minHeight={ORG_CARD_HEIGHT}
                 onClick={() => {
                   if (!agent) return;
                   void navigate({
@@ -645,37 +456,7 @@ function OrgChart() {
                   e.preventDefault();
                   e.stopPropagation();
                 }}
-              >
-                <div className="flex items-center px-4 py-3 gap-3">
-                  {/* Agent icon + status dot */}
-                  <div className="relative shrink-0">
-                    <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                      <AgentIcon
-                        icon={agent?.icon}
-                        className="h-4.5 w-4.5 text-foreground/70"
-                      />
-                    </div>
-                    <span
-                      className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card"
-                      style={{ backgroundColor: dotColor }}
-                    />
-                  </div>
-                  {/* Name + optional title */}
-                  <div className="flex flex-col items-start min-w-0 flex-1">
-                    <span className="text-sm font-semibold text-foreground leading-tight">
-                      {node.name}
-                    </span>
-                    <span className="text-(length:--text-micro) text-muted-foreground leading-tight mt-0.5">
-                      {agent?.title ?? ""}
-                    </span>
-                    {agent && agent.capabilities && (
-                      <span className="text-(length:--text-nano) text-muted-foreground/80 leading-tight mt-1 line-clamp-2">
-                        {agent.capabilities}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </Card>
+              />
             );
           })}
         </div>

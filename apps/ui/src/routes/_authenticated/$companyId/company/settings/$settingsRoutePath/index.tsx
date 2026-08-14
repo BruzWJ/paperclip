@@ -5,15 +5,13 @@ import { getRouteApi, Link } from "@tanstack/react-router";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { PluginSlotMount, usePluginSlots } from "@/plugins/slots";
-import { NotFoundPage } from "@/components/NotFoundPage";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
 
-const BUILT_IN_SETTINGS_ROUTES = new Set<string>(
-  PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS,
-);
+const BUILT_IN_SETTINGS_ROUTES = new Set<string>(PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS);
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/company/settings/$settingsRoutePath/",
-)({
+export const Route = createFileRoute("/_authenticated/$companyId/company/settings/$settingsRoutePath/")({
   beforeLoad: ({ params }) => {
     if (BUILT_IN_SETTINGS_ROUTES.has(params.settingsRoutePath)) {
       throw notFound();
@@ -22,9 +20,7 @@ export const Route = createFileRoute(
   component: CompanySettingsPluginPage,
 });
 
-const route = getRouteApi(
-  "/_authenticated/$companyId/company/settings/$settingsRoutePath/",
-);
+const route = getRouteApi("/_authenticated/$companyId/company/settings/$settingsRoutePath/");
 
 function CompanySettingsPluginPage() {
   const { companyId: routeCompanyId, settingsRoutePath } = route.useParams();
@@ -55,10 +51,7 @@ function CompanySettingsPluginPage() {
       {
         label: "Settings",
         renderLink: (content) => (
-          <Link
-            to="/$companyId/company/settings"
-            params={{ companyId: routeCompanyId }}
-          >
+          <Link to="/$companyId/company/settings" params={{ companyId: routeCompanyId }}>
             {content}
           </Link>
         ),
@@ -69,16 +62,19 @@ function CompanySettingsPluginPage() {
 
   if (!resolvedCompanyId) {
     return (
-      <NotFoundPage
-        scope="invalid_company_id"
-        requestedCompanyId={routeCompanyId}
-      />
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>Company not found</EmptyTitle>
+          <EmptyDescription>No company matches UUID &quot;{routeCompanyId}&quot;.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
   if (!settingsRoutePath || isLoading) {
     return (
-      <div className="text-sm text-muted-foreground" role="status">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner />
         Loading...
       </div>
     );
@@ -86,30 +82,32 @@ function CompanySettingsPluginPage() {
 
   if (errorMessage) {
     return (
-      <div
-        className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-        role="alert"
-      >
-        Plugin extensions unavailable: {errorMessage}
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription>Plugin extensions unavailable: {errorMessage}</AlertDescription>
+      </Alert>
     );
   }
 
   if (pageSlots.length > 1) {
     return (
-      <div
-        className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-        role="alert"
-      >
-        Multiple plugins declare the company settings route{" "}
-        <code>{settingsRoutePath}</code>. Disable one plugin or change its
-        route.
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription>
+          Multiple plugins declare the company settings route <code>{settingsRoutePath}</code>. Disable one
+          plugin or change its route.
+        </AlertDescription>
+      </Alert>
     );
   }
 
   if (!pageSlot) {
-    return <NotFoundPage scope="board" />;
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>Page not found</EmptyTitle>
+          <EmptyDescription>No plugin provides this settings page.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
   }
 
   return (

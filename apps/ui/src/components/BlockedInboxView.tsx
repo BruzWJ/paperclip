@@ -9,6 +9,7 @@ import { applyTaskFilters, type TaskFilterState } from "../lib/task-filters";
 import { resolveInboxTaskBlockerAttention } from "../lib/inbox-live-descendants";
 import {
   blockedRowMatchesSearch,
+  blockedVariantLabel,
   buildBlockedInboxRows,
   formatStoppedAge,
   groupBlockedInboxRows,
@@ -17,13 +18,17 @@ import {
   type BlockedInboxTaskRow,
   type BlockedInboxSort,
 } from "../lib/blockedInbox";
-import { BlockedReasonChip } from "./BlockedReasonChip";
-import { TaskGroupHeader } from "./TaskGroupHeader";
 import { TaskRow } from "./TaskRow";
-import { Identity } from "./Identity";
-import { StatusIcon } from "./StatusIcon";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { deriveInitials } from "@/lib/identity";
+import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ChevronRight } from "lucide-react";
 
 interface BlockedInboxViewProps {
   companyId: string;
@@ -58,9 +63,7 @@ export function BlockedInboxView({
   showIdentifierColumn,
   showUpdatedColumn,
 }: BlockedInboxViewProps) {
-  const [collapsedVariants, setCollapsedVariants] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [collapsedVariants, setCollapsedVariants] = useState<Set<string>>(() => new Set());
 
   const {
     data: tasks = [] as Task[],
@@ -69,10 +72,7 @@ export function BlockedInboxView({
     error,
     refetch,
   } = useQuery({
-    queryKey: [
-      ...queryKeys.tasks.listBlockedAttention(companyId),
-      "live-descendant-summary",
-    ],
+    queryKey: [...queryKeys.tasks.listBlockedAttention(companyId), "live-descendant-summary"],
     queryFn: () =>
       tasksApi.list(companyId, {
         attention: "blocked",
@@ -103,10 +103,7 @@ export function BlockedInboxView({
     () => sortBlockedInboxRows(taskFilteredRows, sortBy),
     [taskFilteredRows, sortBy],
   );
-  const groups = useMemo(
-    () => groupBlockedInboxRows(taskFilteredRows, sortBy),
-    [taskFilteredRows, sortBy],
-  );
+  const groups = useMemo(() => groupBlockedInboxRows(taskFilteredRows, sortBy), [taskFilteredRows, sortBy]);
 
   const toggleVariant = (variant: string) => {
     setCollapsedVariants((prev) => {
@@ -119,24 +116,20 @@ export function BlockedInboxView({
 
   if (isLoading) {
     return (
-      <div
-        data-testid="blocked-inbox-loading"
-        className="space-y-3"
-        aria-busy="true"
-      >
+      <div data-testid="blocked-inbox-loading" className="space-y-3" aria-busy="true">
         {Array.from({ length: 3 }).map((_, groupIdx) => (
           <div key={groupIdx} className="space-y-1">
-            <div className="h-4 w-40 animate-pulse rounded bg-muted/70" />
+            <Skeleton className="h-4 w-40" />
             {Array.from({ length: 2 }).map((__, rowIdx) => (
               <div
                 key={rowIdx}
                 className="flex items-center gap-3 border-b border-border/60 px-3 py-2.5 sm:px-4"
               >
-                <div className="h-3.5 w-3.5 animate-pulse rounded-full bg-muted" />
-                <div className="h-4 w-16 animate-pulse rounded bg-muted/70" />
-                <div className="h-4 w-32 animate-pulse rounded-md bg-muted/70" />
-                <div className="h-4 flex-1 animate-pulse rounded bg-muted/60" />
-                <div className="hidden h-3 w-24 animate-pulse rounded bg-muted/60 sm:block" />
+                <Skeleton className="size-3.5 rounded-full" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="hidden h-3 w-24 sm:block" />
               </div>
             ))}
           </div>
@@ -146,39 +139,24 @@ export function BlockedInboxView({
   }
 
   if (error) {
-    const message =
-      error instanceof Error ? error.message : "Couldn't load the Blocked tab.";
+    const message = error instanceof Error ? error.message : "Couldn't load the Blocked tab.";
     return (
-      <div
-        data-testid="blocked-inbox-error"
-        role="alert"
-        className="flex flex-col gap-2 rounded-md border border-amber-300/70 bg-amber-50/90 p-4 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
-      >
-        <div className="flex items-start gap-2">
-          <AlertTriangle
-            className="mt-0.5 h-4 w-4 shrink-0"
-            aria-hidden="true"
-          />
-          <div className="flex-1 space-y-1">
-            <p className="text-sm font-medium">
-              Couldn't load the Blocked tab.
-            </p>
-            <p className="text-xs opacity-80">
-              Other Inbox tabs still work. {message}
-            </p>
-          </div>
+      <Alert data-testid="blocked-inbox-error">
+        <AlertTriangle aria-hidden="true" />
+        <AlertTitle>Couldn&apos;t load the Blocked tab.</AlertTitle>
+        <AlertDescription>
+          <p>Other Inbox tabs still work. {message}</p>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-7 shrink-0 border-amber-400/70 bg-white/40 text-amber-900 hover:bg-white/70 dark:bg-amber-500/20 dark:text-amber-100"
             onClick={() => void refetch()}
             disabled={isFetching}
           >
             {isFetching ? "Trying…" : "Try again"}
           </Button>
-        </div>
-      </div>
+        </AlertDescription>
+      </Alert>
     );
   }
 
@@ -189,12 +167,12 @@ export function BlockedInboxView({
   if (groups.length === 0) {
     return (
       <div className="space-y-3">
-        <Card
-          data-testid="blocked-inbox-no-search-results"
-          className="block border-border/70 bg-card/40 px-4 py-6 text-center text-sm text-muted-foreground"
-        >
-          No stopped items match your search.
-        </Card>
+        <Empty data-testid="blocked-inbox-no-search-results">
+          <EmptyHeader>
+            <EmptyTitle>No matching stopped items</EmptyTitle>
+            <EmptyDescription>No stopped items match your search.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       </div>
     );
   }
@@ -220,20 +198,36 @@ export function BlockedInboxView({
           : groups.map((group) => {
               const isCollapsed = collapsedVariants.has(group.variant);
               return (
-                <div
+                <Collapsible
                   key={group.variant}
-                  data-testid={`blocked-inbox-group-${group.variant}`}
+                  open={!isCollapsed}
+                  onOpenChange={() => toggleVariant(group.variant)}
+                  asChild
                 >
-                  <div className="px-3 sm:px-4">
-                    <TaskGroupHeader
-                      label={`${group.label} · ${group.rows.length}`}
-                      collapsible
-                      collapsed={isCollapsed}
-                      onToggle={() => toggleVariant(group.variant)}
-                    />
-                  </div>
-                  {!isCollapsed && (
-                    <div>
+                  <div data-testid={`blocked-inbox-group-${group.variant}`}>
+                    <div className="px-3 sm:px-4">
+                      <div className="flex items-center py-1.5 pl-1 pr-3">
+                        <CollapsibleTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-auto min-w-0 gap-2 p-0 text-left"
+                            aria-expanded={!isCollapsed}
+                          >
+                            <ChevronRight
+                              className={cn(
+                                "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                                !isCollapsed && "rotate-90",
+                              )}
+                            />
+                            <span className="truncate text-sm font-semibold uppercase tracking-wide">
+                              {group.label} · {group.rows.length}
+                            </span>
+                          </Button>
+                        </CollapsibleTrigger>
+                      </div>
+                    </div>
+                    <CollapsibleContent>
                       {group.rows.map((row) => (
                         <BlockedInboxRow
                           key={row.task.id}
@@ -248,9 +242,9 @@ export function BlockedInboxView({
                           showUpdatedColumn={showUpdatedColumn}
                         />
                       ))}
-                    </div>
-                  )}
-                </div>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
               );
             })}
       </div>
@@ -260,23 +254,17 @@ export function BlockedInboxView({
 
 function BlockedInboxEmptyState() {
   return (
-    <Card
-      data-testid="blocked-inbox-empty"
-      className="items-center gap-3 border-border/70 bg-card/40 px-6 py-10 text-center"
-    >
-      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-        <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
-      </span>
-      <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground">
-          No work is stopped.
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Tasks that need a decision, recovery, or external action will appear
-          here.
-        </p>
-      </div>
-    </Card>
+    <Empty data-testid="blocked-inbox-empty">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <CheckCircle2 aria-hidden="true" />
+        </EmptyMedia>
+        <EmptyTitle>No work is stopped.</EmptyTitle>
+        <EmptyDescription>
+          Tasks that need a decision, recovery, or external action will appear here.
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -298,8 +286,7 @@ function resolveOwnerName(
   userLabelById?: ReadonlyMap<string, string>,
 ): { label: string | null; isAgent: boolean } {
   const owner = row.attention.owner;
-  if (owner.label)
-    return { label: owner.label, isAgent: owner.type === "agent" };
+  if (owner.label) return { label: owner.label, isAgent: owner.type === "agent" };
   if (owner.agentId) {
     return { label: agentNameById.get(owner.agentId) ?? null, isAgent: true };
   }
@@ -320,16 +307,19 @@ function BlockedInboxRow({
   showIdentifierColumn,
   showUpdatedColumn,
 }: BlockedInboxRowProps) {
-  const { label: ownerName, isAgent } = resolveOwnerName(
-    row,
-    agentNameById,
-    userLabelById,
-  );
+  const { label: ownerName, isAgent } = resolveOwnerName(row, agentNameById, userLabelById);
   const stoppedAge = formatStoppedAge(row.attention.stoppedSinceAt);
   const blockerAttention = resolveInboxTaskBlockerAttention(row.task, {
     isLive: liveTaskIds.has(row.task.id),
     loadedSubtreeLiveCount: subtreeLiveCounts.get(row.task.id) ?? 0,
   });
+  const reasonLabel = blockedVariantLabel(row.variant);
+  const reasonBadgeVariant =
+    row.variant === "stalled" || row.variant === "needs_attention"
+      ? "destructive"
+      : row.variant === "external_wait"
+        ? "outline"
+        : "secondary";
 
   const desktopTrailing = (
     <span className="flex shrink-0 items-center gap-3 text-xs">
@@ -337,21 +327,26 @@ function BlockedInboxRow({
         className="hidden w-(--sz-10_5rem) shrink-0 justify-start sm:inline-flex"
         data-testid="blocked-row-reason-column"
       >
-        <BlockedReasonChip
-          reason={row.attention.reason}
-          severity={row.attention.severity}
+        <Badge
+          variant={reasonBadgeVariant}
+          aria-label={`Reason: ${reasonLabel}, severity ${row.attention.severity}`}
           className="max-w-full"
-        />
+        >
+          {reasonLabel}
+        </Badge>
       </span>
       {ownerName ? (
-        <span className="hidden w-(--sz-150px) min-w-0 items-center text-muted-foreground sm:inline-flex">
-          <Identity name={ownerName} size="xs" className="max-w-full" />
+        <span
+          className="hidden w-(--sz-150px) min-w-0 items-center gap-1 text-muted-foreground sm:inline-flex"
+          title={ownerName}
+        >
+          <Avatar size="sm">
+            <AvatarFallback>{deriveInitials(ownerName)}</AvatarFallback>
+          </Avatar>
+          <span className="truncate text-sm">{ownerName}</span>
         </span>
       ) : (
-        <span
-          className="hidden w-(--sz-150px) shrink-0 sm:inline-flex"
-          aria-hidden="true"
-        />
+        <span className="hidden w-(--sz-150px) shrink-0 sm:inline-flex" aria-hidden="true" />
       )}
       {showUpdatedColumn ? (
         <span
@@ -395,18 +390,22 @@ function BlockedInboxRow({
       }
       mobileLeading={
         <span className="flex shrink-0 items-center gap-1.5 pt-px">
-          <StatusIcon
-            status={row.task.boardPresentationStatus}
-            blockerAttention={blockerAttention}
-          />
+          <Badge
+            variant="secondary"
+            aria-label={taskStatusAccessibleLabel(row.task.boardPresentationStatus, blockerAttention)}
+          >
+            {taskValueLabel(row.task.boardPresentationStatus)}
+          </Badge>
         </span>
       }
       titleSuffix={
-        <BlockedReasonChip
-          reason={row.attention.reason}
-          severity={row.attention.severity}
+        <Badge
+          variant={reasonBadgeVariant}
+          aria-label={`Reason: ${reasonLabel}, severity ${row.attention.severity}`}
           className="ml-2 max-w-(--sz-12rem) align-middle sm:hidden"
-        />
+        >
+          {reasonLabel}
+        </Badge>
       }
       mobileMeta={mobileMeta}
       desktopTrailing={desktopTrailing}
@@ -429,15 +428,15 @@ function BlockedRowDesktopMeta({
   return (
     <span className="hidden shrink-0 items-center gap-2 sm:inline-flex">
       {showStatusColumn ? (
-        <StatusIcon
-          status={row.task.boardPresentationStatus}
-          blockerAttention={blockerAttention}
-        />
+        <Badge
+          variant="secondary"
+          aria-label={taskStatusAccessibleLabel(row.task.boardPresentationStatus, blockerAttention)}
+        >
+          {taskValueLabel(row.task.boardPresentationStatus)}
+        </Badge>
       ) : null}
       {showIdentifierColumn ? (
-        <span className="font-mono text-xs text-muted-foreground">
-          {identifier}
-        </span>
+        <span className="font-mono text-xs text-muted-foreground">{identifier}</span>
       ) : null}
     </span>
   );

@@ -1,14 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Check,
-  ChevronsUpDown,
-  GripVertical,
-  LogOut,
-  Plus,
-  Settings,
-  UserPlus,
-} from "lucide-react";
+import { Check, ChevronsUpDown, GripVertical, LogOut, Plus, Settings, UserPlus } from "lucide-react";
 import {
   DndContext,
   MouseSensor,
@@ -25,6 +17,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { authApi } from "@/api/auth";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,22 +32,10 @@ import { useCompanyOrder } from "@/hooks/useCompanyOrder";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "@/lib/utils";
 import { useSidebar } from "../context/SidebarContext";
-import { CompanyPatternIcon } from "./CompanyPatternIcon";
 
 interface SidebarCompanyMenuProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-}
-
-function WorkspaceIcon({ company }: { company: Company }) {
-  return (
-    <CompanyPatternIcon
-      companyName={company.name}
-      logoUrl={company.logoUrl}
-      brandColor={company.brandColor}
-      className="size-5 shrink-0 rounded-md text-(length:--text-micro)"
-    />
-  );
 }
 
 function SortableCompanyItem({
@@ -68,15 +49,8 @@ function SortableCompanyItem({
   isSelected: boolean;
   onSelect: (company: Company) => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setActivatorNodeRef,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: company.id, disabled: !isEditing });
+  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: company.id, disabled: !isEditing });
 
   return (
     <DropdownMenuItem
@@ -100,14 +74,19 @@ function SortableCompanyItem({
         isSelected && "bg-accent text-accent-foreground",
       )}
     >
-      <WorkspaceIcon company={company} />
+      <Avatar size="sm">
+        <AvatarImage src={company.logoUrl ?? undefined} alt={`${company.name} logo`} />
+        <AvatarFallback>{company.name.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
+      </Avatar>
       <span className="min-w-0 flex-1 truncate">{company.name}</span>
       {isEditing ? (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           ref={setActivatorNodeRef}
           aria-label={`Reorder ${company.name}`}
-          className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-(length:--rad-2) focus-visible:ring-ring"
+          className="shrink-0"
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -116,7 +95,7 @@ function SortableCompanyItem({
           {...listeners}
         >
           <GripVertical className="size-4" aria-hidden="true" />
-        </button>
+        </Button>
       ) : (
         <>
           <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-(length:--text-nano) text-muted-foreground">
@@ -231,11 +210,23 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
           // svg present (expanded) it was already 12px but without it (rail) it fell
           // back to 8px — a 4px horizontal jump on collapse (PAP-10676).
           className="h-9 flex-1 justify-start gap-2 px-3 text-left"
-          aria-label={selectedCompany ? `Open ${selectedCompany.name} company switcher` : "Open company switcher"}
+          aria-label={
+            selectedCompany ? `Open ${selectedCompany.name} company switcher` : "Open company switcher"
+          }
         >
           <span className="flex min-w-0 flex-1 items-center gap-2">
-            {selectedCompany ? <WorkspaceIcon company={selectedCompany} /> : null}
-            <span className={cn("truncate text-sm font-bold text-foreground", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}>
+            {selectedCompany ? (
+              <Avatar size="sm">
+                <AvatarImage
+                  src={selectedCompany.logoUrl ?? undefined}
+                  alt={`${selectedCompany.name} logo`}
+                />
+                <AvatarFallback>{selectedCompany.name.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
+              </Avatar>
+            ) : null}
+            <span
+              className={cn("truncate text-sm font-bold text-foreground", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}
+            >
               {selectedCompany?.name ?? "Select company"}
             </span>
           </span>
@@ -247,24 +238,21 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
           <DropdownMenuLabel className="p-0 text-(length:--text-micro) font-semibold uppercase text-muted-foreground">
             Switch company
           </DropdownMenuLabel>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               setIsEditingOrder((current) => !current);
             }}
-            className="rounded px-1.5 py-0.5 text-(length:--text-micro) font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             {isEditingOrder ? "Done" : "Edit"}
-          </button>
+          </Button>
         </div>
         <div className="max-h-96 overflow-y-auto">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext
               items={orderedCompanies.map((company) => company.id)}
               strategy={verticalListSortingStrategy}
@@ -280,9 +268,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
               ))}
             </SortableContext>
           </DndContext>
-          {orderedCompanies.length === 0 ? (
-            <DropdownMenuItem disabled>No companies</DropdownMenuItem>
-          ) : null}
+          {orderedCompanies.length === 0 ? <DropdownMenuItem disabled>No companies</DropdownMenuItem> : null}
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem

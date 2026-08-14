@@ -1,52 +1,50 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { USER_COMPANY_MEMBERSHIP_ROLE_LABELS } from "@paperclipai/shared";
-import { ShieldCheck, Trash2, Users } from "lucide-react";
 import { accessApi, type CompanyMember } from "@/api/access";
 import { ApiError } from "@/api/client";
-import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  CompanyMemberEditDialog,
+  CompanyMemberRemovalDialog,
+  PendingJoinRequestCard,
+  type EditableMemberStatus,
+} from "@/components/company/CompanyMemberControls";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemGroup,
+  ItemTitle,
+} from "@/components/ui/item";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
-import { useToast } from "@/context/ToastContext";
-import { queryKeys } from "@/lib/queryKeys";
+import { toast } from "sonner";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { queryKeys } from "@/lib/queryKeys";
+import { Spinner } from "@/components/ui/spinner";
+import { USER_COMPANY_MEMBERSHIP_ROLE_LABELS } from "@paperclipai/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ShieldCheck, Trash2, Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/company/settings/members/",
-)({ component: CompanyAccess });
-
-type EditableMemberStatus = "pending" | "active" | "suspended";
+export const Route = createFileRoute("/_authenticated/$companyId/company/settings/members/")({
+  component: CompanyAccess,
+});
 
 function CompanyAccess() {
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
-  const [draftRole, setDraftRole] =
-    useState<CompanyMember["membershipRole"]>("operator");
-  const [draftStatus, setDraftStatus] =
-    useState<EditableMemberStatus>("active");
+  const [draftRole, setDraftRole] = useState<CompanyMember["membershipRole"]>("operator");
+  const [draftStatus, setDraftStatus] = useState<EditableMemberStatus>("active");
 
   useEffect(() => {
     setBreadcrumbs([
@@ -107,76 +105,52 @@ function CompanyAccess() {
     onSuccess: async () => {
       setEditingMemberId(null);
       await refreshAccessData();
-      pushToast({
-        title: "Member updated",
-        tone: "success",
-      });
+      toast.success("Member updated");
     },
     onError: (error) => {
-      pushToast({
-        title: "Failed to update member",
-        body: error instanceof Error ? error.message : "Unknown error",
-        tone: "error",
+      toast.error("Failed to update member", {
+        description: error instanceof Error ? error.message : "Unknown error",
       });
     },
   });
 
   const approveJoinRequestMutation = useMutation({
-    mutationFn: (requestId: string) =>
-      accessApi.approveJoinRequest(companyId, requestId),
+    mutationFn: (requestId: string) => accessApi.approveJoinRequest(companyId, requestId),
     onSuccess: async () => {
       await refreshAccessData();
-      pushToast({
-        title: "Join request approved",
-        tone: "success",
-      });
+      toast.success("Join request approved");
     },
     onError: (error) => {
-      pushToast({
-        title: "Failed to approve join request",
-        body: error instanceof Error ? error.message : "Unknown error",
-        tone: "error",
+      toast.error("Failed to approve join request", {
+        description: error instanceof Error ? error.message : "Unknown error",
       });
     },
   });
 
   const rejectJoinRequestMutation = useMutation({
-    mutationFn: (requestId: string) =>
-      accessApi.rejectJoinRequest(companyId, requestId),
+    mutationFn: (requestId: string) => accessApi.rejectJoinRequest(companyId, requestId),
     onSuccess: async () => {
       await refreshAccessData();
-      pushToast({
-        title: "Join request rejected",
-        tone: "success",
-      });
+      toast.success("Join request rejected");
     },
     onError: (error) => {
-      pushToast({
-        title: "Failed to reject join request",
-        body: error instanceof Error ? error.message : "Unknown error",
-        tone: "error",
+      toast.error("Failed to reject join request", {
+        description: error instanceof Error ? error.message : "Unknown error",
       });
     },
   });
 
   const editingMember = useMemo(
-    () =>
-      membersQuery.data?.members.find(
-        (member) => member.id === editingMemberId,
-      ) ?? null,
+    () => membersQuery.data?.members.find((member) => member.id === editingMemberId) ?? null,
     [editingMemberId, membersQuery.data?.members],
   );
   const removingMember = useMemo(
-    () =>
-      membersQuery.data?.members.find(
-        (member) => member.id === removingMemberId,
-      ) ?? null,
+    () => membersQuery.data?.members.find((member) => member.id === removingMemberId) ?? null,
     [removingMemberId, membersQuery.data?.members],
   );
 
   const archiveMemberMutation = useMutation({
-    mutationFn: async (memberId: string) =>
-      accessApi.archiveMember(companyId, memberId),
+    mutationFn: async (memberId: string) => accessApi.archiveMember(companyId, memberId),
     onSuccess: async () => {
       setRemovingMemberId(null);
       await refreshAccessData();
@@ -189,16 +163,11 @@ function CompanyAccess() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.tasks.listTouchedByMe(companyId),
       });
-      pushToast({
-        title: "Member removed",
-        tone: "success",
-      });
+      toast.success("Member removed");
     },
     onError: (error) => {
-      pushToast({
-        title: "Failed to remove member",
-        body: error instanceof Error ? error.message : "Unknown error",
-        tone: "error",
+      toast.error("Failed to remove member", {
+        description: error instanceof Error ? error.message : "Unknown error",
       });
     },
   });
@@ -206,16 +175,13 @@ function CompanyAccess() {
   useEffect(() => {
     if (!editingMember) return;
     setDraftRole(editingMember.membershipRole);
-    setDraftStatus(
-      isEditableMemberStatus(editingMember.status)
-        ? editingMember.status
-        : "suspended",
-    );
+    setDraftStatus(isEditableMemberStatus(editingMember.status) ? editingMember.status : "suspended");
   }, [editingMember]);
 
   if (membersQuery.isLoading) {
     return (
-      <div role="status" className="text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner />
         Loading company access…
       </div>
     );
@@ -223,16 +189,15 @@ function CompanyAccess() {
 
   if (membersQuery.error) {
     const message =
-      membersQuery.error instanceof ApiError &&
-      membersQuery.error.status === 403
+      membersQuery.error instanceof ApiError && membersQuery.error.status === 403
         ? "You do not have permission to manage company members."
         : membersQuery.error instanceof Error
           ? membersQuery.error.message
           : "Failed to load company members.";
     return (
-      <div role="alert" className="text-sm text-destructive">
-        {message}
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription>{message}</AlertDescription>
+      </Alert>
     );
   }
 
@@ -263,20 +228,23 @@ function CompanyAccess() {
           <h1 className="text-lg font-semibold">Company Members</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
-          Manage the people who can work in {selectedCompany?.name}. Members can
-          collaborate across the company by default.
+          Manage the people who can work in {selectedCompany?.name}. Members can collaborate across the
+          company by default.
         </p>
-        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-          Core keeps this page focused on membership, invite approvals, and safe
-          member removal.
-        </div>
+        <Alert>
+          <AlertDescription>
+            Core keeps this page focused on membership, invite approvals, and safe member removal.
+          </AlertDescription>
+        </Alert>
       </div>
 
       {access && !access.currentUserRole && (
-        <div className="rounded-xl border border-amber-500/40 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-          This account can manage access here through instance-admin privileges,
-          but it does not currently hold an active company membership.
-        </div>
+        <Alert>
+          <AlertDescription>
+            This account can manage access here through instance-admin privileges, but it does not currently
+            hold an active company membership.
+          </AlertDescription>
+        </Alert>
       )}
 
       <section className="space-y-4">
@@ -290,22 +258,18 @@ function CompanyAccess() {
           </p>
         </div>
 
-        {access?.canApproveJoinRequests &&
-        pendingUserJoinRequests.length > 0 ? (
-          <div className="space-y-3 rounded-xl border border-border px-4 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold">Pending human joins</h3>
-                <p className="text-sm text-muted-foreground">
-                  Review pending join requests before they become active company
-                  members.
-                </p>
-              </div>
-              <Badge variant="outline">
-                {pendingUserJoinRequests.length} pending
-              </Badge>
-            </div>
-            <div className="space-y-3">
+        {access?.canApproveJoinRequests && pendingUserJoinRequests.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Pending human joins</CardTitle>
+              <CardDescription>
+                Review pending join requests before they become active company members.
+              </CardDescription>
+              <CardAction>
+                <Badge variant="outline">{pendingUserJoinRequests.length} pending</Badge>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-3">
               {pendingUserJoinRequests.map((request) => (
                 <PendingJoinRequestCard
                   key={request.id}
@@ -330,291 +294,111 @@ function CompanyAccess() {
                   approveLabel="Approve human"
                   rejectLabel="Reject human"
                   disabled={joinRequestActionPending}
-                  onApprove={() =>
-                    approveJoinRequestMutation.mutate(request.id)
-                  }
+                  onApprove={() => approveJoinRequestMutation.mutate(request.id)}
                   onReject={() => rejectJoinRequestMutation.mutate(request.id)}
                 />
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         ) : null}
 
-        <div className="overflow-hidden rounded-xl border border-border">
-          <div className="grid grid-cols-(--gtc-24) gap-3 border-b border-border px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            <div>User account</div>
-            <div>Role</div>
-            <div>Status</div>
-            <div className="text-right">Action</div>
-          </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>User accounts</CardTitle>
+          </CardHeader>
           {members.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-muted-foreground">
-              No user memberships found for this company yet.
-            </div>
+            <CardContent>
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>No company members</EmptyTitle>
+                  <EmptyDescription>No user memberships found for this company yet.</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            </CardContent>
           ) : (
-            members.map((member) => {
-              const removalReason = member.removal?.reason ?? null;
-              const canArchive = member.removal?.canArchive ?? true;
-              return (
-                <div
-                  key={member.id}
-                  className="grid grid-cols-(--gtc-24) gap-3 border-b border-border px-4 py-3 last:border-b-0"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">
-                      {member.user?.name?.trim() ||
-                        member.user?.email ||
-                        member.principalId}
-                    </div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {member.user?.email || member.principalId}
-                    </div>
-                  </div>
-                  <div className="text-sm">
-                    {USER_COMPANY_MEMBERSHIP_ROLE_LABELS[member.membershipRole]}
-                  </div>
-                  <div>
-                    <Badge
-                      variant={
-                        member.status === "active"
-                          ? "secondary"
-                          : member.status === "suspended"
-                            ? "destructive"
-                            : "outline"
-                      }
-                    >
-                      {member.status.replace("_", " ")}
-                    </Badge>
-                  </div>
-                  <div className="space-y-1 text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setEditingMemberId(member.id)}
+            <CardContent>
+              <ItemGroup className="gap-3">
+                {members.map((member) => {
+                  const removalReason = member.removal?.reason ?? null;
+                  const canArchive = member.removal?.canArchive ?? true;
+                  return (
+                    <Item key={member.id} variant="outline">
+                      <ItemContent>
+                        <ItemTitle>
+                          {member.user?.name?.trim() || member.user?.email || member.principalId}
+                        </ItemTitle>
+                        <ItemDescription>{member.user?.email || member.principalId}</ItemDescription>
+                      </ItemContent>
+                      <Badge
+                        variant={
+                          member.status === "active"
+                            ? "secondary"
+                            : member.status === "suspended"
+                              ? "destructive"
+                              : "outline"
+                        }
                       >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setRemovingMemberId(member.id)}
-                        disabled={!canArchive}
-                        title={removalReason ?? undefined}
-                      >
-                        <Trash2
-                          data-icon="inline-start"
-                          className="mr-1 h-3.5 w-3.5"
-                        />
-                        Remove
-                      </Button>
-                    </div>
-                    {removalReason ? (
-                      <div className="text-xs text-muted-foreground">
-                        {removalReason}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })
+                        {member.status.replace("_", " ")}
+                      </Badge>
+                      <ItemActions>
+                        <Button size="sm" variant="outline" onClick={() => setEditingMemberId(member.id)}>
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setRemovingMemberId(member.id)}
+                          disabled={!canArchive}
+                          title={removalReason ?? undefined}
+                        >
+                          <Trash2 data-icon="inline-start" />
+                          Remove
+                        </Button>
+                      </ItemActions>
+                      <ItemFooter>
+                        <ItemDescription>
+                          {USER_COMPANY_MEMBERSHIP_ROLE_LABELS[member.membershipRole]}
+                          {removalReason ? ` · ${removalReason}` : ""}
+                        </ItemDescription>
+                      </ItemFooter>
+                    </Item>
+                  );
+                })}
+              </ItemGroup>
+            </CardContent>
           )}
-        </div>
+        </Card>
       </section>
 
-      <Dialog
-        open={!!editingMember}
-        onOpenChange={(open) => !open && setEditingMemberId(null)}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit member</DialogTitle>
-            <DialogDescription>
-              Update company role and membership status for{" "}
-              {editingMember?.user?.name ||
-                editingMember?.user?.email ||
-                editingMember?.principalId}
-              .
-            </DialogDescription>
-          </DialogHeader>
-          {editingMember && (
-            <div className="space-y-5">
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="space-y-2 text-sm">
-                  <span className="font-medium">Company role</span>
-                  <Select
-                    value={draftRole}
-                    onValueChange={(v) =>
-                      setDraftRole(v as CompanyMember["membershipRole"])
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(USER_COMPANY_MEMBERSHIP_ROLE_LABELS).map(
-                        ([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ),
-                      )}
-                    </SelectContent>
-                  </Select>
-                </label>
-                <label className="space-y-2 text-sm">
-                  <span className="font-medium">Membership status</span>
-                  <Select
-                    value={draftStatus}
-                    onValueChange={(v) =>
-                      setDraftStatus(v as EditableMemberStatus)
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="suspended">Suspended</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </label>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingMemberId(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!editingMember) return;
-                updateMemberMutation.mutate({
-                  memberId: editingMember.id,
-                  membershipRole: draftRole,
-                  status: draftStatus,
-                });
-              }}
-              disabled={updateMemberMutation.isPending}
-            >
-              {updateMemberMutation.isPending ? "Saving…" : "Save member"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!removingMember}
-        onOpenChange={(open) => !open && setRemovingMemberId(null)}
-      >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Remove member</DialogTitle>
-            <DialogDescription>
-              Archive {memberDisplayName(removingMember)} and revoke their
-              company access.
-            </DialogDescription>
-          </DialogHeader>
-          {removingMember && (
-            <div className="space-y-5">
-              <div className="rounded-lg border border-border px-3 py-3">
-                <div className="text-sm font-medium">
-                  {memberDisplayName(removingMember)}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {removingMember.user?.email || removingMember.principalId}
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRemovingMemberId(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (!removingMember) return;
-                archiveMemberMutation.mutate(removingMember.id);
-              }}
-              disabled={archiveMemberMutation.isPending}
-            >
-              {archiveMemberMutation.isPending
-                ? "Removing..."
-                : "Remove member"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CompanyMemberEditDialog
+        member={editingMember}
+        role={draftRole}
+        status={draftStatus}
+        isSaving={updateMemberMutation.isPending}
+        onRoleChange={setDraftRole}
+        onStatusChange={setDraftStatus}
+        onClose={() => setEditingMemberId(null)}
+        onSave={() => {
+          if (!editingMember) return;
+          updateMemberMutation.mutate({
+            memberId: editingMember.id,
+            membershipRole: draftRole,
+            status: draftStatus,
+          });
+        }}
+      />
+      <CompanyMemberRemovalDialog
+        member={removingMember}
+        isRemoving={archiveMemberMutation.isPending}
+        onClose={() => setRemovingMemberId(null)}
+        onRemove={() => {
+          if (removingMember) archiveMemberMutation.mutate(removingMember.id);
+        }}
+      />
     </div>
   );
 }
 
-function memberDisplayName(member: CompanyMember | null) {
-  if (!member) return "this member";
-  return member.user?.name?.trim() || member.user?.email || member.principalId;
-}
-
-function isEditableMemberStatus(
-  status: CompanyMember["status"],
-): status is EditableMemberStatus {
+function isEditableMemberStatus(status: CompanyMember["status"]): status is EditableMemberStatus {
   return status === "pending" || status === "active" || status === "suspended";
-}
-
-function PendingJoinRequestCard({
-  title,
-  subtitle,
-  context,
-  detail,
-  detailSecondary,
-  approveLabel,
-  rejectLabel,
-  disabled,
-  onApprove,
-  onReject,
-}: {
-  title: string;
-  subtitle: string;
-  context: string;
-  detail: string;
-  detailSecondary?: string;
-  approveLabel: string;
-  rejectLabel: string;
-  disabled: boolean;
-  onApprove: () => void;
-  onReject: () => void;
-}) {
-  return (
-    <div className="rounded-xl border border-border px-4 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <div>
-            <div className="font-medium">{title}</div>
-            <div className="text-sm text-muted-foreground">{subtitle}</div>
-          </div>
-          <div className="text-sm text-muted-foreground">{context}</div>
-          <div className="text-sm text-muted-foreground">{detail}</div>
-          {detailSecondary ? (
-            <div className="text-sm text-muted-foreground">
-              {detailSecondary}
-            </div>
-          ) : null}
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onReject}
-            disabled={disabled}
-          >
-            {rejectLabel}
-          </Button>
-          <Button type="button" onClick={onApprove} disabled={disabled}>
-            {approveLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
 }

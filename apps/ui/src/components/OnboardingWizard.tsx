@@ -1,60 +1,43 @@
-import { useEffect, useState, useMemo } from "react";
+import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import * as EmptyUI from "@/components/ui/empty";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMatch, useNavigate } from "@tanstack/react-router";
-import { useDialog } from "../context/DialogContext";
-import { rememberRootRedirectCompanyId } from "../context/CompanyContext";
+import { ArrowLeft, ArrowRight, Building2, Rocket, X, Zap } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { companiesApi } from "../api/companies";
 import { goalsApi } from "../api/goals";
-import { queryKeys } from "../lib/queryKeys";
-import { Dialog, DialogPortal } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { cn } from "../lib/utils";
+import { rememberRootRedirectCompanyId } from "../context/CompanyContext";
+import { useDialog } from "../context/DialogContext";
 import { parseOnboardingGoalInput } from "../lib/onboarding-goal";
-import { AsciiArtAnimation } from "./AsciiArtAnimation";
-import { FrontDoor } from "./FrontDoor";
+import { queryKeys } from "../lib/queryKeys";
+
+import { ONBOARDING_STORAGE_KEY, Step, loadSavedState } from "./OnboardingWizardState";
 import {
-  Building2,
-  ListTodo,
-  ArrowLeft,
-  ArrowRight,
-  Sparkles,
-  Loader2,
-  X,
-} from "lucide-react";
+  OnboardingCompanyNameStep,
+  OnboardingGrowStep,
+  OnboardingMissionFields,
+  OnboardingMissionPathSelector,
+  OnboardingProgress,
+} from "./OnboardingWizardSteps";
 
-type Step = 0 | 1 | 2;
-
-const MISSION_PROMPT_CHIPS = [
-  "Build a SaaS product",
-  "Scale a content business",
-  "Launch a marketplace",
-];
-
-function buildMissionFromQuestionnaire(
-  q1: string,
-  q2: string,
-  q3: string,
-  q4: string,
-): string {
-  const parts: string[] = [];
-  if (q1.trim()) parts.push(q1.trim());
-  if (q2.trim()) parts.push(`We serve ${q2.trim().toLowerCase()}.`);
-  if (q3.trim())
-    parts.push(`Our biggest challenge is ${q3.trim().toLowerCase()}.`);
-  if (q4.trim()) parts.push(`Success looks like ${q4.trim().toLowerCase()}.`);
-  return parts.join(" ");
-}
-
-const ONBOARDING_STORAGE_KEY = "paperclip-onboarding-state";
-
-function loadSavedState(): Record<string, unknown> | null {
-  try {
-    const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
+const ONBOARDING_CHOICES = [
+  {
+    id: "create",
+    icon: Rocket,
+    title: "Build a new company",
+    description: "Begin with a mission, bring on a lead agent, and grow a team of agents to do the work.",
+  },
+  {
+    id: "grow",
+    icon: Zap,
+    title: "Add agents to your org",
+    description: "Bring AI agents into your existing team or workflows.",
+  },
+] as const;
 
 export function OnboardingWizard() {
   const {
@@ -71,50 +54,29 @@ export function OnboardingWizard() {
   });
   const isOnboardingRoute = onboardingRouteMatch !== undefined;
 
-  const effectiveOnboardingOpen =
-    onboardingOpen || (isOnboardingRoute && !routeDismissed);
+  const effectiveOnboardingOpen = onboardingOpen || (isOnboardingRoute && !routeDismissed);
 
-  // Restore saved state from localStorage (read once on mount)
   const saved = useMemo(loadSavedState, []);
   const savedStep = saved?.step;
   const initialStep: Step =
-    savedStep === 0 || savedStep === 1 || savedStep === 2
-      ? savedStep
-      : isOnboardingRoute
-        ? 1
-        : 0;
+    savedStep === 0 || savedStep === 1 || savedStep === 2 ? savedStep : isOnboardingRoute ? 1 : 0;
   const [step, setStep] = useState<Step>(initialStep);
-  const [onboardingPath, setOnboardingPath] = useState<
-    "create" | "grow" | null
-  >((saved?.onboardingPath as "create" | "grow" | null) ?? null);
+  const [onboardingPath, setOnboardingPath] = useState<"create" | "grow" | null>(
+    (saved?.onboardingPath as "create" | "grow" | null) ?? null,
+  );
 
-  // "Grow existing" questionnaire fields
-  const [growWorkflows, setGrowWorkflows] = useState(
-    (saved?.growWorkflows as string) ?? "",
-  );
-  const [growPainPoints, setGrowPainPoints] = useState(
-    (saved?.growPainPoints as string) ?? "",
-  );
-  const [growAutomate, setGrowAutomate] = useState(
-    (saved?.growAutomate as string) ?? "",
-  );
+  const [growWorkflows, setGrowWorkflows] = useState((saved?.growWorkflows as string) ?? "");
+  const [growPainPoints, setGrowPainPoints] = useState((saved?.growPainPoints as string) ?? "");
+  const [growAutomate, setGrowAutomate] = useState((saved?.growAutomate as string) ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Step 1
-  const [companyName, setCompanyName] = useState(
-    (saved?.companyName as string) ?? "",
+  const [companyName, setCompanyName] = useState((saved?.companyName as string) ?? "");
+  const [companyGoal, setCompanyGoal] = useState((saved?.companyGoal as string) ?? "");
+  const [missionPath, setMissionPath] = useState<"direct" | "questionnaire" | null>(
+    (saved?.missionPath as "direct" | "questionnaire" | null) ?? null,
   );
-  const [companyGoal, setCompanyGoal] = useState(
-    (saved?.companyGoal as string) ?? "",
-  );
-  const [missionPath, setMissionPath] = useState<
-    "direct" | "questionnaire" | null
-  >((saved?.missionPath as "direct" | "questionnaire" | null) ?? null);
-  const [missionConfirmed, setMissionConfirmed] = useState(
-    (saved?.missionConfirmed as boolean) ?? false,
-  );
-  // Questionnaire answers
+  const [missionConfirmed, setMissionConfirmed] = useState((saved?.missionConfirmed as boolean) ?? false);
   const [q1, setQ1] = useState((saved?.q1 as string) ?? ""); // What do you do?
   const [q2, setQ2] = useState((saved?.q2 as string) ?? ""); // Who do you serve?
   const [q3, setQ3] = useState((saved?.q3 as string) ?? ""); // Biggest bottleneck?
@@ -123,11 +85,10 @@ export function OnboardingWizard() {
   const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(
     (saved?.createdCompanyId as string) ?? null,
   );
-  const [createdCompanyGoalId, setCreatedCompanyGoalId] = useState<
-    string | null
-  >((saved?.createdCompanyGoalId as string) ?? null);
+  const [createdCompanyGoalId, setCreatedCompanyGoalId] = useState<string | null>(
+    (saved?.createdCompanyGoalId as string) ?? null,
+  );
 
-  // Reset dismissal only when entering or leaving the exact onboarding route.
   useEffect(() => {
     setRouteDismissed(false);
     if (isOnboardingRoute) {
@@ -135,7 +96,6 @@ export function OnboardingWizard() {
     }
   }, [isOnboardingRoute, setRouteDismissed]);
 
-  // Persist wizard state to localStorage on every change
   useEffect(() => {
     if (!effectiveOnboardingOpen) return;
     const state = {
@@ -226,9 +186,7 @@ export function OnboardingWizard() {
         const parsedGoal = parseOnboardingGoalInput(companyGoal);
         const goal = await goalsApi.create(companyId, {
           title: parsedGoal.title,
-          ...(parsedGoal.description
-            ? { description: parsedGoal.description }
-            : {}),
+          ...(parsedGoal.description ? { description: parsedGoal.description } : {}),
           level: "company",
           status: "active",
         });
@@ -258,8 +216,7 @@ export function OnboardingWizard() {
       e.preventDefault();
       if (step === 0) return; // front door requires click
       if (step === 1 && companyName.trim()) setStep(2);
-      else if (step === 2 && companyName.trim() && companyGoal.trim())
-        void handleConfirmMission();
+      else if (step === 2 && companyName.trim() && companyGoal.trim()) void handleConfirmMission();
     }
   }
 
@@ -274,511 +231,205 @@ export function OnboardingWizard() {
         }
       }}
     >
-      <DialogPortal>
-        {/* Plain div instead of DialogOverlay — Radix's overlay wraps in
-            RemoveScroll which blocks wheel events on our custom (non-DialogContent)
-            scroll container. A plain div preserves the background without scroll-locking. */}
-        <div className="fixed inset-0 z-50 bg-background" />
-        <div className="fixed inset-0 z-50 flex" onKeyDown={handleKeyDown}>
-          {/* Close button */}
-          <button
-            onClick={handleClose}
-            className="absolute top-4 left-4 z-10 rounded-sm p-1.5 text-muted-foreground/60 hover:text-foreground transition-colors"
-          >
-            <X className="h-5 w-5" />
-            <span className="sr-only">Close</span>
-          </button>
+      <DialogContent
+        showCloseButton={false}
+        className="inset-0 top-0 left-0 flex h-screen w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 p-0"
+        onKeyDown={handleKeyDown}
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>Set up your company</DialogTitle>
+          <DialogDescription>Create a company and define its mission.</DialogDescription>
+        </DialogHeader>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={handleClose}
+          className="absolute top-4 left-4 z-10 text-muted-foreground/60 hover:text-foreground"
+        >
+          <X className="h-5 w-5" />
+          <span className="sr-only">Close</span>
+        </Button>
 
-          {/* Step 0: Front Door — full-screen choice */}
-          {step === 0 && (
-            <div className="w-full flex flex-col overflow-y-auto">
-              <FrontDoor
-                onChoose={(path) => {
-                  setOnboardingPath(path);
-                  setStep(1);
-                }}
-              />
-            </div>
-          )}
+        {step === 0 && (
+          <div className="w-full flex flex-col overflow-y-auto">
+            <EmptyUI.Empty className="min-h-(--sz-60vh) border-0">
+              <EmptyUI.EmptyHeader>
+                <EmptyUI.EmptyTitle>Welcome to Paperclip</EmptyUI.EmptyTitle>
+                <EmptyUI.EmptyDescription>How would you like to get started?</EmptyUI.EmptyDescription>
+              </EmptyUI.EmptyHeader>
+              <EmptyUI.EmptyContent>
+                {ONBOARDING_CHOICES.map(({ id, icon: Icon, title, description }) => (
+                  <Button
+                    key={id}
+                    type="button"
+                    variant="outline"
+                    className="h-auto whitespace-normal"
+                    onClick={() => {
+                      setOnboardingPath(id);
+                      setStep(1);
+                    }}
+                  >
+                    <Icon />
+                    <span>
+                      <span className="block font-medium">{title}</span>
+                      <span className="block text-xs text-muted-foreground">{description}</span>
+                    </span>
+                  </Button>
+                ))}
+              </EmptyUI.EmptyContent>
+            </EmptyUI.Empty>
+          </div>
+        )}
 
-          {/* Left half — form (steps 1+) */}
-          {step !== 0 && (
-            <div className="w-full flex flex-col overflow-y-auto transition-(--tp-width) duration-500 ease-in-out md:w-1/2">
-              <div className="w-full max-w-md mx-auto my-auto px-8 py-12 shrink-0">
-                {/* Company setup progress — segment N
-                  filled once step ≥ N. Completed segments jump back. */}
-                <div className="flex items-center gap-1.5 mb-8">
-                  {([1, 2] as const).map((s) => {
-                    const filled = step >= s;
-                    const canJump = s < step;
-                    return (
-                      <button
-                        key={s}
-                        type="button"
-                        aria-label={`Step ${s}`}
-                        aria-current={s === step ? "step" : undefined}
-                        disabled={!canJump}
-                        onClick={() => canJump && setStep(s as Step)}
-                        className={cn(
-                          "h-1 flex-1 rounded-full transition-colors",
-                          filled ? "bg-foreground" : "bg-muted",
-                          canJump ? "cursor-pointer" : "cursor-default",
-                        )}
-                      />
-                    );
-                  })}
-                </div>
+        {step !== 0 && (
+          <div className="w-full flex flex-col overflow-y-auto transition-(--tp-width) duration-500 ease-in-out md:w-1/2">
+            <div className="w-full max-w-md mx-auto my-auto px-8 py-12 shrink-0">
+              <OnboardingProgress step={step} onStepChange={setStep} />
 
-                {/* Step content */}
-                {step === 2 && onboardingPath === "grow" && (
-                  <div className="space-y-5">
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="bg-muted/50 p-2">
-                        <Sparkles className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <h3 className="font-medium">Tell us about your team</h3>
-                        <p className="text-xs text-muted-foreground">
-                          We&apos;ll use this to shape the company mission
-                          before you configure its first agent.
-                        </p>
-                      </div>
+              {step === 2 && onboardingPath === "grow" ? (
+                <OnboardingGrowStep
+                  companyGoal={companyGoal}
+                  companyName={companyName}
+                  growAutomate={growAutomate}
+                  growPainPoints={growPainPoints}
+                  growWorkflows={growWorkflows}
+                  onBack={() => {
+                    setOnboardingPath(null);
+                    setStep(0);
+                  }}
+                  onCompanyGoalChange={setCompanyGoal}
+                  onGrowAutomateChange={setGrowAutomate}
+                  onGrowPainPointsChange={setGrowPainPoints}
+                  onGrowWorkflowsChange={setGrowWorkflows}
+                  onWorkDescriptionChange={setQ1}
+                  workDescription={q1}
+                />
+              ) : null}
+
+              {step === 1 ? (
+                <OnboardingCompanyNameStep
+                  companyName={companyName}
+                  onBack={() => {
+                    setOnboardingPath(null);
+                    setStep(0);
+                  }}
+                  onCompanyNameChange={setCompanyName}
+                  onContinue={() => {
+                    if (onboardingPath !== "grow" && !missionPath) {
+                      setMissionPath("direct");
+                    }
+                    setStep(2);
+                  }}
+                />
+              ) : null}
+
+              {step === 2 && onboardingPath !== "grow" && (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="bg-muted/50 p-2">
+                      <Building2 className="h-5 w-5 text-muted-foreground" />
                     </div>
-                    <div className="group">
-                      <label className="text-xs text-muted-foreground mb-1 block">
-                        What does your team work on?
-                      </label>
-                      <input
-                        aria-label="What does your team work on?"
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                        placeholder="e.g. We create educational YouTube content about AI"
-                        value={q1}
-                        onChange={(e) => setQ1(e.target.value)}
-                      />
-                    </div>
-                    <div className="group">
-                      <label className="text-xs text-muted-foreground mb-1 block">
-                        What are your current workflows?
-                      </label>
-                      <textarea
-                        aria-label="What are your current workflows?"
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-(--sz-60px)"
-                        placeholder="e.g. Manual content creation, spreadsheet tracking, email outreach"
-                        value={growWorkflows}
-                        onChange={(e) => setGrowWorkflows(e.target.value)}
-                      />
-                    </div>
-                    <div className="group">
-                      <label className="text-xs text-muted-foreground mb-1 block">
-                        What pain points would you solve with AI?
-                      </label>
-                      <textarea
-                        aria-label="What pain points would you solve with AI?"
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-(--sz-60px)"
-                        placeholder="e.g. Can't produce content fast enough, no time for social media"
-                        value={growPainPoints}
-                        onChange={(e) => setGrowPainPoints(e.target.value)}
-                      />
-                    </div>
-                    <div className="group">
-                      <label className="text-xs text-muted-foreground mb-1 block">
-                        What would you automate first?
-                      </label>
-                      <input
-                        aria-label="What would you automate first?"
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                        placeholder="e.g. Social media scheduling and content repurposing"
-                        value={growAutomate}
-                        onChange={(e) => setGrowAutomate(e.target.value)}
-                      />
-                    </div>
-                    {companyName.trim() && q1.trim() && (
-                      <>
-                        {!companyGoal.trim() && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              const parts = [q1.trim()];
-                              if (growPainPoints.trim())
-                                parts.push(
-                                  `Key challenge: ${growPainPoints.trim()}`,
-                                );
-                              if (growAutomate.trim())
-                                parts.push(
-                                  `First priority: automate ${growAutomate.trim().toLowerCase()}`,
-                                );
-                              setCompanyGoal(parts.join(". "));
-                            }}
-                          >
-                            Generate mission from answers
-                          </Button>
-                        )}
-                        {companyGoal.trim() && (
-                          <div className="group">
-                            <label className="text-xs text-foreground mb-1 block">
-                              Generated mission — edit however you like:
-                            </label>
-                            <textarea
-                              aria-label="Generated mission"
-                              className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-(--sz-60px)"
-                              value={companyGoal}
-                              onChange={(e) => setCompanyGoal(e.target.value)}
-                            />
-                          </div>
-                        )}
-                      </>
-                    )}
-                    <button
-                      className="text-(length:--text-micro) text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={() => {
-                        setOnboardingPath(null);
-                        setStep(0);
-                      }}
-                    >
-                      ← Back to start
-                    </button>
-                  </div>
-                )}
-
-                {/* Step 1: Name your company (both paths) */}
-                {step === 1 && (
-                  <div className="space-y-5">
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="bg-muted/50 p-2">
-                        <Building2 className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <h3 className="font-medium">Name your company</h3>
-                        <p className="text-xs text-muted-foreground">
-                          What should we call your company?
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-3 group">
-                      <label
-                        className={cn(
-                          "text-xs mb-1 block transition-colors",
-                          companyName.trim()
-                            ? "text-foreground"
-                            : "text-muted-foreground group-focus-within:text-foreground",
-                        )}
-                      >
-                        Company name
-                      </label>
-                      <input
-                        aria-label="Company name"
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                        placeholder="Acme Corp"
-                        value={companyName}
-                        onChange={(e) => setCompanyName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && companyName.trim()) {
-                            e.preventDefault();
-                            if (onboardingPath !== "grow" && !missionPath)
-                              setMissionPath("direct");
-                            setStep(2);
-                          }
-                        }}
-                        autoFocus
-                      />
-                    </div>
-                    <button
-                      className="text-(length:--text-micro) text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={() => {
-                        setOnboardingPath(null);
-                        setStep(0);
-                      }}
-                    >
-                      ← Back to start
-                    </button>
-                  </div>
-                )}
-
-                {/* Step 2: Define your mission */}
-                {step === 2 && onboardingPath !== "grow" && (
-                  <div className="space-y-5">
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="bg-muted/50 p-2">
-                        <Building2 className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <h3 className="font-medium">Define your mission</h3>
-                        <p className="text-xs text-muted-foreground">
-                          Your mission guides the agents you configure and the
-                          work <strong>{companyName}</strong> takes on.
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Mission path selector */}
-                    <div className="space-y-3">
-                      <label className="text-xs text-foreground block">
-                        How would you like to define your mission?
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          className={cn(
-                            "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors",
-                            missionPath === "direct"
-                              ? "border-foreground bg-accent/50"
-                              : "border-border hover:bg-accent/50",
-                          )}
-                          onClick={() => setMissionPath("direct")}
-                        >
-                          <Sparkles className="h-4 w-4" />
-                          <span className="font-medium">I know my mission</span>
-                          <span className="text-muted-foreground text-(length:--text-nano)">
-                            Type it directly
-                          </span>
-                        </button>
-                        <button
-                          className={cn(
-                            "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors",
-                            missionPath === "questionnaire"
-                              ? "border-foreground bg-accent/50"
-                              : "border-border hover:bg-accent/50",
-                          )}
-                          onClick={() => setMissionPath("questionnaire")}
-                        >
-                          <ListTodo className="h-4 w-4" />
-                          <span className="font-medium">
-                            Help me figure it out
-                          </span>
-                          <span className="text-muted-foreground text-(length:--text-nano)">
-                            Answer a few questions
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Direct mission input */}
-                    {missionPath === "direct" && (
-                      <div className="space-y-3 animate-in fade-in duration-200">
-                        <div className="group">
-                          <label
-                            className={cn(
-                              "text-xs mb-1 block transition-colors",
-                              companyGoal.trim()
-                                ? "text-foreground"
-                                : "text-muted-foreground group-focus-within:text-foreground",
-                            )}
-                          >
-                            Mission
-                          </label>
-                          <textarea
-                            aria-label="Mission"
-                            className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-(--sz-60px)"
-                            placeholder="What is your team trying to achieve?"
-                            value={companyGoal}
-                            onChange={(e) => setCompanyGoal(e.target.value)}
-                            autoFocus
-                          />
-                        </div>
-                        {/* Prompt chips for inspiration */}
-                        <div className="flex flex-wrap gap-1.5">
-                          {MISSION_PROMPT_CHIPS.map((chip) => (
-                            <button
-                              key={chip}
-                              className={cn(
-                                "rounded-full border px-2.5 py-1 text-(length:--text-micro) transition-colors",
-                                companyGoal === chip
-                                  ? "border-foreground bg-accent text-foreground"
-                                  : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/50",
-                              )}
-                              onClick={() => setCompanyGoal(chip)}
-                            >
-                              {chip}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Questionnaire path */}
-                    {missionPath === "questionnaire" && !missionConfirmed && (
-                      <div className="space-y-3 animate-in fade-in duration-200">
-                        <div className="group">
-                          <label className="text-xs text-muted-foreground mb-1 block">
-                            What does your team work on?
-                          </label>
-                          <input
-                            aria-label="What does your team work on?"
-                            className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                            placeholder="e.g. We create educational YouTube content about AI"
-                            value={q1}
-                            onChange={(e) => setQ1(e.target.value)}
-                            autoFocus
-                          />
-                        </div>
-                        <div className="group">
-                          <label className="text-xs text-muted-foreground mb-1 block">
-                            Who do you serve?
-                          </label>
-                          <input
-                            aria-label="Who do you serve?"
-                            className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                            placeholder="e.g. Non-technical professionals curious about AI tools"
-                            value={q2}
-                            onChange={(e) => setQ2(e.target.value)}
-                          />
-                        </div>
-                        <div className="group">
-                          <label className="text-xs text-muted-foreground mb-1 block">
-                            What's your biggest bottleneck right now?
-                          </label>
-                          <input
-                            aria-label="Biggest bottleneck"
-                            className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                            placeholder="e.g. Can't produce content fast enough across multiple channels"
-                            value={q3}
-                            onChange={(e) => setQ3(e.target.value)}
-                          />
-                        </div>
-                        <div className="group">
-                          <label className="text-xs text-muted-foreground mb-1 block">
-                            What would success look like in 6 months?
-                          </label>
-                          <input
-                            aria-label="Six-month success"
-                            className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                            placeholder="e.g. Publishing daily content across 4 platforms with a team of AI agents"
-                            value={q4}
-                            onChange={(e) => setQ4(e.target.value)}
-                          />
-                        </div>
-                        {q1.trim() && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setCompanyGoal(
-                                buildMissionFromQuestionnaire(q1, q2, q3, q4),
-                              );
-                              setMissionConfirmed(true);
-                            }}
-                          >
-                            Generate my mission
-                          </Button>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Questionnaire result — editable mission */}
-                    {missionPath === "questionnaire" && missionConfirmed && (
-                      <div className="space-y-3 animate-in fade-in duration-200">
-                        <div className="group">
-                          <label className="text-xs text-foreground mb-1 block">
-                            Here's your draft mission — edit it however you
-                            like:
-                          </label>
-                          <textarea
-                            aria-label="Draft mission"
-                            className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-(--sz-80px)"
-                            value={companyGoal}
-                            onChange={(e) => setCompanyGoal(e.target.value)}
-                            autoFocus
-                          />
-                        </div>
-                        <button
-                          className="text-(length:--text-micro) text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={() => {
-                            setMissionConfirmed(false);
-                            setCompanyGoal("");
-                          }}
-                        >
-                          ← Back to questions
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Confirm mission note */}
-                    {companyGoal.trim() && (
-                      <p className="text-(length:--text-micro) text-muted-foreground italic">
-                        You can always change your mission later in settings.
+                    <div>
+                      <h3 className="font-medium">Define your mission</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Your mission guides the agents you configure and the work{" "}
+                        <strong>{companyName}</strong> takes on.
                       </p>
-                    )}
+                    </div>
+                  </div>
 
-                    <button
-                      className="text-(length:--text-micro) text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={() => setStep(1)}
+                  <OnboardingMissionPathSelector missionPath={missionPath} onChange={setMissionPath} />
+
+                  <OnboardingMissionFields
+                    companyGoal={companyGoal}
+                    missionConfirmed={missionConfirmed}
+                    missionPath={missionPath}
+                    onCompanyGoalChange={setCompanyGoal}
+                    onMissionConfirmedChange={setMissionConfirmed}
+                    onQuestionChange={(question, value) => {
+                      if (question === 1) setQ1(value);
+                      else if (question === 2) setQ2(value);
+                      else if (question === 3) setQ3(value);
+                      else setQ4(value);
+                    }}
+                    questions={[q1, q2, q3, q4]}
+                  />
+
+                  {companyGoal.trim() && (
+                    <p className="text-(length:--text-micro) text-muted-foreground italic">
+                      You can always change your mission later in settings.
+                    </p>
+                  )}
+
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="xs"
+                    className="h-auto justify-start p-0 text-(length:--text-micro) text-muted-foreground"
+                    onClick={() => setStep(1)}
+                  >
+                    ← Change company name
+                  </Button>
+                </div>
+              )}
+
+              {error && (
+                <Alert variant="destructive" className="mt-3">
+                  <AlertDescription className="text-xs">{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="flex items-center justify-between mt-8">
+                <div>
+                  {step > 1 && (
+                    <Button variant="ghost" size="sm" onClick={() => setStep(1)} disabled={loading}>
+                      <ArrowLeft data-icon="inline-start" className="h-3.5 w-3.5 mr-1" />
+                      Back
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {step === 1 && (
+                    <Button
+                      size="sm"
+                      disabled={!companyName.trim()}
+                      onClick={() => {
+                        if (onboardingPath !== "grow" && !missionPath) setMissionPath("direct");
+                        setStep(2);
+                      }}
                     >
-                      ← Change company name
-                    </button>
-                  </div>
-                )}
-
-                {/* Error */}
-                {error && (
-                  <div className="mt-3">
-                    <p className="text-xs text-destructive">{error}</p>
-                  </div>
-                )}
-
-                {/* Footer navigation */}
-                <div className="flex items-center justify-between mt-8">
-                  <div>
-                    {step > 1 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setStep(1)}
-                        disabled={loading}
-                      >
-                        <ArrowLeft
-                          data-icon="inline-start"
-                          className="h-3.5 w-3.5 mr-1"
-                        />
-                        Back
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {step === 1 && (
-                      <Button
-                        size="sm"
-                        disabled={!companyName.trim()}
-                        onClick={() => {
-                          if (onboardingPath !== "grow" && !missionPath)
-                            setMissionPath("direct");
-                          setStep(2);
-                        }}
-                      >
-                        Next
-                        <ArrowRight
-                          data-icon="inline-end"
-                          className="h-3.5 w-3.5 ml-1"
-                        />
-                      </Button>
-                    )}
-                    {step === 2 && (
-                      <Button
-                        size="sm"
-                        disabled={
-                          !companyName.trim() || !companyGoal.trim() || loading
-                        }
-                        onClick={handleConfirmMission}
-                      >
-                        {loading ? (
-                          <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                        ) : (
-                          <ArrowRight className="h-3.5 w-3.5 mr-1" />
-                        )}
-                        {loading ? "Creating..." : "Create company"}
-                      </Button>
-                    )}
-                  </div>
+                      Next
+                      <ArrowRight data-icon="inline-end" className="h-3.5 w-3.5 ml-1" />
+                    </Button>
+                  )}
+                  {step === 2 && (
+                    <Button
+                      size="sm"
+                      disabled={!companyName.trim() || !companyGoal.trim() || loading}
+                      onClick={handleConfirmMission}
+                    >
+                      {loading ? (
+                        <Spinner className="h-3.5 w-3.5 mr-1" />
+                      ) : (
+                        <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      {loading ? "Creating..." : "Create company"}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Right half — ASCII art for the company setup steps. */}
-          <div className="hidden w-1/2 overflow-hidden bg-(--hex-1d1d1d) opacity-100 transition-(--tp-width-opacity) duration-500 ease-in-out md:block">
-            <AsciiArtAnimation />
           </div>
+        )}
+
+        <div className="hidden w-1/2 overflow-hidden bg-muted md:block">
+          <Skeleton aria-hidden="true" className="size-full rounded-none" />
         </div>
-      </DialogPortal>
+      </DialogContent>
     </Dialog>
   );
 }
+
+export { OnboardingWizard as OnboardingWizardVariant };
+export * from "./OnboardingWizardState";

@@ -1,22 +1,18 @@
 import { createContext, useContext, type ReactNode } from "react";
-import {
-  Link,
-  type RegisteredRouter,
-  type ValidateLinkOptions,
-} from "@tanstack/react-router";
+import { Link, type RegisteredRouter, type ValidateLinkOptions } from "@tanstack/react-router";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { useSidebar } from "../context/SidebarContext";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 
 /**
  * Forces the full-label (non-rail) presentation for any `SidebarNavItem`
  * rendered beneath it, regardless of the global `useSidebar().collapsed` state.
  *
  * Takeover routes (PAP-10695) collapse the app `<Sidebar/>` to its 64px rail
- * and render the contextual nav in a fixed 240px `SecondarySidebar`. That pane
+ * and render the contextual nav in a fixed-width secondary sidebar. That pane
  * is always wide enough for labels, but its `SidebarNavItem` children still
  * read the *global* `collapsed=true` and would otherwise render icon-only —
  * leaving the settings nav unreadable (PAP-10700). Wrapping the pane in this
@@ -25,21 +21,14 @@ import { Badge } from "@/components/ui/badge";
 const SidebarNavExpandedContext = createContext(false);
 
 export function SidebarNavExpandedProvider({ children }: { children: ReactNode }) {
-  return (
-    <SidebarNavExpandedContext.Provider value={true}>
-      {children}
-    </SidebarNavExpandedContext.Provider>
-  );
+  return <SidebarNavExpandedContext.Provider value={true}>{children}</SidebarNavExpandedContext.Provider>;
 }
 
 export function useSidebarNavExpanded() {
   return useContext(SidebarNavExpandedContext);
 }
 
-interface SidebarNavItemProps<
-  TRouter extends RegisteredRouter = RegisteredRouter,
-  TOptions = unknown,
-> {
+interface SidebarNavItemProps<TRouter extends RegisteredRouter = RegisteredRouter, TOptions = unknown> {
   linkOptions: ValidateLinkOptions<TRouter, TOptions>;
   label: string;
   icon?: LucideIcon;
@@ -74,12 +63,13 @@ interface SidebarNavItemProps<
   trailingLabel?: string;
   /** Rendered inside the right-aligned status cluster, before the live dot. */
   liveAccessory?: ReactNode;
+  /** The caller already supplies the SidebarMenuItem to host row actions. */
+  withinMenuItem?: boolean;
 }
 
-export function SidebarNavItem<
-  TRouter extends RegisteredRouter,
-  TOptions,
->(props: SidebarNavItemProps<TRouter, TOptions>): ReactNode;
+export function SidebarNavItem<TRouter extends RegisteredRouter, TOptions>(
+  props: SidebarNavItemProps<TRouter, TOptions>,
+): ReactNode;
 export function SidebarNavItem({
   linkOptions,
   label,
@@ -99,9 +89,10 @@ export function SidebarNavItem({
   trailing,
   trailingLabel,
   liveAccessory,
+  withinMenuItem = false,
 }: SidebarNavItemProps) {
   const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
-  // A fixed-width contextual pane (SecondarySidebar) forces full labels even
+  // A fixed-width contextual pane forces full labels even
   // when the global app sidebar is collapsed to its rail (PAP-10700).
   const forceExpanded = useSidebarNavExpanded();
   // The icon-only rail presentation only applies when pinned collapsed and not
@@ -121,114 +112,72 @@ export function SidebarNavItem({
       : alert
         ? "attention needed"
         : undefined;
-  const railAriaLabel = !rail || (!railStatusText && !trailingLabel)
-    ? undefined
-    : `${label}${railStatusText ? `, ${railStatusText}` : ""}${trailingLabel ? `, ${trailingLabel}` : ""}`;
-
-  const linkClassName = cn(
-    "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors",
-    className,
-  );
-  const activeClassName = "bg-accent text-foreground";
-  const inactiveClassName =
-    "text-foreground/80 hover:bg-accent/50 hover:text-foreground";
+  const railAriaLabel =
+    !rail || (!railStatusText && !trailingLabel)
+      ? undefined
+      : `${label}${railStatusText ? `, ${railStatusText}` : ""}${trailingLabel ? `, ${trailingLabel}` : ""}`;
 
   const link = (
-    <Link
-      {...linkOptions}
-      state={SIDEBAR_SCROLL_RESET_STATE}
-      activeOptions={{ exact: end }}
-      activeProps={{ className: active === false ? inactiveClassName : activeClassName }}
-      inactiveProps={{ className: active === true ? activeClassName : inactiveClassName }}
-      aria-label={railAriaLabel}
-      onClick={() => { if (isMobile) setSidebarOpen(false); }}
-      className={linkClassName}
+    <SidebarMenuButton
+      asChild
+      isActive={active}
+      tooltip={rail ? label : undefined}
+      className={cn(rail && "px-2", className)}
     >
-      <span className="relative shrink-0">
-        {iconNode ?? (Icon ? <Icon className="h-4 w-4" /> : null)}
-        {alert && (
-          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 shadow-(--shadow-extract-12)" aria-hidden="true" />
-        )}
-        {/* Collapsed rail: numeric badge / live count collapse to a dot on the
-            icon. The icon markup is untouched so it stays pixel-aligned. */}
-        {rail && !alert && hasLive && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-2 w-2" aria-hidden="true">
-            <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-600 dark:bg-blue-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600 dark:bg-blue-400 shadow-(--shadow-extract-12)" />
-          </span>
-        )}
-        {rail && !alert && !hasLive && hasBadge && (
-          <span
-            className={cn(
-              "absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full shadow-(--shadow-extract-12)",
-              badgeTone === "danger"
-                ? "bg-red-600"
-                : badgeTone === "warning"
-                  ? "bg-amber-500"
-                  : "bg-primary",
-            )}
-            aria-hidden="true"
-          />
-        )}
-      </span>
-      <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : cn("min-w-0 flex-1 truncate", labelClassName)}>{label}</span>
-      {!rail && trailing}
-      {!rail && textBadge && (
-        <Badge variant="ghost"
-          className={cn(
-            "ml-auto px-1.5 text-(length:--text-nano) leading-none",
-            textBadgeTone === "amber"
-              ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-              : "bg-muted text-muted-foreground",
+      <Link
+        {...linkOptions}
+        state={SIDEBAR_SCROLL_RESET_STATE}
+        activeOptions={{ exact: end }}
+        activeProps={{
+          className: active === false ? undefined : "bg-accent text-accent-foreground",
+        }}
+        inactiveProps={{
+          className: active === true ? "bg-accent text-accent-foreground" : undefined,
+        }}
+        aria-label={railAriaLabel}
+        onClick={() => {
+          if (isMobile) setSidebarOpen(false);
+        }}
+      >
+        <span className="relative shrink-0">
+          {iconNode ?? (Icon ? <Icon className="h-4 w-4" /> : null)}
+          {alert && (
+            <Badge
+              variant="destructive"
+              className="absolute -right-0.5 -top-0.5 size-2 p-0"
+              aria-hidden="true"
+            />
           )}
-        >
-          {textBadge}
-        </Badge>
-      )}
-      {!rail && (hasLive || liveAccessory) && (
-        <span className="ml-auto flex items-center gap-1.5">
-          {liveAccessory}
-          {hasLive && (
-            <>
-              <span className="relative flex h-2 w-2">
-                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-600 dark:bg-blue-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600 dark:bg-blue-400" />
-              </span>
-              <span className="text-(length:--text-micro) font-medium text-blue-600 dark:text-blue-400">{liveCount} live</span>
-            </>
-          )}
+          {rail && !alert && (hasLive || hasBadge) ? (
+            <Badge
+              variant={
+                badgeTone === "danger" ? "destructive" : badgeTone === "warning" ? "secondary" : "default"
+              }
+              className={cn("absolute -right-0.5 -top-0.5 size-2 p-0", hasLive && "animate-pulse")}
+              aria-hidden="true"
+            />
+          ) : null}
         </span>
-      )}
-      {!rail && hasBadge && (
-        <Badge variant="ghost"
-          className={cn(
-            "ml-auto px-1.5 leading-none",
-            badgeTone === "danger"
-              ? "bg-red-600/90 text-red-50"
-              : badgeTone === "warning"
-                ? "bg-amber-500/90 text-amber-50"
-                : "bg-primary text-primary-foreground",
-          )}
+        <span
+          className={
+            rail ? SIDEBAR_RAIL_HIDDEN_LABEL : cn("min-w-0 flex-1 truncate text-left", labelClassName)
+          }
         >
-          {badge}
-        </Badge>
-      )}
-    </Link>
+          {label}
+        </span>
+        {!rail && trailing}
+        {!rail && textBadge ? (
+          <Badge variant={textBadgeTone === "amber" ? "secondary" : "outline"}>{textBadge}</Badge>
+        ) : null}
+        {!rail && liveAccessory}
+        {!rail && hasLive ? <Badge variant="secondary">{liveCount} live</Badge> : null}
+        {!rail && hasBadge ? (
+          <Badge variant={badgeTone === "danger" ? "destructive" : "secondary"} className="ml-auto">
+            {badge}
+          </Badge>
+        ) : null}
+      </Link>
+    </SidebarMenuButton>
   );
-
-  if (!rail) return link;
-
-  // The tooltip wraps a plain block element rather than the router link directly:
-  // Anchoring the tooltip to a wrapper keeps the link's flex layout stable, so
-  // the in-flow label does not stack under the icon and grow the row. The
-  // wrapper keeps the <a> rendering normally (flex), so the row stays 1:1 with
-  // the expanded state and the icon never moves (PAP-10676).
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div>{link}</div>
-      </TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
-    </Tooltip>
-  );
+  return withinMenuItem ? link : <SidebarMenuItem>{link}</SidebarMenuItem>;
 }

@@ -1,5 +1,4 @@
-import { PageTabBar } from "@/components/PageTabBar";
-import { Tabs } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
@@ -121,13 +120,17 @@ export function CompanySettingsNav() {
   }
 
   return (
-    <Tabs value={activeTab ?? undefined} onValueChange={handleTabChange}>
-      <PageTabBar
-        items={items.map(({ value, label }) => ({ value, label }))}
-        value={activeTab ?? undefined}
-        onValueChange={handleTabChange}
-        align="start"
-      />
-    </Tabs>
+    <Select value={activeTab ?? undefined} onValueChange={handleTabChange}>
+      <SelectTrigger className="h-9" aria-label="Page section">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {items.map((item) => (
+          <SelectItem key={item.value} value={item.value}>
+            {item.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

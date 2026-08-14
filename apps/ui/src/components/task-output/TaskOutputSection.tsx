@@ -1,33 +1,44 @@
-import { Play } from "lucide-react";
 import type { TaskWorkProduct } from "@paperclipai/shared";
+import { Download, ExternalLink, Maximize2, Play } from "lucide-react";
+
+import * as AttachmentUI from "@/components/ui/attachment";
+import { Badge } from "@/components/ui/badge";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { Button } from "@/components/ui/button";
+import * as CardUI from "@/components/ui/card";
 import {
   formatBytes,
+  getOutputFileGlyph,
   getTaskOutputs,
   isImageContentType,
   isVideoLikeOutput,
   outputFilename,
   type TaskOutputItem,
 } from "@/lib/task-output";
-import { OutputPrimaryCard } from "./OutputPrimaryCard";
-import { OutputRow } from "./OutputRow";
-import { cn, relativeTime } from "@/lib/utils";
+import { relativeTime } from "@/lib/utils";
 
 interface TaskOutputSectionProps {
   workProducts: TaskWorkProduct[] | null | undefined;
-  /** Optional resolver for the artifact creator's display name. */
   resolveCreatorName?: (item: TaskOutputItem) => string | null;
   onMediaClick?: (item: TaskOutputItem) => void;
 }
 
 function isMediaOutput(item: TaskOutputItem) {
   const meta = item.metadata;
-  return Boolean(meta && (
-    isImageContentType(meta.contentType) ||
-    isVideoLikeOutput(meta.contentType, meta.originalFilename)
-  ));
+  return Boolean(
+    meta &&
+    (isImageContentType(meta.contentType) || isVideoLikeOutput(meta.contentType, meta.originalFilename)),
+  );
 }
 
-function OutputMediaPreview({
+function outputMeta(item: TaskOutputItem, creatorName?: string | null) {
+  const values = item.metadata ? [item.metadata.contentType, formatBytes(item.metadata.byteSize)] : [];
+  if (creatorName) values.push(creatorName);
+  values.push(relativeTime(item.createdAt));
+  return values.join(" · ");
+}
+
+function MediaThumbnail({
   item,
   creatorName,
   onMediaClick,
@@ -38,119 +49,211 @@ function OutputMediaPreview({
 }) {
   const meta = item.metadata;
   if (!meta) return null;
-
   const filename = outputFilename(item);
-  const isVideo = isVideoLikeOutput(meta.contentType, meta.originalFilename);
-  const metaBits = [meta.contentType, formatBytes(meta.byteSize)];
-  if (creatorName) metaBits.push(creatorName);
-  metaBits.push(relativeTime(item.createdAt));
-
-  const preview = (
-    <>
-      {isVideo ? (
-        <video
-          src={meta.contentPath}
-          className="h-full w-full object-cover"
-          muted
-          playsInline
-          preload="metadata"
-        />
-      ) : (
-        <img
-          src={meta.contentPath}
-          alt={filename}
-          className="h-full w-full object-cover"
-          loading="lazy"
-        />
-      )}
-      <div className="absolute inset-x-0 bottom-0 bg-black/65 px-2 py-1.5 text-left">
-        <p className="truncate text-xs font-medium text-white" title={filename}>{filename}</p>
-        <p className="truncate text-(length:--text-nano) text-white/65">{metaBits.join(" · ")}</p>
-      </div>
-    </>
-  );
-
-  const className = cn(
-    "group relative block aspect-square overflow-hidden rounded-md border border-border bg-accent/10",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-  );
-
-  if (onMediaClick) {
-    return (
-      <button
-        type="button"
-        className={className}
-        aria-label={`Browse ${filename} in gallery`}
-        onClick={() => onMediaClick(item)}
-      >
-        {preview}
-      </button>
-    );
-  }
+  const video = isVideoLikeOutput(meta.contentType, meta.originalFilename);
 
   return (
-    <a
-      href={meta.openPath}
-      target="_blank"
-      rel="noreferrer"
-      className={className}
-      aria-label={`Open ${filename}`}
-    >
-      {preview}
-    </a>
+    <AttachmentUI.Attachment orientation="vertical" size="sm" className="w-full">
+      <AttachmentUI.AttachmentMedia variant="image" className="w-full">
+        {video ? (
+          <video
+            src={meta.contentPath}
+            className="size-full object-cover"
+            muted
+            playsInline
+            preload="metadata"
+          />
+        ) : (
+          <img src={meta.contentPath} alt={filename} className="size-full object-cover" loading="lazy" />
+        )}
+      </AttachmentUI.AttachmentMedia>
+      <AttachmentUI.AttachmentContent>
+        <AttachmentUI.AttachmentTitle title={filename}>{filename}</AttachmentUI.AttachmentTitle>
+        <AttachmentUI.AttachmentDescription>
+          {outputMeta(item, creatorName)}
+        </AttachmentUI.AttachmentDescription>
+      </AttachmentUI.AttachmentContent>
+      {onMediaClick ? (
+        <AttachmentUI.AttachmentTrigger
+          aria-label={`Browse ${filename} in gallery`}
+          onClick={() => onMediaClick(item)}
+        />
+      ) : (
+        <AttachmentUI.AttachmentTrigger asChild>
+          <a href={meta.openPath} target="_blank" rel="noreferrer" aria-label={`Open ${filename}`} />
+        </AttachmentUI.AttachmentTrigger>
+      )}
+    </AttachmentUI.Attachment>
   );
 }
 
-/**
- * Task Output surface (PAP-10162 Phase 3).
- *
- * Renders attachment-backed artifact work products as first-class task
- * outputs: a full-width primary card (video player / image / generic file) with
- * Open + Download, plus compact rows for any additional outputs. The section is
- * omitted entirely when the task has produced no outputs — we never show a
- * permanent empty card.
- */
-export function TaskOutputSection({ workProducts, resolveCreatorName, onMediaClick }: TaskOutputSectionProps) {
-  const { primary, rest, count } = getTaskOutputs(workProducts);
+function PrimaryOutput({
+  item,
+  creatorName,
+  onMediaClick,
+}: {
+  item: TaskOutputItem;
+  creatorName?: string | null;
+  onMediaClick?: (item: TaskOutputItem) => void;
+}) {
+  const meta = item.metadata;
+  const filename = outputFilename(item);
+  const video = Boolean(meta && isVideoLikeOutput(meta.contentType, meta.originalFilename));
+  const image = Boolean(meta && isImageContentType(meta.contentType));
+  const media = video || image;
 
+  return (
+    <CardUI.Card className="gap-0 overflow-hidden py-0">
+      {video && meta ? (
+        <AspectRatio ratio={16 / 9} className="overflow-hidden bg-black">
+          <video
+            src={meta.contentPath}
+            controls
+            preload="metadata"
+            playsInline
+            aria-label={`Video output: ${filename}`}
+            className="size-full"
+          />
+        </AspectRatio>
+      ) : image && meta ? (
+        <Button
+          asChild={!onMediaClick}
+          variant="ghost"
+          className="h-auto aspect-video rounded-none bg-black p-0"
+          aria-label={onMediaClick ? `Browse ${filename} in gallery` : `Open ${filename}`}
+          onClick={() => onMediaClick?.(item)}
+        >
+          {onMediaClick ? (
+            <img src={meta.contentPath} alt={filename} className="size-full object-contain" />
+          ) : (
+            <a href={meta.openPath} target="_blank" rel="noreferrer">
+              <img src={meta.contentPath} alt={filename} className="size-full object-contain" />
+            </a>
+          )}
+        </Button>
+      ) : (
+        <CardUI.CardContent className="flex aspect-video items-center justify-center">
+          <Badge
+            variant="secondary"
+            className="size-16 shrink-0 justify-center rounded-md border-0 p-0 text-base tabular-nums"
+            aria-hidden="true"
+          >
+            {getOutputFileGlyph(meta?.contentType).label}
+          </Badge>
+        </CardUI.CardContent>
+      )}
+
+      <CardUI.CardFooter className="gap-2 p-3">
+        <CardUI.CardHeader className="min-w-0 flex-1 p-0">
+          <CardUI.CardTitle className="truncate text-sm">{filename}</CardUI.CardTitle>
+          <CardUI.CardDescription>
+            {item.degraded ? "Output metadata is unavailable." : outputMeta(item, creatorName)}
+          </CardUI.CardDescription>
+        </CardUI.CardHeader>
+        {item.isPrimary ? <Badge variant="secondary">Primary</Badge> : null}
+        {meta ? (
+          <>
+            {media && onMediaClick ? (
+              <Button variant="outline" size="sm" onClick={() => onMediaClick(item)}>
+                <Maximize2 />
+                Browse
+              </Button>
+            ) : null}
+            {!media || !onMediaClick || video ? (
+              <Button asChild variant="outline" size="sm">
+                <a href={meta.openPath} target="_blank" rel="noreferrer">
+                  <ExternalLink />
+                  Open
+                </a>
+              </Button>
+            ) : null}
+            <Button asChild size="sm">
+              <a href={meta.downloadPath} aria-label={`Download ${filename}`}>
+                <Download />
+                Download
+              </a>
+            </Button>
+          </>
+        ) : null}
+      </CardUI.CardFooter>
+    </CardUI.Card>
+  );
+}
+
+function OutputRow({ item, creatorName }: { item: TaskOutputItem; creatorName?: string | null }) {
+  const filename = outputFilename(item);
+  const meta = item.metadata;
+  return (
+    <AttachmentUI.Attachment size="sm" className="w-full flex-nowrap">
+      <AttachmentUI.AttachmentMedia>
+        <Badge
+          variant="secondary"
+          className="size-8 shrink-0 justify-center rounded-md border-0 p-0 text-(length:--text-nano) tabular-nums"
+          aria-hidden="true"
+        >
+          {getOutputFileGlyph(meta?.contentType).label}
+        </Badge>
+      </AttachmentUI.AttachmentMedia>
+      <AttachmentUI.AttachmentContent>
+        <AttachmentUI.AttachmentTitle title={filename}>{filename}</AttachmentUI.AttachmentTitle>
+        <AttachmentUI.AttachmentDescription>
+          {item.degraded ? "File details unavailable" : outputMeta(item, creatorName)}
+        </AttachmentUI.AttachmentDescription>
+      </AttachmentUI.AttachmentContent>
+      {meta ? (
+        <AttachmentUI.AttachmentActions>
+          <AttachmentUI.AttachmentAction asChild title="Open in new tab">
+            <a href={meta.openPath} target="_blank" rel="noreferrer" aria-label={`Open ${filename}`}>
+              <ExternalLink />
+            </a>
+          </AttachmentUI.AttachmentAction>
+          <AttachmentUI.AttachmentAction asChild title="Download">
+            <a href={meta.downloadPath} aria-label={`Download ${filename}`}>
+              <Download />
+            </a>
+          </AttachmentUI.AttachmentAction>
+        </AttachmentUI.AttachmentActions>
+      ) : null}
+    </AttachmentUI.Attachment>
+  );
+}
+
+export function TaskOutputSection({
+  workProducts,
+  resolveCreatorName,
+  onMediaClick,
+}: TaskOutputSectionProps) {
+  const { primary, rest, count } = getTaskOutputs(workProducts);
   if (!primary) return null;
 
   const creatorFor = (item: TaskOutputItem) => resolveCreatorName?.(item) ?? null;
-  const mediaRest = rest.filter(isMediaOutput);
-  const fileRest = rest.filter((item) => !isMediaOutput(item));
+  const media = rest.filter(isMediaOutput);
+  const files = rest.filter((item) => !isMediaOutput(item));
 
   return (
     <section className="space-y-3" aria-label="Task outputs">
-      <div className="flex items-center gap-2">
-        <Play className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-        <h3 className="text-sm font-medium text-muted-foreground">Output</h3>
-        <span className="text-xs text-muted-foreground">{count}</span>
-      </div>
-
-      {/* Stable anchor target so company Artifacts cards can deep-link to a
-          specific work product inside its task context (PAP-10359). */}
+      <header className="flex items-center gap-2">
+        <Play className="size-4" aria-hidden="true" />
+        <h3 className="text-sm font-medium">Output</h3>
+        <Badge variant="secondary">{count}</Badge>
+      </header>
       <div id={`work-product-${primary.id}`} className="scroll-mt-20">
-        <OutputPrimaryCard item={primary} creatorName={creatorFor(primary)} onMediaClick={onMediaClick} />
+        <PrimaryOutput item={primary} creatorName={creatorFor(primary)} onMediaClick={onMediaClick} />
       </div>
-
-      {rest.length > 0 ? (
+      {rest.length ? (
         <div className="space-y-2">
-          <p className="text-(length:--text-micro) font-medium uppercase tracking-wide text-muted-foreground">Also produced</p>
-          {mediaRest.length > 0 ? (
+          <h4 className="text-sm font-medium">Also produced</h4>
+          {media.length ? (
             <div className="grid grid-cols-4 gap-2">
-              {mediaRest.map((item) => (
-                <div key={item.id} id={`work-product-${item.id}`} className="scroll-mt-20">
-                  <OutputMediaPreview
-                    item={item}
-                    creatorName={creatorFor(item)}
-                    onMediaClick={onMediaClick}
-                  />
+              {media.map((item) => (
+                <div key={item.id} id={`work-product-${item.id}`}>
+                  <MediaThumbnail item={item} creatorName={creatorFor(item)} onMediaClick={onMediaClick} />
                 </div>
               ))}
             </div>
           ) : null}
-          {fileRest.map((item) => (
-            <div key={item.id} id={`work-product-${item.id}`} className="scroll-mt-20">
+          {files.map((item) => (
+            <div key={item.id} id={`work-product-${item.id}`}>
               <OutputRow item={item} creatorName={creatorFor(item)} />
             </div>
           ))}

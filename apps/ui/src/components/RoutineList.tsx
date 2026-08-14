@@ -3,7 +3,9 @@ import { MoreHorizontal, Play } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { AgentIcon } from "@/components/AgentIconPicker";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import { Item, ItemActions } from "@/components/ui/item";
+import { cn } from "@/lib/utils";
 
 export type RoutineListProjectSummary = {
   name: string;
@@ -71,7 +75,11 @@ function RoutineLink({
       </Link>
     );
   }
-  return <Link to="/$companyId/routines" params={{ companyId }} className={className}>{children}</Link>;
+  return (
+    <Link to="/$companyId/routines" params={{ companyId }} className={className}>
+      {children}
+    </Link>
+  );
 }
 
 export function RoutineListRow<TRoutine extends RoutineListRowItem>({
@@ -125,45 +133,40 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   const enabled = routine.status === "active";
   const isArchived = routine.status === "archived";
   const isStatusPending = statusMutationRoutineId === routine.id;
-  const project = routine.projectId ? projectById.get(routine.projectId) ?? null : null;
-  const agent = routine.assigneeAgentId ? agentById.get(routine.assigneeAgentId) ?? null : null;
+  const project = routine.projectId ? (projectById.get(routine.projectId) ?? null) : null;
+  const agent = routine.assigneeAgentId ? (agentById.get(routine.assigneeAgentId) ?? null) : null;
   const isDraft = !isArchived && !routine.assigneeAgentId;
   const runDisabled = runningRoutineId === routine.id || isArchived || disableRunNow;
 
   return (
-    <div
-      className={`group flex flex-col gap-3 px-3 py-3 transition-colors hover:bg-accent/50 sm:flex-row sm:items-center${
-        divider ? " border-b border-border last:border-b-0" : ""
-      }`}
+    <Item
+      className={cn(
+        "group items-start sm:flex-nowrap sm:items-center",
+        divider && "rounded-none border-b last:border-b-0",
+      )}
     >
       {selectMode ? (
-        <div className="flex items-start pt-0.5 sm:pt-1">
-          <input
-            type="checkbox"
-            className="h-4 w-4 rounded border-border"
-            checked={selected}
-            aria-label={`Select ${routine.title}`}
-            onChange={(event) => onSelectChange?.(routine, event.target.checked)}
-          />
-        </div>
+        <Checkbox
+          checked={selected}
+          aria-label={`Select ${routine.title}`}
+          onCheckedChange={(checked) => onSelectChange?.(routine, checked === true)}
+        />
       ) : null}
       <RoutineLink routeId={routeId} className="min-w-0 flex-1 space-y-1.5 no-underline text-inherit">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium">{routine.title}</span>
-          {(isArchived || routine.status === "paused" || isDraft) ? (
-            <span className="text-xs text-muted-foreground">
-              {isArchived ? "archived" : isDraft ? "draft" : "paused"}
-            </span>
+          {isArchived || routine.status === "paused" || isDraft ? (
+            <Badge variant="secondary">{isArchived ? "archived" : isDraft ? "draft" : "paused"}</Badge>
           ) : null}
-          {managedByLabel ? (
-            <span className="text-xs text-muted-foreground">{managedByLabel}</span>
-          ) : null}
+          {managedByLabel ? <Badge variant="outline">{managedByLabel}</Badge> : null}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-2">
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-sm"
-              style={{ backgroundColor: project?.color ?? "var(--project-none)" }}
+              style={{
+                backgroundColor: project?.color ?? "var(--project-none)",
+              }}
             />
             <span>{routine.projectId ? (project?.name ?? "Unknown project") : "No project"}</span>
           </span>
@@ -176,19 +179,12 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
             {routine.lastRun ? ` · ${formatRoutineRunStatus(routine.lastRun.status)}` : ""}
           </span>
         </div>
-        {secondaryDetails ? (
-          <div className="text-xs text-muted-foreground">{secondaryDetails}</div>
-        ) : null}
+        {secondaryDetails ? <div className="text-xs text-muted-foreground">{secondaryDetails}</div> : null}
       </RoutineLink>
 
-      <div className="flex items-center gap-3">
+      <ItemActions className="w-full sm:w-auto">
         {runNowButton ? (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={runDisabled}
-            onClick={() => onRunNow(routine)}
-          >
+          <Button variant="outline" size="sm" disabled={runDisabled} onClick={() => onRunNow(routine)}>
             <Play className="h-3.5 w-3.5" />
             {runningRoutineId === routine.id ? "Running..." : "Run now"}
           </Button>
@@ -215,14 +211,9 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild>
-              <RoutineLink routeId={routeId}>
-                {configureLabel}
-              </RoutineLink>
+              <RoutineLink routeId={routeId}>{configureLabel}</RoutineLink>
             </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={runDisabled}
-              onClick={() => onRunNow(routine)}
-            >
+            <DropdownMenuItem disabled={runDisabled} onClick={() => onRunNow(routine)}>
               {runningRoutineId === routine.id ? "Running..." : "Run now"}
             </DropdownMenuItem>
             {extraMenuItems ? (
@@ -239,16 +230,13 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
               {enabled ? "Pause" : "Enable"}
             </DropdownMenuItem>
             {!hideArchiveAction && onToggleArchived ? (
-              <DropdownMenuItem
-                onClick={() => onToggleArchived(routine)}
-                disabled={isStatusPending}
-              >
+              <DropdownMenuItem onClick={() => onToggleArchived(routine)} disabled={isStatusPending}>
                 {routine.status === "archived" ? "Restore" : "Archive"}
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
-    </div>
+      </ItemActions>
+    </Item>
   );
 }

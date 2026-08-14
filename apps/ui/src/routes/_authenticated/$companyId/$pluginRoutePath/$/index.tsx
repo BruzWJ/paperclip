@@ -11,16 +11,14 @@ import {
   usePluginSlots,
 } from "@/plugins/slots";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Spinner } from "@/components/ui/spinner";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { ArrowLeft } from "lucide-react";
-import { NotFoundPage } from "@/components/NotFoundPage";
 
-const BUILT_IN_COMPANY_ROUTES = new Set<string>(
-  PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS,
-);
+const BUILT_IN_COMPANY_ROUTES = new Set<string>(PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS);
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/$pluginRoutePath/$/",
-)({
+export const Route = createFileRoute("/_authenticated/$companyId/$pluginRoutePath/$/")({
   beforeLoad: ({ params }) => {
     if (BUILT_IN_COMPANY_ROUTES.has(params.pluginRoutePath)) {
       throw notFound();
@@ -37,9 +35,7 @@ export const Route = createFileRoute(
  * @see doc/plugins/PLUGIN_SPEC.md §24.3 — Company-Context Plugin Page
  */
 function PluginPage() {
-  const params = getRouteApi(
-    "/_authenticated/$companyId/$pluginRoutePath/$/",
-  ).useParams();
+  const params = getRouteApi("/_authenticated/$companyId/$pluginRoutePath/$/").useParams();
   const { companyId: routeCompanyId, pluginRoutePath } = params;
   const pluginRouteSplat = params._splat;
   const { companies } = useCompany();
@@ -57,16 +53,11 @@ function PluginPage() {
 
   const pageSlots = useMemo(() => {
     if (!pluginRoutePath) return null;
-    return slots.filter(
-      (slot) => slot.type === "page" && slot.routePath === pluginRoutePath,
-    );
+    return slots.filter((slot) => slot.type === "page" && slot.routePath === pluginRoutePath);
   }, [pluginRoutePath, slots]);
   const pageSlot = pageSlots?.length === 1 ? pageSlots[0]! : null;
 
-  const context = useMemo(
-    () => ({ companyId: resolvedCompanyId }),
-    [resolvedCompanyId],
-  );
+  const context = useMemo(() => ({ companyId: resolvedCompanyId }), [resolvedCompanyId]);
 
   // When the active route has a routeSidebar slot, the sidebar provides the
   // back affordance, but the top bar still needs a route-specific title.
@@ -77,59 +68,59 @@ function PluginPage() {
   useEffect(() => {
     if (!pageSlot) return;
     if (routeSidebarActive) {
-      setBreadcrumbs([
-        { label: resolveRouteSidebarPageTitle(pageSlot, pluginRouteSplat) },
-      ]);
+      setBreadcrumbs([{ label: resolveRouteSidebarPageTitle(pageSlot, pluginRouteSplat) }]);
       return;
     }
     setBreadcrumbs([
       {
         label: "Plugins",
         renderLink: (content) => (
-          <Link
-            to="/$companyId/company/settings/instance/plugins"
-            params={{ companyId: routeCompanyId }}
-          >
+          <Link to="/$companyId/company/settings/instance/plugins" params={{ companyId: routeCompanyId }}>
             {content}
           </Link>
         ),
       },
       { label: pageSlot.pluginDisplayName },
     ]);
-  }, [
-    pageSlot,
-    pluginRouteSplat,
-    routeCompanyId,
-    setBreadcrumbs,
-    routeSidebarActive,
-  ]);
+  }, [pageSlot, pluginRouteSplat, routeCompanyId, setBreadcrumbs, routeSidebarActive]);
 
   if (!resolvedCompanyId) {
     return (
-      <NotFoundPage
-        scope="invalid_company_id"
-        requestedCompanyId={routeCompanyId}
-      />
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>Company not found</EmptyTitle>
+          <EmptyDescription>No company matches UUID &quot;{routeCompanyId}&quot;.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading…</div>;
-  }
-
-  if (errorMessage) {
     return (
-      <div
-        className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-        role="alert"
-      >
-        Plugin extensions unavailable: {errorMessage}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner />
+        Loading…
       </div>
     );
   }
 
+  if (errorMessage) {
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>Plugin extensions unavailable: {errorMessage}</AlertDescription>
+      </Alert>
+    );
+  }
+
   if (!pageSlot) {
-    return <NotFoundPage scope="board" />;
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>Page not found</EmptyTitle>
+          <EmptyDescription>No plugin provides this page.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
   }
 
   return (
@@ -137,10 +128,7 @@ function PluginPage() {
       {!routeSidebarActive && (
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" asChild>
-            <Link
-              to="/$companyId/dashboard"
-              params={{ companyId: routeCompanyId }}
-            >
+            <Link to="/$companyId/dashboard" params={{ companyId: routeCompanyId }}>
               <ArrowLeft data-icon="inline-start" className="h-4 w-4 mr-1" />
               Back
             </Link>
@@ -157,19 +145,13 @@ function PluginPage() {
   );
 }
 
-function resolveRouteSidebarPageTitle(
-  pageSlot: ResolvedPluginSlot,
-  routeSplat: string | undefined,
-): string {
+function resolveRouteSidebarPageTitle(pageSlot: ResolvedPluginSlot, routeSplat: string | undefined): string {
   const title = titleFromRouteSplat(routeSplat);
   return title ?? pageSlot.displayName;
 }
 
 function titleFromRouteSplat(routeSplat: string | undefined): string | null {
-  const segments = (routeSplat ?? "")
-    .split("/")
-    .filter(Boolean)
-    .map(decodeRouteSegment);
+  const segments = (routeSplat ?? "").split("/").filter(Boolean).map(decodeRouteSegment);
   if (segments.length === 0) return null;
 
   if (segments[0] === "page" && segments.length > 1) {

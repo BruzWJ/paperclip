@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { deriveInitials } from "./Identity";
+import { Item } from "@/components/ui/item";
+import { deriveInitials } from "@/lib/identity";
 import { TaskReferenceActivitySummary } from "./TaskReferenceActivitySummary";
 import { timeAgo } from "../lib/timeAgo";
 import { cn } from "../lib/utils";
@@ -18,35 +19,47 @@ interface ActivityRowProps {
   className?: string;
 }
 
-export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, entityTitleMap, className }: ActivityRowProps) {
+export function ActivityRow({
+  event,
+  agentMap,
+  userProfileMap,
+  entityNameMap,
+  entityTitleMap,
+  className,
+}: ActivityRowProps) {
   const companyId = useCompanyRouteId();
-  const verb = formatActivityVerb(event.action, event.details, { agentMap, userProfileMap });
+  const verb = formatActivityVerb(event.action, event.details, {
+    agentMap,
+    userProfileMap,
+  });
 
   const isRunEvent = event.entityType === "task_execution_run";
   const runAgentId = isRunEvent
-    ? event.agentId ?? (event.details as Record<string, unknown> | null)?.targetAgentId as string | undefined
+    ? (event.agentId ??
+      ((event.details as Record<string, unknown> | null)?.targetAgentId as string | undefined))
     : undefined;
 
   const name = isRunEvent
-    ? (runAgentId ? entityNameMap.get(`agent:${runAgentId}`) : null)
+    ? runAgentId
+      ? entityNameMap.get(`agent:${runAgentId}`)
+      : null
     : entityNameMap.get(`${event.entityType}:${event.entityId}`);
 
   const entityTitle = entityTitleMap?.get(`${event.entityType}:${event.entityId}`);
 
   const runAgentRef = runAgentId ?? null;
-  const entityAgentRef = event.entityType === "agent"
-    ? event.entityId
-    : null;
+  const entityAgentRef = event.entityType === "agent" ? event.entityId : null;
   const linkable = Boolean(
-    runAgentRef
-    || entityAgentRef
-    || event.entityType === "goal"
-    || event.entityType === "approval",
+    runAgentRef || entityAgentRef || event.entityType === "goal" || event.entityType === "approval",
   );
 
   const actor = event.actorType === "agent" ? agentMap.get(event.actorId) : null;
   const userProfile = event.actorType === "user" ? userProfileMap?.get(event.actorId) : null;
-  const actorName = actor?.name ?? (event.actorType === "system" ? "System" : userProfile?.label ?? (event.actorType === "user" ? "Board" : event.actorId || "Unknown"));
+  const actorName =
+    actor?.name ??
+    (event.actorType === "system"
+      ? "System"
+      : (userProfile?.label ?? (event.actorType === "user" ? "Board" : event.actorId || "Unknown")));
   const actorAvatarUrl = userProfile?.image ?? null;
 
   const inner = (
@@ -78,21 +91,57 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
 
   const linkClassName = cn(classes, "no-underline text-inherit block");
   if (isRunEvent && runAgentRef) {
-    return <Link to="/$companyId/agents/$agentId/runs/$runId" params={{ companyId, agentId: runAgentRef, runId: event.entityId }} className={linkClassName}>{inner}</Link>;
+    return (
+      <Item asChild className="block rounded-none border-0 p-0">
+        <Link
+          to="/$companyId/agents/$agentId/runs/$runId"
+          params={{ companyId, agentId: runAgentRef, runId: event.entityId }}
+          className={linkClassName}
+        >
+          {inner}
+        </Link>
+      </Item>
+    );
   }
   if (event.entityType === "agent" && entityAgentRef) {
-    return <Link to="/$companyId/agents/$agentId" params={{ companyId, agentId: entityAgentRef }} className={linkClassName}>{inner}</Link>;
+    return (
+      <Item asChild className="block rounded-none border-0 p-0">
+        <Link
+          to="/$companyId/agents/$agentId"
+          params={{ companyId, agentId: entityAgentRef }}
+          className={linkClassName}
+        >
+          {inner}
+        </Link>
+      </Item>
+    );
   }
   if (event.entityType === "goal") {
-    return <Link to="/$companyId/goals/$goalId" params={{ companyId, goalId: event.entityId }} className={linkClassName}>{inner}</Link>;
+    return (
+      <Item asChild className="block rounded-none border-0 p-0">
+        <Link
+          to="/$companyId/goals/$goalId"
+          params={{ companyId, goalId: event.entityId }}
+          className={linkClassName}
+        >
+          {inner}
+        </Link>
+      </Item>
+    );
   }
   if (event.entityType === "approval") {
-    return <Link to="/$companyId/approvals/$approvalId" params={{ companyId, approvalId: event.entityId }} className={linkClassName}>{inner}</Link>;
+    return (
+      <Item asChild className="block rounded-none border-0 p-0">
+        <Link
+          to="/$companyId/approvals/$approvalId"
+          params={{ companyId, approvalId: event.entityId }}
+          className={linkClassName}
+        >
+          {inner}
+        </Link>
+      </Item>
+    );
   }
 
-  return (
-    <div className={classes}>
-      {inner}
-    </div>
-  );
+  return <Item className={cn("block rounded-none border-0 p-0", classes)}>{inner}</Item>;
 }

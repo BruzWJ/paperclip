@@ -5,70 +5,21 @@ import { useQuery } from "@tanstack/react-query";
 import { Cpu } from "lucide-react";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
-import { adaptersApi, type AdapterInfo } from "@/api/adapters";
+import { adaptersApi } from "@/api/adapters";
 import { useAdapterCatalogSyncState } from "@/adapters/use-adapter-catalog";
 import { queryKeys } from "@/lib/queryKeys";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Item, ItemContent, ItemDescription, ItemFooter, ItemGroup, ItemTitle } from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
 import { publicRuntimeMessage } from "@/lib/public-runtime-message";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/company/settings/instance/adapters/",
-)({ component: AdapterManager });
-
-function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
-  const isReady = adapter.loaded;
-  return (
-    <li className="space-y-3 px-4 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{adapter.label}</span>
-            <Badge variant="outline">Local runtime contract</Badge>
-            <Badge
-              variant="secondary"
-              className={isReady ? "text-green-700" : "text-destructive"}
-            >
-              {isReady
-                ? "Ready"
-                : adapter.diagnostic.code === "acpx_catalog_invalid"
-                  ? "Catalog metadata rejected"
-                  : "Probe failed"}
-            </Badge>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {isReady ? (
-              <>
-                Agent runtime name <code>{adapter.type}</code> ·{" "}
-                {adapter.modelsCount} reported model
-                {adapter.modelsCount === 1 ? "" : "s"}
-              </>
-            ) : (
-              <>
-                Agent runtime name <code>{adapter.type}</code> · not selectable
-                until its local readiness check and catalog admission succeed
-              </>
-            )}
-          </p>
-        </div>
-      </div>
-
-      {isReady ? (
-        <div className="flex flex-wrap gap-1.5">
-          <Badge variant="secondary">
-            {adapter.capabilities.runtimeControls.length} runtime controls
-          </Badge>
-        </div>
-      ) : (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          <span className="font-medium">Local agent diagnostic:</span>{" "}
-          {publicRuntimeMessage(adapter.diagnostic.message)}
-        </div>
-      )}
-    </li>
-  );
-}
+export const Route = createFileRoute("/_authenticated/$companyId/company/settings/instance/adapters/")({
+  component: AdapterManager,
+});
 
 function AdapterManager() {
   const companyId = useCompanyRouteId();
@@ -97,10 +48,7 @@ function AdapterManager() {
       {
         label: "Instance settings",
         renderLink: (content) => (
-          <Link
-            to="/$companyId/company/settings/instance"
-            params={{ companyId }}
-          >
+          <Link to="/$companyId/company/settings/instance" params={{ companyId }}>
             {content}
           </Link>
         ),
@@ -120,7 +68,8 @@ function AdapterManager() {
 
   if (isLoading) {
     return (
-      <div className="p-4 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+        <Spinner />
         Loading local agent catalog...
       </div>
     );
@@ -134,34 +83,87 @@ function AdapterManager() {
           <h1 className="text-xl font-semibold">Local agents</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Paperclip discovers compatible local agents, models, session settings,
-          and their resolved execution contracts automatically, then supervises
-          those executions.
+          Paperclip discovers compatible local agents, models, session settings, and their resolved execution
+          contracts automatically, then supervises those executions.
         </p>
       </div>
 
       {error ? (
-        <Card>
-          <CardContent className="py-6 text-sm text-destructive">
+        <Alert variant="destructive">
+          <AlertDescription>
             {error instanceof Error
               ? publicRuntimeMessage(error.message)
               : "The local agent catalog is unavailable."}
-          </CardContent>
-        </Card>
+          </AlertDescription>
+        </Alert>
       ) : !adapters?.length ? (
         <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No compatible local agent is currently available. Install and
-            authenticate a compatible agent CLI on this host, then retry.
+          <CardContent>
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>No compatible local agents</EmptyTitle>
+                <EmptyDescription>
+                  Install and authenticate a compatible agent CLI on this host, then retry.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           </CardContent>
         </Card>
       ) : (
-        <Card className="block py-0">
-          <ul className="divide-y">
-            {adapters.map((adapter) => (
-              <AdapterCatalogRow key={adapter.type} adapter={adapter} />
-            ))}
-          </ul>
+        <Card>
+          <CardContent>
+            <ItemGroup className="gap-3">
+              {adapters.map((adapter) => {
+                const isReady = adapter.loaded;
+                return (
+                  <Item key={adapter.type} variant="outline">
+                    <ItemContent>
+                      <ItemTitle>
+                        {adapter.label}
+                        <Badge variant="outline">Local runtime contract</Badge>
+                        <Badge variant={isReady ? "secondary" : "destructive"}>
+                          {isReady
+                            ? "Ready"
+                            : adapter.diagnostic.code === "acpx_catalog_invalid"
+                              ? "Catalog metadata rejected"
+                              : "Probe failed"}
+                        </Badge>
+                      </ItemTitle>
+                      <ItemDescription>
+                        {isReady ? (
+                          <>
+                            Agent runtime name <code>{adapter.type}</code> · {adapter.modelsCount} reported
+                            model
+                            {adapter.modelsCount === 1 ? "" : "s"}
+                          </>
+                        ) : (
+                          <>
+                            Agent runtime name <code>{adapter.type}</code> · not selectable until its local
+                            readiness check and catalog admission succeed
+                          </>
+                        )}
+                      </ItemDescription>
+                    </ItemContent>
+
+                    <ItemFooter>
+                      {isReady ? (
+                        <Badge variant="secondary">
+                          {adapter.capabilities.runtimeControls.length} runtime controls
+                        </Badge>
+                      ) : (
+                        <Alert variant="destructive">
+                          <AlertDescription>
+                            <span className="font-medium">Local agent diagnostic:</span>{" "}
+                            {publicRuntimeMessage(adapter.diagnostic.message)}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    </ItemFooter>
+                  </Item>
+                );
+              })}
+            </ItemGroup>
+          </CardContent>
         </Card>
       )}
     </div>

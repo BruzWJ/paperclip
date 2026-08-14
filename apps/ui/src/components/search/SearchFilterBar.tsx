@@ -1,6 +1,7 @@
 import { useMemo } from "react";
-import { User } from "lucide-react";
+import { ArrowUpDown, User, X } from "lucide-react";
 import {
+  COMPANY_SEARCH_SORTS,
   COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS,
   TASK_PRIORITIES,
   TASK_STATUSES,
@@ -8,11 +9,27 @@ import {
   type CompanySearchSort,
   type TaskStatus,
 } from "@paperclipai/shared";
-import { StatusIcon } from "@/components/StatusIcon";
-import { PriorityIcon } from "@/components/PriorityIcon";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { SearchFilterMenu, type FilterMenuOption } from "./SearchFilterMenu";
-import { SearchSortMenu } from "./SearchSortMenu";
-import { applyOwnerSelectionId, ownerSelectionId, updatedWithinLabel, type SearchFilters } from "@/lib/search-filters";
+import {
+  applyOwnerSelectionId,
+  buildFilterChips,
+  ownerSelectionId,
+  SORT_LABELS,
+  updatedWithinLabel,
+  type FilterChipLookups,
+  type SearchFilters,
+} from "@/lib/search-filters";
 
 export interface SearchFilterAgent {
   id: string;
@@ -37,7 +54,9 @@ export interface SearchFilterDataProps {
 }
 
 // Non-terminal statuses — the single-click "Open items" preset from wireframe screen 2.
-const OPEN_STATUS_PRESET: TaskStatus[] = TASK_STATUSES.filter((status) => status !== "done" && status !== "cancelled");
+const OPEN_STATUS_PRESET: TaskStatus[] = TASK_STATUSES.filter(
+  (status) => status !== "done" && status !== "cancelled",
+);
 
 function humanize(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
@@ -67,14 +86,12 @@ export function buildSearchFilterOptions({
   const status: FilterMenuOption[] = TASK_STATUSES.map((value) => ({
     value,
     label: humanize(value),
-    icon: <StatusIcon status={value} />,
     count: count(counts?.status as Record<string, number> | undefined, value),
   }));
 
   const priority: FilterMenuOption[] = TASK_PRIORITIES.map((value) => ({
     value,
     label: humanize(value),
-    icon: <PriorityIcon priority={value} />,
     count: count(counts?.priority as Record<string, number> | undefined, value),
   }));
 
@@ -199,6 +216,73 @@ export function SearchFilterBar({
       <div className="ml-auto">
         <SearchSortMenu value={sort} onChange={onSortChange} />
       </div>
+    </div>
+  );
+}
+
+export function SearchSortMenu({
+  value,
+  onChange,
+}: {
+  value: CompanySearchSort;
+  onChange: (next: CompanySearchSort) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" aria-label="Sort results">
+          <ArrowUpDown aria-hidden />
+          <span className="hidden text-muted-foreground sm:inline">Sort:</span>
+          {SORT_LABELS[value]}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuRadioGroup value={value} onValueChange={(sort) => onChange(sort as CompanySearchSort)}>
+          {COMPANY_SEARCH_SORTS.map((sort) => (
+            <DropdownMenuRadioItem key={sort} value={sort}>
+              {SORT_LABELS[sort]}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function SearchFilterChips({
+  filters,
+  lookups,
+  onChange,
+  onClearAll,
+}: {
+  filters: SearchFilters;
+  lookups: FilterChipLookups;
+  onChange: (next: SearchFilters) => void;
+  onClearAll: () => void;
+}) {
+  const chips = buildFilterChips(filters, lookups);
+  if (chips.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid="search-filter-chips">
+      {chips.map((chip) => (
+        <Badge key={chip.id} variant="secondary">
+          {chip.label}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Remove filter ${chip.label}`}
+            onClick={() => onChange(chip.remove(filters))}
+          >
+            <X />
+          </Button>
+        </Badge>
+      ))}
+      <Button type="button" variant="ghost" size="xs" onClick={onClearAll}>
+        Clear all
+      </Button>
     </div>
   );
 }

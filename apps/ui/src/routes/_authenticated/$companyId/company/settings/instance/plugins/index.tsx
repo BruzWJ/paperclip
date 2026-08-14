@@ -1,30 +1,19 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type {
-  PluginCatalogEntryDto,
-  PluginInstallRequest,
-  PluginRecordDto,
-} from "@paperclipai/shared";
-import { Link } from "@tanstack/react-router";
-import {
-  AlertTriangle,
-  Plus,
-  Power,
-  Puzzle,
-  Settings,
-  Trash,
-} from "lucide-react";
-import { useCompany } from "@/context/CompanyContext";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { accessApi } from "@/api/access";
 import { pluginsApi } from "@/api/plugins";
-import { queryKeys } from "@/lib/queryKeys";
+import { InstalledPluginsSection } from "@/components/plugins/InstalledPluginsSection";
+import { PluginCatalogSection } from "@/components/plugins/PluginCatalogSection";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -34,71 +23,47 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useToastActions } from "@/context/ToastContext";
-import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Spinner } from "@/components/ui/spinner";
+import { useBreadcrumbs } from "@/context/BreadcrumbContext";
+import { useCompany } from "@/context/CompanyContext";
+import { toast } from "sonner";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useCurrentUserId } from "@/hooks/useCurrentUserId";
+import { queryKeys } from "@/lib/queryKeys";
+import type { PluginInstallRequest, PluginRecordDto } from "@paperclipai/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { AlertTriangle, Plus, Puzzle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/company/settings/instance/plugins/",
-)({ component: PluginManager });
-
-function firstNonEmptyLine(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const line = value
-    .split(/\r?\n/)
-    .map((entry) => entry.trim())
-    .find(Boolean);
-  return line ?? null;
-}
+export const Route = createFileRoute("/_authenticated/$companyId/company/settings/instance/plugins/")({
+  component: PluginManager,
+});
 
 function getPluginErrorSummary(plugin: PluginRecordDto): string {
   return (
-    firstNonEmptyLine(plugin.lastError) ??
-    "Plugin entered an error state without a stored error message."
+    plugin.lastError
+      ?.split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .find(Boolean) ?? "Plugin entered an error state without a stored error message."
   );
 }
 
-function getCatalogKindLabel(kind: PluginCatalogEntryDto["kind"]): string {
-  return kind === "first_party" ? "First-party" : "Example";
-}
-
-/**
- * PluginManager page component.
- *
- * Provides a management UI for the Paperclip plugin system:
- * - Lists repository-local plugins available to instance administrators.
- * - Lists all installed plugins with their status, version, and category badges.
- * - Allows installing new plugins by npm package name.
- * - Provides instance-admin actions: enable, disable, and navigate to settings.
- * - Uninstall with a two-step confirmation dialog to prevent accidental removal.
- *
- * Data flow:
- * - Reads from `GET /api/plugins` via `pluginsApi.list()`.
- * - Instance administrators read `GET /api/plugins/catalog` and can install a
- *   recognized entry through `POST /api/plugins/catalog/install`.
- * - Mutations (install / uninstall / enable / disable) invalidate
- *   `queryKeys.plugins.all` so the list refreshes automatically.
- *
- * @see PluginSettings — linked from the Settings icon on each plugin row.
- * @see doc/plugins/PLUGIN_SPEC.md §3 — Plugin Lifecycle for status semantics.
- */
+/** Manage installed plugins, catalog installation, and lifecycle actions. */
 function PluginManager() {
   const currentUserId = useCurrentUserId();
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
-  const { pushToast } = useToastActions();
 
   const [installPackage, setInstallPackage] = useState("");
   const [installDialogOpen, setInstallDialogOpen] = useState(false);
-  const [uninstallPluginId, setUninstallPluginId] = useState<string | null>(
-    null,
-  );
+  const [uninstallPluginId, setUninstallPluginId] = useState<string | null>(null);
   const [uninstallPluginName, setUninstallPluginName] = useState<string>("");
-  const [errorDetailsPlugin, setErrorDetailsPlugin] =
-    useState<PluginRecordDto | null>(null);
+  const [errorDetailsPlugin, setErrorDetailsPlugin] = useState<PluginRecordDto | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([
@@ -121,10 +86,7 @@ function PluginManager() {
       {
         label: "Instance settings",
         renderLink: (content) => (
-          <Link
-            to="/$companyId/company/settings/instance"
-            params={{ companyId }}
-          >
+          <Link to="/$companyId/company/settings/instance" params={{ companyId }}>
             {content}
           </Link>
         ),
@@ -174,14 +136,10 @@ function PluginManager() {
       await invalidatePluginQueries();
       setInstallDialogOpen(false);
       setInstallPackage("");
-      pushToast({ title: "Plugin installed successfully", tone: "success" });
+      toast.success("Plugin installed successfully");
     },
     onError: (err: Error) => {
-      pushToast({
-        title: "Failed to install plugin",
-        body: err.message,
-        tone: "error",
-      });
+      toast.error("Failed to install plugin", { description: err.message });
     },
   });
 
@@ -189,14 +147,10 @@ function PluginManager() {
     mutationFn: (packageName: string) => pluginsApi.installCatalog(packageName),
     onSuccess: async () => {
       await invalidatePluginQueries();
-      pushToast({ title: "Plugin installed successfully", tone: "success" });
+      toast.success("Plugin installed successfully");
     },
     onError: (err: Error) => {
-      pushToast({
-        title: "Failed to install plugin",
-        body: err.message,
-        tone: "error",
-      });
+      toast.error("Failed to install plugin", { description: err.message });
     },
   });
 
@@ -204,43 +158,24 @@ function PluginManager() {
     mutationFn: (pluginId: string) => pluginsApi.uninstall(pluginId),
     onSuccess: async () => {
       await invalidatePluginQueries();
-      pushToast({ title: "Plugin uninstalled successfully", tone: "success" });
+      toast.success("Plugin uninstalled successfully");
     },
     onError: (err: Error) => {
-      pushToast({
-        title: "Failed to uninstall plugin",
-        body: err.message,
-        tone: "error",
-      });
+      toast.error("Failed to uninstall plugin", { description: err.message });
     },
   });
 
-  const enableMutation = useMutation({
-    mutationFn: (pluginId: string) => pluginsApi.enable(pluginId),
-    onSuccess: async () => {
+  const lifecycleMutation = useMutation({
+    mutationFn: ({ pluginId, enable }: { pluginId: string; enable: boolean }) =>
+      enable ? pluginsApi.enable(pluginId) : pluginsApi.disable(pluginId),
+    onSuccess: async (_, { enable }) => {
       await invalidatePluginQueries();
-      pushToast({ title: "Plugin enabled", tone: "success" });
+      if (enable) toast.success("Plugin enabled");
+      else toast.info("Plugin disabled");
     },
-    onError: (err: Error) => {
-      pushToast({
-        title: "Failed to enable plugin",
-        body: err.message,
-        tone: "error",
-      });
-    },
-  });
-
-  const disableMutation = useMutation({
-    mutationFn: (pluginId: string) => pluginsApi.disable(pluginId),
-    onSuccess: async () => {
-      await invalidatePluginQueries();
-      pushToast({ title: "Plugin disabled", tone: "info" });
-    },
-    onError: (err: Error) => {
-      pushToast({
-        title: "Failed to disable plugin",
-        body: err.message,
-        tone: "error",
+    onError: (err: Error, { enable }) => {
+      toast.error(`Failed to ${enable ? "enable" : "disable"} plugin`, {
+        description: err.message,
       });
     },
   });
@@ -248,25 +183,15 @@ function PluginManager() {
   const installedPlugins = plugins ?? [];
   const catalogPlugins = catalogQuery.data ?? [];
   const installedByPackageName = useMemo(
-    () =>
-      new Map(installedPlugins.map((plugin) => [plugin.packageName, plugin])),
+    () => new Map(installedPlugins.map((plugin) => [plugin.packageName, plugin])),
     [installedPlugins],
   );
   const catalogEntryBeingInstalled = useMemo(
-    () =>
-      catalogPlugins.find(
-        (entry) => entry.packageName === catalogInstallMutation.variables,
-      ) ?? null,
+    () => catalogPlugins.find((entry) => entry.packageName === catalogInstallMutation.variables) ?? null,
     [catalogInstallMutation.variables, catalogPlugins],
   );
   const errorSummaryByPluginId = useMemo(
-    () =>
-      new Map(
-        installedPlugins.map((plugin) => [
-          plugin.id,
-          getPluginErrorSummary(plugin),
-        ]),
-      ),
+    () => new Map(installedPlugins.map((plugin) => [plugin.id, getPluginErrorSummary(plugin)])),
     [installedPlugins],
   );
   const pluginActionStatus = catalogInstallMutation.isPending
@@ -277,23 +202,22 @@ function PluginManager() {
       ? "Installing plugin…"
       : uninstallMutation.isPending
         ? "Uninstalling plugin…"
-        : enableMutation.isPending
-          ? "Enabling plugin…"
-          : disableMutation.isPending
-            ? "Disabling plugin…"
-            : null;
+        : lifecycleMutation.isPending
+          ? `${lifecycleMutation.variables?.enable ? "Enabling" : "Disabling"} plugin…`
+          : null;
 
   if (isLoading)
     return (
-      <div className="p-4 text-sm text-muted-foreground" role="status">
-        Loading plugins...
+      <div className="flex items-center gap-2 p-4" role="status">
+        <Spinner />
+        <span>Loading plugins...</span>
       </div>
     );
   if (error)
     return (
-      <div className="p-4 text-sm text-destructive" role="alert">
-        Failed to load plugins.
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription>Failed to load plugins.</AlertDescription>
+      </Alert>
     );
 
   return (
@@ -324,22 +248,19 @@ function PluginManager() {
                   Enter the npm package name of the plugin you wish to install.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="packageName">npm Package Name</Label>
+              <div className="py-4">
+                <Field>
+                  <FieldLabel htmlFor="packageName">npm Package Name</FieldLabel>
                   <Input
                     id="packageName"
                     placeholder="@paperclipai/plugin-example"
                     value={installPackage}
                     onChange={(e) => setInstallPackage(e.target.value)}
                   />
-                </div>
+                </Field>
               </div>
               <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setInstallDialogOpen(false)}
-                >
+                <Button variant="outline" onClick={() => setInstallDialogOpen(false)}>
                   Cancel
                 </Button>
                 <Button
@@ -349,9 +270,7 @@ function PluginManager() {
                       packageName: installPackage,
                     })
                   }
-                  disabled={
-                    installPackage.length === 0 || installMutation.isPending
-                  }
+                  disabled={installPackage.length === 0 || installMutation.isPending}
                 >
                   {installMutation.isPending ? "Installing..." : "Install"}
                 </Button>
@@ -361,377 +280,81 @@ function PluginManager() {
         ) : null}
       </div>
 
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-          <div className="space-y-1 text-sm">
-            <p className="font-medium text-foreground">Plugins are alpha.</p>
-            <p className="text-muted-foreground">
-              The plugin runtime and API surface are still changing. Expect
-              breaking changes while this feature settles.
-            </p>
-          </div>
-        </div>
-      </div>
+      <Alert>
+        <AlertTriangle />
+        <AlertTitle>Plugins are alpha.</AlertTitle>
+        <AlertDescription>
+          The plugin runtime and API surface are still changing. Expect breaking changes while this feature
+          settles.
+        </AlertDescription>
+      </Alert>
 
       {boardAccessQuery.error ? (
-        <div
-          className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-          role="alert"
-        >
-          Instance-admin access could not be verified. Plugin management actions
-          are unavailable.
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>
+            Instance-admin access could not be verified. Plugin management actions are unavailable.
+          </AlertDescription>
+        </Alert>
       ) : boardAccessQuery.isSuccess && !isInstanceAdmin ? (
-        <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-          Plugin installation and lifecycle controls are available only to
-          instance admins.
-        </div>
+        <Alert>
+          <AlertDescription>
+            Plugin installation and lifecycle controls are available only to instance admins.
+          </AlertDescription>
+        </Alert>
       ) : null}
 
       {isInstanceAdmin ? (
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Puzzle className="h-5 w-5 text-muted-foreground" />
-            <h2 className="text-base font-semibold">Available Plugins</h2>
-            <Badge variant="outline">Local catalog</Badge>
-          </div>
-
-          {catalogInstallMutation.error ? (
-            <div
-              className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-              role="alert"
-            >
-              {catalogInstallMutation.error.message}
-            </div>
-          ) : null}
-
-          {catalogQuery.isLoading ? (
-            <div className="text-sm text-muted-foreground" role="status">
-              Loading available plugins…
-            </div>
-          ) : catalogQuery.error ? (
-            <div className="text-sm text-destructive" role="alert">
-              Failed to load available plugins.
-            </div>
-          ) : catalogPlugins.length === 0 ? (
-            <div className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
-              No local plugins are available in this installation.
-            </div>
-          ) : (
-            <Card className="block py-0">
-              <ul className="divide-y">
-                {catalogPlugins.map((catalogPlugin) => {
-                  const installedPlugin = installedByPackageName.get(
-                    catalogPlugin.packageName,
-                  );
-                  const installPending =
-                    catalogInstallMutation.isPending &&
-                    catalogInstallMutation.variables ===
-                      catalogPlugin.packageName;
-
-                  return (
-                    <li key={catalogPlugin.packageName}>
-                      <div className="flex items-center gap-4 px-4 py-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-medium">
-                              {catalogPlugin.displayName}
-                            </span>
-                            <Badge variant="outline">
-                              {getCatalogKindLabel(catalogPlugin.kind)}
-                            </Badge>
-                            {installedPlugin ? (
-                              <Badge
-                                variant={
-                                  installedPlugin.status === "ready"
-                                    ? "default"
-                                    : installedPlugin.status === "error"
-                                      ? "destructive"
-                                      : "secondary"
-                                }
-                              >
-                                {installedPlugin.status}
-                              </Badge>
-                            ) : (
-                              <Badge variant="secondary">Available</Badge>
-                            )}
-                            {!catalogPlugin.built && !installedPlugin ? (
-                              <Badge variant="outline">Builds on install</Badge>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {catalogPlugin.description}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {catalogPlugin.packageName} · v
-                            {catalogPlugin.version}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {catalogPlugin.relativePath}
-                          </p>
-                          {!catalogPlugin.built && !installedPlugin ? (
-                            <p className="mt-2 text-xs text-muted-foreground">
-                              Paperclip will build this package automatically
-                              before installing it.
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {installedPlugin ? (
-                            <Button variant="outline" size="sm" asChild>
-                              <Link
-                                to="/$companyId/company/settings/instance/plugins/$pluginId"
-                                params={{
-                                  companyId,
-                                  pluginId: installedPlugin.id,
-                                }}
-                              >
-                                {installedPlugin.status === "ready"
-                                  ? "Configure"
-                                  : "Review configuration"}
-                              </Link>
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              aria-label={`Install ${catalogPlugin.displayName}`}
-                              disabled={catalogInstallMutation.isPending}
-                              onClick={() =>
-                                catalogInstallMutation.mutate(
-                                  catalogPlugin.packageName,
-                                )
-                              }
-                            >
-                              {installPending
-                                ? catalogPlugin.built
-                                  ? "Installing…"
-                                  : "Building and installing…"
-                                : "Install"}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </Card>
-          )}
-        </section>
+        <PluginCatalogSection
+          companyId={companyId}
+          catalogPlugins={catalogPlugins}
+          installedByPackageName={installedByPackageName}
+          isLoading={catalogQuery.isLoading}
+          loadError={catalogQuery.error}
+          installError={catalogInstallMutation.error}
+          isInstallPending={catalogInstallMutation.isPending}
+          installingPackage={catalogInstallMutation.variables}
+          onInstall={(packageName) => catalogInstallMutation.mutate(packageName)}
+        />
       ) : null}
 
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Puzzle className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-base font-semibold">Installed Plugins</h2>
-        </div>
-
-        {!installedPlugins.length ? (
-          <Card className="bg-muted/30">
-            <CardContent className="flex flex-col items-center justify-center py-10">
-              <Puzzle className="h-10 w-10 text-muted-foreground mb-4" />
-              <p className="text-sm font-medium">No plugins installed</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {isInstanceAdmin
-                  ? "Install a plugin to extend functionality."
-                  : "No plugins are installed on this instance."}
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="block py-0">
-            <ul className="divide-y">
-              {installedPlugins.map((plugin) => (
-                <li key={plugin.id}>
-                  <div className="flex items-start gap-4 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {isInstanceAdmin ? (
-                          <Link
-                            to="/$companyId/company/settings/instance/plugins/$pluginId"
-                            params={{ companyId, pluginId: plugin.id }}
-                            className="block truncate font-medium hover:underline"
-                            title={plugin.manifestJson.displayName}
-                          >
-                            {plugin.manifestJson.displayName}
-                          </Link>
-                        ) : (
-                          <span
-                            className="block truncate font-medium"
-                            title={plugin.manifestJson.displayName}
-                          >
-                            {plugin.manifestJson.displayName}
-                          </span>
-                        )}
-                      </div>
-                      <div>
-                        <p
-                          className="mt-0.5 truncate text-xs text-muted-foreground"
-                          title={plugin.packageName}
-                        >
-                          {plugin.packageName} · v{plugin.manifestJson.version}
-                        </p>
-                      </div>
-                      <p
-                        className="mt-0.5 truncate text-sm text-muted-foreground"
-                        title={plugin.manifestJson.description}
-                      >
-                        {plugin.manifestJson.description}
-                      </p>
-                      {plugin.status === "error" && (
-                        <div
-                          className="mt-3 rounded-md border border-red-500/25 bg-red-500/[0.06] px-3 py-2"
-                          role="alert"
-                        >
-                          <div className="flex flex-wrap items-start gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 text-sm font-medium text-red-700 dark:text-red-300">
-                                <AlertTriangle className="h-4 w-4 shrink-0" />
-                                <span>Plugin error</span>
-                              </div>
-                              <p
-                                className="mt-1 break-words text-sm text-red-700/90 dark:text-red-200/90"
-                                title={plugin.lastError ?? undefined}
-                              >
-                                {errorSummaryByPluginId.get(plugin.id)}
-                              </p>
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-red-500/30 bg-background/60 text-red-700 hover:bg-red-500/10 hover:text-red-800 dark:text-red-200 dark:hover:text-red-100"
-                              onClick={() => setErrorDetailsPlugin(plugin)}
-                            >
-                              View full error
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 self-center">
-                      <div className="flex flex-col items-end gap-2">
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant={
-                              plugin.status === "ready"
-                                ? "default"
-                                : plugin.status === "error"
-                                  ? "destructive"
-                                  : "secondary"
-                            }
-                            className={cn(
-                              "shrink-0",
-                              plugin.status === "ready"
-                                ? "bg-green-600 hover:bg-green-700"
-                                : "",
-                            )}
-                          >
-                            {plugin.status}
-                          </Badge>
-                          {isInstanceAdmin ? (
-                            <>
-                              <Button
-                                variant="outline"
-                                size="icon-sm"
-                                className="h-8 w-8"
-                                title={
-                                  plugin.status === "ready"
-                                    ? "Disable"
-                                    : "Enable"
-                                }
-                                onClick={() => {
-                                  if (plugin.status === "ready") {
-                                    disableMutation.mutate(plugin.id);
-                                  } else {
-                                    enableMutation.mutate(plugin.id);
-                                  }
-                                }}
-                                disabled={
-                                  enableMutation.isPending ||
-                                  disableMutation.isPending
-                                }
-                              >
-                                <Power
-                                  className={cn(
-                                    "h-4 w-4",
-                                    plugin.status === "ready"
-                                      ? "text-green-600"
-                                      : "",
-                                  )}
-                                />
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="icon-sm"
-                                className="h-8 w-8 text-destructive hover:text-destructive"
-                                title="Uninstall"
-                                onClick={() => {
-                                  setUninstallPluginId(plugin.id);
-                                  setUninstallPluginName(
-                                    plugin.manifestJson.displayName,
-                                  );
-                                }}
-                                disabled={uninstallMutation.isPending}
-                              >
-                                <Trash className="h-4 w-4" />
-                              </Button>
-                            </>
-                          ) : null}
-                        </div>
-                        {isInstanceAdmin ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="mt-2 h-8"
-                            asChild
-                          >
-                            <Link
-                              to="/$companyId/company/settings/instance/plugins/$pluginId"
-                              params={{ companyId, pluginId: plugin.id }}
-                            >
-                              <Settings
-                                data-icon="inline-start"
-                                className="h-4 w-4"
-                              />
-                              Configure
-                            </Link>
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
-      </section>
+      <InstalledPluginsSection
+        companyId={companyId}
+        installedPlugins={installedPlugins}
+        isInstanceAdmin={isInstanceAdmin}
+        errorSummaryByPluginId={errorSummaryByPluginId}
+        lifecyclePending={lifecycleMutation.isPending}
+        uninstallPending={uninstallMutation.isPending}
+        onToggle={(plugin) =>
+          lifecycleMutation.mutate({
+            pluginId: plugin.id,
+            enable: plugin.status !== "ready",
+          })
+        }
+        onUninstall={(plugin) => {
+          setUninstallPluginId(plugin.id);
+          setUninstallPluginName(plugin.manifestJson.displayName);
+        }}
+        onShowError={setErrorDetailsPlugin}
+      />
 
       {isInstanceAdmin ? (
-        <Dialog
+        <AlertDialog
           open={uninstallPluginId !== null}
           onOpenChange={(open) => {
             if (!open) setUninstallPluginId(null);
           }}
         >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Uninstall Plugin</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to uninstall{" "}
-                <strong>{uninstallPluginName}</strong>? This action cannot be
-                undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setUninstallPluginId(null)}
-              >
-                Cancel
-              </Button>
-              <Button
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Uninstall Plugin</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to uninstall <strong>{uninstallPluginName}</strong>? This action cannot
+                be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={uninstallMutation.isPending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
                 variant="destructive"
                 disabled={uninstallMutation.isPending}
                 onClick={() => {
@@ -743,54 +366,42 @@ function PluginManager() {
                 }}
               >
                 {uninstallMutation.isPending ? "Uninstalling..." : "Uninstall"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       ) : null}
 
       <Dialog
         open={errorDetailsPlugin !== null}
-        onOpenChange={(open) => {
-          if (!open) setErrorDetailsPlugin(null);
-        }}
+        onOpenChange={(open) => !open && setErrorDetailsPlugin(null)}
       >
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Error Details</DialogTitle>
             <DialogDescription>
-              {errorDetailsPlugin?.manifestJson.displayName ?? "Plugin"} hit an
-              error state.
+              {errorDetailsPlugin?.manifestJson.displayName ?? "Plugin"} hit an error state.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="rounded-md border border-red-500/25 bg-red-500/[0.06] px-4 py-3">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-300" />
-                <div className="space-y-1 text-sm">
-                  <p className="font-medium text-red-700 dark:text-red-300">
-                    What errored
-                  </p>
-                  <p className="text-red-700/90 dark:text-red-200/90 break-words">
-                    {errorDetailsPlugin
-                      ? getPluginErrorSummary(errorDetailsPlugin)
-                      : "No error summary available."}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>What errored</AlertTitle>
+              <AlertDescription className="break-words">
+                {errorDetailsPlugin
+                  ? getPluginErrorSummary(errorDetailsPlugin)
+                  : "No error summary available."}
+              </AlertDescription>
+            </Alert>
             <div className="space-y-2">
               <p className="text-sm font-medium">Full error output</p>
-              <pre className="max-h-(--sz-50vh) overflow-auto rounded-md border bg-muted/40 p-3 text-xs leading-5 whitespace-pre-wrap break-words">
+              <pre className="max-h-(--sz-50vh) overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/40 p-3 text-xs leading-5">
                 {errorDetailsPlugin?.lastError ?? "No stored error message."}
               </pre>
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setErrorDetailsPlugin(null)}
-            >
+            <Button variant="outline" onClick={() => setErrorDetailsPlugin(null)}>
               Close
             </Button>
           </DialogFooter>

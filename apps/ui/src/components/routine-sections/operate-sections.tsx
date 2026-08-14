@@ -1,25 +1,39 @@
 import { useMemo, useState } from "react";
-import { Activity as ActivityIcon, Play, SlidersHorizontal } from "lucide-react";
+import { Activity as ActivityIcon, Play, SlidersHorizontal, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { timeAgo } from "../../lib/timeAgo";
 import { runRowSubtitle, dedupedTriggerLabel } from "../../lib/routine-run-display";
-import { EmptyState } from "../EmptyState";
-import { EntityRow } from "../EntityRow";
-import { FilterBar, type FilterValue } from "../FilterBar";
 import { LiveRunWidget } from "../LiveRunWidget";
 import { RoutineHistoryTab } from "../RoutineHistoryTab";
 import { RoutineActivityRow } from "../RoutineActivityRow";
 import { useRoutineDetail } from "./context";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { Link } from "@tanstack/react-router";
 
-const DATE_WINDOW_OPTIONS: { value: string; label: string; ms: number | null }[] = [
+const DATE_WINDOW_OPTIONS: {
+  value: string;
+  label: string;
+  ms: number | null;
+}[] = [
   { value: "any", label: "Any time", ms: null },
   { value: "24h", label: "Last 24h", ms: 24 * 60 * 60 * 1000 },
   { value: "7d", label: "Last 7d", ms: 7 * 24 * 60 * 60 * 1000 },
@@ -36,14 +50,8 @@ export function RunsSection() {
   const [statusFilter, setStatusFilter] = useState("any");
   const [dateFilter, setDateFilter] = useState("any");
 
-  const sourceOptions = useMemo(
-    () => [...new Set(runs.map((run) => run.source))].sort(),
-    [runs],
-  );
-  const statusOptions = useMemo(
-    () => [...new Set(runs.map((run) => run.status))].sort(),
-    [runs],
-  );
+  const sourceOptions = useMemo(() => [...new Set(runs.map((run) => run.source))].sort(), [runs]);
+  const statusOptions = useMemo(() => [...new Set(runs.map((run) => run.status))].sort(), [runs]);
 
   const filtered = useMemo(() => {
     const windowMs = DATE_WINDOW_OPTIONS.find((option) => option.value === dateFilter)?.ms ?? null;
@@ -56,11 +64,15 @@ export function RunsSection() {
     });
   }, [runs, sourceFilter, statusFilter, dateFilter]);
 
-  const activeFilters = useMemo<FilterValue[]>(() => {
-    const list: FilterValue[] = [];
+  const activeFilters = useMemo(() => {
+    const list: Array<{ key: string; label: string; value: string }> = [];
     if (sourceFilter !== "any") list.push({ key: "source", label: "Source", value: sourceFilter });
     if (statusFilter !== "any") {
-      list.push({ key: "status", label: "Status", value: statusFilter.replaceAll("_", " ") });
+      list.push({
+        key: "status",
+        label: "Status",
+        value: statusFilter.replaceAll("_", " "),
+      });
     }
     if (dateFilter !== "any") {
       const label = DATE_WINDOW_OPTIONS.find((option) => option.value === dateFilter)?.label ?? dateFilter;
@@ -88,12 +100,20 @@ export function RunsSection() {
       ) : null}
 
       {runs.length === 0 ? (
-        <EmptyState
-          icon={Play}
-          message="No runs yet. Trigger a run from the header or wait for the schedule."
-          action="Run now"
-          onAction={onOpenRunDialog}
-        />
+        <Empty className="border-0">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Play />
+            </EmptyMedia>
+            <EmptyTitle>No runs yet</EmptyTitle>
+            <EmptyDescription>
+              No runs yet. Trigger a run from the header or wait for the schedule.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button onClick={onOpenRunDialog}>Run now</Button>
+          </EmptyContent>
+        </Empty>
       ) : (
         <>
           {/* Filter chips row (§3.6) */}
@@ -141,61 +161,91 @@ export function RunsSection() {
                 </SelectContent>
               </Select>
             </div>
-            <FilterBar filters={activeFilters} onRemove={removeFilter} onClear={clearFilters} />
+            {activeFilters.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {activeFilters.map((filter) => (
+                  <Badge key={filter.key} variant="secondary">
+                    <span className="text-muted-foreground">{filter.label}:</span>
+                    {filter.value}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={`Remove ${filter.label}: ${filter.value} filter`}
+                      onClick={() => removeFilter(filter.key)}
+                    >
+                      <X />
+                    </Button>
+                  </Badge>
+                ))}
+                <Button type="button" variant="ghost" size="xs" onClick={clearFilters}>
+                  Clear all
+                </Button>
+              </div>
+            ) : null}
           </div>
 
           {filtered.length === 0 ? (
-            <EmptyState
-              icon={SlidersHorizontal}
-              message="No runs match these filters."
-              action="Clear filters"
-              onAction={clearFilters}
-            />
+            <Empty className="border-0">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <SlidersHorizontal />
+                </EmptyMedia>
+                <EmptyTitle>No matching runs</EmptyTitle>
+                <EmptyDescription>No runs match these filters.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button onClick={clearFilters}>Clear filters</Button>
+              </EmptyContent>
+            </Empty>
           ) : (
-            <div className="rounded-lg border border-border">
+            <ItemGroup className="rounded-lg border">
               {filtered.map((run) => {
                 const label = dedupedTriggerLabel(run.trigger);
                 const title = run.linkedTask?.title ?? label ?? "Run";
                 return (
-                  <EntityRow
-                    key={run.id}
-                    leading={
-                      <>
-                        <Badge variant="outline" className="shrink-0">
-                          {run.source}
-                        </Badge>
-                        <Badge
-                          variant={run.status === "failed" ? "destructive" : "secondary"}
-                          className="shrink-0"
-                        >
-                          {run.status.replaceAll("_", " ")}
-                        </Badge>
-                      </>
-                    }
-                    identifier={
-                      run.linkedTask?.identifier ?? undefined
-                    }
-                    title={title}
-                    subtitle={runRowSubtitle(run, routine.variables)}
-                    reserveSubtitleSpace
-                    trailing={
-                      <span className="text-xs text-muted-foreground">{timeAgo(run.triggeredAt)}</span>
-                    }
-                    linkOptions={
-                      run.linkedTask
-                        ? {
-                            to: "/$companyId/tasks/$taskNumber",
-                            params: {
+                  <Item key={run.id} size="sm">
+                    <ItemMedia>
+                      <Badge variant="outline" className="shrink-0">
+                        {run.source}
+                      </Badge>
+                      <Badge
+                        variant={run.status === "failed" ? "destructive" : "secondary"}
+                        className="shrink-0"
+                      >
+                        {run.status.replaceAll("_", " ")}
+                      </Badge>
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle>
+                        {run.linkedTask?.identifier ? (
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {run.linkedTask.identifier}
+                          </span>
+                        ) : null}
+                        {run.linkedTask ? (
+                          <Link
+                            to="/$companyId/tasks/$taskNumber"
+                            params={{
                               companyId,
                               taskNumber: String(run.linkedTask.taskNumber),
-                            },
-                          }
-                        : undefined
-                    }
-                  />
+                            }}
+                          >
+                            {title}
+                          </Link>
+                        ) : (
+                          title
+                        )}
+                      </ItemTitle>
+                      <ItemDescription>{runRowSubtitle(run, routine.variables) || "\u00a0"}</ItemDescription>
+                    </ItemContent>
+                    <ItemActions>
+                      <span className="text-xs text-muted-foreground">{timeAgo(run.triggeredAt)}</span>
+                    </ItemActions>
+                  </Item>
                 );
               })}
-            </div>
+            </ItemGroup>
           )}
         </>
       )}
@@ -229,7 +279,17 @@ export function ActivitySection() {
   }, [events]);
 
   if (events.length === 0) {
-    return <EmptyState icon={ActivityIcon} message="No activity yet." />;
+    return (
+      <Empty className="border-0">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <ActivityIcon />
+          </EmptyMedia>
+          <EmptyTitle>No activity yet</EmptyTitle>
+          <EmptyDescription>Routine changes and runs will appear here.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
   }
 
   return (

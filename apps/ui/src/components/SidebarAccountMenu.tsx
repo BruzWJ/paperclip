@@ -1,28 +1,18 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  BookOpen,
-  LogOut,
-  Megaphone,
-  type LucideIcon,
-  UserRound,
-  UserRoundPen,
-} from "lucide-react";
+import { BookOpen, LogOut, Megaphone, Moon, Sun, UserRound, UserRoundPen } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSidebar } from "../context/SidebarContext";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { useTheme } from "../context/ThemeContext";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
-import { ThemeToggle } from "./ThemeToggle";
 import { SidebarServerInfo } from "./SidebarServerInfo";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 const DOCS_URL = "https://docs.paperclip.ing/";
 const FEEDBACK_URL = "https://paperclip.ing/feedback";
@@ -30,17 +20,6 @@ const FEEDBACK_URL = "https://paperclip.ing/feedback";
 interface SidebarAccountMenuProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-}
-
-interface MenuActionProps {
-  label: string;
-  description: string;
-  icon: LucideIcon;
-  onClick?: () => void;
-  destination?:
-    | { type: "user-profile"; userId: string }
-    | { type: "profile-settings" };
-  externalHref?: string;
 }
 
 function deriveInitials(name: string) {
@@ -51,84 +30,12 @@ function deriveInitials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
-function MenuAction({
-  label,
-  description,
-  icon: Icon,
-  onClick,
-  destination,
-  externalHref,
-}: MenuActionProps) {
-  const companyId = useCompanyRouteId();
-  const className =
-    "flex w-full items-start gap-3 rounded-sm px-3 py-3 text-left transition-colors hover:bg-accent/60";
-
-  const content = (
-    <>
-      <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
-        <Icon className="size-4" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-foreground">
-          {label}
-        </span>
-        <span className="block text-xs text-muted-foreground">
-          {description}
-        </span>
-      </span>
-    </>
-  );
-
-  if (destination) {
-    return destination.type === "user-profile" ? (
-      <Link
-        to="/$companyId/u/$userId"
-        params={{ companyId, userId: destination.userId }}
-        className={className}
-        onClick={onClick}
-      >
-        {content}
-      </Link>
-    ) : (
-      <Link
-        to="/$companyId/company/settings/instance/profile"
-        params={{ companyId }}
-        className={className}
-        onClick={onClick}
-      >
-        {content}
-      </Link>
-    );
-  }
-
-  if (externalHref) {
-    return (
-      <a
-        href={externalHref}
-        target="_blank"
-        rel="noreferrer"
-        className={className}
-        onClick={onClick}
-      >
-        {content}
-      </a>
-    );
-  }
-
-  return (
-    <button type="button" className={className} onClick={onClick}>
-      {content}
-    </button>
-  );
-}
-
-export function SidebarAccountMenu({
-  open: controlledOpen,
-  onOpenChange,
-}: SidebarAccountMenuProps) {
+export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: SidebarAccountMenuProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const queryClient = useQueryClient();
+  const companyId = useCompanyRouteId();
   const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
+  const { theme, toggleTheme } = useTheme();
   const rail = collapsed && !peeking;
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
@@ -146,8 +53,7 @@ export function SidebarAccountMenu({
     },
   });
 
-  const displayName =
-    session?.user.name?.trim() || session?.user.email?.trim() || "Account";
+  const displayName = session?.user.name?.trim() || session?.user.email?.trim() || "Account";
   const secondaryLabel = session?.user.email?.trim() || "Signed in";
   const initials = deriveInitials(displayName);
   const userId = session?.user.id;
@@ -161,26 +67,20 @@ export function SidebarAccountMenu({
     <div className="border-t border-r border-border bg-background px-3 py-2">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <button
+          <Button
             type="button"
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-(length:--text-compact) font-medium text-foreground/80 transition-colors hover:bg-accent/50 hover:text-foreground"
+            variant="ghost"
+            className="h-auto w-full justify-start px-3 py-2"
             aria-label="Open account menu"
           >
             <Avatar size="sm">
-              {session?.user.image ? (
-                <AvatarImage src={session.user.image} alt={displayName} />
-              ) : null}
+              {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
               <AvatarFallback>{initials}</AvatarFallback>
             </Avatar>
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate",
-                rail && SIDEBAR_RAIL_HIDDEN_LABEL,
-              )}
-            >
+            <span className={cn("min-w-0 flex-1 truncate", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}>
               {displayName}
             </span>
-          </button>
+          </Button>
         </PopoverTrigger>
         <PopoverContent
           side="top"
@@ -192,17 +92,13 @@ export function SidebarAccountMenu({
             <div className="flex items-start gap-3">
               <div className="rounded-sm border-4 border-popover bg-popover p-0.5 shadow-sm">
                 <Avatar size="lg">
-                  {session?.user.image ? (
-                    <AvatarImage src={session.user.image} alt={displayName} />
-                  ) : null}
+                  {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
                   <AvatarFallback>{initials}</AvatarFallback>
                 </Avatar>
               </div>
               <div className="min-w-0 flex-1 pt-1">
                 <div className="flex items-center gap-2">
-                  <h2 className="truncate text-base font-semibold text-foreground">
-                    {displayName}
-                  </h2>
+                  <h2 className="truncate text-base font-semibold text-foreground">{displayName}</h2>
                   <Badge
                     variant="ghost"
                     className="bg-accent text-(length:--text-nano) font-semibold uppercase tracking-wide text-muted-foreground"
@@ -210,51 +106,108 @@ export function SidebarAccountMenu({
                     Account
                   </Badge>
                 </div>
-                <p className="truncate text-sm text-muted-foreground">
-                  {secondaryLabel}
-                </p>
+                <p className="truncate text-sm text-muted-foreground">{secondaryLabel}</p>
               </div>
             </div>
 
             <div className="mt-4 space-y-1">
               {userId ? (
-                <MenuAction
-                  label="View profile"
-                  description="Open your activity, task, and usage ledger."
-                  icon={UserRound}
-                  destination={{ type: "user-profile", userId }}
-                  onClick={closeNavigationChrome}
-                />
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="h-auto w-full justify-start gap-3 rounded-sm px-3 py-3 text-left whitespace-normal"
+                >
+                  <Link
+                    to="/$companyId/u/$userId"
+                    params={{ companyId, userId }}
+                    onClick={closeNavigationChrome}
+                  >
+                    <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
+                      <UserRound className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-foreground">View profile</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Open your activity, task, and usage ledger.
+                      </span>
+                    </span>
+                  </Link>
+                </Button>
               ) : null}
-              <MenuAction
-                label="Edit profile"
-                description="Update your display name and avatar."
-                icon={UserRoundPen}
-                destination={{ type: "profile-settings" }}
-                onClick={closeNavigationChrome}
-              />
-              <MenuAction
-                label="Documentation"
-                description="Open Paperclip docs in a new tab."
-                icon={BookOpen}
-                externalHref={DOCS_URL}
-                onClick={() => setOpen(false)}
-              />
-              <MenuAction
-                label="Feedback"
-                description="Share feedback or report a problem."
-                icon={Megaphone}
-                externalHref={FEEDBACK_URL}
-                onClick={() => setOpen(false)}
-              />
-              <ThemeToggle
-                variant="menu-action"
-                onAfterToggle={() => setOpen(false)}
-              />
-              <button
+              <Button
+                asChild
+                variant="ghost"
+                className="h-auto w-full justify-start gap-3 rounded-sm px-3 py-3 text-left whitespace-normal"
+              >
+                <Link
+                  to="/$companyId/company/settings/instance/profile"
+                  params={{ companyId }}
+                  onClick={closeNavigationChrome}
+                >
+                  <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
+                    <UserRoundPen className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-foreground">Edit profile</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Update your display name and avatar.
+                    </span>
+                  </span>
+                </Link>
+              </Button>
+              <Button
+                asChild
+                variant="ghost"
+                className="h-auto w-full justify-start gap-3 rounded-sm px-3 py-3 text-left whitespace-normal"
+              >
+                <a href={DOCS_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+                  <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
+                    <BookOpen className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-foreground">Documentation</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Open Paperclip docs in a new tab.
+                    </span>
+                  </span>
+                </a>
+              </Button>
+              <Button
+                asChild
+                variant="ghost"
+                className="h-auto w-full justify-start gap-3 rounded-sm px-3 py-3 text-left whitespace-normal"
+              >
+                <a href={FEEDBACK_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+                  <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
+                    <Megaphone className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-foreground">Feedback</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Share feedback or report a problem.
+                    </span>
+                  </span>
+                </a>
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
+                className="h-auto w-full justify-start whitespace-normal text-left"
+                onClick={() => {
+                  toggleTheme();
+                  setOpen(false);
+                }}
+                aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                aria-keyshortcuts="Meta+Shift+D Control+Shift+D"
+              >
+                {theme === "dark" ? <Sun /> : <Moon />}
+                <span>{theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}</span>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
                 className={cn(
-                  "flex w-full items-start gap-3 rounded-sm px-3 py-3 text-left transition-colors hover:bg-destructive/10",
+                  "h-auto w-full items-start justify-start gap-3 px-3 py-3 text-left",
                   signOutMutation.isPending && "cursor-not-allowed opacity-60",
                 )}
                 onClick={() => signOutMutation.mutate()}
@@ -268,11 +221,9 @@ export function SidebarAccountMenu({
                   <span aria-live="polite" className="block text-sm font-medium text-foreground">
                     {signOutMutation.isPending ? "Signing out..." : "Sign out"}
                   </span>
-                  <span className="block text-xs text-muted-foreground">
-                    End this browser session.
-                  </span>
+                  <span className="block text-xs text-muted-foreground">End this browser session.</span>
                 </span>
-              </button>
+              </Button>
               <SidebarServerInfo />
             </div>
           </div>

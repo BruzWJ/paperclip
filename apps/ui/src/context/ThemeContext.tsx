@@ -1,29 +1,18 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
-import {
-  hasBlockingShortcutDialog,
-  isKeyboardShortcutTextInputTarget,
-} from "@/lib/keyboardShortcuts";
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
+import { ThemeProvider as NextThemesProvider, useTheme as useNextTheme } from "next-themes";
+import { hasBlockingShortcutDialog, isKeyboardShortcutTextInputTarget } from "@/lib/keyboardShortcuts";
 
 type Theme = "light" | "dark";
-
-interface ThemeContextValue {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
-  toggleTheme: () => void;
-}
 
 const THEME_STORAGE_KEY = "paperclip.theme";
 const DARK_THEME_COLOR = "#18181b";
 const LIGHT_THEME_COLOR = "#ffffff";
-const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
+
+function resolvedTheme(value: string | undefined): Theme {
+  if (value === "light" || value === "dark") return value;
+  if (typeof document === "undefined") return "dark";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
 
 function isThemeShortcutTextInputTarget(target: EventTarget | null): boolean {
   if (
@@ -37,53 +26,16 @@ function isThemeShortcutTextInputTarget(target: EventTarget | null): boolean {
   return isKeyboardShortcutTextInputTarget(target);
 }
 
-function resolveThemeFromDocument(): Theme {
-  if (typeof document === "undefined") return "dark";
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
-}
+function ThemeEffects() {
+  const { theme, setTheme } = useTheme();
 
-function hasStoredTheme(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return stored === "light" || stored === "dark";
-  } catch {
-    return false;
-  }
-}
+  useEffect(() => {
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta instanceof HTMLMetaElement) {
+      themeColorMeta.setAttribute("content", theme === "dark" ? DARK_THEME_COLOR : LIGHT_THEME_COLOR);
+    }
+  }, [theme]);
 
-function applyTheme(theme: Theme) {
-  if (typeof document === "undefined") return;
-  const isDark = theme === "dark";
-  const root = document.documentElement;
-  root.classList.toggle("dark", isDark);
-  root.style.colorScheme = isDark ? "dark" : "light";
-  const themeColorMeta = document.querySelector('meta[name="theme-color"]');
-  if (themeColorMeta instanceof HTMLMetaElement) {
-    themeColorMeta.setAttribute("content", isDark ? DARK_THEME_COLOR : LIGHT_THEME_COLOR);
-  }
-}
-
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => resolveThemeFromDocument());
-  // Track whether the user has explicitly chosen a theme. If false, the
-  // theme is being derived from the OS `prefers-color-scheme` and should
-  // follow OS-level changes mid-session without being persisted.
-  const [hasExplicitChoice, setHasExplicitChoice] = useState<boolean>(() => hasStoredTheme());
-
-  const setTheme = useCallback((nextTheme: Theme) => {
-    setHasExplicitChoice(true);
-    setThemeState(nextTheme);
-  }, []);
-
-  const toggleTheme = useCallback(() => {
-    setHasExplicitChoice(true);
-    setThemeState((current) => (current === "dark" ? "light" : "dark"));
-  }, []);
-
-  // Keep the shortcut narrow enough that it does not interfere with ordinary
-  // typing or form controls. Cmd/Ctrl+Shift+D works consistently alongside the
-  // app's single-key navigation shortcuts and is discoverable on ThemeToggle.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const isThemeShortcut =
@@ -110,49 +62,29 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [setTheme, theme]);
 
-  useEffect(() => {
-    applyTheme(theme);
-    if (!hasExplicitChoice) return;
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Ignore local storage write failures in restricted environments.
-    }
-  }, [theme, hasExplicitChoice]);
+  return null;
+}
 
-  // When the user has not made an explicit choice, follow OS-level
-  // `prefers-color-scheme` changes so the UI flips alongside the OS theme.
-  useEffect(() => {
-    if (hasExplicitChoice) return;
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = (event: MediaQueryListEvent) => {
-      setThemeState(event.matches ? "dark" : "light");
-    };
-    media.addEventListener("change", handleChange);
-    return () => media.removeEventListener("change", handleChange);
-  }, [hasExplicitChoice]);
-
-  const value = useMemo(
-    () => ({
-      theme,
-      setTheme,
-      toggleTheme,
-    }),
-    [theme, setTheme, toggleTheme],
-  );
-
+export function ThemeProvider({ children }: { children: ReactNode }) {
   return (
-    <ThemeContext.Provider value={value}>
+    <NextThemesProvider
+      attribute="class"
+      defaultTheme="system"
+      enableColorScheme
+      enableSystem
+      storageKey={THEME_STORAGE_KEY}
+    >
+      <ThemeEffects />
       {children}
-    </ThemeContext.Provider>
+    </NextThemesProvider>
   );
 }
 
 export function useTheme() {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error("useTheme must be used within ThemeProvider");
-  }
-  return context;
+  const nextTheme = useNextTheme();
+  const theme = resolvedTheme(nextTheme.resolvedTheme);
+  const setTheme = useCallback((value: Theme) => nextTheme.setTheme(value), [nextTheme.setTheme]);
+  const toggleTheme = useCallback(() => setTheme(theme === "dark" ? "light" : "dark"), [setTheme, theme]);
+
+  return useMemo(() => ({ theme, setTheme, toggleTheme }), [setTheme, theme, toggleTheme]);
 }

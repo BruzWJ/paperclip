@@ -6,20 +6,20 @@ import { AlertTriangle, LogOut, Play, SlidersHorizontal } from "lucide-react";
 import { authApi } from "@/api/auth";
 import { healthApi } from "@/api/health";
 import { instanceSettingsApi } from "@/api/instanceSettings";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
-import {
-  getWorktreeInstanceId,
-  isWorktreeRuntime,
-} from "@/lib/worktree-branding";
+import { getWorktreeInstanceId, isWorktreeRuntime } from "@/lib/worktree-branding";
 import { Switch } from "@/components/ui/switch";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/company/settings/instance/",
-)({ component: InstanceGeneralSettings });
+export const Route = createFileRoute("/_authenticated/$companyId/company/settings/instance/")({
+  component: InstanceGeneralSettings,
+});
 
 type WorktreeRunExecutionDisplayState =
   | { kind: "off" }
@@ -77,9 +77,7 @@ function InstanceGeneralSettings() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.health });
     },
     onError: (error) => {
-      setActionError(
-        error instanceof Error ? error.message : "Failed to sign out.",
-      );
+      setActionError(error instanceof Error ? error.message : "Failed to sign out.");
     },
   });
 
@@ -117,17 +115,14 @@ function InstanceGeneralSettings() {
       });
     },
     onError: (error) => {
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : "Failed to update general settings.",
-      );
+      setActionError(error instanceof Error ? error.message : "Failed to update general settings.");
     },
   });
 
   if (generalQuery.isLoading) {
     return (
-      <div className="text-sm text-muted-foreground" role="status">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner />
         Loading general settings...
       </div>
     );
@@ -135,26 +130,23 @@ function InstanceGeneralSettings() {
 
   if (generalQuery.error) {
     return (
-      <div className="text-sm text-destructive" role="alert">
-        {generalQuery.error instanceof Error
-          ? generalQuery.error.message
-          : "Failed to load general settings."}
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription>
+          {generalQuery.error instanceof Error
+            ? generalQuery.error.message
+            : "Failed to load general settings."}
+        </AlertDescription>
+      </Alert>
     );
   }
 
   const censorUsernameInLogs = generalQuery.data?.censorUsernameInLogs === true;
   const keyboardShortcuts = generalQuery.data?.keyboardShortcuts === true;
-  const reconcileWorkspaceBranches =
-    generalQuery.data?.enableWorkspaceBranchReconcileForward !== false;
-  const repairDirtyWorkspaces =
-    generalQuery.data?.enableWorkspaceDirtyQuarantineRepair !== false;
-  const serverInfoDebugView =
-    generalQuery.data?.enableServerInfoDebugView === true;
-  const autoRestartDevServerWhenIdle =
-    generalQuery.data?.autoRestartDevServerWhenIdle === true;
-  const worktreeRunExecution =
-    generalQuery.data?.enableWorktreeRunExecution === true;
+  const reconcileWorkspaceBranches = generalQuery.data?.enableWorkspaceBranchReconcileForward !== false;
+  const repairDirtyWorkspaces = generalQuery.data?.enableWorkspaceDirtyQuarantineRepair !== false;
+  const serverInfoDebugView = generalQuery.data?.enableServerInfoDebugView === true;
+  const autoRestartDevServerWhenIdle = generalQuery.data?.autoRestartDevServerWhenIdle === true;
+  const worktreeRunExecution = generalQuery.data?.enableWorktreeRunExecution === true;
   const inWorktree = isWorktreeRuntime();
   const worktreeRunExecutionState = resolveWorktreeRunExecutionDisplayState(
     generalQuery.data,
@@ -165,6 +157,68 @@ function InstanceGeneralSettings() {
     : signOutMutation.isPending
       ? "Signing out…"
       : null;
+  const authenticationStatuses = [
+    ["Auth readiness", healthQuery.data?.authReady ? "Ready" : "Not ready"],
+    [
+      "Bootstrap status",
+      healthQuery.data?.bootstrapStatus === "bootstrap_pending" ? "Setup required" : "Ready",
+    ],
+    ["Bootstrap invite", healthQuery.data?.bootstrapInviteActive ? "Active" : "None"],
+  ] as const;
+  const toggleSettings = [
+    {
+      title: "Censor username in logs",
+      description:
+        "Hide the username segment in home-directory paths and similar operator-visible log output. Standalone username mentions outside of paths are not yet masked in the live transcript view. This is off by default.",
+      checked: censorUsernameInLogs,
+      payload: { censorUsernameInLogs: !censorUsernameInLogs },
+      ariaLabel: "Toggle username log censoring",
+    },
+    {
+      title: "Server Info debug view",
+      description:
+        "Show server restart, running commit, and checkout-state details in the account menu. This is off by default.",
+      checked: serverInfoDebugView,
+      payload: { enableServerInfoDebugView: !serverInfoDebugView },
+      ariaLabel: "Toggle Server Info debug view",
+    },
+    {
+      title: "Auto-restart dev server when idle",
+      description:
+        "Automatically request a dev-server restart after backend changes once no task executions are active. This is off by default.",
+      checked: autoRestartDevServerWhenIdle,
+      payload: { autoRestartDevServerWhenIdle: !autoRestartDevServerWhenIdle },
+      ariaLabel: "Toggle automatic idle dev-server restart",
+    },
+    {
+      title: "Reconcile workspace branches",
+      description:
+        "Advance managed workspace branches when it is safe to reconcile them with their configured source. Direct project folders are never changed. This safeguard is on by default.",
+      checked: reconcileWorkspaceBranches,
+      payload: {
+        enableWorkspaceBranchReconcileForward: !reconcileWorkspaceBranches,
+      },
+      ariaLabel: "Toggle workspace branch reconciliation",
+    },
+    {
+      title: "Repair dirty workspaces",
+      description:
+        "Quarantine and repair managed workspaces that are left in a dirty state before they are reused. Direct project folders are never changed. This safeguard is on by default.",
+      checked: repairDirtyWorkspaces,
+      payload: {
+        enableWorkspaceDirtyQuarantineRepair: !repairDirtyWorkspaces,
+      },
+      ariaLabel: "Toggle dirty workspace repair",
+    },
+    {
+      title: "Keyboard shortcuts",
+      description:
+        "Enable app keyboard shortcuts, including inbox navigation and global shortcuts like creating tasks or toggling panels. This is off by default.",
+      checked: keyboardShortcuts,
+      payload: { keyboardShortcuts: !keyboardShortcuts },
+      ariaLabel: "Toggle keyboard shortcuts",
+    },
+  ];
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -179,284 +233,133 @@ function InstanceGeneralSettings() {
           <h1 className="text-lg font-semibold">General</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Configure instance-wide preferences including log display and keyboard
-          shortcuts.
+          Configure instance-wide preferences including log display and keyboard shortcuts.
         </p>
       </div>
 
       {actionError && (
-        <div
-          className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-          role="alert"
-        >
-          {actionError}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
       )}
 
-      <Card className="block p-5">
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold">Authentication</h2>
-          <div className="text-sm text-muted-foreground">
-            Every human uses a Better Auth account. Sign-in is required before
-            instance or company authorization is evaluated.
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <StatusBox
-              label="Auth readiness"
-              value={healthQuery.data?.authReady ? "Ready" : "Not ready"}
-            />
-            <StatusBox
-              label="Bootstrap status"
-              value={
-                healthQuery.data?.bootstrapStatus === "bootstrap_pending"
-                  ? "Setup required"
-                  : "Ready"
-              }
-            />
-            <StatusBox
-              label="Bootstrap invite"
-              value={
-                healthQuery.data?.bootstrapInviteActive ? "Active" : "None"
-              }
-            />
-          </div>
-        </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Authentication</CardTitle>
+          <CardDescription>
+            Every human uses a Better Auth account. Sign-in is required before instance or company
+            authorization is evaluated.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ItemGroup className="grid gap-3 md:grid-cols-3">
+            {authenticationStatuses.map(([label, value]) => (
+              <Item key={label} variant="outline">
+                <ItemContent>
+                  <ItemTitle>{label}</ItemTitle>
+                  <ItemDescription>{value}</ItemDescription>
+                </ItemContent>
+              </Item>
+            ))}
+          </ItemGroup>
+        </CardContent>
       </Card>
 
-      <Card className="block p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">Censor username in logs</h2>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Hide the username segment in home-directory paths and similar
-              operator-visible log output. Standalone username mentions outside
-              of paths are not yet masked in the live transcript view. This is
-              off by default.
-            </p>
-          </div>
-          <Switch
-            checked={censorUsernameInLogs}
-            onCheckedChange={() =>
-              updateGeneralMutation.mutate({
-                censorUsernameInLogs: !censorUsernameInLogs,
-              })
-            }
-            disabled={updateGeneralMutation.isPending}
-            aria-label="Toggle username log censoring"
-          />
-        </div>
-      </Card>
+      {toggleSettings.map((setting) => (
+        <Card key={setting.title}>
+          <CardContent>
+            <Item>
+              <ItemContent>
+                <ItemTitle>{setting.title}</ItemTitle>
+                <ItemDescription>{setting.description}</ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Switch
+                  checked={setting.checked}
+                  onCheckedChange={() => updateGeneralMutation.mutate(setting.payload)}
+                  disabled={updateGeneralMutation.isPending}
+                  aria-label={setting.ariaLabel}
+                />
+              </ItemActions>
+            </Item>
+          </CardContent>
+        </Card>
+      ))}
 
       {inWorktree ? (
-        <Card className="block p-5">
-          <div className="flex flex-col gap-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1.5">
-                <h2 className="text-sm font-semibold">
-                  Run scheduled tasks in this worktree
-                </h2>
-                <p className="max-w-2xl text-sm text-muted-foreground">
-                  Allow automatic schedule and webhook runs in this worktree
-                  instance. Only routines created after enabling can run
-                  automatically; toggling off and on resets the cutoff.
-                </p>
-              </div>
-              <Switch
-                checked={worktreeRunExecution}
-                onCheckedChange={() =>
-                  updateGeneralMutation.mutate({
-                    enableWorktreeRunExecution: !worktreeRunExecution,
-                  })
-                }
-                disabled={updateGeneralMutation.isPending}
-                aria-label="Toggle worktree scheduled task execution"
-              />
-            </div>
-
+        <Card>
+          <CardContent className="space-y-4">
+            <Item>
+              <ItemContent>
+                <ItemTitle>Run scheduled tasks in this worktree</ItemTitle>
+                <ItemDescription>
+                  Allow automatic schedule and webhook runs in this worktree instance. Only routines created
+                  after enabling can run automatically; toggling off and on resets the cutoff.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Switch
+                  checked={worktreeRunExecution}
+                  onCheckedChange={() =>
+                    updateGeneralMutation.mutate({
+                      enableWorktreeRunExecution: !worktreeRunExecution,
+                    })
+                  }
+                  disabled={updateGeneralMutation.isPending}
+                  aria-label="Toggle worktree scheduled task execution"
+                />
+              </ItemActions>
+            </Item>
             {worktreeRunExecutionState.kind === "armed" ? (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-foreground">
-                <Play className="h-4 w-4 shrink-0 text-(--status-task-done)" />
-                <span>
+              <Alert>
+                <Play />
+                <AlertDescription>
                   Running routines created after{" "}
                   <span className="font-medium">
-                    {formatActivationTimestamp(
-                      worktreeRunExecutionState.activatedAt,
-                    )}
+                    {formatActivationTimestamp(worktreeRunExecutionState.activatedAt)}
                   </span>
                   .
-                </span>
-              </div>
+                </AlertDescription>
+              </Alert>
             ) : null}
-
             {worktreeRunExecutionState.kind === "fail_closed" ? (
-              <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-(--status-task-todo)" />
-                <div className="space-y-0.5">
-                  <p className="font-medium text-foreground">
-                    Automatic execution is suppressed.
-                  </p>
-                  <p className="text-muted-foreground">
-                    {worktreeRunExecutionState.reason === "instance_mismatch"
-                      ? "This setting was armed in a different instance."
-                      : "This setting is missing its activation cutoff for this instance."}{" "}
-                    Toggle it off and back on to arm execution here.
-                  </p>
-                </div>
-              </div>
+              <Alert variant="destructive">
+                <AlertTriangle />
+                <AlertTitle>Automatic execution is suppressed.</AlertTitle>
+                <AlertDescription>
+                  {worktreeRunExecutionState.reason === "instance_mismatch"
+                    ? "This setting was armed in a different instance."
+                    : "This setting is missing its activation cutoff for this instance."}{" "}
+                  Toggle it off and back on to arm execution here.
+                </AlertDescription>
+              </Alert>
             ) : null}
-          </div>
+          </CardContent>
         </Card>
       ) : null}
-
-      <Card className="block p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">Server Info debug view</h2>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Show server restart, running commit, and checkout-state details in
-              the account menu. This is off by default.
-            </p>
-          </div>
-          <Switch
-            checked={serverInfoDebugView}
-            onCheckedChange={() =>
-              updateGeneralMutation.mutate({
-                enableServerInfoDebugView: !serverInfoDebugView,
-              })
-            }
-            disabled={updateGeneralMutation.isPending}
-            aria-label="Toggle Server Info debug view"
-          />
-        </div>
+      <Card>
+        <CardContent>
+          <Item>
+            <ItemContent>
+              <ItemTitle>Sign out</ItemTitle>
+              <ItemDescription>
+                Sign out of this Paperclip instance. You will be redirected to the login page.
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={signOutMutation.isPending}
+                onClick={() => signOutMutation.mutate()}
+              >
+                <LogOut className="size-4" />
+                {signOutMutation.isPending ? "Signing out..." : "Sign out"}
+              </Button>
+            </ItemActions>
+          </Item>
+        </CardContent>
       </Card>
-
-      <Card className="block p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">
-              Auto-restart dev server when idle
-            </h2>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Automatically request a dev-server restart after backend changes
-              once no task executions are active. This is off by default.
-            </p>
-          </div>
-          <Switch
-            checked={autoRestartDevServerWhenIdle}
-            onCheckedChange={() =>
-              updateGeneralMutation.mutate({
-                autoRestartDevServerWhenIdle: !autoRestartDevServerWhenIdle,
-              })
-            }
-            disabled={updateGeneralMutation.isPending}
-            aria-label="Toggle automatic idle dev-server restart"
-          />
-        </div>
-      </Card>
-
-      <Card className="block p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">
-              Reconcile workspace branches
-            </h2>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Advance managed workspace branches when it is safe to reconcile
-              them with their configured source. Direct project folders are
-              never changed. This safeguard is on by default.
-            </p>
-          </div>
-          <Switch
-            checked={reconcileWorkspaceBranches}
-            onCheckedChange={() =>
-              updateGeneralMutation.mutate({
-                enableWorkspaceBranchReconcileForward:
-                  !reconcileWorkspaceBranches,
-              })
-            }
-            disabled={updateGeneralMutation.isPending}
-            aria-label="Toggle workspace branch reconciliation"
-          />
-        </div>
-      </Card>
-
-      <Card className="block p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">Repair dirty workspaces</h2>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Quarantine and repair managed workspaces that are left in a dirty
-              state before they are reused. Direct project folders are never
-              changed. This safeguard is on by default.
-            </p>
-          </div>
-          <Switch
-            checked={repairDirtyWorkspaces}
-            onCheckedChange={() =>
-              updateGeneralMutation.mutate({
-                enableWorkspaceDirtyQuarantineRepair: !repairDirtyWorkspaces,
-              })
-            }
-            disabled={updateGeneralMutation.isPending}
-            aria-label="Toggle dirty workspace repair"
-          />
-        </div>
-      </Card>
-
-      <Card className="block p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">Keyboard shortcuts</h2>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Enable app keyboard shortcuts, including inbox navigation and
-              global shortcuts like creating tasks or toggling panels. This is
-              off by default.
-            </p>
-          </div>
-          <Switch
-            checked={keyboardShortcuts}
-            onCheckedChange={() =>
-              updateGeneralMutation.mutate({
-                keyboardShortcuts: !keyboardShortcuts,
-              })
-            }
-            disabled={updateGeneralMutation.isPending}
-            aria-label="Toggle keyboard shortcuts"
-          />
-        </div>
-      </Card>
-
-      <Card className="block p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">Sign out</h2>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Sign out of this Paperclip instance. You will be redirected to the
-              login page.
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={signOutMutation.isPending}
-            onClick={() => signOutMutation.mutate()}
-          >
-            <LogOut className="size-4" />
-            {signOutMutation.isPending ? "Signing out..." : "Sign out"}
-          </Button>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function StatusBox({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-background px-3 py-3">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-2 text-sm font-medium">{value}</div>
     </div>
   );
 }

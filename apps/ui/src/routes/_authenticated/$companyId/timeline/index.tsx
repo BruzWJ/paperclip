@@ -1,41 +1,39 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import {
-  Bot,
-  Clock3,
-  GanttChartSquare,
-  Minus,
-  Plus,
-  RotateCcw,
-  type LucideIcon,
-} from "lucide-react";
-import type { WorkTimelineResult } from "@paperclipai/shared";
 import { workTimelineApi, type WorkTimelineParams } from "@/api/workTimeline";
-import { queryKeys } from "@/lib/queryKeys";
-import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
-import { EmptyState } from "@/components/EmptyState";
-import { PageSkeleton } from "@/components/PageSkeleton";
-import { RequestCollapsedSidebar } from "@/components/RequestCollapsedSidebar";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
-  WorkTimelineChart,
   clampZoomScale,
   defaultZoomForWindow,
   nearestZoomForScale,
+  WorkTimelineChart,
+  zoomScaleForLevel,
   type VisibleTimelineWindow,
   type ZoomLevel,
-  zoomScaleForLevel,
 } from "@/components/timeline/WorkTimelineChart";
+import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "@/components/ui/item";
+import { useBreadcrumbs } from "@/context/BreadcrumbContext";
+import { useSidebar } from "@/context/SidebarContext";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { queryKeys } from "@/lib/queryKeys";
 import { formatDuration, TIMELINE_COLORS } from "@/lib/timeline/layout";
-import { cn } from "@/lib/utils";
-
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type { WorkTimelineResult } from "@paperclipai/shared";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { Bot, Clock3, GanttChartSquare, Minus, Plus, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 export const Route = createFileRoute("/_authenticated/$companyId/timeline/")({
   component: Timeline,
 });
+
+function formatInteger(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
+}
 
 type RangePreset = "today" | "7d" | "30d" | "custom";
 
@@ -51,28 +49,23 @@ function dateInputValue(date: Date): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function presetRange(
-  preset: Exclude<RangePreset, "custom">,
-  now = new Date(),
-): DateRangeState {
+function presetRange(preset: Exclude<RangePreset, "custom">, now = new Date()): DateRangeState {
   const from = new Date(now);
   const to = new Date(now);
   if (preset === "today") {
     return { fromDate: dateInputValue(from), toDate: dateInputValue(to) };
-  } else {
-    from.setDate(from.getDate() - (preset === "7d" ? 6 : 29));
   }
+  from.setDate(from.getDate() - (preset === "7d" ? 6 : 29));
   return { fromDate: dateInputValue(from), toDate: dateInputValue(to) };
 }
 
-function rangeWindow(
-  range: DateRangeState,
-): Pick<WorkTimelineParams, "from" | "to"> | null {
+function rangeWindow(range: DateRangeState): Pick<WorkTimelineParams, "from" | "to"> | null {
   if (!range.fromDate || !range.toDate) return null;
   const from = new Date(`${range.fromDate}T00:00:00`);
   const to = new Date(`${range.toDate}T23:59:59.999`);
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to)
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) {
     return null;
+  }
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
@@ -80,37 +73,6 @@ function rangeError(range: DateRangeState): string | null {
   if (!range.fromDate || !range.toDate) return "Choose a start and end date.";
   if (!rangeWindow(range)) return "Start date must be before end date.";
   return null;
-}
-
-function formatInteger(value: number): string {
-  return new Intl.NumberFormat("en-US").format(value);
-}
-
-function spanStartMs(span: WorkTimelineResult["spans"][number]) {
-  return new Date(span.start).getTime();
-}
-
-function spanEndMs(
-  span: WorkTimelineResult["spans"][number],
-  fallbackEndMs: number,
-) {
-  return span.end ? new Date(span.end).getTime() : fallbackEndMs;
-}
-
-function spanWindowOverlap(
-  span: WorkTimelineResult["spans"][number],
-  rawFallbackEndMs: number,
-  windowFromMs: number,
-  windowToMs: number,
-) {
-  const rawStartMs = spanStartMs(span);
-  const rawEndMs = spanEndMs(span, rawFallbackEndMs);
-  const startMs = Math.max(rawStartMs, windowFromMs);
-  const endMs = Math.min(rawEndMs, windowToMs);
-  return {
-    clippedMs: Math.max(0, endMs - startMs),
-    rawMs: Math.max(0, rawEndMs - rawStartMs),
-  };
 }
 
 function dataWindow(data: WorkTimelineResult): VisibleTimelineWindow {
@@ -127,157 +89,42 @@ export function timelineSummary(
   const actorById = new Map(data.actors.map((actor) => [actor.id, actor]));
   const activeAgentIds = new Set<string>();
   const fullWindow = dataWindow(data);
-  const windowFromMs = Math.max(
-    fullWindow.fromMs,
-    Math.min(fullWindow.toMs, visibleWindow.fromMs),
-  );
-  const windowToMs = Math.max(
-    windowFromMs,
-    Math.min(fullWindow.toMs, visibleWindow.toMs),
-  );
+  const windowFromMs = Math.max(fullWindow.fromMs, Math.min(fullWindow.toMs, visibleWindow.fromMs));
+  const windowToMs = Math.max(windowFromMs, Math.min(fullWindow.toMs, visibleWindow.toMs));
   let activeMs = 0;
   let runs = 0;
 
   for (const span of data.spans) {
-    const overlap = spanWindowOverlap(
-      span,
-      fullWindow.toMs,
-      windowFromMs,
-      windowToMs,
-    );
-    if (overlap.clippedMs <= 0) continue;
+    const rawStartMs = new Date(span.start).getTime();
+    const rawEndMs = span.end ? new Date(span.end).getTime() : fullWindow.toMs;
+    const startMs = Math.max(rawStartMs, windowFromMs);
+    const endMs = Math.min(rawEndMs, windowToMs);
+    const clippedMs = Math.max(0, endMs - startMs);
+    if (clippedMs <= 0) continue;
     runs += 1;
-    if (actorById.get(span.actorId)?.type === "agent")
+    if (actorById.get(span.actorId)?.type === "agent") {
       activeAgentIds.add(span.actorId);
-    activeMs += overlap.clippedMs;
+    }
+    activeMs += clippedMs;
   }
 
-  return {
-    runs,
-    agents: activeAgentIds.size,
-    activeMs,
-  };
-}
-
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="inline-flex overflow-hidden rounded-md border border-border">
-      {options.map((opt, i) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          aria-pressed={value === opt.value}
-          className={cn(
-            "px-3 py-1.5 text-xs transition-colors",
-            i > 0 && "border-l border-border",
-            value === opt.value
-              ? "bg-primary text-primary-foreground"
-              : "bg-card text-foreground hover:bg-muted",
-          )}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** Encoding key for the "Signal" timeline: colour = how each run started. */
-function TimelineLegend() {
-  return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-3.5 py-2 text-xs text-muted-foreground">
-      <span className="flex items-center gap-1.5">
-        <span
-          className="h-2.5 w-4 rounded-sm"
-          style={{ backgroundColor: TIMELINE_COLORS.delegated }}
-        />
-        Delegated
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span
-          className="h-2.5 w-4 rounded-sm"
-          style={{ backgroundColor: TIMELINE_COLORS.automation }}
-        />
-        Automation
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span
-          className="h-2.5 w-4 rounded-sm border border-dashed bg-transparent"
-          style={{ borderColor: TIMELINE_COLORS.cancelled }}
-        />
-        Cancelled
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span
-          className="h-3.5 w-0.5"
-          style={{ backgroundColor: TIMELINE_COLORS.now }}
-        />
-        Now
-      </span>
-    </div>
-  );
-}
-
-function TimelineSummaryStats({
-  summary,
-}: {
-  summary: ReturnType<typeof timelineSummary>;
-}) {
-  const stats: { label: string; value: string; icon: LucideIcon }[] = [
-    {
-      label: "Runs",
-      value: formatInteger(summary.runs),
-      icon: GanttChartSquare,
-    },
-    { label: "Agents", value: formatInteger(summary.agents), icon: Bot },
-    {
-      label: "Run time",
-      value: formatDuration(0, summary.activeMs),
-      icon: Clock3,
-    },
-  ];
-
-  return (
-    <dl className="grid flex-1 grid-cols-2 gap-3 border-y border-border py-3 md:grid-cols-3">
-      {stats.map((stat) => {
-        const Icon = stat.icon;
-        return (
-          <div key={stat.label} className="min-w-0">
-            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Icon className="h-3.5 w-3.5 shrink-0" />
-              <span>{stat.label}</span>
-            </dt>
-            <dd className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">
-              {stat.value}
-            </dd>
-          </div>
-        );
-      })}
-    </dl>
-  );
+  return { runs, agents: activeAgentIds.size, activeMs };
 }
 
 function Timeline() {
+  const { setRouteRequestsCollapsed } = useSidebar();
+  useEffect(() => {
+    setRouteRequestsCollapsed(true);
+    return () => setRouteRequestsCollapsed(false);
+  }, [setRouteRequestsCollapsed]);
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [zoom, setZoom] = useState<ZoomLevel>("day");
   const [zoomScale, setZoomScale] = useState<number | undefined>(undefined);
   const zoomTouched = useRef(false);
   const [rangePreset, setRangePreset] = useState<RangePreset>("7d");
-  const [dateRange, setDateRange] = useState<DateRangeState>(() =>
-    presetRange("7d"),
-  );
-  const [visibleWindow, setVisibleWindow] =
-    useState<VisibleTimelineWindow | null>(null);
+  const [dateRange, setDateRange] = useState<DateRangeState>(() => presetRange("7d"));
+  const [visibleWindow, setVisibleWindow] = useState<VisibleTimelineWindow | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Timeline" }]);
@@ -291,11 +138,7 @@ function Timeline() {
   }, [dateRange]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: [
-      ...queryKeys.workTimeline(companyId),
-      dateRange.fromDate,
-      dateRange.toDate,
-    ],
+    queryKey: [...queryKeys.workTimeline(companyId), dateRange.fromDate, dateRange.toDate],
     queryFn: () => workTimelineApi.get(companyId, params!),
     enabled: !!params,
   });
@@ -314,17 +157,11 @@ function Timeline() {
     setVisibleWindow(null);
   }, [data?.window.from, data?.window.to]);
 
-  const handleVisibleWindowChange = useCallback(
-    (nextWindow: VisibleTimelineWindow) => {
-      setVisibleWindow((current) =>
-        current?.fromMs === nextWindow.fromMs &&
-        current.toMs === nextWindow.toMs
-          ? current
-          : nextWindow,
-      );
-    },
-    [],
-  );
+  const handleVisibleWindowChange = useCallback((nextWindow: VisibleTimelineWindow) => {
+    setVisibleWindow((current) =>
+      current?.fromMs === nextWindow.fromMs && current.toMs === nextWindow.toMs ? current : nextWindow,
+    );
+  }, []);
 
   const header = (
     <div className="flex items-center gap-2">
@@ -335,9 +172,7 @@ function Timeline() {
 
   const adjustZoom = (factor: number) => {
     zoomTouched.current = true;
-    const nextScale = clampZoomScale(
-      (zoomScale ?? zoomScaleForLevel(zoom)) * factor,
-    );
+    const nextScale = clampZoomScale((zoomScale ?? zoomScaleForLevel(zoom)) * factor);
     setZoomScale(nextScale);
     setZoom(nearestZoomForScale(nextScale));
   };
@@ -345,44 +180,64 @@ function Timeline() {
   const resetZoom = () => {
     zoomTouched.current = true;
     if (data) {
-      setZoom(
-        defaultZoomForWindow(
-          new Date(data.window.from).getTime(),
-          new Date(data.window.to).getTime(),
-        ),
-      );
+      setZoom(defaultZoomForWindow(new Date(data.window.from).getTime(), new Date(data.window.to).getTime()));
     } else {
       setZoom("day");
     }
     setZoomScale(undefined);
   };
 
-  const summary = data
-    ? timelineSummary(data, visibleWindow ?? dataWindow(data))
-    : null;
+  const summary = data ? timelineSummary(data, visibleWindow ?? dataWindow(data)) : null;
+  const summaryStats = summary
+    ? [
+        {
+          label: "Runs",
+          value: formatInteger(summary.runs),
+          icon: GanttChartSquare,
+        },
+        {
+          label: "Agents",
+          value: formatInteger(summary.agents),
+          icon: Bot,
+        },
+        {
+          label: "Run time",
+          value: formatDuration(0, summary.activeMs),
+          icon: Clock3,
+        },
+      ]
+    : [];
 
   const rangeControls = (
-    <label className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-      Range
-      <Segmented
+    <ButtonGroup
+      className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground"
+      aria-label="Timeline date range"
+    >
+      <span>Range</span>
+      <ToggleGroup
+        type="single"
         value={rangePreset}
-        onChange={(preset) => {
-          if (preset === "custom") return;
-          setRangePreset(preset);
-          setDateRange(presetRange(preset));
+        onValueChange={(next) => {
+          if (next !== "today" && next !== "7d" && next !== "30d") return;
+          setRangePreset(next);
+          setDateRange(presetRange(next));
         }}
-        options={[
-          { value: "today", label: "Today" },
-          { value: "7d", label: "7 days" },
-          { value: "30d", label: "30 days" },
-        ]}
-      />
+        variant="outline"
+        size="sm"
+      >
+        <ToggleGroupItem value="today">Today</ToggleGroupItem>
+        <ToggleGroupItem value="7d">7 days</ToggleGroupItem>
+        <ToggleGroupItem value="30d">30 days</ToggleGroupItem>
+      </ToggleGroup>
       <Input
         type="date"
         value={dateRange.fromDate}
         onChange={(event) => {
           setRangePreset("custom");
-          setDateRange((prev) => ({ ...prev, fromDate: event.target.value }));
+          setDateRange((prev) => ({
+            ...prev,
+            fromDate: event.target.value,
+          }));
         }}
         className="h-8 w-(--sz-150px) text-xs"
         aria-label="Timeline start date"
@@ -398,16 +253,30 @@ function Timeline() {
         className="h-8 w-(--sz-150px) text-xs"
         aria-label="Timeline end date"
       />
-    </label>
+    </ButtonGroup>
   );
 
   const toolbar = (
     <div className="flex flex-wrap items-start gap-3">
-      {summary && <TimelineSummaryStats summary={summary} />}
-      <div
-        className="ml-auto flex items-center gap-1 pt-3"
-        aria-label="Timeline zoom controls"
-      >
+      {summary && (
+        <ItemGroup className="grid flex-1 grid-cols-2 gap-3 border-y py-3 md:grid-cols-3">
+          {summaryStats.map((stat) => {
+            const Icon = stat.icon;
+            return (
+              <Item key={stat.label} size="sm" className="border-0 p-0">
+                <ItemMedia>
+                  <Icon className="size-4 text-muted-foreground" />
+                </ItemMedia>
+                <ItemContent className="min-w-0">
+                  <ItemTitle className="truncate text-lg tabular-nums">{stat.value}</ItemTitle>
+                  <ItemDescription className="text-xs">{stat.label}</ItemDescription>
+                </ItemContent>
+              </Item>
+            );
+          })}
+        </ItemGroup>
+      )}
+      <div className="ml-auto flex items-center gap-1 pt-3" aria-label="Timeline zoom controls">
         <Button
           type="button"
           variant="outline"
@@ -444,26 +313,36 @@ function Timeline() {
 
   return (
     <div className="space-y-6">
-      <RequestCollapsedSidebar />
       {header}
       {toolbar}
 
-      {isLoading && <PageSkeleton />}
+      {isLoading && <Skeleton className="h-32 w-full" />}
 
       {dateRangeError && (
         <div className="space-y-3">
-          <EmptyState icon={GanttChartSquare} message={dateRangeError} />
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            {rangeControls}
-          </div>
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <GanttChartSquare />
+              </EmptyMedia>
+              <EmptyTitle>{dateRangeError}</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
+          <div className="flex flex-wrap items-center justify-end gap-3">{rangeControls}</div>
         </div>
       )}
 
       {error && (
-        <EmptyState
-          icon={GanttChartSquare}
-          message="Couldn't load the timeline. The aggregation endpoint may be unavailable."
-        />
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <GanttChartSquare />
+            </EmptyMedia>
+            <EmptyTitle>
+              Couldn&apos;t load the timeline. The aggregation endpoint may be unavailable.
+            </EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       )}
 
       {data &&
@@ -471,27 +350,38 @@ function Timeline() {
         !dateRangeError &&
         (data.spans.length === 0 ? (
           <div className="space-y-3">
-            <EmptyState
-              icon={GanttChartSquare}
-              message="No activity in this window."
-            />
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              {rangeControls}
-            </div>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <GanttChartSquare />
+                </EmptyMedia>
+                <EmptyTitle>No activity in this window.</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+            <div className="flex flex-wrap items-center justify-end gap-3">{rangeControls}</div>
           </div>
         ) : (
           <div className="space-y-3">
             <Card className="block py-0">
-              <TimelineLegend />
+              <div className="flex flex-wrap items-center gap-2 border-b px-3.5 py-2">
+                {[
+                  ["Delegated", TIMELINE_COLORS.delegated],
+                  ["Automation", TIMELINE_COLORS.automation],
+                  ["Cancelled", TIMELINE_COLORS.cancelled],
+                  ["Now", TIMELINE_COLORS.now],
+                ].map(([label, color]) => (
+                  <Badge key={label} variant="outline">
+                    <span className="size-2 rounded-full" style={{ backgroundColor: color }} aria-hidden />
+                    {label}
+                  </Badge>
+                ))}
+              </div>
               <WorkTimelineChart
                 data={data}
                 zoom={zoom}
                 zoomScale={zoomScale}
                 onVisibleWindowChange={handleVisibleWindowChange}
-                onZoomScaleChange={(
-                  nextScale,
-                  nextZoom = nearestZoomForScale(nextScale),
-                ) => {
+                onZoomScaleChange={(nextScale, nextZoom = nearestZoomForScale(nextScale)) => {
                   zoomTouched.current = true;
                   setZoomScale(nextScale);
                   setZoom(nextZoom);
@@ -501,8 +391,7 @@ function Timeline() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
                 {data.spans.length} run{data.spans.length === 1 ? "" : "s"} ·{" "}
-                {new Date(data.window.from).toLocaleString()} to{" "}
-                {new Date(data.window.to).toLocaleString()}
+                {new Date(data.window.from).toLocaleString()} to {new Date(data.window.to).toLocaleString()}
                 {data.window.capped ? " · window capped" : ""}
               </p>
               {rangeControls}

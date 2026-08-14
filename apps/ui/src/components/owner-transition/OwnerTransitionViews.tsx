@@ -1,4 +1,7 @@
 import { AlertTriangle, Info, PauseCircle, User, X } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "../../lib/utils";
 import { AgentIcon } from "../AgentIconPicker";
 import {
@@ -42,9 +45,6 @@ function userLabel(userId: string, resolvers: OwnerChipResolvers): string {
   return resolvers.currentUserId && resolvers.currentUserId === userId ? `${base} (you)` : base;
 }
 
-const CHIP_CLASS =
-  "inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs";
-
 /** A labelled owner chip that never lets an exceptional user or board owner
  * read like an agent owner. */
 export function OwnerChip({
@@ -58,30 +58,29 @@ export function OwnerChip({
 }) {
   if (owner.ownerKind === "agent" && owner.ownerAgentId) {
     return (
-      <span className={cn(CHIP_CLASS, className)} data-testid="owner-chip" data-kind="agent">
+      <Badge variant="secondary" className={className} data-testid="owner-chip" data-kind="agent">
         <span className="sr-only">Agent </span>
-        <AgentIcon icon={agentIcon(owner.ownerAgentId, resolvers)} className="h-3 w-3 shrink-0 text-muted-foreground" />
+        <AgentIcon
+          icon={agentIcon(owner.ownerAgentId, resolvers)}
+          className="h-3 w-3 shrink-0 text-muted-foreground"
+        />
         <span className="max-w-(--sz-12rem) truncate">{agentName(owner.ownerAgentId, resolvers)}</span>
-      </span>
+      </Badge>
     );
   }
   if (owner.ownerKind === "user" && owner.ownerUserId) {
     return (
-      <span className={cn(CHIP_CLASS, className)} data-testid="owner-chip" data-kind="user">
+      <Badge variant="secondary" className={className} data-testid="owner-chip" data-kind="user">
         <span className="sr-only">User </span>
         <User className="h-3 w-3 shrink-0 text-muted-foreground" />
         <span className="max-w-(--sz-12rem) truncate">{userLabel(owner.ownerUserId, resolvers)}</span>
-      </span>
+      </Badge>
     );
   }
   return (
-    <span
-      className={cn("text-xs italic text-muted-foreground", className)}
-      data-testid="owner-chip"
-      data-kind="board"
-    >
+    <Badge variant="outline" className={className} data-testid="owner-chip" data-kind="board">
       Board escalation
-    </span>
+    </Badge>
   );
 }
 
@@ -126,14 +125,15 @@ export function RunStatusBadge({
 }) {
   const p = resolveRunStatusPresentation(status, { operatorInterrupted });
   return (
-    <span
-      className={cn("font-medium", p.className, className)}
+    <Badge
+      variant="outline"
+      className={cn(p.className, className)}
       data-testid="run-status-badge"
       data-interrupted={operatorInterrupted ? "true" : "false"}
     >
       {p.label}
       {p.srHint ? <span className="sr-only"> — {p.srHint}</span> : null}
-    </span>
+    </Badge>
   );
 }
 
@@ -165,7 +165,7 @@ export function ComposerOwnerPreviewRow({
     <div
       className={cn(
         "flex flex-wrap items-center justify-end gap-1.5 text-xs",
-        preview.tone === "warn" ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground",
+        preview.tone === "warn" ? "text-destructive" : "text-muted-foreground",
       )}
       data-testid="composer-owner-preview"
       data-kind={preview.kind}
@@ -193,34 +193,33 @@ export function ComposerMentionCoach({
   onDismiss: () => void;
 }) {
   return (
-    <div
-      className="flex items-center gap-2 rounded-md border border-amber-300/40 bg-amber-50/70 px-2 py-1.5 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-      data-testid="composer-mention-coach"
-      role="alert"
-      aria-live="polite"
-    >
-      <Info className="h-3.5 w-3.5 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1">
-        Did you mean <span className="font-medium">@{candidate.matchedText}</span>? Plain text won't
-        notify an agent or make it the owner.
-      </span>
-      <button
-        type="button"
-        onClick={onInsert}
-        className="shrink-0 rounded border border-amber-400/50 px-1.5 py-0.5 font-medium hover:bg-amber-100/60 dark:hover:bg-amber-500/20"
-        aria-label={`Insert mention for ${agentDisplayName} into your comment`}
-      >
-        Insert mention
-      </button>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="shrink-0 rounded p-0.5 hover:bg-amber-100/60 dark:hover:bg-amber-500/20"
-        aria-label="Dismiss suggestion"
-      >
-        <X className="h-3.5 w-3.5" aria-hidden />
-      </button>
-    </div>
+    <Alert data-testid="composer-mention-coach" aria-live="polite">
+      <Info aria-hidden />
+      <AlertDescription className="flex-row items-center">
+        <span className="min-w-0 flex-1">
+          Did you mean <strong>@{candidate.matchedText}</strong>? Plain text won't notify an agent or make it
+          the owner.
+        </span>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          onClick={onInsert}
+          aria-label={`Insert mention for ${agentDisplayName} into your comment`}
+        >
+          Insert mention
+        </Button>
+        <Button
+          type="button"
+          size="icon-xs"
+          variant="ghost"
+          onClick={onDismiss}
+          aria-label="Dismiss suggestion"
+        >
+          <X aria-hidden />
+        </Button>
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -234,18 +233,10 @@ export function OwnerRunningBanner({
   className?: string;
 }) {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      data-testid="owner-running-banner"
-      className={cn(
-        "flex items-start gap-1.5 rounded-md border border-amber-300/40 bg-amber-50/70 px-2 py-1.5 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
-        className,
-      )}
-    >
-      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1">{copy.banner}</span>
-    </div>
+    <Alert role="status" aria-live="polite" data-testid="owner-running-banner" className={className}>
+      <AlertTriangle aria-hidden />
+      <AlertDescription>{copy.banner}</AlertDescription>
+    </Alert>
   );
 }
 
@@ -266,38 +257,29 @@ export function InterruptOwnerChangeConfirm({
   onCancel: () => void;
 }) {
   return (
-    <div
-      data-testid="interrupt-owner-change-confirm"
-      className="space-y-2 rounded-md border border-amber-300/40 bg-amber-50/70 p-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-    >
-      <div className="flex items-start gap-1.5">
-        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-        <div className="min-w-0 flex-1 space-y-1">
-          <p className="font-medium">{copy.confirmTitle}</p>
-          <p className="flex flex-wrap items-center gap-1 text-amber-700/90 dark:text-amber-300/90">
-            <span>Change owner to</span>
-            <OwnerChip owner={to} resolvers={resolvers} />
-          </p>
+    <Alert data-testid="interrupt-owner-change-confirm">
+      <AlertTriangle aria-hidden />
+      <AlertTitle>{copy.confirmTitle}</AlertTitle>
+      <AlertDescription>
+        <div className="flex flex-wrap items-center gap-1">
+          <span>Change owner to</span>
+          <OwnerChip owner={to} resolvers={resolvers} />
         </div>
-      </div>
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded border border-amber-400/50 px-2 py-0.5 font-medium hover:bg-amber-100/60 dark:hover:bg-amber-500/20"
-        >
-          {copy.cancelAction}
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          data-testid="interrupt-owner-change-confirm-action"
-          className="rounded bg-amber-600 px-2 py-0.5 font-medium text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-400"
-        >
-          {copy.confirmAction}
-        </button>
-      </div>
-    </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" size="xs" variant="outline" onClick={onCancel}>
+            {copy.cancelAction}
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            onClick={onConfirm}
+            data-testid="interrupt-owner-change-confirm-action"
+          >
+            {copy.confirmAction}
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -311,37 +293,28 @@ export function PauseAffectsSummaryView({
 }) {
   const visibleBuckets = summary.buckets.filter((bucket) => bucket.count > 0);
   return (
-    <div
-      data-testid="pause-affects-summary"
-      className={cn("space-y-2 rounded-md border border-border bg-muted/30 p-3", className)}
-    >
-      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        <PauseCircle className="h-3.5 w-3.5" aria-hidden />
-        What this affects
-      </div>
-      {summary.nothingLive ? (
-        <p role="status" className="text-xs text-muted-foreground" data-testid="pause-nothing-live">
-          Nothing live to pause — no agent run is in flight or queued. This records a hold so new work
-          won't start until you resume.
-        </p>
-      ) : null}
-      {visibleBuckets.length > 0 ? (
-        <ul className="space-y-1">
-          {visibleBuckets.map((bucket) => (
-            <li
-              key={bucket.key}
-              data-bucket={bucket.key}
-              className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs"
-            >
-              <span className="font-medium text-foreground">{bucket.label}:</span>
-              <span className="tabular-nums text-foreground">{bucket.count}</span>
-              <span className="text-muted-foreground">— {bucket.detail}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-xs text-muted-foreground">No tasks are affected.</p>
-      )}
-    </div>
+    <Alert data-testid="pause-affects-summary" className={className}>
+      <PauseCircle aria-hidden />
+      <AlertTitle>What this affects</AlertTitle>
+      <AlertDescription>
+        {summary.nothingLive ? (
+          <p role="status" data-testid="pause-nothing-live">
+            Nothing live to pause — no agent run is in flight or queued. This records a hold so new work won't
+            start until you resume.
+          </p>
+        ) : null}
+        {visibleBuckets.length > 0 ? (
+          <ul className="space-y-1">
+            {visibleBuckets.map((bucket) => (
+              <li key={bucket.key} data-bucket={bucket.key}>
+                <strong>{bucket.label}:</strong> {bucket.count} — {bucket.detail}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No tasks are affected.</p>
+        )}
+      </AlertDescription>
+    </Alert>
   );
 }

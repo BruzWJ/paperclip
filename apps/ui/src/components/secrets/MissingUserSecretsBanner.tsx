@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { secretsApi, type MyUserSecretEntry } from "@/api/secrets";
 import { queryKeys } from "@/lib/queryKeys";
 import { SetMyUserSecretDialog } from "./SetMyUserSecretDialog";
@@ -51,57 +53,44 @@ export function MissingUserSecretsBanner({
   if (missing.length === 0) return null;
 
   return (
-    <div
-      className={
-        "rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200" +
-        (className ? ` ${className}` : "")
-      }
-    >
-      <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p className="font-medium">{title}</p>
-          <p className="mt-0.5 text-amber-700/90 dark:text-amber-300/90">
-            {missing.length} user secret{missing.length === 1 ? "" : "s"} you
-            are responsible for
-            {missing.length === 1 ? " has" : " have"} no value yet. Runs that
-            require
-            {missing.length === 1 ? " it" : " them"} will fail until you set
-            your value.
-          </p>
-          <ul className="mt-2 space-y-1.5">
-            {missing.map((entry) => (
-              <li
-                key={entry.definition.id}
-                className="flex items-center justify-between gap-2 rounded border border-amber-500/30 bg-background/40 px-2 py-1"
-              >
-                <span className="min-w-0 truncate">
-                  <span className="font-medium text-foreground">
-                    {entry.definition.name}
-                  </span>{" "}
-                  <code className="text-(length:--text-micro) text-muted-foreground">
-                    {entry.definition.key}
-                  </code>
-                </span>
+    <Alert className={className}>
+      <AlertTriangle aria-hidden="true" />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>
+        <p>
+          {missing.length} user secret{missing.length === 1 ? "" : "s"} you are responsible for
+          {missing.length === 1 ? " has" : " have"} no value yet. Runs that require
+          {missing.length === 1 ? " it" : " them"} will fail until you set your value.
+        </p>
+        <ItemGroup>
+          {missing.map((entry) => (
+            <Item key={entry.definition.id} variant="outline" size="sm">
+              <ItemContent>
+                <ItemTitle>{entry.definition.name}</ItemTitle>
+                <ItemDescription>
+                  <code>{entry.definition.key}</code>
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
                 <Button size="sm" onClick={() => setDialogFor(entry)}>
                   Set value
                 </Button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
+              </ItemActions>
+            </Item>
+          ))}
+        </ItemGroup>
 
-      <SetMyUserSecretDialog
-        companyId={companyId}
-        userId={userId}
-        definition={dialogFor?.definition ?? null}
-        existingSecret={dialogFor?.secret ?? null}
-        open={dialogFor !== null}
-        onOpenChange={(open) => {
-          if (!open) setDialogFor(null);
-        }}
-      />
-    </div>
+        <SetMyUserSecretDialog
+          companyId={companyId}
+          userId={userId}
+          definition={dialogFor?.definition ?? null}
+          existingSecret={dialogFor?.secret ?? null}
+          open={dialogFor !== null}
+          onOpenChange={(open) => {
+            if (!open) setDialogFor(null);
+          }}
+        />
+      </AlertDescription>
+    </Alert>
   );
 }

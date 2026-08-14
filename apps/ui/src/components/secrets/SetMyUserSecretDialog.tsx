@@ -10,13 +10,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { secretsApi } from "@/api/secrets";
 import { ApiError } from "@/api/client";
 import { queryKeys } from "@/lib/queryKeys";
-import { useToastActions } from "@/context/ToastContext";
-import { UserSecretChip } from "./user-secret-presentation";
+import { toast } from "sonner";
+import { UserRound } from "lucide-react";
 
 /**
  * Shared "set my value" dialog for a user-secret definition. Used both from the
@@ -42,7 +45,6 @@ export function SetMyUserSecretDialog({
   onSaved?: (secret: CompanySecret) => void;
 }) {
   const queryClient = useQueryClient();
-  const { pushToast } = useToastActions();
   const [value, setValue] = useState("");
   const [externalRef, setExternalRef] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -64,12 +66,7 @@ export function SetMyUserSecretDialog({
       const payload = isExternal ? { externalRef } : { value };
       if (existingSecret) {
         // A stored value already exists → rotate it in place.
-        return secretsApi.rotateUserSecret(
-          companyId,
-          userId,
-          existingSecret.id,
-          payload,
-        );
+        return secretsApi.rotateUserSecret(companyId, userId, existingSecret.id, payload);
       }
       return secretsApi.createUserSecret(companyId, userId, {
         definitionId: definition.id,
@@ -85,21 +82,15 @@ export function SetMyUserSecretDialog({
       queryClient.invalidateQueries({
         queryKey: queryKeys.secrets.userDefinitions(companyId),
       });
-      pushToast({
-        title: existingSecret ? "Value updated" : "Value saved",
-        body: definition?.name,
-        tone: "success",
+      toast.success(existingSecret ? "Value updated" : "Value saved", {
+        description: definition?.name,
       });
       onSaved?.(secret);
       onOpenChange(false);
     },
     onError: (err) => {
       setError(
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Failed to save value",
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Failed to save value",
       );
     },
   });
@@ -117,13 +108,15 @@ export function SetMyUserSecretDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {existingSecret ? "Update your value" : "Set your value"}
-            <UserSecretChip />
+            <Badge variant="secondary">
+              <UserRound />
+              User secret
+            </Badge>
           </DialogTitle>
           <DialogDescription>
             {definition ? (
               <>
-                This value is yours only. It is used when you are the user
-                responsible for a run that needs{" "}
+                This value is yours only. It is used when you are the user responsible for a run that needs{" "}
                 <span className="font-mono">{definition.key}</span>.
               </>
             ) : null}
@@ -132,27 +125,19 @@ export function SetMyUserSecretDialog({
 
         {definition ? (
           <div className="space-y-3">
-            <div className="rounded-md border border-border bg-muted/20 p-3 text-xs">
-              <div className="font-medium text-foreground">
-                {definition.name}
-              </div>
-              {definition.description ? (
-                <p className="mt-1 text-muted-foreground">
-                  {definition.description}
-                </p>
-              ) : null}
-              {definition.usageGuidance ? (
-                <p className="mt-1 text-muted-foreground">
-                  {definition.usageGuidance}
-                </p>
-              ) : null}
-            </div>
+            <Item variant="outline">
+              <ItemContent>
+                <ItemTitle>{definition.name}</ItemTitle>
+                {definition.description ? <ItemDescription>{definition.description}</ItemDescription> : null}
+                {definition.usageGuidance ? (
+                  <ItemDescription>{definition.usageGuidance}</ItemDescription>
+                ) : null}
+              </ItemContent>
+            </Item>
 
             {isExternal ? (
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-foreground">
-                  External reference
-                </label>
+              <Field>
+                <FieldLabel>External reference</FieldLabel>
                 <Input
                   aria-label="External secret reference"
                   value={externalRef}
@@ -161,16 +146,14 @@ export function SetMyUserSecretDialog({
                   className="font-mono text-sm"
                   autoFocus
                 />
-                <p className="text-(length:--text-micro) text-muted-foreground">
-                  Points at your own credential in the configured provider.
-                  Paperclip stores the reference, not the value.
-                </p>
-              </div>
+                <FieldDescription>
+                  Points at your own credential in the configured provider. Paperclip stores the reference,
+                  not the value.
+                </FieldDescription>
+              </Field>
             ) : (
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-foreground">
-                  Your value
-                </label>
+              <Field>
+                <FieldLabel>Your value</FieldLabel>
                 <Textarea
                   aria-label="Secret value"
                   value={value}
@@ -179,38 +162,22 @@ export function SetMyUserSecretDialog({
                   className="font-mono text-sm min-h-(--sz-80px)"
                   autoFocus
                 />
-                <p className="text-(length:--text-micro) text-muted-foreground">
-                  Stored encrypted. Never shown back to anyone, including
-                  admins.
-                </p>
-              </div>
+                <FieldDescription>
+                  Stored encrypted. Never shown back to anyone, including admins.
+                </FieldDescription>
+              </Field>
             )}
 
-            {error ? (
-              <p className="text-xs text-destructive" role="alert">
-                {error}
-              </p>
-            ) : null}
+            {error ? <FieldError>{error}</FieldError> : null}
           </div>
         ) : null}
 
         <DialogFooter>
-          <Button
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            disabled={save.isPending}
-          >
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={save.isPending}>
             Cancel
           </Button>
-          <Button
-            onClick={() => save.mutate()}
-            disabled={!canSave || save.isPending}
-          >
-            {save.isPending
-              ? "Saving…"
-              : existingSecret
-                ? "Update value"
-                : "Save value"}
+          <Button onClick={() => save.mutate()} disabled={!canSave || save.isPending}>
+            {save.isPending ? "Saving…" : existingSecret ? "Update value" : "Save value"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,13 +1,8 @@
+import { AgentDetailScreen } from "@/components/agents/AgentDetailScreen";
+import { loadCompanyAgent, loadCompanyAgentRun } from "@/routes/-company-entity-loader";
 import { createFileRoute } from "@tanstack/react-router";
-import { AgentDetail } from "@/routes/_authenticated/$companyId/agents/$agentId";
-import {
-  loadCompanyAgent,
-  loadCompanyAgentRun,
-} from "@/routes/-company-entity-loader";
 
-export const Route = createFileRoute(
-  "/_authenticated/$companyId/agents/$agentId/runs/$runId/",
-)({
+export const Route = createFileRoute("/_authenticated/$companyId/agents/$agentId/runs/$runId/")({
   loader: async ({ abortController, context, params }) => {
     await loadCompanyAgent({
       queryClient: context.queryClient,
@@ -28,7 +23,5 @@ export const Route = createFileRoute(
 
 function AgentRunRoute() {
   const { companyId, agentId, runId } = Route.useParams();
-  return (
-    <AgentDetail companyId={companyId} agentId={agentId} urlRunId={runId} />
-  );
+  return <AgentDetailScreen companyId={companyId} agentId={agentId} urlRunId={runId} />;
 }

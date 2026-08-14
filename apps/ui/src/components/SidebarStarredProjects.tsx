@@ -1,23 +1,24 @@
+import { Spinner } from "@/components/ui/spinner";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { useCallback, useMemo } from "react";
 import { Link, useMatches } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, LogOut, MoreHorizontal, Star } from "lucide-react";
+import { DollarSign, LogOut, MoreHorizontal, Star } from "lucide-react";
 import { useSidebar } from "../context/SidebarContext";
 import { projectsApi } from "../api/projects";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { queryKeys } from "../lib/queryKeys";
-import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
+import { getProjectIcon } from "../lib/project-icons";
+import { cn } from "../lib/utils";
 import {
   isStarred,
   starredResourceIds,
   useResourceMembershipMutation,
   useResourceMemberships,
 } from "../hooks/useResourceMemberships";
-import { BudgetSidebarMarker } from "./BudgetSidebarMarker";
-import { ProjectTile } from "./ProjectTile";
-import { StarToggle } from "./StarToggle";
-import { Button } from "@/components/ui/button";
+import { Toggle } from "@/components/ui/toggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,12 +26,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import type { Project } from "@paperclipai/shared";
-
-// Sidebar star reveals with the row's own group, not the shared unnamed group.
-const STAR_ROW_REVEAL =
-  "opacity-0 transition-opacity group-hover/starred-project:opacity-100 group-focus-within/starred-project:opacity-100";
 
 /**
  * Compact starred-project children rendered directly below the top-level
@@ -68,27 +65,27 @@ export function SidebarStarredProjects() {
     return Array.from(starredIds)
       .map((id) => byId.get(id))
       .filter((project): project is Project => !!project && !project.archivedAt)
-      .sort((left, right) =>
-        left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
-      );
+      .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
   }, [membershipsQuery.data, membershipsQuery.isSuccess, projects]);
 
   const unstar = useCallback(
-    (project: Project) => membershipMutation.mutate({
-      resourceType: "project",
-      resourceId: project.id,
-      resourceName: project.name,
-      starred: false,
-    }),
+    (project: Project) =>
+      membershipMutation.mutate({
+        resourceType: "project",
+        resourceId: project.id,
+        resourceName: project.name,
+        starred: false,
+      }),
     [membershipMutation],
   );
   const leave = useCallback(
-    (project: Project) => membershipMutation.mutate({
-      resourceType: "project",
-      resourceId: project.id,
-      resourceName: project.name,
-      state: "left",
-    }),
+    (project: Project) =>
+      membershipMutation.mutate({
+        resourceType: "project",
+        resourceId: project.id,
+        resourceName: project.name,
+        state: "left",
+      }),
     [membershipMutation],
   );
   const pendingFor = useCallback(
@@ -108,7 +105,7 @@ export function SidebarStarredProjects() {
   }
 
   return (
-    <div className="flex flex-col gap-0.5" aria-label="Starred projects">
+    <SidebarMenu aria-label="Starred projects">
       {starredProjects.map((project) => {
         const projectId = project.id;
         const isActive = activeProjectId === projectId;
@@ -116,56 +113,58 @@ export function SidebarStarredProjects() {
         const unstarPending = pending && membershipMutation.variables?.starred === false;
         const leavePending = pending && membershipMutation.variables?.state === "left";
         const starred = isStarred(membershipsQuery.data, "project", project.id);
-
-        const link = (
-          <Link
-            to="/$companyId/projects/$projectId/tasks"
-            params={{ companyId, projectId }}
-            state={SIDEBAR_SCROLL_RESET_STATE}
-            onClick={() => {
-              if (isMobile) setSidebarOpen(false);
-            }}
-            className={cn(
-              "flex min-w-0 flex-1 items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 pr-8 text-(length:--text-compact) font-medium transition-colors",
-              !rail && "pl-6",
-              isActive
-                ? "bg-accent text-foreground"
-                : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
-            )}
-          >
-            <ProjectTile color={project.color ?? null} icon={project.icon ?? null} size="xs" />
-            <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : "flex-1 truncate"}>{project.name}</span>
-            {!rail && project.pauseReason === "budget" ? (
-              <BudgetSidebarMarker title="Project paused by budget" />
-            ) : null}
-          </Link>
-        );
+        const ProjectIcon = getProjectIcon(project.icon);
 
         return (
-          <div key={project.id} className="group/starred-project relative flex items-center">
-            {rail ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="min-w-0 flex-1">{link}</div>
-                </TooltipTrigger>
-                <TooltipContent side="right">{project.name}</TooltipContent>
-              </Tooltip>
-            ) : (
-              link
-            )}
+          <SidebarMenuItem key={project.id} className="group/starred-project flex items-center">
+            <SidebarMenuButton
+              asChild
+              isActive={isActive}
+              tooltip={rail ? project.name : undefined}
+              className={cn("min-w-0 flex-1", !rail && "pl-6 pr-8")}
+            >
+              <Link
+                to="/$companyId/projects/$projectId/tasks"
+                params={{ companyId, projectId }}
+                state={SIDEBAR_SCROLL_RESET_STATE}
+                onClick={() => {
+                  if (isMobile) setSidebarOpen(false);
+                }}
+              >
+                <Avatar size="sm" style={{ backgroundColor: project.color ?? undefined }} aria-hidden="true">
+                  <AvatarFallback className={project.color ? "bg-transparent" : undefined}>
+                    <ProjectIcon />
+                  </AvatarFallback>
+                </Avatar>
+                <span className="flex-1 truncate">{project.name}</span>
+                {!rail && project.pauseReason === "budget" ? (
+                  <Badge
+                    variant="destructive"
+                    title="Project paused by budget"
+                    aria-label="Project paused by budget"
+                  >
+                    <DollarSign aria-hidden="true" />
+                  </Badge>
+                ) : null}
+              </Link>
+            </SidebarMenuButton>
 
             {!rail && !isMobile ? (
               // Desktop: quiet inline unstar revealed on hover/focus.
               <span className="absolute right-3 top-1/2 -translate-y-1/2">
-                <StarToggle
-                  size="row"
-                  quiet
-                  starred={starred}
-                  pending={unstarPending}
-                  resourceName={project.name}
-                  onToggle={() => unstar(project)}
-                  revealClassName={STAR_ROW_REVEAL}
-                />
+                <Toggle
+                  size="sm"
+                  pressed={starred}
+                  disabled={unstarPending}
+                  aria-label={`Unstar ${project.name}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    unstar(project);
+                  }}
+                >
+                  {unstarPending ? <Spinner /> : <Star />}
+                </Toggle>
               </span>
             ) : null}
 
@@ -173,14 +172,9 @@ export function SidebarStarredProjects() {
               // Touch: explicit ⋯ menu (no hover). Star action + separated Leave.
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    className="absolute right-3 top-1/2 h-6 w-6 -translate-y-1/2 opacity-100"
-                    aria-label={`Open actions for ${project.name}`}
-                  >
+                  <SidebarMenuAction aria-label={`Open actions for ${project.name}`}>
                     <MoreHorizontal className="h-3.5 w-3.5" />
-                  </Button>
+                  </SidebarMenuAction>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem
@@ -191,9 +185,9 @@ export function SidebarStarredProjects() {
                     disabled={pending}
                   >
                     {unstarPending ? (
-                      <Loader2 className="size-4 motion-safe:animate-spin" />
+                      <Spinner className="size-4" />
                     ) : (
-                      <Star className="size-4 fill-amber-500 text-amber-500" />
+                      <Star className="size-4 fill-current" />
                     )}
                     <span>Remove from starred</span>
                   </DropdownMenuItem>
@@ -205,19 +199,15 @@ export function SidebarStarredProjects() {
                     }}
                     disabled={pending}
                   >
-                    {leavePending ? (
-                      <Loader2 className="size-4 motion-safe:animate-spin" />
-                    ) : (
-                      <LogOut className="size-4" />
-                    )}
+                    {leavePending ? <Spinner className="size-4" /> : <LogOut className="size-4" />}
                     <span>Leave project</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
-          </div>
+          </SidebarMenuItem>
         );
       })}
-    </div>
+    </SidebarMenu>
   );
 }

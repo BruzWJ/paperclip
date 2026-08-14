@@ -1,15 +1,9 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Pause,
-  Play,
-  Plus,
-  MoreHorizontal,
-  Copy,
-  Trash2,
-  CheckCircle2,
-} from "lucide-react";
+import { Pause, Play, Plus, MoreHorizontal, Copy, Trash2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,11 +20,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AgentStatusBadge } from "./StatusBadge";
 import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
 import { useDialogActions } from "../context/DialogContext";
-import { useToastActions } from "../context/ToastContext";
+import { toast } from "sonner";
 import type { Agent } from "@paperclipai/shared";
 
 export function PauseResumeButton({
@@ -59,30 +52,6 @@ export function PauseResumeButton({
     <Button variant="outline" size={size} onClick={onPause} disabled={disabled}>
       <Pause data-icon="inline-start" className="h-3.5 w-3.5 sm:mr-1" />
       <span className="hidden sm:inline">Pause</span>
-    </Button>
-  );
-}
-
-export function ClearErrorButton({
-  onClick,
-  disabled,
-  size = "sm",
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  size?: "sm" | "default";
-}) {
-  return (
-    <Button
-      variant="outline"
-      size={size}
-      onClick={onClick}
-      disabled={disabled}
-      className="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive dark:border-destructive/50"
-      aria-label="Clear error and return agent to idle"
-    >
-      <CheckCircle2 data-icon="inline-start" className="h-3.5 w-3.5 sm:mr-1" />
-      <span className="hidden sm:inline">Clear error</span>
     </Button>
   );
 }
@@ -135,7 +104,6 @@ export function AgentActionButtons({
 }) {
   const queryClient = useQueryClient();
   const { openNewTask } = useDialogActions();
-  const { pushToast } = useToastActions();
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
 
   const resolvedCompanyId = companyId ?? agent.companyId;
@@ -147,28 +115,40 @@ export function AgentActionButtons({
       if (onActionError) {
         onActionError(message);
       } else {
-        pushToast({ title: "Action failed", body: message, tone: "error" });
+        toast.error("Action failed", { description: message });
       }
     },
-    [onActionError, pushToast],
+    [onActionError],
   );
 
   const invalidateAgent = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agent.id) });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.agents.detail(agent.id),
+    });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.agents.runtimeState(agent.id),
+    });
     if (resolvedCompanyId) {
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.runs(resolvedCompanyId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.agents.list(resolvedCompanyId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.runs(resolvedCompanyId),
+      });
     }
   }, [agent.id, queryClient, resolvedCompanyId]);
 
   const agentAction = useMutation({
     mutationFn: async (action: "pause" | "resume" | "clear_error" | "terminate") => {
       switch (action) {
-        case "pause": return agentsApi.pause(agent.id);
-        case "resume": return agentsApi.resume(agent.id);
-        case "clear_error": return agentsApi.clearError(agent.id);
-        case "terminate": return agentsApi.terminate(agent.id);
+        case "pause":
+          return agentsApi.pause(agent.id);
+        case "resume":
+          return agentsApi.resume(agent.id);
+        case "clear_error":
+          return agentsApi.clearError(agent.id);
+        case "terminate":
+          return agentsApi.terminate(agent.id);
       }
     },
     onSuccess: () => {
@@ -191,31 +171,38 @@ export function AgentActionButtons({
       className={className ?? "flex items-center gap-1 sm:gap-2 shrink-0"}
       aria-busy={agentAction.isPending}
     >
-      <Button
-        variant="outline"
-        size={size}
-        onClick={() => openNewTask({ ownerAgentId: agent.id })}
-        disabled={assignAndRunDisabled || agentAction.isPending}
-        title={workActionsDisabled ? workActionsDisabledReason : undefined}
-      >
-        <Plus data-icon="inline-start" className="h-3.5 w-3.5 sm:mr-1" />
-        <span className="hidden sm:inline">{assignLabel}</span>
-      </Button>
-      {isError ? (
-        <ClearErrorButton
-          onClick={() => agentAction.mutate("clear_error")}
-          disabled={clearErrorDisabled}
+      <ButtonGroup>
+        <Button
+          variant="outline"
           size={size}
-        />
-      ) : (
-        <PauseResumeButton
-          isPaused={isPaused}
-          onPause={() => (pauseConfirm ? setPauseConfirmOpen(true) : agentAction.mutate("pause"))}
-          onResume={() => agentAction.mutate("resume")}
-          disabled={pauseResumeDisabled}
-          size={size}
-        />
-      )}
+          onClick={() => openNewTask({ ownerAgentId: agent.id })}
+          disabled={assignAndRunDisabled || agentAction.isPending}
+          title={workActionsDisabled ? workActionsDisabledReason : undefined}
+        >
+          <Plus data-icon="inline-start" className="h-3.5 w-3.5 sm:mr-1" />
+          <span className="hidden sm:inline">{assignLabel}</span>
+        </Button>
+        {isError ? (
+          <Button
+            variant="outline"
+            size={size}
+            onClick={() => agentAction.mutate("clear_error")}
+            disabled={clearErrorDisabled}
+            aria-label="Clear error and return agent to idle"
+          >
+            <CheckCircle2 data-icon="inline-start" className="h-3.5 w-3.5 sm:mr-1" />
+            <span className="hidden sm:inline">Clear error</span>
+          </Button>
+        ) : (
+          <PauseResumeButton
+            isPaused={isPaused}
+            onPause={() => (pauseConfirm ? setPauseConfirmOpen(true) : agentAction.mutate("pause"))}
+            onResume={() => agentAction.mutate("resume")}
+            disabled={pauseResumeDisabled}
+            size={size}
+          />
+        )}
+      </ButtonGroup>
       {pauseConfirm && (
         <AlertDialog open={pauseConfirmOpen} onOpenChange={setPauseConfirmOpen}>
           <AlertDialogContent>
@@ -226,7 +213,7 @@ export function AgentActionButtons({
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={disabled}>Cancel</AlertDialogCancel>
               <AlertDialogAction disabled={disabled} onClick={() => agentAction.mutate("pause")}>
                 Pause anyway
               </AlertDialogAction>
@@ -236,7 +223,9 @@ export function AgentActionButtons({
       )}
       {showStatus && (
         <span className="hidden sm:inline">
-          <AgentStatusBadge status={agent.status} />
+          <Badge variant="secondary" className="capitalize">
+            {agent.status.replaceAll("_", " ")}
+          </Badge>
         </span>
       )}
       {children}
@@ -247,7 +236,12 @@ export function AgentActionButtons({
       ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-xs" aria-label={`Open actions for ${agent.name}`} disabled={disabled}>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Open actions for ${agent.name}`}
+            disabled={disabled}
+          >
             <MoreHorizontal data-icon="inline-start" className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>

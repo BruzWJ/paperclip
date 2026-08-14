@@ -14,6 +14,11 @@ import { runsApi, type TaskExecutionRunJoinedDetail } from "../api/runs";
 import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
 import { cn, relativeTime } from "../lib/utils";
+import { Alert, AlertDescription } from "./ui/alert";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card, CardContent } from "./ui/card";
+import { Empty, EmptyDescription } from "./ui/empty";
 
 type TaskRunLedgerProps = {
   taskId: string;
@@ -38,46 +43,24 @@ type TaskRunLedgerContentProps = {
 };
 
 type LedgerFeedItem =
-  | { kind: "run"; id: string; timestamp: string; run: TaskExecutionRunEnvelopeRecord }
+  | {
+      kind: "run";
+      id: string;
+      timestamp: string;
+      run: TaskExecutionRunEnvelopeRecord;
+    }
   | { kind: "activity"; id: string; timestamp: string; event: ActivityEvent };
 
-const TERMINAL_CHILD_STATUSES = new Set<Task["boardPresentationStatus"]>([
-  "done",
-  "cancelled",
-]);
+const TERMINAL_CHILD_STATUSES = new Set<Task["boardPresentationStatus"]>(["done", "cancelled"]);
 
-const LIVENESS_COPY: Record<
-  TaskExecutionRunLivenessFact["livenessState"],
-  { label: string; tone: string }
-> = {
-  completed: {
-    label: "Completed",
-    tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  },
-  advanced: {
-    label: "Advanced",
-    tone: "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
-  },
-  plan_only: {
-    label: "Plan only",
-    tone: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  },
-  empty_response: {
-    label: "Empty response",
-    tone: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300",
-  },
-  blocked: {
-    label: "Blocked",
-    tone: "border-yellow-500/30 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300",
-  },
-  failed: {
-    label: "Failed",
-    tone: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
-  },
-  needs_followup: {
-    label: "Needs follow-up",
-    tone: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  },
+const LIVENESS_LABEL: Record<TaskExecutionRunLivenessFact["livenessState"], string> = {
+  completed: "Completed",
+  advanced: "Advanced",
+  plan_only: "Plan only",
+  empty_response: "Empty response",
+  blocked: "Blocked",
+  failed: "Failed",
+  needs_followup: "Needs follow-up",
 };
 
 function runTimestamp(run: TaskExecutionRunEnvelopeRecord): string {
@@ -93,13 +76,13 @@ function compareRunsNewestFirst(
   left: TaskExecutionRunEnvelopeRecord,
   right: TaskExecutionRunEnvelopeRecord,
 ): number {
-  return timestampValue(runTimestamp(right)) - timestampValue(runTimestamp(left)) ||
-    right.id.localeCompare(left.id);
+  return (
+    timestampValue(runTimestamp(right)) - timestampValue(runTimestamp(left)) ||
+    right.id.localeCompare(left.id)
+  );
 }
 
-export function defaultTaskRunLedgerRunId(
-  runs: readonly TaskExecutionRunEnvelopeRecord[],
-): string | null {
+export function defaultTaskRunLedgerRunId(runs: readonly TaskExecutionRunEnvelopeRecord[]): string | null {
   return [...runs].sort(compareRunsNewestFirst)[0]?.id ?? null;
 }
 
@@ -141,9 +124,7 @@ function runSummary(
 }
 
 function childTaskSummary(childTasks: Task[]) {
-  const active = childTasks.filter(
-    (task) => !TERMINAL_CHILD_STATUSES.has(task.boardPresentationStatus),
-  );
+  const active = childTasks.filter((task) => !TERMINAL_CHILD_STATUSES.has(task.boardPresentationStatus));
   return {
     active,
     done: childTasks.filter((task) => task.boardPresentationStatus === "done").length,
@@ -164,18 +145,12 @@ export function TaskRunLedger({
   const { data: runPage } = useQuery({
     queryKey: queryKeys.tasks.runs(taskId),
     queryFn: () => runsApi.listForTask(taskId, { limit: 200 }),
-    placeholderData:
-      keepPreviousDataForSameQueryTail<TaskExecutionRunListPageRecord>(taskId),
+    placeholderData: keepPreviousDataForSameQueryTail<TaskExecutionRunListPageRecord>(taskId),
   });
   const runs = runPage?.items ?? [];
-  const defaultRunId = useMemo(
-    () => defaultTaskRunLedgerRunId(runs),
-    [runs],
-  );
+  const defaultRunId = useMemo(() => defaultTaskRunLedgerRunId(runs), [runs]);
   const effectiveSelectedRunId =
-    selectedRunId && runs.some((run) => run.id === selectedRunId)
-      ? selectedRunId
-      : defaultRunId;
+    selectedRunId && runs.some((run) => run.id === selectedRunId) ? selectedRunId : defaultRunId;
   const { data: selectedDetail } = useQuery({
     queryKey: queryKeys.runDetail(effectiveSelectedRunId ?? "pending"),
     queryFn: () => runsApi.get(effectiveSelectedRunId!),
@@ -209,10 +184,7 @@ export function TaskRunLedgerContent({
   renderActivityEvent,
 }: TaskRunLedgerContentProps) {
   const companyId = useCompanyRouteId();
-  const orderedRuns = useMemo(
-    () => [...runs].sort(compareRunsNewestFirst),
-    [runs],
-  );
+  const orderedRuns = useMemo(() => [...runs].sort(compareRunsNewestFirst), [runs]);
   const latestRun = orderedRuns[0] ?? null;
   const children = childTaskSummary(childTasks);
   const feedItems = useMemo<LedgerFeedItem[]>(() => {
@@ -228,76 +200,80 @@ export function TaskRunLedgerContent({
           kind: "activity",
           id: event.id,
           timestamp:
-            event.createdAt instanceof Date
-              ? event.createdAt.toISOString()
-              : String(event.createdAt),
+            event.createdAt instanceof Date ? event.createdAt.toISOString() : String(event.createdAt),
           event,
         });
       }
     }
     return items.sort((left, right) => {
-      const difference =
-        new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime();
+      const difference = new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime();
       return difference || right.id.localeCompare(left.id);
     });
   }, [activityEvents, orderedRuns, renderActivityEvent]);
   const selectedLiveness =
-    selectedDetail?.run.id === selectedRunId
-      ? selectedDetail?.finalization?.liveness ?? null
-      : null;
+    selectedDetail?.run.id === selectedRunId ? (selectedDetail?.finalization?.liveness ?? null) : null;
   const selectedRetry = selectedDetail?.retrySchedules.items.at(-1) ?? null;
   const renderRunCard = (run: TaskExecutionRunEnvelopeRecord) => {
     const isSelected = run.id === selectedRunId;
-    const liveness = isSelected && selectedLiveness
-      ? LIVENESS_COPY[selectedLiveness.livenessState]
-      : null;
+    const liveness = isSelected && selectedLiveness ? selectedLiveness.livenessState : null;
     return (
-      <article
+      <Card
         key={`run:${run.id}`}
         data-run-id={run.id}
         data-run-kind={run.kind}
-        className={cn(
-          "space-y-1.5 rounded-lg border px-3 py-2 text-xs text-muted-foreground",
-          isSelected ? "border-foreground/30 bg-accent/20" : "border-border/60",
-        )}
+        className={cn("gap-2 px-3 py-2 text-xs text-muted-foreground", isSelected && "border-primary")}
       >
-        <button
+        <Button
           type="button"
-          className="flex w-full flex-wrap items-center gap-1.5 text-left"
+          variant="ghost"
+          className="h-auto w-full flex-wrap justify-start px-0"
           onClick={() => onSelectRun?.(run.id)}
         >
           <span className="font-medium text-foreground">Run</span>
           <span className="font-mono text-foreground">{run.id.slice(0, 8)}</span>
           <span>by {runAgentName(run, agentMap)}</span>
-          <span className="rounded-md border border-border px-1.5 py-0.5 text-(length:--text-micro) capitalize">
+          <Badge variant="outline" className="capitalize">
             {statusLabel(run.status)}
-          </span>
+          </Badge>
           {liveness ? (
-            <span className={cn("rounded-md border px-1.5 py-0.5 text-(length:--text-micro)", liveness.tone)}>
-              {liveness.label}
-            </span>
+            <Badge variant={liveness === "failed" ? "destructive" : "secondary"}>
+              {LIVENESS_LABEL[liveness]}
+            </Badge>
           ) : null}
           <span className="ml-auto">{relativeTime(runTimestamp(run))}</span>
-        </button>
+        </Button>
         <div className="grid gap-2 sm:grid-cols-3">
-          <div><span className="text-foreground">Elapsed</span> {formatDuration(run.startedAt, run.finishedAt) ?? "not started"}</div>
-          <div><span className="text-foreground">Mode</span> {run.executionMode}</div>
-          <div><span className="text-foreground">Terminal reason</span> {run.terminalReasonCode ?? "—"}</div>
+          <div>
+            <span className="text-foreground">Elapsed</span>{" "}
+            {formatDuration(run.startedAt, run.finishedAt) ?? "not started"}
+          </div>
+          <div>
+            <span className="text-foreground">Mode</span> {run.executionMode}
+          </div>
+          <div>
+            <span className="text-foreground">Terminal reason</span> {run.terminalReasonCode ?? "—"}
+          </div>
         </div>
         {isSelected && selectedLiveness ? (
-          <div className="rounded-md bg-accent/40 px-2 py-1.5">
-            <p>{selectedLiveness.livenessReason}</p>
-            {selectedLiveness.nextAction ? (
-              <p><span className="font-medium text-foreground">Next action:</span> {selectedLiveness.nextAction}</p>
-            ) : null}
-          </div>
+          <Alert>
+            <AlertDescription>
+              <p>{selectedLiveness.livenessReason}</p>
+              {selectedLiveness.nextAction ? (
+                <p>
+                  <span className="font-medium text-foreground">Next action:</span>{" "}
+                  {selectedLiveness.nextAction}
+                </p>
+              ) : null}
+            </AlertDescription>
+          </Alert>
         ) : null}
         {isSelected && selectedRetry ? (
           <p>
-            Retry {statusLabel(selectedRetry.state)} for {relativeTime(selectedRetry.retryAt)}: {selectedRetry.reasonCode}
+            Retry {statusLabel(selectedRetry.state)} for {relativeTime(selectedRetry.retryAt)}:{" "}
+            {selectedRetry.reasonCode}
           </p>
         ) : null}
-      </article>
+      </Card>
     );
   };
 
@@ -315,37 +291,38 @@ export function TaskRunLedgerContent({
           </p>
         </div>
         {latestRun && agentMap.has(latestRun.targetAgentId) ? (
-          <Link
-            to="/$companyId/agents/$agentId/runs/$runId"
-            params={{
-              companyId,
-              agentId: latestRun.targetAgentId,
-              runId: latestRun.id,
-            }}
-            className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            Latest run
-          </Link>
+          <Button variant="outline" size="sm" asChild>
+            <Link
+              to="/$companyId/agents/$agentId/runs/$runId"
+              params={{
+                companyId,
+                agentId: latestRun.targetAgentId,
+                runId: latestRun.id,
+              }}
+            >
+              Latest run
+            </Link>
+          </Button>
         ) : null}
       </div>
 
       {children.total > 0 ? (
-        <div className="rounded-md border border-border/70 px-3 py-2">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Card className="gap-0 py-2">
+          <CardContent className="flex flex-wrap items-center gap-2 px-3 text-xs">
             <span className="font-medium text-foreground">Child work</span>
             <span className="text-muted-foreground">
               {children.active.length > 0
                 ? `${children.active.length} active, ${children.done} done, ${children.cancelled} cancelled`
                 : `all ${children.total} terminal (${children.done} done, ${children.cancelled} cancelled)`}
             </span>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       ) : null}
 
       {feedItems.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
-          Runs and activity will appear here once this task has history.
-        </div>
+        <Empty className="p-6">
+          <EmptyDescription>Runs and activity will appear here once this task has history.</EmptyDescription>
+        </Empty>
       ) : (
         <div className="space-y-1.5">
           {feedItems.slice(0, 20).map((item) => {

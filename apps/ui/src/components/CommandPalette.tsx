@@ -17,6 +17,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
+import { Kbd } from "@/components/ui/kbd";
 import {
   CircleDot,
   Bot,
@@ -30,7 +31,8 @@ import {
   Plus,
   Search,
 } from "lucide-react";
-import { Identity } from "./Identity";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { deriveInitials } from "@/lib/identity";
 import {
   SEARCH_OPERATOR_QUICK_FILTERS,
   parseSearchQuery,
@@ -39,13 +41,10 @@ import {
 
 const SEARCH_ALL_VALUE = "__paperclip-search-all__";
 
-/** Max promoted project matches kept when typing in the palette. */
 const MAX_MATCHED_PROJECTS = 5;
-/** Task cap when projects are also promoted, so Tasks can't crowd them out. */
 const TASK_LIMIT_WITH_PROJECTS = 6;
 const TASK_LIMIT = 10;
 
-/** True when every char of `needle` appears in `haystack` in order (fuzzy). */
 function isSubsequence(needle: string, haystack: string): boolean {
   let i = 0;
   for (let j = 0; j < haystack.length && i < needle.length; j += 1) {
@@ -54,16 +53,8 @@ function isSubsequence(needle: string, haystack: string): boolean {
   return i === needle.length;
 }
 
-/**
- * Score a project against a lowercased query. Higher is a better match;
- * `null` means no match. Prefers name hits (exact > prefix > substring) over
- * description hits, with fuzzy subsequence as a last resort.
- */
 function scoreProjectMatch(name: string, description: string, q: string): number | null {
   if (name === q) return 1000;
-  // Shorter names rank first, but clamp the length penalty so a prefix match can
-  // never sink below the substring band (max 699) for unusually long names —
-  // keeps the prefix > substring > description > fuzzy ordering invariant.
   if (name.startsWith(q)) return Math.max(700, 900 - name.length);
   const nameIdx = name.indexOf(q);
   if (nameIdx >= 0) return 700 - nameIdx;
@@ -134,8 +125,8 @@ export function CommandPalette() {
   });
 
   const { data: searchedTasks = [] } = useQuery({
-    queryKey: queryKeys.tasks.search(companyId, quickSearchQuery, undefined, 10),
-    queryFn: () => tasksApi.list(companyId, { q: quickSearchQuery, limit: 10 }),
+    queryKey: queryKeys.tasks.search(companyId, quickSearchQuery, undefined, TASK_LIMIT),
+    queryFn: () => tasksApi.list(companyId, { q: quickSearchQuery, limit: TASK_LIMIT }),
     enabled: open && quickSearchQuery.length > 0,
   });
 
@@ -171,14 +162,8 @@ export function CommandPalette() {
     return agents.find((a) => a.id === id)?.name ?? null;
   };
 
-  const visibleTasks = useMemo(
-    () => (quickSearchQuery.length > 0 ? searchedTasks : tasks),
-    [tasks, searchedTasks, quickSearchQuery],
-  );
+  const visibleTasks = quickSearchQuery.length > 0 ? searchedTasks : tasks;
 
-  // Client-side typeahead ranking over the already-loaded projects. cmdk ranks
-  // items by their `value` (which defaults to the rendered name) and would bury
-  // or drop description-only matches, so we rank in JS and force-match below.
   const matchedProjects = useMemo(() => {
     if (quickSearchQuery.length === 0) return [];
     const q = quickSearchQuery.toLowerCase();
@@ -197,6 +182,21 @@ export function CommandPalette() {
   const showPromotedProjects = showSearchAll && matchedProjects.length > 0;
   const taskLimit = showPromotedProjects ? TASK_LIMIT_WITH_PROJECTS : TASK_LIMIT;
   const showEmptyHint = showSearchAll && visibleTasks.length === 0 && matchedProjects.length === 0;
+  const pageCommands = [
+    ["Dashboard", LayoutDashboard, "/$companyId/dashboard"],
+    ["Inbox", Inbox, "/$companyId/inbox"],
+    ["Tasks", CircleDot, "/$companyId/tasks"],
+    ["Projects", Hexagon, "/$companyId/projects"],
+    ["Goals", Target, "/$companyId/goals"],
+    ["Agents", Bot, "/$companyId/agents"],
+    ["Costs", DollarSign, "/$companyId/costs"],
+    ["Activity", History, "/$companyId/activity"],
+  ] as const;
+  const actionCommands = [
+    ["Create new task", SquarePen, () => (setOpen(false), openNewTask())],
+    ["Create new agent", Plus, () => (setOpen(false), openNewAgent())],
+    ["Create new project", Plus, () => go({ to: "/$companyId/projects", params: { companyId } })],
+  ] as const;
 
   return (
     <CommandDialog
@@ -227,7 +227,7 @@ export function CommandPalette() {
           {showSearchAll ? (
             <span>
               No quick task matches. Press{" "}
-              <kbd className="rounded border border-border bg-muted px-1 py-0.5 text-(length:--text-nano)">↵</kbd> to{" "}
+              <Kbd className="border border-border text-(length:--text-nano)">↵</Kbd> to{" "}
               <span className="font-medium">search all</span> or keep typing to refine.
             </span>
           ) : (
@@ -249,9 +249,7 @@ export function CommandPalette() {
               </span>
               <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <span>open full search</span>
-                <kbd className="rounded border border-border bg-background px-1 py-0.5 text-(length:--text-nano)">
-                  ↵
-                </kbd>
+                <Kbd className="border border-border bg-background text-(length:--text-nano)">↵</Kbd>
               </span>
             </CommandItem>
           </CommandGroup>
@@ -308,66 +306,23 @@ export function CommandPalette() {
         )}
 
         <CommandGroup heading="Actions">
-          <CommandItem
-            onSelect={() => {
-              setOpen(false);
-              openNewTask();
-            }}
-          >
-            <SquarePen className="mr-2 h-4 w-4" />
-            Create new task
-            <span className="ml-auto text-xs text-muted-foreground">C</span>
-          </CommandItem>
-          <CommandItem
-            onSelect={() => {
-              setOpen(false);
-              openNewAgent();
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Create new agent
-          </CommandItem>
-          <CommandItem onSelect={() => go({ to: "/$companyId/projects", params: { companyId } })}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create new project
-          </CommandItem>
+          {actionCommands.map(([label, Icon, onSelect]) => (
+            <CommandItem key={label} onSelect={onSelect}>
+              <Icon />
+              {label}
+            </CommandItem>
+          ))}
         </CommandGroup>
 
         <CommandSeparator />
 
         <CommandGroup heading="Pages">
-          <CommandItem onSelect={() => go({ to: "/$companyId/dashboard", params: { companyId } })}>
-            <LayoutDashboard className="mr-2 h-4 w-4" />
-            Dashboard
-          </CommandItem>
-          <CommandItem onSelect={() => go({ to: "/$companyId/inbox", params: { companyId } })}>
-            <Inbox className="mr-2 h-4 w-4" />
-            Inbox
-          </CommandItem>
-          <CommandItem onSelect={() => go({ to: "/$companyId/tasks", params: { companyId } })}>
-            <CircleDot className="mr-2 h-4 w-4" />
-            Tasks
-          </CommandItem>
-          <CommandItem onSelect={() => go({ to: "/$companyId/projects", params: { companyId } })}>
-            <Hexagon className="mr-2 h-4 w-4" />
-            Projects
-          </CommandItem>
-          <CommandItem onSelect={() => go({ to: "/$companyId/goals", params: { companyId } })}>
-            <Target className="mr-2 h-4 w-4" />
-            Goals
-          </CommandItem>
-          <CommandItem onSelect={() => go({ to: "/$companyId/agents", params: { companyId } })}>
-            <Bot className="mr-2 h-4 w-4" />
-            Agents
-          </CommandItem>
-          <CommandItem onSelect={() => go({ to: "/$companyId/costs", params: { companyId } })}>
-            <DollarSign className="mr-2 h-4 w-4" />
-            Costs
-          </CommandItem>
-          <CommandItem onSelect={() => go({ to: "/$companyId/activity", params: { companyId } })}>
-            <History className="mr-2 h-4 w-4" />
-            Activity
-          </CommandItem>
+          {pageCommands.map(([label, Icon, to]) => (
+            <CommandItem key={to} onSelect={() => go({ to, params: { companyId } })}>
+              <Icon />
+              {label}
+            </CommandItem>
+          ))}
         </CommandGroup>
 
         {visibleTasks.length > 0 && (
@@ -376,11 +331,14 @@ export function CommandPalette() {
             <CommandGroup heading="Tasks">
               {visibleTasks.slice(0, taskLimit).map((task) => {
                 const taskIdentifier = task.identifier;
+                const ownerName = task.ownerAgentId ? agentName(task.ownerAgentId) : null;
 
                 return (
                   <CommandItem
                     key={task.id}
-                    value={searchQuery.length > 0 ? `${searchQuery} ${taskIdentifier} ${task.title}` : undefined}
+                    value={
+                      searchQuery.length > 0 ? `${searchQuery} ${taskIdentifier} ${task.title}` : undefined
+                    }
                     onSelect={() =>
                       go({
                         to: "/$companyId/tasks/$taskNumber",
@@ -394,11 +352,14 @@ export function CommandPalette() {
                     <CircleDot className="mr-2 h-4 w-4" />
                     <span className="text-muted-foreground mr-2 font-mono text-xs">{taskIdentifier}</span>
                     <span className="flex-1 truncate">{task.title}</span>
-                    {task.ownerAgentId &&
-                      (() => {
-                        const name = agentName(task.ownerAgentId);
-                        return name ? <Identity name={name} size="sm" className="ml-2 hidden sm:inline-flex" /> : null;
-                      })()}
+                    {ownerName ? (
+                      <span className="ml-2 hidden items-center gap-1.5 sm:inline-flex">
+                        <Avatar size="sm">
+                          <AvatarFallback>{deriveInitials(ownerName)}</AvatarFallback>
+                        </Avatar>
+                        <span className="truncate text-xs">{ownerName}</span>
+                      </span>
+                    ) : null}
                   </CommandItem>
                 );
               })}
@@ -422,7 +383,9 @@ export function CommandPalette() {
                 >
                   <Bot className="mr-2 h-4 w-4" />
                   {agent.name}
-                  {agent.title ? <span className="text-xs text-muted-foreground ml-2">{agent.title}</span> : null}
+                  {agent.title ? (
+                    <span className="text-xs text-muted-foreground ml-2">{agent.title}</span>
+                  ) : null}
                 </CommandItem>
               ))}
             </CommandGroup>

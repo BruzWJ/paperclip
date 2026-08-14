@@ -1,12 +1,8 @@
 import type { CompanySecret, UserSecretDefinition } from "@paperclipai/shared";
-import {
-  type MyValueState,
-  myValueLabel,
-  myValueTone,
-} from "./user-secret-presentation";
+import { type MyValueState, myValueLabel } from "./user-secret-presentation";
 
 export type { MyValueState };
-export { myValueLabel, myValueTone };
+export { myValueLabel };
 
 /**
  * Derive the current user's value state for a definition:

@@ -1,34 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowUpDown,
-  Check,
-  CheckCircle2,
-  Inbox,
-  Layers,
-  ListFilter,
-} from "lucide-react";
-import type { AttentionItem } from "@paperclipai/shared";
-import { useNavigateCompanyBoardTarget } from "@/components/CompanyBoardLink";
 import { attentionApi } from "@/api/attention";
-import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { useNavigateCompanyBoardTarget } from "@/components/CompanyBoardLink";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { DecisionQueue } from "@/components/decisions/DecisionQueue";
+import { DecisionToolbar } from "@/components/decisions/DecisionToolbar";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
-import { useToastActions } from "@/context/ToastContext";
+import { toast } from "sonner";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useInboxDismissals } from "@/hooks/useInboxBadge";
-import { queryKeys } from "@/lib/queryKeys";
 import {
-  ATTENTION_GROUP_BY_OPTIONS,
-  ATTENTION_SORT_OPTIONS,
   buildAttentionFilterOptions,
-  countActiveAttentionFilters,
   defaultAttentionFilterState,
   filterAttentionItems,
   groupAttentionItems,
@@ -37,46 +18,26 @@ import {
   loadAttentionGroupBy,
   loadAttentionSortOrder,
   loadCollapsedAttentionGroupKeys,
-  NO_GROUP_SENTINEL,
   planAttentionRenderRows,
   saveAttentionFilters,
   saveAttentionGroupBy,
   saveAttentionSortOrder,
   saveCollapsedAttentionGroupKeys,
   sortAttentionItems,
-  sourceMeta,
   type AttentionFilterState,
   type AttentionGroupBy,
   type AttentionSortOrder,
 } from "@/lib/attention";
-import { cn } from "@/lib/utils";
-import {
-  hasBlockingShortcutDialog,
-  resolveAttentionQueueKeyAction,
-} from "@/lib/keyboardShortcuts";
-import { PageSkeleton } from "@/components/PageSkeleton";
-import { AttentionQueueRow } from "@/components/AttentionQueueRow";
-import { TaskGroupHeader } from "@/components/TaskGroupHeader";
-import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { hasBlockingShortcutDialog, resolveAttentionQueueKeyAction } from "@/lib/keyboardShortcuts";
+import { queryKeys } from "@/lib/queryKeys";
+import type { AttentionItem } from "@paperclipai/shared";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/$companyId/decisions/")({
   component: WhatNeedsMe,
 });
-
-const SEVERITY_LABELS: Record<string, string> = {
-  critical: "Critical",
-  high: "High",
-  medium: "Medium",
-  low: "Low",
-};
-
-/** Curtain rows never expand; module-level so memoized rows see one identity. */
-const noopToggleExpand = () => {};
 
 // Incremental rendering (PAP-13784, same pattern as TasksList): the feed is
 // uncapped, so mounting every row up front makes the page slow to paint and
@@ -92,17 +53,9 @@ const ATTENTION_SCROLL_LOAD_THRESHOLD_PX = 480;
 function findScrollContainer(element: HTMLElement | null): HTMLElement | null {
   if (!element || typeof window === "undefined") return null;
   let current = element.parentElement;
-  while (
-    current &&
-    current !== document.body &&
-    current !== document.documentElement
-  ) {
+  while (current && current !== document.body && current !== document.documentElement) {
     const overflowY = window.getComputedStyle(current).overflowY;
-    if (
-      overflowY === "auto" ||
-      overflowY === "scroll" ||
-      overflowY === "overlay"
-    ) {
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") {
       return current;
     }
     current = current.parentElement;
@@ -114,35 +67,22 @@ function WhatNeedsMe() {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [selectedAttentionId, setSelectedAttentionId] = useState<string | null>(
-    null,
-  );
+  const [selectedAttentionId, setSelectedAttentionId] = useState<string | null>(null);
   const [autoExpandDone, setAutoExpandDone] = useState(false);
 
   // Toolbar preferences (persisted to localStorage, Inbox pattern).
-  const [groupBy, setGroupBy] = useState<AttentionGroupBy>(() =>
-    loadAttentionGroupBy(),
-  );
-  const [sortOrder, setSortOrder] = useState<AttentionSortOrder>(() =>
-    loadAttentionSortOrder(),
-  );
-  const [filters, setFilters] = useState<AttentionFilterState>(
-    () => defaultAttentionFilterState,
-  );
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [groupBy, setGroupBy] = useState<AttentionGroupBy>(() => loadAttentionGroupBy());
+  const [sortOrder, setSortOrder] = useState<AttentionSortOrder>(() => loadAttentionSortOrder());
+  const [filters, setFilters] = useState<AttentionFilterState>(() => defaultAttentionFilterState);
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(() => new Set());
   const [snoozedOpen, setSnoozedOpen] = useState(false);
   const [dismissedOpen, setDismissedOpen] = useState(false);
 
   // Optimistic hide/restore. Reset whenever a fresh feed lands (server truth).
   const [pendingHide, setPendingHide] = useState<Set<string>>(() => new Set());
-  const [pendingRestore, setPendingRestore] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [pendingRestore, setPendingRestore] = useState<Set<string>>(() => new Set());
 
   const { dismiss, snooze, restore } = useInboxDismissals(companyId);
-  const { pushToast } = useToastActions();
   const navigateBoardTarget = useNavigateCompanyBoardTarget();
 
   useEffect(() => {
@@ -175,15 +115,12 @@ function WhatNeedsMe() {
 
   const allItems = useMemo(() => feed?.items ?? [], [feed]);
 
-  const isServerHidden = (item: AttentionItem) =>
-    item.dismissal != null && item.dismissal.isActive;
+  const isServerHidden = (item: AttentionItem) => item.dismissal != null && item.dismissal.isActive;
 
   const activeItems = useMemo(
     () =>
       allItems.filter(
-        (item) =>
-          (!isServerHidden(item) || pendingRestore.has(item.id)) &&
-          !pendingHide.has(item.id),
+        (item) => (!isServerHidden(item) || pendingRestore.has(item.id)) && !pendingHide.has(item.id),
       ),
     [allItems, pendingHide, pendingRestore],
   );
@@ -191,9 +128,7 @@ function WhatNeedsMe() {
     () =>
       allItems.filter(
         (item) =>
-          item.dismissal?.kind === "snooze" &&
-          item.dismissal.isActive &&
-          !pendingRestore.has(item.id),
+          item.dismissal?.kind === "snooze" && item.dismissal.isActive && !pendingRestore.has(item.id),
       ),
     [allItems, pendingRestore],
   );
@@ -201,17 +136,12 @@ function WhatNeedsMe() {
     () =>
       allItems.filter(
         (item) =>
-          item.dismissal?.kind === "dismiss" &&
-          item.dismissal.isActive &&
-          !pendingRestore.has(item.id),
+          item.dismissal?.kind === "dismiss" && item.dismissal.isActive && !pendingRestore.has(item.id),
       ),
     [allItems, pendingRestore],
   );
 
-  const filterOptions = useMemo(
-    () => buildAttentionFilterOptions(activeItems),
-    [activeItems],
-  );
+  const filterOptions = useMemo(() => buildAttentionFilterOptions(activeItems), [activeItems]);
 
   // Filter → sort → group, all client-side so switching re-buckets without a refetch.
   const groups = useMemo(() => {
@@ -220,25 +150,18 @@ function WhatNeedsMe() {
     return groupAttentionItems(sorted, groupBy);
   }, [activeItems, filters, sortOrder, groupBy]);
 
-  const visibleCount = useMemo(
-    () => groups.reduce((sum, group) => sum + group.items.length, 0),
-    [groups],
-  );
+  const visibleCount = useMemo(() => groups.reduce((sum, group) => sum + group.items.length, 0), [groups]);
   const keyboardItems = useMemo(
     () =>
       groups
-        .filter(
-          (group) => group.label === null || !collapsedGroupKeys.has(group.key),
-        )
+        .filter((group) => group.label === null || !collapsedGroupKeys.has(group.key))
         .flatMap((group) => group.items),
     [collapsedGroupKeys, groups],
   );
 
   // Rendered-row budget: only ratchets up (a hard reset mid-scroll would yank
   // the DOM out from under the user), and resets when the company changes.
-  const [renderedRowLimit, setRenderedRowLimit] = useState(
-    INITIAL_ATTENTION_ROW_RENDER_LIMIT,
-  );
+  const [renderedRowLimit, setRenderedRowLimit] = useState(INITIAL_ATTENTION_ROW_RENDER_LIMIT);
   const rootRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     setRenderedRowLimit(INITIAL_ATTENTION_ROW_RENDER_LIMIT);
@@ -286,9 +209,7 @@ function WhatNeedsMe() {
       if (animationFrameId !== null) return;
       animationFrameId = window.requestAnimationFrame(() => {
         animationFrameId = null;
-        const scrollHeight =
-          scrollContainer?.scrollHeight ??
-          document.documentElement.scrollHeight;
+        const scrollHeight = scrollContainer?.scrollHeight ?? document.documentElement.scrollHeight;
         if (scrollHeight === 0) return;
         const scrollBottom = scrollContainer
           ? scrollContainer.scrollTop + scrollContainer.clientHeight
@@ -310,25 +231,19 @@ function WhatNeedsMe() {
     return () => {
       scrollTarget.removeEventListener("scroll", checkScrollPosition);
       window.removeEventListener("resize", checkScrollPosition);
-      if (animationFrameId !== null)
-        window.cancelAnimationFrame(animationFrameId);
+      if (animationFrameId !== null) window.cancelAnimationFrame(animationFrameId);
     };
   }, [loadMoreRows, renderPlan.hasMoreRows, renderedRowLimit]);
 
   useEffect(() => {
-    if (
-      selectedAttentionId &&
-      !keyboardItems.some((item) => item.id === selectedAttentionId)
-    ) {
+    if (selectedAttentionId && !keyboardItems.some((item) => item.id === selectedAttentionId)) {
       setSelectedAttentionId(null);
     }
   }, [keyboardItems, selectedAttentionId]);
 
   useEffect(() => {
     if (!selectedAttentionId) return;
-    document
-      .getElementById(`attention-row-${selectedAttentionId}`)
-      ?.scrollIntoView({ block: "nearest" });
+    document.getElementById(`attention-row-${selectedAttentionId}`)?.scrollIntoView({ block: "nearest" });
   }, [selectedAttentionId]);
 
   // Auto-expand the topmost inline-capable decision, once.
@@ -363,7 +278,7 @@ function WhatNeedsMe() {
   };
 
   // All row callbacks are stable (deps are setState functions, stable hook
-  // callbacks, and the stable `pushToast`) so the memoized rows only re-render
+  // callbacks) so the memoized rows only re-render
   // when their own item/expanded/selected props change (PAP-13784).
   const handleUndoDismiss = useCallback(
     (item: AttentionItem) => {
@@ -382,17 +297,14 @@ function WhatNeedsMe() {
       dismiss(item.dismissalKey);
       setExpandedId((previous) => (previous === item.id ? null : previous));
       // ~8s undo window; restores the row in place via T1's DELETE endpoint.
-      pushToast({
+      toast.info("Dismissed", {
+        description: item.subject.title ?? undefined,
+        duration: 8000,
         id: `attention-dismiss-${item.id}`,
-        dedupeKey: `attention-dismiss-${item.dismissalKey}`,
-        title: "Dismissed",
-        body: item.subject.title ?? undefined,
-        tone: "info",
-        ttlMs: 8000,
         action: { label: "Undo", onClick: () => handleUndoDismiss(item) },
       });
     },
-    [dismiss, handleUndoDismiss, pushToast],
+    [dismiss, handleUndoDismiss],
   );
   const handleSnooze = useCallback(
     (item: AttentionItem, snoozedUntil: string) => {
@@ -439,24 +351,19 @@ function WhatNeedsMe() {
             ? action === "next"
               ? 0
               : keyboardItems.length - 1
-            : (currentIndex + offset + keyboardItems.length) %
-              keyboardItems.length;
+            : (currentIndex + offset + keyboardItems.length) % keyboardItems.length;
         setSelectedAttentionId(keyboardItems[nextIndex]?.id ?? null);
         return;
       }
 
-      const selectedItem = keyboardItems.find(
-        (item) => item.id === selectedAttentionId,
-      );
+      const selectedItem = keyboardItems.find((item) => item.id === selectedAttentionId);
       if (!selectedItem) return;
       event.preventDefault();
 
       if (action === "dismiss") {
         handleDismiss(selectedItem);
       } else if (isInlineResolvable(selectedItem)) {
-        setExpandedId((previous) =>
-          previous === selectedItem.id ? null : selectedItem.id,
-        );
+        setExpandedId((previous) => (previous === selectedItem.id ? null : selectedItem.id));
       } else if (selectedItem.subject.routeTarget) {
         navigateBoardTarget(selectedItem.subject.routeTarget);
       }
@@ -465,442 +372,57 @@ function WhatNeedsMe() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleDismiss, keyboardItems, navigateBoardTarget, selectedAttentionId]);
-  const activeFilterCount = countActiveAttentionFilters(filters);
 
   if (isLoading) {
-    return <PageSkeleton variant="approvals" />;
+    return <Skeleton className="h-32 w-full" />;
   }
 
-  const hasAnything =
-    activeItems.length > 0 ||
-    snoozedItems.length > 0 ||
-    dismissedItems.length > 0;
+  const hasAnything = activeItems.length > 0 || snoozedItems.length > 0 || dismissedItems.length > 0;
 
   return (
     <div ref={rootRef} className="max-w-3xl space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold">Decisions</h1>
-        <div className="flex items-center gap-2">
-          {visibleCount > 0 && (
-            <span className="text-sm text-muted-foreground">
-              {visibleCount} {visibleCount === 1 ? "decision" : "decisions"}
-            </span>
-          )}
-          {/* Filter */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className={cn(
-                  "h-8 w-8 shrink-0",
-                  activeFilterCount > 0 && "bg-accent",
-                )}
-                title="Filter"
-                aria-label="Filter"
-              >
-                <ListFilter className="h-3.5 w-3.5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 p-0">
-              <FilterMenu
-                options={filterOptions}
-                filters={filters}
-                onChange={updateFilters}
-              />
-            </PopoverContent>
-          </Popover>
-          {/* Group by */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className={cn(
-                  "h-8 w-8 shrink-0",
-                  groupBy !== "none" && "bg-accent",
-                )}
-                title="Group"
-                aria-label="Group"
-              >
-                <Layers className="h-3.5 w-3.5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-40 p-2">
-              <div className="space-y-0.5">
-                {ATTENTION_GROUP_BY_OPTIONS.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={cn(
-                      "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm",
-                      groupBy === value
-                        ? "bg-accent/50 text-foreground"
-                        : "text-muted-foreground hover:bg-accent/50",
-                    )}
-                    onClick={() => updateGroupBy(value)}
-                  >
-                    <span>{label}</span>
-                    {groupBy === value ? (
-                      <Check className="h-3.5 w-3.5" />
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-          {/* Sort */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                title="Sort"
-                aria-label="Sort"
-              >
-                <ArrowUpDown className="h-3.5 w-3.5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-44 p-2">
-              <div className="space-y-0.5">
-                {ATTENTION_SORT_OPTIONS.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={cn(
-                      "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm",
-                      sortOrder === value
-                        ? "bg-accent/50 text-foreground"
-                        : "text-muted-foreground hover:bg-accent/50",
-                    )}
-                    onClick={() => updateSortOrder(value)}
-                  >
-                    <span>{label}</span>
-                    {sortOrder === value ? (
-                      <Check className="h-3.5 w-3.5" />
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-        </div>
+        <DecisionToolbar
+          visibleCount={visibleCount}
+          options={filterOptions}
+          filters={filters}
+          groupBy={groupBy}
+          sortOrder={sortOrder}
+          onFiltersChange={updateFilters}
+          onGroupByChange={updateGroupBy}
+          onSortOrderChange={updateSortOrder}
+        />
       </div>
 
       {error && (
-        <p className="text-sm text-destructive">{(error as Error).message}</p>
+        <Alert variant="destructive">
+          <AlertDescription>{(error as Error).message}</AlertDescription>
+        </Alert>
       )}
 
-      {!hasAnything ? (
-        <ZeroState />
-      ) : (
-        <div className="space-y-4">
-          {visibleCount === 0 ? (
-            <CaughtUpNote filtered={activeItems.length > 0} />
-          ) : (
-            groups.map((group) => {
-              const groupLabel = group.label;
-              const collapsed =
-                groupLabel !== null && collapsedGroupKeys.has(group.key);
-              return (
-                <section key={group.key} className="space-y-2">
-                  {groupLabel !== null && (
-                    <TaskGroupHeader
-                      label={groupLabel}
-                      collapsible
-                      collapsed={collapsed}
-                      onToggle={() => toggleGroupCollapse(group.key)}
-                      trailing={
-                        <span className="text-xs tabular-nums text-muted-foreground">
-                          {group.items.length}
-                        </span>
-                      }
-                    />
-                  )}
-                  {!collapsed && (
-                    <div className="space-y-2">
-                      {(renderPlan.groupRows.get(group.key) ?? []).map(
-                        (item) => (
-                          <AttentionQueueRow
-                            key={item.id}
-                            item={item}
-                            companyId={companyId}
-                            expanded={expandedId === item.id}
-                            onToggleExpand={handleToggleExpand}
-                            onDismiss={handleDismiss}
-                            onSnooze={handleSnooze}
-                            selected={selectedAttentionId === item.id}
-                          />
-                        ),
-                      )}
-                    </div>
-                  )}
-                </section>
-              );
-            })
-          )}
-
-          {snoozedItems.length > 0 && (
-            <Curtain
-              label="Snoozed"
-              count={snoozedItems.length}
-              open={snoozedOpen}
-              onToggle={() => setSnoozedOpen((prev) => !prev)}
-            >
-              {renderPlan.snoozedRows.map((item) => (
-                <AttentionQueueRow
-                  key={item.id}
-                  item={item}
-                  companyId={companyId}
-                  variant="hidden"
-                  expanded={false}
-                  onToggleExpand={noopToggleExpand}
-                  onDismiss={handleDismiss}
-                  onRestore={handleRestore}
-                />
-              ))}
-            </Curtain>
-          )}
-
-          {dismissedItems.length > 0 && (
-            <Curtain
-              label="Dismissed"
-              count={dismissedItems.length}
-              open={dismissedOpen}
-              onToggle={() => setDismissedOpen((prev) => !prev)}
-            >
-              {renderPlan.dismissedRows.map((item) => (
-                <AttentionQueueRow
-                  key={item.id}
-                  item={item}
-                  companyId={companyId}
-                  variant="hidden"
-                  expanded={false}
-                  onToggleExpand={noopToggleExpand}
-                  onDismiss={handleDismiss}
-                  onRestore={handleRestore}
-                />
-              ))}
-            </Curtain>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FilterMenu({
-  options,
-  filters,
-  onChange,
-}: {
-  options: ReturnType<typeof buildAttentionFilterOptions>;
-  filters: AttentionFilterState;
-  onChange: (next: AttentionFilterState) => void;
-}) {
-  const toggle = (key: keyof AttentionFilterState, value: string) => {
-    const list = filters[key] as string[];
-    const nextList = list.includes(value)
-      ? list.filter((v) => v !== value)
-      : [...list, value];
-    onChange({ ...filters, [key]: nextList });
-  };
-  const hasActive = countActiveAttentionFilters(filters) > 0;
-
-  return (
-    <div className="max-h-(--sz-70vh) overflow-y-auto">
-      <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Filter
-        </span>
-        {hasActive && (
-          <button
-            type="button"
-            className="text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => onChange(defaultAttentionFilterState)}
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      {options.sourceKinds.length > 1 && (
-        <FilterSection title="Type">
-          {options.sourceKinds.map((kind) => (
-            <FilterRow
-              key={kind}
-              label={sourceMeta(kind).label}
-              checked={filters.sourceKinds.includes(kind)}
-              onToggle={() => toggle("sourceKinds", kind)}
-            />
-          ))}
-        </FilterSection>
-      )}
-
-      {options.severities.length > 1 && (
-        <FilterSection title="Severity">
-          {options.severities.map((severity) => (
-            <FilterRow
-              key={severity}
-              label={SEVERITY_LABELS[severity] ?? severity}
-              checked={filters.severities.includes(severity)}
-              onToggle={() => toggle("severities", severity)}
-            />
-          ))}
-        </FilterSection>
-      )}
-
-      {(options.projects.length > 0 || options.hasNoProject) && (
-        <FilterSection title="Project">
-          {options.projects.map((project) => (
-            <FilterRow
-              key={project.id}
-              label={project.name}
-              checked={filters.projectIds.includes(project.id)}
-              onToggle={() => toggle("projectIds", project.id)}
-            />
-          ))}
-          {options.hasNoProject && (
-            <FilterRow
-              label="No project"
-              checked={filters.projectIds.includes(NO_GROUP_SENTINEL)}
-              onToggle={() => toggle("projectIds", NO_GROUP_SENTINEL)}
-            />
-          )}
-        </FilterSection>
-      )}
-
-      {(options.workspaces.length > 0 || options.hasNoWorkspace) && (
-        <FilterSection title="Workspace">
-          {options.workspaces.map((workspace) => (
-            <FilterRow
-              key={workspace.id}
-              label={workspace.name}
-              checked={filters.workspaceIds.includes(workspace.id)}
-              onToggle={() => toggle("workspaceIds", workspace.id)}
-            />
-          ))}
-          {options.hasNoWorkspace && (
-            <FilterRow
-              label="No workspace"
-              checked={filters.workspaceIds.includes(NO_GROUP_SENTINEL)}
-              onToggle={() => toggle("workspaceIds", NO_GROUP_SENTINEL)}
-            />
-          )}
-        </FilterSection>
-      )}
-    </div>
-  );
-}
-
-function FilterSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="border-t border-border/60 px-2 py-1.5">
-      <p className="px-1 pb-1 text-(length:--text-nano) font-medium uppercase tracking-wide text-muted-foreground">
-        {title}
-      </p>
-      <div className="space-y-0.5">{children}</div>
-    </div>
-  );
-}
-
-function FilterRow({
-  label,
-  checked,
-  onToggle,
-}: {
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="flex w-full items-center gap-2 rounded-sm px-1 py-1 text-left text-sm hover:bg-accent/50"
-      onClick={onToggle}
-    >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "grid h-4 w-4 shrink-0 place-content-center rounded-(--rad-4) border border-input shadow-xs dark:bg-input/30",
-          checked &&
-            "border-primary bg-primary text-primary-foreground dark:bg-primary",
-        )}
-      >
-        {checked ? <Check className="h-3.5 w-3.5" /> : null}
-      </span>
-      <span className="truncate">{label}</span>
-    </button>
-  );
-}
-
-function Curtain({
-  label,
-  count,
-  open,
-  onToggle,
-  children,
-}: {
-  label: string;
-  count: number;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-2">
-      <TaskGroupHeader
-        label={`${label} (${count})`}
-        collapsible
-        collapsed={!open}
-        onToggle={onToggle}
-        className="text-muted-foreground"
+      <DecisionQueue
+        companyId={companyId}
+        hasAnything={hasAnything}
+        activeItemCount={activeItems.length}
+        visibleCount={visibleCount}
+        groups={groups}
+        collapsedGroupKeys={collapsedGroupKeys}
+        renderPlan={renderPlan}
+        expandedId={expandedId}
+        selectedAttentionId={selectedAttentionId}
+        snoozedItems={snoozedItems}
+        snoozedOpen={snoozedOpen}
+        dismissedItems={dismissedItems}
+        dismissedOpen={dismissedOpen}
+        onToggleGroup={toggleGroupCollapse}
+        onToggleExpand={handleToggleExpand}
+        onDismiss={handleDismiss}
+        onSnooze={handleSnooze}
+        onRestore={handleRestore}
+        onToggleSnoozed={() => setSnoozedOpen((previous) => !previous)}
+        onToggleDismissed={() => setDismissedOpen((previous) => !previous)}
       />
-      {open && <div className="space-y-2">{children}</div>}
-    </section>
-  );
-}
-
-function CaughtUpNote({ filtered }: { filtered: boolean }) {
-  return (
-    <div className="rounded-xl border border-dashed border-border py-10 text-center">
-      <p className="text-sm font-medium text-foreground">
-        {filtered
-          ? "No decisions match your filters."
-          : "You're all caught up."}
-      </p>
-      {filtered && (
-        <p className="mt-1 text-xs text-muted-foreground">
-          Adjust or clear the filters to see the rest.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function ZeroState() {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20 text-center">
-      <div className="mb-4 rounded-full bg-muted p-4">
-        <CheckCircle2 className="h-10 w-10 text-(--status-task-done)" />
-      </div>
-      <p className="text-lg font-semibold text-foreground">
-        You're all caught up
-      </p>
-      <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Inbox className="h-4 w-4" />
-        Nothing needs a decision from you right now.
-      </p>
     </div>
   );
 }

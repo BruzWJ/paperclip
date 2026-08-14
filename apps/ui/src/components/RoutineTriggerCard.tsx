@@ -2,19 +2,34 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Clock3, RefreshCw, Save, Trash2, Webhook, Zap } from "lucide-react";
 import type { RoutineTrigger } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Field, FieldGroup, FieldLabel, FieldSet } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/spinner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getScheduleCronValidation, ScheduleEditor } from "./ScheduleEditor";
 import { buildRoutineTriggerPatch } from "../lib/routine-trigger-patch";
 import { describeCron } from "../lib/cron-readable";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const signingModes = ["bearer", "hmac_sha256", "github_hmac", "none"];
 const SIGNING_MODES_WITHOUT_REPLAY_WINDOW = new Set(["github_hmac", "none"]);
@@ -51,9 +66,7 @@ export function RoutineTriggerCard({
     replayWindowSec: String(trigger.replayWindowSec ?? 300),
   });
   const [scheduleIsValid, setScheduleIsValid] = useState(
-    () =>
-      trigger.kind !== "schedule"
-      || getScheduleCronValidation(trigger.cronExpression ?? "").valid,
+    () => trigger.kind !== "schedule" || getScheduleCronValidation(trigger.cronExpression ?? "").valid,
   );
 
   useEffect(() => {
@@ -64,17 +77,14 @@ export function RoutineTriggerCard({
       replayWindowSec: String(trigger.replayWindowSec ?? 300),
     });
     setScheduleIsValid(
-      trigger.kind !== "schedule"
-      || getScheduleCronValidation(trigger.cronExpression ?? "").valid,
+      trigger.kind !== "schedule" || getScheduleCronValidation(trigger.cronExpression ?? "").valid,
     );
   }, [trigger]);
 
-  const KindIcon =
-    trigger.kind === "schedule" ? Clock3 : trigger.kind === "webhook" ? Webhook : Zap;
+  const KindIcon = trigger.kind === "schedule" ? Clock3 : trigger.kind === "webhook" ? Webhook : Zap;
   const humanCron = trigger.kind === "schedule" ? describeCron(draft.cronExpression) : null;
   const lastResultOk =
-    trigger.lastResult != null &&
-    /succeed|success|ok|200|delivered/i.test(String(trigger.lastResult));
+    trigger.lastResult != null && /succeed|success|ok|200|delivered/i.test(String(trigger.lastResult));
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,143 +96,148 @@ export function RoutineTriggerCard({
     <form
       aria-busy={isPending}
       aria-label={`Trigger: ${trigger.label ?? trigger.kind}`}
-      className="space-y-4 rounded-lg border border-border p-4"
       onSubmit={handleSubmit}
     >
-      <fieldset
-        aria-label="Trigger settings"
-        className="m-0 min-w-0 border-0 p-0"
-        disabled={isPending}
-      >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <KindIcon className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{trigger.label ?? trigger.kind}</span>
-          </div>
-          {humanCron ? (
-            <p id={`cron-readable-${trigger.id}`} className="text-xs text-muted-foreground">
-              {humanCron}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {trigger.lastResult ? (
-            <Badge variant={lastResultOk ? "secondary" : "destructive"}>
-              {String(trigger.lastResult)}
-            </Badge>
-          ) : null}
-          <span className="text-xs text-muted-foreground">
-            {trigger.kind === "schedule" && trigger.nextRunAt
-              ? `Next: ${new Date(trigger.nextRunAt).toLocaleString()}`
-              : trigger.kind === "webhook"
-                ? "Webhook"
-                : "API"}
-          </span>
-        </div>
-      </div>
+      <Card>
+        <FieldSet aria-label="Trigger settings" className="gap-6" disabled={isPending}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <KindIcon className="size-4" />
+              <span className="truncate">{trigger.label ?? trigger.kind}</span>
+            </CardTitle>
+            <CardDescription id={`cron-readable-${trigger.id}`}>
+              {humanCron ?? "Trigger settings"}
+            </CardDescription>
+            <CardAction className="flex items-center gap-2">
+              {trigger.lastResult ? (
+                <Badge variant={lastResultOk ? "secondary" : "destructive"}>
+                  {String(trigger.lastResult)}
+                </Badge>
+              ) : null}
+              <span className="text-sm text-muted-foreground">
+                {trigger.kind === "schedule" && trigger.nextRunAt
+                  ? `Next: ${new Date(trigger.nextRunAt).toLocaleString()}`
+                  : trigger.kind === "webhook"
+                    ? "Webhook"
+                    : "API"}
+              </span>
+            </CardAction>
+          </CardHeader>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor={`routine-trigger-${trigger.id}-label`} className="text-xs">Label</Label>
-          <Input
-            id={`routine-trigger-${trigger.id}-label`}
-            value={draft.label}
-            disabled={isPending}
-            onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))}
-          />
-        </div>
-        {trigger.kind === "schedule" && (
-          <div className="space-y-1.5 md:col-span-2">
-            <Label className="text-xs">Schedule</Label>
-            <ScheduleEditor
-              value={draft.cronExpression}
-              onChange={(cronExpression) =>
-                setDraft((current) => ({ ...current, cronExpression }))
-              }
-              onValidityChange={setScheduleIsValid}
-            />
-          </div>
-        )}
-        {trigger.kind === "webhook" && (
-          <>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Signing mode</Label>
-              <Select
-                value={draft.signingMode}
-                onValueChange={(signingMode) =>
-                  setDraft((current) => ({ ...current, signingMode }))
-                }
-                disabled={isPending}
-              >
-                <SelectTrigger aria-label="Signing mode">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {signingModes.map((mode) => (
-                    <SelectItem key={mode} value={mode}>
-                      {mode}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {!SIGNING_MODES_WITHOUT_REPLAY_WINDOW.has(draft.signingMode) && (
-              <div className="space-y-1.5">
-                <Label htmlFor={`routine-trigger-${trigger.id}-replay-window`} className="text-xs">
-                  Replay window (seconds)
-                </Label>
+          <CardContent>
+            <FieldGroup className="grid gap-3 md:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor={`routine-trigger-${trigger.id}-label`}>Label</FieldLabel>
                 <Input
-                  id={`routine-trigger-${trigger.id}-replay-window`}
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={draft.replayWindowSec}
-                  disabled={isPending}
+                  id={`routine-trigger-${trigger.id}-label`}
+                  value={draft.label}
                   onChange={(event) =>
-                    setDraft((current) => ({ ...current, replayWindowSec: event.target.value }))
+                    setDraft((current) => ({
+                      ...current,
+                      label: event.target.value,
+                    }))
                   }
                 />
-              </div>
-            )}
-          </>
-        )}
-      </div>
+              </Field>
+              {trigger.kind === "schedule" && (
+                <Field className="md:col-span-2">
+                  <FieldLabel>Schedule</FieldLabel>
+                  <ScheduleEditor
+                    value={draft.cronExpression}
+                    onChange={(cronExpression) => setDraft((current) => ({ ...current, cronExpression }))}
+                    onValidityChange={setScheduleIsValid}
+                  />
+                </Field>
+              )}
+              {trigger.kind === "webhook" && (
+                <>
+                  <Field>
+                    <FieldLabel>Signing mode</FieldLabel>
+                    <Select
+                      value={draft.signingMode}
+                      onValueChange={(signingMode) => setDraft((current) => ({ ...current, signingMode }))}
+                    >
+                      <SelectTrigger aria-label="Signing mode">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {signingModes.map((mode) => (
+                          <SelectItem key={mode} value={mode}>
+                            {mode}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  {!SIGNING_MODES_WITHOUT_REPLAY_WINDOW.has(draft.signingMode) && (
+                    <Field>
+                      <FieldLabel htmlFor={`routine-trigger-${trigger.id}-replay-window`}>
+                        Replay window (seconds)
+                      </FieldLabel>
+                      <Input
+                        id={`routine-trigger-${trigger.id}-replay-window`}
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={draft.replayWindowSec}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            replayWindowSec: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                  )}
+                </>
+              )}
+            </FieldGroup>
+          </CardContent>
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="mr-auto text-muted-foreground hover:text-destructive"
-            disabled={isPending}
-            onClick={() => onDelete(trigger.id)}
-          >
-            <Trash2 data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
-            Delete
-          </Button>
-          {trigger.kind === "webhook" && (
-            <Button type="button" variant="outline" size="sm" disabled={isPending} onClick={() => onRotate(trigger.id)}>
-              <RefreshCw data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
-              Rotate secret
+          <CardFooter className="gap-2">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="mr-auto">
+                  <Trash2 data-icon="inline-start" />
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete trigger?</AlertDialogTitle>
+                  <AlertDialogDescription>This removes the trigger from the routine.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    disabled={isPending}
+                    onClick={() => onDelete(trigger.id)}
+                  >
+                    Delete trigger
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            {trigger.kind === "webhook" && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isPending}
+                onClick={() => onRotate(trigger.id)}
+              >
+                <RefreshCw data-icon="inline-start" />
+                Rotate secret
+              </Button>
+            )}
+            <Button type="submit" variant="outline" size="sm" disabled={isPending || !scheduleIsValid}>
+              {isPending ? <Spinner /> : <Save data-icon="inline-start" />}
+              {isPending ? "Saving…" : "Save trigger"}
             </Button>
-          )}
-          <Button
-            type="submit"
-            variant="outline"
-            size="sm"
-            disabled={isPending || !scheduleIsValid}
-          >
-            <Save data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
-            Save trigger
-          </Button>
-      </div>
-      </fieldset>
-      {isPending ? (
-        <p aria-live="polite" role="status" className="mt-2 text-xs text-muted-foreground">
-          Saving trigger…
-        </p>
-      ) : null}
+          </CardFooter>
+        </FieldSet>
+      </Card>
     </form>
   );
 }
