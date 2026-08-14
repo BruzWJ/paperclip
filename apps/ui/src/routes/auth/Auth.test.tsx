@@ -23,13 +23,7 @@ vi.mock("@/api/auth", () => ({
   },
 }));
 
-// The ASCII art animation drives a canvas/requestAnimationFrame loop that adds
-// nothing to these assertions, so stub it out.
-vi.mock("@/components/AsciiArtAnimation", () => ({
-  AsciiArtAnimation: () => null,
-}));
-
-// The auth page renders a ThemeToggle, which reads ThemeContext. The provider
+// The auth page renders a theme button, which reads ThemeContext. The provider
 // lives in main.tsx (above the router), so mock the hook here the same way
 // SidebarAccountMenu.test.tsx does.
 vi.mock("@/context/ThemeContext", () => ({
@@ -103,12 +97,8 @@ describe("AuthPage", () => {
   it("exposes password-manager metadata and a11y attributes on the sign-in form", async () => {
     const { root } = await mount();
 
-    const emailInput = container.querySelector(
-      'input[name="email"]',
-    ) as HTMLInputElement;
-    const passwordInput = container.querySelector(
-      'input[name="password"]',
-    ) as HTMLInputElement;
+    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
 
     expect(emailInput).not.toBeNull();
     expect(passwordInput).not.toBeNull();
@@ -150,12 +140,8 @@ describe("AuthPage", () => {
     });
     await flushReact();
 
-    const nameInput = container.querySelector(
-      'input[name="name"]',
-    ) as HTMLInputElement;
-    const passwordInput = container.querySelector(
-      'input[name="password"]',
-    ) as HTMLInputElement;
+    const nameInput = container.querySelector('input[name="name"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
     expect(nameInput).not.toBeNull();
     expect(nameInput.getAttribute("autocomplete")).toBe("name");
     expect(nameInput.required).toBe(true);
@@ -169,16 +155,9 @@ describe("AuthPage", () => {
   it("renders auth errors in an assertive alert region referenced by the inputs", async () => {
     const { root } = await mount();
 
-    const inputValueSetter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    )?.set;
-    const emailInput = container.querySelector(
-      'input[name="email"]',
-    ) as HTMLInputElement;
-    const passwordInput = container.querySelector(
-      'input[name="password"]',
-    ) as HTMLInputElement;
+    const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
 
     await act(async () => {
       inputValueSetter!.call(emailInput, "jane@example.com");
@@ -187,15 +166,11 @@ describe("AuthPage", () => {
       passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    signInEmailMock.mockRejectedValueOnce(
-      new Error("Invalid email or password"),
-    );
+    signInEmailMock.mockRejectedValueOnce(new Error("Invalid email or password"));
 
     const form = container.querySelector("form") as HTMLFormElement;
     await act(async () => {
-      form.dispatchEvent(
-        new Event("submit", { bubbles: true, cancelable: true }),
-      );
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
     await flushReact();
     await flushReact();
@@ -223,16 +198,9 @@ describe("AuthPage", () => {
       status: "ok",
     });
 
-    const inputValueSetter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    )?.set;
-    const emailInput = container.querySelector(
-      'input[name="email"]',
-    ) as HTMLInputElement;
-    const passwordInput = container.querySelector(
-      'input[name="password"]',
-    ) as HTMLInputElement;
+    const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
 
     await act(async () => {
       inputValueSetter!.call(emailInput, "jane@example.com");
@@ -243,9 +211,7 @@ describe("AuthPage", () => {
 
     const form = container.querySelector("form") as HTMLFormElement;
     await act(async () => {
-      form.dispatchEvent(
-        new Event("submit", { bubbles: true, cancelable: true }),
-      );
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
     await flushReact();
     await flushReact();
@@ -254,9 +220,7 @@ describe("AuthPage", () => {
       email: "jane@example.com",
       password: "supersecret",
     });
-    expect(queryClient.getQueryState(queryKeys.health)?.isInvalidated).toBe(
-      true,
-    );
+    expect(queryClient.getQueryState(queryKeys.health)?.isInvalidated).toBe(true);
 
     await act(async () => {
       root.unmount();

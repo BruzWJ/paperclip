@@ -21,7 +21,7 @@ describe("bundled UI font assets", () => {
       expect(css).toContain(`url("../fonts/${fileName}")`);
     }
 
-    expect(css).toContain('--font-sans: "InterVariable"');
+    expect(css).toMatch(/--font-sans:\s*"InterVariable"/);
   });
 
   it("includes redistribution notice text for the bundled Inter files", () => {

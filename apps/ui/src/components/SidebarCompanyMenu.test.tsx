@@ -39,8 +39,19 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to, params, ...props }: { children: ReactNode; to: string; params?: Record<string, string> }) => (
-    <a href={to.replace("$companyId", params?.companyId ?? "")} {...props}>{children}</a>
+  Link: ({
+    children,
+    to,
+    params,
+    ...props
+  }: {
+    children: ReactNode;
+    to: string;
+    params?: Record<string, string>;
+  }) => (
+    <a href={to.replace("$companyId", params?.companyId ?? "")} {...props}>
+      {children}
+    </a>
   ),
   useNavigate: () => mockNavigate,
 }));
@@ -84,12 +95,6 @@ vi.mock("@/context/DialogContext", () => ({
   useDialogActions: () => ({
     openOnboarding: mockOpenOnboarding,
   }),
-}));
-
-vi.mock("./CompanyPatternIcon", () => ({
-  CompanyPatternIcon: ({ companyName }: { companyName: string }) => (
-    <span aria-hidden="true">{companyName.slice(0, 1)}</span>
-  ),
 }));
 
 vi.mock("../context/SidebarContext", () => ({
@@ -210,8 +215,9 @@ describe("SidebarCompanyMenu", () => {
     expect(document.body.textContent).toContain("Company settings");
     expect(document.body.textContent).toContain("Sign out");
 
-    const signOutButton = Array.from(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]'))
-      .find((element) => element.textContent?.includes("Sign out"));
+    const signOutButton = Array.from(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]')).find(
+      (element) => element.textContent?.includes("Sign out"),
+    );
     expect(signOutButton).toBeTruthy();
 
     act(() => {
@@ -251,8 +257,9 @@ describe("SidebarCompanyMenu", () => {
     });
     await flushReact();
 
-    const editButton = Array.from(document.body.querySelectorAll("button"))
-      .find((element) => element.textContent === "Edit");
+    const editButton = Array.from(document.body.querySelectorAll("button")).find(
+      (element) => element.textContent === "Edit",
+    );
     expect(editButton).toBeTruthy();
 
     act(() => {
@@ -265,8 +272,9 @@ describe("SidebarCompanyMenu", () => {
     expect(document.body.textContent).not.toContain("ANA");
     expect(document.body.querySelector('button[aria-label="Reorder Strata"]')).toBeTruthy();
 
-    const strataItem = Array.from(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]'))
-      .find((element) => element.textContent?.includes("Strata"));
+    const strataItem = Array.from(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]')).find(
+      (element) => element.textContent?.includes("Strata"),
+    );
     expect(strataItem).toBeTruthy();
 
     act(() => {
@@ -306,8 +314,9 @@ describe("SidebarCompanyMenu", () => {
     });
     await flushReact();
 
-    const strataItem = Array.from(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]'))
-      .find((element) => element.textContent?.includes("Strata"));
+    const strataItem = Array.from(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]')).find(
+      (element) => element.textContent?.includes("Strata"),
+    );
     expect(strataItem).toBeTruthy();
 
     act(() => {

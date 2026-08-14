@@ -21,15 +21,12 @@ vi.mock("./MarkdownEditor", () => ({
   MarkdownEditor: () => <textarea aria-label="Task chat editor" />,
 }));
 
-vi.mock("./InlineEntitySelector", () => ({ InlineEntitySelector: () => null }));
-vi.mock("./Identity", () => ({ Identity: ({ name }: { name: string }) => <span>{name}</span> }));
 vi.mock("@/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock("./AgentIconPicker", () => ({ AgentIcon: () => null }));
-vi.mock("./StatusBadge", () => ({ StatusBadge: ({ status }: { status: string }) => <span>{status}</span> }));
 vi.mock("./TaskLinkQuicklook", () => ({
   TaskLinkQuicklook: ({
     children,
@@ -55,7 +52,11 @@ vi.mock("@tanstack/react-router", () => ({
       .replace("$companyId", params?.companyId ?? "")
       .replace("$agentId", params?.agentId ?? "")
       .replace("$runId", params?.runId ?? "");
-    return <a href={href} {...props}>{children}</a>;
+    return (
+      <a href={href} {...props}>
+        {children}
+      </a>
+    );
   },
   useLocation: () => ({ hash: "" }),
 }));
@@ -137,7 +138,11 @@ describe("TaskChatThread system notice routing", () => {
                 identifier: "PAP-3440",
                 title: "Recovery",
               },
-              { type: "key_value", label: "Status before", value: "in_progress" },
+              {
+                type: "key_value",
+                label: "Status before",
+                value: "in_progress",
+              },
             ],
           },
         ],
@@ -179,7 +184,12 @@ describe("TaskChatThread system notice routing", () => {
         sections: [
           {
             rows: [
-              { type: "agent_link", label: "Owner", agentId: "agent-architect", name: "Architect" },
+              {
+                type: "agent_link",
+                label: "Owner",
+                agentId: "agent-architect",
+                name: "Architect",
+              },
             ],
           },
         ],
@@ -241,7 +251,7 @@ describe("TaskChatThread system notice routing", () => {
     const codexAgent = {
       id: "22222222-2222-4222-8222-222222222222",
       name: "CodexCoder",
-      } as unknown as Agent;
+    } as unknown as Agent;
     const agentMap = new Map<string, Agent>([[codexAgent.id, codexAgent]]);
     const comment: TaskChatComment = {
       id: "comment-system-runagent",
@@ -267,7 +277,9 @@ describe("TaskChatThread system notice routing", () => {
 
     const status = container.querySelector('[role="status"]');
     expect(status).not.toBeNull();
-    const sourceLink = status?.querySelector('a[href^="/11111111-1111-4111-8111-111111111111/agents/"]') as HTMLAnchorElement | null;
+    const sourceLink = status?.querySelector(
+      'a[href^="/11111111-1111-4111-8111-111111111111/agents/"]',
+    ) as HTMLAnchorElement | null;
     expect(sourceLink?.getAttribute("href")).toBe(
       "/11111111-1111-4111-8111-111111111111/agents/22222222-2222-4222-8222-222222222222/runs/run-task-chat-01",
     );
@@ -306,7 +318,9 @@ describe("TaskChatThread system notice routing", () => {
 
     renderThread([comment]);
 
-    const copyLink = container.querySelector('button[aria-label="Copy link to system notice"]') as HTMLButtonElement;
+    const copyLink = container.querySelector(
+      'button[aria-label="Copy link to system notice"]',
+    ) as HTMLButtonElement;
     const copyText = container.querySelector('button[aria-label="Copy system notice"]') as HTMLButtonElement;
     await act(async () => {
       copyLink.click();
@@ -406,5 +420,4 @@ describe("TaskChatThread system notice routing", () => {
     expect(container.querySelector('[role="status"]')).toBeNull();
     expect(container.querySelector('[data-message-role="assistant"]')).not.toBeNull();
   });
-
 });

@@ -54,12 +54,7 @@ describe("MembershipAction", () => {
 
   it("renders a leave action for joined resources", async () => {
     await renderAction(
-      <MembershipAction
-        state="joined"
-        resourceName="Growth"
-        onJoin={() => {}}
-        onLeave={() => {}}
-      />,
+      <MembershipAction state="joined" resourceName="Growth" onJoin={() => {}} onLeave={() => {}} />,
     );
 
     expect(button().getAttribute("aria-label")).toBe("Leave Growth");
@@ -68,12 +63,7 @@ describe("MembershipAction", () => {
 
   it("renders a join action for left resources", async () => {
     await renderAction(
-      <MembershipAction
-        state="left"
-        resourceName="Growth"
-        onJoin={() => {}}
-        onLeave={() => {}}
-      />,
+      <MembershipAction state="left" resourceName="Growth" onJoin={() => {}} onLeave={() => {}} />,
     );
 
     expect(button().getAttribute("aria-label")).toBe("Join Growth");
@@ -85,12 +75,7 @@ describe("MembershipAction", () => {
     const parentClick = vi.fn();
     await renderAction(
       <a href="/projects/growth" onClick={parentClick}>
-        <MembershipAction
-          state="joined"
-          resourceName="Growth"
-          onJoin={() => {}}
-          onLeave={onLeave}
-        />
+        <MembershipAction state="joined" resourceName="Growth" onJoin={() => {}} onLeave={onLeave} />
       </a>,
     );
 

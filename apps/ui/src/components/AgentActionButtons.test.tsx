@@ -26,8 +26,8 @@ vi.mock("../context/DialogContext", () => ({
   useDialogActions: () => ({ openNewTask: mockOpenNewTask }),
 }));
 
-vi.mock("../context/ToastContext", () => ({
-  useToastActions: () => ({ pushToast: mockPushToast }),
+vi.mock("sonner", () => ({
+  toast: { error: mockPushToast },
 }));
 
 vi.mock("../api/agents", () => ({
@@ -137,14 +137,22 @@ describe("AgentActionButtons", () => {
     await flushReact();
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Clear error and return agent to idle"]')?.click();
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Clear error and return agent to idle"]')
+        ?.click();
     });
     await flushReact();
 
     expect(mockAgentsApi.clearError).toHaveBeenCalledWith(AGENT_ID);
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "detail", AGENT_ID] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "runtime-state", AGENT_ID] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", COMPANY_ID] });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["agents", "detail", AGENT_ID],
+    });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["agents", "runtime-state", AGENT_ID],
+    });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["agents", COMPANY_ID],
+    });
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: ["runs", COMPANY_ID, "all-agents", "all-statuses"],
     });

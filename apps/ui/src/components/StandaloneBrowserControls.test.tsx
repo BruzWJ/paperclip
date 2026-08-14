@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ToastProvider } from "../context/ToastContext";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,7 +31,10 @@ function installMatchMedia(initialMatches: Record<string, boolean> = {}) {
   function getQuery(query: string) {
     let entry = queries.get(query);
     if (!entry) {
-      entry = { matches: initialMatches[query] ?? false, listeners: new Set<Listener>() };
+      entry = {
+        matches: initialMatches[query] ?? false,
+        listeners: new Set<Listener>(),
+      };
       queries.set(query, entry);
     }
 
@@ -63,7 +65,10 @@ function installMatchMedia(initialMatches: Record<string, boolean> = {}) {
 
   return {
     setMatches(query: string, matches: boolean) {
-      const entry = queries.get(query) ?? { matches: false, listeners: new Set<Listener>() };
+      const entry = queries.get(query) ?? {
+        matches: false,
+        listeners: new Set<Listener>(),
+      };
       entry.matches = matches;
       queries.set(query, entry);
       entry.listeners.forEach((listener) => listener({ matches, media: query } as MediaQueryListEvent));
@@ -78,15 +83,24 @@ describe("StandaloneBrowserControls", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
-    Object.defineProperty(navigator, "standalone", { configurable: true, value: true });
+    Object.defineProperty(navigator, "standalone", {
+      configurable: true,
+      value: true,
+    });
   });
 
   afterEach(() => {
     delete (navigator as Navigator & { standalone?: boolean }).standalone;
     if (originalMatchMedia) {
-      Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+      });
     } else {
-      Object.defineProperty(window, "matchMedia", { configurable: true, value: undefined });
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: undefined,
+      });
     }
     container.remove();
     document.body.innerHTML = "";
@@ -98,9 +112,7 @@ describe("StandaloneBrowserControls", () => {
     await act(async () => {
       root.render(
         <TooltipProvider>
-          <ToastProvider>
-            <StandaloneBrowserControls mobile />
-          </ToastProvider>
+          <StandaloneBrowserControls mobile />
         </TooltipProvider>,
       );
     });
@@ -116,16 +128,17 @@ describe("StandaloneBrowserControls", () => {
   });
 
   it("hides controls in normal mobile browser mode", async () => {
-    Object.defineProperty(navigator, "standalone", { configurable: true, value: false });
+    Object.defineProperty(navigator, "standalone", {
+      configurable: true,
+      value: false,
+    });
     installMatchMedia();
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
         <TooltipProvider>
-          <ToastProvider>
-            <StandaloneBrowserControls mobile />
-          </ToastProvider>
+          <StandaloneBrowserControls mobile />
         </TooltipProvider>,
       );
     });
@@ -139,16 +152,17 @@ describe("StandaloneBrowserControls", () => {
   });
 
   it("responds to all chromeless display-mode media query changes", async () => {
-    Object.defineProperty(navigator, "standalone", { configurable: true, value: false });
+    Object.defineProperty(navigator, "standalone", {
+      configurable: true,
+      value: false,
+    });
     const media = installMatchMedia();
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
         <TooltipProvider>
-          <ToastProvider>
-            <StandaloneBrowserControls mobile />
-          </ToastProvider>
+          <StandaloneBrowserControls mobile />
         </TooltipProvider>,
       );
     });

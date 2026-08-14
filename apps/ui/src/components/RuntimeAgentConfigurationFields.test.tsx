@@ -9,8 +9,7 @@ import {
   type RuntimeAgentConfigurationValues,
 } from "./RuntimeAgentConfigurationFields";
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("RuntimeAgentConfigurationFields", () => {
   let container: HTMLDivElement;
@@ -35,17 +34,13 @@ describe("RuntimeAgentConfigurationFields", () => {
     onChange?: (value: RuntimeAgentConfigurationValues) => void;
   } = {}) {
     act(() => {
-      root.render(
-        <RuntimeAgentConfigurationFields value={value} onChange={onChange} />,
-      );
+      root.render(<RuntimeAgentConfigurationFields value={value} onChange={onChange} />);
     });
     return onChange;
   }
 
   it("initializes only the configurable action grants", () => {
-    expect(
-      createEmptyRuntimeAgentConfigurationValues().actionGrants,
-    ).toEqual({
+    expect(createEmptyRuntimeAgentConfigurationValues().actionGrants).toEqual({
       task_create: false,
       mention_board: false,
       agent_hire: false,
@@ -60,14 +55,10 @@ describe("RuntimeAgentConfigurationFields", () => {
     const onChange = vi.fn();
     render({ value, onChange });
 
-    const matrix = container.querySelector(
-      '[data-testid="agent-context-access-matrix"]',
-    );
+    const matrix = container.querySelector('[data-testid="agent-context-access-matrix"]');
     expect(matrix).not.toBeNull();
     expect(matrix!.querySelectorAll('[role="checkbox"]')).toHaveLength(9);
-    expect(matrix!.querySelectorAll('[aria-label$=": blocked"]')).toHaveLength(
-      9,
-    );
+    expect(matrix!.querySelectorAll('[aria-label$=": blocked"]')).toHaveLength(9);
     expect(container.textContent).not.toContain("Carry current-task session");
     expect(container.textContent).not.toContain("Current task · comments");
 
@@ -90,9 +81,7 @@ describe("RuntimeAgentConfigurationFields", () => {
     render();
 
     expect(container.textContent).toContain("Can mention Board");
-    expect(container.textContent).toContain(
-      "Post a canonical task comment to the collective Board.",
-    );
+    expect(container.textContent).toContain("Post a canonical task comment to the collective Board.");
   });
 
   it("combines direct-child creation and assignment and derives lifecycle access", () => {
@@ -102,15 +91,9 @@ describe("RuntimeAgentConfigurationFields", () => {
     expect(container.textContent).toContain(
       "Create direct child tasks and reassign eligible direct children created by this execution.",
     );
-    expect(container.textContent).toContain(
-      "Task updates are relationship-derived",
-    );
-    expect(container.textContent).toContain(
-      "canonically mentions its counterpart automatically",
-    );
-    expect(container.textContent).toContain(
-      "Terminal updates remain owner-only.",
-    );
+    expect(container.textContent).toContain("Task updates are relationship-derived");
+    expect(container.textContent).toContain("canonically mentions its counterpart automatically");
+    expect(container.textContent).toContain("Terminal updates remain owner-only.");
     expect(container.textContent).not.toContain("Assign tasks");
     expect(container.textContent).not.toContain("Update task lifecycle");
   });

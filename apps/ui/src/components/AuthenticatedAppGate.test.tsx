@@ -36,7 +36,9 @@ vi.mock("../api/access", () => ({
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to, ...props }: React.ComponentProps<"a"> & { to: string }) => (
-    <a href={to} {...props}>{children}</a>
+    <a href={to} {...props}>
+      {children}
+    </a>
   ),
   Navigate: ({ to }: { to: string }) => <div>Navigate:{to}</div>,
   Outlet: () => <div>Outlet content</div>,
@@ -164,8 +166,8 @@ describe("AuthenticatedAppGate", () => {
     const root = renderGate(container);
     await waitForText(container, "Switch account");
 
-    const button = Array.from(container.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Switch account"),
+    const button = Array.from(container.querySelectorAll("button")).find((candidate) =>
+      candidate.textContent?.includes("Switch account"),
     );
     expect(button).toBeTruthy();
     flushSync(() => {
@@ -225,9 +227,7 @@ describe("AuthenticatedAppGate", () => {
 
     expect(container.textContent).toContain("Finish setting up this Paperclip");
     expect(container.textContent).toContain("Sign in / Create account");
-    expect(container.textContent).toContain(
-      "pnpm paperclipai auth bootstrap-admin",
-    );
+    expect(container.textContent).toContain("pnpm paperclipai auth bootstrap-admin");
     expect(mockAccessApi.getCurrentBoardAccess).not.toHaveBeenCalled();
 
     unmountRoot(root);
@@ -261,8 +261,8 @@ describe("AuthenticatedAppGate", () => {
     expect(container.textContent).toContain("Signed in as user@example.com");
     expect(mockAccessApi.getCurrentBoardAccess).not.toHaveBeenCalled();
 
-    const button = Array.from(container.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Claim this instance"),
+    const button = Array.from(container.querySelectorAll("button")).find((candidate) =>
+      candidate.textContent?.includes("Claim this instance"),
     );
     expect(button).toBeTruthy();
     flushSync(() => {
@@ -295,14 +295,9 @@ describe("AuthenticatedAppGate", () => {
     });
 
     const root = renderGate(container);
-    await waitForText(
-      container,
-      "This Paperclip is waiting on its first admin",
-    );
+    await waitForText(container, "This Paperclip is waiting on its first admin");
 
-    expect(container.textContent).toContain(
-      "This Paperclip is waiting on its first admin",
-    );
+    expect(container.textContent).toContain("This Paperclip is waiting on its first admin");
     expect(container.textContent).toContain("invite-only mode");
     expect(container.textContent).not.toContain("Claim this instance");
     expect(container.textContent).not.toContain("Sign in / Create account");

@@ -5,23 +5,22 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./MarkdownEditor", () => ({
-  MarkdownEditor: forwardRef<
-    { focus: () => void },
-    { value: string; onChange: (value: string) => void }
-  >(function MarkdownEditorMock(props, ref) {
-    const taRef = useRef<HTMLTextAreaElement>(null);
-    useImperativeHandle(ref, () => ({
-      focus: () => taRef.current?.focus(),
-    }));
-    return (
-      <textarea
-        ref={taRef}
-        data-testid="multiline-md-mock"
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-      />
-    );
-  }),
+  MarkdownEditor: forwardRef<{ focus: () => void }, { value: string; onChange: (value: string) => void }>(
+    function MarkdownEditorMock(props, ref) {
+      const taRef = useRef<HTMLTextAreaElement>(null);
+      useImperativeHandle(ref, () => ({
+        focus: () => taRef.current?.focus(),
+      }));
+      return (
+        <textarea
+          ref={taRef}
+          data-testid="multiline-md-mock"
+          value={props.value}
+          onChange={(e) => props.onChange(e.target.value)}
+        />
+      );
+    },
+  ),
 }));
 
 vi.mock("./MarkdownBody", () => ({
@@ -50,8 +49,11 @@ function setNativeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
   const previous = textarea.value;
   valueSetter?.call(textarea, value);
-  const tracker = (textarea as HTMLTextAreaElement & { _valueTracker?: { setValue: (v: string) => void } })
-    ._valueTracker;
+  const tracker = (
+    textarea as HTMLTextAreaElement & {
+      _valueTracker?: { setValue: (v: string) => void };
+    }
+  )._valueTracker;
   tracker?.setValue(previous);
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
@@ -329,7 +331,8 @@ describe("queueContainedBlurCommit", () => {
     originalCancelAnimationFrame = window.cancelAnimationFrame;
     window.requestAnimationFrame = ((callback: FrameRequestCallback) =>
       window.setTimeout(() => callback(performance.now()), 0)) as typeof window.requestAnimationFrame;
-    window.cancelAnimationFrame = ((id: number) => window.clearTimeout(id)) as typeof window.cancelAnimationFrame;
+    window.cancelAnimationFrame = ((id: number) =>
+      window.clearTimeout(id)) as typeof window.cancelAnimationFrame;
 
     container = document.createElement("div");
     inside = document.createElement("textarea");

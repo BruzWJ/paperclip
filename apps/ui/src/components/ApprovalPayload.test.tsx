@@ -55,7 +55,7 @@ describe("ApprovalPayloadRenderer", () => {
     expect(container.textContent).toContain("Post the frog comment on the task.");
     expect(container.textContent).toContain("The frog might be too powerful.");
     expect(container.textContent).toContain("(o)<");
-    expect(container.textContent).not.toContain("\"recommendedAction\"");
+    expect(container.textContent).not.toContain('"recommendedAction"');
 
     act(() => {
       root.unmount();

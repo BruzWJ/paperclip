@@ -10,7 +10,9 @@ import { TaskAttachmentsSection } from "./TaskAttachmentsSection";
 
 vi.mock("./MarkdownBody", () => ({
   MarkdownBody: ({ children, className }: { children: string; className?: string }) => (
-    <div className={className} data-testid="markdown-body">{children}</div>
+    <div className={className} data-testid="markdown-body">
+      {children}
+    </div>
   ),
 }));
 
@@ -27,7 +29,11 @@ vi.mock("@/components/ui/button", () => ({
     ...props
   }: ComponentProps<"button"> & { asChild?: boolean }) => {
     if (asChild) return <>{children}</>;
-    return <button type={type} onClick={onClick} {...props}>{children}</button>;
+    return (
+      <button type={type} onClick={onClick} {...props}>
+        {children}
+      </button>
+    );
   },
 }));
 
@@ -127,11 +133,7 @@ describe("TaskAttachmentsSection", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TaskAttachmentsSection
-            attachments={[attachment]}
-            onDelete={vi.fn()}
-            onImageClick={vi.fn()}
-          />
+          <TaskAttachmentsSection attachments={[attachment]} onDelete={vi.fn()} onImageClick={vi.fn()} />
         </QueryClientProvider>,
       );
     });
@@ -140,7 +142,9 @@ describe("TaskAttachmentsSection", () => {
     expect(fetchSpy).toHaveBeenCalledWith(
       "/api/attachments/markdown-attachment/content",
       expect.objectContaining({
-        headers: expect.objectContaining({ Accept: expect.stringContaining("text/markdown") }),
+        headers: expect.objectContaining({
+          Accept: expect.stringContaining("text/markdown"),
+        }),
       }),
     );
     await waitForAssertion(() => {
@@ -164,11 +168,7 @@ describe("TaskAttachmentsSection", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TaskAttachmentsSection
-            attachments={[attachment]}
-            onDelete={vi.fn()}
-            onImageClick={vi.fn()}
-          />
+          <TaskAttachmentsSection attachments={[attachment]} onDelete={vi.fn()} onImageClick={vi.fn()} />
         </QueryClientProvider>,
       );
     });
@@ -191,11 +191,7 @@ describe("TaskAttachmentsSection", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TaskAttachmentsSection
-            attachments={[attachment]}
-            onDelete={vi.fn()}
-            onImageClick={vi.fn()}
-          />
+          <TaskAttachmentsSection attachments={[attachment]} onDelete={vi.fn()} onImageClick={vi.fn()} />
         </QueryClientProvider>,
       );
     });
@@ -219,11 +215,7 @@ describe("TaskAttachmentsSection", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TaskAttachmentsSection
-            attachments={[attachment]}
-            onDelete={vi.fn()}
-            onImageClick={onImageClick}
-          />
+          <TaskAttachmentsSection attachments={[attachment]} onDelete={vi.fn()} onImageClick={onImageClick} />
         </QueryClientProvider>,
       );
     });
@@ -252,11 +244,7 @@ describe("TaskAttachmentsSection", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TaskAttachmentsSection
-            attachments={[attachment]}
-            onDelete={vi.fn()}
-            onImageClick={vi.fn()}
-          />
+          <TaskAttachmentsSection attachments={[attachment]} onDelete={vi.fn()} onImageClick={vi.fn()} />
         </QueryClientProvider>,
       );
     });
@@ -281,11 +269,7 @@ describe("TaskAttachmentsSection", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TaskAttachmentsSection
-            attachments={[attachment]}
-            onDelete={vi.fn()}
-            onImageClick={vi.fn()}
-          />
+          <TaskAttachmentsSection attachments={[attachment]} onDelete={vi.fn()} onImageClick={vi.fn()} />
         </QueryClientProvider>,
       );
     });
@@ -308,11 +292,7 @@ describe("TaskAttachmentsSection", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TaskAttachmentsSection
-            attachments={[attachment]}
-            onDelete={vi.fn()}
-            onImageClick={vi.fn()}
-          />
+          <TaskAttachmentsSection attachments={[attachment]} onDelete={vi.fn()} onImageClick={vi.fn()} />
         </QueryClientProvider>,
       );
     });

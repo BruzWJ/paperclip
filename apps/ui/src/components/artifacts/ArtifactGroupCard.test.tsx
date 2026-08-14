@@ -20,7 +20,10 @@ vi.mock("@tanstack/react-router", () => ({
     params?: Record<string, string>;
     search?: Record<string, string | undefined>;
   }) => {
-    const pathname = Object.entries(params ?? {}).reduce((path, [key, value]) => path.replace(`$${key}`, value), to);
+    const pathname = Object.entries(params ?? {}).reduce(
+      (path, [key, value]) => path.replace(`$${key}`, value),
+      to,
+    );
     const query = new URLSearchParams(
       Object.entries(search ?? {}).filter((entry): entry is [string, string] => entry[1] !== undefined),
     ).toString();
@@ -43,7 +46,12 @@ function sampleArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifa
     contentPath: "/files/hero.png",
     openPath: "/files/hero.png",
     downloadPath: "/files/hero.png?download=1",
-    task: { id: TASK_ID, taskNumber: 42, identifier: "PAP-42", title: "Ship launch" },
+    task: {
+      id: TASK_ID,
+      taskNumber: 42,
+      identifier: "PAP-42",
+      title: "Ship launch",
+    },
     project: null,
     createdByAgent: null,
     updatedAt: "2026-06-01T00:00:00.000Z",
@@ -56,7 +64,12 @@ function sampleGroup(overrides: Partial<CompanyArtifactGroup> = {}): CompanyArti
   return {
     id: `task:${TASK_ID}`,
     groupBy: "task",
-    task: { id: TASK_ID, taskNumber: 42, identifier: "PAP-42", title: "Ship launch" },
+    task: {
+      id: TASK_ID,
+      taskNumber: 42,
+      identifier: "PAP-42",
+      title: "Ship launch",
+    },
     title: "Ship launch",
     count: 3,
     mediaKinds: ["image"],
@@ -86,7 +99,10 @@ function render(group: CompanyArtifactGroup) {
 }
 
 describe("ArtifactGroupCard", () => {
-  let mounted: { container: HTMLElement; root: ReturnType<typeof createRoot> } | null = null;
+  let mounted: {
+    container: HTMLElement;
+    root: ReturnType<typeof createRoot>;
+  } | null = null;
 
   beforeEach(() => {
     mounted = null;

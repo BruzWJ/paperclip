@@ -4,10 +4,19 @@ import { describe, expect, it, vi } from "vitest";
 import { TaskRelatedWorkPanel } from "./TaskRelatedWorkPanel";
 
 vi.mock("./TaskLinkQuicklook", () => ({
-  TaskLinkQuicklook: ({ children, taskId: _taskId, taskNumber, ...props }: ComponentProps<"a"> & {
+  TaskLinkQuicklook: ({
+    children,
+    taskId: _taskId,
+    taskNumber,
+    ...props
+  }: ComponentProps<"a"> & {
     taskId: string;
     taskNumber: number | null;
-  }) => <a href={`/11111111-1111-4111-8111-111111111111/tasks/${taskNumber}`} {...props}>{children}</a>,
+  }) => (
+    <a href={`/11111111-1111-4111-8111-111111111111/tasks/${taskNumber}`} {...props}>
+      {children}
+    </a>
+  ),
 }));
 
 describe("TaskRelatedWorkPanel", () => {
@@ -29,8 +38,18 @@ describe("TaskRelatedWorkPanel", () => {
               },
               mentionCount: 2,
               sources: [
-                { kind: "title", sourceRecordId: null, label: "title", matchedText: "PAP-22" },
-                { kind: "document", sourceRecordId: "doc-1", label: "plan", matchedText: "/tasks/PAP-22" },
+                {
+                  kind: "title",
+                  sourceRecordId: null,
+                  label: "title",
+                  matchedText: "PAP-22",
+                },
+                {
+                  kind: "document",
+                  sourceRecordId: "doc-1",
+                  label: "plan",
+                  matchedText: "/tasks/PAP-22",
+                },
               ],
             },
           ],
@@ -48,7 +67,12 @@ describe("TaskRelatedWorkPanel", () => {
               },
               mentionCount: 1,
               sources: [
-                { kind: "comment", sourceRecordId: "comment-1", label: "comment", matchedText: "PAP-1" },
+                {
+                  kind: "comment",
+                  sourceRecordId: "comment-1",
+                  label: "comment",
+                  matchedText: "PAP-1",
+                },
               ],
             },
           ],
@@ -85,9 +109,24 @@ describe("TaskRelatedWorkPanel", () => {
               },
               mentionCount: 3,
               sources: [
-                { kind: "comment", sourceRecordId: "c1", label: "comment", matchedText: "PAP-44 first" },
-                { kind: "comment", sourceRecordId: "c2", label: "comment", matchedText: "PAP-44 second" },
-                { kind: "comment", sourceRecordId: "c3", label: "comment", matchedText: "PAP-44 third" },
+                {
+                  kind: "comment",
+                  sourceRecordId: "c1",
+                  label: "comment",
+                  matchedText: "PAP-44 first",
+                },
+                {
+                  kind: "comment",
+                  sourceRecordId: "c2",
+                  label: "comment",
+                  matchedText: "PAP-44 second",
+                },
+                {
+                  kind: "comment",
+                  sourceRecordId: "c3",
+                  label: "comment",
+                  matchedText: "PAP-44 third",
+                },
               ],
             },
           ],

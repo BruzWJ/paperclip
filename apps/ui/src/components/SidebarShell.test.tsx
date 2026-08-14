@@ -1,12 +1,20 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SidebarShell, SIDEBAR_RAIL_WIDTH } from "./SidebarShell";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+function TestShell(props: ComponentProps<typeof SidebarShell>) {
+  return (
+    <SidebarProvider open={!props.collapsed} className="contents">
+      <SidebarShell {...props} />
+    </SidebarProvider>
+  );
+}
 
 function pointerEvent(type: string, clientX: number) {
   const event = new MouseEvent(type, { bubbles: true, clientX });
@@ -26,176 +34,90 @@ describe("SidebarShell", () => {
   });
 
   afterEach(() => {
-    act(() => {
-      root.unmount();
-    });
+    act(() => root.unmount());
     container.remove();
     window.localStorage.clear();
   });
 
-  // The in-flow spacer that reserves layout width.
-  function spacer() {
-    return container.firstElementChild as HTMLDivElement;
-  }
+  const shell = () => container.querySelector<HTMLElement>("[data-sidebar-shell]")!;
+  const sidebar = () => container.querySelector<HTMLElement>("[data-slot=sidebar]")!;
+  const panel = () => container.querySelector<HTMLElement>("[data-slot=sidebar-container]")!;
+  const handle = () => container.querySelector<HTMLElement>('[role="separator"]');
 
-  // The absolutely-positioned overlay panel that holds the sidebar content.
-  function panel() {
-    return spacer().firstElementChild as HTMLDivElement;
-  }
-
-  function handle() {
-    return container.querySelector('[role="separator"]') as HTMLDivElement | null;
-  }
-
-  it("uses a persisted width when expanded", () => {
+  it("uses, resizes, and persists the expanded width", () => {
     window.localStorage.setItem("test.sidebar.width", "320");
-
     act(() => {
       root.render(
-        <SidebarShell open resizable storageKey="test.sidebar.width">
-          <div>Sidebar</div>
-        </SidebarShell>,
+        <TestShell open resizable storageKey="test.sidebar.width">
+          Sidebar
+        </TestShell>,
       );
     });
-
-    // Both the reserved spacer and the panel match the expanded width; no overlay.
-    expect(spacer().style.width).toBe("320px");
-    expect(panel().style.width).toBe("320px");
-    expect(panel().getAttribute("data-sidebar-overlay")).toBeNull();
+    expect(shell().style.getPropertyValue("--sidebar-width")).toBe("320px");
     expect(handle()?.getAttribute("aria-valuenow")).toBe("320");
+
+    handle()!.setPointerCapture = vi.fn();
+    act(() => {
+      handle()!.dispatchEvent(pointerEvent("pointerdown", 320));
+      handle()!.dispatchEvent(pointerEvent("pointermove", 360));
+      handle()!.dispatchEvent(pointerEvent("pointerup", 360));
+    });
+    expect(shell().style.getPropertyValue("--sidebar-width")).toBe("360px");
+    expect(window.localStorage.getItem("test.sidebar.width")).toBe("360");
   });
 
-  it("resizes by dragging and persists the new width", () => {
+  it("supports accessible keyboard resizing and clamps its bounds", () => {
     act(() => {
       root.render(
-        <SidebarShell open resizable storageKey="test.sidebar.width">
-          <div>Sidebar</div>
-        </SidebarShell>,
+        <TestShell open resizable storageKey="test.sidebar.width">
+          Sidebar
+        </TestShell>,
       );
     });
-
-    const separator = handle();
-    expect(separator).not.toBeNull();
-    separator!.setPointerCapture = vi.fn();
-
-    act(() => {
-      separator!.dispatchEvent(pointerEvent("pointerdown", 240));
-      separator!.dispatchEvent(pointerEvent("pointermove", 320));
-      separator!.dispatchEvent(pointerEvent("pointerup", 320));
-    });
-
-    expect(panel().style.width).toBe("320px");
-    expect(window.localStorage.getItem("test.sidebar.width")).toBe("320");
+    act(() => handle()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })));
+    expect(shell().style.getPropertyValue("--sidebar-width")).toBe("208px");
+    act(() => handle()?.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })));
+    expect(shell().style.getPropertyValue("--sidebar-width")).toBe("420px");
   });
 
-  it("supports keyboard resizing and clamps to the configured bounds", () => {
+  it("delegates icon collapse and suppresses resizing in the rail", () => {
     act(() => {
       root.render(
-        <SidebarShell open resizable storageKey="test.sidebar.width">
-          <div>Sidebar</div>
-        </SidebarShell>,
+        <TestShell open collapsed resizable>
+          Sidebar
+        </TestShell>,
       );
     });
-
-    const separator = handle();
-    act(() => {
-      separator?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
-    });
-    expect(panel().style.width).toBe("256px");
-    expect(window.localStorage.getItem("test.sidebar.width")).toBe("256");
-
-    act(() => {
-      separator?.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
-    });
-    expect(panel().style.width).toBe("208px");
-
-    act(() => {
-      separator?.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
-    });
-    expect(panel().style.width).toBe("420px");
-  });
-
-  it("can render without a resize handle", () => {
-    act(() => {
-      root.render(
-        <SidebarShell open resizable={false}>
-          <div>Sidebar</div>
-        </SidebarShell>,
-      );
-    });
-
-    expect(handle()).toBeNull();
-    expect(panel().style.width).toBe("240px");
-  });
-
-  it("reserves only the rail width when collapsed and hides the resize handle", () => {
-    window.localStorage.setItem("test.sidebar.width", "320");
-
-    act(() => {
-      root.render(
-        <SidebarShell open collapsed resizable storageKey="test.sidebar.width">
-          <div>Sidebar</div>
-        </SidebarShell>,
-      );
-    });
-
-    // Reserved spacer and panel both collapse to the rail; content never reflows
-    // beyond the rail, and the rail is not user-resizable.
-    expect(spacer().style.width).toBe(`${SIDEBAR_RAIL_WIDTH}px`);
-    expect(panel().style.width).toBe(`${SIDEBAR_RAIL_WIDTH}px`);
-    expect(panel().getAttribute("data-sidebar-overlay")).toBeNull();
+    expect(sidebar().getAttribute("data-state")).toBe("collapsed");
+    expect(shell().style.getPropertyValue("--sidebar-width-icon")).toBe(`${SIDEBAR_RAIL_WIDTH}px`);
     expect(handle()).toBeNull();
   });
 
-  it("hides all sidebar width when closed, even if pinned collapsed", () => {
-    window.localStorage.setItem("test.sidebar.width", "320");
-
+  it("hides the desktop shell when closed", () => {
     act(() => {
-      root.render(
-        <SidebarShell open={false} collapsed resizable storageKey="test.sidebar.width">
-          <div>Sidebar</div>
-        </SidebarShell>,
-      );
+      root.render(<TestShell open={false}>Sidebar</TestShell>);
     });
-
-    expect(spacer().style.width).toBe("0px");
-    expect(panel().style.width).toBe("0px");
-    expect(panel().getAttribute("data-sidebar-overlay")).toBeNull();
-    expect(handle()).toBeNull();
+    expect(shell().className).toContain("md:hidden");
   });
 
-  it("overlays content while peeking without expanding the reserved spacer", () => {
-    window.localStorage.setItem("test.sidebar.width", "300");
-
+  it("expands as an overlay while peeking without changing provider state", () => {
     act(() => {
       root.render(
-        <SidebarShell open collapsed peeking storageKey="test.sidebar.width">
-          <div>Sidebar</div>
-        </SidebarShell>,
+        <TestShell open collapsed peeking>
+          Sidebar
+        </TestShell>,
       );
     });
-
-    // The reserved spacer stays at the rail (no page reflow) while the panel
-    // grows to the expanded width and gets overlay styling.
-    expect(spacer().style.width).toBe(`${SIDEBAR_RAIL_WIDTH}px`);
-    expect(panel().style.width).toBe("300px");
+    expect(sidebar().getAttribute("data-state")).toBe("collapsed");
     expect(panel().getAttribute("data-sidebar-overlay")).toBe("");
     expect(panel().className).toContain("shadow-lg");
     expect(panel().className).toContain("z-30");
   });
 
-  it("opens and closes instantly with no width transition (PAP-10676)", () => {
+  it("disables the primitive's width transition", () => {
     act(() => {
-      root.render(
-        <SidebarShell open>
-          <div>Sidebar</div>
-        </SidebarShell>,
-      );
+      root.render(<TestShell open>Sidebar</TestShell>);
     });
-
-    // Open/close must be instant: the panel never animates its width, so neither
-    // the transition nor its reduced-motion fallback should be present.
-    expect(panel().className).not.toContain("transition-(--tp-width)");
-    expect(panel().className).not.toContain("motion-reduce:transition-none");
+    expect(shell().className).toContain("transition-none");
   });
 });

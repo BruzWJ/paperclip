@@ -12,6 +12,7 @@ import { getRouteComponent } from "@/test/route-component";
 const Timeline = getRouteComponent(Route);
 
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
+const mockSetRouteRequestsCollapsed = vi.hoisted(() => vi.fn());
 const mockWorkTimelineApi = vi.hoisted(() => ({
   get: vi.fn(),
 }));
@@ -27,6 +28,12 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({
 
 vi.mock("@/context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({ setBreadcrumbs: mockSetBreadcrumbs }),
+}));
+
+vi.mock("@/context/SidebarContext", () => ({
+  useSidebar: () => ({
+    setRouteRequestsCollapsed: mockSetRouteRequestsCollapsed,
+  }),
 }));
 
 vi.mock("@/api/workTimeline", () => ({
@@ -56,12 +63,6 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
       </a>
     );
   },
-}));
-
-vi.mock("@/components/RequestCollapsedSidebar", () => ({
-  RequestCollapsedSidebar: () => (
-    <div data-testid="request-collapsed-sidebar" />
-  ),
 }));
 
 const emptyTimeline: WorkTimelineResult = {
@@ -180,9 +181,7 @@ describe("Timeline", () => {
     });
     await flushReact();
 
-    expect(
-      container.querySelector('[data-testid="request-collapsed-sidebar"]'),
-    ).not.toBeNull();
+    expect(mockSetRouteRequestsCollapsed).toHaveBeenCalledWith(true);
   });
 
   it("renders range controls plus icon zoom controls without the user lens selector or visible-duration readout", async () => {
@@ -225,9 +224,7 @@ describe("Timeline", () => {
     expect(container.textContent).toContain("45m");
 
     const footer = Array.from(container.querySelectorAll("div")).find(
-      (element) =>
-        element.textContent?.includes("2 runs") &&
-        element.textContent.includes("Range"),
+      (element) => element.textContent?.includes("2 runs") && element.textContent.includes("Range"),
     );
     expect(footer).not.toBeUndefined();
   });
@@ -295,8 +292,6 @@ describe("Timeline", () => {
         to: expect.any(String),
       }),
     );
-    expect(mockWorkTimelineApi.get.mock.calls[0]?.[1]).not.toHaveProperty(
-      "userId",
-    );
+    expect(mockWorkTimelineApi.get.mock.calls[0]?.[1]).not.toHaveProperty("userId");
   });
 });

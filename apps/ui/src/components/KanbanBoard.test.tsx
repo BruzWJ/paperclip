@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import type { Task, TaskStatus } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getKanbanColumnTone, KanbanBoard } from "./KanbanBoard";
+import { KanbanBoard } from "./KanbanBoard";
 import { createTestTask } from "../test-utils/task";
 
 vi.mock("./TaskLinkQuicklook", () => ({
@@ -19,7 +19,9 @@ vi.mock("./TaskLinkQuicklook", () => ({
     taskNumber: number | null;
     disableTaskQuicklook?: boolean;
   }) => (
-    <a href={`/11111111-1111-4111-8111-111111111111/tasks/${taskNumber}`} {...props}>{children}</a>
+    <a href={`/11111111-1111-4111-8111-111111111111/tasks/${taskNumber}`} {...props}>
+      {children}
+    </a>
   ),
 }));
 
@@ -55,15 +57,17 @@ function createTasks(count: number, status: TaskStatus): Task[] {
   return Array.from({ length: count }, (_, index) => createTask(index + 1, status));
 }
 
-function renderBoard(
-  props: Partial<React.ComponentProps<typeof KanbanBoard>> & { tasks: Task[] },
-) {
+function renderBoard(props: Partial<React.ComponentProps<typeof KanbanBoard>> & { tasks: Task[] }) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   mountedRoots.push(root);
 
-  const render = (nextProps: Partial<React.ComponentProps<typeof KanbanBoard>> & { tasks: Task[] }) => {
+  const render = (
+    nextProps: Partial<React.ComponentProps<typeof KanbanBoard>> & {
+      tasks: Task[];
+    },
+  ) => {
     act(() => {
       root.render(
         <KanbanBoard
@@ -163,28 +167,23 @@ describe("KanbanBoard", () => {
     expect(container.textContent).not.toContain("Task 1");
   });
 
-  it("gives every column a status-hued tone", () => {
-    expect(getKanbanColumnTone("backlog").body).toContain("bg-muted/30");
-    expect(getKanbanColumnTone("todo").body).toContain("amber");
-    expect(getKanbanColumnTone("in_progress").body).toContain("blue");
-    expect(getKanbanColumnTone("in_review").body).toContain("violet");
-    expect(getKanbanColumnTone("blocked").body).toContain("red");
-    expect(getKanbanColumnTone("done").body).toContain("green");
-    expect(getKanbanColumnTone("cancelled").body).toContain("bg-muted/25");
-    expect(getKanbanColumnTone("cancelled").card).toContain("opacity-80");
+  it("uses the shared card and badge primitives for every column", () => {
+    const { container } = renderBoard({ tasks: [] });
+    expect(container.querySelectorAll('[data-slot="card-header"]')).toHaveLength(7);
+    expect(container.querySelectorAll('[data-slot="badge"]')).toHaveLength(14);
   });
 
-  it("ghosts cancelled lane cards", () => {
+  it("uses the standard card shell for cancelled tasks", () => {
     const { container } = renderBoard({
       tasks: createTasks(1, "cancelled"),
     });
 
-    const card = container.querySelector(
-      'a[href="/11111111-1111-4111-8111-111111111111/tasks/1"]',
-    )?.parentElement;
+    const card = container
+      .querySelector('a[href="/11111111-1111-4111-8111-111111111111/tasks/1"]')
+      ?.closest('[data-slot="card"]');
 
-    expect(card?.className).toContain("bg-muted/35");
-    expect(card?.className).toContain("opacity-80");
+    expect(card).not.toBeNull();
+    expect(card?.querySelector('[data-slot="card-content"]')).not.toBeNull();
   });
 
   it("keeps core task signals in compact cards", () => {
@@ -198,5 +197,4 @@ describe("KanbanBoard", () => {
     expect(container.textContent).toContain("Codex");
     expect(container.textContent).toContain("Live");
   });
-
 });

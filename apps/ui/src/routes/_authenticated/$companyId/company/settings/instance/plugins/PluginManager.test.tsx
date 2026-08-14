@@ -46,16 +46,16 @@ vi.mock("@/context/CompanyContext", () => ({
     },
   }),
 }));
-vi.mock("@/context/ToastContext", () => ({
-  useToastActions: () => ({ pushToast: mockPushToast }),
+vi.mock("sonner", () => ({
+  toast: {
+    error: mockPushToast,
+    info: mockPushToast,
+    success: mockPushToast,
+  },
 }));
-(
-  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
-).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function installedPlugin(
-  overrides: Partial<PluginRecordDto> = {},
-): PluginRecordDto {
+function installedPlugin(overrides: Partial<PluginRecordDto> = {}): PluginRecordDto {
   return {
     id: "11111111-1111-4111-8111-111111111111",
     pluginKey: "paperclip.agentmemory",
@@ -132,9 +132,7 @@ describe("PluginManager", () => {
     mockPluginsApi.install.mockResolvedValue(installedPlugin());
     mockPluginsApi.installCatalog.mockResolvedValue(installedPlugin());
     mockPluginsApi.uninstall.mockResolvedValue(undefined);
-    mockPluginsApi.enable.mockResolvedValue(
-      installedPlugin({ status: "ready" }),
-    );
+    mockPluginsApi.enable.mockResolvedValue(installedPlugin({ status: "ready" }));
     mockPluginsApi.disable.mockResolvedValue(installedPlugin());
   });
 
@@ -236,9 +234,7 @@ describe("PluginManager", () => {
       isInstanceAdmin: true,
       companyIds: [],
     });
-    mockPluginsApi.installCatalog.mockRejectedValue(
-      new Error("Automatic build failed"),
-    );
+    mockPluginsApi.installCatalog.mockRejectedValue(new Error("Automatic build failed"));
 
     await renderPage();
 

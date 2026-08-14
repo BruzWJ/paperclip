@@ -4,10 +4,7 @@ import type { TaskExecutionRunEnvelopeRecord } from "@paperclipai/shared";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  defaultTaskRunLedgerRunId,
-  TaskRunLedgerContent,
-} from "./TaskRunLedger";
+import { defaultTaskRunLedgerRunId, TaskRunLedgerContent } from "./TaskRunLedger";
 
 const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
 const AGENT_ID = "22222222-2222-4222-8222-222222222222";
@@ -23,15 +20,7 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({
-    to,
-    params,
-    children,
-  }: {
-    to: string;
-    params?: Record<string, string>;
-    children: ReactNode;
-  }) => {
+  Link: ({ to, params, children }: { to: string; params?: Record<string, string>; children: ReactNode }) => {
     const href = to
       .replace("$companyId", params?.companyId ?? "")
       .replace("$agentId", params?.agentId ?? "")
@@ -40,12 +29,9 @@ vi.mock("@tanstack/react-router", () => ({
   },
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function run(
-  overrides: Partial<TaskExecutionRunEnvelopeRecord> = {},
-): TaskExecutionRunEnvelopeRecord {
+function run(overrides: Partial<TaskExecutionRunEnvelopeRecord> = {}): TaskExecutionRunEnvelopeRecord {
   return {
     id: RUN_ID,
     companyId: COMPANY_ID,
@@ -159,9 +145,7 @@ describe("TaskRunLedgerContent", () => {
     expect(container.querySelector("a")?.getAttribute("href")).toBe(
       `/${COMPANY_ID}/agents/${AGENT_ID}/runs/${consult.id}`,
     );
-    const consultButton = container.querySelector(
-      `[data-run-id="${consult.id}"] button`,
-    );
+    const consultButton = container.querySelector(`[data-run-id="${consult.id}"] button`);
     act(() => (consultButton as HTMLButtonElement | null)?.click());
     expect(onSelectRun).toHaveBeenCalledWith(consult.id);
     expect(container.querySelectorAll("[data-run-id]")).toHaveLength(2);
@@ -173,7 +157,8 @@ describe("TaskRunLedgerContent", () => {
         id: uuidFor(100 + index),
         startedAt: `2026-07-30T${String(index).padStart(2, "0")}:00:00.000Z`,
         createdAt: `2026-07-30T${String(index).padStart(2, "0")}:00:00.000Z`,
-      }));
+      }),
+    );
     act(() => {
       root.render(
         <TaskRunLedgerContent

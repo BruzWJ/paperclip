@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 
 const navigateMock = vi.hoisted(() => vi.fn());
-const routerLocation = vi.hoisted(() => ({ current: { pathname: "/co/agents/new", searchStr: "?adapterType=codex" } }));
+const routerLocation = vi.hoisted(() => ({
+  current: { pathname: "/co/agents/new", searchStr: "?adapterType=codex" },
+}));
 
 vi.mock("@/hooks/useCompanyRouteId", () => ({
   useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
@@ -27,7 +29,10 @@ describe("RouteErrorBoundary", () => {
 
   beforeEach(() => {
     navigateMock.mockReset();
-    routerLocation.current = { pathname: "/co/agents/new", searchStr: "?adapterType=codex" };
+    routerLocation.current = {
+      pathname: "/co/agents/new",
+      searchStr: "?adapterType=codex",
+    };
     container = document.createElement("div");
     document.body.appendChild(container);
     // React logs caught render errors to console.error; silence the expected noise.

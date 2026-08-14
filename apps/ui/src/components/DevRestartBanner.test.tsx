@@ -8,8 +8,12 @@ import { DevRestartBanner } from "./DevRestartBanner";
 const mockHealthApi = vi.hoisted(() => ({
   requestDevServerRestart: vi.fn(),
 }));
+const mockPushToast = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/health", () => ({ healthApi: mockHealthApi }));
+vi.mock("sonner", () => ({
+  toast: { error: mockPushToast },
+}));
 
 const baseStatus = {
   enabled: true as const,
@@ -28,8 +32,6 @@ let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLDivElement | null = null;
 
 beforeEach(() => {
-  vi.spyOn(window, "confirm").mockReturnValue(true);
-  vi.spyOn(window, "alert").mockImplementation(() => undefined);
   mockHealthApi.requestDevServerRestart.mockResolvedValue(undefined);
 });
 
@@ -40,6 +42,7 @@ afterEach(() => {
   container = null;
   vi.restoreAllMocks();
   mockHealthApi.requestDevServerRestart.mockReset();
+  mockPushToast.mockReset();
 });
 
 function render(status = baseStatus) {
@@ -50,21 +53,32 @@ function render(status = baseStatus) {
   return container;
 }
 
+async function confirmRestart(node: HTMLDivElement) {
+  const trigger = [...node.querySelectorAll("button")].find((entry) =>
+    entry.textContent?.includes("Restart now"),
+  );
+
+  await act(async () => {
+    trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+
+  const action = document.querySelector<HTMLElement>('[data-slot="alert-dialog-action"]');
+  expect(action).not.toBeNull();
+
+  await act(async () => {
+    action?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
 describe("DevRestartBanner", () => {
   it("keeps manual restart reachable while automatic restart is disabled", async () => {
     const node = render();
-    const button = [...node.querySelectorAll("button")].find((entry) =>
-      entry.textContent?.includes("Restart now"),
-    );
 
     expect(node.textContent).not.toContain("Auto-Restart On");
     expect(node.textContent).toContain("Restart after active work is safe to interrupt");
 
-    await act(async () => {
-      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    await confirmRestart(node);
 
-    expect(window.confirm).toHaveBeenCalledWith("Restart Paperclip now?");
     expect(mockHealthApi.requestDevServerRestart).toHaveBeenCalledTimes(1);
   });
 
@@ -75,17 +89,26 @@ describe("DevRestartBanner", () => {
       activeRunCount: 1,
       waitingForIdle: true,
     });
-    const button = [...node.querySelectorAll("button")].find((entry) =>
-      entry.textContent?.includes("Restart now"),
-    );
 
     await act(async () => {
-      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const trigger = [...node.querySelectorAll("button")].find((entry) =>
+        entry.textContent?.includes("Restart now"),
+      );
+      trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(window.confirm).toHaveBeenCalledWith(
-      "Restart Paperclip now? This may interrupt 1 live run.",
-    );
+    expect(document.body.textContent).toContain("Restarting may interrupt 1 live run.");
     expect(node.textContent).toContain("Waiting for 1 live run to finish");
+  });
+
+  it("reports restart request failures through the app toast", async () => {
+    mockHealthApi.requestDevServerRestart.mockRejectedValueOnce(new Error("Restart unavailable"));
+    const node = render();
+
+    await confirmRestart(node);
+
+    expect(mockPushToast).toHaveBeenCalledWith("Restart request failed", {
+      description: "Restart unavailable",
+    });
   });
 });

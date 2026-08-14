@@ -35,9 +35,7 @@ describe("canonical Socket.IO live refresh boundary", () => {
   });
 
   it("has no cross-tab or shared-polling transport", () => {
-    expect(
-      filesContaining(/useSharedPolling|cross-tab-poll|BroadcastChannel/),
-    ).toEqual([]);
+    expect(filesContaining(/useSharedPolling|cross-tab-poll|BroadcastChannel/)).toEqual([]);
   });
 
   it("limits query intervals to explicit operational diagnostics", () => {
@@ -46,7 +44,7 @@ describe("canonical Socket.IO live refresh boundary", () => {
       "components/AuthenticatedAppGate.tsx",
       "components/Layout.tsx",
       "routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/index.tsx",
-      "routes/_authenticated/$companyId/company/settings/secrets/index.tsx",
+      "routes/_authenticated/$companyId/company/settings/secrets/-useSecretsData.ts",
     ]);
   });
 

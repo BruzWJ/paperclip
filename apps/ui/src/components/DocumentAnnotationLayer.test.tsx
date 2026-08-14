@@ -53,7 +53,9 @@ describe("DocumentAnnotationLayer", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     mockRangesForNormalizedSpan.mockReturnValue([makeRange([makeRect(8, 12, 80, 18)])]);
-    rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(makeRect(0, 0, 400, 300));
+    rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue(makeRect(0, 0, 400, 300));
   });
 
   afterEach(async () => {
@@ -77,10 +79,30 @@ describe("DocumentAnnotationLayer", () => {
           containerRef={{ current: body }}
           markdown="Annotated body text."
           threads={[
-            { id: "active", selectedText: "Annotated", status: "open", anchorState: "active" },
-            { id: "focused", selectedText: "body", status: "open", anchorState: "active" },
-            { id: "stale", selectedText: "text", status: "open", anchorState: "stale" },
-            { id: "resolved", selectedText: "body text", status: "resolved", anchorState: "active" },
+            {
+              id: "active",
+              selectedText: "Annotated",
+              status: "open",
+              anchorState: "active",
+            },
+            {
+              id: "focused",
+              selectedText: "body",
+              status: "open",
+              anchorState: "active",
+            },
+            {
+              id: "stale",
+              selectedText: "text",
+              status: "open",
+              anchorState: "stale",
+            },
+            {
+              id: "resolved",
+              selectedText: "body text",
+              status: "resolved",
+              anchorState: "active",
+            },
           ]}
           focusedThreadId="focused"
           onThreadFocus={vi.fn()}
@@ -97,9 +119,10 @@ describe("DocumentAnnotationLayer", () => {
     expect(highlights).toHaveLength(4);
 
     for (const highlight of highlights) {
-      const backgroundClasses = Array.from(highlight.classList).filter((className) =>
-        /^(dark:|hover:|dark:hover:)?bg-yellow-\d+$/.test(className)
-        || /^(dark:|hover:|dark:hover:)?bg-yellow-\d+\//.test(className),
+      const backgroundClasses = Array.from(highlight.classList).filter(
+        (className) =>
+          /^(dark:|hover:|dark:hover:)?bg-yellow-\d+$/.test(className) ||
+          /^(dark:|hover:|dark:hover:)?bg-yellow-\d+\//.test(className),
       );
       expect(backgroundClasses.some((className) => className.includes("/"))).toBe(false);
       expect(backgroundClasses.some((className) => className.startsWith("bg-yellow-"))).toBe(true);
@@ -127,7 +150,12 @@ describe("DocumentAnnotationLayer", () => {
           containerRef={{ current: body }}
           markdown="Hidden folded text"
           threads={[
-            { id: "hidden", selectedText: "Hidden folded text", status: "open", anchorState: "active" },
+            {
+              id: "hidden",
+              selectedText: "Hidden folded text",
+              status: "open",
+              anchorState: "active",
+            },
           ]}
           focusedThreadId={null}
           onThreadFocus={vi.fn()}
@@ -272,7 +300,12 @@ describe("DocumentAnnotationLayer", () => {
           containerRef={{ current: body }}
           markdown="Annotated body text."
           threads={[
-            { id: "active", selectedText: "Annotated", status: "open", anchorState: "active" },
+            {
+              id: "active",
+              selectedText: "Annotated",
+              status: "open",
+              anchorState: "active",
+            },
           ]}
           focusedThreadId={null}
           onThreadFocus={vi.fn()}
@@ -286,7 +319,9 @@ describe("DocumentAnnotationLayer", () => {
 
     expect(container.querySelector(".paperclip-doc-annotation-highlight")).toBeNull();
     expect(container.querySelector(".paperclip-doc-annotation-hit-target")).not.toBeNull();
-    const openHighlightCall = setHighlight.mock.calls.find(([name]) => name === "paperclip-doc-annotation-open");
+    const openHighlightCall = setHighlight.mock.calls.find(
+      ([name]) => name === "paperclip-doc-annotation-open",
+    );
     expect(openHighlightCall).toBeTruthy();
     expect((openHighlightCall?.[1] as MockHighlight).ranges).toHaveLength(1);
 

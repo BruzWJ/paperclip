@@ -14,11 +14,8 @@ import {
   folderSearchValue,
   normalizeFolderSelection,
 } from "./FolderControls";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -101,17 +98,19 @@ describe("FolderControls", () => {
 
     act(() => {
       root?.render(
-        <FolderRail
-          result={folderResult}
-          selection="all"
-          itemLabelPlural="routines"
-          allLabel="All routines"
-          onSelect={onSelect}
-          onCreate={vi.fn()}
-          onRename={vi.fn()}
-          onEdit={vi.fn()}
-          onDelete={vi.fn()}
-        />,
+        <SidebarProvider>
+          <FolderRail
+            result={folderResult}
+            selection="all"
+            itemLabelPlural="routines"
+            allLabel="All routines"
+            onSelect={onSelect}
+            onCreate={vi.fn()}
+            onRename={vi.fn()}
+            onEdit={vi.fn()}
+            onDelete={vi.fn()}
+          />
+        </SidebarProvider>,
       );
     });
 
@@ -138,17 +137,19 @@ describe("FolderControls", () => {
     root = createRoot(container);
     act(() => {
       root?.render(
-        <FolderRail
-          result={folderResult}
-          selection="unfiled"
-          itemLabelPlural="routines"
-          allLabel="All routines"
-          onSelect={vi.fn()}
-          onCreate={vi.fn()}
-          onRename={vi.fn()}
-          onEdit={vi.fn()}
-          onDelete={vi.fn()}
-        />,
+        <SidebarProvider>
+          <FolderRail
+            result={folderResult}
+            selection="unfiled"
+            itemLabelPlural="routines"
+            allLabel="All routines"
+            onSelect={vi.fn()}
+            onCreate={vi.fn()}
+            onRename={vi.fn()}
+            onEdit={vi.fn()}
+            onDelete={vi.fn()}
+          />
+        </SidebarProvider>,
       );
     });
 
@@ -161,17 +162,19 @@ describe("FolderControls", () => {
     root = createRoot(container);
     act(() => {
       root?.render(
-        <FolderRail
-          result={folderResult}
-          selection="all"
-          itemLabelPlural="routines"
-          allLabel="All routines"
-          onSelect={vi.fn()}
-          onCreate={vi.fn()}
-          onRename={onRename}
-          onEdit={vi.fn()}
-          onDelete={vi.fn()}
-        />,
+        <SidebarProvider>
+          <FolderRail
+            result={folderResult}
+            selection="all"
+            itemLabelPlural="routines"
+            allLabel="All routines"
+            onSelect={vi.fn()}
+            onCreate={vi.fn()}
+            onRename={onRename}
+            onEdit={vi.fn()}
+            onDelete={vi.fn()}
+          />
+        </SidebarProvider>,
       );
     });
 
@@ -221,8 +224,8 @@ describe("FolderControls", () => {
       );
     });
 
-    const subTrigger = Array.from(document.querySelectorAll("[data-radix-collection-item]")).find(
-      (element) => element.textContent?.includes("Move to"),
+    const subTrigger = Array.from(document.querySelectorAll("[data-radix-collection-item]")).find((element) =>
+      element.textContent?.includes("Move to"),
     );
     expect(subTrigger).toBeTruthy();
     act(() => {
@@ -257,14 +260,7 @@ describe("FolderControls", () => {
     const onSubmit = vi.fn();
     root = createRoot(container);
     act(() => {
-      root?.render(
-        <FolderFormDialog
-          open
-          folder={null}
-          onOpenChange={vi.fn()}
-          onSubmit={onSubmit}
-        />,
-      );
+      root?.render(<FolderFormDialog open folder={null} onOpenChange={vi.fn()} onSubmit={onSubmit} />);
     });
 
     const submit = Array.from(document.querySelectorAll("button")).find(
@@ -285,7 +281,10 @@ describe("FolderControls", () => {
     act(() => {
       submit?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
-    expect(onSubmit).toHaveBeenCalledWith({ name: "Reporting", color: expect.any(String) });
+    expect(onSubmit).toHaveBeenCalledWith({
+      name: "Reporting",
+      color: expect.any(String),
+    });
   });
 
   it("states the forgiving delete behavior and confirms", () => {
@@ -337,8 +336,8 @@ describe("FolderControls", () => {
     expect(document.body.textContent).toContain("All routines");
     expect(document.body.textContent).toContain("Unfiled");
 
-    const reportingRow = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Reporting"),
+    const reportingRow = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Reporting"),
     );
     act(() => {
       reportingRow?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));

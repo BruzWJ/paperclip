@@ -52,13 +52,31 @@ describe("owner transition views", () => {
   it("renders canonical owner kinds distinctly", () => {
     const view = mount(
       <>
-        <OwnerChip owner={{ ownerKind: "agent", ownerAgentId: "agent-qa", ownerUserId: null }} resolvers={resolvers} />
-        <OwnerChip owner={{ ownerKind: "user", ownerAgentId: null, ownerUserId: "user-board" }} resolvers={resolvers} />
-        <OwnerChip owner={{ ownerKind: "board", ownerAgentId: null, ownerUserId: null }} resolvers={resolvers} />
+        <OwnerChip
+          owner={{
+            ownerKind: "agent",
+            ownerAgentId: "agent-qa",
+            ownerUserId: null,
+          }}
+          resolvers={resolvers}
+        />
+        <OwnerChip
+          owner={{
+            ownerKind: "user",
+            ownerAgentId: null,
+            ownerUserId: "user-board",
+          }}
+          resolvers={resolvers}
+        />
+        <OwnerChip
+          owner={{ ownerKind: "board", ownerAgentId: null, ownerUserId: null }}
+          resolvers={resolvers}
+        />
       </>,
     );
-    expect([...view.querySelectorAll("[data-testid='owner-chip']")].map((chip) => chip.getAttribute("data-kind")))
-      .toEqual(["agent", "user", "board"]);
+    expect(
+      [...view.querySelectorAll("[data-testid='owner-chip']")].map((chip) => chip.getAttribute("data-kind")),
+    ).toEqual(["agent", "user", "board"]);
     expect(view.textContent).toContain("Riley Board (you)");
     expect(view.textContent).toContain("Board escalation");
   });
@@ -73,7 +91,11 @@ describe("owner transition views", () => {
     const view = mount(
       <>
         <OwnerDispatchRow
-          to={{ ownerKind: "agent", ownerAgentId: "agent-qa", ownerUserId: null }}
+          to={{
+            ownerKind: "agent",
+            ownerAgentId: "agent-qa",
+            ownerUserId: null,
+          }}
           resolvers={resolvers}
           interruptedRunAttached
         />
@@ -89,7 +111,9 @@ describe("owner transition views", () => {
     const onDismiss = vi.fn();
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
-    const copy = describeOwnerChangeInterrupt({ runningAgentName: "ClaudeCoder" });
+    const copy = describeOwnerChangeInterrupt({
+      runningAgentName: "ClaudeCoder",
+    });
     const view = mount(
       <>
         <ComposerMentionCoach
@@ -101,7 +125,11 @@ describe("owner transition views", () => {
         <OwnerRunningBanner copy={copy} />
         <InterruptOwnerChangeConfirm
           copy={copy}
-          to={{ ownerKind: "agent", ownerAgentId: "agent-qa", ownerUserId: null }}
+          to={{
+            ownerKind: "agent",
+            ownerAgentId: "agent-qa",
+            ownerUserId: null,
+          }}
           resolvers={resolvers}
           onConfirm={onConfirm}
           onCancel={onCancel}

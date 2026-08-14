@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Inbox } from "lucide-react";
 import { SidebarNavItem, SidebarNavExpandedProvider } from "./SidebarNavItem";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 const sidebarState = vi.hoisted(() => ({
   isMobile: false,
@@ -16,7 +17,17 @@ const sidebarState = vi.hoisted(() => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to, params: _params, className, activeProps: _activeProps, inactiveProps, activeOptions: _activeOptions, state: _state, ...props }: {
+  Link: ({
+    children,
+    to,
+    params: _params,
+    className,
+    activeProps: _activeProps,
+    inactiveProps,
+    activeOptions: _activeOptions,
+    state: _state,
+    ...props
+  }: {
     children: ReactNode;
     to: string;
     params?: Record<string, string>;
@@ -68,7 +79,11 @@ describe("SidebarNavItem", () => {
 
   function render(node: ReactNode) {
     act(() => {
-      root.render(<TooltipProvider>{node}</TooltipProvider>);
+      root.render(
+        <TooltipProvider>
+          <SidebarProvider>{node}</SidebarProvider>
+        </TooltipProvider>,
+      );
     });
   }
 
@@ -81,7 +96,15 @@ describe("SidebarNavItem", () => {
   }
 
   it("shows the full label and numeric badge when expanded", () => {
-    render(<SidebarNavItem linkOptions={inboxLinkOptions} label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />);
+    render(
+      <SidebarNavItem
+        linkOptions={inboxLinkOptions}
+        label="Inbox"
+        icon={Inbox}
+        badge={28}
+        badgeLabel="unread"
+      />,
+    );
 
     const label = Array.from(container.querySelectorAll("span")).find((el) => el.textContent === "Inbox");
     expect(label?.className).not.toContain("sr-only");
@@ -92,7 +115,15 @@ describe("SidebarNavItem", () => {
 
   it("clips the label (kept in flow for 1:1 row height) and collapses the badge to a dot in the rail", () => {
     sidebarState.collapsed = true;
-    render(<SidebarNavItem linkOptions={inboxLinkOptions} label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />);
+    render(
+      <SidebarNavItem
+        linkOptions={inboxLinkOptions}
+        label="Inbox"
+        icon={Inbox}
+        badge={28}
+        badgeLabel="unread"
+      />,
+    );
 
     // The label stays in the DOM/a11y tree (not display:none) so screen readers
     // still announce it. Unlike sr-only it is kept IN FLOW (zero-width, clipped,
@@ -109,9 +140,7 @@ describe("SidebarNavItem", () => {
     expect(container.textContent).not.toContain("28 ");
     expect(link().getAttribute("aria-label")).toBe("Inbox, 28 unread");
 
-    // Tooltip wraps the row; the trigger is the wrapper element so the Link's
-    // own flex className is preserved (PAP-10676), with the <a> nested inside it.
-    expect(link().parentElement?.getAttribute("data-slot")).toBe("tooltip-trigger");
+    expect(link().getAttribute("data-slot")).toBe("sidebar-menu-button");
   });
 
   it("surfaces the trailing status label in the rail aria-label", () => {
@@ -120,7 +149,10 @@ describe("SidebarNavItem", () => {
       <SidebarNavItem
         linkOptions={{
           to: "/$companyId/agents/$agentId",
-          params: { companyId: "11111111-1111-4111-8111-111111111111", agentId: "codexcoder" },
+          params: {
+            companyId: "11111111-1111-4111-8111-111111111111",
+            agentId: "codexcoder",
+          },
         }}
         label="CodexCoder"
         icon={Inbox}
@@ -137,7 +169,15 @@ describe("SidebarNavItem", () => {
   it("keeps the full presentation while peeking even when collapsed", () => {
     sidebarState.collapsed = true;
     sidebarState.peeking = true;
-    render(<SidebarNavItem linkOptions={inboxLinkOptions} label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />);
+    render(
+      <SidebarNavItem
+        linkOptions={inboxLinkOptions}
+        label="Inbox"
+        icon={Inbox}
+        badge={28}
+        badgeLabel="unread"
+      />,
+    );
 
     const label = Array.from(container.querySelectorAll("span")).find((el) => el.textContent === "Inbox");
     expect(label?.className).not.toContain("sr-only");
@@ -147,12 +187,18 @@ describe("SidebarNavItem", () => {
 
   it("forces the full label inside an expanded contextual pane even when globally collapsed", () => {
     // The takeover model collapses the global sidebar (collapsed=true) while the
-    // 240px SecondarySidebar still needs readable labels (PAP-10700). The
+    // The fixed-width secondary sidebar still needs readable labels (PAP-10700). The
     // provider must override the global rail collapse.
     sidebarState.collapsed = true;
     render(
       <SidebarNavExpandedProvider>
-        <SidebarNavItem linkOptions={inboxLinkOptions} label="Inbox" icon={Inbox} badge={28} badgeLabel="unread" />
+        <SidebarNavItem
+          linkOptions={inboxLinkOptions}
+          label="Inbox"
+          icon={Inbox}
+          badge={28}
+          badgeLabel="unread"
+        />
       </SidebarNavExpandedProvider>,
     );
 
@@ -162,14 +208,17 @@ describe("SidebarNavItem", () => {
     // Full numeric badge, no rail aria-label, no tooltip wrapper.
     expect(container.textContent).toContain("28");
     expect(link().getAttribute("aria-label")).toBeNull();
-    expect(link().parentElement?.getAttribute("data-slot")).not.toBe("tooltip-trigger");
+    expect(link().getAttribute("data-slot")).not.toBe("tooltip-trigger");
   });
 
   it("surfaces the live count in the rail aria-label", () => {
     sidebarState.collapsed = true;
     render(
       <SidebarNavItem
-        linkOptions={{ to: "/$companyId/dashboard", params: { companyId: "11111111-1111-4111-8111-111111111111" } }}
+        linkOptions={{
+          to: "/$companyId/dashboard",
+          params: { companyId: "11111111-1111-4111-8111-111111111111" },
+        }}
         label="Dashboard"
         icon={Inbox}
         liveCount={3}

@@ -8,14 +8,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxAgentPolicyControl } from "./InboxAgentPolicyControl";
 
 const mockAgentsApi = vi.hoisted(() => ({ list: vi.fn() }));
-const mockInboxAgentPolicyApi = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn() }));
+const mockInboxAgentPolicyApi = vi.hoisted(() => ({
+  get: vi.fn(),
+  update: vi.fn(),
+}));
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const GARDENER_AGENT_ID = "22222222-2222-4222-8222-222222222222";
 const CODER_AGENT_ID = "33333333-3333-4333-8333-333333333333";
 const RETIRED_AGENT_ID = "44444444-4444-4444-8444-444444444444";
 
 vi.mock("@/api/agents", () => ({ agentsApi: mockAgentsApi }));
-vi.mock("@/api/inbox-agent-policy", () => ({ inboxAgentPolicyApi: mockInboxAgentPolicyApi }));
+vi.mock("@/api/inbox-agent-policy", () => ({
+  inboxAgentPolicyApi: mockInboxAgentPolicyApi,
+}));
 vi.mock("./AgentIconPicker", () => ({ AgentIcon: () => null }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,7 +68,9 @@ function policy(overrides: Partial<InboxAgentPolicy> = {}): InboxAgentPolicy {
 }
 
 function render(container: HTMLDivElement) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const root = createRoot(container);
   act(() => {
     root.render(
@@ -76,8 +83,7 @@ function render(container: HTMLDivElement) {
 }
 
 function optionByTitle(container: HTMLElement, title: string) {
-  const label = Array.from(container.querySelectorAll("label"))
-    .find((el) => el.textContent?.includes(title));
+  const label = Array.from(container.querySelectorAll("label")).find((el) => el.textContent?.includes(title));
   return label?.querySelector('[role="radio"]') as HTMLButtonElement | undefined;
 }
 
@@ -90,7 +96,12 @@ describe("InboxAgentPolicyControl", () => {
     mockAgentsApi.list.mockResolvedValue([
       { id: GARDENER_AGENT_ID, name: "Gardener", status: "idle", icon: null },
       { id: CODER_AGENT_ID, name: "Coder", status: "idle", icon: null },
-      { id: RETIRED_AGENT_ID, name: "Retired", status: "terminated", icon: null },
+      {
+        id: RETIRED_AGENT_ID,
+        name: "Retired",
+        status: "terminated",
+        icon: null,
+      },
     ]);
     mockInboxAgentPolicyApi.get.mockResolvedValue(policy());
     mockInboxAgentPolicyApi.update.mockImplementation((_companyId: string, _userId: string, input) =>
@@ -138,7 +149,9 @@ describe("InboxAgentPolicyControl", () => {
 
     // Save disabled until the draft diverges from the persisted policy.
     await waitForAssertion(() => {
-      const save = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("Save"));
+      const save = Array.from(container.querySelectorAll("button")).find((b) =>
+        b.textContent?.includes("Save"),
+      );
       expect(save?.disabled).toBe(true);
     });
 
@@ -158,7 +171,9 @@ describe("InboxAgentPolicyControl", () => {
     await act(async () => gardenerCheckbox!.click());
     await flush();
 
-    const saveButton = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("Save"))!;
+    const saveButton = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Save"),
+    )!;
     await waitForAssertion(() => expect(saveButton.disabled).toBe(false));
 
     await act(async () => saveButton.click());
@@ -171,7 +186,9 @@ describe("InboxAgentPolicyControl", () => {
 
     await waitForAssertion(() => {
       expect(container.textContent).toContain("Saved");
-      const save = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("Save"));
+      const save = Array.from(container.querySelectorAll("button")).find((b) =>
+        b.textContent?.includes("Save"),
+      );
       expect(save?.disabled).toBe(true);
     });
 
@@ -179,11 +196,13 @@ describe("InboxAgentPolicyControl", () => {
   });
 
   it("clears the allowlist when switching to Off before saving", async () => {
-    mockInboxAgentPolicyApi.get.mockResolvedValue(policy({
-      mode: "allowlist",
-      allowedAgentIds: [GARDENER_AGENT_ID],
-      materialized: true,
-    }));
+    mockInboxAgentPolicyApi.get.mockResolvedValue(
+      policy({
+        mode: "allowlist",
+        allowedAgentIds: [GARDENER_AGENT_ID],
+        materialized: true,
+      }),
+    );
     const root = render(container);
     await flush();
 
@@ -194,7 +213,9 @@ describe("InboxAgentPolicyControl", () => {
     await act(async () => optionByTitle(container, "Off")!.click());
     await flush();
 
-    const saveButton = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("Save"))!;
+    const saveButton = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Save"),
+    )!;
     await waitForAssertion(() => expect(saveButton.disabled).toBe(false));
     await act(async () => saveButton.click());
     await flush();

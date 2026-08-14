@@ -13,7 +13,9 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children, ...props }: React.ComponentProps<"a"> & { to: string }) => (
-    <a href={to} {...props}>{children}</a>
+    <a href={to} {...props}>
+      {children}
+    </a>
   ),
 }));
 
@@ -61,12 +63,7 @@ describe("ApprovalCard", () => {
 
     act(() => {
       root.render(
-        <ApprovalCard
-          approval={approval}
-          requesterAgent={null}
-          onApprove={vi.fn()}
-          onReject={onReject}
-        />,
+        <ApprovalCard approval={approval} requesterAgent={null} onApprove={vi.fn()} onReject={onReject} />,
       );
     });
 
@@ -78,7 +75,9 @@ describe("ApprovalCard", () => {
     expect(document.body.textContent).toContain("Reject this approval?");
 
     act(() => {
-      findButton("Reject approval")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      findButton("Reject approval")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
     });
 
     expect(onReject).toHaveBeenCalledOnce();

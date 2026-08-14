@@ -18,12 +18,10 @@ const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
 vi.mock("@/api/access", () => ({
   accessApi: {
     listMembers: (companyId: string) => listMembersMock(companyId),
-    listJoinRequests: (companyId: string, status: string) =>
-      listJoinRequestsMock(companyId, status),
+    listJoinRequests: (companyId: string, status: string) => listJoinRequestsMock(companyId, status),
     updateMember: (companyId: string, memberId: string, input: unknown) =>
       updateMemberMock(companyId, memberId, input),
-    archiveMember: (companyId: string, memberId: string) =>
-      archiveMemberMock(companyId, memberId),
+    archiveMember: (companyId: string, memberId: string) => archiveMemberMock(companyId, memberId),
     approveJoinRequest: vi.fn(),
     rejectJoinRequest: vi.fn(),
   },
@@ -43,8 +41,12 @@ vi.mock("@/context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }),
 }));
 
-vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ pushToast: vi.fn() }),
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    info: vi.fn(),
+    success: vi.fn(),
+  },
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -150,15 +152,9 @@ describe("CompanyAccess", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).toContain(
-      "Manage the people who can work in Paperclip",
-    );
-    expect(container.textContent).toContain(
-      "Members can collaborate across the company by default",
-    );
-    expect(container.textContent).toContain(
-      "Core keeps this page focused on membership",
-    );
+    expect(container.textContent).toContain("Manage the people who can work in Paperclip");
+    expect(container.textContent).toContain("Members can collaborate across the company by default");
+    expect(container.textContent).toContain("Core keeps this page focused on membership");
     expect(container.textContent).toContain("Humans");
     expect(container.textContent).toContain("Pending human joins");
     expect(container.textContent).toContain("User account");
@@ -182,12 +178,8 @@ describe("CompanyAccess", () => {
     });
     await flushReact();
 
-    expect(document.body.textContent).toContain(
-      "Update company role and membership status",
-    );
-    expect(document.body.textContent).not.toContain(
-      "Implicit grants from role",
-    );
+    expect(document.body.textContent).toContain("Update company role and membership status");
+    expect(document.body.textContent).not.toContain("Implicit grants from role");
     expect(document.body.textContent).not.toContain("permissionKey");
 
     await act(async () => {
@@ -221,9 +213,9 @@ describe("CompanyAccess", () => {
     });
     await flushReact();
 
-    const saveButton = Array.from(
-      document.body.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Save member");
+    const saveButton = Array.from(document.body.querySelectorAll("button")).find(
+      (button) => button.textContent === "Save member",
+    );
     expect(saveButton).toBeTruthy();
 
     await act(async () => {
@@ -257,27 +249,23 @@ describe("CompanyAccess", () => {
     await flushReact();
     await flushReact();
 
-    const removeButtons = Array.from(
-      container.querySelectorAll("button"),
-    ).filter((button) => button.textContent?.includes("Remove"));
+    const removeButtons = Array.from(container.querySelectorAll("button")).filter((button) =>
+      button.textContent?.includes("Remove"),
+    );
     expect(removeButtons.length).toBeGreaterThan(0);
 
     await act(async () => {
-      removeButtons[0]?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      removeButtons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flushReact();
 
     expect(document.body.textContent).toContain("Remove member");
-    expect(document.body.textContent).toContain(
-      "Archive Codex Coder and revoke their company access",
-    );
+    expect(document.body.textContent).toContain("Archive Codex Coder and revoke their company access");
     expect(document.body.querySelector("select")).toBeNull();
 
-    const confirmButton = Array.from(
-      document.body.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Remove member");
+    const confirmButton = Array.from(document.body.querySelectorAll("button")).find(
+      (button) => button.textContent === "Remove member",
+    );
     expect(confirmButton).toBeTruthy();
 
     await act(async () => {
@@ -285,10 +273,7 @@ describe("CompanyAccess", () => {
     });
     await flushReact();
 
-    expect(archiveMemberMock).toHaveBeenCalledExactlyOnceWith(
-      COMPANY_ID,
-      "member-1",
-    );
+    expect(archiveMemberMock).toHaveBeenCalledExactlyOnceWith(COMPANY_ID, "member-1");
 
     await act(async () => {
       root.unmount();
@@ -343,11 +328,9 @@ describe("CompanyAccess", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).toContain(
-      "Company admins cannot be removed from company access.",
-    );
-    const removeButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Remove"),
+    expect(container.textContent).toContain("Company admins cannot be removed from company access.");
+    const removeButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Remove"),
     );
     expect(removeButton).toBeTruthy();
     expect(removeButton).toHaveProperty("disabled", true);

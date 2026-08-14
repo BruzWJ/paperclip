@@ -13,12 +13,10 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({
-    children,
-    to,
-    ...props
-  }: { children: ReactNode; to: string } & React.ComponentProps<"a">) => (
-    <a href={to} {...props}>{children}</a>
+  Link: ({ children, to, ...props }: { children: ReactNode; to: string } & React.ComponentProps<"a">) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
   ),
 }));
 
@@ -64,12 +62,8 @@ describe("MarkdownBody code block wrapping", () => {
     });
 
     const pre = container.querySelector("pre");
-    const actions = container.querySelector<HTMLDivElement>(
-      ".paperclip-markdown-codeblock-actions",
-    );
-    const wrapButton = container.querySelector<HTMLButtonElement>(
-      ".paperclip-markdown-codeblock-wrap",
-    );
+    const actions = container.querySelector<HTMLDivElement>(".paperclip-markdown-codeblock-actions");
+    const wrapButton = container.querySelector<HTMLButtonElement>(".paperclip-markdown-codeblock-wrap");
 
     expect(pre).not.toBeNull();
     expect(actions).not.toBeNull();
@@ -108,7 +102,9 @@ describe("MarkdownBody code block wrapping", () => {
         <QueryClientProvider client={queryClient}>
           <ThemeProvider>
             <MarkdownBody>
-              {"[Internal](/11111111-1111-4111-8111-111111111111/dashboard) [External](https://example.com/docs) [File](/api/assets/asset-1/content) [Section](#details)"}
+              {
+                "[Internal](/11111111-1111-4111-8111-111111111111/dashboard) [External](https://example.com/docs) [File](/api/assets/asset-1/content) [Section](#details)"
+              }
             </MarkdownBody>
           </ThemeProvider>
         </QueryClientProvider>,
@@ -117,7 +113,9 @@ describe("MarkdownBody code block wrapping", () => {
 
     expect(container.querySelector('a[href="/11111111-1111-4111-8111-111111111111/dashboard"]')).toBeNull();
     expect(container.textContent).toContain("Internal");
-    expect(container.querySelector('a[href="https://example.com/docs"]')?.getAttribute("target")).toBe("_blank");
+    expect(container.querySelector('a[href="https://example.com/docs"]')?.getAttribute("target")).toBe(
+      "_blank",
+    );
     expect(container.querySelector('a[href="/api/assets/asset-1/content"]')).not.toBeNull();
     expect(container.querySelector('a[href="#details"]')).not.toBeNull();
   });

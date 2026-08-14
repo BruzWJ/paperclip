@@ -8,9 +8,8 @@ import type { DocumentRevision } from "@paperclipai/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({ open, children }: { open: boolean; children: ReactNode }) => (
-    open ? <div>{children}</div> : null
-  ),
+  Dialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
+    open ? <div>{children}</div> : null,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
@@ -105,16 +104,18 @@ describe("DocumentDiffModal", () => {
     const { container, revisionsQueryFn } = await render([]);
 
     expect(revisionsQueryFn).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('[data-testid="document-diff-empty"]')?.textContent)
-      .toContain("No revisions are available for this document.");
+    expect(container.querySelector('[data-testid="document-diff-empty"]')?.textContent).toContain(
+      "No revisions are available for this document.",
+    );
     expect(container.textContent).toContain("Save changes to create the first revision");
   });
 
   it("explains when there is only one revision to compare", async () => {
     const { container } = await render([createRevision()]);
 
-    expect(container.querySelector('[data-testid="document-diff-empty"]')?.textContent)
-      .toContain("A second revision is needed to compare changes.");
+    expect(container.querySelector('[data-testid="document-diff-empty"]')?.textContent).toContain(
+      "A second revision is needed to compare changes.",
+    );
     expect(container.textContent).toContain("Save another revision");
   });
 });

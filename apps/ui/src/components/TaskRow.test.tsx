@@ -71,18 +71,17 @@ describe("TaskRow", () => {
     container.remove();
   });
 
-  it("renders the list status glyph at md (16px)", () => {
+  it("renders task status with the shared badge primitive", () => {
     const root = createRoot(container);
 
     act(() => {
       root.render(<TaskRow task={createTask({ boardPresentationStatus: "in_progress" })} />);
     });
 
-    const glyphs = container.querySelectorAll('svg[viewBox="0 0 24 24"]');
-    expect(glyphs.length).toBeGreaterThan(0);
-    glyphs.forEach((glyph) => {
-      expect(glyph.getAttribute("width")).toBe("16");
-      expect(glyph.getAttribute("height")).toBe("16");
+    const badges = container.querySelectorAll('[data-slot="badge"]');
+    expect(badges.length).toBeGreaterThan(0);
+    badges.forEach((badge) => {
+      expect(badge.textContent).toBe("In Progress");
     });
 
     act(() => {
@@ -102,14 +101,13 @@ describe("TaskRow", () => {
     const row = link?.parentElement;
     expect(link).not.toBeNull();
     expect(row?.className).toContain("hover:bg-transparent");
-    expect(row?.className).not.toContain("hover:bg-accent/50");
 
     act(() => {
       root.unmount();
     });
   });
 
-  it("neutralizes selected status and unread dot accents", () => {
+  it("neutralizes the selected unread dot accent", () => {
     const root = createRoot(container);
 
     act(() => {
@@ -118,20 +116,15 @@ describe("TaskRow", () => {
 
     const markReadButton = container.querySelector('button[aria-label="Mark as read"]');
     const unreadDot = markReadButton?.querySelector("span");
-    // Selected rows neutralize the status glyph to muted via `!`-important
-    // utilities, which override the glyph's inline colour var. The glyph is an
-    // <svg> (SVGAnimatedString className), so match on the class attribute.
-    const statusGlyph = container.querySelector('svg[class*="text-muted-foreground"]');
+    const statusBadge = container.querySelector('[data-slot="badge"]');
 
     expect(markReadButton).not.toBeNull();
     expect(markReadButton?.className).toContain("hover:bg-muted/80");
-    expect(markReadButton?.className).not.toContain("hover:bg-blue-500/20");
+    expect(markReadButton?.className).not.toContain("hover:bg-primary/10");
     expect(unreadDot).not.toBeNull();
     expect(unreadDot?.className).toContain("bg-muted-foreground/70");
-    expect(unreadDot?.className).not.toContain("bg-blue-600");
-    expect(statusGlyph).not.toBeNull();
-    expect(statusGlyph?.getAttribute("class")).toContain("!text-muted-foreground");
-    expect(statusGlyph?.getAttribute("class")).toContain("!border-muted-foreground");
+    expect(unreadDot?.className).not.toContain("bg-primary");
+    expect(statusBadge?.textContent).toBe("Todo");
 
     act(() => {
       root.unmount();
@@ -175,7 +168,9 @@ describe("TaskRow", () => {
 
     // Mobile: a separate in-flow, order-first dot (mobile has no reserved slot).
     const mobileDot = container
-      .querySelector('button[aria-label="Mark as read"].sm\\:hidden, span.sm\\:hidden button[aria-label="Mark as read"]')
+      .querySelector(
+        'button[aria-label="Mark as read"].sm\\:hidden, span.sm\\:hidden button[aria-label="Mark as read"]',
+      )
       ?.closest("span.sm\\:hidden");
     expect(mobileDot).not.toBeNull();
     expect(mobileDot?.className).toContain("order-first");
@@ -243,12 +238,7 @@ describe("TaskRow", () => {
     const task = createTask({ title: "Parent task" });
 
     act(() => {
-      root.render(
-        <TaskRow
-          task={task}
-          titleSuffix={<span data-testid="suffix">(3 sub-tasks)</span>}
-        />,
-      );
+      root.render(<TaskRow task={task} titleSuffix={<span data-testid="suffix">(3 sub-tasks)</span>} />);
     });
 
     const titleEl = container.querySelector(".line-clamp-2, .truncate");
@@ -274,8 +264,9 @@ describe("TaskRow", () => {
       );
     });
 
-    const metaRow = Array.from(container.querySelectorAll("span.flex.items-center.gap-2"))
-      .find((element) => element.textContent?.includes("PAP-42"));
+    const metaRow = Array.from(container.querySelectorAll("span.flex.items-center.gap-2")).find((element) =>
+      element.textContent?.includes("PAP-42"),
+    );
 
     expect(metaRow).not.toBeUndefined();
     expect(metaRow?.textContent?.replace(/\s+/g, "")).toContain("2.1.PAP-42");

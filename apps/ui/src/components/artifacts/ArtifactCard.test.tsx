@@ -11,7 +11,13 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, params, hash, children, ...props }: {
+  Link: ({
+    to,
+    params,
+    hash,
+    children,
+    ...props
+  }: {
     to: string;
     params?: Record<string, string>;
     hash?: string;
@@ -22,9 +28,9 @@ vi.mock("@tanstack/react-router", () => ({
       to,
     );
     return (
-    <a href={`${pathname}${hash ? `#${hash}` : ""}`} {...props}>
-      {children}
-    </a>
+      <a href={`${pathname}${hash ? `#${hash}` : ""}`} {...props}>
+        {children}
+      </a>
     );
   },
 }));
@@ -43,7 +49,12 @@ function makeArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifact
     contentPath: "/files/art-1.png",
     openPath: "/files/art-1.png",
     downloadPath: "/files/art-1.png?download=1",
-    task: { id: "task-1", taskNumber: 10306, identifier: "PAP-10306", title: "Landing visuals" },
+    task: {
+      id: "task-1",
+      taskNumber: 10306,
+      identifier: "PAP-10306",
+      title: "Landing visuals",
+    },
     project: { id: "proj-1", name: "Paperclip App" },
     createdByAgent: { id: "agent-1", name: "ClaudeCoder" },
     updatedAt: "2026-06-01T12:00:00.000Z",
@@ -55,9 +66,7 @@ function makeArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifact
 describe("ArtifactCard", () => {
   it("renders an image preview with cover image and links to the task anchor", () => {
     const markup = renderToStaticMarkup(<ArtifactCard artifact={makeArtifact()} />);
-    expect(markup).toContain(
-      'href="/11111111-1111-4111-8111-111111111111/tasks/10306#attachment-art-1"',
-    );
+    expect(markup).toContain('href="/11111111-1111-4111-8111-111111111111/tasks/10306#attachment-art-1"');
     expect(markup).toContain('data-media-kind="image"');
     expect(markup).toContain("rounded-lg");
     expect(markup).toContain('src="/files/art-1.png"');
@@ -75,7 +84,12 @@ describe("ArtifactCard", () => {
       <ArtifactCard
         artifact={makeArtifact({
           title: "Social launch clip",
-          task: { id: "task-2", taskNumber: 10370, identifier: "PAP-10370", title: "Make artifact page look like this" },
+          task: {
+            id: "task-2",
+            taskNumber: 10370,
+            identifier: "PAP-10370",
+            title: "Make artifact page look like this",
+          },
           updatedAt: "2025-10-08T12:00:00.000Z",
           createdByAgent: null,
         })}
@@ -91,7 +105,11 @@ describe("ArtifactCard", () => {
   it("renders a video preview with a video element and play glyph", () => {
     const markup = renderToStaticMarkup(
       <ArtifactCard
-        artifact={makeArtifact({ mediaKind: "video", contentType: "video/mp4", contentPath: "/files/clip.mp4" })}
+        artifact={makeArtifact({
+          mediaKind: "video",
+          contentType: "video/mp4",
+          contentPath: "/files/clip.mp4",
+        })}
       />,
     );
     expect(markup).toContain('data-media-kind="video"');
@@ -107,7 +125,11 @@ describe("ArtifactCard", () => {
     flushSync(() => {
       root.render(
         <ArtifactCard
-          artifact={makeArtifact({ mediaKind: "video", contentType: "video/mp4", contentPath: "/files/clip.mp4" })}
+          artifact={makeArtifact({
+            mediaKind: "video",
+            contentType: "video/mp4",
+            contentPath: "/files/clip.mp4",
+          })}
         />,
       );
     });
@@ -147,7 +169,11 @@ describe("ArtifactCard", () => {
       flushSync(() => {
         root.render(
           <ArtifactCard
-            artifact={makeArtifact({ mediaKind: "video", contentType: "video/mp4", contentPath: "/files/clip.mp4" })}
+            artifact={makeArtifact({
+              mediaKind: "video",
+              contentType: "video/mp4",
+              contentPath: "/files/clip.mp4",
+            })}
           />,
         );
       });
@@ -207,7 +233,12 @@ describe("ArtifactCard", () => {
   it("renders a placeholder for empty artifacts without an image or video", () => {
     const markup = renderToStaticMarkup(
       <ArtifactCard
-        artifact={makeArtifact({ mediaKind: "empty", contentType: null, contentPath: null, previewText: null })}
+        artifact={makeArtifact({
+          mediaKind: "empty",
+          contentType: null,
+          contentPath: null,
+          previewText: null,
+        })}
       />,
     );
     expect(markup).toContain('data-media-kind="empty"');

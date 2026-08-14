@@ -67,8 +67,14 @@ describe("SwipeToArchive", () => {
     const button = container.querySelector("button");
     expect(button).not.toBeNull();
 
-    Object.defineProperty(wrapper, "offsetWidth", { configurable: true, value: 200 });
-    Object.defineProperty(wrapper, "offsetHeight", { configurable: true, value: 48 });
+    Object.defineProperty(wrapper, "offsetWidth", {
+      configurable: true,
+      value: 200,
+    });
+    Object.defineProperty(wrapper, "offsetHeight", {
+      configurable: true,
+      value: 48,
+    });
 
     act(() => {
       dispatchTouchEvent(wrapper, "touchstart", { x: 180, y: 20 });
@@ -146,8 +152,14 @@ describe("SwipeToArchive", () => {
     const button = container.querySelector("button");
     expect(button).not.toBeNull();
 
-    Object.defineProperty(wrapper, "offsetWidth", { configurable: true, value: 200 });
-    Object.defineProperty(wrapper, "offsetHeight", { configurable: true, value: 48 });
+    Object.defineProperty(wrapper, "offsetWidth", {
+      configurable: true,
+      value: 200,
+    });
+    Object.defineProperty(wrapper, "offsetHeight", {
+      configurable: true,
+      value: 48,
+    });
 
     act(() => {
       dispatchTouchEvent(wrapper, "touchstart", { x: 180, y: 20 });
@@ -186,8 +198,14 @@ describe("SwipeToArchive", () => {
     });
 
     const wrapper = container.firstElementChild as HTMLDivElement;
-    Object.defineProperty(wrapper, "offsetWidth", { configurable: true, value: 200 });
-    Object.defineProperty(wrapper, "offsetHeight", { configurable: true, value: 48 });
+    Object.defineProperty(wrapper, "offsetWidth", {
+      configurable: true,
+      value: 200,
+    });
+    Object.defineProperty(wrapper, "offsetHeight", {
+      configurable: true,
+      value: 48,
+    });
 
     act(() => {
       dispatchTouchEvent(wrapper, "touchstart", { x: 180, y: 20 });
@@ -216,8 +234,14 @@ describe("SwipeToArchive", () => {
     });
 
     const wrapper = container.firstElementChild as HTMLDivElement;
-    Object.defineProperty(wrapper, "offsetWidth", { configurable: true, value: 200 });
-    Object.defineProperty(wrapper, "offsetHeight", { configurable: true, value: 48 });
+    Object.defineProperty(wrapper, "offsetWidth", {
+      configurable: true,
+      value: 200,
+    });
+    Object.defineProperty(wrapper, "offsetHeight", {
+      configurable: true,
+      value: 48,
+    });
 
     act(() => {
       dispatchTouchEvent(wrapper, "touchstart", { x: 180, y: 20 });

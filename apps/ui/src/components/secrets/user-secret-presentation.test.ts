@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CompanySecret, UserSecretDefinition } from "@paperclipai/shared";
-import {
-  coverageSummaryLabel,
-  myValueLabel,
-  secretStatusTone,
-} from "./user-secret-presentation";
+import { coverageSummaryLabel, myValueLabel } from "./user-secret-presentation";
 import { myValueState } from "./my-value-state";
 
 function makeSecret(status: CompanySecret["status"]): CompanySecret {
@@ -79,12 +75,5 @@ describe("myValueState", () => {
 
   it("is inactive when the value is disabled", () => {
     expect(myValueState(definition, makeSecret("disabled"))).toBe("inactive");
-  });
-});
-
-describe("secretStatusTone", () => {
-  it("uses emerald for active and muted for disabled", () => {
-    expect(secretStatusTone("active")).toContain("emerald");
-    expect(secretStatusTone("disabled")).toContain("muted");
   });
 });

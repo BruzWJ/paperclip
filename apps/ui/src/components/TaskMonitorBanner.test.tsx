@@ -18,7 +18,11 @@ import type { DerivedMonitorState } from "@/lib/task-monitor";
 
 const NOW = new Date("2026-07-17T20:00:00.000Z");
 
-function derived(overrides: Partial<DerivedMonitorState> & { state: DerivedMonitorState["state"] }): DerivedMonitorState {
+function derived(
+  overrides: Partial<DerivedMonitorState> & {
+    state: DerivedMonitorState["state"];
+  },
+): DerivedMonitorState {
   return {
     nextCheckAt: null,
     attemptCount: 0,
@@ -65,7 +69,11 @@ describe("buildMonitorSurfaceCopy", () => {
 
   it("switches copy for due-now and overdue states", () => {
     const dueNow = buildMonitorSurfaceCopy(
-      derived({ state: "due-now", nextCheckAt: NOW.toISOString(), attemptCount: 1 }),
+      derived({
+        state: "due-now",
+        nextCheckAt: NOW.toISOString(),
+        attemptCount: 1,
+      }),
       NOW,
     );
     expect(dueNow!.bannerTitle).toBe("Monitor reminder — due now");
@@ -113,19 +121,26 @@ describe("TaskMonitorBanner / TaskMonitorComposerStrip rendering", () => {
   function taskWithMonitor(nextCheckAt: string | null): Task {
     return {
       executionState: nextCheckAt
-        ? { monitor: { status: "scheduled", nextCheckAt, attemptCount: 1, serviceName: "vercel-deploy" } }
+        ? {
+            monitor: {
+              status: "scheduled",
+              nextCheckAt,
+              attemptCount: 1,
+              serviceName: "vercel-deploy",
+            },
+          }
         : null,
     } as unknown as Task;
   }
 
   it("renders the waiting banner without an unsupported immediate-check action", () => {
-    expect(hasVisibleMonitorSurface(taskWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString()))).toBe(true);
+    expect(
+      hasVisibleMonitorSurface(taskWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString())),
+    ).toBe(true);
     const root = createRoot(container);
     flushSync(() => {
       root.render(
-        <TaskMonitorBanner
-          task={taskWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString())}
-        />,
+        <TaskMonitorBanner task={taskWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString())} />,
       );
     });
 

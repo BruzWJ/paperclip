@@ -21,7 +21,14 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to, params, hash, state: _state, ...props }: React.ComponentProps<"a"> & {
+  Link: ({
+    children,
+    to,
+    params,
+    hash,
+    state: _state,
+    ...props
+  }: React.ComponentProps<"a"> & {
     to: string;
     params?: Record<string, string>;
     hash?: string;
@@ -31,7 +38,11 @@ vi.mock("@tanstack/react-router", () => ({
       (path, [key, value]) => path.replace(`$${key}`, value),
       to,
     );
-    return <a href={`${pathname}${hash ? `#${hash}` : ""}`} {...props}>{children}</a>;
+    return (
+      <a href={`${pathname}${hash ? `#${hash}` : ""}`} {...props}>
+        {children}
+      </a>
+    );
   },
 }));
 
@@ -87,11 +98,7 @@ describe("TaskLinkQuicklook", () => {
     act(() => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TaskLinkQuicklook
-            taskId={task.id}
-            taskNumber={task.taskNumber}
-            taskPrefetch={task}
-          >
+          <TaskLinkQuicklook taskId={task.id} taskNumber={task.taskNumber} taskPrefetch={task}>
             PAP-1
           </TaskLinkQuicklook>
         </QueryClientProvider>,

@@ -4,12 +4,7 @@ import { useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  ScheduleEditor,
-  buildCron,
-  getScheduleCronValidation,
-  parseCronToPreset,
-} from "./ScheduleEditor";
+import { ScheduleEditor, buildCron, getScheduleCronValidation, parseCronToPreset } from "./ScheduleEditor";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -103,11 +98,7 @@ describe("ScheduleEditor", () => {
     const root = createRoot(container);
     act(() => {
       root.render(
-        <Harness
-          initial="0 8-18/2 * * 1-5"
-          onChange={onChange}
-          onValidityChange={onValidityChange}
-        />,
+        <Harness initial="0 8-18/2 * * 1-5" onChange={onChange} onValidityChange={onValidityChange} />,
       );
     });
 

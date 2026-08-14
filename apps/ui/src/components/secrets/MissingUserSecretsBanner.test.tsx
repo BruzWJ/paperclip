@@ -17,8 +17,11 @@ const mockSecretsApi = vi.hoisted(() => ({
 const mockPushToast = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api/secrets", () => ({ secretsApi: mockSecretsApi }));
-vi.mock("@/context/ToastContext", () => ({
-  useToastActions: () => ({ pushToast: mockPushToast }),
+vi.mock("sonner", () => ({
+  toast: {
+    error: mockPushToast,
+    success: mockPushToast,
+  },
 }));
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to, ...props }: ComponentProps<"a"> & { to: string }) => (
@@ -31,9 +34,7 @@ vi.mock("@tanstack/react-router", () => ({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-function definition(
-  overrides: Partial<UserSecretDefinition> = {},
-): UserSecretDefinition {
+function definition(overrides: Partial<UserSecretDefinition> = {}): UserSecretDefinition {
   return {
     id: "def-1",
     companyId: "c1",
@@ -129,9 +130,7 @@ function render() {
 
 describe("MissingUserSecretsBanner", () => {
   it("warns about an active user secret with no value and offers to set it", async () => {
-    const entries: MyUserSecretEntry[] = [
-      { definition: definition(), secret: null },
-    ];
+    const entries: MyUserSecretEntry[] = [{ definition: definition(), secret: null }];
     mockSecretsApi.listUserSecrets.mockResolvedValue(entries);
 
     await render();
@@ -144,9 +143,7 @@ describe("MissingUserSecretsBanner", () => {
   });
 
   it("renders nothing when every active secret already has a value", async () => {
-    const entries: MyUserSecretEntry[] = [
-      { definition: definition(), secret: secret() },
-    ];
+    const entries: MyUserSecretEntry[] = [{ definition: definition(), secret: secret() }];
     mockSecretsApi.listUserSecrets.mockResolvedValue(entries);
 
     await render();
@@ -156,9 +153,7 @@ describe("MissingUserSecretsBanner", () => {
   });
 
   it("ignores disabled definitions", async () => {
-    const entries: MyUserSecretEntry[] = [
-      { definition: definition({ status: "disabled" }), secret: null },
-    ];
+    const entries: MyUserSecretEntry[] = [{ definition: definition({ status: "disabled" }), secret: null }];
     mockSecretsApi.listUserSecrets.mockResolvedValue(entries);
 
     await render();
@@ -168,16 +163,14 @@ describe("MissingUserSecretsBanner", () => {
   });
 
   it("opens the set-value dialog when Set value is clicked", async () => {
-    const entries: MyUserSecretEntry[] = [
-      { definition: definition(), secret: null },
-    ];
+    const entries: MyUserSecretEntry[] = [{ definition: definition(), secret: null }];
     mockSecretsApi.listUserSecrets.mockResolvedValue(entries);
 
     await render();
     await flushReact();
 
-    const setButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Set value"),
+    const setButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Set value"),
     );
     expect(setButton).toBeTruthy();
     await act(() => setButton!.click());

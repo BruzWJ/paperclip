@@ -62,23 +62,16 @@ describe("ImageGalleryModal", () => {
     });
 
     await act(async () => {
-      root.render(
-        <ImageGalleryModal
-          items={[video]}
-          initialIndex={0}
-          open
-          onOpenChange={() => undefined}
-        />,
-      );
+      root.render(<ImageGalleryModal items={[video]} initialIndex={0} open onOpenChange={() => undefined} />);
     });
     await flushReact();
 
     const renderedVideo = document.body.querySelector("video");
     expect(renderedVideo?.getAttribute("src")).toBe("/api/attachments/video-1/content");
     expect(renderedVideo?.getAttribute("controls")).not.toBeNull();
-    expect(
-      document.body.querySelector('a[aria-label="Download demo.webm"]')?.getAttribute("href"),
-    ).toBe("/api/attachments/video-1/content?download=1");
+    expect(document.body.querySelector('a[aria-label="Download demo.webm"]')?.getAttribute("href")).toBe(
+      "/api/attachments/video-1/content?download=1",
+    );
   });
 
   it("supports keyboard navigation and Escape close", async () => {
@@ -96,12 +89,7 @@ describe("ImageGalleryModal", () => {
 
     await act(async () => {
       root.render(
-        <ImageGalleryModal
-          items={[first, second]}
-          initialIndex={0}
-          open
-          onOpenChange={onOpenChange}
-        />,
+        <ImageGalleryModal items={[first, second]} initialIndex={0} open onOpenChange={onOpenChange} />,
       );
     });
     await flushReact();
@@ -126,7 +114,9 @@ describe("ImageGalleryModal", () => {
     expect(document.body.textContent).toContain("1 / 2");
 
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      document.body
+        .querySelector('[role="dialog"]')
+        ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
 
     expect(onOpenChange).toHaveBeenCalledWith(false);

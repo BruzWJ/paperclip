@@ -6,7 +6,6 @@ import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TaskBlockedNotice } from "./TaskBlockedNotice";
-import { ToastProvider } from "../context/ToastContext";
 
 vi.mock("@/hooks/useCompanyRouteId", () => ({
   useCompanyRouteId: () => "11111111-1111-4111-8111-111111111111",
@@ -14,7 +13,9 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to, ...props }: ComponentProps<"a"> & { to: string }) => (
-    <a href={to} {...props}>{children}</a>
+    <a href={to} {...props}>
+      {children}
+    </a>
   ),
 }));
 
@@ -61,11 +62,7 @@ function withProviders(node: ReactNode) {
       mutations: { retry: false },
     },
   });
-  return (
-    <QueryClientProvider client={client}>
-      <ToastProvider>{node}</ToastProvider>
-    </QueryClientProvider>
-  );
+  return <QueryClientProvider client={client}>{node}</QueryClientProvider>;
 }
 
 function render(element: ReactElement) {
@@ -210,9 +207,9 @@ describe("TaskBlockedNotice", () => {
       />,
     );
 
-    const stepLinks = Array.from(
-      node.querySelectorAll('[data-testid="task-blocked-notice-steps"] a'),
-    ).map((link) => link.textContent ?? "");
+    const stepLinks = Array.from(node.querySelectorAll('[data-testid="task-blocked-notice-steps"] a')).map(
+      (link) => link.textContent ?? "",
+    );
 
     expect(stepLinks[0]).toContain("TASK-9");
     expect(stepLinks[1]).toContain("TASK-10");
@@ -220,7 +217,7 @@ describe("TaskBlockedNotice", () => {
 
     const runningStep = node.querySelectorAll('[data-testid="task-blocked-notice-steps"] a')[2];
     if (!runningStep) throw new Error("Expected a running live-work step.");
-    expect(runningStep.querySelector('svg[aria-label="In Progress status"]')).not.toBeNull();
+    expect(runningStep.textContent).toContain("In Progress");
     expect(node.querySelector('[data-testid="task-blocked-notice-now-running"]')).toBeNull();
   });
 
@@ -395,5 +392,4 @@ describe("TaskBlockedNotice", () => {
     const stepText = node.querySelector('[data-testid="task-blocked-notice-steps"]')?.textContent;
     expect(stepText).not.toContain("TASK-99");
   });
-
 });

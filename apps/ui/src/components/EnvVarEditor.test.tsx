@@ -69,7 +69,11 @@ function render(props: Partial<React.ComponentProps<typeof EnvironmentVariablesE
 describe("EnvironmentVariablesEditor user secret binding", () => {
   it("renders an existing user_secret_ref as a User secret row with the definition and requirement", async () => {
     const value: Record<string, EnvBinding> = {
-      GH_TOKEN: { type: "user_secret_ref", key: "PERSONAL_GH_TOKEN", required: true },
+      GH_TOKEN: {
+        type: "user_secret_ref",
+        key: "PERSONAL_GH_TOKEN",
+        required: true,
+      },
     };
     await render({ value, userSecretDefinitions: [definition] });
 
@@ -83,7 +87,13 @@ describe("EnvironmentVariablesEditor user secret binding", () => {
 
   it("explains user-secret bindings when a user secret row is present", async () => {
     await render({
-      value: { GH_TOKEN: { type: "user_secret_ref", key: "PERSONAL_GH_TOKEN", required: true } },
+      value: {
+        GH_TOKEN: {
+          type: "user_secret_ref",
+          key: "PERSONAL_GH_TOKEN",
+          required: true,
+        },
+      },
       userSecretDefinitions: [definition],
     });
     expect(container.textContent).toContain("Personal GitHub token");

@@ -21,10 +21,8 @@ const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
 
 vi.mock("@/api/access", () => ({
   accessApi: {
-    listInvites: (companyId: string, options?: unknown) =>
-      listInvitesMock(companyId, options),
-    createCompanyInvite: (companyId: string, input: unknown) =>
-      createCompanyInviteMock(companyId, input),
+    listInvites: (companyId: string, options?: unknown) => listInvitesMock(companyId, options),
+    createCompanyInvite: (companyId: string, input: unknown) => createCompanyInviteMock(companyId, input),
     revokeInvite: (inviteId: string) => revokeInviteMock(inviteId),
   },
 }));
@@ -42,8 +40,13 @@ vi.mock("@/context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({ setBreadcrumbs: setBreadcrumbsMock }),
 }));
 
-vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ pushToast: pushToastMock }),
+vi.mock("sonner", () => ({
+  toast: {
+    error: pushToastMock,
+    info: pushToastMock,
+    success: pushToastMock,
+    warning: pushToastMock,
+  },
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,10 +98,7 @@ describe("CompanyInvites", () => {
         const limit = options?.limit ?? 20;
         const offset = options?.offset ?? 0;
         const invites = inviteHistory.slice(offset, offset + limit);
-        const nextOffset =
-          offset + invites.length < inviteHistory.length
-            ? offset + invites.length
-            : null;
+        const nextOffset = offset + invites.length < inviteHistory.length ? offset + invites.length : null;
         return Promise.resolve({ invites, nextOffset });
       },
     );
@@ -133,9 +133,7 @@ describe("CompanyInvites", () => {
 
     await act(async () => {
       root.render(
-        <TestRouter
-          initialEntries={[`/${COMPANY_ID}/company/settings/invites`]}
-        >
+        <TestRouter initialEntries={[`/${COMPANY_ID}/company/settings/invites`]}>
           <QueryClientProvider client={queryClient}>
             <CompanyInvites />
           </QueryClientProvider>
@@ -165,18 +163,16 @@ describe("CompanyInvites", () => {
     expect(container.textContent).toContain(
       "Can create agents, invite users, assign tasks, and approve join requests.",
     );
-    expect(container.textContent).toContain(
-      "Everything in Admin, plus managing members.",
-    );
+    expect(container.textContent).toContain("Everything in Admin, plus managing members.");
     expect(container.textContent).not.toContain("permission grants");
     expect(listInvitesMock).toHaveBeenCalledWith(COMPANY_ID, {
       limit: 5,
       offset: 0,
     });
 
-    const viewMoreButton = Array.from(
-      container.querySelectorAll("button"),
-    ).find((button) => button.textContent === "View more");
+    const viewMoreButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "View more",
+    );
 
     await act(async () => {
       viewMoreButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -194,19 +190,14 @@ describe("CompanyInvites", () => {
 
     await act(async () => {
       const viewerRadio = container.querySelector(
-        'input[type="radio"][value="viewer"]',
-      ) as HTMLInputElement | null;
+        'button[role="radio"][value="viewer"]',
+      ) as HTMLButtonElement | null;
       viewerRadio?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      viewerRadio?.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
     const buttons = Array.from(container.querySelectorAll("button"));
-    const createButton = buttons.find(
-      (button) => button.textContent === "Create invite",
-    );
-    const revokeButton = buttons.find(
-      (button) => button.textContent === "Revoke",
-    );
+    const createButton = buttons.find((button) => button.textContent === "Create invite");
+    const revokeButton = buttons.find((button) => button.textContent === "Revoke");
 
     expect(createButton).toBeTruthy();
     expect(revokeButton).toBeTruthy();
@@ -220,27 +211,24 @@ describe("CompanyInvites", () => {
     expect(createCompanyInviteMock).toHaveBeenCalledWith(COMPANY_ID, {
       userRole: "viewer",
     });
-    expect(clipboardWriteTextMock).toHaveBeenCalledWith(
-      "https://paperclip.local/invite/new-token",
-    );
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith("https://paperclip.local/invite/new-token");
     expect(container.textContent).toContain("Latest invite link");
     expect(container.textContent).toContain(
       "This URL includes the current Paperclip domain returned by the server.",
     );
-    expect(
-      container.querySelector('input[aria-label="Latest invite URL"]'),
-    ).toHaveProperty("value", "https://paperclip.local/invite/new-token");
+    expect(container.querySelector('input[aria-label="Latest invite URL"]')).toHaveProperty(
+      "value",
+      "https://paperclip.local/invite/new-token",
+    );
     expect(container.textContent).toContain("Copy link");
     expect(container.textContent).toContain("Open invite");
-    expect(pushToastMock).toHaveBeenCalledWith({
-      title: "Invite created",
-      body: "Invite ready below and copied to clipboard.",
-      tone: "success",
+    expect(pushToastMock).toHaveBeenCalledWith("Invite created", {
+      description: "Invite ready below and copied to clipboard.",
     });
 
-    const copyLinkButton = Array.from(
-      container.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Copy link");
+    const copyLinkButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Copy link",
+    );
 
     await act(async () => {
       copyLinkButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -274,9 +262,7 @@ describe("CompanyInvites", () => {
 
     await act(async () => {
       root.render(
-        <TestRouter
-          initialEntries={[`/${COMPANY_ID}/company/settings/invites`]}
-        >
+        <TestRouter initialEntries={[`/${COMPANY_ID}/company/settings/invites`]}>
           <QueryClientProvider client={queryClient}>
             <CompanyInvites />
           </QueryClientProvider>
@@ -300,15 +286,11 @@ describe("CompanyInvites", () => {
       'input[aria-label="Latest invite URL"]',
     ) as HTMLInputElement | null;
     expect(inviteInput?.value).toBe("https://paperclip.local/invite/new-token");
-    expect(pushToastMock).toHaveBeenCalledWith({
-      title: "Clipboard unavailable",
-      body: "Copy the invite URL manually from the field below.",
-      tone: "warn",
+    expect(pushToastMock).toHaveBeenCalledWith("Clipboard unavailable", {
+      description: "Copy the invite URL manually from the field below.",
     });
-    expect(pushToastMock).toHaveBeenCalledWith({
-      title: "Invite created",
-      body: "Invite ready below.",
-      tone: "success",
+    expect(pushToastMock).toHaveBeenCalledWith("Invite created", {
+      description: "Invite ready below.",
     });
 
     await act(async () => {
@@ -323,9 +305,7 @@ describe("CompanyInvites", () => {
     });
     await act(async () => {
       root.render(
-        <TestRouter
-          initialEntries={[`/${COMPANY_ID}/company/settings/invites`]}
-        >
+        <TestRouter initialEntries={[`/${COMPANY_ID}/company/settings/invites`]}>
           <QueryClientProvider client={queryClient}>
             <CompanyInvites />
           </QueryClientProvider>
@@ -341,9 +321,7 @@ describe("CompanyInvites", () => {
       limit: 5,
       offset: 0,
     });
-    expect(
-      queryClient.getQueryData(queryKeys.access.invites(COMPANY_ID, "all", 5)),
-    ).toMatchObject({
+    expect(queryClient.getQueryData(queryKeys.access.invites(COMPANY_ID, "all", 5))).toMatchObject({
       pages: [
         {
           invites: expect.any(Array),

@@ -16,6 +16,8 @@ interface FakeMediaQueryList {
   matches: boolean;
   addEventListener: (type: "change", listener: MediaListener) => void;
   removeEventListener: (type: "change", listener: MediaListener) => void;
+  addListener: (listener: MediaListener) => void;
+  removeListener: (listener: MediaListener) => void;
   dispatch: (matches: boolean) => void;
   listenerCount: () => number;
 }
@@ -28,6 +30,12 @@ function installMatchMedia(initialMatches: boolean): FakeMediaQueryList {
       listeners.add(listener);
     },
     removeEventListener: (_type, listener) => {
+      listeners.delete(listener);
+    },
+    addListener: (listener) => {
+      listeners.add(listener);
+    },
+    removeListener: (listener) => {
       listeners.delete(listener);
     },
     dispatch: (matches) => {
@@ -114,7 +122,7 @@ describe("ThemeContext", () => {
     });
   });
 
-  it("stops listening to OS changes after the user makes an explicit choice", () => {
+  it("keeps an explicit choice when the OS theme changes", () => {
     document.documentElement.classList.add("dark");
     const mql = installMatchMedia(true);
 
@@ -133,7 +141,7 @@ describe("ThemeContext", () => {
       setTheme?.("light");
     });
     expect(observedTheme).toBe("light");
-    expect(mql.listenerCount()).toBe(0);
+    expect(mql.listenerCount()).toBe(1);
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
 
     act(() => {
@@ -152,7 +160,7 @@ describe("ThemeContext", () => {
     });
   });
 
-  it("does not attach the OS listener when a stored choice already exists", () => {
+  it("keeps a stored choice when the OS theme changes", () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, "light");
     const mql = installMatchMedia(true);
 
@@ -165,7 +173,7 @@ describe("ThemeContext", () => {
       );
     });
 
-    expect(mql.listenerCount()).toBe(0);
+    expect(mql.listenerCount()).toBe(1);
 
     act(() => {
       mql.dispatch(true);
@@ -192,23 +200,27 @@ describe("ThemeContext", () => {
     const input = document.createElement("input");
     container.appendChild(input);
     act(() => {
-      input.dispatchEvent(new KeyboardEvent("keydown", {
-        bubbles: true,
-        cancelable: true,
-        ctrlKey: true,
-        shiftKey: true,
-        key: "d",
-      }));
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: true,
+          shiftKey: true,
+          key: "d",
+        }),
+      );
     });
     expect(observedTheme).toBe("dark");
 
     act(() => {
-      window.dispatchEvent(new KeyboardEvent("keydown", {
-        cancelable: true,
-        ctrlKey: true,
-        shiftKey: true,
-        key: "d",
-      }));
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          cancelable: true,
+          ctrlKey: true,
+          shiftKey: true,
+          key: "d",
+        }),
+      );
     });
     expect(observedTheme).toBe("light");
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");

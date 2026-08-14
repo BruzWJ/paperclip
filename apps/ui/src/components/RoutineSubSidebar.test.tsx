@@ -4,6 +4,7 @@ import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -18,10 +19,7 @@ vi.mock("@tanstack/react-router", () => ({
     replace?: boolean;
   }) => {
     const { replace: _replace, ...rest } = props as Record<string, unknown>;
-    const href = Object.entries(params).reduce(
-      (path, [key, value]) => path.replace(`$${key}`, value),
-      to,
-    );
+    const href = Object.entries(params).reduce((path, [key, value]) => path.replace(`$${key}`, value), to);
     return (
       <a href={href} {...(rest as AnchorHTMLAttributes<HTMLAnchorElement>)}>
         {children}
@@ -60,13 +58,15 @@ function renderSidebar(overrides?: {
   const dirty = new Set(overrides?.dirty ?? []);
   act(() => {
     root.render(
-      <RoutineSubSidebar
-        activeSection={overrides?.activeSection ?? "overview"}
-        companyId="11111111-1111-4111-8111-111111111111"
-        routineId="r1"
-        isSectionDirty={(section) => dirty.has(section)}
-        hasLiveRun={overrides?.hasLiveRun ?? false}
-      />,
+      <SidebarProvider>
+        <RoutineSubSidebar
+          activeSection={overrides?.activeSection ?? "overview"}
+          companyId="11111111-1111-4111-8111-111111111111"
+          routineId="r1"
+          isSectionDirty={(section) => dirty.has(section)}
+          hasLiveRun={overrides?.hasLiveRun ?? false}
+        />
+      </SidebarProvider>,
     );
   });
 }
@@ -86,7 +86,9 @@ describe("RoutineSubSidebar", () => {
       "Activity",
       "History",
     ]);
-    const groupLabels = Array.from(container.querySelectorAll("p")).map((p) => p.textContent);
+    const groupLabels = Array.from(container.querySelectorAll('[data-slot="sidebar-group-label"]')).map(
+      (element) => element.textContent,
+    );
     expect(groupLabels).toContain("Routine");
     expect(groupLabels).toContain("Operate");
   });
@@ -102,7 +104,9 @@ describe("RoutineSubSidebar", () => {
     const variables = Array.from(container.querySelectorAll("a")).find(
       (link) => link.textContent?.trim() === "Variables",
     );
-    expect(variables?.getAttribute("href")).toBe("/11111111-1111-4111-8111-111111111111/routines/r1/variables");
+    expect(variables?.getAttribute("href")).toBe(
+      "/11111111-1111-4111-8111-111111111111/routines/r1/variables",
+    );
   });
 
   it("shows a dirty marker only on dirty editable sections", () => {

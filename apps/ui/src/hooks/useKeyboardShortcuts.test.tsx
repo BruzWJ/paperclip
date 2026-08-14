@@ -11,19 +11,16 @@ import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 function TestHarness({
   onNewTask,
   onSearch,
-  onToggleCollapse,
   onGoToInbox,
 }: {
   onNewTask: () => void;
   onSearch?: () => void;
-  onToggleCollapse?: () => void;
   onGoToInbox?: () => void;
 }) {
   useKeyboardShortcuts({
     enabled: true,
     onNewTask,
     onSearch,
-    onToggleCollapse,
     onGoToInbox,
   });
 
@@ -77,11 +74,13 @@ describe("useKeyboardShortcuts", () => {
       root.render(<TestHarness onNewTask={vi.fn()} onSearch={onSearch} />);
     });
 
-    document.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "/",
-      bubbles: true,
-      cancelable: true,
-    }));
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "/",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
 
     expect(document.activeElement).toBe(input);
     expect(onSearch).not.toHaveBeenCalled();
@@ -100,11 +99,13 @@ describe("useKeyboardShortcuts", () => {
       root.render(<TestHarness onNewTask={vi.fn()} onSearch={onSearch} />);
     });
 
-    document.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "/",
-      bubbles: true,
-      cancelable: true,
-    }));
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "/",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
 
     expect(onSearch).toHaveBeenCalledTimes(1);
 
@@ -113,37 +114,12 @@ describe("useKeyboardShortcuts", () => {
     });
   });
 
-  it("fires onToggleCollapse on Cmd/Ctrl+B", () => {
-    const root = createRoot(container);
-    const onToggleCollapse = vi.fn();
-
-    act(() => {
-      root.render(<TestHarness onNewTask={vi.fn()} onToggleCollapse={onToggleCollapse} />);
-    });
-
-    document.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "b",
-      metaKey: true,
-      bubbles: true,
-      cancelable: true,
-    }));
-    expect(onToggleCollapse).toHaveBeenCalledTimes(1);
-
-    document.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "b",
-      ctrlKey: true,
-      bubbles: true,
-      cancelable: true,
-    }));
-    expect(onToggleCollapse).toHaveBeenCalledTimes(2);
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
   const pressKey = (key: string) => {
-    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    const event = new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+    });
     document.dispatchEvent(event);
     return event;
   };
@@ -201,20 +177,20 @@ describe("useKeyboardShortcuts", () => {
     });
   });
 
-  it("does not fire onToggleCollapse for a bare 'b' keypress", () => {
+  it("does not claim a bare 'b' keypress", () => {
     const root = createRoot(container);
-    const onToggleCollapse = vi.fn();
 
     act(() => {
-      root.render(<TestHarness onNewTask={vi.fn()} onToggleCollapse={onToggleCollapse} />);
+      root.render(<TestHarness onNewTask={vi.fn()} />);
     });
 
-    document.dispatchEvent(new KeyboardEvent("keydown", {
+    const event = new KeyboardEvent("keydown", {
       key: "b",
       bubbles: true,
       cancelable: true,
-    }));
-    expect(onToggleCollapse).not.toHaveBeenCalled();
+    });
+    document.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
 
     act(() => {
       root.unmount();

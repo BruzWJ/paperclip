@@ -1,0 +1,285 @@
+// @vitest-environment jsdom
+import { flushSync } from "react-dom";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import "./-Artifacts-test-support";
+import {
+  latestObserverCallback,
+  MockIntersectionObserver,
+  renderArtifacts,
+  resetLatestObserverCallback,
+  sampleArtifact,
+  sampleGroup,
+  TASK_ID,
+  useArtifactsApiMockTestState,
+  useBreadcrumbStateTestState,
+  waitForAssertion,
+} from "./-Artifacts-test-support";
+const breadcrumbState = useBreadcrumbStateTestState();
+const artifactsApiMock = useArtifactsApiMockTestState();
+describe("Artifacts page", () => {
+  let container: HTMLDivElement;
+  let originalIntersectionObserver: typeof IntersectionObserver | undefined;
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    breadcrumbState.setBreadcrumbs.mockReset();
+    artifactsApiMock.list.mockReset();
+    resetLatestObserverCallback();
+    originalIntersectionObserver = window.IntersectionObserver;
+    window.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver;
+  });
+  afterEach(() => {
+    window.IntersectionObserver = originalIntersectionObserver as typeof IntersectionObserver;
+    container.remove();
+  });
+  it("requests task-grouped artifact stacks by default", async () => {
+    artifactsApiMock.list.mockResolvedValue({
+      artifacts: [],
+      groups: [sampleGroup()],
+      nextCursor: null,
+    });
+    const { root } = renderArtifacts(container);
+    await waitForAssertion(() => {
+      expect(artifactsApiMock.list).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+        kind: "all",
+        q: undefined,
+        groupBy: "task",
+        groupTaskId: undefined,
+        limit: 30,
+        cursor: undefined,
+      });
+      const groupControl = container.querySelector(
+        '[data-testid="artifact-group-control"]',
+      ) as HTMLButtonElement;
+      const allFilter = [...container.querySelectorAll("button")].find(
+        (element) => element.textContent === "All",
+      ) as HTMLButtonElement;
+      expect(groupControl).not.toBeNull();
+      expect(groupControl.textContent).toBe("");
+      expect(groupControl.getAttribute("data-variant")).toBe("outline");
+      expect(groupControl.getAttribute("data-size")).toBe("icon");
+      expect(groupControl.getAttribute("data-group-by")).toBe("task");
+      expect(
+        Boolean(groupControl.compareDocumentPosition(allFilter) & Node.DOCUMENT_POSITION_FOLLOWING),
+      ).toBe(true);
+    });
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+  it("debounces artifact search into the artifacts API", async () => {
+    artifactsApiMock.list
+      .mockResolvedValueOnce({
+        artifacts: [],
+        groups: [sampleGroup()],
+        nextCursor: null,
+      })
+      .mockResolvedValueOnce({ artifacts: [], groups: [], nextCursor: null });
+    const { root } = renderArtifacts(container);
+    let input: HTMLInputElement | null = null;
+    await waitForAssertion(() => {
+      input = container.querySelector<HTMLInputElement>('input[aria-label="Search artifacts"]');
+      expect(input).not.toBeNull();
+    });
+    flushSync(() => {
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      nativeSetter.call(input!, "launch");
+      input!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitForAssertion(() => {
+      expect(artifactsApiMock.list).toHaveBeenLastCalledWith("11111111-1111-4111-8111-111111111111", {
+        kind: "all",
+        q: "launch",
+        groupBy: "task",
+        groupTaskId: undefined,
+        limit: 30,
+        cursor: undefined,
+      });
+    });
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+  it("keeps the artifacts grid max-width constrained and left aligned", async () => {
+    artifactsApiMock.list.mockResolvedValue({
+      artifacts: [sampleArtifact()],
+      nextCursor: null,
+    });
+    const { root } = renderArtifacts(container, [
+      "/11111111-1111-4111-8111-111111111111/artifacts?groupBy=none",
+    ]);
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="artifact-card"]')).not.toBeNull();
+    });
+    const pageShell = container.firstElementChild as HTMLElement | null;
+    expect(pageShell?.className).toContain("max-w-6xl");
+    expect(pageShell?.className).not.toContain("mx-auto");
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+  it("fetches the next artifact page when the sentinel intersects", async () => {
+    artifactsApiMock.list
+      .mockResolvedValueOnce({
+        artifacts: [sampleArtifact({ id: "artifact-1", title: "First Artifact" })],
+        nextCursor: "cursor-2",
+      })
+      .mockResolvedValueOnce({
+        artifacts: [sampleArtifact({ id: "artifact-2", title: "Second Artifact" })],
+        nextCursor: null,
+      });
+    const { root } = renderArtifacts(container, [
+      "/11111111-1111-4111-8111-111111111111/artifacts?groupBy=none",
+    ]);
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("First Artifact");
+      expect(latestObserverCallback).not.toBeNull();
+    });
+    latestObserverCallback?.(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    );
+    await waitForAssertion(() => {
+      expect(artifactsApiMock.list).toHaveBeenLastCalledWith("11111111-1111-4111-8111-111111111111", {
+        kind: "all",
+        q: undefined,
+        groupBy: "none",
+        groupTaskId: undefined,
+        limit: 30,
+        cursor: "cursor-2",
+      });
+      expect(container.textContent).toContain("Second Artifact");
+    });
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+  it("switches grouping via the group control and refetches stacks", async () => {
+    artifactsApiMock.list.mockImplementation((_companyId: string, params?: { groupBy?: string }) => {
+      if (params?.groupBy === "none") {
+        return Promise.resolve({
+          artifacts: [sampleArtifact()],
+          nextCursor: null,
+        });
+      }
+      return Promise.resolve({
+        artifacts: [],
+        groups: [sampleGroup()],
+        nextCursor: null,
+      });
+    });
+    const { root } = renderArtifacts(container);
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="artifact-group-card"]')).not.toBeNull();
+    });
+    const noneOption = container.querySelector(
+      '[data-testid="artifact-group-option-none"]',
+    ) as HTMLButtonElement;
+    expect(noneOption).not.toBeNull();
+    flushSync(() => {
+      noneOption.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    await waitForAssertion(() => {
+      expect(artifactsApiMock.list).toHaveBeenLastCalledWith("11111111-1111-4111-8111-111111111111", {
+        kind: "all",
+        q: undefined,
+        groupBy: "none",
+        groupTaskId: undefined,
+        limit: 30,
+        cursor: undefined,
+      });
+      expect(container.querySelector('[data-testid="artifact-card"]')).not.toBeNull();
+      const groupControl = container.querySelector('[data-testid="artifact-group-control"]') as HTMLElement;
+      expect(groupControl.getAttribute("data-group-by")).toBe("none");
+    });
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+  it("renders stack cards from a grouped URL with count metadata", async () => {
+    artifactsApiMock.list.mockResolvedValue({
+      artifacts: [],
+      groups: [sampleGroup({ count: 4 })],
+      nextCursor: null,
+    });
+    const { root } = renderArtifacts(container, [
+      "/11111111-1111-4111-8111-111111111111/artifacts?groupBy=task",
+    ]);
+    await waitForAssertion(() => {
+      expect(artifactsApiMock.list).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+        kind: "all",
+        q: undefined,
+        groupBy: "task",
+        groupTaskId: undefined,
+        limit: 30,
+        cursor: undefined,
+      });
+      const card = container.querySelector('[data-testid="artifact-group-card"]') as HTMLElement;
+      expect(card).not.toBeNull();
+      expect(card.getAttribute("data-count")).toBe("4");
+      expect(card.getAttribute("data-stacked")).toBe("true");
+      expect(card.getAttribute("href")).toBe(
+        `/11111111-1111-4111-8111-111111111111/artifacts?groupTaskId=${TASK_ID}`,
+      );
+      expect(card.textContent).toContain("4 artifacts");
+    });
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+  it("opens a stack from the URL and shows the back affordance and artifacts", async () => {
+    artifactsApiMock.list.mockResolvedValue({
+      artifacts: [sampleArtifact({ title: "Stacked Artifact" })],
+      selectedGroup: sampleGroup(),
+      nextCursor: null,
+    });
+    const { root } = renderArtifacts(container, [
+      `/11111111-1111-4111-8111-111111111111/artifacts?groupBy=task&groupTaskId=${TASK_ID}`,
+    ]);
+    await waitForAssertion(() => {
+      expect(artifactsApiMock.list).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+        kind: "all",
+        q: undefined,
+        groupBy: "task",
+        groupTaskId: TASK_ID,
+        limit: 30,
+        cursor: undefined,
+      });
+      expect(container.querySelector('[data-testid="artifact-stack-back"]')).not.toBeNull();
+      expect(
+        (container.querySelector('[data-testid="artifact-stack-back"]') as HTMLAnchorElement).getAttribute(
+          "href",
+        ),
+      ).toBe("/11111111-1111-4111-8111-111111111111/artifacts");
+      expect(container.textContent).toContain("Stacked Artifact");
+      expect(container.querySelector('[data-testid="artifact-card"]')).not.toBeNull();
+    });
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+  it("preserves the media filter when grouping", async () => {
+    artifactsApiMock.list.mockResolvedValue({
+      artifacts: [],
+      groups: [sampleGroup()],
+      nextCursor: null,
+    });
+    const { root } = renderArtifacts(container, [
+      "/11111111-1111-4111-8111-111111111111/artifacts?kind=image&groupBy=task",
+    ]);
+    await waitForAssertion(() => {
+      expect(artifactsApiMock.list).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+        kind: "image",
+        q: undefined,
+        groupBy: "task",
+        groupTaskId: undefined,
+        limit: 30,
+        cursor: undefined,
+      });
+    });
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+});

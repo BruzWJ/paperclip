@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
 
@@ -14,7 +15,16 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, params, children, activeProps: _activeProps, inactiveProps: _inactiveProps, activeOptions: _activeOptions, state: _state, ...props }: {
+  Link: ({
+    to,
+    params,
+    children,
+    activeProps: _activeProps,
+    inactiveProps: _inactiveProps,
+    activeOptions: _activeOptions,
+    state: _state,
+    ...props
+  }: {
     to: string;
     params?: Record<string, string>;
     children: ReactNode;
@@ -23,7 +33,9 @@ vi.mock("@tanstack/react-router", () => ({
     activeOptions?: unknown;
     state?: unknown;
   }) => (
-    <a href={to.replace("$companyId", params?.companyId ?? "")} {...props}>{children}</a>
+    <a href={to.replace("$companyId", params?.companyId ?? "")} {...props}>
+      {children}
+    </a>
   ),
 }));
 
@@ -56,8 +68,12 @@ vi.mock("../hooks/useInboxBadge", () => ({
 vi.mock("@/plugins/slots", () => ({ PluginSlotOutlet: () => null }));
 vi.mock("@/plugins/launchers", () => ({ PluginLauncherOutlet: () => null }));
 vi.mock("./SidebarAgents", () => ({ SidebarAgents: () => null }));
-vi.mock("./SidebarStarredProjects", () => ({ SidebarStarredProjects: () => null }));
-vi.mock("./SidebarCompanyMenu", () => ({ SidebarCompanyMenu: () => <div>Company</div> }));
+vi.mock("./SidebarStarredProjects", () => ({
+  SidebarStarredProjects: () => null,
+}));
+vi.mock("./SidebarCompanyMenu", () => ({
+  SidebarCompanyMenu: () => <div>Company</div>,
+}));
 
 describe("Sidebar Goals navigation", () => {
   let container: HTMLDivElement;
@@ -83,7 +99,9 @@ describe("Sidebar Goals navigation", () => {
     flushSync(() => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <Sidebar />
+          <SidebarProvider>
+            <Sidebar />
+          </SidebarProvider>
         </QueryClientProvider>,
       );
     });

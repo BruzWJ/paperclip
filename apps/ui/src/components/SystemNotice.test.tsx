@@ -10,11 +10,7 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to, params }: {
-    children: ReactNode;
-    to: string;
-    params?: Record<string, string>;
-  }) => {
+  Link: ({ children, to, params }: { children: ReactNode; to: string; params?: Record<string, string> }) => {
     const href = Object.entries(params ?? {}).reduce(
       (path, [key, value]) => path.replace(`$${key}`, value),
       to,
@@ -51,33 +47,24 @@ function render(element: ReactElement) {
 describe("SystemNotice", () => {
   it("renders the warning tone label and body in a single status container", () => {
     const node = render(
-      <SystemNotice
-        tone="warning"
-        body="Paperclip needs a disposition before this task can continue."
-      />,
+      <SystemNotice tone="warning" body="Paperclip needs a disposition before this task can continue." />,
     );
 
     const status = node.querySelectorAll('[role="status"]');
     expect(status.length).toBe(1);
     expect(status[0]?.getAttribute("aria-label")).toBe("System warning");
-    expect(node.textContent).toContain(
-      "Paperclip needs a disposition before this task can continue.",
-    );
+    expect(node.textContent).toContain("Paperclip needs a disposition before this task can continue.");
   });
 
   it("uses System alert label for danger tone", () => {
-    const node = render(
-      <SystemNotice tone="danger" body="Recovery escalated to Architect." />,
-    );
+    const node = render(<SystemNotice tone="danger" body="Recovery escalated to Architect." />);
 
     const status = node.querySelector('[role="status"]');
     expect(status?.getAttribute("aria-label")).toBe("System alert");
   });
 
   it("uses neutral System notice label by default", () => {
-    const node = render(
-      <SystemNotice tone="neutral" body="Reassigned to ClaudeFixer." />,
-    );
+    const node = render(<SystemNotice tone="neutral" body="Reassigned to ClaudeFixer." />);
 
     const status = node.querySelector('[role="status"]');
     expect(status?.getAttribute("aria-label")).toBe("System notice");
@@ -128,7 +115,13 @@ describe("SystemNotice", () => {
         detailsDefaultOpen
         metadata={[
           {
-            rows: [{ kind: "text", label: "Suggested action", value: "Pick a disposition" }],
+            rows: [
+              {
+                kind: "text",
+                label: "Suggested action",
+                value: "Pick a disposition",
+              },
+            ],
           },
         ]}
       />,
@@ -184,8 +177,12 @@ describe("SystemNotice", () => {
 
     const links = Array.from(node.querySelectorAll("a")).map((a) => a.getAttribute("href"));
     expect(links).toContain("/11111111-1111-4111-8111-111111111111/tasks/3440");
-    expect(links).toContain("/11111111-1111-4111-8111-111111111111/agents/223e4567-e89b-42d3-a456-426614174000");
-    expect(links).toContain("/11111111-1111-4111-8111-111111111111/agents/323e4567-e89b-42d3-a456-426614174000/runs/9cdba892-c7ca-4d93-8604-4843873b127c");
+    expect(links).toContain(
+      "/11111111-1111-4111-8111-111111111111/agents/223e4567-e89b-42d3-a456-426614174000",
+    );
+    expect(links).toContain(
+      "/11111111-1111-4111-8111-111111111111/agents/323e4567-e89b-42d3-a456-426614174000/runs/9cdba892-c7ca-4d93-8604-4843873b127c",
+    );
     expect(node.textContent).toContain("PAP-3440");
     expect(node.textContent).toContain("Disposition recovery");
     expect(node.textContent).toContain("Architect");
