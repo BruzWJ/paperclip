@@ -1,9 +1,3 @@
-import type {
-  ThreadAssistantMessage,
-  ThreadMessage,
-  ThreadSystemMessage,
-  ThreadUserMessage,
-} from "@assistant-ui/react";
 import type { Agent } from "@paperclipai/shared";
 import type { ClientTaskComment } from "./optimistic-task-comments";
 import { formatOwnerUserLabel } from "./task-owners";
@@ -21,15 +15,41 @@ export type TaskChatComment = ClientTaskComment & {
   followUpRequested?: boolean;
 };
 
+export type TaskChatMessagePart =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | {
+      type: "tool-call";
+      toolCallId: string;
+      toolName: string;
+      args: Record<string, never>;
+      argsText: string;
+      result?: unknown;
+    };
+
+/** Board transcript view-model consumed directly by AI Elements renderers. */
+export interface TaskChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  createdAt: Date;
+  content: TaskChatMessagePart[];
+  status?: { type: "running" } | { type: "complete"; reason: "stop" };
+  attachments?: [];
+  metadata: {
+    custom: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+}
+
 type MessageWithOrder = {
   createdAtMs: number;
   order: number;
-  message: ThreadMessage;
+  message: TaskChatMessage;
 };
 
 export interface StableThreadMessageCacheEntry {
   fingerprint: string;
-  message: ThreadMessage;
+  message: TaskChatMessage;
 }
 
 function toDate(value: Date | string | null | undefined) {
@@ -40,13 +60,13 @@ function toTimestamp(value: Date | string | null | undefined) {
   return toDate(value).getTime();
 }
 
-function fingerprintThreadMessage(message: ThreadMessage) {
+function fingerprintThreadMessage(message: TaskChatMessage) {
   return JSON.stringify(message);
 }
 
 export function stabilizeThreadMessages(
-  messages: readonly ThreadMessage[],
-  previousMessages: readonly ThreadMessage[],
+  messages: readonly TaskChatMessage[],
+  previousMessages: readonly TaskChatMessage[],
   previousById: ReadonlyMap<string, StableThreadMessageCacheEntry>,
 ) {
   const nextById = new Map<string, StableThreadMessageCacheEntry>();
@@ -86,6 +106,26 @@ function createAssistantMetadata(custom: Record<string, unknown>) {
   } as const;
 }
 
+function createRunSegmentContent(comment: TaskChatComment): TaskChatMessage["content"] | null {
+  if (!comment.boardRunSegmentParts) return null;
+
+  return comment.boardRunSegmentParts.map((part, index) => {
+    if (part.type === "text") {
+      return { type: "text", text: part.text };
+    }
+    if (part.type === "reasoning") {
+      return { type: "reasoning", text: part.text };
+    }
+    return {
+      type: "tool-call",
+      toolCallId: `${comment.id}:tool:${index}`,
+      toolName: part.name,
+      args: {},
+      argsText: "",
+    };
+  });
+}
+
 function authorNameForComment(
   comment: TaskChatComment,
   agentMap?: Map<string, Agent>,
@@ -115,7 +155,7 @@ function createCommentMessage(args: {
   userLabelMap?: ReadonlyMap<string, string> | null;
   companyId?: string | null;
   projectId?: string | null;
-}): ThreadMessage {
+}): TaskChatMessage {
   const { comment, agentMap, currentUserId, userLabelMap, companyId, projectId } = args;
   const isSystemNotice = comment.authorType === "system";
   const isRunProgress = comment.presentation?.kind === "run_progress";
@@ -149,6 +189,8 @@ function createCommentMessage(args: {
     sourceTrust: comment.sourceTrust ?? null,
     runState: comment.runState ?? null,
     boardEntryKind: comment.boardEntryKind ?? null,
+    boardRunSegmentParts: comment.boardRunSegmentParts ?? null,
+    boardRunSegmentStatus: comment.boardRunSegmentStatus ?? null,
     boardGroupRootId: comment.boardGroupRootId ?? null,
     boardIsRoot: comment.boardIsRoot === true,
     boardGroupHasMore: comment.boardGroupHasMore === true,
@@ -168,7 +210,7 @@ function createCommentMessage(args: {
   const createdAt = toDate(comment.createdAt);
 
   if (isSystemNotice) {
-    const message: ThreadSystemMessage = {
+    const message: TaskChatMessage = {
       id: comment.id,
       role: "system",
       createdAt,
@@ -178,11 +220,12 @@ function createCommentMessage(args: {
     return message;
   }
   if (comment.authorAgentId) {
-    const message: ThreadAssistantMessage = {
+    const runSegmentContent = createRunSegmentContent(comment);
+    const message: TaskChatMessage = {
       id: comment.id,
       role: "assistant",
       createdAt,
-      content: [{ type: "text", text: contentText }],
+      content: runSegmentContent ?? [{ type: "text", text: contentText }],
       status:
         comment.runState === "queued" || comment.runState === "working"
           ? { type: "running" }
@@ -191,7 +234,7 @@ function createCommentMessage(args: {
     };
     return message;
   }
-  const message: ThreadUserMessage = {
+  const message: TaskChatMessage = {
     id: comment.id,
     role: "user",
     createdAt,
@@ -230,7 +273,7 @@ function createTimelineEventMessage(args: {
         : (formatOwnerUserLabel(owner.ownerUserId, currentUserId, userLabelMap) ?? "Board escalation");
     lines.push(`Owner: ${ownerLabel(event.ownerChange.from)} -> ${ownerLabel(event.ownerChange.to)}`);
   }
-  const message: ThreadSystemMessage = {
+  const message: TaskChatMessage = {
     id: `activity:${event.id}`,
     role: "system",
     createdAt: toDate(event.createdAt),

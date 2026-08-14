@@ -1,11 +1,10 @@
-import type { ThreadMessage } from "@assistant-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { usePaperclipTaskRuntime } from "../hooks/usePaperclipTaskRuntime";
 import {
   buildTaskChatMessages,
   stabilizeThreadMessages,
   type StableThreadMessageCacheEntry,
+  type TaskChatMessage,
 } from "../lib/task-chat-messages";
 import {
   type TaskChatMessageContext,
@@ -15,6 +14,12 @@ import {
 } from "./task-chat/TaskChatShared";
 import { TaskChatThreadView } from "./task-chat/TaskChatThreadView";
 
+/**
+ * Keeps Paperclip's task/comment behavior separate from the AI Elements view.
+ * The controller deliberately exposes plain data and callbacks: there is no
+ * assistant-ui runtime or second chat abstraction between PromptInput and the
+ * canonical task comment mutation.
+ */
 export function useTaskChatThreadController(props: TaskChatThreadProps) {
   const {
     comments,
@@ -66,9 +71,13 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     ownerUserId = null,
     onResumeFromBacklog,
     resumeFromBacklogPending = false,
+    activeRunIds: suppliedActiveRunIds,
+    hasOlderComments = false,
+    commentsLoadingOlder = false,
+    onLoadOlderComments,
   } = props;
-  const [replyTarget, setReplyTarget] = useState<TaskChatReplyTarget | null>(null);
 
+  const [replyTarget, setReplyTarget] = useState<TaskChatReplyTarget | null>(null);
   const [replyPending, setReplyPending] = useState(false);
 
   useEffect(() => {
@@ -80,12 +89,15 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     (target: TaskChatReplyTarget) => {
       if (replyPending) return;
       setReplyTarget(target);
-      composerRef && typeof composerRef === "object" && composerRef.current?.focus();
+      if (composerRef && typeof composerRef === "object") {
+        composerRef.current?.focus();
+      }
     },
     [composerRef, replyPending],
   );
 
-  const activeRunIds = useMemo(() => new Set<string>(), []);
+  const emptyActiveRunIds = useMemo(() => new Set<string>(), []);
+  const activeRunIds = suppliedActiveRunIds ?? emptyActiveRunIds;
 
   const rawMessages = useMemo(
     () =>
@@ -101,10 +113,8 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     [comments, timelineEvents, companyId, projectId, agentMap, currentUserId, userLabelMap],
   );
 
-  const stableMessagesRef = useRef<readonly ThreadMessage[]>([]);
-
+  const stableMessagesRef = useRef<readonly TaskChatMessage[]>([]);
   const stableMessageCacheRef = useRef<Map<string, StableThreadMessageCacheEntry>>(new Map());
-
   const messages = useMemo(() => {
     const stabilized = stabilizeThreadMessages(
       rawMessages,
@@ -115,8 +125,6 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     stableMessageCacheRef.current = stabilized.cache;
     return stabilized.messages;
   }, [rawMessages]);
-
-  const isRunning = hasActiveRun;
 
   const unresolvedBlockers = useMemo(
     () =>
@@ -129,27 +137,13 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
 
   const ownerAgent = useMemo(() => {
     if (!currentOwnerValue.startsWith("agent:")) return null;
-    const ownerAgentId = currentOwnerValue.slice("agent:".length);
-    return agentMap?.get(ownerAgentId) ?? null;
+    return agentMap?.get(currentOwnerValue.slice("agent:".length)) ?? null;
   }, [agentMap, currentOwnerValue]);
 
-  const runtime = usePaperclipTaskRuntime({
-    messages,
-    isRunning,
-    onSend: ({ body, ownerChange, mentionAgentId, replyToCommentId }) => {
-      return onAdd(body, ownerChange, mentionAgentId, replyToCommentId);
-    },
-    onCancel: onCancelRun,
-  });
-
   const stableOnStopRun = useStableEvent(onStopRun);
-
   const stableOnInterruptQueued = useStableEvent(onInterruptQueued);
-
   const stableOnCancelQueued = useStableEvent(onCancelQueued);
-
   const stableOnImageClick = useStableEvent(onImageClick);
-
   const stableOnUploadImage = useStableEvent(imageUploadHandler);
 
   const chatCtx = useMemo<TaskChatMessageContext>(
@@ -157,6 +151,7 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
       agentMap,
       currentUserId,
       userLabelMap,
+      userProfileMap,
       onStopRun: stableOnStopRun,
       stopRunLabel,
       stoppingRunLabel,
@@ -187,69 +182,68 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
   );
 
   const resolvedShowJumpToLatest = showJumpToLatest ?? variant === "full";
-
   const resolvedEmptyMessage =
     emptyMessage ??
     (variant === "embedded"
       ? "No run output yet."
       : "This task conversation is empty. Start with a message below.");
 
-  const previousErrorBoundaryMessagesRef = useRef<readonly ThreadMessage[] | null>(null);
-
+  const previousErrorBoundaryMessagesRef = useRef<readonly TaskChatMessage[] | null>(null);
   const errorBoundaryResetVersionRef = useRef(0);
-
   if (previousErrorBoundaryMessagesRef.current !== messages) {
     previousErrorBoundaryMessagesRef.current = messages;
     errorBoundaryResetVersionRef.current += 1;
   }
 
-  const errorBoundaryResetKey = String(errorBoundaryResetVersionRef.current);
-
   return {
-    hasActiveRun,
-    blockedBy,
-    liveTaskIds,
-    blockerAttention,
-    taskStatus,
+    activeRunIds,
     agentMap,
-    currentUserId,
-    userLabelMap,
-    imageUploadHandler,
-    onAttachImage,
-    draftKey,
-    enableOwnerChange,
-    ownerOptions,
-    currentOwnerValue,
-    suggestedOwnerValue,
-    mentions,
+    autoScrollToHashOnInitialLoad,
+    blockedBy,
+    blockerAttention,
+    chatCtx,
+    commentsLoadingOlder,
+    composerAccessory,
     composerDisabledReason,
     composerHint,
-    showComposer,
-    footer,
-    variant,
-    interruptingQueuedRunId,
-    stoppingRunId,
     composerRef,
-    composerAccessory,
-    taskWorkMode,
-    ownerUserId,
-    onResumeFromBacklog,
-    resumeFromBacklogPending,
-    replyTarget,
-    setReplyTarget,
-    replyPending,
-    setReplyPending,
-    activeRunIds,
+    currentOwnerValue,
+    currentUserId,
+    draftKey,
+    enableOwnerChange,
+    errorBoundaryResetKey: String(errorBoundaryResetVersionRef.current),
+    footer,
+    hasActiveRun,
+    hasOlderComments,
+    imageUploadHandler,
+    interruptingQueuedRunId,
+    liveTaskIds,
+    mentions,
     messages,
-    unresolvedBlockers,
-    ownerAgent,
-    runtime,
-    autoScrollToHashOnInitialLoad,
+    onAdd,
+    onAttachImage,
+    onCancelRun,
+    onLoadOlderComments,
     onRefreshLatestComments,
-    chatCtx,
-    resolvedShowJumpToLatest,
+    onResumeFromBacklog,
+    ownerAgent,
+    ownerOptions,
+    ownerUserId,
+    replyPending,
+    replyTarget,
     resolvedEmptyMessage,
-    errorBoundaryResetKey,
+    resolvedShowJumpToLatest,
+    resumeFromBacklogPending,
+    setReplyPending,
+    setReplyTarget,
+    showComposer,
+    stoppingRunId,
+    suggestedOwnerValue,
+    taskStatus,
+    taskWorkMode,
+    unresolvedBlockers,
+    userLabelMap,
+    variant,
   };
 }
 

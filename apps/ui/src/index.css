@@ -1,5 +1,14 @@
 @import "tailwindcss";
+@import "streamdown/styles.css";
+@import "katex/dist/katex.min.css";
 @plugin "@tailwindcss/typography";
+
+/* Streamdown and its plugins ship utility classes that Tailwind must scan. */
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/cjk/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+@source "../node_modules/@streamdown/math/dist/*.js";
+@source "../node_modules/@streamdown/mermaid/dist/*.js";
 
 @font-face {
   font-family: "InterVariable";

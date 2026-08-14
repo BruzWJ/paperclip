@@ -1,5 +1,7 @@
-import type { ThreadMessage } from "@assistant-ui/react";
+import type { TaskChatMessage } from "./task-chat-messages";
+import type { BoardTaskCommentGroupPage, BoardTaskRunSegmentPart } from "@paperclipai/shared";
 import { describe, expect, it } from "vitest";
+import { flattenBoardTaskCommentGroupPages } from "./optimistic-task-comments";
 import {
   buildTaskChatMessages,
   formatDurationWords,
@@ -8,9 +10,7 @@ import {
   type TaskChatComment,
 } from "./task-chat-messages";
 
-function comment(
-  overrides: Partial<TaskChatComment> = {},
-): TaskChatComment {
+function comment(overrides: Partial<TaskChatComment> = {}): TaskChatComment {
   return {
     id: "comment-1",
     companyId: "company-1",
@@ -27,7 +27,7 @@ function comment(
   };
 }
 
-function textOf(message: ThreadMessage) {
+function textOf(message: TaskChatMessage) {
   return message.content
     .filter((part) => part.type === "text")
     .map((part) => part.text)
@@ -35,6 +35,101 @@ function textOf(message: ThreadMessage) {
 }
 
 describe("buildTaskChatMessages", () => {
+  it("preserves ordered board run-segment text, reasoning, and tool parts", () => {
+    const parts = [
+      { type: "text", text: "Starting the investigation." },
+      { type: "reasoning", text: "I should inspect the failing check first." },
+      { type: "tool", name: "read_logs", status: "completed" },
+      { type: "text", text: "The failure is isolated." },
+      { type: "tool", name: "run_tests", status: "error" },
+    ] satisfies BoardTaskRunSegmentPart[];
+    const pages = [
+      {
+        groups: [
+          {
+            root: {
+              id: "root",
+              author: {
+                type: "user",
+                label: "Board user",
+                agentId: null,
+                userId: "user-1",
+                pluginKey: null,
+              },
+              body: "Please investigate",
+              presentation: null,
+              metadata: null,
+              sourceTrust: null,
+              runState: null,
+              canonicalSequence: 1,
+              immediateParentDisplayReference: null,
+              createdAt: new Date("2026-07-31T12:00:00.000Z"),
+              updatedAt: new Date("2026-07-31T12:00:00.000Z"),
+            },
+            replyCount: 0,
+            runSegmentCount: 1,
+            entries: [
+              {
+                kind: "run_segment",
+                id: "segment-1",
+                author: {
+                  type: "agent",
+                  label: "Agent",
+                  agentId: "agent-1",
+                  userId: null,
+                  pluginKey: null,
+                },
+                parts,
+                status: "error",
+                canonicalSequence: 2,
+                immediateParentDisplayReference: null,
+                createdAt: new Date("2026-07-31T12:01:00.000Z"),
+                updatedAt: new Date("2026-07-31T12:01:00.000Z"),
+              },
+            ],
+            entriesNextCursor: null,
+          },
+        ],
+        nextCursor: null,
+      },
+    ] satisfies BoardTaskCommentGroupPage[];
+    const comments = flattenBoardTaskCommentGroupPages(pages, {
+      companyId: "company-1",
+      taskId: "task-1",
+    });
+
+    expect(comments[1]).toMatchObject({
+      boardEntryKind: "run_segment",
+      boardRunSegmentParts: parts,
+      boardRunSegmentStatus: "error",
+    });
+
+    const messages = buildTaskChatMessages({ comments, timelineEvents: [] });
+    expect(messages[1]?.content).toEqual([
+      { type: "text", text: "Starting the investigation." },
+      { type: "reasoning", text: "I should inspect the failing check first." },
+      {
+        type: "tool-call",
+        toolCallId: "segment-1:tool:2",
+        toolName: "read_logs",
+        args: {},
+        argsText: "",
+      },
+      { type: "text", text: "The failure is isolated." },
+      {
+        type: "tool-call",
+        toolCallId: "segment-1:tool:4",
+        toolName: "run_tests",
+        args: {},
+        argsText: "",
+      },
+    ]);
+    expect(messages[1]?.metadata.custom).toMatchObject({
+      boardRunSegmentParts: parts,
+      boardRunSegmentStatus: "error",
+    });
+  });
+
   it("uses the canonical board projection order for grouped reply and run-progress rows", () => {
     const messages = buildTaskChatMessages({
       comments: [
@@ -81,12 +176,7 @@ describe("buildTaskChatMessages", () => {
       timelineEvents: [],
     });
 
-    expect(messages.map((message) => message.id)).toEqual([
-      "root",
-      "progress",
-      "reply-1",
-      "reply-2",
-    ]);
+    expect(messages.map((message) => message.id)).toEqual(["root", "progress", "reply-1", "reply-2"]);
     expect(textOf(messages[1]!)).toBe("Working…");
     expect(messages[1]).toMatchObject({
       role: "assistant",

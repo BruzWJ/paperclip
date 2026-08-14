@@ -1,109 +1,144 @@
-import { Button } from "@/components/ui/button";
-import { buildSystemNoticeProps } from "@/lib/system-notice-comment";
-import type { ThreadMessage } from "@assistant-ui/react";
-import { Check, Copy, Paperclip } from "lucide-react";
-import { useContext } from "react";
-import { MarkdownBody } from "../MarkdownBody";
-import { SystemNotice } from "../SystemNotice";
+import { Message, MessageContent, MessageResponse, MessageToolbar } from "@/components/ai-elements/message";
+import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
 import {
-  TaskChatCtx,
-  TaskChatImmediateParentLabel,
+  mapCommentMetadataToSystemNoticeSections,
+  systemNoticeLabelForTone,
+} from "@/lib/system-notice-comment";
+import { formatDateTime } from "@/lib/utils";
+import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
+import { Link } from "@tanstack/react-router";
+import { useContext } from "react";
+import type { TaskChatMessage } from "../../lib/task-chat-messages";
+
+import type { SystemNoticeMetadataRow } from "../SystemNotice";
+import { TaskChatMessageActionBar } from "./TaskChatMessageActionBar";
+import {
   getThreadMessageCopyText,
   isTaskCommentMetadata,
   isTaskCommentPresentation,
-  replyTargetForMessage,
+  TaskChatCtx,
 } from "./TaskChatShared";
-import { TaskChatReplyMenu, TaskChatTimestamp, useTaskChatCopy } from "./TaskChatMessagePrimitives";
+import { taskChatMessageCustom } from "./TaskChatMessageUtils";
 
 export interface SystemNoticeCommentRowProps {
-  message: ThreadMessage;
+  message: TaskChatMessage;
   anchorId?: string;
 }
 
-/** Renders a posted system notice with copy, permalink, and reply affordances. */
+function MetadataValue({ row, companyId }: { row: SystemNoticeMetadataRow; companyId: string }) {
+  if (row.kind === "text") return <span>{row.value}</span>;
+  if (row.kind === "code") return <code>{row.value}</code>;
+  if (row.kind === "task") {
+    const label = [row.identifier ?? "Task unavailable", row.title].filter(Boolean).join(" — ");
+    return row.link && row.taskNumber !== null ? (
+      <Link to="/$companyId/tasks/$taskNumber" params={{ companyId, taskNumber: String(row.taskNumber) }}>
+        {label}
+      </Link>
+    ) : (
+      <span>{label}</span>
+    );
+  }
+  if (row.kind === "agent") {
+    return row.agentId ? (
+      <Link to="/$companyId/agents/$agentId" params={{ companyId, agentId: row.agentId }}>
+        {row.name}
+      </Link>
+    ) : (
+      <span>{row.name}</span>
+    );
+  }
+  return row.agentId ? (
+    <Link
+      to="/$companyId/agents/$agentId/runs/$runId"
+      params={{ companyId, agentId: row.agentId, runId: row.runId }}
+    >
+      {row.status ? `${row.status} · ` : ""}
+      {row.runId}
+    </Link>
+  ) : (
+    <span>
+      {row.status ? `${row.status} · ` : ""}
+      {row.runId}
+    </span>
+  );
+}
+
+/** A system-authored transcript entry composed only from AI Elements surfaces. */
 export function SystemNoticeCommentRow({ message, anchorId }: SystemNoticeCommentRowProps) {
-  const { onImageClick, agentMap, onReply } = useContext(TaskChatCtx);
-  const custom = message.metadata.custom as Record<string, unknown>;
+  const { agentMap, onImageClick } = useContext(TaskChatCtx);
+  const routeCompanyId = useCompanyRouteId();
+  const custom = taskChatMessageCustom(message);
   const presentation = isTaskCommentPresentation(custom.presentation) ? custom.presentation : null;
-  const commentMetadata = isTaskCommentMetadata(custom.commentMetadata) ? custom.commentMetadata : null;
+  const metadata = isTaskCommentMetadata(custom.commentMetadata) ? custom.commentMetadata : null;
+  const tone = presentation?.tone ?? "neutral";
+  const label = systemNoticeLabelForTone(tone, presentation?.title);
+  const body = getThreadMessageCopyText(message);
   const runAgentId = typeof custom.runAgentId === "string" ? custom.runAgentId : null;
-  const runAgent = runAgentId ? (agentMap?.get(runAgentId) ?? null) : null;
-  const runAgentRef = runAgent?.id ?? null;
   const runId = typeof custom.runId === "string" ? custom.runId : null;
-  const authorType = typeof custom.authorType === "string" ? custom.authorType : null;
-  const authorName = typeof custom.authorName === "string" ? custom.authorName : null;
-  const bodyText = getThreadMessageCopyText(message);
-  const { copied, copy } = useTaskChatCopy("Unable to copy system notice");
-  const { copied: copiedLink, copy: copyLink } = useTaskChatCopy("Unable to copy system notice link");
-  const replyTarget = replyTargetForMessage(message, authorName ?? "Paperclip");
-
-  const runAgentName = runAgent?.name ?? null;
-  const source =
-    authorType === "system"
-      ? runAgentRef && runId
-        ? { label: runAgentName ?? "Paperclip", agentId: runAgentRef, runId }
-        : { label: runAgentName ?? "Paperclip" }
-      : runAgentRef && runId
-        ? {
-            label: authorName ?? runAgentName ?? "Paperclip",
-            agentId: runAgentRef,
-            runId,
-          }
-        : authorName
-          ? { label: authorName }
-          : undefined;
-
-  const noticeProps = buildSystemNoticeProps({
-    presentation,
-    metadata: commentMetadata,
-    body: (
-      <MarkdownBody className="text-sm leading-6" softBreaks onImageClick={onImageClick}>
-        {bodyText}
-      </MarkdownBody>
-    ),
-    timestamp: message.createdAt ? new Date(message.createdAt).toISOString() : undefined,
-    source,
-    runAgentId: runAgentRef,
-  });
-
-  const handleCopyLink = () => {
-    if (!anchorId || typeof window === "undefined") return;
-    const url = `${window.location.origin}${window.location.pathname}#${anchorId}`;
-    copyLink(url);
-  };
+  const runAgent = runAgentId ? agentMap?.get(runAgentId) : null;
+  const companyId = routeCompanyId;
+  const sections = mapCommentMetadataToSystemNoticeSections(metadata, { runAgentId });
+  const sourceLabel = runAgent?.name ?? "Paperclip";
 
   return (
-    <div id={anchorId} className="group">
-      <div className="py-1">
-        <TaskChatImmediateParentLabel custom={custom} />
-        <SystemNotice {...noticeProps} />
-        <div className="mt-1 flex items-center justify-end gap-1.5 px-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <TaskChatTimestamp anchorId={anchorId} createdAt={message.createdAt} />
-          {anchorId ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              title="Copy link"
-              aria-label="Copy link to system notice"
-              onClick={handleCopyLink}
+    <Message from="assistant" role="status" aria-label={label}>
+      <MessageContent
+        onClick={(event) => {
+          const target = event.target;
+          if (target instanceof HTMLImageElement && target.src) onImageClick?.(target.src);
+        }}
+      >
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span>{label}</span>
+          <span aria-hidden="true">·</span>
+          {runAgent && runId ? (
+            <Link
+              to="/$companyId/agents/$agentId/runs/$runId"
+              params={{ companyId, agentId: runAgent.id, runId }}
             >
-              {copiedLink ? <Check className="h-3.5 w-3.5" /> : <Paperclip className="h-3.5 w-3.5" />}
-            </Button>
+              {sourceLabel}
+            </Link>
+          ) : (
+            <span>{sourceLabel}</span>
+          )}
+          {message.createdAt ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{formatDateTime(message.createdAt)}</span>
+            </>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            title="Copy notice text"
-            aria-label="Copy system notice"
-            onClick={() => copy(bodyText)}
-          >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          </Button>
-          <TaskChatReplyMenu replyTarget={replyTarget} onReply={onReply} />
         </div>
-      </div>
-    </div>
+        <MessageResponse>{body}</MessageResponse>
+
+        {sections.length > 0 ? (
+          <Task defaultOpen={presentation?.detailsDefaultOpen ?? false}>
+            <TaskTrigger title="Details">
+              <button type="button" className="text-sm text-muted-foreground">
+                Details
+              </button>
+            </TaskTrigger>
+            <TaskContent>
+              {sections.flatMap((section, sectionIndex) =>
+                section.rows.map((row, rowIndex) => (
+                  <TaskItem key={`${sectionIndex}:${rowIndex}`}>
+                    {section.title ? `${section.title} · ` : ""}
+                    {row.label}: <MetadataValue row={row} companyId={companyId} />
+                  </TaskItem>
+                )),
+              )}
+            </TaskContent>
+          </Task>
+        ) : null}
+      </MessageContent>
+      <MessageToolbar>
+        <TaskChatMessageActionBar
+          message={message}
+          authorLabel={sourceLabel}
+          anchorId={anchorId}
+          copyLabel="Copy system notice"
+          linkLabel="Copy link to system notice"
+        />
+      </MessageToolbar>
+    </Message>
   );
 }

@@ -1,117 +1,98 @@
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import type { ThreadMessage } from "@assistant-ui/react";
-import { Link } from "@tanstack/react-router";
-import { Check, Copy, MoreHorizontal, PauseCircle, Reply as ReplyIcon, Search, Square } from "lucide-react";
-import { TaskChatTimestamp } from "./TaskChatMessagePrimitives";
-import type { TaskChatReplyTarget } from "./TaskChatShared";
+import { MessageAction, MessageActions } from "@/components/ai-elements/message";
+import { copyTextToClipboard } from "@/lib/clipboard";
+import { CheckIcon, CopyIcon, LinkIcon, ReplyIcon, SquareIcon } from "lucide-react";
+import { useContext, useState } from "react";
+import { toast } from "sonner";
+import type { TaskChatMessage } from "../../lib/task-chat-messages";
+
+import { getThreadMessageCopyText, replyTargetForMessage, TaskChatCtx } from "./TaskChatShared";
+import { taskChatMessageCustom } from "./TaskChatMessageUtils";
 
 export interface TaskChatMessageActionBarProps {
-  message: ThreadMessage;
-  anchorId?: string;
-  copied: boolean;
-  onCopy: () => void;
-  replyTarget: TaskChatReplyTarget | null;
-  onReply?: (target: TaskChatReplyTarget) => void;
-  canStopRun: boolean;
-  runId: string | null;
-  runAgentRef: string | null;
-  companyId: string;
-  isStoppingRun: boolean;
-  onStopRun?: (runId: string) => Promise<void>;
-  stopRunLabel: string;
-  stoppingRunLabel: string;
-  stopRunVariant: "stop" | "pause";
+  message: TaskChatMessage;
+  authorLabel: string;
+  anchorId?: string | null;
+  copyLabel?: string;
+  linkLabel?: string;
+  isRunActive?: boolean;
+  isStoppingRun?: boolean;
 }
 
-/** Shared copy, reply, run-control, and permalink actions for agent messages. */
 export function TaskChatMessageActionBar({
   message,
+  authorLabel,
   anchorId,
-  copied,
-  onCopy,
-  replyTarget,
-  onReply,
-  canStopRun,
-  runId,
-  runAgentRef,
-  companyId,
-  isStoppingRun,
-  onStopRun,
-  stopRunLabel,
-  stoppingRunLabel,
-  stopRunVariant,
+  copyLabel = "Copy message",
+  linkLabel = "Copy link to message",
+  isRunActive = false,
+  isStoppingRun = false,
 }: TaskChatMessageActionBarProps) {
+  const {
+    onReply,
+    onStopRun,
+    stopRunLabel = "Stop run",
+    stoppingRunLabel = "Stopping…",
+  } = useContext(TaskChatCtx);
+  const [copiedText, setCopiedText] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const custom = taskChatMessageCustom(message);
+  const runId = typeof custom.runId === "string" ? custom.runId : null;
+  const replyTarget = replyTargetForMessage(message, authorLabel);
+
+  async function copy(value: string, kind: "text" | "link") {
+    try {
+      await copyTextToClipboard(value);
+      if (kind === "text") setCopiedText(true);
+      else setCopiedLink(true);
+      window.setTimeout(() => {
+        if (kind === "text") setCopiedText(false);
+        else setCopiedLink(false);
+      }, 2000);
+    } catch (error) {
+      toast.error("Copy failed", {
+        description: error instanceof Error ? error.message : "Unable to copy this message",
+      });
+    }
+  }
+
   return (
-    <div className="mt-2 flex items-center gap-1">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        title="Copy message"
-        aria-label="Copy message"
-        onClick={onCopy}
+    <MessageActions>
+      <MessageAction
+        tooltip={copyLabel}
+        label={copyLabel}
+        aria-label={copyLabel}
+        onClick={() => void copy(getThreadMessageCopyText(message), "text")}
       >
-        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      </Button>
-      <TaskChatTimestamp anchorId={anchorId} createdAt={message.createdAt} />
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="text-muted-foreground hover:text-foreground"
-            title="More actions"
-            aria-label="More actions"
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={onCopy}>
-            <Copy className="mr-2 h-3.5 w-3.5" />
-            Copy message
-          </DropdownMenuItem>
-          {replyTarget && onReply ? (
-            <DropdownMenuItem onSelect={() => onReply(replyTarget)}>
-              <ReplyIcon className="mr-2 h-3.5 w-3.5" />
-              Reply
-            </DropdownMenuItem>
-          ) : null}
-          {canStopRun && onStopRun && runId ? (
-            <DropdownMenuItem
-              disabled={isStoppingRun}
-              variant="destructive"
-              onSelect={() => void onStopRun(runId)}
-            >
-              {stopRunVariant === "pause" ? (
-                <PauseCircle className="mr-2 h-3.5 w-3.5" />
-              ) : (
-                <Square className="mr-2 h-3.5 w-3.5 fill-current" />
-              )}
-              {isStoppingRun ? stoppingRunLabel : stopRunLabel}
-            </DropdownMenuItem>
-          ) : null}
-          {runId && runAgentRef ? (
-            <DropdownMenuItem asChild>
-              <Link
-                to="/$companyId/agents/$agentId/runs/$runId"
-                params={{ companyId, agentId: runAgentRef, runId }}
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                <Search className="mr-2 h-3.5 w-3.5" />
-                View run
-              </Link>
-            </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+        {copiedText ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
+      </MessageAction>
+      {anchorId ? (
+        <MessageAction
+          tooltip={linkLabel}
+          label={linkLabel}
+          aria-label={linkLabel}
+          onClick={() =>
+            void copy(`${window.location.origin}${window.location.pathname}#${anchorId}`, "link")
+          }
+        >
+          {copiedLink ? <CheckIcon className="size-4" /> : <LinkIcon className="size-4" />}
+        </MessageAction>
+      ) : null}
+      {replyTarget && onReply ? (
+        <MessageAction tooltip="Reply" label="Reply" aria-label="Reply" onClick={() => onReply(replyTarget)}>
+          <ReplyIcon className="size-4" />
+        </MessageAction>
+      ) : null}
+      {isRunActive && runId && onStopRun ? (
+        <MessageAction
+          tooltip={isStoppingRun ? stoppingRunLabel : stopRunLabel}
+          label={isStoppingRun ? stoppingRunLabel : stopRunLabel}
+          aria-label={isStoppingRun ? stoppingRunLabel : stopRunLabel}
+          disabled={isStoppingRun}
+          onClick={() => void onStopRun(runId)}
+        >
+          <SquareIcon className="size-4" />
+        </MessageAction>
+      ) : null}
+    </MessageActions>
   );
 }

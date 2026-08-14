@@ -1,4 +1,3 @@
-import type { TextMessagePart, ThreadMessage } from "@assistant-ui/react";
 import type {
   Agent,
   SourceTrustMetadata,
@@ -12,14 +11,16 @@ import type {
 import { createContext, useLayoutEffect, useMemo, useRef, type ReactNode, type Ref } from "react";
 import type { CompanyUserProfile } from "../../lib/company-members";
 import { type ComposerOwnerPreview } from "../../lib/owner-transition";
-import { type TaskChatComment } from "../../lib/task-chat-messages";
+import { type TaskChatComment, type TaskChatMessage } from "../../lib/task-chat-messages";
 import { type TaskTimelineEvent } from "../../lib/task-timeline-events";
 import type { EntityOption } from "@/lib/entity-selector";
 import { type MentionOption } from "../MarkdownEditor";
 /** Returns the plain-text content used by message copy and reply previews. */
-export function getThreadMessageCopyText(message: ThreadMessage): string {
+export function getThreadMessageCopyText(message: TaskChatMessage): string {
   return message.content
-    .filter((part): part is TextMessagePart => part.type === "text")
+    .filter(
+      (part): part is Extract<(typeof message.content)[number], { type: "text" }> => part.type === "text",
+    )
     .map((part) => part.text)
     .join("\n\n");
 }
@@ -70,7 +71,7 @@ export function truncateReplyPreview(text: string): string {
 }
 
 export function replyTargetForMessage(
-  message: ThreadMessage,
+  message: TaskChatMessage,
   authorLabel: string,
 ): TaskChatReplyTarget | null {
   const custom = message.metadata.custom as Record<string, unknown>;
@@ -82,22 +83,6 @@ export function replyTargetForMessage(
     preview: truncateReplyPreview(getThreadMessageCopyText(message)),
   };
 }
-
-export function TaskChatImmediateParentLabel({ custom }: { custom: Record<string, unknown> }) {
-  const value = custom.immediateParentDisplayReference;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const reference = value as Record<string, unknown>;
-  if (typeof reference.authorLabel !== "string" || typeof reference.excerpt !== "string") return null;
-  return (
-    <div className="mb-1 ml-2 max-w-(--pct-85) border-l-2 border-border pl-2 text-xs text-muted-foreground">
-      <span className="font-medium text-foreground/80">{reference.authorLabel}</span>
-      <span aria-hidden> · </span>
-      <span>{reference.excerpt}</span>
-    </div>
-  );
-}
-
-export const AGENT_COMMENT_BUBBLE_WIDTH_CLASS = "max-w-(--sz-calc-7) sm:max-w-(--pct-85)";
 
 export interface TaskChatReplyTarget {
   commentId: string;
@@ -131,39 +116,6 @@ export function canStopTaskChatRun(args: {
   return runStatus === "queued" || runStatus === "running";
 }
 
-export function findCoTSegmentIndex(
-  messageParts: ReadonlyArray<{ type: string }>,
-  cotParts: ReadonlyArray<{ type: string }>,
-): number {
-  if (cotParts.length === 0) return -1;
-  const firstPart = cotParts[0];
-  let segIdx = -1;
-  let inCoT = false;
-  for (const part of messageParts) {
-    if (part.type === "reasoning" || part.type === "tool-call") {
-      if (!inCoT) {
-        segIdx++;
-        inCoT = true;
-      }
-      if (part === firstPart) return segIdx;
-    } else {
-      inCoT = false;
-    }
-  }
-  return -1;
-}
-
-export function countCoTSegments(parts: ReadonlyArray<{ type: string }>) {
-  let count = 0;
-  let inSegment = false;
-  for (const part of parts) {
-    const isCoT = part.type === "reasoning" || part.type === "tool-call";
-    if (isCoT && !inSegment) count += 1;
-    inSegment = isCoT;
-  }
-  return count;
-}
-
 export function useStableEvent<T extends (...args: never[]) => unknown>(
   callback: T | undefined,
 ): T | undefined {
@@ -192,9 +144,16 @@ export function shouldRenderComposerOwnerPreview(body: string, preview: Composer
 export interface TaskChatComposerHandle {
   focus: () => void;
   restoreDraft: (submittedBody: string) => void;
+  setDraft: (body: string) => void;
 }
 
 export interface TaskChatComposerProps {
+  onSubmit: (
+    body: string,
+    ownerChange?: CommentOwnerChange,
+    mentionAgentId?: string,
+    replyToCommentId?: string,
+  ) => Promise<void>;
   onImageUpload?: (file: File) => Promise<string>;
   onAttachImage?: (file: File) => Promise<TaskAttachment | void>;
   draftKey?: string;
@@ -221,6 +180,7 @@ export interface TaskChatThreadProps {
   comments: TaskChatComment[];
   timelineEvents?: TaskTimelineEvent[];
   hasActiveRun?: boolean;
+  activeRunIds?: ReadonlySet<string>;
   taskId?: string | null;
   blockedBy?: TaskRelationTaskSummary[];
   /** Company-wide set of task ids with a live (queued/running) run. */
@@ -260,6 +220,9 @@ export interface TaskChatThreadProps {
   composerHint?: string | null;
   showComposer?: boolean;
   showJumpToLatest?: boolean;
+  hasOlderComments?: boolean;
+  commentsLoadingOlder?: boolean;
+  onLoadOlderComments?: () => Promise<unknown> | void;
   autoScrollToHashOnInitialLoad?: boolean;
   emptyMessage?: string;
   footer?: ReactNode;

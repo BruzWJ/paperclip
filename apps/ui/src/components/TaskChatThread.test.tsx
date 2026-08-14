@@ -12,7 +12,7 @@ describe("TaskChatThread canonical run helpers", () => {
       new URL("./task-chat/useTaskChatComposerController.ts", import.meta.url),
       "utf8",
     );
-    expect(source.match(/if \(!body\.trim\(\) \|\| isSubmitting\) return;/g)).toHaveLength(2);
+    expect(source.match(/if \(\(!body\.trim\(\)/g)).toHaveLength(2);
     expect(source).toContain("const submittedBody = body;");
     expect(source).not.toContain("const submittedBody = body.trim();");
     expect(source).not.toContain("const submittedBody = trimmed;");

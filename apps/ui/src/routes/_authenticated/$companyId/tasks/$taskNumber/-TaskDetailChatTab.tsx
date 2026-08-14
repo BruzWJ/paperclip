@@ -1,12 +1,11 @@
 import { activityApi } from "@/api/activity";
 import { tasksApi } from "@/api/tasks";
 import { ApprovalCard } from "@/components/ApprovalCard";
+import { TaskChatConfirmation } from "@/components/task-chat/TaskChatConfirmation";
 import { TaskReferenceActivitySummary } from "@/components/TaskReferenceActivitySummary";
 import { TaskRunLedger } from "@/components/TaskRunLedger";
 import { TaskChatThread } from "@/components/TaskChatThread";
-import { TaskMonitorComposerStrip, hasVisibleMonitorSurface } from "@/components/TaskMonitorBanner";
 import { TaskSiblingNavigation } from "@/components/TaskSiblingNavigation";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Item, ItemContent, ItemHeader } from "@/components/ui/item";
 import { formatTaskActivityAction } from "@/lib/activity-format";
@@ -33,6 +32,7 @@ import { useTaskDetailPage } from "./-TaskDetailPageContext";
 export const TaskDetailChatTab = memo(function TaskDetailChatTab() {
   const {
     agentMap,
+    approvalDecision,
     activeTaskRuns: activeRuns,
     commentComposerRef,
     commentOwnerOptions,
@@ -53,6 +53,7 @@ export const TaskDetailChatTab = memo(function TaskDetailChatTab() {
     locallyQueuedCommentRunIds,
     location,
     mentionOptions,
+    pendingApprovalAction,
     refetchLatestComments,
     resolvedTaskDetailState,
     siblingNavigation,
@@ -69,6 +70,15 @@ export const TaskDetailChatTab = memo(function TaskDetailChatTab() {
     queryFn: () => activityApi.forTask(taskId),
     placeholderData: keepPreviousDataForSameQueryTail<ActivityEvent[]>(taskId),
   });
+  const { data: linkedApprovals } = useQuery({
+    queryKey: queryKeys.tasks.approvals(taskId),
+    queryFn: () => tasksApi.listApprovals(taskId),
+    placeholderData:
+      keepPreviousDataForSameQueryTail<Awaited<ReturnType<typeof tasksApi.listApprovals>>>(taskId),
+  });
+  const unresolvedApprovals = (linkedApprovals ?? []).filter(
+    (approval) => approval.status === "pending" || approval.status === "revision_requested",
+  );
   const resolvedActivity = activity ?? [];
   const interruptibleTaskRun = resolveInterruptibleTaskRun(activeRuns);
   const activeRunIds = useMemo(() => new Set(activeRuns.map((run) => run.id)), [activeRuns]);
@@ -87,72 +97,74 @@ export const TaskDetailChatTab = memo(function TaskDetailChatTab() {
   const timelineEvents = useMemo(() => extractTaskTimelineEvents(resolvedActivity), [resolvedActivity]);
 
   return (
-    <div className="space-y-3">
-      {hasOlderComments ? (
-        <div className="flex justify-center">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={commentsLoadingOlder}
-            onClick={loadOlderComments}
-          >
-            {commentsLoadingOlder ? "Loading earlier comments..." : "Load earlier comments"}
-          </Button>
-        </div>
-      ) : null}
-      <ThreadComponent
-        composerRef={commentComposerRef}
-        composerAccessory={
-          hasVisibleMonitorSurface(task) || humanLifecycleFormControls ? (
-            <div className="flex flex-col gap-2">
-              {hasVisibleMonitorSurface(task) ? <TaskMonitorComposerStrip task={task} /> : null}
-              {humanLifecycleFormControls}
-            </div>
-          ) : null
-        }
-        comments={commentsWithRunMeta}
-        timelineEvents={timelineEvents}
-        hasActiveRun={activeRuns.length > 0}
-        taskId={taskId}
-        blockedBy={task.blockedBy ?? []}
-        liveTaskIds={liveTaskIds}
-        blockerAttention={task.blockerAttention ?? null}
-        companyId={task.companyId}
-        projectId={task.projectId ?? null}
-        taskStatus={task.boardPresentationStatus}
-        agentMap={agentMap}
-        currentUserId={currentUserId}
-        userLabelMap={userLabelMap}
-        userProfileMap={userProfileMap}
-        draftKey={`paperclip:task-comment-draft:${task.id}`}
-        enableOwnerChange
-        ownerOptions={commentOwnerOptions}
-        currentOwnerValue={currentOwnerValue}
-        suggestedOwnerValue={suggestedOwnerValue}
-        mentions={mentionOptions}
-        composerDisabledReason={
-          isUserCreatorWithdrawalOwner ? "This task is withdrawn; finish its cancellation above." : null
-        }
-        composerHint={composerHint}
-        onAdd={handleChatAdd}
-        onLoadMoreCommentGroup={loadMoreCommentGroup}
-        imageUploadHandler={handleCommentImageUpload}
-        onAttachImage={handleCommentAttachImage}
-        taskWorkMode={task.workMode ?? "standard"}
-        onImageClick={handleChatImageClick}
-        onRefreshLatestComments={refetchLatestComments}
-        ownerUserId={task.ownerUserId ?? null}
-        footer={
-          siblingNavigation ? (
-            <TaskSiblingNavigation
-              navigation={siblingNavigation}
-              linkState={resolvedTaskDetailState ?? location.state}
-            />
-          ) : null
-        }
-      />
-    </div>
+    <ThreadComponent
+      composerRef={commentComposerRef}
+      composerAccessory={
+        unresolvedApprovals.length > 0 || humanLifecycleFormControls ? (
+          <div className="space-y-3">
+            {unresolvedApprovals.map((approval) => (
+              <TaskChatConfirmation
+                key={approval.id}
+                approval={approval}
+                requesterAgent={
+                  approval.requestedByAgentId ? (agentMap.get(approval.requestedByAgentId) ?? null) : null
+                }
+                onDecision={approvalDecision.mutate}
+                isPending={pendingApprovalAction?.approvalId === approval.id}
+                pendingAction={
+                  pendingApprovalAction?.approvalId === approval.id ? pendingApprovalAction.action : null
+                }
+              />
+            ))}
+            {humanLifecycleFormControls}
+          </div>
+        ) : null
+      }
+      comments={commentsWithRunMeta}
+      timelineEvents={timelineEvents}
+      hasActiveRun={activeRuns.length > 0}
+      activeRunIds={activeRunIds}
+      hasOlderComments={hasOlderComments}
+      commentsLoadingOlder={commentsLoadingOlder}
+      onLoadOlderComments={loadOlderComments}
+      taskId={taskId}
+      blockedBy={task.blockedBy ?? []}
+      liveTaskIds={liveTaskIds}
+      blockerAttention={task.blockerAttention ?? null}
+      companyId={task.companyId}
+      projectId={task.projectId ?? null}
+      taskStatus={task.boardPresentationStatus}
+      agentMap={agentMap}
+      currentUserId={currentUserId}
+      userLabelMap={userLabelMap}
+      userProfileMap={userProfileMap}
+      draftKey={`paperclip:task-comment-draft:${task.id}`}
+      enableOwnerChange
+      ownerOptions={commentOwnerOptions}
+      currentOwnerValue={currentOwnerValue}
+      suggestedOwnerValue={suggestedOwnerValue}
+      mentions={mentionOptions}
+      composerDisabledReason={
+        isUserCreatorWithdrawalOwner ? "This task is withdrawn; finish its cancellation above." : null
+      }
+      composerHint={composerHint}
+      onAdd={handleChatAdd}
+      onLoadMoreCommentGroup={loadMoreCommentGroup}
+      imageUploadHandler={handleCommentImageUpload}
+      onAttachImage={handleCommentAttachImage}
+      taskWorkMode={task.workMode ?? "standard"}
+      onImageClick={handleChatImageClick}
+      onRefreshLatestComments={refetchLatestComments}
+      ownerUserId={task.ownerUserId ?? null}
+      footer={
+        siblingNavigation ? (
+          <TaskSiblingNavigation
+            navigation={siblingNavigation}
+            linkState={resolvedTaskDetailState ?? location.state}
+          />
+        ) : null
+      }
+    />
   );
 });
 

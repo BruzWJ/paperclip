@@ -3,6 +3,7 @@ import type {
   BoardTaskCommentGroupPage,
   BoardTaskCommentParentReference,
   BoardTaskRunSegmentEntry,
+  BoardTaskRunSegmentPart,
   BoardTaskThreadEntry,
   Task,
   TaskCommentAuthorType,
@@ -34,6 +35,8 @@ export interface ClientTaskComment {
   canonicalSequence?: number;
   immediateParentDisplayReference?: BoardTaskCommentParentReference | null;
   boardEntryKind?: "comment" | "run_segment";
+  boardRunSegmentParts?: readonly BoardTaskRunSegmentPart[];
+  boardRunSegmentStatus?: BoardTaskRunSegmentEntry["status"];
   boardGroupRootId?: string;
   boardIsRoot?: boolean;
   boardOrder?: number;
@@ -213,6 +216,8 @@ function boardRunSegmentToClient(
     canonicalSequence: segment.canonicalSequence,
     immediateParentDisplayReference: segment.immediateParentDisplayReference,
     boardEntryKind: "run_segment",
+    boardRunSegmentParts: segment.parts,
+    boardRunSegmentStatus: segment.status,
     boardGroupRootId: placement.rootId,
     boardIsRoot: false,
     boardOrder: placement.order,

@@ -1,254 +1,285 @@
-import { Spinner } from "@/components/ui/spinner";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
 import {
   Attachment,
-  AttachmentContent,
-  AttachmentDescription,
-  AttachmentGroup,
-  AttachmentMedia,
-  AttachmentTitle,
-} from "@/components/ui/attachment";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item";
-import { EntityCombobox } from "@/components/patterns/EntityCombobox";
-import { AlertTriangle, Check, Reply as ReplyIcon, X } from "lucide-react";
-import { forwardRef } from "react";
-import { cn } from "../../lib/utils";
-import { AgentIcon } from "../AgentIconPicker";
-import { MarkdownEditor } from "../MarkdownEditor";
-import { ComposerMentionCoach, ComposerOwnerPreviewRow } from "../owner-transition/OwnerTransitionViews";
+  AttachmentInfo,
+  AttachmentPreview,
+  AttachmentRemove,
+  Attachments,
+} from "@/components/ai-elements/attachments";
+import {
+  PromptInput,
+  PromptInputActionAddAttachments,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuTrigger,
+  PromptInputBody,
+  PromptInputButton,
+  PromptInputCommand,
+  PromptInputCommandEmpty,
+  PromptInputCommandGroup,
+  PromptInputCommandInput,
+  PromptInputCommandItem,
+  PromptInputCommandList,
+  PromptInputFooter,
+  PromptInputHeader,
+  PromptInputSelect,
+  PromptInputSelectContent,
+  PromptInputSelectItem,
+  PromptInputSelectTrigger,
+  PromptInputSelectValue,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputTools,
+  usePromptInputAttachments,
+} from "@/components/ai-elements/prompt-input";
+import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
+import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
+import {
+  BotIcon,
+  FolderKanbanIcon,
+  ListTodoIcon,
+  PaperclipIcon,
+  ReplyIcon,
+  UserIcon,
+  XIcon,
+} from "lucide-react";
+import { forwardRef, useState } from "react";
 
+import type { MentionOption } from "../MarkdownEditor";
 import {
   shouldRenderComposerOwnerPreview,
   type TaskChatComposerHandle,
   type TaskChatComposerProps,
 } from "./TaskChatShared";
-
-import { formatAttachmentSize } from "./TaskChatMessageUtils";
 import { useTaskChatComposerController } from "./useTaskChatComposerController";
+
+function PromptAttachments() {
+  const attachments = usePromptInputAttachments();
+  if (attachments.files.length === 0) return null;
+  return (
+    <Attachments variant="inline">
+      {attachments.files.map((file) => (
+        <Attachment key={file.id} data={file} onRemove={() => attachments.remove(file.id)}>
+          <AttachmentPreview />
+          <AttachmentInfo />
+          <AttachmentRemove />
+        </Attachment>
+      ))}
+    </Attachments>
+  );
+}
+
+function ComposerSubmit({
+  body,
+  disabled,
+  isSubmitting,
+}: {
+  body: string;
+  disabled: boolean;
+  isSubmitting: boolean;
+}) {
+  const attachments = usePromptInputAttachments();
+  return (
+    <PromptInputSubmit
+      status={isSubmitting ? "submitted" : undefined}
+      disabled={disabled || isSubmitting || (!body.trim() && attachments.files.length === 0)}
+    />
+  );
+}
+
+function mentionIcon(kind: MentionOption["kind"]) {
+  if (kind === "agent") return BotIcon;
+  if (kind === "project") return FolderKanbanIcon;
+  if (kind === "task") return ListTodoIcon;
+  return UserIcon;
+}
+
+function mentionLabel(mention: MentionOption) {
+  return mention.kind === "task" ? mention.taskIdentifier : `@${mention.name}`;
+}
 
 export function TaskChatComposerView(props: ReturnType<typeof useTaskChatComposerController>) {
   const {
-    onImageUpload,
-    enableOwnerChange,
-    ownerOptions,
-    mentions,
-    agentMap,
+    attachmentError,
+    body,
+    canAcceptFiles,
+    coachAgentName,
+    coachVisible,
+    composerContainerRef,
     composerDisabledReason,
     composerHint,
-    replyTarget,
-    onClearReply,
-    body,
-    setBody,
-    isSubmitting,
-    attaching,
-    composerAttachments,
-    ownerTarget,
-    setOwnerTarget,
-    setDismissedCoachToken,
-    resolvedTaskWorkMode,
-    ownerTriggerRef,
-    editorRef,
-    composerContainerRef,
-    canAcceptFiles,
+    enableOwnerChange,
     handleSubmit,
-    handleDroppedFiles,
-    ownerResolvers,
-    plainNameCandidate,
-    ownerPreview,
-    coachVisible,
-    coachAgentName,
     insertCoachMention,
+    insertMention,
+    isSubmitting,
+    mentions,
+    onClearReply,
+    ownerOptions,
+    ownerPreview,
+    ownerTarget,
+    ownerTriggerRef,
+    plainNameCandidate,
+    replyTarget,
+    resolvedTaskWorkMode,
+    setAttachmentError,
+    setBody,
+    setDismissedCoachToken,
+    setOwnerTarget,
+    textareaRef,
   } = props;
-  if (composerDisabledReason) {
-    return (
-      <Alert>
-        <AlertDescription>{composerDisabledReason}</AlertDescription>
-      </Alert>
-    );
-  }
+  const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
+
   return (
-    <Card
-      ref={composerContainerRef}
-      data-testid="task-chat-composer"
-      data-pending-work-mode={resolvedTaskWorkMode}
-      className="relative gap-0 rounded-md border-border/70 bg-background/95 p-(--sz-15px) shadow-(--shadow-extract-4) backdrop-blur transition-(--tp-border-color-background-color-box-shadow) duration-150 supports-[backdrop-filter]:bg-background/85 dark:shadow-(--shadow-extract-5)"
-    >
-      {replyTarget ? (
-        <Item
-          data-testid="task-chat-reply-target"
-          variant="muted"
-          size="sm"
-          className="mb-2 min-w-0 flex-nowrap px-2.5 py-2"
-          aria-label={`Replying to ${replyTarget.authorLabel}`}
-        >
-          <ItemMedia>
-            <ReplyIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          </ItemMedia>
-          <ItemContent className="min-w-0 truncate text-xs">
-            <ItemTitle className="inline text-xs">{replyTarget.authorLabel}</ItemTitle>
-            <span className="text-muted-foreground"> · {replyTarget.preview}</span>
-          </ItemContent>
-          <ItemActions>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              disabled={isSubmitting}
-              onClick={onClearReply}
-              aria-label="Cancel reply"
-              title="Cancel reply"
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </ItemActions>
-        </Item>
-      ) : null}
-
-      <MarkdownEditor
-        ref={editorRef}
-        value={body}
-        onChange={setBody}
-        placeholder="Reply"
-        mentions={replyTarget ? [] : mentions}
-        onSubmit={handleSubmit}
-        readOnly={isSubmitting}
-        imageUploadHandler={onImageUpload}
-        fileDropTarget="parent"
-        bordered={false}
-        contentClassName="max-h-(--sz-28dvh) overflow-y-auto pr-1 pb-2 text-sm scrollbar-auto-hide"
-      />
-
+    <div ref={composerContainerRef} data-testid="task-chat-composer">
       {coachVisible && plainNameCandidate ? (
-        <div className="mt-2">
-          <ComposerMentionCoach
-            candidate={plainNameCandidate}
-            agentDisplayName={coachAgentName}
-            onInsert={insertCoachMention}
-            onDismiss={() => setDismissedCoachToken(plainNameCandidate.matchedText)}
+        <Suggestions className="mb-2" aria-live="polite" data-testid="composer-mention-coach">
+          <Suggestion
+            suggestion={`Insert @${coachAgentName}`}
+            onClick={insertCoachMention}
+            aria-label={`Insert mention for ${coachAgentName} into your comment`}
           />
-        </div>
+          <Suggestion
+            suggestion="Keep as plain text"
+            variant="ghost"
+            onClick={() => setDismissedCoachToken(plainNameCandidate.matchedText)}
+          />
+        </Suggestions>
       ) : null}
 
-      {composerHint ? (
-        <Badge variant="outline" className="text-muted-foreground">
-          {composerHint}
-        </Badge>
-      ) : null}
-
-      {composerAttachments.length > 0 ? (
-        <AttachmentGroup
-          data-testid="task-chat-composer-attachments"
-          className="mb-3 mt-2 flex-col gap-1.5 overflow-visible rounded-md border border-dashed border-border/80 bg-muted/20 p-2"
-        >
-          {composerAttachments.map((attachment) => {
-            const sizeLabel = formatAttachmentSize(attachment.size);
-            const statusLabel =
-              attachment.status === "uploading"
-                ? "Uploading to task"
-                : attachment.status === "error"
-                  ? (attachment.error ?? "Upload failed")
-                  : attachment.inline
-                    ? "Inserted inline"
-                    : "Attached to task";
-            return (
-              <Attachment
-                key={attachment.id}
-                size="xs"
-                state={attachment.status === "attached" ? "done" : attachment.status}
-                className={cn(
-                  "w-full flex-nowrap",
-                  attachment.status === "error"
-                    ? "bg-destructive/10 text-destructive"
-                    : "bg-background/70 text-muted-foreground",
-                )}
+      <PromptInput
+        accept="*/*"
+        multiple
+        maxFiles={20}
+        onError={(error) => setAttachmentError(error.message)}
+        onSubmit={handleSubmit}
+        data-pending-work-mode={resolvedTaskWorkMode}
+      >
+        {replyTarget || canAcceptFiles ? (
+          <PromptInputHeader>
+            {replyTarget ? (
+              <div
+                className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground"
+                data-testid="task-chat-reply-target"
+                aria-label={`Replying to ${replyTarget.authorLabel}`}
               >
-                <AttachmentMedia>
-                  {attachment.status === "uploading" ? (
-                    <Spinner />
-                  ) : attachment.status === "attached" ? (
-                    <Check />
-                  ) : (
-                    <AlertTriangle />
-                  )}
-                </AttachmentMedia>
-                <AttachmentContent>
-                  <AttachmentTitle>{attachment.name}</AttachmentTitle>
-                  <AttachmentDescription>
-                    {[sizeLabel, statusLabel].filter(Boolean).join(" · ")}
-                  </AttachmentDescription>
-                </AttachmentContent>
-              </Attachment>
-            );
-          })}
-        </AttachmentGroup>
-      ) : null}
-
-      {canAcceptFiles ? (
-        <AccessibleDropzone
-          ariaLabel="Attach files to this comment"
-          maxFiles={20}
-          disabled={attaching}
-          className="my-2"
-          onDrop={(files) => void handleDroppedFiles(files)}
-        />
-      ) : null}
-
-      {shouldRenderComposerOwnerPreview(body, ownerPreview) ? (
-        <div className="my-2">
-          <ComposerOwnerPreviewRow preview={ownerPreview} resolvers={ownerResolvers} />
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <div className="mr-auto" />
-
-        {enableOwnerChange && ownerOptions.length > 0 ? (
-          <EntityCombobox
-            ref={ownerTriggerRef}
-            value={ownerTarget}
-            options={ownerOptions}
-            type="agent owner"
-            ariaLabel="Owner"
-            placeholder="Owner"
-            noneLabel="Choose owner"
-            includeNone={false}
-            onValueChange={setOwnerTarget}
-            triggerClassName="h-8 text-xs"
-            searchPlaceholder="Search agent owners..."
-            emptyMessage="No agent owners found."
-            renderValue={(option) => {
-              if (!option) return <span className="text-muted-foreground">Owner</span>;
-              const agentId = option.id.startsWith("agent:") ? option.id.slice("agent:".length) : null;
-              const agent = agentId ? agentMap?.get(agentId) : null;
-              return (
-                <>
-                  {agent ? <AgentIcon icon={agent.icon} className="size-3.5 shrink-0" /> : null}
-                  {option.label}
-                </>
-              );
-            }}
-            renderOption={(option) => {
-              const agentId = option.id.startsWith("agent:") ? option.id.slice("agent:".length) : null;
-              const agent = agentId ? agentMap?.get(agentId) : null;
-              return (
-                <>
-                  {agent ? <AgentIcon icon={agent.icon} className="size-3.5 shrink-0" /> : null}
-                  <span className="truncate">{option.label}</span>
-                </>
-              );
-            }}
-          />
+                <ReplyIcon className="size-4 shrink-0" aria-hidden="true" />
+                <span className="truncate">
+                  {replyTarget.authorLabel} · {replyTarget.preview}
+                </span>
+                <PromptInputButton
+                  className="ml-auto"
+                  tooltip="Cancel reply"
+                  aria-label="Cancel reply"
+                  disabled={isSubmitting}
+                  onClick={onClearReply}
+                >
+                  <XIcon className="size-4" />
+                </PromptInputButton>
+              </div>
+            ) : null}
+            <PromptAttachments />
+          </PromptInputHeader>
         ) : null}
 
-        <Button size="sm" disabled={isSubmitting || !body.trim()} onClick={() => void handleSubmit()}>
-          {isSubmitting ? "Posting..." : "Send"}
-        </Button>
-      </div>
-    </Card>
+        <PromptInputBody>
+          <PromptInputTextarea
+            ref={textareaRef}
+            value={body}
+            onChange={(event) => setBody(event.currentTarget.value)}
+            placeholder={composerDisabledReason ?? "Message this task…"}
+            disabled={Boolean(composerDisabledReason) || isSubmitting}
+            aria-label="Task message"
+          />
+        </PromptInputBody>
+
+        <PromptInputFooter>
+          <PromptInputTools>
+            {canAcceptFiles || mentions.length > 0 ? (
+              <PromptInputActionMenu open={mentionMenuOpen} onOpenChange={setMentionMenuOpen}>
+                <PromptInputActionMenuTrigger tooltip="Add context">
+                  <PaperclipIcon className="size-4" />
+                </PromptInputActionMenuTrigger>
+                <PromptInputActionMenuContent>
+                  {canAcceptFiles ? <PromptInputActionAddAttachments label="Attach files" /> : null}
+                  {mentions.length > 0 ? (
+                    <PromptInputCommand>
+                      <PromptInputCommandInput placeholder="Find people, agents, projects, or tasks…" />
+                      <PromptInputCommandList>
+                        <PromptInputCommandEmpty>No matching mention.</PromptInputCommandEmpty>
+                        <PromptInputCommandGroup heading="Mention">
+                          {mentions.map((mention) => {
+                            const Icon = mentionIcon(mention.kind);
+                            return (
+                              <PromptInputCommandItem
+                                key={mention.id}
+                                value={`${mentionLabel(mention)} ${mention.name} ${mention.kind}`}
+                                onSelect={() => {
+                                  insertMention(mention);
+                                  setMentionMenuOpen(false);
+                                }}
+                              >
+                                <Icon className="size-4" aria-hidden="true" />
+                                <span>{mentionLabel(mention)}</span>
+                                <span className="ml-auto text-xs text-muted-foreground">{mention.kind}</span>
+                              </PromptInputCommandItem>
+                            );
+                          })}
+                        </PromptInputCommandGroup>
+                      </PromptInputCommandList>
+                    </PromptInputCommand>
+                  ) : null}
+                </PromptInputActionMenuContent>
+              </PromptInputActionMenu>
+            ) : null}
+
+            {enableOwnerChange && ownerOptions.length > 0 ? (
+              <PromptInputSelect value={ownerTarget} onValueChange={setOwnerTarget}>
+                <PromptInputSelectTrigger ref={ownerTriggerRef} aria-label="Owner">
+                  <PromptInputSelectValue placeholder="Owner" />
+                </PromptInputSelectTrigger>
+                <PromptInputSelectContent>
+                  {ownerOptions.map((option) => (
+                    <PromptInputSelectItem key={option.id} value={option.id} disabled={option.disabled}>
+                      {option.label}
+                    </PromptInputSelectItem>
+                  ))}
+                </PromptInputSelectContent>
+              </PromptInputSelect>
+            ) : null}
+          </PromptInputTools>
+
+          <ComposerSubmit
+            body={body}
+            disabled={Boolean(composerDisabledReason)}
+            isSubmitting={isSubmitting}
+          />
+        </PromptInputFooter>
+      </PromptInput>
+
+      {shouldRenderComposerOwnerPreview(body, ownerPreview) ? (
+        <Task defaultOpen className="mt-2" data-testid="composer-owner-preview">
+          <TaskTrigger title="Delivery" />
+          <TaskContent>
+            <TaskItem role="status" aria-live="polite" data-kind={ownerPreview.kind}>
+              {ownerPreview.text}
+              {ownerPreview.chip
+                ? ` ${ownerOptions.find((option) => option.id === `agent:${ownerPreview.chip?.id}`)?.label ?? "the selected agent"}`
+                : ownerPreview.suffix
+                  ? ` ${ownerPreview.suffix}`
+                  : ""}
+            </TaskItem>
+          </TaskContent>
+        </Task>
+      ) : null}
+
+      {attachmentError ? (
+        <p className="mt-2 text-sm text-destructive" role="alert">
+          {attachmentError}
+        </p>
+      ) : composerHint ? (
+        <p className="mt-2 text-sm text-muted-foreground">{composerHint}</p>
+      ) : null}
+    </div>
   );
 }
 

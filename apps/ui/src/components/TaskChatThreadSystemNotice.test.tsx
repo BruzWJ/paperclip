@@ -8,11 +8,6 @@ import { TaskChatThread } from "./TaskChatThread";
 import type { TaskChatComment } from "../lib/task-chat-messages";
 import type { Agent } from "@paperclipai/shared";
 
-vi.mock("@assistant-ui/react", () => ({
-  AssistantRuntimeProvider: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  useAui: () => ({ thread: () => ({ append: async () => undefined }) }),
-}));
-
 vi.mock("./MarkdownBody", () => ({
   MarkdownBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -22,6 +17,7 @@ vi.mock("./MarkdownEditor", () => ({
 }));
 
 vi.mock("@/components/ui/tooltip", () => ({
+  TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -60,10 +56,6 @@ vi.mock("@tanstack/react-router", () => ({
   },
   useLocation: () => ({ hash: "" }),
 }));
-vi.mock("../hooks/usePaperclipTaskRuntime", () => ({
-  usePaperclipTaskRuntime: () => ({}),
-}));
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
