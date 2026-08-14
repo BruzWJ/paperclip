@@ -14,7 +14,7 @@ import {
 import type { CompanyUserDirectoryResponse } from "../api/access";
 import { authApi } from "../api/auth";
 import { toast } from "sonner";
-import { useNavigateCompanyBoardTarget } from "../components/CompanyBoardLink";
+import { useNavigateCompanyBoardTargetForCompany } from "../components/CompanyBoardLink";
 import { queryKeys } from "../lib/queryKeys";
 import {
   invalidateActivityQueries,
@@ -328,7 +328,6 @@ function handleLiveEvent(
 
 export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const navigateToBoardTarget = useNavigateCompanyBoardTarget();
   const companyRouteMatch = useMatch({
     from: "/_authenticated/$companyId",
     shouldThrow: false,
@@ -337,6 +336,9 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
     from: "/_authenticated/$companyId/tasks/$taskNumber/",
     shouldThrow: false,
   });
+  const routeCompanyId = companyRouteMatch?.params.companyId ?? null;
+  const liveCompanyId = routeCompanyId && isCanonicalUuid(routeCompanyId) ? routeCompanyId : null;
+  const navigateToBoardTarget = useNavigateCompanyBoardTargetForCompany(liveCompanyId);
   const gateRef = useRef<ToastGate>({
     cooldownHits: new Map(),
     suppressUntil: 0,
@@ -349,8 +351,6 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   });
   const currentUserId = session?.user.id ?? null;
   const socketAuthKey = session?.session.id ?? "signed_out";
-  const routeCompanyId = companyRouteMatch?.params.companyId ?? null;
-  const liveCompanyId = routeCompanyId && isCanonicalUuid(routeCompanyId) ? routeCompanyId : null;
   const canConnectSocket = sessionStatus === "success" && session !== null && liveCompanyId !== null;
   const currentUserIdRef = useRef(currentUserId);
 

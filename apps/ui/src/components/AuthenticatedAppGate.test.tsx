@@ -105,6 +105,18 @@ describe("AuthenticatedAppGate", () => {
     vi.clearAllMocks();
   });
 
+  it("redirects signed-out users to authentication when bootstrap is ready", async () => {
+    mockAuthApi.getSession.mockResolvedValue(null);
+
+    const root = renderGate(container);
+    await waitForText(container, "Navigate:/auth");
+
+    expect(container.textContent).toContain("Navigate:/auth");
+    expect(mockAccessApi.getCurrentBoardAccess).not.toHaveBeenCalled();
+
+    unmountRoot(root);
+  });
+
   it("shows a no-access message for signed-in users without org access", async () => {
     mockAuthApi.getSession.mockResolvedValue({
       session: { id: "session-1", userId: "user-1" },

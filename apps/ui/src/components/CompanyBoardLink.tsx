@@ -103,10 +103,16 @@ function companyBoardRouteOptions(
 
 export function useNavigateCompanyBoardTarget() {
   const companyId = useCompanyRouteId();
+
+  return useNavigateCompanyBoardTargetForCompany(companyId);
+}
+
+export function useNavigateCompanyBoardTargetForCompany(companyId: string | null) {
   const navigate = useNavigate();
 
   return useCallback(
     (routeTarget: CompanyBoardRouteTarget, options?: { replace?: boolean }) => {
+      if (!companyId) return;
       const routeOptions = companyBoardRouteOptions(routeTarget, companyId);
       void navigate({ ...routeOptions, replace: options?.replace });
     },
