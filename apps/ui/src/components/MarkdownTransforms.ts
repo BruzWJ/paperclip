@@ -7,15 +7,15 @@ const wrapAnywhereStyle: React.CSSProperties = {
   wordBreak: "break-word",
 };
 
-const scrollableBlockStyle: React.CSSProperties = {
-  maxWidth: "100%",
-  overflowX: "auto",
-};
-
 const tableCellWrapStyle: React.CSSProperties = {
   overflowWrap: "anywhere",
   wordBreak: "normal",
 };
+
+export interface MarkdownCodeChildProps {
+  className?: unknown;
+  children?: ReactNode;
+}
 
 export function isHtmlCommentNode(node: MarkdownAstNode) {
   return node.type === "html" && typeof node.value === "string" && /^<!--[\s\S]*-->$/.test(node.value.trim());
@@ -57,26 +57,19 @@ export function mergeTableCellStyle(style?: React.CSSProperties): React.CSSPrope
   };
 }
 
-export function mergeScrollableBlockStyle(style?: React.CSSProperties): React.CSSProperties {
-  return {
-    ...scrollableBlockStyle,
-    ...style,
-  };
-}
-
 export function flattenText(value: ReactNode): string {
   if (value == null) return "";
   if (typeof value === "string" || typeof value === "number") return String(value);
   if (Array.isArray(value)) return value.map((item) => flattenText(item)).join("");
+  if (isValidElement(value)) {
+    return flattenText((value.props as { children?: ReactNode }).children);
+  }
   return "";
 }
 
 export function extractMermaidSource(children: ReactNode): string | null {
   if (!isValidElement(children)) return null;
-  const childProps = children.props as {
-    className?: unknown;
-    children?: ReactNode;
-  };
+  const childProps = children.props as MarkdownCodeChildProps;
   if (typeof childProps.className !== "string") return null;
   if (!/\blanguage-mermaid\b/i.test(childProps.className)) return null;
   return flattenText(childProps.children).replace(/\n$/, "");
@@ -101,6 +94,11 @@ type ParsedWikiLink = {
   target: string;
   label: string;
 };
+
+export interface WikiLinkOptions {
+  wikiLinkRoot?: string;
+  resolveWikiLinkHref?: (target: string, label: string) => string | null | undefined;
+}
 
 const WIKI_LINK_PATTERN = /\[\[([^\]\r\n]+)\]\]/g;
 
@@ -167,13 +165,7 @@ export function createWikiLinkNode(href: string, wikiLink: ParsedWikiLink): Mark
   };
 }
 
-export function splitTextByWikiLinks(
-  value: string,
-  options: {
-    wikiLinkRoot?: string;
-    resolveWikiLinkHref?: (target: string, label: string) => string | null | undefined;
-  },
-): MarkdownAstNode[] {
+export function splitTextByWikiLinks(value: string, options: WikiLinkOptions): MarkdownAstNode[] {
   const nodes: MarkdownAstNode[] = [];
   let lastIndex = 0;
 
@@ -212,13 +204,7 @@ export function splitTextByWikiLinks(
   return nodes;
 }
 
-export function transformWikiLinkChildren(
-  node: MarkdownAstNode,
-  options: {
-    wikiLinkRoot?: string;
-    resolveWikiLinkHref?: (target: string, label: string) => string | null | undefined;
-  },
-) {
+export function transformWikiLinkChildren(node: MarkdownAstNode, options: WikiLinkOptions) {
   if (!node.children || WIKI_LINK_SKIP_PARENT_TYPES.has(node.type ?? "")) return;
 
   node.children = node.children.flatMap((child) => {
@@ -230,10 +216,7 @@ export function transformWikiLinkChildren(
   });
 }
 
-export function createRemarkWikiLinks(options: {
-  wikiLinkRoot?: string;
-  resolveWikiLinkHref?: (target: string, label: string) => string | null | undefined;
-}) {
+export function createRemarkWikiLinks(options: WikiLinkOptions) {
   return function remarkWikiLinks() {
     return (tree: MarkdownAstNode) => {
       transformWikiLinkChildren(tree, options);

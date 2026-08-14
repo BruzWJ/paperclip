@@ -1,9 +1,10 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { buildRoutineMentionHref } from "@paperclipai/shared";
-import { routinesApi } from "../api/routines";
+
+import { routinesApi } from "@/api/routines";
 import { useOptionalCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import { queryKeys } from "../lib/queryKeys";
+import { queryKeys } from "@/lib/queryKeys";
 
 export interface RoutineCommandOption {
   id: string;
@@ -15,46 +16,35 @@ export interface RoutineCommandOption {
   aliases: string[];
 }
 
-interface EditorAutocompleteContextValue {
-  slashCommands: RoutineCommandOption[];
-}
+const EditorAutocompleteContext = createContext<RoutineCommandOption[]>([]);
 
-const EditorAutocompleteContext = createContext<EditorAutocompleteContextValue>({
-  slashCommands: [],
-});
-
+/** Supplies company-scoped routine commands to Kibo editor adapters. */
 export function EditorAutocompleteProvider({ children }: { children: ReactNode }) {
   const companyId = useOptionalCompanyRouteId();
   const { data: routines = [] } = useQuery({
-    queryKey: companyId
-      ? queryKeys.routines.list(companyId)
-      : ["routines", "__none__", "__all-projects__"],
+    queryKey: companyId ? queryKeys.routines.list(companyId) : ["routines", "__none__", "__all-projects__"],
     queryFn: () => routinesApi.list(companyId!),
     enabled: Boolean(companyId),
   });
 
-  const value = useMemo<EditorAutocompleteContextValue>(() => ({
-    slashCommands: [
-      ...routines
+  const commands = useMemo<RoutineCommandOption[]>(
+    () =>
+      routines
         .filter((routine) => routine.status !== "archived")
         .sort((left, right) => left.title.localeCompare(right.title))
         .map((routine) => ({
           id: `routine:${routine.id}`,
-          kind: "routine" as const,
+          kind: "routine",
           routineId: routine.id,
           name: routine.title,
           status: routine.status,
           href: buildRoutineMentionHref(routine.id),
           aliases: [`routine:${routine.title}`, routine.title, routine.id],
         })),
-    ],
-  }), [routines]);
-
-  return (
-    <EditorAutocompleteContext.Provider value={value}>
-      {children}
-    </EditorAutocompleteContext.Provider>
+    [routines],
   );
+
+  return <EditorAutocompleteContext.Provider value={commands}>{children}</EditorAutocompleteContext.Provider>;
 }
 
 export function useEditorAutocomplete() {

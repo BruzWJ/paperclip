@@ -71,8 +71,8 @@ describe("MarkdownBody code block wrapping", () => {
     expect(actions?.getAttribute("data-active")).toBeNull();
     expect(wrapButton?.getAttribute("aria-pressed")).toBe("false");
     expect(wrapButton?.getAttribute("aria-label")).toBe("Wrap lines");
-    expect(pre?.style.overflowX).toBe("auto");
-    expect(pre?.style.whiteSpace).toBe("");
+    const codeBlock = container.querySelector<HTMLElement>(".paperclip-markdown-codeblock");
+    expect(codeBlock?.getAttribute("data-wrap-lines")).toBeNull();
 
     flushSync(() => {
       wrapButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -81,9 +81,7 @@ describe("MarkdownBody code block wrapping", () => {
     expect(wrapButton?.getAttribute("aria-pressed")).toBe("true");
     expect(wrapButton?.getAttribute("aria-label")).toBe("Unwrap lines");
     expect(actions?.getAttribute("data-active")).toBe("true");
-    expect(pre?.style.overflowX).toBe("hidden");
-    expect(pre?.style.whiteSpace).toBe("pre-wrap");
-    expect(pre?.style.overflowWrap).toBe("anywhere");
+    expect(codeBlock?.getAttribute("data-wrap-lines")).toBe("true");
 
     flushSync(() => {
       wrapButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -92,8 +90,7 @@ describe("MarkdownBody code block wrapping", () => {
     expect(wrapButton?.getAttribute("aria-pressed")).toBe("false");
     expect(wrapButton?.getAttribute("aria-label")).toBe("Wrap lines");
     expect(actions?.getAttribute("data-active")).toBeNull();
-    expect(pre?.style.overflowX).toBe("auto");
-    expect(pre?.style.whiteSpace).toBe("");
+    expect(codeBlock?.getAttribute("data-wrap-lines")).toBeNull();
   });
 
   it("fails closed for unknown same-origin links while preserving external, file, and hash anchors", () => {

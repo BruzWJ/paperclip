@@ -1,22 +1,19 @@
-import type { RoutineCommandOption } from "../context/EditorAutocompleteContext";
+import type { NamedEntity } from "@/lib/presentation-contracts";
+import type { UserMentionReference } from "@/lib/mention-chips";
 
-interface MentionOptionBase {
-  id: string;
-  name: string;
-}
 export type MentionOption =
-  | (MentionOptionBase & {
+  | (NamedEntity & {
       kind: "agent";
       agentId: string;
       agentIcon?: string | null;
     })
-  | (MentionOptionBase & {
+  | (NamedEntity & {
       kind: "project";
       projectId: string;
       projectColor?: string | null;
     })
-  | (MentionOptionBase & { kind: "user"; userId: string })
-  | (MentionOptionBase & {
+  | (NamedEntity & UserMentionReference)
+  | (NamedEntity & {
       kind: "task";
       taskId: string;
       taskIdentifier: string;
@@ -40,17 +37,3 @@ export interface MarkdownEditorRef {
   focus: () => void;
   insertMarkdown: (markdown: string) => void;
 }
-export interface MentionState {
-  trigger: "mention" | "command";
-  marker: "@" | "/";
-  query: string;
-  top: number;
-  left: number;
-  viewportTop: number;
-  viewportBottom: number;
-  viewportLeft: number;
-  textNode: Text;
-  atPos: number;
-  endPos: number;
-}
-export type AutocompleteOption = MentionOption | RoutineCommandOption;

@@ -27,7 +27,7 @@ import {
 
 import { MermaidDiagramBlock } from "./MermaidDiagramBlock";
 
-import { CodeBlock } from "./MarkdownCodeBlock";
+import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 
 import {
   MarkdownAgentMentionLink,
@@ -137,12 +137,12 @@ export function MarkdownBodyImpl({
           {tableHeaderChildren}
         </TableHead>
       ),
-      pre: ({ node: _node, children: preChildren, ...preProps }) => {
+      pre: ({ node: _node, children: preChildren }) => {
         const mermaidSource = extractMermaidSource(preChildren);
         if (mermaidSource) {
           return <MermaidDiagramBlock source={mermaidSource} darkMode={theme === "dark"} />;
         }
-        return <CodeBlock preProps={preProps}>{preChildren}</CodeBlock>;
+        return <MarkdownCodeBlock>{preChildren}</MarkdownCodeBlock>;
       },
       code: ({ node: _node, style: codeStyle, children: codeChildren, ...codeProps }) => (
         <code {...codeProps} style={mergeWrapStyle(codeStyle as React.CSSProperties | undefined)}>
