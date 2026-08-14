@@ -222,6 +222,8 @@ describe("Timeline", () => {
     expect(container.textContent).toContain("Agents");
     expect(container.textContent).toContain("Run time");
     expect(container.textContent).toContain("45m");
+    expect(container.querySelector(".gantt")).not.toBeNull();
+    expect(container.querySelector('[data-roadmap-ui="gantt-sidebar"]')).not.toBeNull();
 
     const footer = Array.from(container.querySelectorAll("div")).find(
       (element) => element.textContent?.includes("2 runs") && element.textContent.includes("Range"),
@@ -257,7 +259,7 @@ describe("Timeline", () => {
     await flushReact();
 
     expect(container.textContent).toContain("Run time");
-    expect(container.textContent).toContain("2h 0m");
+    expect(container.textContent).toContain("2h");
   });
 
   it("summarizes only runs that overlap the visible timeline window", () => {

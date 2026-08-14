@@ -4,13 +4,7 @@ import type { WorkTimelineResult } from "@paperclipai/shared";
 import { Minus, Plus, RotateCcw } from "lucide-react";
 import { Route as TimelineRoute } from "@/routes/_authenticated/$companyId/timeline";
 import { getRouteComponent } from "@/test/route-component";
-import {
-  WorkTimelineChart,
-  clampZoomScale,
-  nearestZoomForScale,
-  type ZoomLevel,
-  zoomScaleForLevel,
-} from "@/components/timeline/WorkTimelineChart";
+import { WorkTimelineGantt } from "@/components/patterns/WorkTimelineGantt";
 import { Button } from "@/components/ui/button";
 import sampleJson from "../fixtures/workTimeline.sample.json";
 import humanSampleJson from "../fixtures/workTimeline.human.sample.json";
@@ -19,33 +13,21 @@ const STORYBOOK_USER_AVATAR =
   "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=96&q=80";
 const Timeline = getRouteComponent(TimelineRoute);
 
-function withStorybookTimelineDetails(
-  data: WorkTimelineResult,
-): WorkTimelineResult {
+function withStorybookTimelineDetails(data: WorkTimelineResult): WorkTimelineResult {
   return {
     ...data,
     actors: data.actors.map((actor) =>
-      actor.type === "user"
-        ? { ...actor, avatar: STORYBOOK_USER_AVATAR }
-        : actor,
+      actor.type === "user" ? { ...actor, avatar: STORYBOOK_USER_AVATAR } : actor,
     ),
     spans: data.spans,
   };
 }
 
-const sample = withStorybookTimelineDetails(
-  sampleJson as unknown as WorkTimelineResult,
-);
+const sample = withStorybookTimelineDetails(sampleJson as unknown as WorkTimelineResult);
 // A second real slice (2026-07-02 14:00–16:00Z) captured straight from the live
 // `/timeline` endpoint that DOES carry human events — Dotta's created / commented /
 // approved / delegated actions provide human participation and kickoff context.
-const humanSample = withStorybookTimelineDetails(
-  humanSampleJson as unknown as WorkTimelineResult,
-);
-// The fixture is a real slice of PAP company activity (2026-07-02 14:00–15:50Z);
-// pin "now" to the window end so in-progress runs fade correctly.
-const NOW = new Date("2026-07-02T15:45:00.000Z").getTime();
-
+const humanSample = withStorybookTimelineDetails(humanSampleJson as unknown as WorkTimelineResult);
 function FullPageTimelineHarness() {
   return (
     <div className="min-h-screen bg-background p-6 text-foreground">
@@ -55,43 +37,30 @@ function FullPageTimelineHarness() {
 }
 
 function TimelineHarness({
-  initialZoom = "day" as ZoomLevel,
+  initialZoom = 100,
   data = sample,
-  now = NOW,
 }: {
-  initialZoom?: ZoomLevel;
+  initialZoom?: number;
   data?: WorkTimelineResult;
-  now?: number;
 }) {
-  const [zoom, setZoom] = useState<ZoomLevel>(initialZoom);
-  const [zoomScale, setZoomScale] = useState<number | undefined>(undefined);
+  const [zoom, setZoom] = useState(initialZoom);
 
   const adjustZoom = (factor: number) => {
-    const nextScale = clampZoomScale(
-      (zoomScale ?? zoomScaleForLevel(zoom)) * factor,
-    );
-    setZoomScale(nextScale);
-    setZoom(nearestZoomForScale(nextScale));
+    setZoom((current) => Math.max(50, Math.min(200, Math.round(current * factor))));
   };
 
   const resetZoom = () => {
     setZoom(initialZoom);
-    setZoomScale(undefined);
   };
 
   return (
     <div className="min-h-screen bg-background p-6 text-foreground">
       <div className="space-y-6">
         <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Work Timeline
-          </h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Work Timeline</h1>
         </div>
 
-        <div
-          className="flex flex-wrap items-center justify-end gap-1"
-          aria-label="Timeline zoom controls"
-        >
+        <div className="flex flex-wrap items-center justify-end gap-1" aria-label="Timeline zoom controls">
           <Button
             type="button"
             variant="outline"
@@ -125,24 +94,10 @@ function TimelineHarness({
         </div>
 
         <div className="space-y-3">
-          <div className="rounded-lg border border-border bg-card">
-            <WorkTimelineChart
-              data={data}
-              zoom={zoom}
-              zoomScale={zoomScale}
-              nowMs={now}
-              onZoomScaleChange={(
-                nextScale,
-                nextZoom = nearestZoomForScale(nextScale),
-              ) => {
-                setZoomScale(nextScale);
-                setZoom(nextZoom);
-              }}
-            />
-          </div>
+          <WorkTimelineGantt data={data} zoom={zoom} />
           <p className="text-xs text-muted-foreground">
-            {data.spans.length} runs · {data.actors.length} actors ·{" "}
-            {data.events.length} human/instant events · real company data
+            {data.spans.length} runs · {data.actors.length} actors · {data.events.length} human/instant events
+            · real company data
           </p>
         </div>
       </div>
@@ -159,14 +114,13 @@ export default meta;
 
 type Story = StoryObj<typeof TimelineHarness>;
 
-export const HourZoom: Story = { args: { initialZoom: "hour" } };
-export const DayZoom: Story = { args: { initialZoom: "day" } };
+export const CompactZoom: Story = { args: { initialZoom: 75 } };
+export const DefaultZoom: Story = { args: { initialZoom: 100 } };
 // Live slice that carries human-originated activity and delegation context.
 export const WithHumanActivity: Story = {
   args: {
-    initialZoom: "hour",
+    initialZoom: 125,
     data: humanSample,
-    now: new Date("2026-07-02T16:00:00.000Z").getTime(),
   },
 };
 

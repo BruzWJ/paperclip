@@ -1,9 +1,16 @@
 import type { ActivityEvent } from "@paperclipai/shared";
+import type { TaskOwnerReference, TimestampedEntity } from "@/lib/presentation-contracts";
 
-export interface TaskTimelineOwner {
-  ownerKind: "agent" | "user" | "board";
-  ownerAgentId: string | null;
-  ownerUserId: string | null;
+export type TaskTimelineOwner = TaskOwnerReference;
+
+export interface TaskTimelineStatusChange {
+  from: string | null;
+  to: string | null;
+}
+
+export interface TaskTimelineOwnerChange {
+  from: TaskTimelineOwner;
+  to: TaskTimelineOwner;
 }
 
 export interface TaskTimelineEvent {
@@ -12,14 +19,8 @@ export interface TaskTimelineEvent {
   actorType: ActivityEvent["actorType"];
   actorId: string;
   runId?: string | null;
-  lifecycleStatusChange?: {
-    from: string | null;
-    to: string | null;
-  };
-  ownerChange?: {
-    from: TaskTimelineOwner;
-    to: TaskTimelineOwner;
-  };
+  lifecycleStatusChange?: TaskTimelineStatusChange;
+  ownerChange?: TaskTimelineOwnerChange;
   commentId?: string | null;
   followUpRequested?: boolean;
 }
@@ -42,9 +43,11 @@ function toTimestamp(value: Date | string) {
 }
 
 function sameOwner(left: TaskTimelineOwner, right: TaskTimelineOwner) {
-  return left.ownerKind === right.ownerKind
-    && left.ownerAgentId === right.ownerAgentId
-    && left.ownerUserId === right.ownerUserId;
+  return (
+    left.ownerKind === right.ownerKind &&
+    left.ownerAgentId === right.ownerAgentId &&
+    left.ownerUserId === right.ownerUserId
+  );
 }
 
 function ownerFromRecord(value: unknown): TaskTimelineOwner | null {
@@ -65,7 +68,7 @@ function ownerFromRecord(value: unknown): TaskTimelineOwner | null {
   return null;
 }
 
-function sortTimelineEvents<T extends { createdAt: Date | string; id: string }>(events: T[]) {
+function sortTimelineEvents<T extends TimestampedEntity>(events: T[]) {
   return [...events].sort((a, b) => {
     const createdAtDiff = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
     if (createdAtDiff !== 0) return createdAtDiff;
@@ -130,11 +133,7 @@ export function extractTaskTimelineEvents(activity: ActivityEvent[] | null | und
       }
     }
 
-    if (
-      timelineEvent.lifecycleStatusChange
-      || timelineEvent.ownerChange
-      || timelineEvent.followUpRequested
-    ) {
+    if (timelineEvent.lifecycleStatusChange || timelineEvent.ownerChange || timelineEvent.followUpRequested) {
       events.push(timelineEvent);
     }
   }

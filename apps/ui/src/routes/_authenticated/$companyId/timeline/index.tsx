@@ -1,32 +1,22 @@
 import { workTimelineApi, type WorkTimelineParams } from "@/api/workTimeline";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  clampZoomScale,
-  defaultZoomForWindow,
-  nearestZoomForScale,
-  WorkTimelineChart,
-  zoomScaleForLevel,
-  type VisibleTimelineWindow,
-  type ZoomLevel,
-} from "@/components/timeline/WorkTimelineChart";
+import { WorkTimelineGantt } from "@/components/patterns/WorkTimelineGantt";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useSidebar } from "@/context/SidebarContext";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { queryKeys } from "@/lib/queryKeys";
-import { formatDuration, TIMELINE_COLORS } from "@/lib/timeline/layout";
+import { formatDurationMs } from "@/lib/utils";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { WorkTimelineResult } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Bot, Clock3, GanttChartSquare, Minus, Plus, RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 export const Route = createFileRoute("/_authenticated/$companyId/timeline/")({
   component: Timeline,
 });
@@ -82,6 +72,11 @@ function dataWindow(data: WorkTimelineResult): VisibleTimelineWindow {
   };
 }
 
+interface VisibleTimelineWindow {
+  fromMs: number;
+  toMs: number;
+}
+
 export function timelineSummary(
   data: WorkTimelineResult,
   visibleWindow: VisibleTimelineWindow = dataWindow(data),
@@ -119,12 +114,9 @@ function Timeline() {
   }, [setRouteRequestsCollapsed]);
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const [zoom, setZoom] = useState<ZoomLevel>("day");
-  const [zoomScale, setZoomScale] = useState<number | undefined>(undefined);
-  const zoomTouched = useRef(false);
+  const [zoom, setZoom] = useState(100);
   const [rangePreset, setRangePreset] = useState<RangePreset>("7d");
   const [dateRange, setDateRange] = useState<DateRangeState>(() => presetRange("7d"));
-  const [visibleWindow, setVisibleWindow] = useState<VisibleTimelineWindow | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Timeline" }]);
@@ -143,26 +135,6 @@ function Timeline() {
     enabled: !!params,
   });
 
-  useEffect(() => {
-    if (!data || zoomTouched.current) return;
-    const defaultZoom = defaultZoomForWindow(
-      new Date(data.window.from).getTime(),
-      new Date(data.window.to).getTime(),
-    );
-    setZoom(defaultZoom);
-    setZoomScale(undefined);
-  }, [data]);
-
-  useEffect(() => {
-    setVisibleWindow(null);
-  }, [data?.window.from, data?.window.to]);
-
-  const handleVisibleWindowChange = useCallback((nextWindow: VisibleTimelineWindow) => {
-    setVisibleWindow((current) =>
-      current?.fromMs === nextWindow.fromMs && current.toMs === nextWindow.toMs ? current : nextWindow,
-    );
-  }, []);
-
   const header = (
     <div className="flex items-center gap-2">
       <GanttChartSquare className="h-6 w-6 text-muted-foreground" />
@@ -171,23 +143,14 @@ function Timeline() {
   );
 
   const adjustZoom = (factor: number) => {
-    zoomTouched.current = true;
-    const nextScale = clampZoomScale((zoomScale ?? zoomScaleForLevel(zoom)) * factor);
-    setZoomScale(nextScale);
-    setZoom(nearestZoomForScale(nextScale));
+    setZoom((current) => Math.max(50, Math.min(200, Math.round(current * factor))));
   };
 
   const resetZoom = () => {
-    zoomTouched.current = true;
-    if (data) {
-      setZoom(defaultZoomForWindow(new Date(data.window.from).getTime(), new Date(data.window.to).getTime()));
-    } else {
-      setZoom("day");
-    }
-    setZoomScale(undefined);
+    setZoom(100);
   };
 
-  const summary = data ? timelineSummary(data, visibleWindow ?? dataWindow(data)) : null;
+  const summary = data ? timelineSummary(data) : null;
   const summaryStats = summary
     ? [
         {
@@ -202,7 +165,7 @@ function Timeline() {
         },
         {
           label: "Run time",
-          value: formatDuration(0, summary.activeMs),
+          value: formatDurationMs(summary.activeMs),
           icon: Clock3,
         },
       ]
@@ -362,32 +325,7 @@ function Timeline() {
           </div>
         ) : (
           <div className="space-y-3">
-            <Card className="block py-0">
-              <div className="flex flex-wrap items-center gap-2 border-b px-3.5 py-2">
-                {[
-                  ["Delegated", TIMELINE_COLORS.delegated],
-                  ["Automation", TIMELINE_COLORS.automation],
-                  ["Cancelled", TIMELINE_COLORS.cancelled],
-                  ["Now", TIMELINE_COLORS.now],
-                ].map(([label, color]) => (
-                  <Badge key={label} variant="outline">
-                    <span className="size-2 rounded-full" style={{ backgroundColor: color }} aria-hidden />
-                    {label}
-                  </Badge>
-                ))}
-              </div>
-              <WorkTimelineChart
-                data={data}
-                zoom={zoom}
-                zoomScale={zoomScale}
-                onVisibleWindowChange={handleVisibleWindowChange}
-                onZoomScaleChange={(nextScale, nextZoom = nearestZoomForScale(nextScale)) => {
-                  zoomTouched.current = true;
-                  setZoomScale(nextScale);
-                  setZoom(nextZoom);
-                }}
-              />
-            </Card>
+            <WorkTimelineGantt data={data} zoom={zoom} />
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
                 {data.spans.length} run{data.spans.length === 1 ? "" : "s"} ·{" "}
