@@ -1,9 +1,7 @@
 import { readFileSync } from "node:fs";
 import express from "express";
 import { describe, expect, it } from "vitest";
-import {
-  requireNamedBoardUser,
-} from "../routes/tasks.js";
+import { requireNamedBoardUser } from "../routes/tasks.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const companyId = "22222222-2222-4222-8222-222222222222";
@@ -46,59 +44,44 @@ describe("canonical generic task and activity route surface", () => {
   });
 
   it("registers the canonical mutations and omits retired task routes", () => {
-    const source = readFileSync(
-      new URL("../routes/tasks.ts", import.meta.url),
-      "utf8",
-    );
-    const openApi = readFileSync(
-      new URL("../routes/openapi.ts", import.meta.url),
-      "utf8",
-    );
+    const source = [
+      "tasks.ts",
+      "task-route-context.ts",
+      "task-mutation-routes.ts",
+      "task-execution-policy-routes.ts",
+      "task-comment-routes.ts",
+    ]
+      .map((file) => readFileSync(new URL(`../routes/${file}`, import.meta.url), "utf8"))
+      .join("\n");
+    const openApi = [
+      "openapi.ts",
+      ...Array.from({ length: 9 }, (_, index) => `openapi-paths-${String(index + 1).padStart(2, "0")}.ts`),
+    ]
+      .map((file) => readFileSync(new URL(`../routes/${file}`, import.meta.url), "utf8"))
+      .join("\n");
 
-    expect(source).toMatch(
-      /router\.patch\(\s*"\/tasks\/:id",\s*validate\(updateTaskTitleSchema\)/,
-    );
-    expect(source).toMatch(
-      /router\.post\(\s*"\/tasks\/:id\/reassign",\s*validate\(reassignTaskSchema\)/,
-    );
+    expect(source).toMatch(/router\.patch\(\s*"\/tasks\/:id",\s*validate\(updateTaskTitleSchema\)/);
+    expect(source).toMatch(/router\.post\(\s*"\/tasks\/:id\/reassign",\s*validate\(reassignTaskSchema\)/);
     expect(source).toContain('"/tasks/:id/creator-reassign",');
-    expect(source).toContain(
-      '"/tasks/:id/withdrawal-self-assignment",',
-    );
+    expect(source).toContain('"/tasks/:id/withdrawal-self-assignment",');
     expect(source).toContain('"/task-creator-form-updates",');
     expect(source).toContain('"/task-owner-form-updates",');
+    expect(source).toMatch(/router\.post\(\s*"\/tasks\/:id\/reopen",\s*validate\(reopenTaskSchema\)/);
+    expect(source).toContain('"/tasks/:id/execution-policy",');
+    expect(source).toContain('"/tasks/:id/execution-policy/decisions",');
+    expect(source).toContain("const actorUserId = requireNamedBoardUser(req);");
     expect(source).toMatch(
-      /router\.post\(\s*"\/tasks\/:id\/reopen",\s*validate\(reopenTaskSchema\)/,
-    );
-    expect(source).toContain(
-      '"/tasks/:id/execution-policy",',
-    );
-    expect(source).toContain(
-      '"/tasks/:id/execution-policy/decisions",',
-    );
-    expect(source).toContain(
-      "const actorUserId = requireNamedBoardUser(req);",
-    );
-    expect(source).toContain(
-      '"/tasks/:id/comments",\n    validate(createTaskUserCommentSchema)',
+      /router\.post\(\s*"\/tasks\/:id\/comments",\s*validate\(createTaskUserCommentSchema\)/,
     );
     expect(openApi).toContain("/api/tasks/{id}/execution-policy");
-    expect(openApi).toContain(
-      "/api/tasks/{id}/execution-policy/decisions",
-    );
+    expect(openApi).toContain("/api/tasks/{id}/execution-policy/decisions");
     expect(openApi).toContain("/api/tasks/{id}/creator-reassign");
-    expect(openApi).toContain(
-      "/api/tasks/{id}/withdrawal-self-assignment",
-    );
+    expect(openApi).toContain("/api/tasks/{id}/withdrawal-self-assignment");
     expect(openApi).toContain("/api/task-creator-form-updates");
     expect(openApi).toContain("/api/task-owner-form-updates");
     expect(source).toContain("ordinaryTasks: OrdinaryTaskRuntime;");
-    expect(source).not.toContain(
-      "createOrdinaryTaskRuntime(db)",
-    );
-    expect(source).not.toContain(
-      "new Proxy({} as OrdinaryTaskRuntime",
-    );
+    expect(source).not.toContain("createOrdinaryTaskRuntime(db)");
+    expect(source).not.toContain("new Proxy({} as OrdinaryTaskRuntime");
 
     for (const retired of [
       'router.delete("/tasks/:id"',

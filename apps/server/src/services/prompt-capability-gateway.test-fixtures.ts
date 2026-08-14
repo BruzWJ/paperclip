@@ -1,0 +1,33 @@
+import type { PromptCapabilityBinding } from "./prompt-capability-gateway.js";
+
+export const now = new Date("2026-07-31T12:00:00.000Z");
+export const capability: PromptCapabilityBinding = Object.freeze({
+  companyId: "00000000-0000-4000-8000-000000000001",
+  capabilityConnectionId: "00000000-0000-4000-8000-000000000002",
+  capabilityGeneration: 3,
+  runId: "00000000-0000-4000-8000-000000000003",
+  runBatchDigest: "a".repeat(64),
+  refId: "00000000-0000-4000-8000-000000000004",
+  refOrdinal: 1,
+  segmentOrdinal: 0,
+  attemptId: "00000000-0000-4000-8000-000000000005",
+  leaseId: "00000000-0000-4000-8000-000000000006",
+  leaseGeneration: 2,
+  workerProcessIdentity: "00000000-0000-4000-8000-000000000007",
+  taskId: "00000000-0000-4000-8000-000000000008",
+  sessionId: "ses_canonical",
+  ownershipEpoch: 4,
+  targetAgentId: "00000000-0000-4000-8000-000000000009",
+  laneKind: "owner",
+  executionMode: "owner",
+  taskExecutionAuthorityId: "00000000-0000-4000-8000-00000000000a",
+  consultExecutionId: null,
+  adapterConfigIdentity: "00000000-0000-4000-8000-00000000000b",
+  workspaceIdentity: "00000000-0000-4000-8000-00000000000c",
+  targetSessionCorrelationId: "00000000-0000-4000-8000-00000000000d",
+  effectiveContextExposureDigest: "b".repeat(64),
+  effectiveToolsDigest: "c".repeat(64),
+  expiresAt: new Date("2026-07-31T12:05:00.000Z"),
+  activatedAt: new Date("2026-07-31T11:59:00.000Z"),
+  createdAt: new Date("2026-07-31T11:58:00.000Z"),
+});

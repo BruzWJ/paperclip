@@ -1,497 +1,11 @@
-import { createHash } from "node:crypto";
-import {
-  agents,
-  companies,
-  taskExecutionAttempts,
-  taskExecutionAuthorities,
-  taskExecutionLeases,
-  taskExecutionPromptCapabilities,
-  taskExecutionPromptSegments,
-  taskExecutionRefs,
-  taskExecutionRunControls,
-  taskExecutionRunRefs,
-  taskExecutionSessions,
-  taskExecutionWorkspaceBindings,
-  tasks,
-  type Db,
-} from "@paperclipai/db";
-import { describe, expect, it, vi } from "vitest";
-import { resolveContextDial } from "./context-dial-resolver.js";
-import {
-  createPromptCapabilityGateway,
-  mintPromptCapabilityBearer,
-  PromptCapabilityAuthenticationError,
-  PromptCapabilityAuthorityError,
-  type PromptCapabilityBinding,
-  type PromptCapabilityGatewayRepository,
-  type PromptCapabilityIngressBinding,
-  type PromptCapabilityToolExecutor,
-} from "./prompt-capability-gateway.js";
-import {
-  createPostgresPromptCapabilityGatewayRepository,
-  lockActivePromptCapabilityBinding,
-} from "./prompt-capability-gateway-postgres.js";
-import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
-import type {
-  PaperclipManagedToolCommand,
-} from "./paperclip-managed-tool-registry.js";
-import type {
-  PaperclipManagedToolRouteContext,
-} from "./paperclip-managed-tool-router.js";
-import type { RuntimeInterfaceCompileInput } from "./runtime-interface-compiler.js";
-import {
-  createRuntimePluginToolPort,
-  createRuntimeToolGateway,
-} from "./runtime-tool-gateway.js";
-
-const now = new Date("2026-07-31T12:00:00.000Z");
-const capability: PromptCapabilityBinding = Object.freeze({
-  companyId: "00000000-0000-4000-8000-000000000001",
-  capabilityConnectionId: "00000000-0000-4000-8000-000000000002",
-  capabilityGeneration: 3,
-  runId: "00000000-0000-4000-8000-000000000003",
-  runBatchDigest: "a".repeat(64),
-  refId: "00000000-0000-4000-8000-000000000004",
-  refOrdinal: 1,
-  segmentOrdinal: 0,
-  attemptId: "00000000-0000-4000-8000-000000000005",
-  leaseId: "00000000-0000-4000-8000-000000000006",
-  leaseGeneration: 2,
-  workerProcessIdentity: "00000000-0000-4000-8000-000000000007",
-  taskId: "00000000-0000-4000-8000-000000000008",
-  sessionId: "ses_canonical",
-  ownershipEpoch: 4,
-  targetAgentId: "00000000-0000-4000-8000-000000000009",
-  laneKind: "owner",
-  executionMode: "owner",
-  taskExecutionAuthorityId: "00000000-0000-4000-8000-00000000000a",
-  consultExecutionId: null,
-  adapterConfigIdentity: "00000000-0000-4000-8000-00000000000b",
-  workspaceIdentity: "00000000-0000-4000-8000-00000000000c",
-  targetSessionCorrelationId: "00000000-0000-4000-8000-00000000000d",
-  effectiveContextExposureDigest: "b".repeat(64),
-  effectiveToolsDigest: "c".repeat(64),
-  expiresAt: new Date("2026-07-31T12:05:00.000Z"),
-  activatedAt: new Date("2026-07-31T11:59:00.000Z"),
-  createdAt: new Date("2026-07-31T11:58:00.000Z"),
-});
-
-function capabilityLockTransaction(
-  row: unknown,
-  databaseTime = now,
-) {
-  const selectedTables: unknown[] = [];
-  const lockedTables: unknown[] = [];
-  const transaction = {
-    async execute() {
-      return [{ timestampMs: databaseTime.getTime() }];
-    },
-    select() {
-      let table: unknown;
-      const builder = {
-        from(value: unknown) {
-          table = value;
-          selectedTables.push(value);
-          return builder;
-        },
-        where() {
-          return builder;
-        },
-        limit() {
-          return builder;
-        },
-        for() {
-          lockedTables.push(table);
-          return Promise.resolve([row]);
-        },
-      };
-      return builder;
-    },
-  } as unknown as TaskSessionDbTransaction;
-  return { transaction, selectedTables, lockedTables };
-}
-
-function persistedCapabilityRow(input: {
-  expiresAt: Date;
-  state?: "pending_setup" | "active" | "revoked";
-}) {
-  const state = input.state ?? "active";
-  return {
-    ...capability,
-    state,
-    targetSessionCorrelationId:
-      state === "pending_setup" ? null : capability.targetSessionCorrelationId,
-    expiresAt: input.expiresAt,
-    activatedAt: state === "pending_setup" ? null : capability.activatedAt,
-    bearerHash: "d".repeat(64),
-    revocationReason: state === "revoked" ? "fixture" : null,
-    revokedAt: state === "revoked" ? now : null,
-  };
-}
-
-function gatewayAuthorityRows(
-  row: ReturnType<typeof persistedCapabilityRow>,
-  taskState: {
-    lifecycleStatus?: "open" | "blocked" | "done" | "cancelled";
-    executionPaused?: boolean;
-  } = {},
-) {
-  return new Map<unknown, readonly unknown[]>([
-    [taskExecutionPromptCapabilities, [row]],
-    [companies, [{ status: "active", integrity: "ready" }]],
-    [
-      tasks,
-      [{
-        companyId: row.companyId,
-        ownershipEpoch: row.ownershipEpoch,
-        lifecycleStatus: taskState.lifecycleStatus ?? "open",
-        ownerKind: "agent",
-        ownerAgentId: row.targetAgentId,
-        executionPaused: taskState.executionPaused ?? false,
-      }],
-    ],
-    [
-      agents,
-      [{
-        companyId: row.companyId,
-        status: "active",
-        currentAdapterConfigRevisionId: row.adapterConfigIdentity,
-      }],
-    ],
-    [
-      taskExecutionRefs,
-      [{
-        companyId: row.companyId,
-        taskId: row.taskId,
-        sessionId: capability.sessionId,
-        ownershipEpoch: row.ownershipEpoch,
-        mode: row.executionMode,
-        targetAgentId: row.targetAgentId,
-        taskExecutionAuthorityId: row.taskExecutionAuthorityId,
-        consultExecutionId: row.consultExecutionId,
-        adapterConfigRevisionId: row.adapterConfigIdentity,
-        disposition: "active",
-      }],
-    ],
-    [
-      taskExecutionRunRefs,
-      [{
-        companyId: row.companyId,
-        taskId: row.taskId,
-        sessionId: capability.sessionId,
-        batchDigest: row.runBatchDigest,
-        attemptId: row.attemptId,
-        protocolSettlementState: null,
-        capabilityConnectionId: row.capabilityConnectionId,
-        capabilityGeneration: row.capabilityGeneration,
-      }],
-    ],
-    ...(row.segmentOrdinal === 0
-      ? []
-      : [[
-          taskExecutionPromptSegments,
-          [{
-            companyId: row.companyId,
-            taskId: row.taskId,
-            sessionId: capability.sessionId,
-            attemptId: row.attemptId,
-            capabilityConnectionId: row.capabilityConnectionId,
-            capabilityGeneration: row.capabilityGeneration,
-            protocolSettlementState: null,
-            steeringState: "resumed",
-          }],
-        ]] as const),
-    [
-      taskExecutionRunControls,
-      [{
-        currentRefId: row.refId,
-        currentOrdinal: row.refOrdinal,
-        currentSegmentOrdinal: row.segmentOrdinal,
-      }],
-    ],
-    [
-      taskExecutionAttempts,
-      [{
-        companyId: row.companyId,
-        taskId: row.taskId,
-        sessionId: capability.sessionId,
-        runId: row.runId,
-        runKind: "productive",
-        promptKind: row.segmentOrdinal === 0 ? "base" : "steering",
-        refId: row.refId,
-        refOrdinal: row.refOrdinal,
-        segmentOrdinal: row.segmentOrdinal,
-        state: "running",
-      }],
-    ],
-    [
-      taskExecutionLeases,
-      [{
-        companyId: row.companyId,
-        taskId: row.taskId,
-        runId: row.runId,
-        attemptId: row.attemptId,
-        leaseGeneration: row.leaseGeneration,
-        state: "active",
-        expiresAt: row.expiresAt,
-      }],
-    ],
-    [
-      taskExecutionSessions,
-      [{
-        taskId: row.taskId,
-        ownershipEpoch: row.ownershipEpoch,
-        targetAgentId: row.targetAgentId,
-        adapterConfigIdentity: row.adapterConfigIdentity,
-        workspaceIdentity: row.workspaceIdentity,
-        purpose: "active_run_steering",
-        state: "current",
-        runId: row.runId,
-        currentRefId: row.refId,
-        currentRefOrdinal: row.refOrdinal,
-        currentSegmentOrdinal: row.segmentOrdinal,
-      }],
-    ],
-    [
-      taskExecutionWorkspaceBindings,
-      [{
-        companyId: row.companyId,
-        taskId: row.taskId,
-        sessionId: capability.sessionId,
-        ownershipEpoch: row.ownershipEpoch,
-      }],
-    ],
-    [
-      taskExecutionAuthorities,
-      [{
-        companyId: row.companyId,
-        taskId: row.taskId,
-        sessionId: capability.sessionId,
-        ownershipEpoch: row.ownershipEpoch,
-        agentId: row.targetAgentId,
-        state: "current",
-      }],
-    ],
-  ]);
-}
-
-function postgresGatewayRepository(
-  row: ReturnType<typeof persistedCapabilityRow>,
-  databaseTime = now,
-  taskState: Parameters<typeof gatewayAuthorityRows>[1] = {},
-) {
-  const rowsByTable = gatewayAuthorityRows(row, taskState);
-  const database: Record<string, unknown> = {
-    async execute() {
-      return [{ timestampMs: databaseTime.getTime() }];
-    },
-    select() {
-      let table: unknown;
-      const builder = {
-        from(value: unknown) {
-          table = value;
-          return builder;
-        },
-        where() {
-          return builder;
-        },
-        limit() {
-          return builder;
-        },
-        for() {
-          return builder;
-        },
-        then<TResult1 = readonly unknown[], TResult2 = never>(
-          onFulfilled?: ((value: readonly unknown[]) => TResult1 | PromiseLike<TResult1>) | null,
-          onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
-        ) {
-          return Promise.resolve(rowsByTable.get(table) ?? []).then(
-            onFulfilled,
-            onRejected,
-          );
-        },
-      };
-      return builder;
-    },
-  };
-  database.transaction = vi.fn(
-    async (work: (transaction: unknown) => unknown) => work(database),
-  );
-  return createPostgresPromptCapabilityGatewayRepository(
-    database as unknown as Db,
-    {
-      resolve: vi.fn(async () => compileInput()),
-    },
-    {
-      readRun: vi.fn(async () => ({
-        kind: "productive",
-        status: "running",
-        sessionId: capability.sessionId,
-        ownershipEpoch: row.ownershipEpoch,
-        targetAgentId: row.targetAgentId,
-        executionMode: row.executionMode,
-        taskExecutionAuthorityId: row.taskExecutionAuthorityId,
-        consultExecutionId: row.consultExecutionId,
-        adapterConfigRevisionId: row.adapterConfigIdentity,
-        executionWorkspaceBindingId: row.workspaceIdentity,
-        currentAttemptId: row.attemptId,
-        currentLeaseId: row.leaseId,
-        cancellationIntentId: null,
-        terminalFinalizationId: null,
-      })),
-    } as never,
-  );
-}
-
-function compileInput(): RuntimeInterfaceCompileInput {
-  return {
-    mode: "owner" as const,
-    turn: "work",
-    contextDial: resolveContextDial({ agent: {} }).effective,
-    actionGrants: {},
-    isCurrentOwner: true,
-    taskCreateDirectChildren: [],
-    taskAssignTargets: [],
-    creatorUpdateTargets: [],
-    mentionTargets: [],
-    configureTargets: [],
-    pluginTools: [],
-  };
-}
-
-function setup(
-  compile = compileInput(),
-  binding: PromptCapabilityIngressBinding = capability,
-) {
-  const authenticateBearerHash = vi.fn(async () => ({
-    kind: "authenticated" as const,
-    capability: binding,
-  }));
-  const revalidate = vi.fn(async () => ({
-    kind: "authenticated" as const,
-    capability: binding,
-  }));
-  const repository: PromptCapabilityGatewayRepository = {
-    authenticateBearerHash,
-    revalidate,
-    resolveCompileInput: vi.fn(async () => compile),
-    createPluginRunContext: vi.fn(async () => undefined),
-    resolvePluginRunContextHash: vi.fn(async () => null),
-  };
-  const registerTerminalInvalid = vi.fn(async () => undefined);
-  const execute = vi.fn(async (
-    _input: Parameters<PromptCapabilityToolExecutor["execute"]>[0],
-  ) => ({ source: "paperclip" as const, value: { accepted: true } }));
-  return {
-    authenticateBearerHash,
-    execute,
-    registerTerminalInvalid,
-    revalidate,
-    gateway: createPromptCapabilityGateway({
-      repository,
-      executor: { execute, registerTerminalInvalid },
-      now: () => now,
-    }),
-  };
-}
-
-function composedPluginToolRuntime() {
-  const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(13));
-  const installation = { status: "ready", manifestIdentity: "manifest-v1" };
-  const compile: RuntimeInterfaceCompileInput = {
-    ...compileInput(),
-    actionGrants: {},
-    // This fixture isolates plugin-tool binding. The automatic owner update
-    // action is covered by the runtime action tests instead.
-    isCurrentOwner: false,
-    pluginTools: [{
-      installationId: "plugin-installation",
-      manifestIdentity: "manifest-v1",
-      name: "acme.search__lookup",
-      toolName: "lookup",
-      title: "Lookup",
-      description: "Look up an external record",
-      inputSchema: { type: "object" },
-    }],
-  };
-  const originalCall = vi.fn(async () => ({
-    ok: true as const,
-    content: "original worker",
-  }));
-  let selectedWorker = {
-    status: "running" as const,
-    manifestIdentity: "manifest-v1",
-    call: originalCall,
-  };
-  let afterWorkerSelection: (() => void) | undefined;
-  const getWorker = vi.fn(() => {
-    const worker = selectedWorker;
-    afterWorkerSelection?.();
-    afterWorkerSelection = undefined;
-    return worker;
-  });
-  const createPluginRunContext = vi.fn(async (
-    input: Parameters<
-      PromptCapabilityGatewayRepository["createPluginRunContext"]
-    >[0],
-  ) => {
-    if (
-      installation.status !== "ready" ||
-      installation.manifestIdentity !== input.pluginManifestIdentity
-    ) {
-      throw new Error("Plugin context is not bound to a ready tool");
-    }
-  });
-  const authenticated = async () => ({
-    kind: "authenticated" as const,
-    capability,
-  });
-  const repository = {
-    authenticateBearerHash: authenticated,
-    revalidate: authenticated,
-    resolveCompileInput: vi.fn(async () => compile),
-    createPluginRunContext,
-  } as unknown as PromptCapabilityGatewayRepository;
-  const runtimeToolGateway = createRuntimeToolGateway({
-    managedTools: {} as never,
-    pluginTools: createRuntimePluginToolPort({ getWorker } as never),
-    callLedger: {
-      claim: vi.fn(async () => ({
-        state: "claimed" as const,
-        id: "plugin-call-1",
-      })),
-      complete: vi.fn(async () => undefined),
-      fail: vi.fn(async () => undefined),
-    } as never,
-  });
-
-  return {
-    bearer,
-    createPluginRunContext,
-    gateway: createPromptCapabilityGateway({
-      repository,
-      executor: runtimeToolGateway,
-      now: () => now,
-    }),
-    originalCall,
-    stageChangeBeforeMint(
-      change: "status" | "manifest identity",
-      replacementCall: typeof originalCall,
-    ) {
-      afterWorkerSelection = () => {
-        installation.status = change === "status" ? "disabled" : "ready";
-        installation.manifestIdentity =
-          change === "manifest identity" ? "manifest-v2" : "manifest-v1";
-        selectedWorker = {
-          status: "running",
-          manifestIdentity:
-            change === "manifest identity" ? "manifest-v2" : "manifest-v1",
-          call: replacementCall,
-        };
-      };
-    },
-  };
-}
+import * as t from "./prompt-capability-gateway.test-support.js";
+const { describe, it, composedPluginToolRuntime, vi, expect, capability, setup } = t;
+const { compileInput, mintPromptCapabilityBearer } = t;
+const { PromptCapabilityAuthenticationError, createHash, now, resolveContextDial } = t;
+const { createRuntimeToolGateway, createPromptCapabilityGateway } = t;
+const { capabilityLockTransaction, persistedCapabilityRow } = t;
+const { lockActivePromptCapabilityBinding, taskExecutionPromptCapabilities } = t;
+const { postgresGatewayRepository } = t;
 
 describe("prompt-capability gateway", () => {
   it.each(["stable", "status", "manifest identity"] as const)(
@@ -524,9 +38,7 @@ describe("prompt-capability gateway", () => {
         ingressOrdinal: 0,
       });
       if (state !== "stable") {
-        await expect(call).rejects.toThrow(
-          "Plugin context is not bound to a ready tool",
-        );
+        await expect(call).rejects.toThrow("Plugin context is not bound to a ready tool");
         expect(runtime.originalCall).not.toHaveBeenCalled();
         expect(replacementCall).not.toHaveBeenCalled();
         return;
@@ -549,11 +61,11 @@ describe("prompt-capability gateway", () => {
           runContextHandle: expect.stringMatching(/^pc_plugin_ctx_v1_/),
         }),
         undefined,
-        expect.objectContaining({ companyId: capability.companyId }),
+        expect.objectContaining({
+          companyId: capability.companyId,
+        }),
       );
-      expect(invocationScope.pluginRunContextHandle).toBe(
-        rpcParams.runContextHandle,
-      );
+      expect(invocationScope.pluginRunContextHandle).toBe(rpcParams.runContextHandle);
       expect(runtime.createPluginRunContext).toHaveBeenCalledWith(
         expect.objectContaining({
           pluginInstallationId: "plugin-installation",
@@ -574,21 +86,21 @@ describe("prompt-capability gateway", () => {
 
     const tools = await runtime.gateway.listTools(bearer);
     expect(tools.map((tool) => tool.name)).toContain("task_update");
-    await expect(runtime.gateway.callTool({
-      bearer,
-      toolName: "task_update",
-      arguments: { message: "progress" },
-      callIdentity: { source: "jsonrpc", id: 7 },
-      ingressOrdinal: 0,
-    })).rejects.toBeInstanceOf(PromptCapabilityAuthenticationError);
+    await expect(
+      runtime.gateway.callTool({
+        bearer,
+        toolName: "task_update",
+        arguments: { message: "progress" },
+        callIdentity: { source: "jsonrpc", id: 7 },
+        ingressOrdinal: 0,
+      }),
+    ).rejects.toBeInstanceOf(PromptCapabilityAuthenticationError);
 
     expect(runtime.authenticateBearerHash).toHaveBeenCalledWith(
       createHash("sha256").update(bearer, "utf8").digest("hex"),
       now,
     );
-    expect(runtime.authenticateBearerHash.mock.calls.flat()).not.toContain(
-      bearer,
-    );
+    expect(runtime.authenticateBearerHash.mock.calls.flat()).not.toContain(bearer);
     expect(runtime.authenticateBearerHash).toHaveBeenCalledTimes(3);
     expect(runtime.revalidate).not.toHaveBeenCalled();
     expect(runtime.execute).not.toHaveBeenCalled();
@@ -601,21 +113,27 @@ describe("prompt-capability gateway", () => {
     });
     const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(8));
 
-    await expect(runtime.gateway.callTool({
-      bearer,
-      toolName: "mention_board",
-      arguments: { message: "Need Board direction" },
-      callIdentity: { source: "jsonrpc", id: 8 },
-      ingressOrdinal: 0,
-    })).resolves.toEqual({
+    await expect(
+      runtime.gateway.callTool({
+        bearer,
+        toolName: "mention_board",
+        arguments: { message: "Need Board direction" },
+        callIdentity: { source: "jsonrpc", id: 8 },
+        ingressOrdinal: 0,
+      }),
+    ).resolves.toEqual({
       source: "paperclip",
       value: { accepted: true },
     });
 
-    expect(runtime.execute).toHaveBeenCalledWith(expect.objectContaining({
-      capability,
-      descriptor: expect.objectContaining({ name: "mention_board" }),
-    }));
+    expect(runtime.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capability,
+        descriptor: expect.objectContaining({
+          name: "mention_board",
+        }),
+      }),
+    );
   });
 
   it("uses one compiled snapshot for descriptor and context scope", async () => {
@@ -623,15 +141,24 @@ describe("prompt-capability gateway", () => {
     const compiledDial = resolveContextDial({
       agent: { read_task_comments: true },
     }).effective;
-    const driftedDial = resolveContextDial({ agent: {} }).effective;
-    const resolveCompileInput = vi.fn()
-      .mockResolvedValueOnce({ ...compileInput(), contextDial: compiledDial })
-      .mockResolvedValue({ ...compileInput(), contextDial: driftedDial });
+    const driftedDial = resolveContextDial({
+      agent: {},
+    }).effective;
+    const resolveCompileInput = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...compileInput(),
+        contextDial: compiledDial,
+      })
+      .mockResolvedValue({
+        ...compileInput(),
+        contextDial: driftedDial,
+      });
     const authenticated = vi.fn(async () => ({
       kind: "authenticated" as const,
       capability,
     }));
-    const repository: PromptCapabilityGatewayRepository = {
+    const repository: t.PromptCapabilityGatewayRepository = {
       authenticateBearerHash: authenticated,
       revalidate: authenticated,
       resolveCompileInput,
@@ -641,8 +168,8 @@ describe("prompt-capability gateway", () => {
     const observedScopes: unknown[] = [];
     const managedTools = {
       async routeExecution(
-        _command: PaperclipManagedToolCommand,
-        context: PaperclipManagedToolRouteContext,
+        _command: t.PaperclipManagedToolCommand,
+        context: t.PaperclipManagedToolRouteContext,
       ) {
         observedScopes.push(await context.resolveRuntimeScope!());
         return { items: [] };
@@ -666,89 +193,103 @@ describe("prompt-capability gateway", () => {
       now: () => now,
     });
 
-    await expect(gateway.callTool({
-      bearer,
-      toolName: "read_task_comments",
-      arguments: {},
-      callIdentity: { source: "jsonrpc", id: "context-call" },
-      ingressOrdinal: 0,
-    })).resolves.toEqual({ source: "paperclip", value: { items: [] } });
+    await expect(
+      gateway.callTool({
+        bearer,
+        toolName: "read_task_comments",
+        arguments: {},
+        callIdentity: { source: "jsonrpc", id: "context-call" },
+        ingressOrdinal: 0,
+      }),
+    ).resolves.toEqual({ source: "paperclip", value: { items: [] } });
 
     expect(resolveCompileInput).toHaveBeenCalledOnce();
-    expect(observedScopes).toEqual([{
-      companyId: capability.companyId,
-      activeTaskId: capability.taskId,
-      dial: compiledDial,
-    }]);
-    expect(observedScopes).not.toContainEqual(expect.objectContaining({
-      dial: driftedDial,
-    }));
+    expect(observedScopes).toEqual([
+      {
+        companyId: capability.companyId,
+        activeTaskId: capability.taskId,
+        dial: compiledDial,
+      },
+    ]);
+    expect(observedScopes).not.toContainEqual(
+      expect.objectContaining({
+        dial: driftedDial,
+      }),
+    );
   });
 
   it("uses the compiled bootstrap turn for discovery and calls", async () => {
     const runtime = setup({
       ...compileInput(),
       turn: "bootstrap",
-      pluginTools: [{
-        installationId: "memory-plugin",
-        manifestIdentity: "memory-v1",
-        name: "memory.read_company_agent_memory",
-        toolName: "read_company_agent_memory",
-        title: "Read company memory",
-        description: "Read agent background memory",
-        inputSchema: { type: "object" },
-        bootstrapEnabled: true,
-      }],
+      pluginTools: [
+        {
+          installationId: "memory-plugin",
+          manifestIdentity: "memory-v1",
+          name: "memory.read_company_agent_memory",
+          toolName: "read_company_agent_memory",
+          title: "Read company memory",
+          description: "Read agent background memory",
+          inputSchema: { type: "object" },
+          bootstrapEnabled: true,
+        },
+      ],
     });
     const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(10));
 
-    const names = (await runtime.gateway.listTools(bearer)).map(
-      (tool) => tool.name,
-    );
+    const names = (await runtime.gateway.listTools(bearer)).map((tool) => tool.name);
     expect(names).toEqual(["memory.read_company_agent_memory"]);
 
-    await expect(runtime.gateway.callTool({
-      bearer,
-      toolName: "task_update",
-      arguments: { message: "do work" },
-      callIdentity: { source: "jsonrpc", id: "bootstrap-denied" },
-      ingressOrdinal: 0,
-    })).rejects.toMatchObject({
+    await expect(
+      runtime.gateway.callTool({
+        bearer,
+        toolName: "task_update",
+        arguments: { message: "do work" },
+        callIdentity: { source: "jsonrpc", id: "bootstrap-denied" },
+        ingressOrdinal: 0,
+      }),
+    ).rejects.toMatchObject({
       code: "runtime_tool_unavailable",
-      message:
-        "Tool is not available for the current task execution: task_update",
+      message: "Tool is not available for the current task execution: task_update",
     });
     expect(runtime.execute).not.toHaveBeenCalled();
     expect(runtime.registerTerminalInvalid).toHaveBeenCalledWith(
       expect.objectContaining({
         capability,
-        descriptor: expect.objectContaining({ name: "task_update" }),
+        descriptor: expect.objectContaining({
+          name: "task_update",
+        }),
       }),
     );
 
-    await expect(runtime.gateway.callTool({
-      bearer,
-      toolName: "memory.read_company_agent_memory",
-      arguments: {},
-      callIdentity: { source: "jsonrpc", id: "bootstrap-memory" },
-      ingressOrdinal: 1,
-    })).resolves.toEqual({
+    await expect(
+      runtime.gateway.callTool({
+        bearer,
+        toolName: "memory.read_company_agent_memory",
+        arguments: {},
+        callIdentity: { source: "jsonrpc", id: "bootstrap-memory" },
+        ingressOrdinal: 1,
+      }),
+    ).resolves.toEqual({
       source: "paperclip",
       value: { accepted: true },
     });
-    expect(runtime.execute).toHaveBeenCalledWith(expect.objectContaining({
-      capability,
-      descriptor: expect.objectContaining({
-        name: "memory.read_company_agent_memory",
-        availability: "both",
+    expect(runtime.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capability,
+        descriptor: expect.objectContaining({
+          name: "memory.read_company_agent_memory",
+          availability: "both",
+        }),
       }),
-    }));
+    );
   });
 
   it("rejects every credential class other than a prompt capability", async () => {
     const runtime = setup();
-    await expect(runtime.gateway.listTools("pc_plugin_ctx_v1_not-a-run"))
-      .rejects.toBeInstanceOf(PromptCapabilityAuthenticationError);
+    await expect(runtime.gateway.listTools("pc_plugin_ctx_v1_not-a-run")).rejects.toBeInstanceOf(
+      PromptCapabilityAuthenticationError,
+    );
     expect(runtime.authenticateBearerHash).not.toHaveBeenCalled();
   });
 
@@ -766,12 +307,8 @@ describe("prompt-capability gateway", () => {
         new Date("2026-07-31T12:06:00.000Z"),
       ),
     ).resolves.toBeUndefined();
-    expect(runtime.selectedTables).toEqual([
-      taskExecutionPromptCapabilities,
-    ]);
-    expect(runtime.lockedTables).toEqual([
-      taskExecutionPromptCapabilities,
-    ]);
+    expect(runtime.selectedTables).toEqual([taskExecutionPromptCapabilities]);
+    expect(runtime.lockedTables).toEqual([taskExecutionPromptCapabilities]);
   });
 
   it("revalidates an immutable gateway binding after its database expiry is extended", async () => {
@@ -780,12 +317,7 @@ describe("prompt-capability gateway", () => {
     });
     const repository = postgresGatewayRepository(row);
 
-    await expect(
-      repository.revalidate(
-        capability,
-        new Date("2026-07-31T12:06:00.000Z"),
-      ),
-    ).resolves.toEqual({
+    await expect(repository.revalidate(capability, new Date("2026-07-31T12:06:00.000Z"))).resolves.toEqual({
       kind: "authenticated",
       capability: {
         ...capability,
@@ -804,7 +336,10 @@ describe("prompt-capability gateway", () => {
       postgresGatewayRepository(row).authenticateBearerHash(row.bearerHash, now),
     ).resolves.toMatchObject({
       kind: "authenticated",
-      capability: { activatedAt: null, sessionId: capability.sessionId },
+      capability: {
+        activatedAt: null,
+        sessionId: capability.sessionId,
+      },
     });
   });
 
@@ -829,10 +364,7 @@ describe("prompt-capability gateway", () => {
       expiresAt: new Date("2026-07-31T12:10:00.000Z"),
     });
     const repository = postgresGatewayRepository(row, now, taskState);
-    const result = await repository.revalidate(
-      capability,
-      new Date("2026-07-31T12:06:00.000Z"),
-    );
+    const result = await repository.revalidate(capability, new Date("2026-07-31T12:06:00.000Z"));
 
     if (expected === "authenticated") {
       expect(result.kind).toBe("authenticated");
@@ -856,14 +388,8 @@ describe("prompt-capability gateway", () => {
   ])("rejects a $label persisted capability despite the original binding", async ({ row }) => {
     const runtime = capabilityLockTransaction(row);
 
-    await expect(
-      lockActivePromptCapabilityBinding(
-        runtime.transaction,
-        capability,
-        now,
-      ),
-    ).rejects.toEqual(
-      expect.objectContaining<Partial<PromptCapabilityAuthorityError>>({
+    await expect(lockActivePromptCapabilityBinding(runtime.transaction, capability, now)).rejects.toEqual(
+      expect.objectContaining({
         code: "prompt_capability_authority_invalid",
         reason: "capability_generation_changed",
       }),
@@ -892,16 +418,10 @@ describe("prompt-capability gateway", () => {
     const row = persistedCapabilityRow({
       expiresAt: new Date("2026-07-31T12:05:00.000Z"),
     });
-    const repository = postgresGatewayRepository(
-      row,
-      new Date("2026-07-31T12:05:00.001Z"),
-    );
+    const repository = postgresGatewayRepository(row, new Date("2026-07-31T12:05:00.001Z"));
 
-    await expect(
-      repository.revalidate(
-        capability,
-        new Date("2026-07-31T12:04:00.000Z"),
-      ),
-    ).resolves.toEqual({ kind: "inactive" });
+    await expect(repository.revalidate(capability, new Date("2026-07-31T12:04:00.000Z"))).resolves.toEqual({
+      kind: "inactive",
+    });
   });
 });

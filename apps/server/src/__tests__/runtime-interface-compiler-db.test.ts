@@ -1,192 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { taskExecutionRefs, type Db } from "@paperclipai/db";
-import {
-  AGENT_CONTEXT_GRANT_KEYS,
-  type PaperclipPluginManifestV1,
-} from "@paperclipai/shared";
-import type { PromptCapabilityCompileScope } from "../services/prompt-capability-gateway.ts";
-import {
-  buildRuntimeInterfaceCompileInput,
-  readyPluginTools,
-  resolveRuntimeToolTurn,
-  type RuntimeInterfaceCompilerSnapshot,
-} from "../services/runtime-interface-compiler-db.ts";
-import { compileRuntimeInterface } from "../services/runtime-interface-compiler.ts";
-import type { InvokableTaskOwnerRevision } from "../services/agent-invokability.ts";
-
-function revision(id: string, agentId: string): InvokableTaskOwnerRevision {
-  return {
-    id,
-    companyId: "company",
-    agentId,
-  };
-}
-
-function capability(
-  overrides: Partial<PromptCapabilityCompileScope> = {},
-): PromptCapabilityCompileScope {
-  return {
-    companyId: "company",
-    taskId: "task",
-    taskExecutionAuthorityId: "authority",
-    consultExecutionId: null,
-    executionMode: "owner",
-    ownershipEpoch: 4,
-    targetAgentId: "owner",
-    ...overrides,
-  };
-}
-
-function snapshot(
-  overrides: Partial<RuntimeInterfaceCompilerSnapshot> = {},
-): RuntimeInterfaceCompilerSnapshot {
-  return {
-    capability: capability(),
-    turn: "work",
-    task: {
-      companyId: "company",
-      ownerKind: "agent",
-      ownerAgentId: "owner",
-      ownershipEpoch: 4,
-      executionPolicy: null,
-    },
-    agents: [
-      {
-        id: "above-root",
-        companyId: "company",
-        name: "Above root",
-        title: null,
-        capabilities: null,
-        reportsTo: null,
-        status: "idle",
-        currentAdapterConfigRevisionId: "above-root-revision",
-      },
-      {
-        id: "ancestor",
-        companyId: "company",
-        name: "Ancestor",
-        title: "Secret title",
-        capabilities: "Review",
-        reportsTo: "above-root",
-        status: "idle",
-        currentAdapterConfigRevisionId: "ancestor-revision",
-      },
-      {
-        id: "owner",
-        companyId: "company",
-        name: "Owner",
-        title: "Secret title",
-        capabilities: "Build",
-        reportsTo: "ancestor",
-        status: "idle",
-        currentAdapterConfigRevisionId: "revision",
-      },
-      {
-        id: "child",
-        companyId: "company",
-        name: "Child",
-        title: "Secret title",
-        capabilities: "Test",
-        reportsTo: "owner",
-        status: "idle",
-        currentAdapterConfigRevisionId: "child-revision",
-      },
-      {
-        id: "grandchild",
-        companyId: "company",
-        name: "Grandchild",
-        title: null,
-        capabilities: null,
-        reportsTo: "child",
-        status: "idle",
-        currentAdapterConfigRevisionId: "grandchild-revision",
-      },
-      {
-        id: "paused-child",
-        companyId: "company",
-        name: "Paused",
-        title: null,
-        capabilities: null,
-        reportsTo: "owner",
-        status: "paused",
-        currentAdapterConfigRevisionId: "paused-revision",
-      },
-      {
-        id: "peer",
-        companyId: "company",
-        name: "Peer",
-        title: null,
-        capabilities: null,
-        reportsTo: "ancestor",
-        status: "idle",
-        currentAdapterConfigRevisionId: "peer-revision",
-      },
-    ],
-    adapterRevisions: [
-      revision("above-root-revision", "above-root"),
-      revision("ancestor-revision", "ancestor"),
-      revision("revision", "owner"),
-      revision("child-revision", "child"),
-      revision("grandchild-revision", "grandchild"),
-      revision("paused-revision", "paused-child"),
-      revision("peer-revision", "peer"),
-    ],
-    contextGrantKeys: ["read_task_comments", "list_company_tasks"],
-    actionGrantKeys: ["task_create", "mention_agent", "agent_configure"],
-    mentionReachGrantKeys: ["mention_any_descendant", "mention_any_ancestor"],
-    configureGrants: [
-      {
-        permissionKey: "agents:configure",
-        scope: { targetAgentIds: ["peer"] },
-      },
-    ],
-    childTasks: [
-      {
-        id: "eligible-child",
-        identifier: "PAP-2",
-        lifecycleStatus: "open",
-        creatorKind: "agent-execution",
-        creatorAuthorityId: "authority",
-      },
-      {
-        id: "other-authority",
-        identifier: "PAP-3",
-        lifecycleStatus: "open",
-        creatorKind: "agent-execution",
-        creatorAuthorityId: "different",
-      },
-      {
-        id: "terminal-child",
-        identifier: "PAP-4",
-        lifecycleStatus: "done",
-        creatorKind: "agent-execution",
-        creatorAuthorityId: "authority",
-      },
-    ],
-    taskTree: [
-      {
-        id: "root-task",
-        parentId: null,
-        ownerKind: "agent",
-        ownerAgentId: "ancestor",
-      },
-      {
-        id: "task",
-        parentId: "root-task",
-        ownerKind: "agent",
-        ownerAgentId: "owner",
-      },
-      {
-        id: "descendant-task",
-        parentId: "task",
-        ownerKind: "agent",
-        ownerAgentId: "grandchild",
-      },
-    ],
-    pluginTools: [],
-    ...overrides,
-  };
-}
+import * as t from "./runtime-interface-compiler-db.test-support.js";
+const { describe, it, capability, expect, resolveRuntimeToolTurn } = t;
+const { readyPluginTools, buildRuntimeInterfaceCompileInput, snapshot } = t;
+const { AGENT_CONTEXT_GRANT_KEYS, compileRuntimeInterface } = t;
 
 describe("Postgres runtime-interface compile snapshot", () => {
   it("derives the bootstrap turn only from an exact ordered scope", async () => {
@@ -216,7 +31,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
         consultCallerRefId: null,
         consultChainToken: null,
         ...overrides,
-      }) as typeof taskExecutionRefs.$inferSelect;
+      }) as testSupport.TaskExecutionRefRow;
     const instruction = ref();
     const work = ref({ id: "work", messageKind: "user", laneOrdinal: 1 });
     const db = (responses: readonly (readonly unknown[])[]) => {
@@ -240,7 +55,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
           };
           return builder;
         },
-      } as unknown as Db;
+      } as unknown as testSupport.Db;
     };
     const compileScope = capability({
       ownershipEpoch: 1,
@@ -248,26 +63,20 @@ describe("Postgres runtime-interface compile snapshot", () => {
     });
 
     await expect(
-      resolveRuntimeToolTurn(
-        db([[instruction], [instruction, work]]),
-        compileScope,
-      ),
+      resolveRuntimeToolTurn(db([[instruction], [instruction, work]]), compileScope),
     ).resolves.toBe("bootstrap");
-    await expect(
-      resolveRuntimeToolTurn(db([[instruction], [instruction]]), compileScope),
-    ).resolves.toBe("work");
+    await expect(resolveRuntimeToolTurn(db([[instruction], [instruction]]), compileScope)).resolves.toBe(
+      "work",
+    );
     const lateInstruction = ref({ laneOrdinal: 1 });
     const lateWork = ref({ id: "work", messageKind: "user", laneOrdinal: 3 });
     await expect(
-      resolveRuntimeToolTurn(
-        db([[lateInstruction], [lateInstruction, lateWork]]),
-        compileScope,
-      ),
+      resolveRuntimeToolTurn(db([[lateInstruction], [lateInstruction, lateWork]]), compileScope),
     ).rejects.toThrow("lost its exact ordered pair");
   });
 
   it("admits only authorized tools from an exact ready-plugin manifest", () => {
-    const manifest: PaperclipPluginManifestV1 = {
+    const manifest: testSupport.PaperclipPluginManifestV1 = {
       id: "acme.search",
       apiVersion: 1,
       version: "1.0.0",
@@ -288,7 +97,11 @@ describe("Postgres runtime-interface compile snapshot", () => {
     };
     expect(
       readyPluginTools([
-        { id: "installed", pluginKey: "acme.search", manifestJson: manifest },
+        {
+          id: "installed",
+          pluginKey: "acme.search",
+          manifestJson: manifest,
+        },
       ]),
     ).toEqual([
       {
@@ -365,18 +178,9 @@ describe("Postgres runtime-interface compile snapshot", () => {
         ],
       },
     ]);
-    expect(compiled.creatorUpdateTargets).toEqual([
-      { taskId: "eligible-child" },
-    ]);
-    expect(compiled.mentionTargets.map((agent) => agent.id)).toEqual([
-      "ancestor",
-      "child",
-      "grandchild",
-    ]);
-    expect(compiled.configureTargets.map((agent) => agent.id)).toEqual([
-      "owner",
-      "peer",
-    ]);
+    expect(compiled.creatorUpdateTargets).toEqual([{ taskId: "eligible-child" }]);
+    expect(compiled.mentionTargets.map((agent) => agent.id)).toEqual(["ancestor", "child", "grandchild"]);
+    expect(compiled.configureTargets.map((agent) => agent.id)).toEqual(["owner", "peer"]);
     expect(compiled.configureTargets[0]).not.toHaveProperty("title");
     expect(compiled.configureTargets[0]).not.toHaveProperty("reportsTo");
   });
@@ -411,13 +215,8 @@ describe("Postgres runtime-interface compile snapshot", () => {
         ],
       }),
     );
-    expect(compiled.configureTargets.map((agent) => agent.id)).toEqual([
-      "owner",
-      "peer",
-    ]);
-    expect(compiled.configureTargets.map((agent) => agent.id)).not.toContain(
-      "ancestor",
-    );
+    expect(compiled.configureTargets.map((agent) => agent.id)).toEqual(["owner", "peer"]);
+    expect(compiled.configureTargets.map((agent) => agent.id)).not.toContain("ancestor");
   });
 
   it("includes direct children without implicit parent reach", () => {
@@ -441,23 +240,19 @@ describe("Postgres runtime-interface compile snapshot", () => {
       mentionReachGrantKeys: [],
     });
     const withoutDynamicReach = buildRuntimeInterfaceCompileInput(childless);
-    expect(withoutDynamicReach.mentionTargets.map((agent) => agent.id)).toEqual(
-      [],
-    );
-    expect(
-      compileRuntimeInterface(withoutDynamicReach).byName.has("mention_agent"),
-    ).toBe(false);
+    expect(withoutDynamicReach.mentionTargets.map((agent) => agent.id)).toEqual([]);
+    expect(compileRuntimeInterface(withoutDynamicReach).byName.has("mention_agent")).toBe(false);
 
     const withBoundedAncestorReach = buildRuntimeInterfaceCompileInput({
       ...childless,
       mentionReachGrantKeys: ["mention_any_ancestor"],
     });
-    expect(
-      withBoundedAncestorReach.mentionTargets.map((agent) => agent.id),
-    ).toEqual(["ancestor", "child", "owner"]);
-    expect(
-      withBoundedAncestorReach.mentionTargets.map((agent) => agent.id),
-    ).not.toContain("above-root");
+    expect(withBoundedAncestorReach.mentionTargets.map((agent) => agent.id)).toEqual([
+      "ancestor",
+      "child",
+      "owner",
+    ]);
+    expect(withBoundedAncestorReach.mentionTargets.map((agent) => agent.id)).not.toContain("above-root");
   });
 
   it("keeps a childless root owner's mention reach empty", () => {
@@ -480,21 +275,14 @@ describe("Postgres runtime-interface compile snapshot", () => {
       ],
     });
 
-    for (const mentionReachGrantKeys of [
-      [],
-      ["mention_any_ancestor"],
-    ] as const) {
+    for (const mentionReachGrantKeys of [[], ["mention_any_ancestor"]] as const) {
       const compileInput = buildRuntimeInterfaceCompileInput({
         ...rootOwner,
         mentionReachGrantKeys: [...mentionReachGrantKeys],
       });
       expect(compileInput.mentionTargets.map((agent) => agent.id)).toEqual([]);
-      expect(
-        compileInput.mentionTargets.map((agent) => agent.id),
-      ).not.toContain("owner");
-      expect(
-        compileRuntimeInterface(compileInput).byName.has("mention_agent"),
-      ).toBe(false);
+      expect(compileInput.mentionTargets.map((agent) => agent.id)).not.toContain("owner");
+      expect(compileRuntimeInterface(compileInput).byName.has("mention_agent")).toBe(false);
     }
   });
 
@@ -502,17 +290,13 @@ describe("Postgres runtime-interface compile snapshot", () => {
     const withoutGrandchildOwnership = buildRuntimeInterfaceCompileInput(
       snapshot({
         taskTree: snapshot().taskTree.map((task) =>
-          task.id === "descendant-task"
-            ? { ...task, ownerAgentId: "peer" }
-            : task,
+          task.id === "descendant-task" ? { ...task, ownerAgentId: "peer" } : task,
         ),
         mentionReachGrantKeys: ["mention_any_descendant"],
       }),
     );
 
-    expect(
-      withoutGrandchildOwnership.mentionTargets.map((agent) => agent.id),
-    ).toEqual(["child"]);
+    expect(withoutGrandchildOwnership.mentionTargets.map((agent) => agent.id)).toEqual(["child"]);
   });
 
   it("fails closed when task scope or target invokability changes", () => {
@@ -542,17 +326,13 @@ describe("Postgres runtime-interface compile snapshot", () => {
     const compiled = buildRuntimeInterfaceCompileInput(
       snapshot({
         agents: snapshot().agents.map((agent) =>
-          agent.id === "child"
-            ? { ...agent, currentAdapterConfigRevisionId: null }
-            : agent,
+          agent.id === "child" ? { ...agent, currentAdapterConfigRevisionId: null } : agent,
         ),
       }),
     );
 
     expect(compiled.taskCreateDirectChildren).toEqual([]);
-    expect(compiled.mentionTargets.map((agent) => agent.id)).not.toContain(
-      "child",
-    );
+    expect(compiled.mentionTargets.map((agent) => agent.id)).not.toContain("child");
   });
 
   it("omits owners whose current revision is dangling or belongs to another agent", () => {
@@ -560,9 +340,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
     const dangling = buildRuntimeInterfaceCompileInput({
       ...base,
       agents: base.agents.map((agent) =>
-        agent.id === "child"
-          ? { ...agent, currentAdapterConfigRevisionId: "missing-revision" }
-          : agent,
+        agent.id === "child" ? { ...agent, currentAdapterConfigRevisionId: "missing-revision" } : agent,
       ),
     });
     expect(dangling.taskCreateDirectChildren).toEqual([]);
@@ -570,9 +348,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
     const crossAgent = buildRuntimeInterfaceCompileInput({
       ...base,
       agents: base.agents.map((agent) =>
-        agent.id === "child"
-          ? { ...agent, currentAdapterConfigRevisionId: "revision" }
-          : agent,
+        agent.id === "child" ? { ...agent, currentAdapterConfigRevisionId: "revision" } : agent,
       ),
     });
     expect(crossAgent.taskCreateDirectChildren).toEqual([]);
@@ -600,9 +376,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
       }),
     );
 
-    expect(Object.values(compiled.contextDial).every((value) => !value)).toBe(
-      true,
-    );
+    expect(Object.values(compiled.contextDial).every((value) => !value)).toBe(true);
   });
 
   it("does not give an owner-mode non-owner the task baseline", () => {

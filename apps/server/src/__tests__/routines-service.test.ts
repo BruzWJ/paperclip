@@ -1,327 +1,11 @@
+import "./routines-service.test-suite-03-run-admission-and-scheduling.js";
+import * as t from "./routines-service.test-support.js";
 import { createHmac } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createMockDb as createQueuedMockDb,
-  type MockDbHarness,
-  type MockDbPlan,
-} from "./helpers/mock-db.js";
-import { testSecretsRuntimeConfig } from "./helpers/secrets-runtime.js";
-
-const mocks = vi.hoisted(() => ({
-  resolveOwner: vi.fn(),
-  terminalizeRoutineEdges: vi.fn(),
-  logActivity: vi.fn(),
-  secrets: {
-    normalizeEnvBindingsForPersistence: vi.fn(),
-    syncEnvBindingsForTarget: vi.fn(),
-    createBound: vi.fn(),
-    remove: vi.fn(),
-    rotate: vi.fn(),
-    resolveSecretValue: vi.fn(),
-  },
-}));
-
-vi.mock("../services/agent-invokability.js", async (importActual) => {
-  const actual =
-    await importActual<typeof import("../services/agent-invokability.js")>();
-  return {
-    ...actual,
-    resolveInvokableTaskOwnerInTransaction: mocks.resolveOwner,
-  };
-});
-
-vi.mock("../services/system-escalation-postgres.js", async (importActual) => {
-  const actual =
-    await importActual<
-      typeof import("../services/system-escalation-postgres.js")
-    >();
-  return {
-    ...actual,
-    terminalizeRoutineCreatorEdgesInTransaction: mocks.terminalizeRoutineEdges,
-  };
-});
-
-vi.mock("../services/task-session/admission.js", async (importActual) => {
-  const actual =
-    await importActual<
-      typeof import("../services/task-session/admission.js")
-    >();
-  return {
-    ...actual,
-    createTaskSessionAdmissionService: vi.fn(() => ({})),
-  };
-});
-
-vi.mock("../services/secrets.js", async (importActual) => {
-  const actual = await importActual<typeof import("../services/secrets.js")>();
-  return {
-    ...actual,
-    secretService: vi.fn(() => mocks.secrets),
-  };
-});
-
-vi.mock("../services/activity-log.js", async (importActual) => {
-  const actual =
-    await importActual<typeof import("../services/activity-log.js")>();
-  return { ...actual, logActivity: mocks.logActivity };
-});
-
-vi.mock("../telemetry.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telemetry.js")>();
-  return { ...actual, getTelemetryClient: vi.fn(() => null) };
-});
-
-import {
-  nextCronTickInTimeZone,
-  routineService,
-} from "../services/routines.js";
-
-const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
-const ROUTINE_ID = "22222222-2222-4222-8222-222222222222";
-const CALLING_AGENT_ID = "33333333-3333-4333-8333-333333333333";
-const ROUTINE_REVISION_ID = "44444444-4444-4444-8444-000000000001";
-const HISTORICAL_REVISION_ID = "55555555-5555-4555-8555-555555555555";
-const USER_ACTOR = { type: "user", userId: "board-user" } as const;
-const NOW = new Date("2026-07-25T12:08:00.000Z");
-
-/**
- * Routines deliberately distinguish a root Db from its transaction executor
- * when deciding whether to open a nested transaction. Keep those identities
- * distinct while delegating every operation to the same deterministic queues.
- */
-function createMockDb(plan: MockDbPlan = {}): MockDbHarness {
-  const harness = createQueuedMockDb(plan);
-  let transactionDb: typeof harness.db;
-  transactionDb = new Proxy(harness.db, {
-    get(target, property) {
-      if (property === "transaction") {
-        return vi.fn(async (callback: (tx: typeof harness.db) => unknown) =>
-          callback(transactionDb),
-        );
-      }
-      return Reflect.get(target, property);
-    },
-  });
-  const rootDb = new Proxy(harness.db, {
-    get(target, property) {
-      if (property === "transaction") {
-        return vi.fn(async (callback: (tx: typeof harness.db) => unknown) =>
-          callback(transactionDb),
-        );
-      }
-      return Reflect.get(target, property);
-    },
-  });
-  return { ...harness, db: rootDb };
-}
-
-function routine(overrides: Record<string, unknown> = {}) {
-  return {
-    id: ROUTINE_ID,
-    companyId: COMPANY_ID,
-    projectId: null,
-    folderId: null,
-    goalId: null,
-    parentTaskId: null,
-    title: "Repository triage",
-    description: "Review the repository",
-    assigneeAgentId: "agent-owner",
-    priority: "medium",
-    status: "active",
-    concurrencyPolicy: "coalesce_if_active",
-    catchUpPolicy: "skip_missed",
-    activityGatePolicy: "always",
-    activityGateScope: "company",
-    variables: [],
-    env: null,
-    responsibleUserId: "board-user",
-    originKind: "manual",
-    originId: null,
-    latestRevisionId: ROUTINE_REVISION_ID,
-    latestRevisionNumber: 1,
-    lastTriggeredAt: null,
-    lastEnqueuedAt: null,
-    createdByAgentId: null,
-    createdByUserId: "board-user",
-    updatedByAgentId: null,
-    updatedByUserId: "board-user",
-    createdAt: new Date("2026-07-25T10:00:00.000Z"),
-    updatedAt: new Date("2026-07-25T10:00:00.000Z"),
-    ...overrides,
-  };
-}
-
-function snapshot(row: ReturnType<typeof routine>, triggers: unknown[] = []) {
-  return {
-    version: 1 as const,
-    routine: {
-      id: row.id,
-      companyId: row.companyId,
-      projectId: row.projectId,
-      goalId: row.goalId,
-      parentTaskId: row.parentTaskId,
-      title: row.title,
-      description: row.description,
-      assigneeAgentId: row.assigneeAgentId,
-      priority: row.priority,
-      status: row.status,
-      concurrencyPolicy: row.concurrencyPolicy,
-      catchUpPolicy: row.catchUpPolicy,
-      variables: row.variables,
-      env: row.env,
-      responsibleUserId: row.responsibleUserId,
-    },
-    triggers,
-  };
-}
-
-function revision(
-  row: ReturnType<typeof routine>,
-  overrides: Record<string, unknown> = {},
-) {
-  const revisionNumber = Number(
-    overrides.revisionNumber ?? row.latestRevisionNumber,
-  );
-  return {
-    id: `44444444-4444-4444-8444-${String(revisionNumber).padStart(12, "0")}`,
-    companyId: row.companyId,
-    routineId: row.id,
-    revisionNumber,
-    title: row.title,
-    description: row.description,
-    snapshot: snapshot(row),
-    changeSummary: null,
-    restoredFromRevisionId: null,
-    createdByAgentId: null,
-    createdByUserId: "board-user",
-    createdByRunId: null,
-    responsibleUserId: row.responsibleUserId,
-    createdAt: NOW,
-    ...overrides,
-  };
-}
-
-function descriptionDocument(row: ReturnType<typeof routine>) {
-  return {
-    id: "document-1",
-    companyId: row.companyId,
-    routineId: row.id,
-    key: "description",
-    title: "Routine description",
-    format: "markdown",
-    latestBody: row.description ?? "",
-    latestRevisionId: "document-revision-1",
-    latestRevisionNumber: 1,
-    createdByAgentId: null,
-    createdByUserId: "board-user",
-    updatedByAgentId: null,
-    updatedByUserId: "board-user",
-    createdAt: NOW,
-    updatedAt: NOW,
-  };
-}
-
-function ordinaryTasks() {
-  return {
-    create: vi.fn(),
-    dispatchRef: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function service(
-  harness: MockDbHarness,
-  ordinary = ordinaryTasks(),
-  runtimeEnv: Record<string, string | undefined> = {
-    PAPERCLIP_PUBLIC_URL: "https://paperclip.example/",
-  },
-) {
-  return {
-    ordinary,
-    service: routineService(harness.db, {
-      runtimeEnv,
-      ordinaryTasks: ordinary as never,
-      secretsRuntime: testSecretsRuntimeConfig(),
-    }),
-  };
-}
-
-function queryValues(harness: MockDbHarness, operation: "insert" | "update") {
-  const valueMethod = operation === "insert" ? "values" : "set";
-  return harness.calls
-    .filter(
-      (call) => call.operation === operation && call.method === valueMethod,
-    )
-    .map((call) => call.args[0]);
-}
-
-function creationHarness(created: ReturnType<typeof routine>) {
-  const createdRevision = revision(created, {
-    id: ROUTINE_REVISION_ID,
-    revisionNumber: 1,
-    snapshot: snapshot(created),
-    changeSummary: "Created routine",
-  });
-  const committed = {
-    ...created,
-    latestRevisionId: createdRevision.id,
-    latestRevisionNumber: 1,
-  };
-  const document = {
-    id: "document-1",
-    companyId: created.companyId,
-    title: "Routine description",
-    format: "markdown",
-    latestBody: created.description ?? "",
-    latestRevisionId: null,
-    latestRevisionNumber: 1,
-    createdByAgentId: null,
-    createdByUserId: "board-user",
-    updatedByAgentId: null,
-    updatedByUserId: "board-user",
-    createdAt: NOW,
-    updatedAt: NOW,
-  };
-  const documentRevision = {
-    id: "document-revision-1",
-    documentId: document.id,
-  };
-  return {
-    committed,
-    harness: createMockDb({
-      select: [[], []],
-      insert: [
-        [created],
-        [createdRevision],
-        [document],
-        [documentRevision],
-        [],
-      ],
-      update: [[committed], []],
-    }),
-  };
-}
-
-beforeEach(() => {
-  vi.useFakeTimers();
-  vi.setSystemTime(NOW);
-  mocks.resolveOwner.mockReset();
-  mocks.terminalizeRoutineEdges.mockReset();
-  mocks.logActivity.mockReset();
-  for (const candidate of Object.values(mocks.secrets)) candidate.mockReset();
-  mocks.resolveOwner.mockResolvedValue({ revisionId: "agent-revision-1" });
-  mocks.terminalizeRoutineEdges.mockResolvedValue([]);
-  mocks.logActivity.mockResolvedValue(undefined);
-  mocks.secrets.normalizeEnvBindingsForPersistence.mockImplementation(
-    async (_companyId, env) => env,
-  );
-  mocks.secrets.syncEnvBindingsForTarget.mockResolvedValue(undefined);
-  mocks.secrets.remove.mockResolvedValue(undefined);
-  mocks.secrets.rotate.mockResolvedValue(undefined);
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
+import { nextCronTickInTimeZone } from "../services/routines.js";
+const { describe, it, expect, NOW, routine } = t;
+const { creationHarness, service, COMPANY_ID, USER_ACTOR, mocks, queryValues } = t;
+const { createMockDb, revision, snapshot, descriptionDocument, ordinaryTasks } = t;
+const { ROUTINE_ID, HISTORICAL_REVISION_ID, CALLING_AGENT_ID } = t;
 
 describe("routine service contracts without a database", () => {
   describe("schedule calculation", () => {
@@ -330,11 +14,7 @@ describe("routine service contracts without a database", () => {
         new Date("2026-07-25T12:37:00.000Z"),
       );
       expect(
-        nextCronTickInTimeZone(
-          "0 9 * * 1-5",
-          "America/Denver",
-          new Date("2026-07-24T16:00:00.000Z"),
-        ),
+        nextCronTickInTimeZone("0 9 * * 1-5", "America/Denver", new Date("2026-07-24T16:00:00.000Z")),
       ).toEqual(new Date("2026-07-27T15:00:00.000Z"));
     });
 
@@ -421,7 +101,10 @@ describe("routine service contracts without a database", () => {
 
       expect(result.status).toBe("paused");
       expect(queryValues(harness, "insert")[0]).toEqual(
-        expect.objectContaining({ status: "paused", assigneeAgentId: null }),
+        expect.objectContaining({
+          status: "paused",
+          assigneeAgentId: null,
+        }),
       );
       expect(mocks.resolveOwner).not.toHaveBeenCalled();
     });
@@ -469,14 +152,15 @@ describe("routine service contracts without a database", () => {
       await expect(
         service(harness).service.update(
           existing.id,
-          { title: existing.title, baseRevisionId: existing.latestRevisionId },
+          {
+            title: existing.title,
+            baseRevisionId: existing.latestRevisionId,
+          },
           USER_ACTOR,
         ),
       ).resolves.toBe(existing);
       expect(
-        harness.calls.filter((call) =>
-          ["insert", "update", "delete"].includes(call.operation),
-        ),
+        harness.calls.filter((call) => ["insert", "update", "delete"].includes(call.operation)),
       ).toHaveLength(0);
     });
 
@@ -519,15 +203,7 @@ describe("routine service contracts without a database", () => {
         latestRevisionNumber: 2,
       });
       const harness = createMockDb({
-        select: [
-          [existing],
-          [],
-          [existing],
-          [],
-          [],
-          [],
-          [descriptionDocument(existing)],
-        ],
+        select: [[existing], [], [existing], [], [], [], [descriptionDocument(existing)]],
         execute: [[]],
         update: [[updated], [committed]],
         insert: [[appendedRevision]],
@@ -541,7 +217,10 @@ describe("routine service contracts without a database", () => {
       await expect(
         service(harness, ordinary).service.update(
           existing.id,
-          { status: "archived", baseRevisionId: existing.latestRevisionId },
+          {
+            status: "archived",
+            baseRevisionId: existing.latestRevisionId,
+          },
           USER_ACTOR,
         ),
       ).resolves.toEqual(committed);
@@ -567,19 +246,15 @@ describe("routine service contracts without a database", () => {
     it("rejects restoring the current latest revision without writes", async () => {
       const existing = routine();
       const current = revision(existing);
-      const harness = createMockDb({ select: [[existing], [current]] });
+      const harness = createMockDb({
+        select: [[existing], [current]],
+      });
 
       await expect(
-        service(harness).service.restoreRevision(
-          existing.id,
-          current.id,
-          USER_ACTOR,
-        ),
+        service(harness).service.restoreRevision(existing.id, current.id, USER_ACTOR),
       ).rejects.toMatchObject({ status: 409 });
       expect(
-        harness.calls.filter((call) =>
-          ["insert", "update", "delete", "execute"].includes(call.operation),
-        ),
+        harness.calls.filter((call) => ["insert", "update", "delete", "execute"].includes(call.operation)),
       ).toHaveLength(0);
     });
 
@@ -593,7 +268,9 @@ describe("routine service contracts without a database", () => {
         id: HISTORICAL_REVISION_ID,
         snapshot: snapshot(targetRoutine),
       });
-      const harness = createMockDb({ select: [[existing], [target]] });
+      const harness = createMockDb({
+        select: [[existing], [target]],
+      });
 
       await expect(
         service(harness).service.restoreRevision(existing.id, target.id, {
@@ -604,7 +281,9 @@ describe("routine service contracts without a database", () => {
       expect(mocks.resolveOwner).not.toHaveBeenCalled();
     });
   });
+});
 
+describe("routine service contracts without a database", () => {
   describe("trigger contracts", () => {
     it("persists a custom schedule exactly and appends its routine revision", async () => {
       const existing = routine({
@@ -666,12 +345,7 @@ describe("routine service contracts without a database", () => {
         latestRevisionNumber: 2,
       });
       const harness = createMockDb({
-        select: [
-          [existing],
-          [existing],
-          [trigger],
-          [descriptionDocument(existing)],
-        ],
+        select: [[existing], [existing], [trigger], [descriptionDocument(existing)]],
         execute: [[]],
         insert: [[trigger], [appendedRevision]],
         update: [[committed]],
@@ -701,9 +375,7 @@ describe("routine service contracts without a database", () => {
           nextRunAt: trigger.nextRunAt,
         }),
       );
-      expect(queryValues(harness, "insert")[1]).toEqual(
-        expect.objectContaining({ revisionNumber: 2 }),
-      );
+      expect(queryValues(harness, "insert")[1]).toEqual(expect.objectContaining({ revisionNumber: 2 }));
     });
 
     it("rejects an enabled schedule when a required variable has no default", async () => {
@@ -734,9 +406,7 @@ describe("routine service contracts without a database", () => {
         ),
       ).rejects.toMatchObject({ status: 422 });
       expect(
-        harness.calls.filter((call) =>
-          ["insert", "update", "delete", "execute"].includes(call.operation),
-        ),
+        harness.calls.filter((call) => ["insert", "update", "delete", "execute"].includes(call.operation)),
       ).toHaveLength(0);
     });
 
@@ -754,17 +424,11 @@ describe("routine service contracts without a database", () => {
       };
       const existing = routine();
       const harness = createMockDb({
-        select: [
-          [trigger],
-          [existing],
-          [{ id: trigger.secretId, companyId: COMPANY_ID }],
-        ],
+        select: [[trigger], [existing], [{ id: trigger.secretId, companyId: COMPANY_ID }]],
       });
       mocks.secrets.resolveSecretValue.mockResolvedValueOnce("top-secret");
       const rawBody = Buffer.from('{"event":"push"}');
-      const valid = createHmac("sha256", "top-secret")
-        .update(rawBody)
-        .digest("hex");
+      const valid = createHmac("sha256", "top-secret").update(rawBody).digest("hex");
 
       await expect(
         service(harness).service.firePublicTrigger(trigger.publicId, {
@@ -773,412 +437,6 @@ describe("routine service contracts without a database", () => {
         }),
       ).rejects.toMatchObject({ status: 401 });
       expect(queryValues(harness, "insert")).toHaveLength(0);
-      expect(queryValues(harness, "update")).toHaveLength(0);
-    });
-  });
-
-  describe("run admission and scheduling", () => {
-    it("interpolates variables and atomically correlates a fresh execution task", async () => {
-      const existing = routine({
-        title: "Triage {{repository}}",
-        description: "Review {{repository}} at {{priority}} priority",
-        variables: [
-          {
-            name: "repository",
-            label: null,
-            type: "text",
-            defaultValue: null,
-            required: true,
-            options: [],
-          },
-          {
-            name: "priority",
-            label: null,
-            type: "select",
-            defaultValue: "high",
-            required: true,
-            options: ["high", "low"],
-          },
-        ],
-      });
-      const boundSnapshot = snapshot(existing);
-      const createdRun = {
-        id: "run-1",
-        companyId: COMPANY_ID,
-        routineId: ROUTINE_ID,
-        triggerId: null,
-        source: "api",
-        status: "received",
-        triggeredAt: NOW,
-        idempotencyKey: null,
-        triggerPayload: {
-          variables: { repository: "paperclip", priority: "high" },
-        },
-        dispatchFingerprint: "fingerprint-1",
-        routineRevisionId: existing.latestRevisionId,
-        responsibleUserId: "revision-owner",
-        linkedTaskId: null,
-        coalescedIntoRunId: null,
-        failureReason: null,
-        completedAt: null,
-        createdAt: NOW,
-        updatedAt: NOW,
-      };
-      const finalRun = {
-        ...createdRun,
-        status: "task_created",
-        linkedTaskId: "task-created-1",
-      };
-      const harness = createMockDb({
-        select: [
-          [existing],
-          [{ snapshot: boundSnapshot }],
-          [
-            {
-              pluginKey: "paperclip.routine-source",
-              defaultsJson: {
-                taskTemplate: {
-                  surfaceVisibility: "plugin_operation",
-                  originId: "operation:repository-triage",
-                },
-              },
-              manifestJson: { displayName: "Routine Source" },
-            },
-          ],
-          [{ responsibleUserId: "revision-owner", snapshot: boundSnapshot }],
-          [],
-          [],
-        ],
-        execute: [[]],
-        insert: [[createdRun]],
-        update: [[finalRun], []],
-      });
-      const ordinary = ordinaryTasks();
-      ordinary.create.mockImplementationOnce(async (input) => {
-        const persisted = {
-          task: { id: finalRun.linkedTaskId, companyId: COMPANY_ID },
-          sessionId: "ses-created",
-          authorityId: "authority-created",
-          ref: { id: "ref-created" },
-        };
-        await input.correlate(harness.db, persisted);
-        return persisted;
-      });
-
-      const run = await service(harness, ordinary).service.runRoutine(
-        ROUTINE_ID,
-        {
-          source: "api",
-          variables: { repository: "paperclip" },
-        },
-      );
-
-      expect(run).toEqual(finalRun);
-      expect(ordinary.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Triage paperclip",
-          request: "Review paperclip at high priority",
-          ownerAgentId: existing.assigneeAgentId,
-          creator: {
-            kind: "routine",
-            routineId: ROUTINE_ID,
-            routineDispatchId: createdRun.id,
-          },
-          originKind: "plugin:paperclip.routine-source:operation",
-          originId: "operation:repository-triage",
-          originRunId: createdRun.id,
-          responsibleUserId: "revision-owner",
-        }),
-      );
-      expect(queryValues(harness, "insert")[0]).toEqual(
-        expect.objectContaining({
-          status: "received",
-          triggerPayload: createdRun.triggerPayload,
-          routineRevisionId: existing.latestRevisionId,
-        }),
-      );
-      expect(harness.remaining("select")).toBe(0);
-    });
-
-    it.each([
-      "",
-      " operation:repository-triage",
-      "operation:repository-triage ",
-      "operation:\u0000repository-triage",
-    ])(
-      "rejects persisted non-canonical managed routine originId %j",
-      async (originId) => {
-        const existing = routine();
-        const harness = createMockDb({
-          select: [
-            [existing],
-            [{ id: existing.latestRevisionId }],
-            [
-              {
-                pluginKey: "paperclip.routine-source",
-                defaultsJson: { taskTemplate: { originId } },
-                manifestJson: { displayName: "Routine Source" },
-              },
-            ],
-          ],
-        });
-        const ordinary = ordinaryTasks();
-
-        await expect(
-          service(harness, ordinary).service.runRoutine(ROUTINE_ID, {
-            source: "api",
-          }),
-        ).rejects.toMatchObject({
-          status: 409,
-          message: "Managed routine task template originId is not canonical",
-        });
-        expect(ordinary.create).not.toHaveBeenCalled();
-        expect(harness.remaining("select")).toBe(0);
-      },
-    );
-
-    it.each([
-      ["coalesce_if_active", "coalesced"],
-      ["skip_if_active", "skipped"],
-    ] as const)(
-      "%s resolves a matching live task as %s without creating another task",
-      async (concurrencyPolicy, expectedStatus) => {
-        const existing = routine({ concurrencyPolicy });
-        const boundSnapshot = snapshot(existing);
-        const createdRun = {
-          id: `run-${expectedStatus}`,
-          companyId: COMPANY_ID,
-          routineId: ROUTINE_ID,
-          source: "api",
-          status: "received",
-          triggeredAt: NOW,
-          responsibleUserId: "board-user",
-        };
-        const activeTask = {
-          id: "task-active",
-          companyId: COMPANY_ID,
-          lifecycleStatus: "open",
-          boardPresentationStatus: "in_progress",
-          creatorRoutineDispatchId: "run-active",
-        };
-        const settledRun = {
-          ...createdRun,
-          status: expectedStatus,
-          linkedTaskId: activeTask.id,
-          coalescedIntoRunId: activeTask.creatorRoutineDispatchId,
-          completedAt: NOW,
-        };
-        const harness = createMockDb({
-          select: [
-            [existing],
-            [{ snapshot: boundSnapshot }],
-            [],
-            [{ responsibleUserId: "board-user", snapshot: boundSnapshot }],
-            [activeTask],
-          ],
-          execute: [[]],
-          insert: [[createdRun]],
-          update: [[settledRun], []],
-        });
-        const ordinary = ordinaryTasks();
-
-        await expect(
-          service(harness, ordinary).service.runRoutine(ROUTINE_ID, {
-            source: "api",
-          }),
-        ).resolves.toEqual(settledRun);
-        expect(ordinary.create).not.toHaveBeenCalled();
-        expect(queryValues(harness, "update")[0]).toEqual(
-          expect.objectContaining({
-            status: expectedStatus,
-            linkedTaskId: activeTask.id,
-          }),
-        );
-      },
-    );
-
-    it("claims and advances a paused project's due schedule without dispatching", async () => {
-      const existing = routine({
-        projectId: "project-1",
-        catchUpPolicy: "enqueue_missed_with_cap",
-      });
-      const trigger = {
-        id: "schedule-trigger",
-        companyId: COMPANY_ID,
-        routineId: ROUTINE_ID,
-        kind: "schedule",
-        enabled: true,
-        cronExpression: "*/15 * * * *",
-        timezone: "UTC",
-        nextRunAt: new Date("2026-07-25T12:00:00.000Z"),
-        createdAt: new Date("2026-07-25T10:00:00.000Z"),
-      };
-      const skippedRun = {
-        id: "run-skipped-paused",
-        companyId: COMPANY_ID,
-        routineId: ROUTINE_ID,
-        triggerId: trigger.id,
-        source: "schedule",
-        status: "skipped",
-        failureReason: "paused",
-        triggeredAt: NOW,
-      };
-      const harness = createMockDb({
-        select: [[{ trigger, routine: existing, projectPausedAt: NOW }]],
-        update: [[{ id: trigger.id }], [], []],
-        insert: [[skippedRun]],
-      });
-      const ordinary = ordinaryTasks();
-
-      await expect(
-        service(harness, ordinary).service.tickScheduledTriggers(NOW),
-      ).resolves.toEqual({ triggered: 0 });
-      expect(queryValues(harness, "update")[0]).toEqual(
-        expect.objectContaining({
-          nextRunAt: new Date("2026-07-25T12:15:00.000Z"),
-        }),
-      );
-      expect(queryValues(harness, "insert")[0]).toEqual(
-        expect.objectContaining({
-          status: "skipped",
-          failureReason: "paused",
-          linkedTaskId: null,
-        }),
-      );
-      expect(ordinary.create).not.toHaveBeenCalled();
-      expect(mocks.logActivity).toHaveBeenCalledWith(
-        harness.db,
-        expect.objectContaining({
-          action: "routine.run_skipped",
-          details: expect.objectContaining({ reason: "paused" }),
-        }),
-      );
-    });
-
-    it("suppresses an automatic schedule when worktree execution is disabled in General settings", async () => {
-      const existing = routine();
-      const trigger = {
-        id: "schedule-trigger",
-        companyId: COMPANY_ID,
-        routineId: ROUTINE_ID,
-        kind: "schedule",
-        enabled: true,
-        cronExpression: "*/15 * * * *",
-        timezone: "UTC",
-        nextRunAt: new Date("2026-07-25T12:00:00.000Z"),
-        createdAt: new Date("2026-07-25T10:00:00.000Z"),
-      };
-      const skippedRun = {
-        id: "run-skipped-worktree",
-        companyId: COMPANY_ID,
-        routineId: ROUTINE_ID,
-        triggerId: trigger.id,
-        source: "schedule",
-        status: "skipped",
-        failureReason: "worktree_execution_cutoff",
-        triggeredAt: NOW,
-      };
-      const harness = createMockDb({
-        select: [
-          [
-            {
-              id: "instance-settings",
-              singletonKey: "default",
-              general: { enableWorktreeRunExecution: false },
-              createdAt: NOW,
-              updatedAt: NOW,
-            },
-          ],
-          [{ trigger, routine: existing, projectPausedAt: null }],
-        ],
-        update: [[{ id: trigger.id }], [], []],
-        insert: [[skippedRun]],
-      });
-      const ordinary = ordinaryTasks();
-
-      await expect(
-        service(harness, ordinary, {
-          PAPERCLIP_PUBLIC_URL: "https://paperclip.example/",
-          PAPERCLIP_IN_WORKTREE: "true",
-          PAPERCLIP_INSTANCE_ID: "worktree-1",
-        }).service.tickScheduledTriggers(NOW),
-      ).resolves.toEqual({ triggered: 0 });
-
-      expect(queryValues(harness, "insert")[0]).toEqual(
-        expect.objectContaining({
-          status: "skipped",
-          failureReason: "worktree_execution_cutoff",
-          linkedTaskId: null,
-        }),
-      );
-      expect(ordinary.create).not.toHaveBeenCalled();
-      expect(mocks.logActivity).toHaveBeenCalledWith(
-        harness.db,
-        expect.objectContaining({
-          action: "routine.run_skipped",
-          details: expect.objectContaining({
-            reason: "worktree_execution_cutoff",
-          }),
-        }),
-      );
-      expect(harness.remaining("select")).toBe(0);
-    });
-  });
-
-  describe("run lifecycle projection", () => {
-    it.each([
-      ["done", "completed", undefined],
-      ["blocked", "failed", "Execution task moved to blocked"],
-      ["cancelled", "failed", "Execution task moved to cancelled"],
-    ] as const)(
-      "maps an execution task in %s to a %s routine run",
-      async (boardPresentationStatus, runStatus, failureReason) => {
-        const task = {
-          id: "task-execution",
-          boardPresentationStatus,
-          originKind: "routine_execution",
-          originRunId: "run-linked",
-        };
-        const updatedRun = {
-          id: task.originRunId,
-          status: runStatus,
-          failureReason: failureReason ?? null,
-        };
-        const harness = createMockDb({
-          select: [[task]],
-          update: [[updatedRun]],
-        });
-
-        await expect(
-          service(harness).service.syncRunStatusForTask(task.id),
-        ).resolves.toEqual(updatedRun);
-        expect(queryValues(harness, "update")[0]).toEqual(
-          expect.objectContaining({
-            status: runStatus,
-            ...(failureReason ? { failureReason } : {}),
-            completedAt: NOW,
-          }),
-        );
-      },
-    );
-
-    it("ignores a task without canonical routine execution provenance", async () => {
-      const harness = createMockDb({
-        select: [
-          [
-            {
-              id: "ordinary-task",
-              boardPresentationStatus: "done",
-              originKind: "manual",
-              originRunId: null,
-            },
-          ],
-        ],
-      });
-
-      await expect(
-        service(harness).service.syncRunStatusForTask("ordinary-task"),
-      ).resolves.toBeNull();
       expect(queryValues(harness, "update")).toHaveLength(0);
     });
   });

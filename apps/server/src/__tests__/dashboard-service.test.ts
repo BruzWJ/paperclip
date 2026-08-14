@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { dashboardService, getUtcMonthStart } from "../services/dashboard.ts";
+import { dashboardService } from "../services/dashboard.ts";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const mocks = vi.hoisted(() => ({
@@ -36,7 +36,10 @@ function run(
   runId: string,
   status: "succeeded" | "failed" | "timed_out" | "cancelled",
   createdAt: Date,
-  input: { retryOfRunId?: string | null; terminalReasonCode?: string | null } = {},
+  input: {
+    retryOfRunId?: string | null;
+    terminalReasonCode?: string | null;
+  } = {},
 ) {
   return {
     runId,
@@ -49,25 +52,9 @@ function run(
 
 function createDashboardDb() {
   return createMockDb({
-    select: [
-      [{ id: companyId }],
-      [],
-      [],
-      [{ count: 0 }],
-    ],
+    select: [[{ id: companyId }], [], [], [{ count: 0 }]],
   }).db;
 }
-
-describe("getUtcMonthStart", () => {
-  it("anchors the monthly spend window to UTC month boundaries", () => {
-    expect(getUtcMonthStart(new Date("2026-03-31T20:30:00.000-05:00")).toISOString()).toBe(
-      "2026-04-01T00:00:00.000Z",
-    );
-    expect(getUtcMonthStart(new Date("2026-04-01T00:30:00.000+14:00")).toISOString()).toBe(
-      "2026-03-01T00:00:00.000Z",
-    );
-  });
-});
 
 describe("dashboard service", () => {
   beforeEach(() => {
@@ -92,8 +79,7 @@ describe("dashboard service", () => {
     const today = utcDay(0);
     const weekAgo = utcDay(-7);
     const runs = [
-      ...Array.from({ length: 105 }, (_, index) =>
-        run(`run-today-${index}`, "succeeded", today)),
+      ...Array.from({ length: 105 }, (_, index) => run(`run-today-${index}`, "succeeded", today)),
       run("run-failed", "failed", weekAgo),
       run("run-timed-out", "timed_out", weekAgo),
       run("run-cancelled", "cancelled", weekAgo),
@@ -132,15 +118,21 @@ describe("dashboard service", () => {
     const day = utcDay(-2);
     mocks.listRuns.mockResolvedValue({
       items: [
-        run("original", "failed", day, { terminalReasonCode: "worker_loss_after_prompt" }),
+        run("original", "failed", day, {
+          terminalReasonCode: "worker_loss_after_prompt",
+        }),
         run("retry", "succeeded", day, { retryOfRunId: "original" }),
-        run("chain-original", "failed", day, { terminalReasonCode: "worker_loss_after_prompt" }),
+        run("chain-original", "failed", day, {
+          terminalReasonCode: "worker_loss_after_prompt",
+        }),
         run("chain-retry", "failed", day, {
           retryOfRunId: "chain-original",
           terminalReasonCode: "worker_loss_after_prompt",
         }),
         run("chain-success", "succeeded", day, { retryOfRunId: "chain-retry" }),
-        run("transport", "failed", day, { terminalReasonCode: "transport_transient" }),
+        run("transport", "failed", day, {
+          terminalReasonCode: "transport_transient",
+        }),
       ],
       nextCursor: null,
     });

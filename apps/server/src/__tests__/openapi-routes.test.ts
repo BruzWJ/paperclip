@@ -55,14 +55,8 @@ const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head",
  * operations. MCP publishes its own tools/list schema and the installer is a
  * public shell/PowerShell script endpoint, so neither belongs in OpenAPI.
  */
-const explicitOpenApiCoverageExclusions = new Set<string>([
-  "board-mcp.ts",
-  "board-mcp-setup.ts",
-]);
-const betterAuthOwnedRuntimeRoutes = new Set([
-  "GET /api/auth/get-session",
-  "POST /api/auth/update-user",
-]);
+const explicitOpenApiCoverageExclusions = new Set<string>(["board-mcp.ts", "board-mcp-setup.ts"]);
+const betterAuthOwnedRuntimeRoutes = new Set(["GET /api/auth/get-session", "POST /api/auth/update-user"]);
 const retiredRoutePrefixes = [
   "/api/board/chat",
   "/api/cases/",
@@ -116,7 +110,7 @@ function loadActualRoutes() {
 
   for (const file of fs.readdirSync(ROUTES_DIR).filter((entry) => entry.endsWith(".ts"))) {
     if (explicitOpenApiCoverageExclusions.has(file)) continue;
-    const prefix = apiPrefixes[file];
+    const prefix = apiPrefixes[file] ?? (file.endsWith("-routes.ts") ? "/api" : undefined);
     const source = fs.readFileSync(path.join(ROUTES_DIR, file), "utf8");
     if (!prefix) {
       if (ROUTER_METHOD_PATTERN.test(source)) {
@@ -143,7 +137,9 @@ function loadSpecRoutes() {
   const spec = buildOpenApiDocument();
   const routes = new Set<string>();
 
-  for (const [routePath, pathItem] of Object.entries<Record<string, Record<string, unknown>>>(spec.paths ?? {})) {
+  for (const [routePath, pathItem] of Object.entries<Record<string, Record<string, unknown>>>(
+    spec.paths ?? {},
+  )) {
     for (const method of Object.keys(pathItem)) {
       if (HTTP_METHODS.has(method)) {
         routes.add(`${method.toUpperCase()} ${routePath}`);
@@ -164,26 +160,25 @@ describe("openapi routes", () => {
     expect(res.body.paths["/api/openapi.json"].get.summary).toBe("Get the generated OpenAPI document");
     expect(res.body.paths["/api/companies/{companyId}/agents"].get.summary).toBe("List agents in a company");
     expect(
-      res.body.paths["/api/companies/{companyId}/runtime-agents"].post
-        .requestBody.content["application/json"].schema.required,
-    ).toEqual(expect.arrayContaining([
-      "name",
-      "title",
-      "capabilities",
-      "reportsTo",
-      "instruction",
-      "contextGrants",
-      "actionGrants",
-      "mentionReachGrants",
-    ]));
+      res.body.paths["/api/companies/{companyId}/runtime-agents"].post.requestBody.content["application/json"]
+        .schema.required,
+    ).toEqual(
+      expect.arrayContaining([
+        "name",
+        "title",
+        "capabilities",
+        "reportsTo",
+        "instruction",
+        "contextGrants",
+        "actionGrants",
+        "mentionReachGrants",
+      ]),
+    );
     expect(
-      res.body.paths["/api/agents/{id}/adapter-config-revisions"].post
-        ["x-paperclip-authorization"],
+      res.body.paths["/api/agents/{id}/adapter-config-revisions"].post["x-paperclip-authorization"],
     ).toEqual({ actor: "board" });
     const [readyAdapterInfoSchema, unavailableAdapterInfoSchema] =
-      res.body.paths["/api/adapters"].get.responses["200"].content[
-        "application/json"
-      ].schema.items.oneOf;
+      res.body.paths["/api/adapters"].get.responses["200"].content["application/json"].schema.items.oneOf;
     expect(readyAdapterInfoSchema).toMatchObject({
       type: "object",
       additionalProperties: false,
@@ -202,10 +197,7 @@ describe("openapi routes", () => {
         capabilities: {
           type: "object",
           additionalProperties: false,
-          required: [
-            "contractVersion",
-            "runtimeControls",
-          ],
+          required: ["contractVersion", "runtimeControls"],
           properties: {
             contractVersion: {
               type: "string",
@@ -222,19 +214,11 @@ describe("openapi routes", () => {
         },
       },
     });
-    expect(
-      readyAdapterInfoSchema.required,
-    ).not.toContain("disabled");
+    expect(readyAdapterInfoSchema.required).not.toContain("disabled");
     expect(unavailableAdapterInfoSchema).toMatchObject({
       type: "object",
       additionalProperties: false,
-      required: expect.arrayContaining([
-        "type",
-        "label",
-        "modelsCount",
-        "loaded",
-        "diagnostic",
-      ]),
+      required: expect.arrayContaining(["type", "label", "modelsCount", "loaded", "diagnostic"]),
       properties: {
         loaded: { type: "boolean", enum: [false] },
         diagnostic: {
@@ -242,7 +226,10 @@ describe("openapi routes", () => {
           additionalProperties: false,
           required: ["code", "message"],
           properties: {
-            code: { type: "string", enum: ["acpx_probe_failed", "acpx_catalog_invalid"] },
+            code: {
+              type: "string",
+              enum: ["acpx_probe_failed", "acpx_catalog_invalid"],
+            },
             message: { type: "string" },
           },
         },
@@ -251,9 +238,9 @@ describe("openapi routes", () => {
     expect(res.body.paths["/api/adapters/{type}"]).toBeUndefined();
 
     const adapterRevisionSchema =
-      res.body.paths[
-        "/api/agents/{id}/adapter-config-revisions/current"
-      ].get.responses["200"].content["application/json"].schema;
+      res.body.paths["/api/agents/{id}/adapter-config-revisions/current"].get.responses["200"].content[
+        "application/json"
+      ].schema;
     expect(adapterRevisionSchema).toMatchObject({
       type: "object",
       additionalProperties: false,
@@ -263,14 +250,14 @@ describe("openapi routes", () => {
       required: expect.arrayContaining(["acpConfiguration"]),
     });
     expect(
-      res.body.paths[
-        "/api/agents/{id}/adapter-config-revisions"
-      ].get.responses["200"].content["application/json"].schema.items,
+      res.body.paths["/api/agents/{id}/adapter-config-revisions"].get.responses["200"].content[
+        "application/json"
+      ].schema.items,
     ).toEqual(adapterRevisionSchema);
     const createRevisionSchema =
-      res.body.paths[
-        "/api/agents/{id}/adapter-config-revisions"
-      ].post.responses["201"].content["application/json"].schema;
+      res.body.paths["/api/agents/{id}/adapter-config-revisions"].post.responses["201"].content[
+        "application/json"
+      ].schema;
     expect(createRevisionSchema).toMatchObject({
       type: "object",
       additionalProperties: false,
@@ -279,10 +266,7 @@ describe("openapi routes", () => {
       },
       required: ["revision", "current", "appended"],
     });
-    for (const schema of [
-      adapterRevisionSchema,
-      createRevisionSchema,
-    ]) {
+    for (const schema of [adapterRevisionSchema, createRevisionSchema]) {
       const serialized = JSON.stringify(schema);
       expect(serialized).not.toContain("nativeCorrelationKind");
       expect(serialized).not.toContain("nativeCorrelation");
@@ -291,8 +275,7 @@ describe("openapi routes", () => {
       expect(serialized).not.toContain("providerInputKind");
     }
     expect(
-      res.body.paths["/api/agents/{id}/operational-configuration"].patch
-        ["x-paperclip-authorization"],
+      res.body.paths["/api/agents/{id}/operational-configuration"].patch["x-paperclip-authorization"],
     ).toEqual({ actor: "board" });
     expect(res.body.paths["/api/agents/{id}/keys"]).toBeUndefined();
     expect(res.body.paths["/api/join-requests/{requestId}/claim-api-key"]).toBeUndefined();
@@ -303,11 +286,12 @@ describe("openapi routes", () => {
     expect(res.body.components.securitySchemes.AgentBearerAuth).toBeUndefined();
     expect(res.body.paths["/api/health"].get.security).toEqual([]);
     expect(res.body.paths["/api/companies"].post.responses["201"]).toBeDefined();
+    expect(res.body.paths["/api/companies/{companyId}/users/{userId}/profile"].get.summary).toBe(
+      "Get a user profile by exact stored user ID within a company",
+    );
     expect(
-      res.body.paths["/api/companies/{companyId}/users/{userId}/profile"].get
-        .summary,
-    ).toBe("Get a user profile by exact stored user ID within a company");
-    expect(res.body.paths["/api/companies"].post.requestBody.content["application/json"].schema).toMatchObject({
+      res.body.paths["/api/companies"].post.requestBody.content["application/json"].schema,
+    ).toMatchObject({
       type: "object",
       properties: {
         name: { type: "string", minLength: 1 },
@@ -323,9 +307,7 @@ describe("openapi routes", () => {
       "Move an item into or out of a folder",
     );
     const resolveBudgetIncidentOperation =
-      res.body.paths[
-        "/api/companies/{companyId}/budget-incidents/{incidentId}/resolve"
-      ].post;
+      res.body.paths["/api/companies/{companyId}/budget-incidents/{incidentId}/resolve"].post;
     const incidentIdParameter = resolveBudgetIncidentOperation.parameters.find(
       (parameter: { name?: string }) => parameter.name === "incidentId",
     );
@@ -397,8 +379,7 @@ describe("openapi routes", () => {
       });
     }
     expect(spec.paths["/api/plugins/{pluginId}/health"]).toBeUndefined();
-    const costEventsPath =
-      spec.paths["/api/companies/{companyId}/cost-events"];
+    const costEventsPath = spec.paths["/api/companies/{companyId}/cost-events"];
     expect(costEventsPath.get.responses["200"]).toBeDefined();
     expect(costEventsPath.get.responses["401"]).toBeDefined();
     expect(costEventsPath.post).toBeUndefined();

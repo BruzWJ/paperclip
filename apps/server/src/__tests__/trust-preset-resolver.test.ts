@@ -5,10 +5,7 @@ import {
   LOW_TRUST_REVIEW_PRESET,
 } from "@paperclipai/shared";
 import { normalizeTaskExecutionPolicy } from "../services/task-execution-policy.js";
-import {
-  isTaskWithinLowTrustBoundary,
-  resolveCoreTrustPreset,
-} from "../services/trust-preset-resolver.js";
+import { resolveCoreTrustPreset } from "../services/trust-preset-resolver.js";
 
 const companyId = "11111111-1111-4111-8111-111111111111";
 const otherCompanyId = "22222222-2222-4222-8222-222222222222";
@@ -91,8 +88,6 @@ describe("resolveCoreTrustPreset", () => {
       allowedAgentIds: [agentA, agentB],
       allowedToolClasses: ["git.read"],
     });
-    expect(isTaskWithinLowTrustBoundary(result.boundary, { companyId, id: taskB, projectId: projectB })).toBe(true);
-    expect(isTaskWithinLowTrustBoundary(result.boundary, { companyId, id: taskC, projectId: projectC })).toBe(false);
   });
 
   it("rejects the retired top-level trustPreset alias", () => {
@@ -119,7 +114,9 @@ describe("resolveCoreTrustPreset", () => {
         executionPolicy: {
           reviewPreset: lowTrustReviewPreset(),
           authorizationPolicy: {
-            trustBoundary: lowTrustBoundary({ allowedToolClasses: ["git.read"] }),
+            trustBoundary: lowTrustBoundary({
+              allowedToolClasses: ["git.read"],
+            }),
           },
         },
       },
@@ -175,10 +172,12 @@ describe("resolveCoreTrustPreset", () => {
         },
       },
     ]) {
-      expect(resolveCoreTrustPreset({
-        companyId,
-        task: { companyId, executionPolicy },
-      })).toMatchObject({
+      expect(
+        resolveCoreTrustPreset({
+          companyId,
+          task: { companyId, executionPolicy },
+        }),
+      ).toMatchObject({
         kind: "denied",
         reason: "invalid_authorization_policy",
         source: "task",

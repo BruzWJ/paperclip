@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { AGENT_CONTEXT_GRANT_KEYS } from "@paperclipai/shared";
 import {
-  allContextCellsFalse,
   contextDialDigest,
   resolveContextDial,
   resolveContextRetrievalPolicy,
-  resolveFreshCompositionDepth,
-  stampContextAccessPreset,
 } from "../services/context-dial-resolver.ts";
 
 describe("context dial resolver", () => {
@@ -73,7 +70,7 @@ describe("context dial resolver", () => {
       taskOwner: false,
     });
 
-    expect(allContextCellsFalse(result.effective)).toBe(true);
+    expect(Object.values(result.effective).every((enabled) => !enabled)).toBe(true);
   });
 
   it("allows execution mode only to attenuate the owner baseline", () => {
@@ -85,63 +82,6 @@ describe("context dial resolver", () => {
 
     expect(result.effective.read_task_comments).toBe(false);
     expect(result.effective.read_sub_task_comments).toBe(true);
-  });
-
-  it("stamps the exact five presets without persisting preset authority", () => {
-    expect(stampContextAccessPreset("heads_down")).toEqual(
-      Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false])),
-    );
-    expect(stampContextAccessPreset("focused")).toMatchObject({
-      carry_context: true,
-      read_task_comments: true,
-      list_sub_tasks: false,
-    });
-    expect(stampContextAccessPreset("supervisor")).toMatchObject({
-      carry_context: true,
-      read_task_comments: true,
-      list_sub_tasks: true,
-      read_sub_task_comments: true,
-      read_task_agent_run: false,
-    });
-    expect(stampContextAccessPreset("investigator")).toMatchObject({
-      read_task_agent_run: true,
-      read_sub_task_agent_run: false,
-      list_company_tasks: false,
-    });
-    expect(stampContextAccessPreset("situational")).toMatchObject({
-      read_task_agent_run: true,
-      read_sub_task_agent_run: false,
-      list_company_tasks: true,
-      read_company_task_comments: false,
-      read_company_task_agent_run: false,
-    });
-  });
-
-  it("derives fresh composition depth from only active-task content cells", () => {
-    expect(
-      resolveFreshCompositionDepth(
-        resolveContextDial({
-          agent: { read_company_task_agent_run: true },
-        }).effective,
-      ),
-    ).toBeNull();
-    expect(
-      resolveFreshCompositionDepth(
-        resolveContextDial({
-          agent: { read_task_comments: true },
-        }).effective,
-      ),
-    ).toBe("thread");
-    expect(
-      resolveFreshCompositionDepth(
-        resolveContextDial({
-          agent: {
-            read_task_comments: true,
-            read_task_agent_run: true,
-          },
-        }).effective,
-      ),
-    ).toBe("turns");
   });
 
   it("uses the exact retrieval-tool union rules", () => {

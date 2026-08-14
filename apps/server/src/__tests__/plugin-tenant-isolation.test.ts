@@ -4,10 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { plugins } from "@paperclipai/db";
 import { buildHostServices } from "../services/plugin-host-services.js";
-import {
-  deletePluginInstallationInTransaction,
-  pluginRegistryService,
-} from "../services/plugin-registry.js";
+import { deletePluginInstallationInTransaction, pluginRegistryService } from "../services/plugin-registry.js";
 import { createMockDb } from "./helpers/mock-db.js";
 import {
   createPluginHostServicesTestOptions,
@@ -19,18 +16,14 @@ const schemaUrls = [
   new URL("../../../../packages/db/schema/plugin_entities.ts", import.meta.url),
   new URL("../../../../packages/db/schema/plugin_logs.ts", import.meta.url),
 ];
-const registryUrl = new URL("../services/plugin-registry.ts", import.meta.url);
-const migrationsDirectory = fileURLToPath(
-  new URL("../../../../packages/db/migrations/", import.meta.url),
-);
+const registryServiceUrl = new URL("../services/plugin-registry-service.ts", import.meta.url);
+const migrationsDirectory = fileURLToPath(new URL("../../../../packages/db/migrations/", import.meta.url));
 
 async function readGeneratedMigrationSql(): Promise<string> {
-  const names = (await readdir(migrationsDirectory))
-    .filter((name) => /^\d+_.+\.sql$/.test(name))
-    .sort();
-  return (await Promise.all(
-    names.map((name) => readFile(path.join(migrationsDirectory, name), "utf8")),
-  )).join("\n");
+  const names = (await readdir(migrationsDirectory)).filter((name) => /^\d+_.+\.sql$/.test(name)).sort();
+  return (
+    await Promise.all(names.map((name) => readFile(path.join(migrationsDirectory, name), "utf8")))
+  ).join("\n");
 }
 
 const pluginId = "00000000-0000-4000-8000-000000000100";
@@ -46,7 +39,7 @@ function entityInput(companyId: string | null) {
   return {
     companyId,
     entityType: "ticket",
-    scopeKind: companyId === null ? "instance" as const : "company" as const,
+    scopeKind: companyId === null ? ("instance" as const) : ("company" as const),
     scopeId: companyId,
     externalId: "external-ticket-1",
     title: "External ticket",
@@ -88,12 +81,8 @@ describe("plugin tenant isolation", () => {
     expect(entitiesSource).toContain(
       'unique("plugin_entities_external_idx") .on( table.companyId, table.pluginId, table.entityType, table.scopeKind, table.scopeId, table.externalId, ) .nullsNotDistinct()',
     );
-    expect(entitiesSource).toContain(
-      'companyIdx: index("plugin_entities_company_idx").on(table.companyId)',
-    );
-    expect(logsSource).toContain(
-      'companyIdx: index("plugin_logs_company_idx").on(table.companyId)',
-    );
+    expect(entitiesSource).toContain('companyIdx: index("plugin_entities_company_idx").on(table.companyId)');
+    expect(logsSource).toContain('companyIdx: index("plugin_logs_company_idx").on(table.companyId)');
   });
 
   it("emits the PostgreSQL tenant constraints into generated migrations", async () => {
@@ -113,7 +102,7 @@ describe("plugin tenant isolation", () => {
   });
 
   it("uses the exact scoped identity as the atomic entity upsert target", async () => {
-    const source = normalized(await readFile(registryUrl, "utf8"));
+    const source = normalized(await readFile(registryServiceUrl, "utf8"));
 
     expect(source).toContain(
       "target: [ pluginEntities.companyId, pluginEntities.pluginId, pluginEntities.entityType, pluginEntities.scopeKind, pluginEntities.scopeId, pluginEntities.externalId, ]",
@@ -126,14 +115,17 @@ describe("plugin tenant isolation", () => {
       insert: [[updated]],
     });
 
-    await expect(pluginRegistryService(harness.db).upsertEntity(pluginId, {
-      ...entityInput(companyA),
-      title: "Updated ticket",
-    })).resolves.toEqual(updated);
+    await expect(
+      pluginRegistryService(harness.db).upsertEntity(pluginId, {
+        ...entityInput(companyA),
+        title: "Updated ticket",
+      }),
+    ).resolves.toEqual(updated);
 
-    expect(harness.calls.find((call) =>
-      call.operation === "insert" && call.method === "onConflictDoUpdate"
-    )?.args[0]).toMatchObject({
+    expect(
+      harness.calls.find((call) => call.operation === "insert" && call.method === "onConflictDoUpdate")
+        ?.args[0],
+    ).toMatchObject({
       target: expect.any(Array),
       set: {
         title: "Updated ticket",
@@ -172,10 +164,12 @@ describe("plugin tenant isolation", () => {
   it("rejects generic writes to host-owned managed-agent provenance before persistence", async () => {
     const harness = createMockDb();
 
-    await expect(pluginRegistryService(harness.db).upsertEntity(pluginId, {
-      ...entityInput(companyA),
-      entityType: "managed_agent",
-    })).rejects.toMatchObject({
+    await expect(
+      pluginRegistryService(harness.db).upsertEntity(pluginId, {
+        ...entityInput(companyA),
+        entityType: "managed_agent",
+      }),
+    ).rejects.toMatchObject({
       status: 409,
       details: { code: "plugin_managed_agent_generic_entity_mutation_denied" },
     });
@@ -208,9 +202,11 @@ describe("plugin tenant isolation", () => {
     });
     await host.dispose();
 
-    expect(harness.calls.filter((call) =>
-      call.operation === "insert" && call.method === "values"
-    ).map((call) => call.args[0])).toEqual([
+    expect(
+      harness.calls
+        .filter((call) => call.operation === "insert" && call.method === "values")
+        .map((call) => call.args[0]),
+    ).toEqual([
       expect.objectContaining({
         pluginId,
         companyId: companyA,
@@ -229,17 +225,14 @@ describe("plugin tenant isolation", () => {
 
   it("deletes the installation after dropping its namespace", async () => {
     const harness = createMockDb({
-      select: [
-        [{ id: pluginId, status: "disabled" }],
-        [{ namespaceName: "plugin_fixture" }],
-      ],
+      select: [[{ id: pluginId, status: "disabled" }], [{ namespaceName: "plugin_fixture" }]],
       execute: [undefined],
       delete: [[{ id: pluginId }]],
     });
 
-    await expect(
-      deletePluginInstallationInTransaction(harness.db as never, pluginId),
-    ).resolves.toEqual({ id: pluginId });
+    await expect(deletePluginInstallationInTransaction(harness.db as never, pluginId)).resolves.toEqual({
+      id: pluginId,
+    });
 
     expect(harness.calls.filter((call) => call.operation === "execute")).toHaveLength(1);
     const deletedTables = harness.calls

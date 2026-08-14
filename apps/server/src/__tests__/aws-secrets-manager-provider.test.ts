@@ -1,50 +1,15 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAwsSecretsManagerProvider } from "../secrets/aws-secrets-manager-provider.js";
-import { SecretProviderClientError } from "../secrets/types.js";
+import "./aws-secrets-manager-provider.test-suite-02-rejects-non-exact-linked-aws.js";
+import "./aws-secrets-manager-provider.test-suite-03-resolves-aws-secret-values-by.js";
+import * as t from "./aws-secrets-manager-provider.test-support.js";
+const { describe, registerSuiteSetup, it, createAwsSecretsManagerProvider, expect } = t;
+const { vi } = t;
 
 describe("awsSecretsManagerProvider", () => {
-  const previousEnv = {
-    PAPERCLIP_SECRETS_AWS_REGION: process.env.PAPERCLIP_SECRETS_AWS_REGION,
-    AWS_REGION: process.env.AWS_REGION,
-    AWS_DEFAULT_REGION: process.env.AWS_DEFAULT_REGION,
-    PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID:
-      process.env.PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID,
-    PAPERCLIP_SECRETS_AWS_KMS_KEY_ID:
-      process.env.PAPERCLIP_SECRETS_AWS_KMS_KEY_ID,
-    AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
-    AWS_SESSION_TOKEN: process.env.AWS_SESSION_TOKEN,
-    AWS_PROFILE: process.env.AWS_PROFILE,
-    AWS_DEFAULT_PROFILE: process.env.AWS_DEFAULT_PROFILE,
-    AWS_CONFIG_FILE: process.env.AWS_CONFIG_FILE,
-    AWS_SHARED_CREDENTIALS_FILE: process.env.AWS_SHARED_CREDENTIALS_FILE,
-    AWS_SDK_LOAD_CONFIG: process.env.AWS_SDK_LOAD_CONFIG,
-  };
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    for (const [key, value] of Object.entries(previousEnv)) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
-  });
+  registerSuiteSetup();
 
   it("creates Paperclip-managed AWS secrets without persisting plaintext in provider material", async () => {
     const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
+    const provider = t.createConfiguredAwsProvider({
       gateway: {
         async createSecret(input) {
           calls.push({ op: "createSecret", input });
@@ -70,8 +35,7 @@ describe("awsSecretsManagerProvider", () => {
 
     const prepared = await provider.createSecret({
       value: "super-secret-value",
-      externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/attacker",
+      externalRef: "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/attacker",
       context: {
         companyId: "company-1",
         secretKey: "openai-api-key",
@@ -90,9 +54,7 @@ describe("awsSecretsManagerProvider", () => {
       }),
     ]);
     expect(JSON.stringify(prepared)).not.toContain("super-secret-value");
-    expect(prepared.externalRef).toContain(
-      "paperclip/prod-use1/company-1/openai-api-key",
-    );
+    expect(prepared.externalRef).toContain("paperclip/prod-use1/company-1/openai-api-key");
     expect(prepared.providerVersionRef).toBe("aws-version-1");
   });
 
@@ -186,9 +148,7 @@ describe("awsSecretsManagerProvider", () => {
     ]);
     expect(calls[0]?.input).not.toHaveProperty("KmsKeyId");
     expect(JSON.stringify(prepared)).not.toContain("super-secret-value");
-    expect(prepared.externalRef).toContain(
-      "clip/prod-us-west/company-1/openai-api-key",
-    );
+    expect(prepared.externalRef).toContain("clip/prod-us-west/company-1/openai-api-key");
   });
 
   it.each([
@@ -197,25 +157,21 @@ describe("awsSecretsManagerProvider", () => {
       region: "us-east-1",
       kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test ",
     },
-  ])(
-    "rejects non-exact AWS provider identity config at runtime",
-    async ({ region, kmsKeyId }) => {
-      const provider = createAwsSecretsManagerProvider();
+  ])("rejects non-exact AWS provider identity config at runtime", async ({ region, kmsKeyId }) => {
+    const provider = createAwsSecretsManagerProvider();
 
-      await expect(
-        provider.linkExternalSecret({
-          externalRef:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/external",
-          providerConfig: {
-            id: "vault-1",
-            provider: "aws_secrets_manager",
-            status: "ready",
-            config: { region, kmsKeyId },
-          },
-        }),
-      ).rejects.toThrow(/exact value without surrounding whitespace/i);
-    },
-  );
+    await expect(
+      provider.linkExternalSecret({
+        externalRef: "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/external",
+        providerConfig: {
+          id: "vault-1",
+          provider: "aws_secrets_manager",
+          status: "ready",
+          config: { region, kmsKeyId },
+        },
+      }),
+    ).rejects.toThrow(/exact value without surrounding whitespace/i);
+  });
 
   it("signs AWS Secrets Manager JSON requests with default runtime credentials", async () => {
     delete process.env.AWS_PROFILE;
@@ -266,9 +222,7 @@ describe("awsSecretsManagerProvider", () => {
     expect(headers["x-amz-target"]).toBe("secretsmanager.CreateSecret");
     expect(headers["x-amz-security-token"]).toBe("test-session-token");
     expect(headers.authorization).toContain("Credential=AKIA_TEST_ACCESS/");
-    expect(headers.authorization).toContain(
-      "/us-east-1/secretsmanager/aws4_request",
-    );
+    expect(headers.authorization).toContain("/us-east-1/secretsmanager/aws4_request");
     expect(headers.authorization).toContain("SignedHeaders=");
     expect(headers.authorization).toContain("Signature=");
     expect(init?.signal).toBeInstanceOf(AbortSignal);
@@ -276,17 +230,7 @@ describe("awsSecretsManagerProvider", () => {
 
   it("creates new AWS secret versions against a namespace-valid existing secret reference", async () => {
     const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
+    const provider = t.createConfiguredAwsProvider({
       gateway: {
         async createSecret() {
           throw new Error("not used");
@@ -336,17 +280,7 @@ describe("awsSecretsManagerProvider", () => {
 
   it("rejects out-of-namespace refs for managed AWS secret version writes", async () => {
     const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
+    const provider = t.createConfiguredAwsProvider({
       gateway: {
         async createSecret() {
           throw new Error("not used");
@@ -367,8 +301,7 @@ describe("awsSecretsManagerProvider", () => {
     await expect(
       provider.createVersion({
         value: "rotated-secret-value",
-        externalRef:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/attacker",
+        externalRef: "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/attacker",
         context: {
           companyId: "company-1",
           secretKey: "openai-api-key",
@@ -382,695 +315,15 @@ describe("awsSecretsManagerProvider", () => {
   });
 
   it("stores linked external references as metadata-only provider material", async () => {
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
-    });
+    const provider = t.createConfiguredAwsProvider();
 
     const prepared = await provider.linkExternalSecret({
-      externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/external",
+      externalRef: "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/external",
       providerVersionRef: "linked-version-7",
     });
 
-    expect(prepared.externalRef).toBe(
-      "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/external",
-    );
+    expect(prepared.externalRef).toBe("arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/external");
     expect(prepared.providerVersionRef).toBe("linked-version-7");
     expect(prepared.valueSha256).toBeTruthy();
-  });
-
-  it.each([
-    {
-      externalRef:
-        " arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/external",
-      providerVersionRef: "linked-version-7",
-    },
-    {
-      externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/external",
-      providerVersionRef: "linked-version-7 ",
-    },
-  ])(
-    "rejects non-exact linked AWS references before creating provider material",
-    async ({ externalRef, providerVersionRef }) => {
-      const provider = createAwsSecretsManagerProvider({
-        config: {
-          region: "us-east-1",
-          endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-          deploymentId: "prod-use1",
-          prefix: "paperclip",
-          kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-          environmentTag: "production",
-          providerOwnerTag: "paperclip",
-          deleteRecoveryWindowDays: 30,
-        },
-      });
-
-      await expect(
-        provider.linkExternalSecret({ externalRef, providerVersionRef }),
-      ).rejects.toThrow(/exact value without surrounding whitespace/i);
-    },
-  );
-
-  it("rejects non-exact AWS response references instead of persisting aliases", async () => {
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
-      gateway: {
-        async createSecret() {
-          return {
-            ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:managed ",
-            VersionId: "aws-version-1",
-          };
-        },
-        async putSecretValue() {
-          throw new Error("not used");
-        },
-        async getSecretValue() {
-          throw new Error("not used");
-        },
-        async deleteSecret() {
-          throw new Error("not used");
-        },
-      },
-    });
-
-    await expect(
-      provider.createSecret({
-        value: "secret-value",
-        context: {
-          companyId: "company-1",
-          secretKey: "api-key",
-          secretName: "API key",
-          version: 1,
-        },
-      }),
-    ).rejects.toMatchObject({
-      code: "provider_error",
-      provider: "aws_secrets_manager",
-      operation: "createSecret",
-    });
-  });
-
-  it("rejects linked external references under the Paperclip-managed namespace", async () => {
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
-    });
-
-    await expect(
-      provider.linkExternalSecret({
-        externalRef:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-2/openai-api-key",
-        providerVersionRef: "linked-version-7",
-      }),
-    ).rejects.toThrow(/Paperclip-managed namespace/i);
-  });
-
-  it("lists remote AWS secrets with metadata only and never resolves plaintext", async () => {
-    const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
-      gateway: {
-        async createSecret() {
-          throw new Error("not used");
-        },
-        async putSecretValue() {
-          throw new Error("not used");
-        },
-        async getSecretValue() {
-          throw new Error(
-            "GetSecretValue must not be used for remote import preview",
-          );
-        },
-        async deleteSecret() {
-          throw new Error("not used");
-        },
-        async listSecrets(input) {
-          calls.push({ op: "listSecrets", input });
-          return {
-            NextToken: "token-2",
-            SecretList: [
-              {
-                ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/openai",
-                Name: "prod/openai",
-                Description: "OpenAI API key",
-                CreatedDate: new Date("2026-05-06T00:00:00.000Z"),
-                Tags: [{ Key: "team", Value: "platform" }],
-              },
-            ],
-          };
-        },
-      },
-    });
-
-    const listed = await provider.listRemoteSecrets?.({
-      query: "openai",
-      nextToken: "token-1",
-      pageSize: 25,
-    });
-
-    expect(calls).toEqual([
-      {
-        op: "listSecrets",
-        input: {
-          MaxResults: 25,
-          NextToken: "token-1",
-          IncludePlannedDeletion: false,
-          Filters: [{ Key: "all", Values: ["openai"] }],
-        },
-      },
-    ]);
-    expect(listed).toEqual({
-      nextToken: "token-2",
-      secrets: [
-        {
-          externalRef:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/openai",
-          name: "prod/openai",
-          providerVersionRef: null,
-          metadata: expect.objectContaining({
-            createdDate: "2026-05-06T00:00:00.000Z",
-            hasDescription: true,
-            tagCount: 1,
-          }),
-        },
-      ],
-    });
-    expect(JSON.stringify(listed)).not.toContain("SecretString");
-    expect(JSON.stringify(listed)).not.toContain("OpenAI API key");
-    expect(JSON.stringify(listed)).not.toContain("team");
-  });
-
-  it("discovers AWS provider vault prefill candidates from metadata without reading values", async () => {
-    const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
-    const provider = createAwsSecretsManagerProvider({
-      gateway: {
-        async createSecret() {
-          throw new Error("not used");
-        },
-        async putSecretValue() {
-          throw new Error("not used");
-        },
-        async getSecretValue() {
-          throw new Error(
-            "GetSecretValue must not be used for provider vault discovery",
-          );
-        },
-        async deleteSecret() {
-          throw new Error("not used");
-        },
-        async listSecrets(input) {
-          calls.push({ op: "listSecrets", input });
-          return {
-            NextToken: "next-page",
-            SecretList: [
-              {
-                ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai",
-                Name: "paperclip/prod-use1/company-1/openai",
-                KmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/prod",
-                Tags: [
-                  { Key: "paperclip:managed-by", Value: "paperclip" },
-                  { Key: "paperclip:deployment-id", Value: "prod-use1" },
-                  { Key: "paperclip:company-id", Value: "company-1" },
-                  { Key: "paperclip:environment", Value: "production" },
-                  { Key: "paperclip:provider-owner", Value: "platform" },
-                ],
-              },
-              {
-                ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-2/stripe",
-                Name: "paperclip/prod-use1/company-2/stripe",
-                Tags: [
-                  { Key: "paperclip:managed-by", Value: "paperclip" },
-                  { Key: "paperclip:company-id", Value: "company-2" },
-                ],
-              },
-            ],
-          };
-        },
-      },
-    });
-
-    const preview = await provider.discoverProviderConfigs?.({
-      companyId: "company-1",
-      providerConfig: {
-        id: "draft",
-        provider: "aws_secrets_manager",
-        status: "ready",
-        config: { region: "us-east-1" },
-      },
-      query: "paperclip",
-      pageSize: 25,
-    });
-
-    expect(calls).toEqual([
-      {
-        op: "listSecrets",
-        input: {
-          MaxResults: 25,
-          NextToken: undefined,
-          IncludePlannedDeletion: false,
-          Filters: [{ Key: "all", Values: ["paperclip"] }],
-        },
-      },
-    ]);
-    expect(preview).toMatchObject({
-      provider: "aws_secrets_manager",
-      nextToken: "next-page",
-      sampledSecretCount: 1,
-      skippedForeignPaperclipSampleCount: 1,
-      candidates: [
-        expect.objectContaining({
-          displayName: "AWS production",
-          config: expect.objectContaining({
-            region: "us-east-1",
-            namespace: "prod-use1",
-            secretNamePrefix: "paperclip",
-            kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/prod",
-            ownerTag: "platform",
-            environmentTag: "production",
-          }),
-          signals: expect.objectContaining({
-            paperclipManagedSampleCount: 1,
-            skippedForeignPaperclipSampleCount: 1,
-          }),
-        }),
-      ],
-    });
-    expect(JSON.stringify(preview)).not.toContain("SecretString");
-    expect(JSON.stringify(preview)).not.toContain("company-2/stripe");
-  });
-
-  it("redacts AWS provider exception text when remote listing fails", async () => {
-    const rawProviderMessage =
-      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/Paperclip is not authorized to perform secretsmanager:ListSecrets on arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/openai";
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
-      gateway: {
-        async createSecret() {
-          throw new Error("not used");
-        },
-        async putSecretValue() {
-          throw new Error("not used");
-        },
-        async getSecretValue() {
-          throw new Error("not used");
-        },
-        async deleteSecret() {
-          throw new Error("not used");
-        },
-        async listSecrets() {
-          throw new Error(rawProviderMessage);
-        },
-      },
-    });
-
-    let thrown: unknown;
-    try {
-      await provider.listRemoteSecrets?.({});
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(SecretProviderClientError);
-    expect(thrown).toMatchObject({
-      code: "access_denied",
-      status: 403,
-      message:
-        "AWS Secrets Manager denied the request. Check IAM permissions for this provider vault.",
-      rawMessage: rawProviderMessage,
-    });
-    expect(
-      thrown instanceof Error ? thrown.message : String(thrown),
-    ).not.toContain("arn:aws");
-    expect(
-      thrown instanceof Error ? thrown.message : String(thrown),
-    ).not.toContain("123456789012");
-  });
-
-  it("resolves AWS secret values by provider version reference", async () => {
-    const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
-      gateway: {
-        async createSecret() {
-          throw new Error("not used");
-        },
-        async putSecretValue() {
-          throw new Error("not used");
-        },
-        async getSecretValue(input) {
-          calls.push({ op: "getSecretValue", input });
-          return {
-            SecretString: "resolved-secret-value",
-            VersionId: "aws-version-2",
-          };
-        },
-        async deleteSecret() {
-          throw new Error("not used");
-        },
-      },
-    });
-
-    const resolved = await provider.resolveVersion({
-      material: {
-        scheme: "aws_secrets_manager_v1",
-        secretId:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
-        versionId: "aws-version-2",
-        source: "managed",
-      },
-      externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
-      providerVersionRef: "aws-version-2",
-      context: {
-        companyId: "company-1",
-        secretId: "secret-1",
-        secretKey: "openai-api-key",
-        version: 2,
-      },
-    });
-
-    expect(resolved).toBe("resolved-secret-value");
-    expect(calls).toEqual([
-      {
-        op: "getSecretValue",
-        input: {
-          SecretId:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
-          VersionId: "aws-version-2",
-          VersionStage: undefined,
-        },
-      },
-    ]);
-  });
-
-  it("rejects managed resolve attempts when stored refs drift outside the derived scope", async () => {
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
-      gateway: {
-        async createSecret() {
-          throw new Error("not used");
-        },
-        async putSecretValue() {
-          throw new Error("not used");
-        },
-        async getSecretValue() {
-          throw new Error("should not be called");
-        },
-        async deleteSecret() {
-          throw new Error("not used");
-        },
-      },
-    });
-
-    await expect(
-      provider.resolveVersion({
-        material: {
-          scheme: "aws_secrets_manager_v1",
-          secretId:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-2/openai-api-key",
-          versionId: "aws-version-2",
-          source: "managed",
-        },
-        externalRef:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-2/openai-api-key",
-        providerVersionRef: "aws-version-2",
-        context: {
-          companyId: "company-1",
-          secretId: "secret-1",
-          secretKey: "openai-api-key",
-          version: 2,
-        },
-      }),
-    ).rejects.toThrow(/drifted outside the derived deployment\/company scope/i);
-  });
-
-  it("warns when AWS provider configuration is incomplete and blocks managed writes", async () => {
-    delete process.env.PAPERCLIP_SECRETS_AWS_REGION;
-    delete process.env.AWS_REGION;
-    delete process.env.AWS_DEFAULT_REGION;
-    delete process.env.PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID;
-    delete process.env.PAPERCLIP_SECRETS_AWS_KMS_KEY_ID;
-
-    const provider = createAwsSecretsManagerProvider();
-    const health = await provider.healthCheck();
-
-    expect(health.status).toBe("warn");
-    expect(health.message).toContain("missing PAPERCLIP_SECRETS_AWS_REGION");
-    expect(health.warnings).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining(
-          "Missing required non-secret AWS provider config",
-        ),
-        expect.stringContaining("AWS bootstrap credentials must be available"),
-        expect.stringContaining("Do not store AWS root credentials"),
-      ]),
-    );
-    expect(health.details).toMatchObject({
-      missingConfig: [
-        "PAPERCLIP_SECRETS_AWS_REGION or AWS_REGION/AWS_DEFAULT_REGION",
-        "PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID",
-        "PAPERCLIP_SECRETS_AWS_KMS_KEY_ID",
-      ],
-      credentialSource: "AWS SDK default credential provider chain",
-    });
-    await expect(
-      provider.createSecret({
-        value: "super-secret-value",
-        context: {
-          companyId: "company-1",
-          secretKey: "openai-api-key",
-          secretName: "OpenAI API Key",
-          version: 1,
-        },
-      }),
-    ).rejects.toThrow(/PAPERCLIP_SECRETS_AWS_REGION|AWS_REGION/i);
-  });
-
-  it("deletes only Paperclip-managed AWS secrets", async () => {
-    const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
-      gateway: {
-        async createSecret() {
-          throw new Error("not used");
-        },
-        async putSecretValue() {
-          throw new Error("not used");
-        },
-        async getSecretValue() {
-          throw new Error("not used");
-        },
-        async deleteSecret(input) {
-          calls.push({ op: "deleteSecret", input });
-          return {};
-        },
-      },
-    });
-
-    await provider.deleteOrArchive({
-      mode: "delete",
-      externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
-      material: {
-        scheme: "aws_secrets_manager_v1",
-        secretId:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
-        versionId: null,
-        source: "managed",
-      },
-      context: {
-        companyId: "company-1",
-        secretKey: "openai-api-key",
-        secretName: "OpenAI API Key",
-        version: 2,
-      },
-    });
-    await expect(
-      provider.deleteOrArchive({
-        mode: "delete",
-        externalRef:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/attacker",
-        material: {
-          scheme: "aws_secrets_manager_v1",
-          secretId:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/attacker",
-          versionId: null,
-          source: "managed",
-        },
-        context: {
-          companyId: "company-1",
-          secretKey: "openai-api-key",
-          secretName: "OpenAI API Key",
-          version: 2,
-        },
-      }),
-    ).rejects.toThrow(/drifted outside the derived deployment\/company scope/i);
-    await provider.deleteOrArchive({
-      mode: "delete",
-      externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/external",
-      material: {
-        scheme: "aws_secrets_manager_v1",
-        secretId:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/external",
-        versionId: "linked-version-7",
-        source: "external_reference",
-      },
-      context: {
-        companyId: "company-1",
-        secretKey: "openai-api-key",
-        secretName: "OpenAI API Key",
-        version: 2,
-      },
-    });
-
-    expect(calls).toEqual([
-      {
-        op: "deleteSecret",
-        input: {
-          SecretId:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
-          RecoveryWindowInDays: 30,
-        },
-      },
-    ]);
-  });
-
-  it("archives pending Paperclip-managed AWS versions without deleting the secret", async () => {
-    const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
-    const provider = createAwsSecretsManagerProvider({
-      config: {
-        region: "us-east-1",
-        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
-        deploymentId: "prod-use1",
-        prefix: "paperclip",
-        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
-        environmentTag: "production",
-        providerOwnerTag: "paperclip",
-        deleteRecoveryWindowDays: 30,
-      },
-      gateway: {
-        async createSecret() {
-          throw new Error("not used");
-        },
-        async putSecretValue() {
-          throw new Error("not used");
-        },
-        async getSecretValue() {
-          throw new Error("not used");
-        },
-        async deleteSecret(input) {
-          calls.push({ op: "deleteSecret", input });
-          return {};
-        },
-        async updateSecretVersionStage(input) {
-          calls.push({ op: "updateSecretVersionStage", input });
-          return {};
-        },
-      },
-    });
-
-    await provider.deleteOrArchive({
-      mode: "archive",
-      externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
-      material: {
-        scheme: "aws_secrets_manager_v1",
-        secretId:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
-        versionId: "aws-version-2",
-        source: "managed",
-      },
-      context: {
-        companyId: "company-1",
-        secretKey: "openai-api-key",
-        secretName: "OpenAI API Key",
-        version: 2,
-      },
-    });
-
-    expect(calls).toEqual([
-      {
-        op: "updateSecretVersionStage",
-        input: {
-          SecretId:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
-          VersionStage: "PAPERCLIP_PENDING",
-          RemoveFromVersionId: "aws-version-2",
-        },
-      },
-    ]);
   });
 });

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { authorizationService } from "../services/authorization.js";
-import {
-  resolveCurrentTaskOwnerRunLinkage,
-  resolveProductiveRunLinkage,
-} from "../services/productive-run-linkage.js";
+import { resolveProductiveRunLinkage } from "../services/productive-run-linkage.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const companyId = "00000000-0000-4000-8000-000000000001";
@@ -42,11 +39,13 @@ describe("productive run linkage", () => {
   it("resolves the exact typed ref from the canonical joined projection", async () => {
     const { db, calls } = createMockDb({ select: [[currentOwnerLinkage]] });
 
-    await expect(resolveProductiveRunLinkage(db, {
-      runId,
-      companyId,
-      agentId,
-    })).resolves.toMatchObject({
+    await expect(
+      resolveProductiveRunLinkage(db, {
+        runId,
+        companyId,
+        agentId,
+      }),
+    ).resolves.toMatchObject({
       runId,
       companyId,
       agentId,
@@ -59,57 +58,37 @@ describe("productive run linkage", () => {
     expect(calls.find((call) => call.method === "limit")?.args).toEqual([1]);
   });
 
-  it("projects a run only while it is the current owner epoch", async () => {
-    const { db } = createMockDb({ select: [[currentOwnerLinkage], []] });
-
-    await expect(resolveCurrentTaskOwnerRunLinkage(db, {
-      companyId,
-      taskId,
-    })).resolves.toMatchObject({
-      runId,
-      refId,
-      taskId,
-      agentId,
-      ownershipEpoch: 1,
-      mode: "owner",
-    });
-
-    await expect(resolveCurrentTaskOwnerRunLinkage(db, {
-      companyId,
-      taskId,
-    })).resolves.toBeNull();
-  });
-
   it("keeps generic REST denied for a canonically linked productive run", async () => {
     const { db } = createMockDb({
-      select: [
-        [currentOwnerLinkage],
-        [{ id: agentId, companyId, status: "idle" }],
-      ],
+      select: [[currentOwnerLinkage], [{ id: agentId, companyId, status: "idle" }]],
     });
 
-    await expect(resolveProductiveRunLinkage(db, {
-      runId,
-      companyId,
-      agentId,
-    })).resolves.toMatchObject({ refId, taskId });
-    await expect(authorizationService(db).decide({
-      actor: {
-        type: "agent",
-        agentId,
-        companyId,
+    await expect(
+      resolveProductiveRunLinkage(db, {
         runId,
-        source: "internal",
-      },
-      action: "task:read",
-      resource: {
-        type: "task",
         companyId,
-        taskId,
-        ownerKind: "agent",
-        ownerAgentId: agentId,
-      },
-    })).resolves.toMatchObject({
+        agentId,
+      }),
+    ).resolves.toMatchObject({ refId, taskId });
+    await expect(
+      authorizationService(db).decide({
+        actor: {
+          type: "agent",
+          agentId,
+          companyId,
+          runId,
+          source: "internal",
+        },
+        action: "task:read",
+        resource: {
+          type: "task",
+          companyId,
+          taskId,
+          ownerKind: "agent",
+          ownerAgentId: agentId,
+        },
+      }),
+    ).resolves.toMatchObject({
       allowed: false,
       reason: "deny_unsupported_action",
       explanation:
