@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { CompanySecret, EnvBinding, SecretStatus } from "@paperclipai/shared";
-import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
+import { EnvironmentVariablesEditor } from "@/features/environment-variables-editor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Toaster } from "@/components/ui/sonner";
 

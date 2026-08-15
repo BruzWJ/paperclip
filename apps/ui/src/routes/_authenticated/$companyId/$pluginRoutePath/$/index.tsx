@@ -12,7 +12,7 @@ import {
 } from "@/plugins/slots";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { PluginRouteBoundary } from "@/components/patterns/PluginRouteBoundary";
+import { PluginRouteBoundary } from "@/plugins/PluginRouteBoundary";
 import { ArrowLeft } from "lucide-react";
 
 const BUILT_IN_COMPANY_ROUTES = new Set<string>(PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS);

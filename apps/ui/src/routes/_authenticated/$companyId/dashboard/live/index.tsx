@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { ActiveAgentsPanel } from "@/components/ActiveAgentsPanel";
+import { ActiveAgentsPanel } from "@/routes/_authenticated/$companyId/dashboard/-ActiveAgentsPanel";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 

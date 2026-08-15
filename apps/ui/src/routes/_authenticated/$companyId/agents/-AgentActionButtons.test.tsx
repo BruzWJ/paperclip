@@ -1,0 +1,168 @@
+// @vitest-environment jsdom
+
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { canonicalizeMoneyAmount, type Agent } from "@paperclipai/shared";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AgentActionButtons } from "./-AgentActionButtons";
+
+const mockOpenNewTask = vi.hoisted(() => vi.fn());
+const mockPushToast = vi.hoisted(() => vi.fn());
+const mockAgentsApi = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  pause: vi.fn(),
+  resume: vi.fn(),
+  clearError: vi.fn(),
+  approve: vi.fn(),
+  terminate: vi.fn(),
+  create: vi.fn(),
+  hire: vi.fn(),
+}));
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const AGENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+vi.mock("@/context/DialogContext", () => ({
+  useDialogActions: () => ({ openNewTask: mockOpenNewTask }),
+}));
+
+vi.mock("sonner", () => ({
+  toast: { error: mockPushToast },
+}));
+
+vi.mock("@/api/agents", () => ({
+  agentsApi: mockAgentsApi,
+}));
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
+async function act(callback: () => void | Promise<void>) {
+  let result: void | Promise<void> = undefined;
+  flushSync(() => {
+    result = callback();
+  });
+  await result;
+}
+
+async function flushReact() {
+  await act(async () => {
+    await Promise.resolve();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+  });
+}
+
+function makeAgent(overrides: Partial<Agent> = {}): Agent {
+  return {
+    id: AGENT_ID,
+    companyId: COMPANY_ID,
+    name: "Alpha Agent",
+    title: null,
+    icon: null,
+    status: "idle",
+    reportsTo: null,
+    capabilities: null,
+    instruction: null,
+    currentAdapterConfigRevisionId: null,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
+    pauseReason: null,
+    pausedAt: null,
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    updatedAt: new Date("2026-01-01T00:00:00Z"),
+    ...overrides,
+  };
+}
+
+describe("AgentActionButtons", () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot> | null;
+  let queryClient: QueryClient;
+  let invalidateQueries: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = null;
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    invalidateQueries = vi.spyOn(queryClient, "invalidateQueries") as unknown as ReturnType<typeof vi.fn>;
+    mockAgentsApi.clearError.mockResolvedValue(makeAgent({ status: "idle" }));
+    mockAgentsApi.pause.mockResolvedValue(makeAgent({ status: "paused" }));
+    mockAgentsApi.resume.mockResolvedValue(makeAgent({ status: "idle" }));
+    mockAgentsApi.invoke.mockResolvedValue({ id: "run-1" });
+  });
+
+  afterEach(async () => {
+    const currentRoot = root;
+    if (currentRoot) {
+      await act(async () => {
+        currentRoot.unmount();
+      });
+    }
+    queryClient.clear();
+    container.remove();
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+  });
+
+  function render(agent: Agent) {
+    root = createRoot(container);
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <AgentActionButtons agent={agent} companyId={COMPANY_ID} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("replaces the pause slot with Clear error for error agents", async () => {
+    render(makeAgent({ status: "error" }));
+    await flushReact();
+
+    expect(container.textContent).toContain("Clear error");
+    expect(container.textContent).not.toContain("Pause");
+    expect(container.textContent).toContain("Assign Task");
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Open actions for Alpha Agent"]')?.click();
+    });
+    await flushReact();
+
+    expect(document.body.textContent).not.toContain("Reset Sessions");
+  });
+
+  it("calls clearError and refreshes agent-related queries", async () => {
+    render(makeAgent({ status: "error" }));
+    await flushReact();
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Clear error and return agent to idle"]')
+        ?.click();
+    });
+    await flushReact();
+
+    expect(mockAgentsApi.clearError).toHaveBeenCalledWith(AGENT_ID);
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["agents", "detail", AGENT_ID],
+    });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["agents", "runtime-state", AGENT_ID],
+    });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["agents", COMPANY_ID],
+    });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["runs", COMPANY_ID, "all-agents", "all-statuses"],
+    });
+  });
+
+  it("keeps the normal pause action for non-error agents", async () => {
+    render(makeAgent({ status: "idle" }));
+    await flushReact();
+
+    expect(container.textContent).toContain("Pause");
+    expect(container.textContent).not.toContain("Clear error");
+  });
+});

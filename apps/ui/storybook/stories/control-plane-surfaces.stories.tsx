@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { AlertTriangle, CheckCircle2, Clock3, Eye, GitPullRequest, Inbox, WalletCards } from "lucide-react";
-import { ActivityRow } from "@/components/ActivityRow";
-import { ApprovalCard } from "@/components/ApprovalCard";
-import { BudgetPolicyCard } from "@/components/BudgetPolicyCard";
-import { TaskRow } from "@/components/TaskRow";
+import { ActivityRow } from "@/features/activity/ActivityRow";
+import { ApprovalCard } from "@/routes/_authenticated/$companyId/approvals/-ApprovalCard";
+import { BudgetPolicyCard } from "@/features/budgets/BudgetPolicyCard";
+import { TaskRow } from "@/features/tasks/list/TaskRow";
 import { formatMoneyAmount } from "@/lib/utils";
 import { taskValueLabel } from "@/lib/task-blockers";
 import { deriveInitials } from "@/lib/identity";

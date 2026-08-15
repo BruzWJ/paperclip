@@ -5,7 +5,7 @@ import type { AdapterConfigFieldsProps } from "./types";
 import type { AdapterInfo, ReadyAdapterInfo } from "../api/adapters";
 import { queryKeys } from "../lib/queryKeys";
 import { publicRuntimeMessage } from "../lib/public-runtime-message";
-import { DraftInput } from "../components/agent-config-primitives";
+import { DraftInput } from "@/components/patterns/DraftFields";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { FieldError, FieldGroup } from "../components/ui/field";

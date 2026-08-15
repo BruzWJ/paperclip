@@ -4,7 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AlertCircle, KeyRound } from "lucide-react";
 import { useCallback, useEffect } from "react";
 
-import { MyUserSecretsTab } from "@/components/secrets/MyUserSecretsTab";
+import { MyUserSecretsTab } from "@/routes/_authenticated/$companyId/company/settings/secrets/-MyUserSecretsTab";
 import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Alert, AlertDescription } from "@/components/ui/alert";

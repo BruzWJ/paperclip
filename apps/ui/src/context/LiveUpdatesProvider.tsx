@@ -14,7 +14,7 @@ import {
 import type { CompanyUserDirectoryResponse } from "../api/access";
 import { authApi } from "../api/auth";
 import { toast } from "sonner";
-import { useNavigateCompanyBoardTargetForCompany } from "../components/CompanyBoardLink";
+import { useNavigateCompanyBoardTargetForCompany } from "../features/navigation/CompanyBoardLink";
 import { queryKeys } from "../lib/queryKeys";
 import {
   invalidateActivityQueries,

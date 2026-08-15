@@ -1,4 +1,4 @@
-import { taskTrailingColumns } from "@/components/TaskColumns";
+import { taskTrailingColumns } from "@/features/tasks/list/TaskColumns";
 import { buildCompanyUserLabelMap, buildCompanyUserProfileMap } from "@/lib/company-members";
 import {
   getApprovalsForTab,

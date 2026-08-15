@@ -19,10 +19,13 @@ import {
  * collapse (pin precedence).
  *
  * The plugin `routeSidebar` half of this behavior shares the exact same Layout
- * code path (one `secondarySidebar`/`hasSecondarySidebar` resolver drives both
- * company-settings and plugin routes) and is covered by the unit tests in
- * `apps/ui/src/components/Layout.test.tsx`. A plugin-route browser check requires a
- * dedicated test-owned plugin fixture and is out of scope for this suite;
+ * code path in
+ * `apps/ui/src/routes/_authenticated/$companyId/-shell/-Layout.tsx` (one
+ * `secondarySidebar`/`hasSecondarySidebar` resolver drives both company-settings
+ * and plugin routes). Route-sidebar selection is covered by the unit tests in
+ * `apps/ui/src/routes/_authenticated/$companyId/$pluginRoutePath/$/PluginPage.test.tsx`.
+ * A plugin-route browser check requires a dedicated test-owned plugin fixture
+ * and is out of scope for this suite;
  * visual QA of both panes is delegated to the QA child task.
  */
 

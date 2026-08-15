@@ -1,7 +1,7 @@
 import { agentsApi } from "@/api/agents";
 import { approvalsApi } from "@/api/approvals";
-import { approvalLabel, ApprovalPayloadRenderer, typeIcon } from "@/components/ApprovalPayload";
-import { ApprovalComments } from "@/components/approvals/ApprovalComments";
+import { approvalLabel, ApprovalPayloadRenderer, typeIcon } from "@/features/approvals/ApprovalPayload";
+import { ApprovalComments } from "@/routes/_authenticated/$companyId/approvals/$approvalId/-ApprovalComments";
 import { JsonCodeBlock } from "@/components/patterns/JsonCodeBlock";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";

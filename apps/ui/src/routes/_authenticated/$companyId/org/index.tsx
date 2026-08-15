@@ -5,7 +5,7 @@ import {
   OrgChartAgentCard,
   OrgChartEdges,
   OrgChartZoomControls,
-} from "@/components/org/OrgChartParts";
+} from "@/routes/_authenticated/$companyId/org/-OrgChartParts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";

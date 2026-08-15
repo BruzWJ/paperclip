@@ -1,9 +1,9 @@
 import { attentionApi } from "@/api/attention";
-import { useNavigateCompanyBoardTarget } from "@/components/CompanyBoardLink";
+import { useNavigateCompanyBoardTarget } from "@/features/navigation/CompanyBoardLink";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { DecisionQueue } from "@/components/decisions/DecisionQueue";
-import { DecisionToolbar } from "@/components/decisions/DecisionToolbar";
+import { DecisionQueue } from "@/routes/_authenticated/$companyId/decisions/-DecisionQueue";
+import { DecisionToolbar } from "@/routes/_authenticated/$companyId/decisions/-DecisionToolbar";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { toast } from "sonner";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";

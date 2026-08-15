@@ -31,7 +31,7 @@ vi.mock("@/api/agents", () => ({
   },
 }));
 
-vi.mock("@/components/AgentIconPicker", () => ({
+vi.mock("@/features/agents/AgentIconPicker", () => ({
   AgentIcon: () => <span data-testid="agent-icon" />,
 }));
 

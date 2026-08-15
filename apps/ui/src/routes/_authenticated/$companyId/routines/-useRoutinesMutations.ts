@@ -1,7 +1,7 @@
 import { foldersApi } from "@/api/folders";
 import { routinesApi } from "@/api/routines";
-import type { RoutineRunDialogSubmitData } from "@/components/RoutineRunVariablesDialog";
-import type { FolderSelection } from "@/components/folders/FolderControls";
+import type { RoutineRunDialogSubmitData } from "@/routes/_authenticated/$companyId/routines/-RoutineRunVariablesDialog";
+import type { FolderSelection } from "@/routes/_authenticated/$companyId/routines/-folders/-FolderControls";
 import { toast } from "sonner";
 import { queryKeys } from "@/lib/queryKeys";
 import type { FolderListItem, RoutineListItem } from "@paperclipai/shared";

@@ -1,4 +1,4 @@
-import { TaskLinkQuicklook } from "@/components/TaskLinkQuicklook";
+import { TaskLinkQuicklook } from "@/features/tasks/shared/TaskLinkQuicklook";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { taskDisplayTitle } from "@/lib/task-display";

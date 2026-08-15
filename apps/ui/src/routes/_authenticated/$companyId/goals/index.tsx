@@ -6,7 +6,7 @@ import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useDialogActions } from "@/context/DialogContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { GoalTree } from "@/components/GoalTree";
+import { GoalTree } from "@/routes/_authenticated/$companyId/goals/-GoalTree";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";

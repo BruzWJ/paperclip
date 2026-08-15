@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import type { TaskTreePreviewTask } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/TaskLinkQuicklook", () => ({
+vi.mock("@/features/tasks/shared/TaskLinkQuicklook", () => ({
   TaskLinkQuicklook: ({
     children,
     className,

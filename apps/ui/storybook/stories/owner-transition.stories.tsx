@@ -9,7 +9,7 @@ import {
   PauseAffectsSummaryView,
   RunStatusBadge,
   type OwnerChipResolvers,
-} from "@/components/owner-transition/OwnerTransitionViews";
+} from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-owner-transition/-OwnerTransitionViews";
 import {
   computeComposerOwnerPreview,
   computePauseAffectsSummary,

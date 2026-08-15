@@ -7,13 +7,13 @@ import {
   normalizeFolderSelection,
   selectedFolderFromList,
   type FolderSelection,
-} from "@/components/folders/FolderControls";
-import type { MarkdownEditorRef, MentionOption } from "@/components/MarkdownEditor";
-import { nextRoutineStatus } from "@/components/RoutineList";
+} from "@/routes/_authenticated/$companyId/routines/-folders/-FolderControls";
+import type { MarkdownEditorRef, MentionOption } from "@/features/markdown/MarkdownEditor";
+import { nextRoutineStatus } from "@/features/routines/list/RoutineList";
 import {
   useRoutineAssignmentPresentation,
   useRoutineDirectoryData,
-} from "@/components/routines/useRoutinePresentationData";
+} from "@/routes/_authenticated/$companyId/routines/-useRoutinePresentationData";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { toast } from "sonner";
 import { useSidebar } from "@/context/SidebarContext";

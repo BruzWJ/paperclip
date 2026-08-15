@@ -1,9 +1,9 @@
-import { TaskOutputSection } from "@/components/task-output/TaskOutputSection";
-import { TaskAttachmentsSection } from "@/components/TaskAttachmentsSection";
-import { TaskDocumentsSection } from "@/components/TaskDocumentsSection";
-import { TaskProperties } from "@/components/task-properties/TaskProperties";
+import { TaskOutputSection } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-output/-TaskOutputSection";
+import { TaskAttachmentsSection } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-documents/-TaskAttachmentsSection";
+import { TaskDocumentsSection } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-documents/-TaskDocumentsSection";
+import { TaskProperties } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-properties/-TaskProperties";
 import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
-import { TasksList } from "@/components/TasksList";
+import { TasksList } from "@/features/tasks/list";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";

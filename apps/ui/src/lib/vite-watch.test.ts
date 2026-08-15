@@ -7,7 +7,7 @@ import {
 describe("shouldIgnoreUiDevWatchPath", () => {
   it("ignores test-only files and folders", () => {
     expect(
-      shouldIgnoreUiDevWatchPath("/repo/ui/src/components/TasksList.test.tsx"),
+      shouldIgnoreUiDevWatchPath("/repo/ui/src/features/tasks/list/TaskRow.test.tsx"),
     ).toBe(true);
     expect(
       shouldIgnoreUiDevWatchPath("/repo/ui/src/lib/task-tree.spec.ts"),
@@ -20,7 +20,7 @@ describe("shouldIgnoreUiDevWatchPath", () => {
 
   it("keeps runtime source files watchable", () => {
     expect(
-      shouldIgnoreUiDevWatchPath("/repo/ui/src/components/TasksList.tsx"),
+      shouldIgnoreUiDevWatchPath("/repo/ui/src/features/tasks/list/TaskRow.tsx"),
     ).toBe(false);
     expect(
       shouldIgnoreUiDevWatchPath(

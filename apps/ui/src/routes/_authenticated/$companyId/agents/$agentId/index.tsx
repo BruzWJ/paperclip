@@ -1,8 +1,8 @@
-import { AgentDetailScreen } from "@/components/agents/AgentDetailScreen";
+import { AgentDetailScreen } from "@/routes/_authenticated/$companyId/agents/$agentId/-AgentDetailScreen";
 import { loadCompanyAgent } from "@/routes/-company-entity-loader";
 import { createFileRoute } from "@tanstack/react-router";
 
-export { AgentDetailScreen as AgentDetail } from "@/components/agents/AgentDetailScreen";
+export { AgentDetailScreen as AgentDetail } from "@/routes/_authenticated/$companyId/agents/$agentId/-AgentDetailScreen";
 
 export const Route = createFileRoute("/_authenticated/$companyId/agents/$agentId/")({
   loader: ({ abortController, context, params }) =>

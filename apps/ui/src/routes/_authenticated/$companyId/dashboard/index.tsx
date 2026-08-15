@@ -12,7 +12,7 @@ import { buildCompanyUserProfileMap } from "@/lib/company-members";
 import { useDialogActions } from "@/context/DialogContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { ActivityRow } from "@/components/ActivityRow";
+import { ActivityRow } from "@/features/activity/ActivityRow";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { deriveInitials } from "@/lib/identity";
@@ -20,14 +20,14 @@ import { taskValueLabel } from "@/lib/task-blockers";
 import { timeAgo } from "@/lib/timeAgo";
 import { formatMoneyAmount } from "@/lib/utils";
 import { Bot, CircleDot, DollarSign, ShieldCheck, PauseCircle } from "lucide-react";
-import { ActiveAgentsPanel } from "@/components/ActiveAgentsPanel";
+import { ActiveAgentsPanel } from "@/routes/_authenticated/$companyId/dashboard/-ActiveAgentsPanel";
 import { taskDisplayTitle } from "@/lib/task-display";
 import {
   RunActivityChart,
   PriorityChart,
   TaskStatusChart,
   SuccessRateChart,
-} from "@/components/ActivityCharts";
+} from "@/features/activity/ActivityCharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";

@@ -4,7 +4,7 @@ import type { WorkTimelineResult } from "@paperclipai/shared";
 import { Minus, Plus, RotateCcw } from "lucide-react";
 import { Route as TimelineRoute } from "@/routes/_authenticated/$companyId/timeline";
 import { getRouteComponent } from "@/test/route-component";
-import { WorkTimelineGantt } from "@/components/patterns/WorkTimelineGantt";
+import { WorkTimelineGantt } from "@/routes/_authenticated/$companyId/timeline/-WorkTimelineGantt";
 import { Button } from "@/components/ui/button";
 import sampleJson from "../fixtures/workTimeline.sample.json";
 import humanSampleJson from "../fixtures/workTimeline.human.sample.json";

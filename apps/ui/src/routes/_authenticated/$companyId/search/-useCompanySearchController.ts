@@ -3,7 +3,7 @@ import { authApi } from "@/api/auth";
 import { projectsApi } from "@/api/projects";
 import { searchApi } from "@/api/search";
 import { tasksApi } from "@/api/tasks";
-import type { SearchFilterDataProps } from "@/components/search/SearchFilterBar";
+import type { SearchFilterDataProps } from "@/routes/_authenticated/$companyId/search/-SearchFilterBar";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useDialogActions } from "@/context/DialogContext";
 import { useSidebar } from "@/context/SidebarContext";

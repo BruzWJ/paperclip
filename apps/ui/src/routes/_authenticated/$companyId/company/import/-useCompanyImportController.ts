@@ -1,13 +1,13 @@
 import { authApi } from "@/api/auth";
 import { companiesApi } from "@/api/companies";
-import { defaultCreateValues } from "@/components/agent-config-defaults";
-import type { AdapterPickerItem } from "@/components/company/CompanyImportControls";
+import { defaultCreateValues } from "@/features/agents/configuration/agent-config-defaults";
+import type { AdapterPickerItem } from "@/routes/_authenticated/$companyId/company/import/-CompanyImportControls";
 import {
   buildFileTree,
   countFiles,
   toggleFileTreeCheckedFiles,
   type FileTreeTone,
-} from "@/components/FileTree";
+} from "@/components/patterns/FileTree";
 import { useCompany } from "@/context/CompanyContext";
 import { toast } from "sonner";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";

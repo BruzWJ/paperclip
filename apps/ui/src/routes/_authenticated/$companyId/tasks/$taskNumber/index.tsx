@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo } from "react";
 
 import { ApiError } from "@/api/client";
 import { tasksApi } from "@/api/tasks";
-import { ImageGalleryModal } from "@/components/ImageGalleryModal";
+import { ImageGalleryModal } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-ImageGalleryModal";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";

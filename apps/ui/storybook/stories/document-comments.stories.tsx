@@ -6,8 +6,8 @@ import type {
   DocumentAnnotationThreadStatus,
   DocumentAnnotationAnchorState,
 } from "@paperclipai/shared";
-import { DocumentAnnotationPanel } from "@/components/DocumentAnnotationPanel";
-import type { PendingAnchor } from "@/components/DocumentAnnotationLayer";
+import { DocumentAnnotationPanel } from "@/features/document-annotations/DocumentAnnotationPanel";
+import type { PendingAnchor } from "@/features/document-annotations/DocumentAnnotationLayer";
 import type { CompanyUserProfile } from "@/lib/company-members";
 import { queryKeys } from "@/lib/queryKeys";
 

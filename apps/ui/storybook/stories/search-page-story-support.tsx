@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { Input } from "@/components/ui/input";
 
-import { SearchResultRow } from "@/components/search/SearchResultRow";
+import { SearchResultRow } from "@/routes/_authenticated/$companyId/search/-SearchResultRow";
 
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 

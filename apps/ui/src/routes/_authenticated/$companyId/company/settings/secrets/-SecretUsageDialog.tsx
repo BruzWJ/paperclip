@@ -1,5 +1,5 @@
-import { ImportFromVaultDialog } from "@/components/secrets/ImportFromVaultDialog";
-import { SetMyUserSecretDialog } from "@/components/secrets/SetMyUserSecretDialog";
+import { ImportFromVaultDialog } from "@/routes/_authenticated/$companyId/company/settings/secrets/-ImportFromVaultDialog";
+import { SetMyUserSecretDialog } from "@/features/secrets/user-secrets/SetMyUserSecretDialog";
 import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { useSecretsPage } from "./-SecretsPageContext";
 

@@ -1,4 +1,4 @@
-import { AgentDetailScreen as AgentDetail } from "@/components/agents/AgentDetailScreen";
+import { AgentDetailScreen as AgentDetail } from "@/routes/_authenticated/$companyId/agents/$agentId/-AgentDetailScreen";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   canonicalizeMoneyAmount,

@@ -14,8 +14,8 @@ import { artifactsApi, type ArtifactGroupBy, type ArtifactKindFilter } from "@/a
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArtifactCard } from "@/components/artifacts/ArtifactCard";
-import { ArtifactGroupCard } from "@/components/artifacts/ArtifactGroupCard";
+import { ArtifactCard } from "@/routes/_authenticated/$companyId/artifacts/-ArtifactCard";
+import { ArtifactGroupCard } from "@/routes/_authenticated/$companyId/artifacts/-ArtifactGroupCard";
 import {
   DropdownMenu,
   DropdownMenuContent,

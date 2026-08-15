@@ -1,7 +1,7 @@
 import { tasksApi } from "@/api/tasks";
-import { TaskChatConfirmation } from "@/components/task-chat/TaskChatConfirmation";
-import { TaskChatThread } from "@/components/TaskChatThread";
-import { TaskSiblingNavigation } from "@/components/TaskSiblingNavigation";
+import { TaskChatConfirmation } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatConfirmation";
+import { TaskChatThread } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread";
+import { TaskSiblingNavigation } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-TaskSiblingNavigation";
 import { applyLocalQueuedTaskCommentState } from "@/lib/optimistic-task-comments";
 import { keepPreviousDataForSameQueryTail } from "@/lib/query-placeholder-data";
 import { queryKeys } from "@/lib/queryKeys";

@@ -321,7 +321,7 @@ test('scanSensitivePaths: flags tenant-sensitive agent route changes', () => {
 });
 
 test('scanSensitivePaths: flags changes to MarkdownBody (XSS via urlTransform)', () => {
-  const files = [{ filename: 'apps/ui/src/components/MarkdownBody.tsx', status: 'modified' }];
+  const files = [{ filename: 'apps/ui/src/features/markdown/MarkdownBody.tsx', status: 'modified' }];
   assert.ok(scanSensitivePaths(files).length > 0);
 });
 

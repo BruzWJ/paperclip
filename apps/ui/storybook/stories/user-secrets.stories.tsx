@@ -7,9 +7,9 @@ import type {
   UserSecretCoverageSummary,
   UserSecretDefinition,
 } from "@paperclipai/shared";
-import { MyUserSecretsTab } from "@/components/secrets/MyUserSecretsTab";
-import { MissingUserSecretsBanner } from "@/components/secrets/MissingUserSecretsBanner";
-import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
+import { MyUserSecretsTab } from "@/routes/_authenticated/$companyId/company/settings/secrets/-MyUserSecretsTab";
+import { MissingUserSecretsBanner } from "@/features/secrets/user-secrets/MissingUserSecretsBanner";
+import { EnvironmentVariablesEditor } from "@/features/environment-variables-editor";
 import type { MyUserSecretEntry } from "@/api/secrets";
 import { queryKeys } from "@/lib/queryKeys";
 

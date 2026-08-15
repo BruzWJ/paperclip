@@ -1,5 +1,5 @@
 import { secretsApi } from "@/api/secrets";
-import { coverageSummaryLabel } from "@/components/secrets/user-secret-presentation";
+import { coverageSummaryLabel } from "@/routes/_authenticated/$companyId/company/settings/secrets/-user-secret-presentation";
 import { queryKeys } from "@/lib/queryKeys";
 import type { UserSecretCoverageSummary, UserSecretDefinition } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";

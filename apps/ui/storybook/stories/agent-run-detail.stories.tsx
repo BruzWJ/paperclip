@@ -1,4 +1,4 @@
-import { AgentRunsPanel } from "@/components/agents/AgentRunsPanel";
+import { AgentRunsPanel } from "@/routes/_authenticated/$companyId/agents/$agentId/-AgentRunsPanel";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   RUN_DETAIL_AGENT_ID,

@@ -78,7 +78,7 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   ),
 }));
 
-vi.mock("@/components/artifacts/ArtifactCard", () => ({
+vi.mock("@/routes/_authenticated/$companyId/artifacts/-ArtifactCard", () => ({
   ArtifactCard: ({ artifact }: { artifact: CompanyArtifact }) => (
     <article data-testid="artifact-card">{artifact.title}</article>
   ),

@@ -2,11 +2,11 @@ import { compareMoneyAmounts } from "@paperclipai/shared";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { createElement, useCallback, useEffect } from "react";
 
-import { BlockedInboxView } from "@/components/BlockedInboxView";
+import { BlockedInboxView } from "@/routes/_authenticated/$companyId/inbox/-BlockedInboxView";
 import { Banner, BannerClose, BannerIcon, BannerTitle } from "@/components/kibo-ui/banner";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TaskFiltersPopover } from "@/components/TaskFiltersPopover";
+import { TaskFiltersPopover } from "@/features/tasks/list/TaskFiltersPopover";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";

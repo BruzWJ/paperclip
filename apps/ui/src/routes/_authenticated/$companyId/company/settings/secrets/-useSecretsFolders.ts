@@ -3,7 +3,7 @@ import {
   buildSecretPathListing,
   getSecretPathRowName,
   validateSecretFolderSegment,
-} from "@/components/secrets/secret-path";
+} from "@/routes/_authenticated/$companyId/company/settings/secrets/-secret-path";
 import { getRouteApi } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 

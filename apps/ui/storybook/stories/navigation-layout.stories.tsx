@@ -1,14 +1,14 @@
 import { useEffect } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Bot, CircleDot, House, Inbox, LayoutDashboard, SquarePen, Users } from "lucide-react";
-import { BreadcrumbBar } from "@/components/BreadcrumbBar";
-import { CommandPalette } from "@/components/CommandPalette";
-import { KeyboardShortcutsCheatsheetContent } from "@/components/KeyboardShortcutsCheatsheet";
-import { MobileBottomNav } from "@/components/LayoutView";
-import { Sidebar } from "@/components/Sidebar";
+import { BreadcrumbBar } from "@/routes/_authenticated/$companyId/-shell/-BreadcrumbBar";
+import { CommandPalette } from "@/routes/_authenticated/$companyId/-shell/-CommandPalette";
+import { KeyboardShortcutsCheatsheetContent } from "@/routes/_authenticated/$companyId/-shell/-KeyboardShortcutsCheatsheet";
+import { MobileBottomNav } from "@/routes/_authenticated/$companyId/-shell/-LayoutView";
+import { Sidebar } from "@/routes/_authenticated/$companyId/-shell/-Sidebar";
 import { PluginLauncherProvider } from "@/plugins/launchers";
-import { SidebarAccountMenu } from "@/components/SidebarAccountMenu";
-import { SidebarCompanyMenu } from "@/components/SidebarCompanyMenu";
+import { SidebarAccountMenu } from "@/routes/_authenticated/$companyId/-shell/-SidebarAccountMenu";
+import { SidebarCompanyMenu } from "@/routes/_authenticated/$companyId/-shell/-SidebarCompanyMenu";
 import { Badge } from "@/components/ui/badge";
 import {
   Command,

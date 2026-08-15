@@ -132,7 +132,9 @@ export function createTranscriptRecords(): TaskExecutionSessionMessageRecord[] {
           name: "read_file",
           state: {
             status: "completed",
-            input: { path: "apps/ui/src/components/agents/AgentRunsPanel.tsx" },
+            input: {
+              path: "apps/ui/src/routes/_authenticated/$companyId/agents/$agentId/-AgentRunsPanel.tsx",
+            },
             structured: { lines: 182 },
             content: [
               { type: "text", text: "Read the run-detail panel." },

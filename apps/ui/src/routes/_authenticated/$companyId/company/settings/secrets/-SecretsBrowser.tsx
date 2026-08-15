@@ -12,7 +12,7 @@ import type {
   CompanySecretProviderConfig,
   SecretProviderDescriptor,
 } from "@paperclipai/shared";
-import { getRelativeSecretPath } from "@/components/secrets/secret-path";
+import { getRelativeSecretPath } from "@/routes/_authenticated/$companyId/company/settings/secrets/-secret-path";
 import type { UnifiedSecretRow } from "./-secrets-model";
 import {
   AlertCircle,

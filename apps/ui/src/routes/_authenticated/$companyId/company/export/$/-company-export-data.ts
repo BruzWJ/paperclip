@@ -1,4 +1,4 @@
-import { type FileTreeNode, collectAllPaths } from "@/components/FileTree";
+import { type FileTreeNode, collectAllPaths } from "@/components/patterns/FileTree";
 import { createZipArchive } from "@/lib/zip";
 import type {
   CompanyPortabilityExportResult,

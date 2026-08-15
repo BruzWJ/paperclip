@@ -1,8 +1,8 @@
-import { CompanyExportScreen } from "@/components/company/CompanyExportScreen";
+import { CompanyExportScreen } from "@/routes/_authenticated/$companyId/company/export/$/-CompanyExportScreen";
 import { isPortableRelativePath } from "@paperclipai/shared";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 
-export { CompanyExportScreen as CompanyExport } from "@/components/company/CompanyExportScreen";
+export { CompanyExportScreen as CompanyExport } from "@/routes/_authenticated/$companyId/company/export/$/-CompanyExportScreen";
 
 export function parseCompanyExportFilePath(splat: string | undefined): string | null {
   if (splat === undefined || splat.length === 0) return null;

@@ -48,9 +48,9 @@ const FINANCE_EVENT_PRODUCTION_OWNERS = new Set([
 
 const AI_MONEY_PRESENTATION_PATHS = [
   "packages/cli/src/commands/client/cost.ts",
-  "apps/ui/src/components/ApprovalPayload.tsx",
-  "apps/ui/src/components/BudgetIncidentCard.tsx",
-  "apps/ui/src/components/BudgetPolicyCard.tsx",
+  "apps/ui/src/features/approvals/ApprovalPayload.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/costs/-BudgetIncidentCard.tsx",
+  "apps/ui/src/features/budgets/BudgetPolicyCard.tsx",
   "apps/ui/src/lib/utils.ts",
   "apps/ui/src/routes/_authenticated/$companyId/agents/$agentId/index.tsx",
   "apps/ui/src/routes/_authenticated/$companyId/companies/index.tsx",
@@ -715,7 +715,7 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
     ),
     ...requireFileTokens(
       repositoryRoot,
-      "apps/ui/src/components/BudgetPolicyCard.tsx",
+      "apps/ui/src/features/budgets/BudgetPolicyCard.tsx",
       [
         "formatMoneyAmount(summary.observedAmount, summary.budgetCurrency)",
         "formatMoneyAmount(summary.limitAmount, summary.budgetCurrency)",

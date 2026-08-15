@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Task, TaskBlockedInboxAttention } from "@paperclipai/shared";
-import { BlockedInboxView } from "@/components/BlockedInboxView";
+import { BlockedInboxView } from "@/routes/_authenticated/$companyId/inbox/-BlockedInboxView";
 import { Badge } from "@/components/ui/badge";
 import { blockedReasonLabel } from "@/lib/blockedInbox";
 import { defaultTaskFilterState } from "@/lib/task-filters";

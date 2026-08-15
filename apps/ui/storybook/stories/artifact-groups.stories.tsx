@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { ArtifactGroupCard } from "@/components/artifacts/ArtifactGroupCard";
+import { ArtifactGroupCard } from "@/routes/_authenticated/$companyId/artifacts/-ArtifactGroupCard";
 import type { CompanyArtifactGroup, CompanyArtifact } from "@/api/artifacts";
 import {
   ArtifactsToolbar,

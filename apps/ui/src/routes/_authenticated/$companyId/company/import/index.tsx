@@ -1,4 +1,4 @@
-import { CompanyImportView } from "@/components/company/CompanyImportView";
+import { CompanyImportView } from "@/routes/_authenticated/$companyId/company/import/-CompanyImportView";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";

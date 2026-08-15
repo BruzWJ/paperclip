@@ -1,8 +1,8 @@
 import type { ComponentProps, ReactNode } from "react";
 
-import { InlineEditor } from "@/components/InlineEditor";
-import { MarkdownBody } from "@/components/MarkdownBody";
-import { TaskMonitorBanner } from "@/components/TaskMonitorBanner";
+import { InlineEditor } from "@/features/markdown/InlineEditor";
+import { MarkdownBody } from "@/features/markdown/MarkdownBody";
+import { TaskMonitorBanner } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-TaskMonitorBanner";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

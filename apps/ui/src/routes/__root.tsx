@@ -29,7 +29,7 @@ import { lazyPage } from "@/lib/lazy-page";
 import type { AppRouterContext } from "./-router-context";
 
 const OnboardingWizardVariant = lazyPage(
-  () => import("@/components/OnboardingWizard"),
+  () => import("@/features/onboarding/OnboardingWizard"),
   "OnboardingWizardVariant",
 );
 

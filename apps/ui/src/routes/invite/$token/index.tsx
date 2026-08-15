@@ -2,7 +2,7 @@ import { accessApi } from "@/api/access";
 import { authApi } from "@/api/auth";
 import { companiesListQueryOptions } from "@/api/companies-query";
 import { healthApi } from "@/api/health";
-import { InviteLandingForm } from "@/components/invites/InviteLandingForm";
+import { InviteLandingForm } from "@/routes/invite/$token/-InviteLandingForm";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";

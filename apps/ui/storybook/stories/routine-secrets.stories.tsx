@@ -10,8 +10,8 @@ import type {
   RoutineRevision,
   RoutineRevisionSnapshotV1,
 } from "@paperclipai/shared";
-import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
-import { RoutineHistoryTab } from "@/components/RoutineHistoryTab";
+import { EnvironmentVariablesEditor } from "@/features/environment-variables-editor";
+import { RoutineHistoryTab } from "@/routes/_authenticated/$companyId/routines/$routineId/-detail/-RoutineHistoryTab";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { queryKeys } from "@/lib/queryKeys";
 import { storybookCompanies, storybookSecrets } from "../fixtures/paperclipData";

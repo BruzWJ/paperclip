@@ -7,9 +7,9 @@ import { AGENT_STATUSES, TASK_PRIORITIES, TASK_STATUSES } from "@paperclipai/sha
 import { Clock3, DollarSign, FolderKanban, Inbox, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { TaskBlockedNotice } from "@/components/TaskBlockedNotice";
+import { TaskBlockedNotice } from "@/features/tasks/shared/TaskBlockedNotice";
 
-import { TaskRow } from "@/components/TaskRow";
+import { TaskRow } from "@/features/tasks/list/TaskRow";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";

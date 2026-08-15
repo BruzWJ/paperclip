@@ -12,26 +12,26 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { RoutineSubSidebar, RoutineSectionPicker } from "@/components/RoutineSubSidebar";
-import { RoutineSaveBar } from "@/components/RoutineSaveBar";
+import { RoutineSubSidebar, RoutineSectionPicker } from "@/routes/_authenticated/$companyId/routines/$routineId/-detail/-RoutineSubSidebar";
+import { RoutineSaveBar } from "@/routes/_authenticated/$companyId/routines/$routineId/-detail/-RoutineSaveBar";
 import {
   EDITABLE_SECTIONS,
   RoutineDetailContext,
   type RoutineDetailContextValue,
   type RoutineEditDraft,
   type RoutineSectionKey,
-} from "@/components/routine-sections/context";
+} from "@/routes/_authenticated/$companyId/routines/$routineId/-sections/-context";
 import {
   OverviewSection,
   TriggersSection,
   VariablesSection,
   SecretsSection,
   DeliverySection,
-} from "@/components/routine-sections/editable-sections";
+} from "@/routes/_authenticated/$companyId/routines/$routineId/-sections/-editable-sections";
 import {
   RunsSection,
   ActivitySection,
-} from "@/components/routine-sections/operate-sections";
+} from "@/routes/_authenticated/$companyId/routines/$routineId/-sections/-operate-sections";
 import { queryKeys } from "@/lib/queryKeys";
 import { storybookAgents, storybookProjects } from "../fixtures/paperclipData";
 

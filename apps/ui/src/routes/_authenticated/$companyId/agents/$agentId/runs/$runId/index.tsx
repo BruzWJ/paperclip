@@ -1,4 +1,4 @@
-import { AgentDetailScreen } from "@/components/agents/AgentDetailScreen";
+import { AgentDetailScreen } from "@/routes/_authenticated/$companyId/agents/$agentId/-AgentDetailScreen";
 import { loadCompanyAgent, loadCompanyAgentRun } from "@/routes/-company-entity-loader";
 import { createFileRoute } from "@tanstack/react-router";
 

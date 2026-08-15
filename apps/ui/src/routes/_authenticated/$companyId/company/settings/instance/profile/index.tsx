@@ -8,7 +8,7 @@ import { assetsApi } from "@/api/assets";
 import { useSettingsBreadcrumbs } from "@/hooks/useSettingsBreadcrumbs";
 import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { InboxAgentPolicyControl } from "@/components/InboxAgentPolicyControl";
+import { InboxAgentPolicyControl } from "@/routes/_authenticated/$companyId/company/settings/instance/profile/-InboxAgentPolicyControl";
 import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Alert, AlertDescription } from "@/components/ui/alert";

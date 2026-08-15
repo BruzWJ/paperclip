@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ReactNode } from "react";
 import { CircleDot, Flag, MoreHorizontal, Paperclip } from "lucide-react";
 import type { TaskRelationTaskSummary } from "@paperclipai/shared";
-import { TaskBlockedNotice } from "@/components/TaskBlockedNotice";
-import { TaskRow } from "@/components/TaskRow";
+import { TaskBlockedNotice } from "@/features/tasks/shared/TaskBlockedNotice";
+import { TaskRow } from "@/features/tasks/list/TaskRow";
 import { storybookAgents, createTask } from "../fixtures/paperclipData";
 
 const codexAgent =

@@ -44,7 +44,7 @@ vi.mock("@/context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({ setBreadcrumbs: mocks.setBreadcrumbs }),
 }));
 
-vi.mock("@/components/ActiveAgentsPanel", () => ({
+vi.mock("@/routes/_authenticated/$companyId/dashboard/-ActiveAgentsPanel", () => ({
   ActiveAgentsPanel: () => null,
 }));
 

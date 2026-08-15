@@ -11,7 +11,7 @@ import {
   FileTree,
   parseFrontmatter,
   type FileTreeNode,
-} from "@/components/FileTree";
+} from "@/components/patterns/FileTree";
 
 import { Badge } from "@/components/ui/badge";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";

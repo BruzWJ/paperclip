@@ -1,5 +1,5 @@
 import { tasksApi } from "@/api/tasks";
-import type { GalleryMediaItem } from "@/components/ImageGalleryModal";
+import type { GalleryMediaItem } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-ImageGalleryModal";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

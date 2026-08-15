@@ -1,8 +1,8 @@
 import { pluginsApi } from "@/api/plugins";
-import type { JsonSchemaNode } from "@/components/JsonSchemaForm";
-import { PluginConfigForm } from "@/components/plugins/PluginConfigForm";
-import { PluginLocalFoldersSettings } from "@/components/plugins/PluginLocalFoldersSettings";
-import { PluginRuntimeStatus } from "@/components/plugins/PluginRuntimeStatus";
+import type { JsonSchemaNode } from "./-json-schema/-JsonSchemaForm";
+import { PluginConfigForm } from "@/routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/-PluginConfigForm";
+import { PluginLocalFoldersSettings } from "@/routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/-PluginLocalFoldersSettings";
+import { PluginRuntimeStatus } from "@/routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/-PluginRuntimeStatus";
 import { Badge } from "@/components/ui/badge";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";

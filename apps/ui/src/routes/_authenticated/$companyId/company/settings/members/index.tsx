@@ -5,7 +5,7 @@ import {
   CompanyMemberRemovalDialog,
   PendingJoinRequestCard,
   type EditableMemberStatus,
-} from "@/components/company/CompanyMemberControls";
+} from "@/routes/_authenticated/$companyId/company/settings/members/-CompanyMemberControls";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { DomainStatus } from "@/components/patterns/DomainStatus";

@@ -5,7 +5,7 @@ import type {
 } from "@paperclipai/shared";
 import { parseMoneyAmount } from "@paperclipai/shared";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
-import type { RuntimeAgentConfigurationValues } from "../components/RuntimeAgentConfigurationFields";
+import type { RuntimeAgentConfigurationValues } from "../features/agents/configuration/RuntimeAgentConfigurationFields";
 
 export interface NewAgentControlPlanePayloads {
   runtimeAgent: RuntimeAgentCreateConfigurationInput;

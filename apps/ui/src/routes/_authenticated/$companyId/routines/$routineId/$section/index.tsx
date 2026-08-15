@@ -1,5 +1,5 @@
-import { ROUTINE_SECTION_KEYS, type RoutineSectionKey } from "@/components/routine-sections/context";
-import { RoutineDetailScreen } from "@/components/routines/RoutineDetailScreen";
+import { ROUTINE_SECTION_KEYS, type RoutineSectionKey } from "@/routes/_authenticated/$companyId/routines/$routineId/-sections/-context";
+import { RoutineDetailScreen } from "@/routes/_authenticated/$companyId/routines/$routineId/-detail/-RoutineDetailScreen";
 import { loadCompanyRoutine } from "@/routes/-company-entity-loader";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 

@@ -1,4 +1,4 @@
-import { ProjectDetailScreen } from "@/components/projects/ProjectDetailScreen";
+import { ProjectDetailScreen } from "@/routes/_authenticated/$companyId/projects/$projectId/-detail/-ProjectDetailScreen";
 import { loadCompanyProject } from "@/routes/-company-entity-loader";
 import { createFileRoute } from "@tanstack/react-router";
 

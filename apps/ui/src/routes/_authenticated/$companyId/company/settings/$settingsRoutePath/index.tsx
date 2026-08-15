@@ -7,7 +7,7 @@ import { useCompany } from "@/context/CompanyContext";
 import { PluginSlotMount, usePluginSlots } from "@/plugins/slots";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { PluginRouteBoundary } from "@/components/patterns/PluginRouteBoundary";
+import { PluginRouteBoundary } from "@/plugins/PluginRouteBoundary";
 
 const BUILT_IN_SETTINGS_ROUTES = new Set<string>(PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS);
 

@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Agent, Approval } from "@paperclipai/shared";
 
-import { TaskChatThread } from "@/components/TaskChatThread";
-import { TaskChatConfirmation } from "@/components/task-chat/TaskChatConfirmation";
+import { TaskChatThread } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread";
+import { TaskChatConfirmation } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatConfirmation";
 import type { TaskChatComment } from "@/lib/task-chat-messages";
 
 const AGENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

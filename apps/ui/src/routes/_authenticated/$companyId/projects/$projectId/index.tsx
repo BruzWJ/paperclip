@@ -1,10 +1,10 @@
-import { ProjectDetailScreen } from "@/components/projects/ProjectDetailScreen";
+import { ProjectDetailScreen } from "@/routes/_authenticated/$companyId/projects/$projectId/-detail/-ProjectDetailScreen";
 import { PROJECT_PLUGIN_TAB_PATTERN } from "@/lib/project-detail-tabs";
 import { loadCompanyProject } from "@/routes/-company-entity-loader";
 import { assertOnlySearchKeys, optionalSearchPattern } from "@/routes/-search";
 import { createFileRoute } from "@tanstack/react-router";
 
-export { ProjectDetailScreen as ProjectDetail } from "@/components/projects/ProjectDetailScreen";
+export { ProjectDetailScreen as ProjectDetail } from "@/routes/_authenticated/$companyId/projects/$projectId/-detail/-ProjectDetailScreen";
 
 export function validateProjectDetailSearch(search: Record<string, unknown>): {
   tab?: string;

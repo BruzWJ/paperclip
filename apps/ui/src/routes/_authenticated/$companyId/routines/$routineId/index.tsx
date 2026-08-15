@@ -1,8 +1,8 @@
-import { RoutineDetailScreen } from "@/components/routines/RoutineDetailScreen";
+import { RoutineDetailScreen } from "@/routes/_authenticated/$companyId/routines/$routineId/-detail/-RoutineDetailScreen";
 import { loadCompanyRoutine } from "@/routes/-company-entity-loader";
 import { createFileRoute } from "@tanstack/react-router";
 
-export { RoutineDetailScreen as RoutineDetail } from "@/components/routines/RoutineDetailScreen";
+export { RoutineDetailScreen as RoutineDetail } from "@/routes/_authenticated/$companyId/routines/$routineId/-detail/-RoutineDetailScreen";
 
 export const Route = createFileRoute("/_authenticated/$companyId/routines/$routineId/")({
   loader: ({ abortController, context, params }) =>

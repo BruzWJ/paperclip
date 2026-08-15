@@ -1,5 +1,5 @@
-import { TaskProperties } from "@/components/task-properties/TaskProperties";
-import type { TaskChatComposerHandle } from "@/components/TaskChatThread";
+import { TaskProperties } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-properties/-TaskProperties";
+import type { TaskChatComposerHandle } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread";
 import type { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import type { usePanel } from "@/context/PanelContext";
 import {

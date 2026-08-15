@@ -5,7 +5,7 @@ import type { OwnerPickerProps, ProjectPickerProps } from "@paperclipai/plugin-s
 import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
 import { projectsApi } from "@/api/projects";
-import { AgentIcon } from "@/components/AgentIconPicker";
+import { AgentIcon } from "@/features/agents/AgentIconPicker";
 import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { useProjectOrder } from "@/hooks/useProjectOrder";
 import { type EntityOption } from "@/lib/entity-selector";

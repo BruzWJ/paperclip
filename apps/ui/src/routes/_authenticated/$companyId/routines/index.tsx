@@ -1,8 +1,8 @@
-import { FolderSwatch, selectedFolderFromList } from "@/components/folders/FolderControls";
+import { FolderSwatch, selectedFolderFromList } from "@/routes/_authenticated/$companyId/routines/-folders/-FolderControls";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RoutineComposerDialog } from "@/components/routines/RoutineComposerDialog";
-import { RoutinesBrowser, RoutinesDialogs } from "@/components/routines/RoutinesBrowser";
-import { TasksList } from "@/components/TasksList";
+import { RoutineComposerDialog } from "@/routes/_authenticated/$companyId/routines/-RoutineComposerDialog";
+import { RoutinesBrowser, RoutinesDialogs } from "@/routes/_authenticated/$companyId/routines/-RoutinesBrowser";
+import { TasksList } from "@/features/tasks/list";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

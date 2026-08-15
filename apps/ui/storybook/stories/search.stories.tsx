@@ -2,14 +2,14 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 
 import type { CompanySearchFilterOptionCounts, CompanySearchZeroResults } from "@paperclipai/shared";
 
-import { SearchResultRow } from "@/components/search/SearchResultRow";
+import { SearchResultRow } from "@/routes/_authenticated/$companyId/search/-SearchResultRow";
 
-import { ZeroResultsRecovery } from "@/components/search/CompanySearchTabContent";
+import { ZeroResultsRecovery } from "@/routes/_authenticated/$companyId/search/-CompanySearchTabContent";
 import {
   SearchFilterBar,
   SearchFilterChips,
   type SearchFilterDataProps,
-} from "@/components/search/SearchFilterBar";
+} from "@/routes/_authenticated/$companyId/search/-SearchFilterBar";
 
 import type { FilterChipLookups, SearchFilters } from "@/lib/search-filters";
 

@@ -1,4 +1,4 @@
-import { SwipeToArchive } from "@/components/SwipeToArchive";
+import { SwipeToArchive } from "@/routes/_authenticated/$companyId/inbox/-SwipeToArchive";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Item } from "@/components/ui/item";

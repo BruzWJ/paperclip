@@ -1,5 +1,5 @@
 import type { CompanyArtifact } from "@/api/artifacts";
-import { ArtifactCard } from "@/components/artifacts/ArtifactCard";
+import { ArtifactCard } from "@/routes/_authenticated/$companyId/artifacts/-ArtifactCard";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

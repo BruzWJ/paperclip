@@ -1,7 +1,7 @@
-import { PauseAffectsSummaryView } from "@/components/owner-transition/OwnerTransitionViews";
+import { PauseAffectsSummaryView } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-owner-transition/-OwnerTransitionViews";
 import { DomainTree, type DomainTreeNode } from "@/components/patterns/DomainTree";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
-import { TaskLinkQuicklook } from "@/components/TaskLinkQuicklook";
+import { TaskLinkQuicklook } from "@/features/tasks/shared/TaskLinkQuicklook";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";

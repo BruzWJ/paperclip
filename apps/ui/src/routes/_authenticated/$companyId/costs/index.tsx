@@ -1,14 +1,14 @@
 import { budgetsApi } from "@/api/budgets";
 import { costsApi } from "@/api/costs";
-import { BudgetIncidentCard } from "@/components/BudgetIncidentCard";
-import { BudgetPolicyCard } from "@/components/BudgetPolicyCard";
+import { BudgetIncidentCard } from "@/routes/_authenticated/$companyId/costs/-BudgetIncidentCard";
+import { BudgetPolicyCard } from "@/features/budgets/BudgetPolicyCard";
 import {
   CostBreakdownRows,
   CostEventRows,
   FinanceBreakdownRows,
   FinanceCurrencyCard,
   FinanceEventRows,
-} from "@/components/costs/CostSummaryCards";
+} from "@/routes/_authenticated/$companyId/costs/-CostSummaryCards";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";

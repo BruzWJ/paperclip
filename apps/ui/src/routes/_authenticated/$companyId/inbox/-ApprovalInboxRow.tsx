@@ -1,4 +1,4 @@
-import { approvalLabel, typeIcon } from "@/components/ApprovalPayload";
+import { approvalLabel, typeIcon } from "@/features/approvals/ApprovalPayload";
 import { Button } from "@/components/ui/button";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";

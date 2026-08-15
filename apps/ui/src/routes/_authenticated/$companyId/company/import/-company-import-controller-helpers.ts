@@ -1,5 +1,5 @@
 import { getUIAdapter } from "@/adapters";
-import type { AdapterPickerItem } from "@/components/company/CompanyImportControls";
+import type { AdapterPickerItem } from "@/routes/_authenticated/$companyId/company/import/-CompanyImportControls";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import type {
   CompanyPortabilityAdapterOverride,

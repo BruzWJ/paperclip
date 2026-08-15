@@ -1,7 +1,7 @@
 import { workTimelineApi, type WorkTimelineParams } from "@/api/workTimeline";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { WorkTimelineGantt } from "@/components/patterns/WorkTimelineGantt";
+import { WorkTimelineGantt } from "@/routes/_authenticated/$companyId/timeline/-WorkTimelineGantt";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";

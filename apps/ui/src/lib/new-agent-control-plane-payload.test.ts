@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
-import type { RuntimeAgentConfigurationValues } from "../components/RuntimeAgentConfigurationFields";
+import type { RuntimeAgentConfigurationValues } from "../features/agents/configuration/RuntimeAgentConfigurationFields";
 import { describe, expect, it } from "vitest";
 import { buildNewAgentControlPlanePayloads } from "./new-agent-control-plane-payload";
 

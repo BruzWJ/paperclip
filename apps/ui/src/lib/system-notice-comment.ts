@@ -8,7 +8,7 @@ import type {
   SystemNoticeMetadataSection,
   SystemNoticeProps,
   SystemNoticeTone,
-} from "../components/SystemNotice";
+} from "../features/task-chat/SystemNotice";
 
 const TONE_LABEL: Record<SystemNoticeTone, string> = {
   neutral: "System notice",

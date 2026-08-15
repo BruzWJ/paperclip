@@ -1,6 +1,6 @@
-import { CompanySearchTabContent, ZeroResultsRecovery } from "@/components/search/CompanySearchTabContent";
-import { SearchFilterBar, SearchFilterChips, SearchSortMenu } from "@/components/search/SearchFilterBar";
-import { SearchFilterSheet } from "@/components/search/SearchFilterSheet";
+import { CompanySearchTabContent, ZeroResultsRecovery } from "@/routes/_authenticated/$companyId/search/-CompanySearchTabContent";
+import { SearchFilterBar, SearchFilterChips, SearchSortMenu } from "@/routes/_authenticated/$companyId/search/-SearchFilterBar";
+import { SearchFilterSheet } from "@/routes/_authenticated/$companyId/search/-SearchFilterSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";

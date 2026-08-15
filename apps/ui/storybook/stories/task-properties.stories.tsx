@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { TaskProperties } from "@/components/task-properties/TaskProperties";
+import { TaskProperties } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-properties/-TaskProperties";
 import { Card } from "@/components/ui/card";
 import { queryKeys } from "@/lib/queryKeys";
 import {

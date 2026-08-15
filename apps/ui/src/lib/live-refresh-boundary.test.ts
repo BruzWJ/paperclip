@@ -41,10 +41,10 @@ describe("canonical Socket.IO live refresh boundary", () => {
   it("limits query intervals to explicit operational diagnostics", () => {
     expect(filesContaining(/\brefetchInterval\s*:/)).toEqual([
       "adapters/use-adapter-catalog.ts",
-      "components/AuthenticatedAppGate.tsx",
-      "components/Layout.tsx",
+      "routes/_authenticated/$companyId/-shell/-Layout.tsx",
       "routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/index.tsx",
       "routes/_authenticated/$companyId/company/settings/secrets/-useSecretsData.ts",
+      "routes/_authenticated/-AuthenticatedAppGate.tsx",
     ]);
   });
 

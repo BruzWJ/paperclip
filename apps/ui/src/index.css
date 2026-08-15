@@ -898,79 +898,79 @@ span.paperclip-project-mention-chip {
 */
 :root {
   --sz-18px: 18px; /* Shared compact icon size. */
-  --sz-44px: 44px; /* Extracted from apps/ui/src/components/AgentConfigForm.tsx (min-h-[44px]). */
-  --sz-88px: 88px; /* Extracted from apps/ui/src/components/AgentConfigForm.tsx (min-h-[88px]). */
-  --sz-240px: 240px; /* Extracted from apps/ui/src/components/AgentConfigForm.tsx (max-h-[240px]). */
-  --sz-10_5rem: 10.5rem; /* Extracted from apps/ui/src/components/BlockedInboxView.tsx (w-[10.5rem]). */
-  --sz-150px: 150px; /* Extracted from apps/ui/src/components/BlockedInboxView.tsx (w-[150px]). */
-  --sz-5_75rem: 5.75rem; /* Extracted from apps/ui/src/components/BlockedInboxView.tsx (w-[5.75rem]). */
-  --sz-12rem: 12rem; /* Extracted from apps/ui/src/components/BlockedInboxView.tsx (max-w-[12rem]). */
+  --sz-44px: 44px; /* Extracted from apps/ui/src/features/agents/configuration/AgentConfigForm.tsx (min-h-[44px]). */
+  --sz-88px: 88px; /* Extracted from apps/ui/src/features/agents/configuration/AgentConfigForm.tsx (min-h-[88px]). */
+  --sz-240px: 240px; /* Extracted from apps/ui/src/features/agents/configuration/AgentConfigForm.tsx (max-h-[240px]). */
+  --sz-10_5rem: 10.5rem; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/inbox/-BlockedInboxView.tsx (w-[10.5rem]). */
+  --sz-150px: 150px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/inbox/-BlockedInboxView.tsx (w-[150px]). */
+  --sz-5_75rem: 5.75rem; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/inbox/-BlockedInboxView.tsx (w-[5.75rem]). */
+  --sz-12rem: 12rem; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/inbox/-BlockedInboxView.tsx (max-w-[12rem]). */
   --sz-200px: 200px;
   --sz-60px: 60px; /* Shared onboarding textarea minimum height. */
   --sz-220px: 220px;
-  --sz-88vh: 88vh; /* Extracted from apps/ui/src/components/DocumentAnnotationPanel.tsx (max-h-[88vh]). */
-  --sz-80vh: 80vh; /* Extracted from apps/ui/src/components/DocumentAnnotationPanel.tsx (max-h-[80vh]). */
-  --sz-360px: 360px; /* Extracted from apps/ui/src/components/DocumentAnnotationPanel.tsx (w-[360px]). */
-  --sz-85vh: 85vh; /* Extracted from apps/ui/src/components/DocumentDiffModal.tsx (max-h-[85vh]). */
+  --sz-88vh: 88vh; /* Extracted from apps/ui/src/features/document-annotations/DocumentAnnotationPanel.tsx (max-h-[88vh]). */
+  --sz-80vh: 80vh; /* Extracted from apps/ui/src/features/document-annotations/DocumentAnnotationPanel.tsx (max-h-[80vh]). */
+  --sz-360px: 360px; /* Extracted from apps/ui/src/features/document-annotations/DocumentAnnotationPanel.tsx (w-[360px]). */
+  --sz-85vh: 85vh; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-documents/-DocumentDiffModal.tsx (max-h-[85vh]). */
   --sz-100px: 100px; /* Shared compact field minimum size. */
-  --sz-60vh: 60vh; /* Extracted from apps/ui/src/components/FrontDoor.tsx (min-h-[60vh]). */
-  --sz-18rem: 18rem; /* Extracted from apps/ui/src/components/TaskBlockedNotice.tsx (max-w-[18rem]). */
-  --sz-70vh: 70vh; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (max-h-[70vh]). */
+  --sz-60vh: 60vh; /* Used by apps/ui/src/features/onboarding/OnboardingWizard.tsx (min-h-[60vh]). */
+  --sz-18rem: 18rem; /* Extracted from apps/ui/src/features/tasks/shared/TaskBlockedNotice.tsx (max-w-[18rem]). */
+  --sz-70vh: 70vh; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (max-h-[70vh]). */
   --sz-calc-7: calc(
     100% - 0.5rem
-  ); /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (max-w-[calc(100%-0.5rem)]). */
-  --sz-28dvh: 28dvh; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (max-h-[28dvh]). */
-  --sz-15px: 15px; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (p-[15px]). */
+  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (max-w-[calc(100%-0.5rem)]). */
+  --sz-28dvh: 28dvh; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (max-h-[28dvh]). */
+  --sz-15px: 15px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (p-[15px]). */
   --sz-calc-8: calc(
     env(safe-area-inset-bottom) + 20px
-  ); /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (bottom-[calc(env(safe-area-inset-bottom)+20px)]). */
-  --sz-300px: 300px; /* Extracted from apps/ui/src/components/TaskColumns.tsx (w-[300px]). */
+  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (bottom-[calc(env(safe-area-inset-bottom)+20px)]). */
+  --sz-300px: 300px; /* Extracted from apps/ui/src/features/tasks/list/TaskColumns.tsx (w-[300px]). */
   --sz-calc-9: min(80vh, 42rem); /* Used by TaskFiltersPopover. */
   --sz-calc-10: min(
     780px,
     calc(100vw - 2rem)
-  ); /* Extracted from apps/ui/src/components/TaskFiltersPopover.tsx (w-[min(780px,calc(100vw-2rem))]). */
+  ); /* Extracted from apps/ui/src/features/tasks/list/TaskFiltersPopover.tsx (w-[min(780px,calc(100vw-2rem))]). */
   --sz-calc-13: calc(
     0.75rem + 0.5rem
-  ); /* Extracted from apps/ui/src/components/TaskRow.tsx (ml-[calc(theme(spacing.3)+theme(spacing.2))]). */
-  --sz-140px: 140px; /* Extracted from apps/ui/src/components/JsonSchemaForm.tsx (min-h-[140px]). */
-  --sz-52px: 52px; /* Extracted from apps/ui/src/components/KanbanBoard.tsx (w-[52px]). */
-  --sz-260px: 260px; /* Extracted from apps/ui/src/components/KanbanBoard.tsx (min-w-[260px]). */
-  --sz-120px: 120px; /* Extracted from apps/ui/src/components/KanbanBoard.tsx (min-h-[120px]). */
+  ); /* Extracted from apps/ui/src/features/tasks/list/TaskRow.tsx (ml-[calc(theme(spacing.3)+theme(spacing.2))]). */
+  --sz-140px: 140px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/-json-schema/-JsonSchemaForm.tsx (min-h-[140px]). */
+  --sz-52px: 52px; /* Extracted from apps/ui/src/features/tasks/list/KanbanBoard.tsx (w-[52px]). */
+  --sz-260px: 260px; /* Extracted from apps/ui/src/features/tasks/list/KanbanBoard.tsx (min-w-[260px]). */
+  --sz-120px: 120px; /* Extracted from apps/ui/src/features/tasks/list/KanbanBoard.tsx (min-h-[120px]). */
   --sz-safe-top: env(
     safe-area-inset-top
-  ); /* Extracted from apps/ui/src/components/Layout.tsx (pt-[env(safe-area-inset-top)]). */
+  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/-shell/-Layout.tsx (pt-[env(safe-area-inset-top)]). */
   --sz-calc-14: calc(
     5rem + env(safe-area-inset-bottom)
-  ); /* Extracted from apps/ui/src/components/Layout.tsx (pb-[calc(5rem+env(safe-area-inset-bottom))]). */
-  --sz-66px: 66px; /* Extracted from apps/ui/src/components/MembershipAction.tsx (w-[66px]). */
+  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/-shell/-Layout.tsx (pb-[calc(5rem+env(safe-area-inset-bottom))]). */
+  --sz-66px: 66px; /* Extracted from apps/ui/src/features/resource-memberships/MembershipAction.tsx (w-[66px]). */
   --sz-safe-bottom: env(
     safe-area-inset-bottom
-  ); /* Extracted from apps/ui/src/components/MobileBottomNav.tsx (pb-[env(safe-area-inset-bottom)]). */
-  --sz-24rem: 24rem; /* Extracted from apps/ui/src/components/NewAgentDialog.tsx (h-[24rem]). */
-  --sz-50vh: 50vh; /* Extracted from apps/ui/src/components/NewGoalDialog.tsx (max-h-[50vh]). */
-  --sz-8_5rem: 8.5rem; /* Extracted from apps/ui/src/components/NewTaskDialog.tsx (min-w-[8.5rem]). */
-  --sz-160px: 160px; /* Extracted from apps/ui/src/components/NewProjectDialog.tsx (max-w-[160px]). */
-  --sz-80px: 80px; /* Extracted from apps/ui/src/components/OnboardingWizard.tsx (min-h-[80px]). */
+  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/-shell/-LayoutView.tsx (pb-[env(safe-area-inset-bottom)]). */
+  --sz-24rem: 24rem; /* Shared company-portability sidebar cap used by the company import and export route views. */
+  --sz-50vh: 50vh; /* Extracted from apps/ui/src/features/goals/create/NewGoalDialog.tsx (max-h-[50vh]). */
+  --sz-8_5rem: 8.5rem; /* Extracted from apps/ui/src/features/tasks/new-task/NewTaskActions.tsx (min-w-[8.5rem]). */
+  --sz-160px: 160px; /* Extracted from apps/ui/src/features/projects/create/NewProjectDialog.tsx (max-w-[160px]). */
+  --sz-80px: 80px; /* Extracted from apps/ui/src/features/onboarding/OnboardingWizard.tsx (min-h-[80px]). */
   --sz-calc-18: calc(100dvh - 2rem); /* Used by full-height dialogs. */
   --sz-calc-19: calc(1rem + env(safe-area-inset-bottom)); /* Used by RoutineRunVariablesDialog. */
   --sz-calc-20: min(
     calc(100dvh - 2rem),
     42rem
-  ); /* Extracted from apps/ui/src/components/RoutineRunVariablesDialog.tsx (max-h-[min(calc(100dvh-2rem),42rem)]). */
+  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/routines/-RoutineRunVariablesDialog.tsx (max-h-[min(calc(100dvh-2rem),42rem)]). */
   --sz-calc-23: min(
     32rem,
     calc(100vw - 2rem)
-  ); /* Extracted from apps/ui/src/components/SearchableSelect.tsx (max-w-[min(32rem,calc(100vw-2rem))]). */
+  ); /* Reserved searchable-select dialog maximum width. */
   --sz-277px: 277px; /* Used by SidebarAccountMenu. */
   --sz-calc-24: calc(
     100vw - 1rem
-  ); /* Extracted from apps/ui/src/components/SidebarAccountMenu.tsx (max-w-[calc(100vw-1rem)]). */
-  --sz-8px: 8px; /* Extracted from apps/ui/src/components/artifacts/ArtifactGroupCard.tsx (translate-x-[8px]). */
-  --sz-4px: 4px; /* Extracted from apps/ui/src/components/artifacts/ArtifactGroupCard.tsx (translate-x-[4px]). */
-  --sz-34px: 34px; /* Extracted from apps/ui/src/components/environment-variables-editor/SecretPicker.tsx (h-[34px]). */
-  --sz-11rem: 11rem; /* Extracted from apps/ui/src/components/task-properties/TaskProperties.tsx (min-w-[11rem]). */
-  --sz-32rem: 32rem; /* Extracted from apps/ui/src/components/task-properties/TaskProperties.tsx (w-[32rem]). */
+  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/-shell/-SidebarAccountMenu.tsx (max-w-[calc(100vw-1rem)]). */
+  --sz-8px: 8px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/artifacts/-ArtifactGroupCard.tsx (translate-x-[8px]). */
+  --sz-4px: 4px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/artifacts/-ArtifactGroupCard.tsx (translate-x-[4px]). */
+  --sz-34px: 34px; /* Extracted from apps/ui/src/features/secrets/pickers/EnvironmentVariableSecretPicker.tsx (h-[34px]). */
+  --sz-11rem: 11rem; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-properties/-TaskProperties.tsx (min-w-[11rem]). */
+  --sz-32rem: 32rem; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-properties/-TaskProperties.tsx (w-[32rem]). */
   --sz-420px: 420px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/agents/$agentId/index.tsx (min-h-[420px]). */
   --sz-7rem: 7rem; /* Used by agent and company-import labels. */
   --sz-560px: 560px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/export/index.tsx (min-h-[560px]). */
@@ -1001,14 +1001,14 @@ span.paperclip-project-mention-chip {
     34rem
   ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/secrets/index.tsx (max-h-[min(80vh,34rem)]). */
   --rad-3: 3px; /* Shared focus-ring width. */
-  --rad-4: 4px; /* Extracted from apps/ui/src/components/TaskChatThread.tsx (rounded-br-[4px]). */
-  --pct-90: 90%; /* Extracted from apps/ui/src/components/DocumentDiffModal.tsx (max-w-[90%]). */
-  --pct-85: 85%; /* Extracted from apps/ui/src/components/TaskChatThread.test.tsx (max-w-[85%]). */
+  --rad-4: 4px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.tsx (rounded-br-[4px]). */
+  --pct-90: 90%; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-documents/-DocumentDiffModal.tsx (max-w-[90%]). */
+  --pct-85: 85%; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (max-w-[85%]). */
   --pct-72: 72%; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx (w-[72%]). */
   --shadow-extract-4: 0 -12px 28px rgba(15, 23, 42, 0.08);
   --shadow-extract-5: 0 -12px 28px rgba(0, 0, 0, 0.28);
-  --shadow-extract-6: 0 0 0 1px var(--color-background); /* Extracted from apps/ui/src/components/DocumentAnnotationLayer.tsx (shadow-[0_0_0_1px_var(--color-background)]). */
-  --shadow-extract-10: 0 1px 0 1px hsl(var(--border)); /* Extracted from apps/ui/src/components/KeyboardShortcutsCheatsheet.tsx (shadow-[0_1px_0_1px_hsl(var(--border))]). */
+  --shadow-extract-6: 0 0 0 1px var(--color-background); /* Extracted from apps/ui/src/features/document-annotations/DocumentAnnotationLayer.tsx (shadow-[0_0_0_1px_var(--color-background)]). */
+  --shadow-extract-10: 0 1px 0 1px hsl(var(--border)); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/-shell/-KeyboardShortcutsCheatsheet.tsx (shadow-[0_1px_0_1px_hsl(var(--border))]). */
 }
 
 /* ── Extracted verbatim MISC tokens (Phase 2 Batch 4, design/token-extraction) ── */
@@ -1049,22 +1049,22 @@ span.paperclip-project-mention-chip {
 */
 :root {
   --gtc-8: 7.5rem 1fr; /* Shared metadata grid. */
-  --gtc-9: 300px minmax(0, 1fr); /* Extracted from apps/ui/src/components/RoutineHistoryTab.tsx (grid-cols-[300px_minmax(0,1fr)]). */
-  --gtc-13: minmax(0, 1fr) auto; /* Extracted from apps/ui/src/components/environment-variables-editor/Row.tsx (grid-cols-[minmax(0,1fr)_auto]). */
-  --gtc-14: minmax(160px, 2fr) minmax(240px, 3fr) 32px; /* Extracted from apps/ui/src/components/environment-variables-editor/Row.tsx (grid-cols-[minmax(160px,2fr)_minmax(240px,3fr)_32px]). */
+  --gtc-9: 300px minmax(0, 1fr); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/routines/$routineId/-detail/-RoutineHistoryTab.tsx (grid-cols-[300px_minmax(0,1fr)]). */
+  --gtc-13: minmax(0, 1fr) auto; /* Extracted from apps/ui/src/features/environment-variables-editor/Row.tsx (grid-cols-[minmax(0,1fr)_auto]). */
+  --gtc-14: minmax(160px, 2fr) minmax(240px, 3fr) 32px; /* Extracted from apps/ui/src/features/environment-variables-editor/Row.tsx (grid-cols-[minmax(160px,2fr)_minmax(240px,3fr)_32px]). */
   --gtc-25: 19rem minmax(0, 1fr); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/export/index.tsx (grid-cols-[19rem_minmax(0,1fr)]). */
   --gtc-34: 320px minmax(0, 1fr); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/instance/access/index.tsx (grid-cols-[320px_minmax(0,1fr)]). */
   --gtc-36: minmax(0, 1.15fr) minmax(360px, 0.85fr); /* Extracted from apps/ui/src/routes/invite/$token/index.tsx (grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]). */
   --gtc-39: minmax(0, 1.2fr) 320px; /* Used by PluginSettings. */
   --gtc-52: minmax(0, 1.4fr) minmax(220px, 0.8fr); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/index.tsx (grid-cols-[minmax(0,1.4fr)_minmax(220px,0.8fr)]). */
   --tp-width: width; /* Used by OnboardingWizard. */
-  --tp-max-height: max-height; /* Extracted from apps/ui/src/components/FoldCurtain.tsx (transition-[max-height]). */
+  --tp-max-height: max-height; /* Extracted from apps/ui/src/components/patterns/FoldCurtain.tsx (transition-[max-height]). */
   --tp-border-color-background-color-box-shadow:
-    border-color, background-color, box-shadow; /* Extracted from apps/ui/src/components/TaskChatThread.tsx (transition-[border-color,background-color,box-shadow]). */
-  --z-2: 2; /* Extracted from apps/ui/src/components/DocumentAnnotationLayer.tsx (z-[2]). */
-  --z-60: 60; /* Extracted from apps/ui/src/components/DocumentAnnotationPanel.tsx (z-[60]). */
-  --z-1: 1; /* Extracted from apps/ui/src/components/TaskDocumentAnnotations.tsx (z-[1]). */
-  --z-200: 200; /* Extracted from apps/ui/src/components/Layout.tsx (z-[200]). */
+    border-color, background-color, box-shadow; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.tsx (transition-[border-color,background-color,box-shadow]). */
+  --z-2: 2; /* Extracted from apps/ui/src/features/document-annotations/DocumentAnnotationLayer.tsx (z-[2]). */
+  --z-60: 60; /* Extracted from apps/ui/src/features/document-annotations/DocumentAnnotationPanel.tsx (z-[60]). */
+  --z-1: 1; /* Extracted from apps/ui/src/features/document-annotations/TaskDocumentAnnotations.tsx (z-[1]). */
+  --z-200: 200; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/-shell/-Layout.tsx (z-[200]). */
   --s-0_98: 0.98; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/inbox/index.tsx (scale-[0.98]). */
   --va-0_125em: -0.125em; /* Shared inline-icon alignment. */
 }
@@ -1094,8 +1094,8 @@ span.paperclip-project-mention-chip {
    A path may appear more than once if it has more than one distinct
    allowlisted concern. Paths are matched by the gate script as a substring
    of the file being checked (repo-relative, POSIX-style).
-   * allow apps/ui/src/components/task-properties/useTaskPropertiesState.ts — extracted home of the same newLabelColor color-picker seed state; the persisted API payload still requires a real hex string
-   * allow apps/ui/src/components/TaskColumns.tsx — accentColor fallback also feeds pickTextColorForPillBg() contrast math (lib/color-contrast.ts), which needs a real hex string to compute luminance
+   * allow apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-properties/-useTaskPropertiesState.ts — extracted home of the same newLabelColor color-picker seed state; the persisted API payload still requires a real hex string
+   * allow apps/ui/src/features/tasks/list/TaskColumns.tsx — accentColor fallback also feeds pickTextColorForPillBg() contrast math (lib/color-contrast.ts), which needs a real hex string to compute luminance
    * allow apps/ui/src/components/ui/scroll-area.tsx — rounded-[inherit] is a CSS keyword, not a literal value; nothing to extract
    * allow apps/ui/src/components/ui/dialog.tsx — tw-animate-css plugin utilities (zoom-in-[0.97], zoom-out-[0.97], slide-in-from-top-[1%], slide-out-to-top-[1%], animate-in, animate-out, fade-in-0, fade-out-0) are dead/no-op classes today (the tw-animate-css plugin is not installed and no matching @utility exists in this file; confirmed via grep of the built storybook-static CSS — none of these class names emit any rule); nothing to tokenize without visually changing a currently-inert class
    * allow apps/ui/src/components/ui/alert-dialog.tsx — same tw-animate-css dead-class situation as dialog.tsx (zoom-out-[0.97], zoom-in-[0.97])
@@ -1112,14 +1112,7 @@ span.paperclip-project-mention-chip {
    replace realistic-looking mock data with `var()` strings that no longer
    resemble what a real API response contains, without touching any
    rendered pixel. Each file is listed individually for reviewability.
-   * allow apps/ui/src/components/TaskFiltersPopover.test.tsx — mock label color prop
-   * allow apps/ui/src/components/TaskProperties.test.tsx — mock label/project color fixtures
-   * allow apps/ui/src/components/MarkdownBody.test.tsx — mock project color fed through a mention-href builder
-   * allow apps/ui/src/components/NewTaskDialog.test.tsx — mock brandColor/label color fixtures
-   * allow apps/ui/src/components/ProjectTile.test.tsx — mock project color prop
-   * allow apps/ui/src/components/RoutineRunVariablesDialog.test.tsx — mock label color fixture
-   * allow apps/ui/src/components/SidebarCompanyMenu.test.tsx — mock brandColor company fixtures
-   * allow apps/ui/src/components/SidebarStarredProjects.test.tsx — mock project color fixture
+   * allow apps/ui/src/routes/_authenticated/$companyId/-shell/-SidebarCompanyMenu.test.tsx — mock brandColor company fixtures
    * allow apps/ui/src/routes/invite/$token/InviteLanding.test.tsx — mock companyBrandColor fixtures
    * allow apps/ui/src/routes/invite/$token/InviteLanding.invite-landing-page-01.test.tsx — focused split of InviteLanding.test.tsx retaining the same mock companyBrandColor fixtures
    * allow apps/ui/src/routes/invite/$token/InviteLanding.invite-landing-page-02.test.tsx — focused split of InviteLanding.test.tsx retaining the same mock companyBrandColor fixtures

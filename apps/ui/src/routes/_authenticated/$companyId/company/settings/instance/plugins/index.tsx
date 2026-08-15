@@ -1,7 +1,7 @@
 import { accessApi } from "@/api/access";
 import { pluginsApi } from "@/api/plugins";
-import { InstalledPluginsSection } from "@/components/plugins/InstalledPluginsSection";
-import { PluginCatalogSection } from "@/components/plugins/PluginCatalogSection";
+import { InstalledPluginsSection } from "@/routes/_authenticated/$companyId/company/settings/instance/plugins/-InstalledPluginsSection";
+import { PluginCatalogSection } from "@/routes/_authenticated/$companyId/company/settings/instance/plugins/-PluginCatalogSection";
 import { CodeBlockPanel } from "@/components/patterns/CodeBlockPanel";
 import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";

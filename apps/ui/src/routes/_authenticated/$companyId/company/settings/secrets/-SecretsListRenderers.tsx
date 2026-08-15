@@ -1,4 +1,4 @@
-import type { SecretPathBreadcrumb, SecretPathFolder } from "@/components/secrets/secret-path";
+import type { SecretPathBreadcrumb, SecretPathFolder } from "@/routes/_authenticated/$companyId/company/settings/secrets/-secret-path";
 import { Button } from "@/components/ui/button";
 import {
   Breadcrumb,
