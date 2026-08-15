@@ -142,8 +142,8 @@ export const QueueItemFile = ({ children, className, ...props }: QueueItemFilePr
 export type QueueListProps = ComponentProps<typeof ScrollArea>;
 
 export const QueueList = ({ children, className, ...props }: QueueListProps) => (
-  <ScrollArea className={cn("mt-2 -mb-1", className)} {...props}>
-    <div className="max-h-40 pr-4">
+  <ScrollArea className={cn("mt-2 -mb-1 max-h-40", className)} {...props}>
+    <div className="pr-4">
       <ul>{children}</ul>
     </div>
   </ScrollArea>

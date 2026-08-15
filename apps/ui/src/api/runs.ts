@@ -18,9 +18,7 @@ export const ACTIVE_TASK_EXECUTION_RUN_STATUSES = [
   "running",
 ] as const satisfies readonly TaskExecutionRunStatus[];
 
-export function isTaskExecutionRunActive(
-  run: Pick<TaskExecutionRunEnvelopeRecord, "status">,
-): boolean {
+export function isTaskExecutionRunActive(run: Pick<TaskExecutionRunEnvelopeRecord, "status">): boolean {
   return ACTIVE_TASK_EXECUTION_RUN_STATUSES.includes(
     run.status as (typeof ACTIVE_TASK_EXECUTION_RUN_STATUSES)[number],
   );
@@ -33,10 +31,22 @@ export interface TaskExecutionRunListFilters {
   limit?: number;
 }
 
+export interface TaskExecutionRunDetailCursors {
+  messageCursor?: string | null;
+  eventCursor?: string | null;
+}
+
 export interface BoundedRunRecords<T> {
   items: T[];
   truncated: boolean;
+  nextCursor?: string | null;
 }
+
+/** JSON wire projection of the canonical prompt cost fact. */
+export type TaskExecutionCostEventRecord = Omit<CostEvent, "occurredAt" | "createdAt"> & {
+  occurredAt: string;
+  createdAt: string;
+};
 
 export interface TaskExecutionRunControlRecord {
   runId: string;
@@ -52,7 +62,6 @@ interface TaskExecutionPromptRecord {
   runId: string;
   refId: string;
   refOrdinal: number;
-  inputId: string;
   attemptId: string | null;
   capabilityConnectionId: string | null;
   capabilityGeneration: number | null;
@@ -70,15 +79,21 @@ interface TaskExecutionPromptRecord {
 export interface TaskExecutionRunRefRecord extends TaskExecutionPromptRecord {
   admissionOrder: number;
   batchDigest: string;
+  inputId: string | null;
 }
 
-export interface TaskExecutionPromptSegmentRecord
-  extends TaskExecutionPromptRecord {
+export interface TaskExecutionPromptSegmentRecord extends TaskExecutionPromptRecord {
   segmentOrdinal: number;
   sourceCommentId: string;
   sourceRefId: string | null;
+  sourceMessageId: string;
+  sourceInputId: string | null;
+  resumeSourceCorrelationId: string;
+  targetSessionGeneration: number | null;
   cancellationIntentId: string | null;
   steeringState: "requested" | "sent" | "protocol_settled" | "rebound" | "resumed";
+  terminalSessionMessageId: string | null;
+  resumedAt: string | null;
 }
 
 export interface TaskExecutionSessionEventRecord {
@@ -93,14 +108,7 @@ export interface TaskExecutionSessionMessageRecord {
   id: string;
   seq: number;
   modelStateSeq: number;
-  type:
-    | "agent-switched"
-    | "model-switched"
-    | "user"
-    | "synthetic"
-    | "system"
-    | "shell"
-    | "assistant";
+  type: "agent-switched" | "model-switched" | "user" | "synthetic" | "system" | "shell" | "assistant";
   data: Record<string, unknown>;
   timeCreated: string;
   timeUpdated: string;
@@ -118,6 +126,7 @@ export interface TaskExecutionAttemptRecord {
   refId: string | null;
   refOrdinal: number | null;
   segmentOrdinal: number | null;
+  steeringSegmentOrdinal: number | null;
   attemptGeneration: number;
   state: "pending" | "leased" | "running" | "settled" | "failed" | "cancelled";
   startedAt: string | null;
@@ -181,6 +190,7 @@ export interface AcpPromptAccountingRecord {
   id: string;
   companyId: string;
   taskId: string;
+  sessionId: string;
   agentId: string;
   runId: string;
   runKind: TaskExecutionRunKind;
@@ -188,9 +198,24 @@ export interface AcpPromptAccountingRecord {
   refId: string | null;
   runOrdinal: number | null;
   segmentOrdinal: number | null;
+  attemptId: string;
+  adapterConfigRevisionId: string;
+  selectedModelId: string | null;
+  contextTokenLimit: number;
   contextUsedTokens: number;
   contextWindowTokens: number;
+  promptSettlementReferenceId: string;
+  terminalUsageReference: string;
+  terminalStopReference: string;
+  settledAt: string;
   createdAt: string;
+}
+
+export interface TaskExecutionRunOutputCommentLink {
+  commentId: string;
+  messageId: string;
+  sourceKind: "run_output" | "run_progress" | "task_update";
+  projectedEventSeq: number;
 }
 
 export interface TaskExecutionActivityRecord {
@@ -209,12 +234,16 @@ export interface TaskExecutionActivityRecord {
 export interface TaskExecutionFinalizationRecord {
   id: string;
   companyId: string;
-  taskId: string;
   runId: string;
+  finalizationIdentityDigest: string;
   action: "comment_only" | "updates_committed" | "no_conversational_output";
   terminalSessionEventId: string | null;
   terminalSessionMessageId: string | null;
   progressCommentId: string | null;
+  gatewayCapabilityConnectionId: string | null;
+  gatewayCapabilityGeneration: number | null;
+  runLivenessFactId: string | null;
+  finalizedAt: string;
   createdAt: string;
 }
 
@@ -261,8 +290,9 @@ export interface TaskExecutionRunJoinedDetail {
   leases: BoundedRunRecords<TaskExecutionLeaseRecord>;
   cancellations: BoundedRunRecords<TaskExecutionCancellationRecord>;
   accounting: BoundedRunRecords<AcpPromptAccountingRecord>;
-  costs: BoundedRunRecords<CostEvent>;
+  costs: BoundedRunRecords<TaskExecutionCostEventRecord>;
   activity: BoundedRunRecords<TaskExecutionActivityRecord>;
+  outputComments: BoundedRunRecords<TaskExecutionRunOutputCommentLink>;
   finalization: TaskExecutionJoinedFinalization | null;
 }
 
@@ -277,23 +307,19 @@ function runListQuery(filters: TaskExecutionRunListFilters = {}): string {
 }
 
 export const runsApi = {
-  listForCompany: (
-    companyId: string,
-    filters: TaskExecutionRunListFilters = {},
-  ) =>
-    api.get<TaskExecutionRunListPageRecord>(
-      `/companies/${companyId}/runs${runListQuery(filters)}`,
-    ),
-  listForTask: (
-    taskId: string,
-    filters: Omit<TaskExecutionRunListFilters, "agentId"> = {},
-  ) =>
-    api.get<TaskExecutionRunListPageRecord>(
-      `/tasks/${taskId}/runs${runListQuery(filters)}`,
-    ),
-  get: (runId: string, limit = 200, options?: RequestOptions) =>
-    api.get<TaskExecutionRunJoinedDetail>(
-      `/runs/${runId}?limit=${encodeURIComponent(String(limit))}`,
-      options,
-    ),
+  listForCompany: (companyId: string, filters: TaskExecutionRunListFilters = {}) =>
+    api.get<TaskExecutionRunListPageRecord>(`/companies/${companyId}/runs${runListQuery(filters)}`),
+  listForTask: (taskId: string, filters: Omit<TaskExecutionRunListFilters, "agentId"> = {}) =>
+    api.get<TaskExecutionRunListPageRecord>(`/tasks/${taskId}/runs${runListQuery(filters)}`),
+  get: (
+    runId: string,
+    limit = 200,
+    options?: RequestOptions,
+    cursors: TaskExecutionRunDetailCursors = {},
+  ) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursors.messageCursor) params.set("messageCursor", cursors.messageCursor);
+    if (cursors.eventCursor) params.set("eventCursor", cursors.eventCursor);
+    return api.get<TaskExecutionRunJoinedDetail>(`/runs/${runId}?${params.toString()}`, options);
+  },
 };

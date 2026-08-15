@@ -1,5 +1,5 @@
 import { AgentActionButtons } from "@/components/AgentActionButtons";
-import { AgentIconPicker } from "@/components/AgentIconPicker";
+import { AgentIcon, AgentIconPicker } from "@/components/AgentIconPicker";
 import { AgentConfigurePage as AgentConfigurationPanel } from "@/components/agents/AgentConfigurationPanel";
 import { AgentOverview } from "@/components/agents/AgentOverview";
 import { AgentRunsPanel } from "@/components/agents/AgentRunsPanel";
@@ -20,7 +20,7 @@ import {
   type AgentDetailController,
 } from "@/routes/_authenticated/$companyId/agents/$agentId/-useAgentDetailController";
 import { Link } from "@tanstack/react-router";
-import { AlertTriangle, CheckCircle2, Star, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftIcon, CheckCircle2, Star, X } from "lucide-react";
 
 const AGENT_DETAIL_TABS = [
   { value: "dashboard", label: "Dashboard" },
@@ -165,63 +165,74 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
           </AlertDescription>
         </Alert>
       ) : null}
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-3 min-w-0">
-          <AgentIconPicker value={agent.icon} onChange={(icon) => updateIcon.mutate(icon)} />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-bold truncate">{agent.name}</h2>
+      {urlRunId ? (
+        <div className="border-b pb-3">
+          <Button asChild variant="ghost" size="sm" className="max-w-full">
+            <Link to="/$companyId/agents/$agentId/$tab" params={{ companyId, agentId, tab: "runs" }}>
+              <ArrowLeftIcon />
+              <AgentIcon icon={agent.icon} className="size-4" />
+              <span className="truncate">{agent.name} runs</span>
+            </Link>
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <AgentIconPicker value={agent.icon} onChange={(icon) => updateIcon.mutate(icon)} />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold truncate">{agent.name}</h2>
+              </div>
+              {agent.title ? <p className="text-sm text-muted-foreground truncate">{agent.title}</p> : null}
             </div>
-            {agent.title ? <p className="text-sm text-muted-foreground truncate">{agent.title}</p> : null}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Toggle
+              size="sm"
+              pressed={agentStarred}
+              disabled={agentStarPending}
+              aria-label={`${agentStarred ? "Unstar" : "Star"} ${agent.name}`}
+              onPressedChange={(next) =>
+                membershipMutation.mutate({
+                  resourceType: "agent",
+                  resourceId: agent.id,
+                  resourceName: agent.name,
+                  starred: next,
+                })
+              }
+            >
+              {agentStarPending ? <Spinner /> : <Star />}
+            </Toggle>
+            <AgentActionButtons
+              agent={agent}
+              companyId={companyId}
+              assignLabel="Assign Task"
+              workActionsDisabled={hasInvalidOrgChain || isPluginTriage}
+              workActionsDisabledReason={
+                isPluginTriage
+                  ? "Adopt or terminate this agent before assigning work or resuming it"
+                  : "Repair this agent's reporting chain before assigning tasks or starting runs"
+              }
+              hideTerminate={isPluginTriage}
+              onActionError={setActionError}
+            >
+              {mobileLiveRun && (
+                <Link
+                  to="/$companyId/agents/$agentId/runs/$runId"
+                  params={{
+                    companyId,
+                    agentId,
+                    runId: mobileLiveRun.id,
+                  }}
+                  className="sm:hidden"
+                >
+                  <DomainStatus status="running">Live</DomainStatus>
+                </Link>
+              )}
+            </AgentActionButtons>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Toggle
-            size="sm"
-            pressed={agentStarred}
-            disabled={agentStarPending}
-            aria-label={`${agentStarred ? "Unstar" : "Star"} ${agent.name}`}
-            onPressedChange={(next) =>
-              membershipMutation.mutate({
-                resourceType: "agent",
-                resourceId: agent.id,
-                resourceName: agent.name,
-                starred: next,
-              })
-            }
-          >
-            {agentStarPending ? <Spinner /> : <Star />}
-          </Toggle>
-          <AgentActionButtons
-            agent={agent}
-            companyId={companyId}
-            assignLabel="Assign Task"
-            workActionsDisabled={hasInvalidOrgChain || isPluginTriage}
-            workActionsDisabledReason={
-              isPluginTriage
-                ? "Adopt or terminate this agent before assigning work or resuming it"
-                : "Repair this agent's reporting chain before assigning tasks or starting runs"
-            }
-            hideTerminate={isPluginTriage}
-            onActionError={setActionError}
-          >
-            {mobileLiveRun && (
-              <Link
-                to="/$companyId/agents/$agentId/runs/$runId"
-                params={{
-                  companyId,
-                  agentId,
-                  runId: mobileLiveRun.id,
-                }}
-                className="sm:hidden"
-              >
-                <DomainStatus status="running">Live</DomainStatus>
-              </Link>
-            )}
-          </AgentActionButtons>
-        </div>
-      </div>
+      )}
 
       {!urlRunId && !isPluginTriage && (
         <Tabs value={activeView} onValueChange={handleAgentTabChange}>
@@ -352,7 +363,7 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
       )}
 
       {!isPluginTriage && activeView === "runs" && (
-        <AgentRunsPanel runs={runs} agentRouteId={agentId} selectedRunId={urlRunId ?? null} />
+        <AgentRunsPanel runs={runs} agentRouteId={agentId} selectedRunId={urlRunId ?? null} agent={agent} />
       )}
 
       {!isPluginTriage && activeView === "budget" ? (
