@@ -8,8 +8,8 @@ quickly becomes misleading when screens and components are removed.
 
 Before adding or consolidating a UI component:
 
-1. Inspect the current `apps/ui/src/components/`, `apps/ui/src/features/`, and
-   route-owned `apps/ui/src/routes/**/` trees (`index.tsx` is the screen entry)
+1. Inspect the current `apps/ui/src/components/` and route-owned
+   `apps/ui/src/routes/**/` trees (`index.tsx` is the screen entry)
    for an existing primitive or equivalent behavior.
 2. Reuse the established component when its behavior and accessibility contract
    fit; otherwise keep the new component focused on one clearly distinct
@@ -32,11 +32,10 @@ storybook story.
 - `components/ui`: official shadcn primitives, updated through the shadcn CLI.
 - `components/kibo-ui`: official Kibo composed components, updated through the Kibo CLI.
 - `components/ai-elements`: official AI Elements components, updated through its registry workflow.
-- Other `components` modules: Paperclip-owned, neutral patterns reusable across unrelated features and routes.
-- `features`: Paperclip domain UI reused by more than one route branch.
-- `routes`: route entry modules and route-only helpers; a non-route helper lives in a file or directory whose basename starts with `-` so the Router plugin ignores it.
+- Other `components` modules: Paperclip-owned, neutral patterns reusable across unrelated route domains.
+- `routes`: route entry modules and all route-owned Paperclip domain UI. A non-route helper lives beside its consumer—or at the closest common route ancestor for multiple consumers—in a file or directory whose basename starts with `-` so the Router plugin ignores it.
 
 Neutral patterns may compose registry components through their public APIs but
 must not copy or rename registry implementations. Paperclip-specific adapters
-belong in `features`, route-only behavior belongs beside its route consumer,
-and a registry source file must not acquire Paperclip-specific branches.
+and route behavior belong beside their route consumers, and a registry source
+file must not acquire Paperclip-specific branches.

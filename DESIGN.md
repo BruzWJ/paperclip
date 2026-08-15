@@ -22,9 +22,8 @@ Tailwind v4 gotcha: `@theme inline` bakes literal values at build time. Any toke
 
 ## UI source ownership
 
-- `apps/ui/src/components/` contains neutral, reusable UI: the protected registry sources above and Paperclip-owned generic patterns. Paperclip-owned components must not depend on a feature or route.
-- `apps/ui/src/features/` contains Paperclip domain UI reused across route branches, including domain-specific components, hooks, and supporting models.
-- `apps/ui/src/routes/` contains route entry modules. Helpers used by only one route stay beside that consumer in a file or directory whose basename starts with `-`, which keeps the helper outside the generated route tree.
+- `apps/ui/src/components/` contains neutral, reusable UI: the protected registry sources above and Paperclip-owned generic patterns. Paperclip-owned components must not depend on domain state or a route.
+- `apps/ui/src/routes/` contains route entry modules and all route-owned Paperclip domain UI. Put a helper beside its direct route consumer; if several route branches share it, put it at their closest common route ancestor. Every non-route module must be in a file or directory whose basename starts with `-`, keeping it outside the generated route tree. Do not create a parallel feature or page layer.
 
 Existing tiers already in index.css (~80+ tokens) — extraction maps to these on **exact value match** before minting anything new:
 
@@ -49,7 +48,7 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
 - **Baseline scope for Run 1:** the shared primitives in `apps/ui/src/components/ui/` (each gets a story if missing — there are only ~24) plus the ~46 existing stories under `apps/ui/storybook/stories/`. Do NOT attempt a story for every feature component (~277) in this run; full coverage is a later effort.
 - Mechanical rewrites (value extraction, renames) are done via committed codemod scripts in `scripts/`, not hand-edits — reviewable once, repeatable forever.
 - Token layer is the single source (`apps/ui/src/index.css`, per above) consumed via CSS variables / Tailwind theme — never values copied into components.
-- Lint/grep gates pass: zero hardcoded hex values, zero arbitrary spacing values, zero raw font-size declarations in `apps/ui/src/components/**`, `apps/ui/src/features/**`, and `apps/ui/src/routes/**` outside registry-owned source, the token layer, and a documented allowlist (third-party overrides, intentional opt-outs commented inline).
+- Lint/grep gates pass: zero hardcoded hex values, zero arbitrary spacing values, zero raw font-size declarations in `apps/ui/src/components/**` and `apps/ui/src/routes/**` outside registry-owned source, the token layer, and a documented allowlist (third-party overrides, intentional opt-outs commented inline).
 - `pnpm build`, `pnpm typecheck`, and `pnpm build-storybook` pass.
 - AGENTS.md links here and states the token-only rule.
 

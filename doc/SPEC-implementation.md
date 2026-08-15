@@ -229,10 +229,10 @@ module and exports the corresponding `createFileRoute(...)` definition. There
 is no intermediate page/component directory and no parallel global pages tree
 or Next.js-style `app/` router. Route-specific tests are colocated and ignored
 by the Router plugin's test-file pattern. Neutral reusable UI remains in
-`apps/ui/src/components/`; Paperclip domain UI shared across route branches
-lives in `apps/ui/src/features/`; and helpers used by only one route remain
-beside that consumer in a file or directory whose basename starts with `-`, so
-the Router plugin ignores it.
+`apps/ui/src/components/`. Paperclip domain UI stays beside its route consumer,
+or at the closest common route ancestor when several route branches share it,
+in a file or directory whose basename starts with `-` so the Router plugin
+ignores it. There is no parallel `src/features/` ownership layer.
 
 REST remains the canonical board data and mutation boundary. TanStack Query
 owns client snapshots and cache reconciliation. Socket.IO attaches to the same
