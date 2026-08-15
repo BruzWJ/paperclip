@@ -25,7 +25,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { PluginLauncherProvider } from "@/plugins/launchers";
 import { lazyPage } from "@/lib/lazy-page";
-import { AppCommandMenu } from "./-AppCommandMenu";
 import type { AppRouterContext } from "./-router-context";
 
 const OnboardingWizardVariant = lazyPage(
@@ -55,7 +54,6 @@ function CompanyAwareBreadcrumbProvider({ children }: { children: ReactNode }) {
 function RootComponent() {
   return (
     <CompanyProvider>
-      <AppCommandMenu />
       <EditorAutocompleteProvider>
         <LiveUpdatesProvider>
           <TooltipProvider>
