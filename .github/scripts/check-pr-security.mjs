@@ -125,7 +125,7 @@ const SENSITIVE_PATHS = [
   // Advisory 4: Approval decision attribution spoofing via decidedByUserId
   'apps/server/src/routes/approvals.ts',
   // Advisory 5: Stored XSS via javascript: URLs in MarkdownBody (urlTransform)
-  'apps/ui/src/features/markdown/MarkdownBody.tsx',
+  'apps/ui/src/routes/_authenticated/$companyId/-markdown/-MarkdownBody.tsx',
   // Advisory 7: Unauthenticated access to protected endpoints
   'apps/server/src/routes/authz.ts',
   // Advisory 8: Unauthenticated RCE via import authorization bypass
