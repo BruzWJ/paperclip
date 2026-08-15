@@ -374,7 +374,7 @@ export const TreeExpander = ({ hasChildren = false, className, onClick, ...props
       transition={{ duration: 0.2, ease: "easeInOut" }}
       {...props}
     >
-      <ChevronRight className="h-3 w-3 text-muted-foreground"  data-icon="inline-start"/>
+      <ChevronRight className="h-3 w-3 text-muted-foreground" data-icon="inline-start" />
     </motion.div>
   );
 };
@@ -396,24 +396,14 @@ export const TreeIcon = ({ icon, hasChildren = false, className, ...props }: Tre
   const getDefaultIcon = () =>
     hasChildren ? (
       isExpanded ? (
-        <FolderOpen className="h-4 w-4"  data-icon="inline-start"/>
+        <FolderOpen className="h-4 w-4" data-icon="inline-start" />
       ) : (
-        <Folder className="h-4 w-4"  data-icon="inline-start"/>
+        <Folder className="h-4 w-4" data-icon="inline-start" />
       )
     ) : (
-      <File className="h-4 w-4"  data-icon="inline-start"/>
+      <File className="h-4 w-4" data-icon="inline-start" />
     );
 
-  return (
-    <motion.div
-      className={cn("mr-2 flex h-4 w-4 items-center justify-center text-muted-foreground", className)}
-      transition={{ duration: 0.15 }}
-      whileHover={{ scale: 1.1 }}
-      {...props}
-    >
-      {icon || getDefaultIcon()}
-    </motion.div>
-  );
 };
 
 export type TreeLabelProps = HTMLAttributes<HTMLSpanElement>;
