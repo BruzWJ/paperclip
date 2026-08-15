@@ -65,10 +65,12 @@ Each route-owned screen is the route branch's actual `index.tsx` module. That
 file exports `Route = createFileRoute(...)` and the component it renders; do not
 insert another page or component directory between the route and its screen.
 Route-specific tests may sit beside the route module and are excluded by the
-Router plugin's test-file ignore pattern. Prefix non-route helper files with
-`-`, and keep reusable UI in `apps/ui/src/components/`. There is no parallel
-`src/pages/` tree and this Vite application does not use Next.js App Router
-conventions.
+Router plugin's test-file ignore pattern. Keep helpers used by only one route
+beside that consumer in a file or directory whose basename starts with `-`, so
+the Router plugin ignores it. Reserve `apps/ui/src/components/` for neutral,
+reusable UI and registry sources; put Paperclip domain UI shared across route
+branches in `apps/ui/src/features/`. There is no parallel `src/pages/` tree and
+this Vite application does not use Next.js App Router conventions.
 
 The tenant route root uses the canonical lowercase company UUID. Agent,
 project, routine, and approval parameters use canonical UUIDs directly. Task

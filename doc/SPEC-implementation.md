@@ -228,8 +228,11 @@ Each screen implementation is its owning route branch's actual `index.tsx`
 module and exports the corresponding `createFileRoute(...)` definition. There
 is no intermediate page/component directory and no parallel global pages tree
 or Next.js-style `app/` router. Route-specific tests are colocated and ignored
-by the Router plugin's test-file pattern; reusable UI remains in
-`apps/ui/src/components/`.
+by the Router plugin's test-file pattern. Neutral reusable UI remains in
+`apps/ui/src/components/`; Paperclip domain UI shared across route branches
+lives in `apps/ui/src/features/`; and helpers used by only one route remain
+beside that consumer in a file or directory whose basename starts with `-`, so
+the Router plugin ignores it.
 
 REST remains the canonical board data and mutation boundary. TanStack Query
 owns client snapshots and cache reconciliation. Socket.IO attaches to the same

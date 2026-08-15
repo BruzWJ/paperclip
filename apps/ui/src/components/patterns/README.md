@@ -1,24 +1,16 @@
-# Kibo-backed application patterns
+# Reusable application patterns
 
-This directory is the single Paperclip-owned adapter layer between domain data
-and shadcn/Kibo compositions. Screens should reuse these patterns instead of
-recreating dialog, field, selector, status, upload, table, tree, diff, or code
-block contracts.
+This directory contains Paperclip-owned, product-neutral compositions built on
+the protected shadcn, Kibo, and AI Elements registry sources. Keep a pattern
+here only when unrelated features or routes can reuse the same prop-level
+behavior without importing Paperclip domain state, API mutations, or route
+assumptions.
 
-The adapters intentionally keep business state and API mutations outside the
-registry-owned `components/kibo-ui` directory:
-
-- `EntityCombobox` composes Kibo Combobox for domain entity selection.
-- `DataTable` composes Kibo Table with per-instance sorting state.
-- `DomainTree`, `WorkTimelineGantt`, `DiffCodeBlock`, and `AccessibleDropzone`
-  translate Paperclip contracts into Kibo Tree, Gantt, CodeBlock, and Dropzone.
-- `DomainStatus`, `ZoomableImage`, `ThemeSelector`, and the color-picker
-  adapters map domain values onto their exact Kibo components.
-- `ConfirmActionDialog`, `LabeledFormField`, `SettingsSwitchField`, and
-  `FormDialog` centralize repeated shadcn compositions using Kibo Patterns.
-- `DetailList` centralizes the shadcn Item label/value metadata composition.
-- `EntityCreationFields` combines the shared shadcn title field with the Kibo-backed editor.
-- `PluginRouteBoundary` centralizes plugin-route loading and failure states with shadcn primitives.
+The retained patterns cover reusable selectors, tables and trees, file and code
+views, form/dialog layouts, status presentation, media display, and accessible
+interaction helpers. Paperclip-specific orchestration belongs in
+`apps/ui/src/features/`; a helper with only one route consumer belongs beside
+that route in a Router-ignored `-` file or directory.
 
 The form layouts are adapted from the official Kibo Patterns examples
 `field/layouts/field-layouts-6`, `dialog/standard/dialog-standard-6`, and

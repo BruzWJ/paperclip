@@ -37,7 +37,7 @@ Before making changes, read in this order:
 ## 3. Repo Map
 
 - `apps/server/`: Express REST API, Socket.IO live invalidation, and orchestration services
-- `apps/ui/`: client-rendered React + Vite board UI with native TanStack Router file routes
+- `apps/ui/`: client-rendered React + Vite board UI; neutral UI lives in `src/components`, cross-route domain UI in `src/features`, and native TanStack Router routes in `src/routes`
 - `apps/docs/`: published Mintlify documentation site and its assets
 - `packages/cli/`: publishable Paperclip CLI
 - `packages/db/`: Drizzle schema, migrations, DB clients
@@ -182,6 +182,9 @@ When adding endpoints:
 - Keep routes and nav aligned with available API surface
 - Make each route-owned screen its TanStack branch's actual `index.tsx` route
   module; do not add an intermediate page directory or recreate `src/pages/`
+- Keep neutral reusable UI in `apps/ui/src/components/`, cross-route Paperclip
+  domain UI in `apps/ui/src/features/`, and route-only helpers beside their
+  consumer in Router-ignored `-` files or directories
 - Use company selection context for company-scoped pages
 - Surface failures clearly; do not silently ignore API errors
 
@@ -267,4 +270,4 @@ nothing, and does not treat that observation as execution-workspace readiness.
 
 ## Design system
 
-`DESIGN.md` at the repo root is the source of truth for UI design decisions. The token-only rule applies to all `apps/ui/` changes: every color, spacing, radius, type, shadow, and motion value in `apps/ui/src/components/**` and `apps/ui/src/routes/**` comes from the token layer in `apps/ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `apps/ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.
+`DESIGN.md` at the repo root is the source of truth for UI design decisions. The token-only rule applies to all `apps/ui/` changes: every color, spacing, radius, type, shadow, and motion value in `apps/ui/src/components/**`, `apps/ui/src/features/**`, and `apps/ui/src/routes/**` comes from the token layer in `apps/ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in those trees, outside the documented allowlist in `apps/ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.

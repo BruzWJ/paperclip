@@ -71,7 +71,7 @@ Route registration lives in `apps/server/src/app.ts` via `companyRoutes(db, stor
 
 | File                                  | Role                                                                                                                                                                                                                |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/ui/src/components/FileTree.tsx` | Reusable file tree component for both import and export. Builds tree from `CompanyPortabilityFileEntry` items, parses frontmatter, shows action indicators (create/update/skip), and maps frontmatter field labels. |
+| `apps/ui/src/components/patterns/FileTree.tsx` | Reusable file tree component for both import and export. Builds tree from `CompanyPortabilityFileEntry` items, parses frontmatter, shows action indicators (create/update/skip), and maps frontmatter field labels. |
 
 ## 9. UI — Libraries
 
