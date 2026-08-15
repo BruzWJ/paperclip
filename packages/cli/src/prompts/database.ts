@@ -4,7 +4,7 @@ import type { DatabaseConfig } from "../config/schema.js";
 
 export async function promptDatabase(
   current?: DatabaseConfig,
-): Promise<DatabaseConfig> {
+): Promise<DatabaseConfig & { connectionString: string }> {
   const base: DatabaseConfig = current ?? {};
 
   const value = await p.text({

@@ -14,6 +14,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./runtime-environment": "./src/runtime-environment.ts",
     "./worktree-bootstrap": "./src/dev-runner-worktree.ts"
   },
   "publishConfig": {
@@ -22,6 +23,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./runtime-environment": {
+        "types": "./dist/runtime-environment.d.ts",
+        "import": "./dist/runtime-environment.js"
       },
       "./worktree-bootstrap": {
         "types": "./dist/dev-runner-worktree.d.ts",
@@ -75,6 +80,7 @@
   "devDependencies": {
     "@paperclipai/ui": "workspace:*",
     "@types/express": "^5.0.0",
+    "@types/express-serve-static-core": "^5.0.0",
     "@types/jsdom": "^28.0.0",
     "@types/multer": "^2.2.0",
     "@types/node": "^22.19.21",

@@ -27,7 +27,7 @@ pnpm paperclipai run --instance dev
 
 ## `paperclipai onboard`
 
-Interactive first-time setup:
+Environment-aware first-time setup:
 
 ```sh
 pnpm paperclipai onboard
@@ -35,10 +35,15 @@ pnpm paperclipai onboard
 
 If Paperclip is already configured, rerunning `onboard` keeps the existing config in place. Use `paperclipai configure` to change settings on an existing install.
 
-First prompt:
+Onboarding has one Quickstart path: it uses an external PostgreSQL URL, local
+disk storage, local encrypted secrets, and private loopback binding by default.
+Environment variables and `--bind` can override those defaults. For advanced
+customization, finish onboarding and run `paperclipai configure` for the
+database, logging, server, storage, or secrets section.
 
-1. `Quickstart` (recommended): external PostgreSQL URL, local disk storage, default secrets
-2. `Advanced setup`: full interactive configuration
+Environment values are loaded without overwriting earlier sources: existing
+shell variables take precedence over the instance-adjacent `.env`, which takes
+precedence over `.env` in the current working directory.
 
 Start immediately after onboarding:
 

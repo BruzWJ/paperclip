@@ -10,7 +10,7 @@ import {
   resolveRuntimeBind,
   type PaperclipConfig,
 } from "@paperclipai/shared";
-import { loadPaperclipEnvFile } from "../config/env.js";
+import { loadPaperclipEnvironmentFiles } from "../config/env.js";
 import { detectTailnetBindHost } from "../config/server-bind.js";
 import { readConfig, resolveConfigPath } from "../config/store.js";
 
@@ -146,7 +146,7 @@ export async function bootstrapAdminInvite(opts: {
   baseUrl?: string;
 }) {
   const configPath = resolveConfigPath(opts.config);
-  loadPaperclipEnvFile(configPath);
+  loadPaperclipEnvironmentFiles(configPath);
   const config = readConfig(configPath);
   if (!config) {
     p.log.error(

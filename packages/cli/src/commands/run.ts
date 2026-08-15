@@ -7,7 +7,7 @@ import { bootstrapDevRunnerWorktreeEnv } from "@paperclipai/server/worktree-boot
 import pc from "picocolors";
 import { onboard } from "./onboard.js";
 import { doctor } from "./doctor.js";
-import { loadPaperclipEnvFile } from "../config/env.js";
+import { loadPaperclipEnvironmentFiles } from "../config/env.js";
 import { configExists, resolveConfigPath } from "../config/store.js";
 import { readConfig } from "../config/store.js";
 import {
@@ -82,7 +82,7 @@ export async function runCommand(
   }
   process.env.PAPERCLIP_CONFIG = configPath;
   if (!isPinnedWorktree) {
-    loadPaperclipEnvFile(configPath);
+    loadPaperclipEnvironmentFiles(configPath);
   }
 
   p.intro(pc.bgCyan(pc.black(" paperclipai run ")));

@@ -5,6 +5,11 @@ summary: Full environment variable reference
 
 All environment variables that Paperclip uses for server configuration.
 
+For CLI startup, existing shell variables take precedence over the
+instance-adjacent `.env`, which takes precedence over `.env` in the current
+working directory. Environment files fill missing values and do not overwrite
+an earlier source.
+
 ## Server Configuration
 
 | Variable                        | Default                                                   | Description                                                                                                                                                                                                                                                                                                                                                             |

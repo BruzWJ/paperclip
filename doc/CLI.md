@@ -31,8 +31,14 @@ Current CLI behavior:
 
 - `paperclipai onboard` and `paperclipai configure --section server` configure
   bind and exposure
+- onboarding uses one environment-aware Quickstart path; advanced customization
+  lives in `paperclipai configure`
 - every bind and exposure uses the same Better Auth signup/sign-in lifecycle
 - `paperclipai run --bind <loopback|lan|tailnet>` passes a quickstart bind preset into first-run onboarding when config is missing
+
+CLI environment precedence is existing shell variables, the instance-adjacent
+`.env`, then the `.env` in the current working directory. Later files fill only
+missing values.
 
 Canonical behavior is documented in `doc/DEPLOYMENT.md`.
 

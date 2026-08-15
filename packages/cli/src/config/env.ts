@@ -1,13 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { config as loadDotenv, parse as parseEnvFileContents } from "dotenv";
+import { loadRuntimeEnvironmentFiles } from "@paperclipai/server/runtime-environment";
+import { parse as parseEnvFileContents } from "dotenv";
 import { resolveConfigPath } from "./store.js";
 
 function resolveEnvFilePath(configPath?: string) {
   return path.resolve(path.dirname(resolveConfigPath(configPath)), ".env");
 }
-const loadedEnvFiles = new Set<string>();
-
 function parseEnvFile(contents: string) {
   try {
     return parseEnvFileContents(contents);
@@ -37,13 +36,18 @@ export function resolvePaperclipEnvFile(configPath?: string): string {
   return resolveEnvFilePath(configPath);
 }
 
-export function loadPaperclipEnvFile(configPath?: string): void {
-  const filePath = resolveEnvFilePath(configPath);
-  if (loadedEnvFiles.has(filePath)) return;
-
-  if (!fs.existsSync(filePath)) return;
-  loadedEnvFiles.add(filePath);
-  loadDotenv({ path: filePath, override: false, quiet: true });
+export function loadPaperclipEnvironmentFiles(
+  configPath?: string,
+  input: {
+    cwd?: string;
+    environment?: NodeJS.ProcessEnv;
+  } = {},
+): void {
+  loadRuntimeEnvironmentFiles({
+    paperclipEnvFilePath: resolveEnvFilePath(configPath),
+    cwd: input.cwd,
+    environment: input.environment,
+  });
 }
 
 export function readPaperclipEnvEntries(filePath = resolveEnvFilePath()): Record<string, string> {

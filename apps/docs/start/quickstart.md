@@ -14,7 +14,11 @@ npx paperclipai onboard --yes
 
 This walks you through setup, configures your environment, and gets Paperclip running against the supplied PostgreSQL server.
 
-If you already have a Paperclip install, rerunning `onboard` keeps your current config and data paths intact. Use `paperclipai configure` if you want to edit settings.
+From a cloned repository, `DATABASE_URL` may instead live in the repository-root
+`.env`. Existing shell variables win over the instance-adjacent `.env`, which
+wins over `.env` in the current working directory.
+
+If you already have a Paperclip install, rerunning `onboard` keeps your current config and data paths intact. Onboarding uses Quickstart defaults; use `paperclipai configure` for advanced customization.
 
 To start Paperclip again later:
 

@@ -37,10 +37,8 @@ import {
 import { ensureLocalSecretsKeyFile } from "../config/secrets-key.js";
 import { provisionPrimaryBetterAuthSecret } from "../config/auth-secret.js";
 import { promptDatabase } from "../prompts/database.js";
-import { promptLogging } from "../prompts/logging.js";
 import { defaultSecretsConfig } from "../prompts/secrets.js";
-import { defaultStorageConfig, promptStorage } from "../prompts/storage.js";
-import { promptServer } from "../prompts/server.js";
+import { defaultStorageConfig } from "../prompts/storage.js";
 import {
   buildPresetServerConfig,
   detectTailnetBindHost,
@@ -53,8 +51,6 @@ import {
 } from "../config/home.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import { getTelemetryClient, trackInstallStarted } from "../telemetry.js";
-
-type SetupMode = "quickstart" | "advanced";
 
 type OnboardOptions = {
   config?: string;
@@ -427,39 +423,6 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     return;
   }
 
-  let setupMode: SetupMode = "quickstart";
-  if (opts.yes) {
-    p.log.message(
-      pc.dim(
-        opts.bind
-          ? `\`--yes\` enabled: using Quickstart defaults with bind=${opts.bind}.`
-          : "`--yes` enabled: using Quickstart defaults.",
-      ),
-    );
-  } else {
-    const setupModeChoice = await p.select({
-      message: "Choose setup path",
-      options: [
-        {
-          value: "quickstart" as const,
-          label: "Quickstart",
-          hint: "Recommended: local defaults + ready to run",
-        },
-        {
-          value: "advanced" as const,
-          label: "Advanced setup",
-          hint: "Customize database, server, storage, and more",
-        },
-      ],
-      initialValue: "quickstart",
-    });
-    if (p.isCancel(setupModeChoice)) {
-      p.cancel("Setup cancelled.");
-      return;
-    }
-    setupMode = setupModeChoice as SetupMode;
-  }
-
   const tc = getTelemetryClient();
   if (tc) trackInstallStarted(tc);
 
@@ -470,14 +433,14 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
   } = quickstartDefaultsFromEnv({
     preferLoopback: opts.yes === true && !opts.bind,
   });
-  const explicitDatabaseUrl =
-    process.env.DATABASE_URL === undefined
-      ? undefined
-      : validateExternalPostgresConnectionString(
-          process.env.DATABASE_URL,
-          "DATABASE_URL",
-        );
-  let { database, logging, server, auth, storage, secrets } = derivedDefaults;
+  let { database, server, auth } = derivedDefaults;
+  const { logging, storage, secrets } = derivedDefaults;
+  let selectedDatabaseUrl =
+    database.connectionString ?? process.env.DATABASE_URL;
+  let selectedDatabaseSource =
+    database.connectionString === undefined
+      ? "DATABASE_URL"
+      : "database.connectionString";
 
   if (
     opts.bind === "loopback" ||
@@ -498,82 +461,45 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     }
   }
 
-  if (setupMode === "advanced") {
-    p.log.step(pc.bold("Database"));
-    database = await promptDatabase(database);
-
-    p.log.step(pc.bold("Logging"));
-    logging = await promptLogging();
-
-    p.log.step(pc.bold("Server"));
-    ({ server, auth } = await promptServer({
-      currentServer: server,
-      currentAuth: auth,
-    }));
-
-    p.log.step(pc.bold("Storage"));
-    storage = await promptStorage(storage);
-
-    p.log.step(pc.bold("Secrets"));
-    const secretsDefaults = defaultSecretsConfig();
-    secrets = {
-      provider: secrets.provider ?? secretsDefaults.provider,
-      strictMode: secrets.strictMode ?? secretsDefaults.strictMode,
-      localEncrypted: {
-        keyFilePath:
-          secrets.localEncrypted?.keyFilePath ??
-          secretsDefaults.localEncrypted.keyFilePath,
-      },
-    };
+  p.log.step(pc.bold("Quickstart"));
+  p.log.message(
+    pc.dim(
+      opts.bind
+        ? `Using quickstart defaults with bind=${opts.bind}.`
+        : `Using quickstart defaults: ${server.exposure} @ ${describeServerBinding(server)}.`,
+    ),
+  );
+  if (selectedDatabaseUrl === undefined) {
+    if (opts.yes) {
+      throw new Error(
+        "An external PostgreSQL URL is required. Set DATABASE_URL or run interactive onboarding.",
+      );
+    }
+    const promptedDatabase = await promptDatabase(database);
+    database = promptedDatabase;
+    selectedDatabaseUrl = promptedDatabase.connectionString;
+    selectedDatabaseSource = "database.connectionString";
+  }
+  if (usedEnvKeys.length > 0) {
     p.log.message(
       pc.dim(
-        `Using defaults: provider=${secrets.provider}, strictMode=${secrets.strictMode}, keyFile=${secrets.localEncrypted.keyFilePath}`,
+        `Environment-aware defaults active (${usedEnvKeys.length} env var(s) detected).`,
       ),
     );
   } else {
-    p.log.step(pc.bold("Quickstart"));
     p.log.message(
       pc.dim(
-        opts.bind
-          ? `Using quickstart defaults with bind=${opts.bind}.`
-          : `Using quickstart defaults: ${server.exposure} @ ${describeServerBinding(server)}.`,
+        "No optional environment overrides detected: using file storage and local encrypted secrets.",
       ),
     );
-    if (!database.connectionString && !explicitDatabaseUrl) {
-      if (opts.yes) {
-        throw new Error(
-          "An external PostgreSQL URL is required. Set DATABASE_URL or run interactive onboarding.",
-        );
-      }
-      database = await promptDatabase(database);
-    }
-    if (usedEnvKeys.length > 0) {
-      p.log.message(
-        pc.dim(
-          `Environment-aware defaults active (${usedEnvKeys.length} env var(s) detected).`,
-        ),
-      );
-    } else {
-      p.log.message(
-        pc.dim(
-          "No optional environment overrides detected: using file storage and local encrypted secrets.",
-        ),
-      );
-    }
-    for (const ignored of ignoredEnvKeys) {
-      p.log.message(pc.dim(`Ignored ${ignored.key}: ${ignored.reason}`));
-    }
+  }
+  for (const ignored of ignoredEnvKeys) {
+    p.log.message(pc.dim(`Ignored ${ignored.key}: ${ignored.reason}`));
   }
 
-  const selectedDatabaseUrl = database.connectionString ?? explicitDatabaseUrl;
-  if (!selectedDatabaseUrl) {
-    throw new Error(
-      "An external PostgreSQL URL is required. Set DATABASE_URL or configure database.connectionString.",
-    );
-  }
   const validatedDatabaseUrl = validateExternalPostgresConnectionString(
     selectedDatabaseUrl,
-    database.connectionString ? "database.connectionString" : "DATABASE_URL",
+    selectedDatabaseSource,
   );
 
   const databaseSpinner = p.spinner();
@@ -631,11 +557,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
 
   p.note(
     [
-      `Database: ${
-        database.connectionString
-          ? redactExternalPostgresConnectionString(database.connectionString)
-          : redactExternalPostgresConnectionString(explicitDatabaseUrl!)
-      }`,
+      `Database: ${redactExternalPostgresConnectionString(validatedDatabaseUrl)}`,
       `Logging: ${logging.mode} -> ${logging.logDir}`,
       `Server: ${server.exposure} @ ${describeServerBinding(server)}`,
       `Allowed hosts: ${server.allowedHostnames.length > 0 ? server.allowedHostnames.join(", ") : "(loopback only)"}`,

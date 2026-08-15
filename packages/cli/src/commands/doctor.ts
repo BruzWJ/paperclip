@@ -12,7 +12,7 @@ import {
   storageCheck,
   type CheckResult,
 } from "../checks/index.js";
-import { loadPaperclipEnvFile } from "../config/env.js";
+import { loadPaperclipEnvironmentFiles } from "../config/env.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 
 const STATUS_ICON = {
@@ -28,7 +28,7 @@ export async function doctor(opts: {
   p.intro(pc.bgCyan(pc.black(" paperclip doctor ")));
 
   const configPath = resolveConfigPath(opts.config);
-  loadPaperclipEnvFile(configPath);
+  loadPaperclipEnvironmentFiles(configPath);
   const results: CheckResult[] = [];
 
   // 1. Config check (must pass before others)

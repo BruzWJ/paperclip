@@ -300,6 +300,11 @@ export DATABASE_URL=postgres://paperclip:paperclip@localhost:5432/paperclip
 npx paperclipai onboard --yes
 ```
 
+When running from a cloned repository, you may put `DATABASE_URL` in the
+repository-root `.env` instead of exporting it. Paperclip loads existing shell
+variables first, then the instance-adjacent `.env`, then the `.env` in the
+current directory without overwriting earlier values.
+
 > **Troubleshooting: private npm registry `.npmrc`**
 >
 > If this fails with an `E404` for `paperclipai` (or similar) and you use a private npm registry (for example GitHub Packages) via a global `~/.npmrc`, `npx` may be resolving `paperclipai` against that private registry instead of the public npm registry.
@@ -324,7 +329,7 @@ npx paperclipai onboard --yes --bind lan
 npx paperclipai onboard --yes --bind tailnet
 ```
 
-If you already have Paperclip configured, rerunning `onboard` keeps the existing config in place. Use `paperclipai configure` to edit settings.
+If you already have Paperclip configured, rerunning `onboard` keeps the existing config in place. Onboarding uses environment-aware Quickstart defaults; use `paperclipai configure` to customize database, server, storage, logging, or secrets settings.
 
 Or manually:
 

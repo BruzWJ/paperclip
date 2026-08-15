@@ -26,7 +26,8 @@ This starts:
 - **UI** served by the API server in dev middleware mode (same origin)
 
 The database target is required. Paperclip validates it before startup and
-never creates a local database process.
+never creates a local database process. `DATABASE_URL` may be exported or placed
+in the repository-root `.env`.
 
 ## One-Command Bootstrap
 

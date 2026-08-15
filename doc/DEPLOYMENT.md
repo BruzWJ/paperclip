@@ -75,9 +75,10 @@ pnpm paperclipai configure --section server
 pnpm paperclipai doctor
 ```
 
-Onboarding asks about bind and exposure, requires an external PostgreSQL URL,
-and persists one durable Better Auth secret. Doctor validates those inputs but
-never creates a human account.
+Onboarding applies environment-aware Quickstart defaults, requires an external
+PostgreSQL URL, and persists one durable Better Auth secret. Use `configure`
+for custom bind, exposure, storage, logging, database, or secrets settings.
+Doctor validates those inputs but never creates a human account.
 
 Examples:
 
