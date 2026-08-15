@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { WorkTimelineResult } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Route, timelineSummary } from ".";
+import { filterTimelineData, Route, timelineSummary } from ".";
 import { getRouteComponent } from "@/test/route-component";
 
 const Timeline = getRouteComponent(Route);
@@ -169,9 +169,8 @@ describe("Timeline", () => {
     vi.clearAllMocks();
   });
 
-  it("requests the collapsed app sidebar by default", async () => {
+  async function renderTimeline() {
     root = createRoot(container);
-
     flushSync(() => {
       root?.render(
         <QueryClientProvider client={queryClient}>
@@ -180,55 +179,55 @@ describe("Timeline", () => {
       );
     });
     await flushReact();
+  }
+
+  it("requests the collapsed app sidebar by default", async () => {
+    await renderTimeline();
 
     expect(mockSetRouteRequestsCollapsed).toHaveBeenCalledWith(true);
   });
 
-  it("renders range controls plus icon zoom controls without the user lens selector or visible-duration readout", async () => {
-    root = createRoot(container);
+  it("keeps range and filter controls available when the selected window is empty", async () => {
+    await renderTimeline();
 
-    flushSync(() => {
-      root?.render(
-        <QueryClientProvider client={queryClient}>
-          <Timeline />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-
-    expect(container.textContent).toContain("Range");
-    expect(container.querySelector('[aria-label="Zoom out"]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Zoom in"]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Reset zoom"]')).not.toBeNull();
-    expect(container.textContent).not.toContain("Everyone");
-    expect(container.textContent).not.toContain("work kicked off");
-    expect(container.textContent).not.toContain("visible");
+    expect(container.textContent).toContain("Window");
+    expect(container.querySelector('[aria-label="Search timeline runs"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Filter timeline by run status"]')).not.toBeNull();
+    expect(container.textContent).toContain("No work recorded in this window");
   });
 
-  it("renders top timeline stats and keeps range controls in the chart footer", async () => {
-    mockWorkTimelineApi.get.mockResolvedValue(populatedTimeline);
-    root = createRoot(container);
-
-    flushSync(() => {
-      root?.render(
-        <QueryClientProvider client={queryClient}>
-          <Timeline />
-        </QueryClientProvider>,
-      );
+  it("does not treat task history outside the returned window as visible activity", async () => {
+    mockWorkTimelineApi.get.mockResolvedValue({
+      ...emptyTimeline,
+      actors: [{ id: "user:board", type: "user", name: "Board Operator", avatar: null }],
+      events: [
+        {
+          actorId: "user:board",
+          kind: "created",
+          taskId: TASK_ONE_ID,
+          at: "2026-06-01T00:00:00.000Z",
+        },
+      ],
     });
-    await flushReact();
+    await renderTimeline();
+
+    expect(container.textContent).toContain("No work recorded in this window");
+    expect(container.querySelector(".gantt")).toBeNull();
+  });
+
+  it("renders operator summary, integrated viewport controls, and the Kibo chart", async () => {
+    mockWorkTimelineApi.get.mockResolvedValue(populatedTimeline);
+    await renderTimeline();
 
     expect(container.textContent).toContain("Runs");
     expect(container.textContent).toContain("Agents");
     expect(container.textContent).toContain("Run time");
+    expect(container.textContent).toContain("Activity");
     expect(container.textContent).toContain("45m");
     expect(container.querySelector(".gantt")).not.toBeNull();
     expect(container.querySelector('[data-roadmap-ui="gantt-sidebar"]')).not.toBeNull();
-
-    const footer = Array.from(container.querySelectorAll("div")).find(
-      (element) => element.textContent?.includes("2 runs") && element.textContent.includes("Range"),
-    );
-    expect(footer).not.toBeUndefined();
+    expect(container.querySelector('[aria-label="Timeline scale"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Timeline navigation"]')).not.toBeNull();
   });
 
   it("clamps open run summary time to the returned timeline window", async () => {
@@ -247,16 +246,7 @@ describe("Timeline", () => {
         capped: false,
       },
     });
-    root = createRoot(container);
-
-    flushSync(() => {
-      root?.render(
-        <QueryClientProvider client={queryClient}>
-          <Timeline />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
+    await renderTimeline();
 
     expect(container.textContent).toContain("Run time");
     expect(container.textContent).toContain("2h");
@@ -272,20 +262,116 @@ describe("Timeline", () => {
       runs: 2,
       agents: 2,
       activeMs: 20 * 60 * 1000,
+      activity: 0,
+      relationships: 0,
+      attention: 0,
     });
   });
 
-  it("requests the company timeline without a user lens parameter", async () => {
-    root = createRoot(container);
+  it("filters runs, actors, activity, and relationships as one coherent chart projection", () => {
+    const data: WorkTimelineResult = {
+      ...populatedTimeline,
+      spans: [populatedTimeline.spans[0], { ...populatedTimeline.spans[1], status: "failed" }],
+      events: [
+        {
+          actorId: "user:board",
+          kind: "commented",
+          taskId: TASK_ONE_ID,
+          at: "2026-07-02T10:05:00.000Z",
+        },
+        {
+          actorId: "user:board",
+          kind: "approved",
+          taskId: TASK_TWO_ID,
+          at: "2026-07-02T11:05:00.000Z",
+        },
+      ],
+      edges: [
+        {
+          fromActorId: "user:board",
+          toActorId: "agent:qa",
+          taskId: TASK_TWO_ID,
+          at: "2026-07-02T11:00:00.000Z",
+          kind: "assignment",
+        },
+      ],
+    };
 
-    flushSync(() => {
-      root?.render(
-        <QueryClientProvider client={queryClient}>
-          <Timeline />
-        </QueryClientProvider>,
-      );
+    const filtered = filterTimelineData(data, "QA", "attention");
+    expect(filtered.spans.map((span) => span.runId)).toEqual([RUN_TWO_ID]);
+    expect(filtered.events).toHaveLength(1);
+    expect(filtered.edges).toHaveLength(1);
+    expect(filtered.actors.map((actor) => actor.id)).toEqual(
+      expect.arrayContaining(["agent:qa", "user:board"]),
+    );
+  });
+
+  it("finds event-only work by actor name", () => {
+    const eventOnlyTaskId = "66666666-6666-4666-8666-666666666666";
+    const filtered = filterTimelineData(
+      {
+        ...emptyTimeline,
+        actors: [{ id: "user:operator", type: "user", name: "Timeline Operator", avatar: null }],
+        events: [
+          {
+            actorId: "user:operator",
+            kind: "commented",
+            taskId: eventOnlyTaskId,
+            at: "2026-07-03T10:00:00.000Z",
+          },
+        ],
+      },
+      "Timeline Operator",
+      "all",
+    );
+
+    expect(filtered.spans).toHaveLength(0);
+    expect(filtered.events.map((event) => event.taskId)).toEqual([eventOnlyTaskId]);
+    expect(filtered.actors.map((actor) => actor.id)).toEqual(["user:operator"]);
+  });
+
+  it("opens exact run details from a selectable Gantt bar", async () => {
+    mockWorkTimelineApi.get.mockResolvedValue(populatedTimeline);
+    await renderTimeline();
+
+    const runButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label*="PAP-1 · Implement timeline stats, Succeeded"]',
+    );
+    expect(runButton).not.toBeNull();
+    flushSync(() => runButton?.click());
+
+    expect(container.textContent).toContain("Open task");
+    expect(container.textContent).toContain(RUN_ONE_ID);
+    expect(container.querySelector('[aria-label="Close run details"]')).not.toBeNull();
+  });
+
+  it("lets operators page through partial task results", async () => {
+    mockWorkTimelineApi.get.mockResolvedValue({
+      ...populatedTimeline,
+      pagination: {
+        limit: 200,
+        offset: 0,
+        totalTasks: 201,
+        hasMore: true,
+      },
     });
+    await renderTimeline();
+
+    const pageControls = container.querySelector('[aria-label="Timeline task pages"]');
+    const nextPage = Array.from(pageControls?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
+      (button) => button.textContent === "Next",
+    );
+    flushSync(() => nextPage?.click());
     await flushReact();
+
+    expect(mockWorkTimelineApi.get).toHaveBeenLastCalledWith(
+      COMPANY_ID,
+      expect.objectContaining({ offset: 200 }),
+    );
+  });
+
+  it("requests the company timeline without a user lens parameter", async () => {
+    await renderTimeline();
 
     expect(mockWorkTimelineApi.get).toHaveBeenCalledWith(
       COMPANY_ID,

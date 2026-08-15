@@ -27,11 +27,20 @@ Compatibility-only corrections from the generated registry output:
 - `table/index.tsx` is kept byte-for-byte with the generated registry source;
   the app pins `@tanstack/react-table` to `^8.21.3` because that source uses the
   v8 provider and row-model API while the registry dependency is unversioned.
-- `gantt/index.tsx` accepts opt-in `draggable={false}` feature items and an
-  `initialExtent` provider hint. Kibo's defaults stay interactive and centered
-  on today; read-only domain adapters can omit drag semantics and seed the
-  calendar around historical or future data. Sidebar items also activate with
-  Space as well as Enter when used through their generated `role="button"`.
+- `gantt/index.tsx` accepts opt-in `draggable={false}` feature items plus
+  `initialExtent` and `initialFocusDate` provider hints. Kibo's defaults stay
+  interactive and geometrically centered; read-only domain adapters can omit
+  drag semantics, seed only the years spanned by historical or future data,
+  and choose its initial focus. Providers without an explicit extent retain
+  Kibo's three-year default. Daily-range features, markers, and the today line
+  share DST-aware fractional-day positioning, while optional
+  `showDailyHourTicks` adds sparse, month-level SVG hour guides only when zoomed
+  columns can keep them readable. Read-only grids skip inactive per-column
+  interaction hooks, feature geometry follows refreshed date props, and one
+  responsive row metric keeps chart and sidebar rows aligned on coarse
+  pointers. Sidebar durations use their real endpoints, header labels are
+  configurable, and sidebar items activate with Space as well as Enter when
+  used through their generated `role="button"`.
 - `kanban/index.tsx` accepts opt-in `draggable={false}` cards so read-only
   boards keep Kibo's card composition without exposing inactive sortable
   controls. Kibo's default remains draggable.

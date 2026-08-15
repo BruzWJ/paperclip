@@ -4,12 +4,12 @@ import { api } from "./client";
 export interface WorkTimelineParams {
   from?: string;
   to?: string;
-  /** lens: work kicked off / touched by this user. */
   userId?: string;
   goalId?: string;
   projectId?: string;
   taskId?: string;
   limit?: number;
+  offset?: number;
 }
 
 function query(params: WorkTimelineParams): string {
@@ -21,6 +21,7 @@ function query(params: WorkTimelineParams): string {
   if (params.projectId) search.set("projectId", params.projectId);
   if (params.taskId) search.set("taskId", params.taskId);
   if (params.limit) search.set("limit", String(params.limit));
+  if (params.offset !== undefined) search.set("offset", String(params.offset));
   const qs = search.toString();
   return qs ? `?${qs}` : "";
 }
