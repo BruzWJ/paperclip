@@ -451,6 +451,7 @@ export const CodeBlockLanguageSelectorTrigger = ({
   ...props
 }: CodeBlockLanguageSelectorTriggerProps) => (
   <SelectTrigger
+    aria-label="Code language"
     className={cn("h-7 border-none bg-transparent px-2 text-xs shadow-none", className)}
     size="sm"
     {...props}

@@ -53,7 +53,7 @@ export const Route = createFileRoute("/_authenticated/$companyId/inbox/")({
 });
 
 function MineInboxIndexRoute() {
-  return <Inbox tab="mine" />;
+  return <Inbox tab="mine"  data-icon="inline-start"/>;
 }
 
 export {
@@ -349,7 +349,7 @@ function InboxStates() {
       {tab !== "blocked" && allLoaded && visibleSections.length === 0 ? (
         <Empty>
           <EmptyHeader>
-            <EmptyMedia variant="icon">{searchQuery.trim() ? <Search /> : <InboxIcon />}</EmptyMedia>
+            <EmptyMedia variant="icon">{searchQuery.trim() ? <Search  data-icon="inline-start"/> : <InboxIcon  data-icon="inline-start"/>}</EmptyMedia>
             <EmptyTitle>
               {searchQuery.trim()
                 ? "No inbox items match your search."

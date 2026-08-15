@@ -31,7 +31,7 @@ export function NewTaskStagedFiles() {
                       <span className="truncate text-sm">{item.file.name}</span>
                     </ItemTitle>
                     <ItemDescription className="flex items-center gap-2 text-(length:--text-micro)">
-                      <FileText className="h-3.5 w-3.5" />
+                      <FileText className="h-3.5 w-3.5"  data-icon="inline-start"/>
                       <span>{item.title || item.file.name}</span>
                       <span>•</span>
                       <span>{formatFileSize(item.file)}</span>
@@ -46,7 +46,7 @@ export function NewTaskStagedFiles() {
                       disabled={creation.createTask.isPending}
                       title="Remove document"
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <X className="h-3.5 w-3.5"  data-icon="inline-start"/>
                     </Button>
                   </ItemActions>
                 </Item>
@@ -66,7 +66,7 @@ export function NewTaskStagedFiles() {
                 <Item key={item.id} variant="outline" size="sm">
                   <ItemContent className="min-w-0">
                     <ItemTitle>
-                      <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
                       <span className="truncate text-sm">{item.file.name}</span>
                     </ItemTitle>
                     <ItemDescription className="text-(length:--text-micro)">
@@ -82,7 +82,7 @@ export function NewTaskStagedFiles() {
                       disabled={creation.createTask.isPending}
                       title="Remove attachment"
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <X className="h-3.5 w-3.5"  data-icon="inline-start"/>
                     </Button>
                   </ItemActions>
                 </Item>

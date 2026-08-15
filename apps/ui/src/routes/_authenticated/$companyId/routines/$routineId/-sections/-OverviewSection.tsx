@@ -18,6 +18,7 @@ export function OverviewSection({
 }: {
   defaultDescriptionAnnotationsOpen?: boolean;
 } = {}) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const ctx = useRoutineDetail();
   const {
     routine,
@@ -264,7 +265,7 @@ export function OverviewSection({
               <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
                 <summary.icon className="h-3.5 w-3.5" />
                 {summary.label}
-                <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground/60" />
+                <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground/60"  data-icon="inline-start"/>
               </div>
               <p className="text-lg font-semibold">{summary.value}</p>
               <p className="text-xs text-muted-foreground">{summary.hint}</p>
@@ -294,7 +295,7 @@ export function OverviewSection({
               </Item>
             ))}
             <Button variant="ghost" size="sm" onClick={() => navigateToSection("activity")}>
-              View all activity <ArrowRight className="h-3 w-3" />
+              View all activity <ArrowRight className="h-3 w-3"  data-icon="inline-end"/>
             </Button>
           </ItemGroup>
         )}

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useQuery } from "@tanstack/react-query";
@@ -30,7 +30,6 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
   const companyId = useCompanyRouteId();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
-  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Approvals" }]);
@@ -46,7 +45,7 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
     queryFn: () => agentsApi.list(companyId),
   });
 
-  const { approveMutation, rejectMutation } = useApprovalMutations(companyId, setActionError);
+  const { approveMutation, rejectMutation, isPending: mutationPending } = useApprovalMutations(companyId);
 
   const filtered = (data ?? [])
     .filter((a) => statusFilter === "all" || a.status === "pending" || a.status === "revision_requested")
@@ -55,11 +54,11 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
   const pendingCount = (data ?? []).filter(
     (a) => a.status === "pending" || a.status === "revision_requested",
   ).length;
-  const pendingActionStatus = approveMutation.isPending
-    ? "Approving request…"
-    : rejectMutation.isPending
-      ? "Rejecting request…"
-      : null;
+  const pendingActionStatus = mutationPending
+    ? approveMutation.isPending
+      ? "Approving request…"
+      : "Rejecting request…"
+    : null;
 
   if (isLoading) {
     return (
@@ -109,13 +108,8 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
         </p>
       ) : null}
       {error && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" role="alert">
           <AlertDescription>{error.message}</AlertDescription>
-        </Alert>
-      )}
-      {actionError && (
-        <Alert variant="destructive">
-          <AlertDescription>{actionError}</AlertDescription>
         </Alert>
       )}
 
@@ -123,7 +117,7 @@ export function Approvals({ statusFilter }: { statusFilter: StatusFilter }) {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <ShieldCheck />
+              <ShieldCheck  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>
               {statusFilter === "pending" ? "No pending approvals" : "No approvals yet"}

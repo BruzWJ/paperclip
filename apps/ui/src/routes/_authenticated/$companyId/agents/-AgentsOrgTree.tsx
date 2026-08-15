@@ -76,7 +76,7 @@ export function AgentsOrgTree({
       renderIcon={({ node }) => {
         const agent = agentMap.get(node.id);
         return agent?.orgChainHealth?.status === "invalid_org_chain" ? (
-          <AlertTriangle className="size-4 text-muted-foreground" aria-label="Invalid reporting chain" />
+          <AlertTriangle className="size-4 text-muted-foreground" aria-label="Invalid reporting chain"  data-icon="inline-start"/>
         ) : (
           <DomainStatus status={node.value.status}>
             <span className="sr-only">{node.value.status.replace(/_/g, " ")}</span>
@@ -151,7 +151,7 @@ export function AgentsOrgTree({
                 })
               }
             >
-              {starPending ? <Spinner /> : <Star />}
+              {starPending ? <Spinner /> : <Star  data-icon="inline-start"/>}
             </Toggle>
           </div>
         );

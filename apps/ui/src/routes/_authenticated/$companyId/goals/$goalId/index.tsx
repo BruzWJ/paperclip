@@ -145,7 +145,7 @@ function GoalDetail() {
               onClick={() => setPanelVisible(true)}
               title="Show properties"
             >
-              <SlidersHorizontal className="h-4 w-4" />
+              <SlidersHorizontal className="h-4 w-4"  data-icon="inline-start"/>
             </Button>
           </div>
         </div>

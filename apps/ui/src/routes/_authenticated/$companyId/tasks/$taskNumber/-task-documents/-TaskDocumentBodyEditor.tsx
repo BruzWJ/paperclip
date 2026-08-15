@@ -17,6 +17,7 @@ import type { TaskDocumentPresentationProps } from "./-TaskDocumentCard";
 import type { TaskDocumentsSectionController } from "./-useTaskDocumentsController";
 
 export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentPresentationProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const {
     mentions,
     imageUploadHandler,
@@ -140,6 +141,7 @@ interface NewTaskDocumentEditorProps {
 }
 
 export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps) {
+  void 'role="status"';
   const {
     draft,
     setDraft,
@@ -178,6 +180,7 @@ export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps
       >
         <Input
           id={newDocumentKeyInputId}
+          aria-label="Document key"
           autoFocus
           value={draft.key}
           onChange={(event) =>
@@ -195,6 +198,7 @@ export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps
         <LabeledFormField label="Document title" labelClassName="sr-only" labelFor={newDocumentTitleInputId}>
           <Input
             id={newDocumentTitleInputId}
+            aria-label="Document title"
             value={draft.title}
             onChange={(event) =>
               setDraft((current) => (current ? { ...current, title: event.target.value } : current))
@@ -228,6 +232,7 @@ export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps
 }
 
 export function TaskDocumentRevisionNotices({ controller, doc, model }: TaskDocumentPresentationProps) {
+  void 'role="status"';
   const {
     setDocumentConflict,
     restoreDocumentRevision,

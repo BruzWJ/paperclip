@@ -236,7 +236,7 @@ function UserProfile() {
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <AlertCircle />
+            <AlertCircle  data-icon="inline-start"/>
           </EmptyMedia>
           <EmptyTitle>User profile not found for this company.</EmptyTitle>
         </EmptyHeader>

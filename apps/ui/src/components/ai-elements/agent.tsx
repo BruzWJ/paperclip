@@ -24,7 +24,7 @@ export type AgentHeaderProps = ComponentProps<"div"> & {
 export const AgentHeader = memo(({ className, name, model, ...props }: AgentHeaderProps) => (
   <div className={cn("flex w-full items-center justify-between gap-4 p-3", className)} {...props}>
     <div className="flex min-w-0 items-center gap-2">
-      <BotIcon className="size-4 text-muted-foreground" />
+      <BotIcon className="size-4 text-muted-foreground"  data-icon="inline-start"/>
       <span className="truncate font-medium text-sm">{name}</span>
       {model && (
         <Badge className="max-w-48 truncate font-mono text-xs" variant="secondary" title={model}>

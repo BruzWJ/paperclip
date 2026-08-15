@@ -50,7 +50,7 @@ function AdapterManager() {
     <div className="max-w-5xl space-y-6">
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <Cpu className="h-6 w-6 text-muted-foreground" />
+          <Cpu className="h-6 w-6 text-muted-foreground"  data-icon="inline-start"/>
           <h1 className="text-xl font-semibold">Local agents</h1>
         </div>
         <p className="text-sm text-muted-foreground">

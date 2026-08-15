@@ -125,11 +125,11 @@ export function ThreadCard(props: {
                 >
                   {thread.status === "resolved" ? (
                     <>
-                      <RotateCcw className="h-3 w-3" /> Reopen
+                      <RotateCcw className="h-3 w-3"  data-icon="inline-start"/> Reopen
                     </>
                   ) : (
                     <>
-                      <Check className="h-3 w-3" /> Resolve
+                      <Check className="h-3 w-3"  data-icon="inline-start"/> Resolve
                     </>
                   )}
                 </Button>
@@ -151,7 +151,7 @@ export function ThreadCard(props: {
                       title="More actions"
                       aria-label="More thread actions"
                     >
-                      <MoreHorizontal className="h-3.5 w-3.5" />
+                      <MoreHorizontal className="h-3.5 w-3.5"  data-icon="inline-start"/>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -161,7 +161,7 @@ export function ThreadCard(props: {
                         props.onCopyLink();
                       }}
                     >
-                      <Copy className="h-3.5 w-3.5" />
+                      <Copy className="h-3.5 w-3.5"  data-icon="inline-start"/>
                       Copy link
                     </DropdownMenuItem>
                   </DropdownMenuContent>

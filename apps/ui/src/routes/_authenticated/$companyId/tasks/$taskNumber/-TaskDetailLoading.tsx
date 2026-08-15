@@ -88,7 +88,7 @@ export function TaskDetailLoadingState({
               <Badge variant="secondary">{taskValueLabel(headerSeed.priority)} priority</Badge>
               {headerSeed.originKind === "routine_execution" && headerSeed.originId ? (
                 <Badge variant="secondary" title={`Routine execution from routine ${headerSeed.originId}`}>
-                  <Repeat />
+                  <Repeat  data-icon="inline-start"/>
                   Routine
                 </Badge>
               ) : null}

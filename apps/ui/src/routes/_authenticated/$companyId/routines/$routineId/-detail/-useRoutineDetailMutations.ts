@@ -41,6 +41,7 @@ export function useRoutineDetailMutations({
   setSecretMessage,
   navigateToSection,
 }: UseRoutineDetailMutationsOptions) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
 
   const createSecret = useMutation({

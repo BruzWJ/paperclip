@@ -107,7 +107,7 @@ export function BudgetPolicyCard({
 
   const pausedPane = summary.paused ? (
     <Alert variant="destructive">
-      <PauseCircle />
+      <PauseCircle  data-icon="inline-start"/>
       <AlertDescription>
         {summary.scopeType === "project"
           ? "Execution is paused for this project until the budget is raised or the incident is dismissed."
@@ -125,6 +125,7 @@ export function BudgetPolicyCard({
       >
         <Input
           id={budgetInputId}
+          aria-label={`Budget (${summary.budgetCurrency})`}
           value={draftBudget}
           onChange={(event) => setDraftBudget(event.target.value)}
           inputMode="decimal"

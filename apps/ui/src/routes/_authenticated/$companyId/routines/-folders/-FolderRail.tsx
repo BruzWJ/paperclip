@@ -99,7 +99,7 @@ export function FolderRail({
         <SidebarGroup>
           <SidebarGroupLabel>Folders</SidebarGroupLabel>
           <SidebarGroupAction type="button" title="New folder" aria-label="New folder" onClick={onCreate}>
-            <Plus />
+            <Plus  data-icon="inline-start"/>
           </SidebarGroupAction>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -113,7 +113,7 @@ export function FolderRail({
                 </>
               ) : (
                 <>
-                  {renderVirtualRow("all", allLabel, result?.allCount ?? 0, <FolderIcon />)}
+                  {renderVirtualRow("all", allLabel, result?.allCount ?? 0, <FolderIcon  data-icon="inline-start"/>)}
                   {folders.map((folder) => (
                     <FolderRailItem
                       key={folder.id}
@@ -217,7 +217,7 @@ export function FolderRailItem({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <SidebarMenuAction showOnHover aria-label={`Folder actions for ${folder.name}`}>
-            <MoreHorizontal />
+            <MoreHorizontal  data-icon="inline-start"/>
           </SidebarMenuAction>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -225,7 +225,7 @@ export function FolderRailItem({
           <DropdownMenuItem onSelect={onEdit}>Edit color</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-            <Trash2 />
+            <Trash2  data-icon="inline-start"/>
             Delete
           </DropdownMenuItem>
         </DropdownMenuContent>

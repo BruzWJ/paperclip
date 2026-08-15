@@ -48,13 +48,13 @@ const statusLabels: Record<ToolPart["state"], string> = {
 };
 
 const statusIcons: Record<ToolPart["state"], ReactNode> = {
-  "approval-requested": <ClockIcon className="size-4 text-muted-foreground" />,
-  "approval-responded": <CheckCircleIcon className="size-4 text-foreground" />,
-  "input-available": <ClockIcon className="size-4 animate-pulse text-foreground" />,
-  "input-streaming": <CircleIcon className="size-4 text-muted-foreground" />,
-  "output-available": <CheckCircleIcon className="size-4 text-foreground" />,
-  "output-denied": <XCircleIcon className="size-4 text-destructive" />,
-  "output-error": <XCircleIcon className="size-4 text-destructive" />,
+  "approval-requested": <ClockIcon className="size-4 text-muted-foreground"  data-icon="inline-start"/>,
+  "approval-responded": <CheckCircleIcon className="size-4 text-foreground"  data-icon="inline-start"/>,
+  "input-available": <ClockIcon className="size-4 animate-pulse text-foreground"  data-icon="inline-start"/>,
+  "input-streaming": <CircleIcon className="size-4 text-muted-foreground"  data-icon="inline-start"/>,
+  "output-available": <CheckCircleIcon className="size-4 text-foreground"  data-icon="inline-start"/>,
+  "output-denied": <XCircleIcon className="size-4 text-destructive"  data-icon="inline-start"/>,
+  "output-error": <XCircleIcon className="size-4 text-destructive"  data-icon="inline-start"/>,
 };
 
 export const getStatusBadge = (status: ToolPart["state"]) => (
@@ -74,7 +74,7 @@ export const ToolHeader = ({ className, title, type, state, toolName, ...props }
       {...props}
     >
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <WrenchIcon className="size-4 shrink-0 text-muted-foreground" />
+        <WrenchIcon className="size-4 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
         <span
           className="min-w-0 flex-1 truncate text-left font-medium text-sm"
           title={typeof resolvedTitle === "string" ? resolvedTitle : undefined}
@@ -83,7 +83,7 @@ export const ToolHeader = ({ className, title, type, state, toolName, ...props }
         </span>
         {getStatusBadge(state)}
       </div>
-      <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+      <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"  data-icon="inline-start"/>
     </CollapsibleTrigger>
   );
 };

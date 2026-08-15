@@ -7,10 +7,10 @@ export interface ZoomableImageProps extends ComponentProps<"img"> {
 }
 
 /** Native image adapter backed by Kibo's accessible image-zoom behavior. */
-export function ZoomableImage({ zoomClassName, ...props }: ZoomableImageProps) {
+export function ZoomableImage({ zoomClassName, alt, ...props }: ZoomableImageProps) {
   return (
     <ImageZoom className={zoomClassName}>
-      <img {...props} />
+      <img alt={alt ?? ""} {...props} />
     </ImageZoom>
   );
 }

@@ -128,11 +128,11 @@ function PluginSettings() {
             params={{ companyId }}
             aria-label="Back to plugins"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4"  data-icon="inline-start"/>
           </Link>
         </Button>
         <div className="flex items-center gap-2">
-          <Puzzle className="h-6 w-6 text-muted-foreground" />
+          <Puzzle className="h-6 w-6 text-muted-foreground"  data-icon="inline-start"/>
           <h1 className="text-xl font-semibold">{plugin.manifestJson.displayName}</h1>
           <DomainStatus status={displayStatus} className="ml-2">
             {displayStatus}

@@ -167,7 +167,7 @@ function Projects() {
                 <span>{option.label}</span>
                 {sortField === option.field ? (
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Check className="h-3 w-3" />
+                    <Check className="h-3 w-3"  data-icon="inline-start"/>
                     {sortDir === "asc" ? "Asc" : "Desc"}
                   </span>
                 ) : null}
@@ -191,13 +191,13 @@ function Projects() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Hexagon />
+              <Hexagon  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>No projects yet.</EmptyTitle>
           </EmptyHeader>
           <EmptyContent>
             <Button onClick={openNewProject}>
-              <Plus />
+              <Plus  data-icon="inline-start"/>
               Add Project
             </Button>
           </EmptyContent>
@@ -311,7 +311,7 @@ function Projects() {
                               {starPending ? (
                                 <Spinner />
                               ) : (
-                                <Star className={starred ? "fill-current" : undefined} />
+                                <Star className={starred ? "fill-current" : undefined}  data-icon="inline-start"/>
                               )}
                             </Toggle>
                           </div>

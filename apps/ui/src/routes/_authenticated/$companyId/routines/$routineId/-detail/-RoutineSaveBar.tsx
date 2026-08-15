@@ -60,7 +60,7 @@ export function RoutineSaveBar({
         <CardContent className="flex min-h-14 items-center justify-between px-8 py-2">
           {saveConflict ? (
             <Alert variant="destructive" className="w-auto border-0 p-0 shadow-none">
-              <AlertTriangle />
+              <AlertTriangle  data-icon="inline-start"/>
               <AlertTitle>Routine changed elsewhere. Reload to merge.</AlertTitle>
             </Alert>
           ) : (

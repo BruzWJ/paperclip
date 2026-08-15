@@ -44,9 +44,9 @@ export const TaskTrigger = ({ children, className, title, ...props }: TaskTrigge
         type="button"
         className="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
       >
-        <SearchIcon className="size-4" />
+        <SearchIcon className="size-4"  data-icon="inline-start"/>
         <span className="text-sm">{title}</span>
-        <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+        <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180"  data-icon="inline-start"/>
       </button>
     )}
   </CollapsibleTrigger>

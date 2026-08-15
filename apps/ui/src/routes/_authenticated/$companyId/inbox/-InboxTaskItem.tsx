@@ -117,7 +117,7 @@ export function InboxTaskItem({
                   toggleInboxParentCollapse(collapseParentId);
                 }}
               >
-                <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
+                <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")}  data-icon="inline-start"/>
               </Button>
             ) : (
               <span className="hidden w-4 shrink-0 sm:block" />
@@ -156,7 +156,7 @@ export function InboxTaskItem({
               toggleInboxParentCollapse(collapseParentId);
             }}
           >
-            <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
+            <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")}  data-icon="inline-start"/>
           </Button>
         ) : (
           statusIcon

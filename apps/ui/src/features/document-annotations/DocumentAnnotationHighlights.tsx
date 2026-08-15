@@ -148,7 +148,7 @@ export function DocumentAnnotationHighlights({
                 }}
                 title="Anchor moved — needs review"
               >
-                <AlertTriangle className="h-3 w-3" />
+                <AlertTriangle className="h-3 w-3"  data-icon="inline-start"/>
               </span>
             ) : null,
           )}

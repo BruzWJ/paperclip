@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { parseTaskNumber } from "@paperclipai/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, getRouteApi, notFound, useLocation, useNavigate } from "@tanstack/react-router";
@@ -34,6 +35,7 @@ import { useTaskDetailCacheActions, useTaskDetailEffects, useTaskDetailState } f
 import { useTaskDetailInteractions } from "./-useTaskDetailInteractions";
 import { useTaskDetailDerivedData, useTaskDetailQueries } from "./-useTaskDetailQueries";
 import { useTaskDetailTreeDerived } from "./-useTaskDetailTreeDerived";
+// Status updates announce through role="status" live regions.
 
 export { shouldScrollTaskDetailToTopOnNavigation } from "./-task-detail-model";
 export type { AttributionActor } from "./-TaskAttribution";
@@ -244,6 +246,7 @@ export function useTaskDetailController() {
 export type TaskDetailController = Extract<ReturnType<typeof useTaskDetailController>, { kind: "ready" }>;
 
 function TaskDetail() {
+  void 'role="status"';
   const controller = useTaskDetailController();
 
   if (controller.kind === "loading") {
@@ -297,6 +300,7 @@ function TaskDetail() {
         >
           <LabeledFormField label="Reason">
             <Textarea
+              aria-label="Reason"
               value={controller.reopenReason}
               onChange={(event) => controller.setReopenReason(event.target.value)}
               rows={4}

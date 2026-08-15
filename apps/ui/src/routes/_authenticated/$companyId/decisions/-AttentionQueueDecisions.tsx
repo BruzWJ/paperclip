@@ -27,6 +27,7 @@ interface AttentionDecisionProps {
 }
 
 export function compactDecisionAction(item: AttentionItem, verbId: string): CompactDecisionAction | null {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   if (
     item.sourceKind === "approval" &&
     (verbId === "approve" || verbId === "reject" || verbId === "request_revision")

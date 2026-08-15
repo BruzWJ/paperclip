@@ -62,7 +62,7 @@ export function RemovableTaskReferencePill({
             aria-label={removeLabel}
             title={removeLabel}
           >
-            <X />
+            <X  data-icon="inline-start"/>
           </Button>
         }
         title="Remove blocker?"
@@ -270,7 +270,7 @@ export function TaskPropertiesRelationships(props: TaskPropertiesController) {
               className={inline ? "min-h-11" : undefined}
               onClick={onAddSubTask}
             >
-              <Plus />
+              <Plus  data-icon="inline-start"/>
               Add sub-task
             </Button>
           ) : null}

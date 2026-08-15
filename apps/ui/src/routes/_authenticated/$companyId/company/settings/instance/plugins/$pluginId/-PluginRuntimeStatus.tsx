@@ -120,7 +120,7 @@ export function PluginRuntimeStatus({
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-1.5">
-              <Cpu className="h-4 w-4" />
+              <Cpu className="h-4 w-4"  data-icon="inline-start"/>
               Runtime Dashboard
             </CardTitle>
             <CardDescription>Worker process, scheduled jobs, and webhook deliveries</CardDescription>
@@ -130,7 +130,7 @@ export function PluginRuntimeStatus({
               <>
                 <div>
                   <h3 className="text-sm font-medium mb-3 flex items-center gap-1.5">
-                    <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
+                    <Cpu className="h-3.5 w-3.5 text-muted-foreground"  data-icon="inline-start"/>
                     Worker Process
                   </h3>
                   {worker ? (
@@ -160,7 +160,7 @@ export function PluginRuntimeStatus({
 
                 <div>
                   <h3 className="text-sm font-medium mb-3 flex items-center gap-1.5">
-                    <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
+                    <CalendarClock className="h-3.5 w-3.5 text-muted-foreground"  data-icon="inline-start"/>
                     Recent Job Runs
                   </h3>
                   {dashboardData.recentJobRuns.length > 0 ? (
@@ -194,7 +194,7 @@ export function PluginRuntimeStatus({
 
                 <div>
                   <h3 className="text-sm font-medium mb-3 flex items-center gap-1.5">
-                    <Webhook className="h-3.5 w-3.5 text-muted-foreground" />
+                    <Webhook className="h-3.5 w-3.5 text-muted-foreground"  data-icon="inline-start"/>
                     Recent Webhook Deliveries
                   </h3>
                   {dashboardData.recentWebhookDeliveries.length > 0 ? (
@@ -226,7 +226,7 @@ export function PluginRuntimeStatus({
                 </div>
 
                 <div className="flex items-center gap-1.5 border-t border-border/50 pt-2 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" />
+                  <Clock className="h-3 w-3"  data-icon="inline-start"/>
                   Last checked: {new Date(dashboardData.checkedAt).toLocaleTimeString()}
                 </div>
               </>
@@ -242,7 +242,7 @@ export function PluginRuntimeStatus({
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-1.5">
-                <ActivitySquare className="h-4 w-4" />
+                <ActivitySquare className="h-4 w-4"  data-icon="inline-start"/>
                 Recent Logs
               </CardTitle>
               <CardDescription>Last {recentLogs.length} log entries</CardDescription>
@@ -274,7 +274,7 @@ export function PluginRuntimeStatus({
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-1.5">
-              <ActivitySquare className="h-4 w-4" />
+              <ActivitySquare className="h-4 w-4"  data-icon="inline-start"/>
               Health Status
             </CardTitle>
           </CardHeader>
@@ -306,9 +306,9 @@ export function PluginRuntimeStatus({
                         </ItemContent>
                         <ItemActions>
                           {check.passed ? (
-                            <CheckCircle className="size-4" aria-label="Passed" />
+                            <CheckCircle className="size-4" aria-label="Passed"  data-icon="inline-start"/>
                           ) : (
-                            <XCircle className="size-4 text-destructive" aria-label="Failed" />
+                            <XCircle className="size-4 text-destructive" aria-label="Failed"  data-icon="inline-start"/>
                           )}
                         </ItemActions>
                       </Item>
@@ -368,7 +368,7 @@ export function PluginRuntimeStatus({
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-1.5">
-              <ShieldAlert className="h-4 w-4" />
+              <ShieldAlert className="h-4 w-4"  data-icon="inline-start"/>
               Permissions
             </CardTitle>
           </CardHeader>

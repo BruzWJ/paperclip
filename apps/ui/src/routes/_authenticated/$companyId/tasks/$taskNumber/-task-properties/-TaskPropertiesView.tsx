@@ -115,6 +115,7 @@ export function TaskPropertiesView(props: TaskPropertiesController) {
                       variant="ghost"
                       size={inline ? "icon-lg" : "icon-sm"}
                       className={inline ? "size-11!" : undefined}
+                      aria-label={`Open ${props.ownerAgent.name} agent`}
                     >
                       <Link
                         to="/$companyId/agents/$agentId"
@@ -122,7 +123,7 @@ export function TaskPropertiesView(props: TaskPropertiesController) {
                         aria-label={`Open ${props.ownerAgent.name} agent`}
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <ArrowUpRight />
+                        <ArrowUpRight  data-icon="inline-end"/>
                       </Link>
                     </Button>
                   ) : null
@@ -151,6 +152,7 @@ export function TaskPropertiesView(props: TaskPropertiesController) {
                       variant="ghost"
                       size={inline ? "icon-lg" : "icon-sm"}
                       className={inline ? "size-11!" : undefined}
+                      aria-label={`Open ${props.selectedProject.name} project`}
                     >
                       <Link
                         to="/$companyId/projects/$projectId"
@@ -158,7 +160,7 @@ export function TaskPropertiesView(props: TaskPropertiesController) {
                         aria-label={`Open ${props.selectedProject.name} project`}
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <ArrowUpRight />
+                        <ArrowUpRight  data-icon="inline-end"/>
                       </Link>
                     </Button>
                   ) : null
@@ -269,7 +271,10 @@ export function TaskPropertiesView(props: TaskPropertiesController) {
               <TaskPropertyPicker
                 inline={inline}
                 open={s.monitorOpen}
-                onOpenChange={s.setMonitorOpen}
+                onOpenChange={(open) => {
+                  s.setMonitorOpen(open);
+                  if (open) s.setMonitorDetailsOpen(false);
+                }}
                 ariaLabel="Edit task monitor"
                 trigger={props.monitorTrigger}
                 popoverClassName="w-80 max-w-full sm:w-(--sz-32rem)"

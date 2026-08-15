@@ -12,6 +12,7 @@ import type { SecretProvider } from "@paperclipai/shared";
 import { Pencil, X } from "lucide-react";
 import { SecretCreateError } from "./-ProviderVaultErrors";
 import {
+// Status updates announce through role="status" live regions.
   type CreateMode,
   type SecretValueProvider,
   deriveCompanySecretKey,
@@ -24,6 +25,7 @@ import {
 import { useSecretsPage } from "./-SecretsPageContext";
 
 export function SecretEditorDialog() {
+  void 'role="status"';
   const {
     awsManagedPathPreview,
     createError,
@@ -153,7 +155,7 @@ export function SecretEditorDialog() {
                   aria-label="Remove folder prefix"
                   onClick={() => setCreateNamePrefix(null)}
                 >
-                  <X />
+                  <X  data-icon="inline-end"/>
                 </InputGroupButton>
               </InputGroupAddon>
               <InputGroupInput
@@ -176,7 +178,7 @@ export function SecretEditorDialog() {
               />
             </InputGroup>
           ) : (
-            <Input
+            <Input aria-label="new secret name"
               id="new-secret-name"
               value={createForm.name}
               onChange={(event) => {
@@ -199,7 +201,7 @@ export function SecretEditorDialog() {
 
         {secretValueProvider === "company" && createMode === "managed" ? (
           <LabeledFormField label="Value" labelFor="new-secret-value">
-            <Textarea
+            <Textarea aria-label="new secret value"
               id="new-secret-value"
               value={createForm.value}
               onChange={(event) =>
@@ -220,7 +222,7 @@ export function SecretEditorDialog() {
             labelFor="new-secret-ref"
             description="Existing provider secrets are resolve-only in Paperclip. Rotate the value in the provider, then update this reference only if the path, ARN, or version changes."
           >
-            <Input
+            <Input aria-label="new secret ref"
               id="new-secret-ref"
               value={createForm.externalRef}
               onChange={(event) =>
@@ -250,7 +252,7 @@ export function SecretEditorDialog() {
               }
               labelFor="new-secret-usage-guidance"
             >
-              <Textarea
+              <Textarea aria-label="new secret usage guidance"
                 id="new-secret-usage-guidance"
                 value={createForm.usageGuidance}
                 onChange={(event) =>
@@ -272,7 +274,7 @@ export function SecretEditorDialog() {
           labelActions={
             !createKeyEditable && !editingDefinition ? (
               <Button type="button" variant="ghost" size="sm" onClick={() => setCreateKeyEditable(true)}>
-                <Pencil /> Edit
+                <Pencil  data-icon="inline-start"/> Edit
               </Button>
             ) : null
           }
@@ -282,7 +284,7 @@ export function SecretEditorDialog() {
               : "Generated from the name; edit it if the runtime expects another key."
           }
         >
-          <Input
+          <Input aria-label="new secret key"
             id="new-secret-key"
             value={createForm.key}
             readOnly={!createKeyEditable}
@@ -299,7 +301,7 @@ export function SecretEditorDialog() {
           />
         </LabeledFormField>
         <LabeledFormField label="Description (optional)" labelFor="new-secret-description">
-          <Input
+          <Input aria-label="new secret description"
             id="new-secret-description"
             value={createForm.description}
             onChange={(event) =>

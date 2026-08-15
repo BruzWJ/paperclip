@@ -42,16 +42,28 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   }: {
     children: React.ReactNode;
     onValueChange?: (value: string) => void;
-  }) => (
-    <div
-      onClick={(event) => {
-        const value = (event.target as HTMLElement).closest("button")?.getAttribute("value");
-        if (value) onValueChange?.(value);
-      }}
-    >
-      {children}
-    </div>
-  ),
+  }) => {
+    const resolveValue = (target: EventTarget | null) =>
+      (target as HTMLElement).closest("button")?.getAttribute("value") ?? null;
+    const selectFrom = (target: EventTarget | null) => {
+      const value = resolveValue(target);
+      if (value) onValueChange?.(value);
+    };
+    return (
+      <div
+        role="radiogroup"
+        tabIndex={0}
+        onPointerDown={(event) => selectFrom(event.target)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            selectFrom(event.target);
+          }
+        }}
+      >
+        {children}
+      </div>
+    );
+  },
   DropdownMenuRadioItem: ({
     children,
     onSelect,

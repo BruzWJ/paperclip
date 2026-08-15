@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useQuery } from "@tanstack/react-query";
 import { Clock3, FileDiff, GitCommit } from "lucide-react";
 import { healthApi, type HealthStatus } from "@/api/health";

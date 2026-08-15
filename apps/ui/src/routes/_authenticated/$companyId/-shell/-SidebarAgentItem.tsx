@@ -86,7 +86,7 @@ export function SidebarAgentItem({
         <AlertTriangle
           className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
           aria-label="Invalid reporting chain"
-        />
+         data-icon="inline-start"/>
       </span>
     ) : undefined,
     trailingLabel,
@@ -139,7 +139,7 @@ export function SidebarAgentItem({
               onToggleStar(agent, false);
             }}
           >
-            {starPending ? <Spinner /> : <Star />}
+            {starPending ? <Spinner /> : <Star  data-icon="inline-start"/>}
           </Toggle>
         </span>
       ) : null}
@@ -157,7 +157,7 @@ export function SidebarAgentItem({
             )}
             aria-label={`Open actions for ${agent.name}`}
           >
-            <MoreHorizontal className="h-3.5 w-3.5" />
+            <MoreHorizontal className="h-3.5 w-3.5"  data-icon="inline-start"/>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
@@ -173,7 +173,7 @@ export function SidebarAgentItem({
                 {starPending ? (
                   <Spinner className="size-4" />
                 ) : (
-                  <Star className={cn("size-4", starred && "fill-current")} />
+                  <Star className={cn("size-4", starred && "fill-current")}  data-icon="inline-start"/>
                 )}
                 <span>{starred ? "Remove from starred" : "Star agent"}</span>
               </DropdownMenuItem>
@@ -192,7 +192,7 @@ export function SidebarAgentItem({
                 if (isMobile) setSidebarOpen(false);
               }}
             >
-              <Pencil className="size-4" />
+              <Pencil className="size-4"  data-icon="inline-start"/>
               <span>Edit agent</span>
             </Link>
           </DropdownMenuItem>
@@ -205,7 +205,7 @@ export function SidebarAgentItem({
             disabled={pauseResumeDisabled}
             title={isBudgetPaused ? "Agent was paused by budget limits" : undefined}
           >
-            {isPaused ? <PlayCircle className="size-4" /> : <PauseCircle className="size-4" />}
+            {isPaused ? <PlayCircle className="size-4"  data-icon="inline-start"/> : <PauseCircle className="size-4"  data-icon="inline-start"/>}
             <span>{pauseResumeDisabledLabel}</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -216,7 +216,7 @@ export function SidebarAgentItem({
             }}
             disabled={leaving}
           >
-            {leaving ? <Spinner className="size-4" /> : <LogOut className="size-4" />}
+            {leaving ? <Spinner className="size-4" /> : <LogOut className="size-4"  data-icon="inline-start"/>}
             <span>{leaving ? "Leaving..." : "Leave agent"}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>

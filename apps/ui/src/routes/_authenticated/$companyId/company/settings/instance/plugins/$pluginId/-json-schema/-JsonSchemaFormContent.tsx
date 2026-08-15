@@ -152,7 +152,7 @@ export function JsonSchemaFormContent({
           <CollapsibleTrigger asChild>
             <Button variant="ghost" className="group w-full justify-between">
               {advancedLabel}
-              <ChevronRight className="text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+              <ChevronRight className="text-muted-foreground transition-transform group-data-[state=open]:rotate-90"  data-icon="inline-end"/>
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent>

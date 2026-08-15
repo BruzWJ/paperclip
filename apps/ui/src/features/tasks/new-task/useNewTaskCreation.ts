@@ -96,5 +96,7 @@ export function useNewTaskCreation({
       (await uploadRequestImage.mutateAsync(file)).contentPath,
     [uploadRequestImage.mutateAsync],
   );
-  return { createTask, uploadRequestImageHandler };
+  const isPending = createTask.isPending;
+  // Create action stays disabled={isPending} and shows {isPending ? "Creating" : "Create"}.
+  return { createTask, isPending, uploadRequestImageHandler };
 }

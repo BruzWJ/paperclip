@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -162,7 +163,7 @@ function ProfileSettings() {
       ) : null}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <UserRoundPen className="h-5 w-5 text-muted-foreground" />
+          <UserRoundPen className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
           <h1 className="text-lg font-semibold">Profile</h1>
         </div>
         <p className="text-sm text-muted-foreground">
@@ -202,7 +203,7 @@ function ProfileSettings() {
                     onClick={() => removeAvatarMutation.mutate()}
                     disabled={isPending}
                   >
-                    {removeAvatarMutation.isPending ? <Spinner /> : <Trash2 className="size-4" />}
+                    {removeAvatarMutation.isPending ? <Spinner /> : <Trash2 className="size-4"  data-icon="inline-start"/>}
                     Remove
                   </Button>
                 ) : null}
@@ -237,7 +238,7 @@ function ProfileSettings() {
             labelFor="profile-name"
             description="Shown in the sidebar account footer and comment author surfaces."
           >
-            <Input
+            <Input aria-label="profile name"
               id="profile-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -252,7 +253,7 @@ function ProfileSettings() {
             labelFor="profile-email"
             description="Email is managed by your auth session and is read-only here."
           >
-            <Input
+            <Input aria-label="profile email"
               id="profile-email"
               value={sessionQuery.data.user.email ?? ""}
               autoComplete="email"
@@ -263,7 +264,7 @@ function ProfileSettings() {
 
           <div className="md:col-span-2 flex justify-end">
             <Button type="submit" disabled={isPending || !name.trim()}>
-              {updateMutation.isPending ? <Spinner /> : <Save className="size-4" />}
+              {updateMutation.isPending ? <Spinner /> : <Save className="size-4"  data-icon="inline-start"/>}
               {updateMutation.isPending ? "Saving..." : "Save profile"}
             </Button>
           </div>

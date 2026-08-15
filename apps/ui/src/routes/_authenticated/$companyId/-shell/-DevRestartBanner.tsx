@@ -83,17 +83,17 @@ export function DevRestartBanner({ devServer }: { devServer?: DevServerHealthSta
             <DomainStatus status={devServer.waitingForIdle ? "pending" : "active"}>
               {devServer.waitingForIdle ? (
                 <>
-                  <TimerReset className="h-3.5 w-3.5" />
+                  <TimerReset className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   <span>Waiting for {activeRunLabel} to finish</span>
                 </>
               ) : devServer.autoRestartEnabled ? (
                 <>
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   <span>Auto-restart will trigger when the instance is idle</span>
                 </>
               ) : (
                 <>
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   <span>Restart after active work is safe to interrupt</span>
                 </>
               )}
@@ -102,7 +102,7 @@ export function DevRestartBanner({ devServer }: { devServer?: DevServerHealthSta
               triggerAsChild
               trigger={
                 <BannerAction className="h-auto gap-2 px-3 py-1.5 text-xs" disabled={restartPending}>
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   <span>{restartPending ? "Restart requested" : "Restart now"}</span>
                 </BannerAction>
               }

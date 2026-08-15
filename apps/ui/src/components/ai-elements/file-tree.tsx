@@ -137,12 +137,12 @@ export const FileTreeFolder = ({ path, name, className, children, ...props }: Fi
                 "size-4 shrink-0 text-muted-foreground transition-transform",
                 isExpanded && "rotate-90",
               )}
-            />
+             data-icon="inline-start"/>
             <FileTreeIcon>
               {isExpanded ? (
-                <FolderOpenIcon className="size-4 text-blue-500" />
+                <FolderOpenIcon className="size-4 text-blue-500"  data-icon="inline-start"/>
               ) : (
-                <FolderIcon className="size-4 text-blue-500" />
+                <FolderIcon className="size-4 text-blue-500"  data-icon="inline-start"/>
               )}
             </FileTreeIcon>
             <FileTreeName>{name}</FileTreeName>
@@ -176,12 +176,17 @@ export const FileTreeFile = ({ path, name, icon, className, children, ...props }
   const { selectedPath, onSelect } = useContext(FileTreeContext);
   const isSelected = selectedPath === path;
 
-  const handleClick = useCallback(() => {
-    onSelect?.(path);
-  }, [onSelect, path]);
+  const handleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isWithinActions(e.target)) return;
+      onSelect?.(path);
+    },
+    [onSelect, path],
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (isWithinActions(e.target)) return;
       if (e.key === "Enter" || e.key === " ") {
         onSelect?.(path);
       }
@@ -210,7 +215,7 @@ export const FileTreeFile = ({ path, name, icon, className, children, ...props }
           <>
             {/* Spacer for alignment */}
             <span className="size-4 shrink-0" />
-            <FileTreeIcon>{icon ?? <FileIcon className="size-4 text-muted-foreground" />}</FileTreeIcon>
+            <FileTreeIcon>{icon ?? <FileIcon className="size-4 text-muted-foreground"  data-icon="inline-start"/>}</FileTreeIcon>
             <FileTreeName>{name}</FileTreeName>
           </>
         )}
@@ -221,13 +226,15 @@ export const FileTreeFile = ({ path, name, icon, className, children, ...props }
 
 export type FileTreeActionsProps = HTMLAttributes<HTMLDivElement>;
 
-const stopPropagation = (e: React.SyntheticEvent) => e.stopPropagation();
+const FILE_TREE_ACTIONS_SELECTOR = "[data-file-tree-actions]";
+
+const isWithinActions = (target: EventTarget | null): boolean =>
+  target instanceof Element && target.closest(FILE_TREE_ACTIONS_SELECTOR) !== null;
 
 export const FileTreeActions = ({ className, children, ...props }: FileTreeActionsProps) => (
   <div
     className={cn("ml-auto flex items-center gap-1", className)}
-    onClick={stopPropagation}
-    onKeyDown={stopPropagation}
+    data-file-tree-actions=""
     role="group"
     {...props}
   >

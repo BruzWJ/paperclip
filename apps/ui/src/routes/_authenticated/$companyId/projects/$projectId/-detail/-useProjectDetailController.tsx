@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { assetsApi } from "@/api/assets";
 import { budgetsApi } from "@/api/budgets";
 import { projectsApi } from "@/api/projects";
@@ -49,6 +50,7 @@ export function useProjectDetailController({
   variant,
   pluginTab,
 }: ProjectDetailProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const { companies } = useCompany();
   const { closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();

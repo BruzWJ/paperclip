@@ -303,7 +303,7 @@ export function EnvironmentVariableRow({
                 aria-label="More actions"
                 className="opacity-100 @[40rem]/env:opacity-0 @[40rem]/env:group-hover/row:opacity-100 @[40rem]/env:group-focus-within/row:opacity-100"
               >
-                <MoreHorizontal className="size-4" />
+                <MoreHorizontal className="size-4"  data-icon="inline-start"/>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -322,7 +322,7 @@ export function EnvironmentVariableRow({
           aria-label={`Remove ${row.name.trim() || "variable"}`}
           className="opacity-100 hover:text-destructive @[40rem]/env:opacity-0 @[40rem]/env:group-hover/row:opacity-100 @[40rem]/env:group-focus-within/row:opacity-100"
         >
-          <X className="size-4" />
+          <X className="size-4"  data-icon="inline-start"/>
         </Button>
       </div>
     </Item>

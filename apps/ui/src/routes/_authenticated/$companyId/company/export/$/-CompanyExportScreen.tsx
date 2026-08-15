@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
 import { companiesApi } from "@/api/companies";
@@ -54,6 +55,7 @@ export function CompanyExportScreen({
 }: {
   filePath: string | null;
 }) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -415,7 +417,7 @@ export function CompanyExportScreen({
             onClick={handleDownload}
             disabled={selectedCount === 0 || downloadMutation.isPending}
           >
-            <Download className="mr-1.5 h-3.5 w-3.5" />
+            <Download className="mr-1.5 h-3.5 w-3.5"  data-icon="inline-start"/>
             {downloadMutation.isPending
               ? "Building export..."
               : `Export ${selectedCount} file${selectedCount === 1 ? "" : "s"}`}
@@ -441,7 +443,7 @@ export function CompanyExportScreen({
           <div className="border-b border-border px-3 py-2 shrink-0">
             <InputGroup>
               <InputGroupAddon>
-                <Search />
+                <Search  data-icon="inline-start"/>
               </InputGroupAddon>
               <InputGroupInput
                 aria-label="Search package files"

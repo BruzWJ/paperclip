@@ -37,6 +37,7 @@ export function SetMyUserSecretDialog({
   onOpenChange: (open: boolean) => void;
   onSaved?: (secret: CompanySecret) => void;
 }) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
   const [value, setValue] = useState("");
   const [externalRef, setExternalRef] = useState("");
@@ -98,7 +99,7 @@ export function SetMyUserSecretDialog({
         <>
           {existingSecret ? "Update your value" : "Set your value"}
           <Badge variant="secondary">
-            <UserRound />
+            <UserRound  data-icon="inline-start"/>
             User secret
           </Badge>
         </>

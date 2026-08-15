@@ -42,7 +42,7 @@ export function TriggersSection() {
           </p>
           <CollapsibleTrigger asChild>
             <Button size="sm" variant={addOpen ? "secondary" : "default"}>
-              {addOpen ? <X /> : <Plus />}
+              {addOpen ? <X  data-icon="inline-start"/> : <Plus  data-icon="inline-start"/>}
               {addOpen ? "Cancel" : "New trigger"}
             </Button>
           </CollapsibleTrigger>
@@ -59,7 +59,7 @@ export function TriggersSection() {
                   value={newTrigger.kind}
                   onValueChange={(kind) => setNewTrigger((current) => ({ ...current, kind }))}
                 >
-                  <SelectTrigger id="new-trigger-kind">
+                  <SelectTrigger id="new-trigger-kind" aria-label="Trigger kind">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -133,7 +133,7 @@ export function TriggersSection() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Clock3 />
+              <Clock3  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>No triggers yet</EmptyTitle>
           </EmptyHeader>

@@ -534,11 +534,12 @@ export const GanttAddFeatureHelper: FC<GanttAddFeatureHelperProps> = ({ top, cla
       }}
     >
       <button
+        aria-label="Add item"
         className="flex h-full w-full items-center justify-center rounded-md border border-dashed p-2"
         onClick={handleClick}
         type="button"
       >
-        <PlusIcon className="pointer-events-none select-none text-muted-foreground" size={16} />
+        <PlusIcon className="pointer-events-none select-none text-muted-foreground" size={16}  data-icon="inline-start"/>
       </button>
     </div>
   );
@@ -637,11 +638,12 @@ export const GanttCreateMarkerTrigger: FC<GanttCreateMarkerTriggerProps> = ({
         style={{ transform: `translateX(${x}px)` }}
       >
         <button
+          aria-label="Add marker"
           className="z-50 inline-flex h-4 w-4 items-center justify-center rounded-full bg-card"
           onClick={handleClick}
           type="button"
         >
-          <PlusIcon className="text-muted-foreground" size={12} />
+          <PlusIcon className="text-muted-foreground" size={12}  data-icon="inline-start"/>
         </button>
         <div className="whitespace-nowrap rounded-full border border-border/50 bg-background/90 px-2 py-1 text-foreground text-xs backdrop-blur-lg">
           {formatDate(date, "MMM dd, yyyy")}
@@ -1017,7 +1019,7 @@ export const GanttMarker: FC<
         <ContextMenuContent>
           {onRemove ? (
             <ContextMenuItem className="flex items-center gap-2 text-destructive" onClick={handleRemove}>
-              <TrashIcon size={16} />
+              <TrashIcon size={16}  data-icon="inline-start"/>
               Remove marker
             </ContextMenuItem>
           ) : null}

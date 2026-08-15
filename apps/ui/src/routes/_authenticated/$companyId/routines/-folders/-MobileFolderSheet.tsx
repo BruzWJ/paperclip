@@ -79,10 +79,10 @@ export function MobileFolderSheet({
             className="h-auto w-full justify-start gap-2 px-2 py-2 text-left"
             onClick={() => select("all")}
           >
-            <FolderIcon />
+            <FolderIcon  data-icon="inline-start"/>
             <span className="min-w-0 flex-1 truncate">{allLabel}</span>
             <span className="text-xs text-muted-foreground">{result?.allCount ?? 0}</span>
-            {selection === "all" ? <Check /> : null}
+            {selection === "all" ? <Check  data-icon="inline-start"/> : null}
           </Button>
           <DomainTree
             nodes={roots}
@@ -113,7 +113,7 @@ export function MobileFolderSheet({
               >
                 <span className="min-w-0 flex-1 truncate">{node.value.name}</span>
                 <span className="text-xs text-muted-foreground">{node.value.itemCount}</span>
-                {selection === node.value.id ? <Check /> : null}
+                {selection === node.value.id ? <Check  data-icon="inline-start"/> : null}
               </Button>
             )}
           />
@@ -126,7 +126,7 @@ export function MobileFolderSheet({
             <FolderSwatch color={null} />
             <span className="min-w-0 flex-1 truncate">Unfiled</span>
             <span className="text-xs text-muted-foreground">{result?.unfiledCount ?? 0}</span>
-            {selection === "unfiled" ? <Check /> : null}
+            {selection === "unfiled" ? <Check  data-icon="inline-start"/> : null}
           </Button>
         </div>
         <div className="border-t border-border px-4 pt-3">

@@ -74,7 +74,8 @@ function CompanyAccess() {
     });
   };
 
-  const updateMemberMutation = useMutation({
+  const updateMemberMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+  useMutation({
     mutationFn: async (input: {
       memberId: string;
       membershipRole: CompanyMember["membershipRole"];
@@ -207,7 +208,7 @@ function CompanyAccess() {
       ) : null}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-muted-foreground" />
+          <ShieldCheck className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
           <h1 className="text-lg font-semibold">Company Members</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
@@ -233,7 +234,7 @@ function CompanyAccess() {
       <section className="space-y-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Users className="h-4 w-4 text-muted-foreground"  data-icon="inline-start"/>
             <h2 className="text-base font-semibold">Humans</h2>
           </div>
           <p className="max-w-3xl text-sm text-muted-foreground">

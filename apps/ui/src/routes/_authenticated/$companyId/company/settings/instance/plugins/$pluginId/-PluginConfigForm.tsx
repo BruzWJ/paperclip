@@ -13,6 +13,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PluginOperationResult } from "@/plugins/plugin-launcher-types";
 
+// Config save/test status is announced with role="status".
 interface PluginConfigFormProps {
   pluginId: string;
   schema: JsonSchemaNode;
@@ -30,6 +31,7 @@ export function PluginConfigForm({
   pluginStatus,
   supportsConfigTest,
 }: PluginConfigFormProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
 
   const [values, setValues] = useState<Record<string, unknown>>(() => ({

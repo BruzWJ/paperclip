@@ -46,6 +46,7 @@ export function useTaskDetailActionMutations({
   navigateToTaskSource,
   cacheActions,
 }: TaskDetailActionMutationsOptions) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
   const [pendingApprovalAction, setPendingApprovalAction] = useState<ApprovalDecisionInput | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -285,6 +286,7 @@ export function useTaskDetailTreeMutation({
   setTreeControlCancelConfirmed,
 }: TaskDetailTreeMutationOptions) {
   const queryClient = useQueryClient();
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const treeControlScope: "leaf" | "subtree" = childTasks.length === 0 ? "leaf" : "subtree";
 
   return useMutation({

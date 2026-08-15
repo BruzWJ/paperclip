@@ -64,9 +64,9 @@ export const ChainOfThoughtHeader = memo(({ className, children, ...props }: Cha
         )}
         {...props}
       >
-        <BrainIcon className="size-4" />
+        <BrainIcon className="size-4"  data-icon="inline-start"/>
         <span className="flex-1 text-left">{children ?? "Chain of Thought"}</span>
-        <ChevronDownIcon className={cn("size-4 transition-transform", isOpen ? "rotate-180" : "rotate-0")} />
+        <ChevronDownIcon className={cn("size-4 transition-transform", isOpen ? "rotate-180" : "rotate-0")}  data-icon="inline-start"/>
       </CollapsibleTrigger>
     </Collapsible>
   );

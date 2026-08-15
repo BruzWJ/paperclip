@@ -30,7 +30,7 @@ export function InstalledPluginsSection({
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-2">
-        <Puzzle className="h-5 w-5 text-muted-foreground" />
+        <Puzzle className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
         <h2 className="text-base font-semibold">Installed Plugins</h2>
       </div>
 
@@ -38,7 +38,7 @@ export function InstalledPluginsSection({
         <Empty className="border">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Puzzle />
+              <Puzzle  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>No plugins installed</EmptyTitle>
             <EmptyDescription>
@@ -77,7 +77,7 @@ export function InstalledPluginsSection({
                 </ItemDescription>
                 {plugin.status === "error" && (
                   <Alert variant="destructive">
-                    <AlertTriangle aria-hidden />
+                    <AlertTriangle aria-hidden  data-icon="inline-start"/>
                     <AlertTitle>Plugin error</AlertTitle>
                     <AlertDescription title={plugin.lastError ?? undefined}>
                       {errorSummaryByPluginId.get(plugin.id)}
@@ -101,7 +101,7 @@ export function InstalledPluginsSection({
                         onClick={() => onToggle(plugin)}
                         disabled={lifecyclePending}
                       >
-                        <Power className="size-4" />
+                        <Power className="size-4"  data-icon="inline-start"/>
                       </Button>
                       <Button
                         variant="outline"
@@ -111,7 +111,7 @@ export function InstalledPluginsSection({
                         onClick={() => onUninstall(plugin)}
                         disabled={uninstallPending}
                       >
-                        <Trash className="h-4 w-4" />
+                        <Trash className="h-4 w-4"  data-icon="inline-start"/>
                       </Button>
                     </>
                   ) : null}

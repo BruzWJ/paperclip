@@ -52,6 +52,7 @@ export function RoutineSigningFields({
         <LabeledFormField label="Replay window (seconds)" labelFor={`${idPrefix}-replay-window`}>
           <Input
             id={`${idPrefix}-replay-window`}
+            aria-label="Replay window (seconds)"
             type="number"
             min="0"
             step="1"

@@ -28,7 +28,7 @@ function ProtocolTrace({ detail }: { detail: TaskExecutionRunJoinedDetail }) {
             return (
               <li key={event.id} className="min-w-0 rounded-lg border p-3">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <RadioIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <RadioIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true"  data-icon="inline-start"/>
                   <span className="min-w-0 flex-1 break-words font-medium capitalize">
                     {humanizeRunValue(event.type)}
                   </span>
@@ -145,7 +145,7 @@ function AccountingAndCost({ detail }: { detail: TaskExecutionRunJoinedDetail })
           return (
             <TaskItem key={record.id} className="space-y-1 rounded-lg border p-3">
               <div className="flex flex-wrap items-center gap-2">
-                <CoinsIcon className="size-4" />
+                <CoinsIcon className="size-4"  data-icon="inline-start"/>
                 <span className="font-medium capitalize">{record.promptKind} prompt</span>
                 {record.selectedModelId ? (
                   <Badge
@@ -203,7 +203,7 @@ function AuditRecords({
         {detail.activity.items.map((record) => (
           <TaskItem key={record.id} className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <ActivityIcon className="size-4" />
+              <ActivityIcon className="size-4"  data-icon="inline-start"/>
               <span className="capitalize">{humanizeRunValue(record.action)}</span>
               <span className="text-xs text-muted-foreground">
                 {record.actorType} · {formatDateTime(record.createdAt)}
@@ -216,7 +216,7 @@ function AuditRecords({
         ))}
         {detail.outputComments.items.map((record) => (
           <TaskItem key={`${record.commentId}-${record.messageId}`} className="flex flex-wrap gap-2">
-            <CircleDotIcon className="size-4" />
+            <CircleDotIcon className="size-4"  data-icon="inline-start"/>
             <span className="capitalize">{humanizeRunValue(record.sourceKind)}</span>
             <TaskItemFile className="max-w-full">
               {task && companyId ? (

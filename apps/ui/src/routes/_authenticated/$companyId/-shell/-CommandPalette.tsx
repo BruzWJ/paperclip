@@ -32,6 +32,7 @@ import {
   Search,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { registerCompanyCommandMenu } from "@/lib/command-menu-bridge";
 import { deriveInitials } from "@/lib/identity";
 import {
   SEARCH_OPERATOR_QUICK_FILTERS,
@@ -73,15 +74,10 @@ export function CommandPalette() {
   const searchQuery = query.trim();
 
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setOpen(true);
-        if (isMobile) setSidebarOpen(false);
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    return registerCompanyCommandMenu((nextOpen) => {
+      setOpen(nextOpen);
+      if (nextOpen && isMobile) setSidebarOpen(false);
+    });
   }, [isMobile, setSidebarOpen]);
 
   useEffect(() => {
@@ -243,7 +239,7 @@ export function CommandPalette() {
               className="bg-accent/40 border border-accent data-[selected=true]:bg-accent/60"
               data-testid="command-search-all"
             >
-              <Search className="mr-2 h-4 w-4" />
+              <Search className="mr-2 h-4 w-4"  data-icon="inline-start"/>
               <span className="flex-1 truncate">
                 Search all for <span className="font-semibold">&ldquo;{searchQuery}&rdquo;</span>
               </span>
@@ -265,7 +261,7 @@ export function CommandPalette() {
               onSelect={() => setQuery((current) => (current.trim() ? `${current.trim()} ${chip}` : chip))}
               data-testid="command-filter-chip"
             >
-              <Search className="mr-2 h-4 w-4" />
+              <Search className="mr-2 h-4 w-4"  data-icon="inline-start"/>
               <span className="font-mono text-xs">{chip}</span>
             </CommandItem>
           ))}
@@ -291,7 +287,7 @@ export function CommandPalette() {
                   }
                   data-testid="command-project-match"
                 >
-                  <Hexagon className="mr-2 h-4 w-4 shrink-0" />
+                  <Hexagon className="mr-2 h-4 w-4 shrink-0"  data-icon="inline-start"/>
                   <span className="min-w-0 truncate">{project.name}</span>
                   {project.description ? (
                     <span className="ml-2 hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:inline">
@@ -349,7 +345,7 @@ export function CommandPalette() {
                       })
                     }
                   >
-                    <CircleDot className="mr-2 h-4 w-4" />
+                    <CircleDot className="mr-2 h-4 w-4"  data-icon="inline-start"/>
                     <span className="text-muted-foreground mr-2 font-mono text-xs">{taskIdentifier}</span>
                     <span className="flex-1 truncate">{task.title}</span>
                     {ownerName ? (
@@ -381,7 +377,7 @@ export function CommandPalette() {
                     })
                   }
                 >
-                  <Bot className="mr-2 h-4 w-4" />
+                  <Bot className="mr-2 h-4 w-4"  data-icon="inline-start"/>
                   {agent.name}
                   {agent.title ? (
                     <span className="text-xs text-muted-foreground ml-2">{agent.title}</span>
@@ -409,7 +405,7 @@ export function CommandPalette() {
                     })
                   }
                 >
-                  <Hexagon className="mr-2 h-4 w-4" />
+                  <Hexagon className="mr-2 h-4 w-4"  data-icon="inline-start"/>
                   {project.name}
                 </CommandItem>
               ))}

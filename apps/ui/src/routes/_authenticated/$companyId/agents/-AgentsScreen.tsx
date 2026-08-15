@@ -212,7 +212,7 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
             <AlertTriangle
               className="h-3.5 w-3.5 text-muted-foreground"
               aria-label="Invalid reporting chain"
-            />
+             data-icon="inline-start"/>
           ) : (
             <DomainStatus status={agent.status} />
           )}
@@ -275,7 +275,7 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
                   });
                 }}
               >
-                {agentStarPending ? <Spinner /> : <Star />}
+                {agentStarPending ? <Spinner /> : <Star  data-icon="inline-start"/>}
               </Toggle>
             </div>
             <MembershipAction
@@ -332,7 +332,7 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
               aria-label="View mode"
             >
               <ToggleGroupItem value="list" className="px-1.5" title="List view" aria-label="List view">
-                <List className="h-3.5 w-3.5" />
+                <List className="h-3.5 w-3.5"  data-icon="inline-start"/>
               </ToggleGroupItem>
               <ToggleGroupItem
                 value="org"
@@ -340,7 +340,7 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
                 title="Org chart view"
                 aria-label="Org chart view"
               >
-                <GitBranch className="h-3.5 w-3.5" />
+                <GitBranch className="h-3.5 w-3.5"  data-icon="inline-start"/>
               </ToggleGroupItem>
             </ToggleGroup>
           )}
@@ -367,13 +367,13 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Bot />
+              <Bot  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>Create your first agent to get started.</EmptyTitle>
           </EmptyHeader>
           <EmptyContent>
             <Button onClick={openNewAgent}>
-              <Plus />
+              <Plus  data-icon="inline-start"/>
               New Agent
             </Button>
           </EmptyContent>

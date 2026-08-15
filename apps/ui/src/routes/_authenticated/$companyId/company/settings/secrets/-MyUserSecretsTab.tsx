@@ -24,6 +24,7 @@ import { myValueLabel, myValueState } from "./-my-value-state";
  * "User secret definitions" tab.
  */
 export function MyUserSecretsTab({ companyId }: { companyId: string }) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
   const userId = useCurrentUserId();
   const [dialogFor, setDialogFor] = useState<MyUserSecretEntry | null>(null);
@@ -86,7 +87,7 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
         </p>
       ) : null}
       <Alert>
-        <UserRound />
+        <UserRound  data-icon="inline-start"/>
         <AlertTitle>Your secret values</AlertTitle>
         <AlertDescription>
           These are credentials only you provide. Each value is yours alone — used when you are the user
@@ -104,7 +105,7 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {mySecretsQuery.isError ? (
           <Alert variant="destructive">
-            <AlertCircle />
+            <AlertCircle  data-icon="inline-start"/>
             <AlertTitle>Failed to load your secrets</AlertTitle>
             <AlertDescription>
               {(mySecretsQuery.error as Error).message}
@@ -117,7 +118,7 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <KeyRound />
+                <KeyRound  data-icon="inline-start"/>
               </EmptyMedia>
               <EmptyTitle>
                 No user secrets are defined for this company yet. An admin defines which credentials each
@@ -208,7 +209,7 @@ function MyUserSecretRow({
               disabled={clearing}
               aria-label="Clear my value"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3.5 w-3.5"  data-icon="inline-start"/>
             </Button>
           ) : null}
         </ItemActions>

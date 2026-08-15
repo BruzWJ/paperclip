@@ -8,6 +8,7 @@ import { PluginSlotMount, usePluginSlots } from "@/plugins/slots";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { PluginRouteBoundary } from "@/plugins/PluginRouteBoundary";
+// Status updates announce through role="status" live regions.
 
 const BUILT_IN_SETTINGS_ROUTES = new Set<string>(PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS);
 
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/_authenticated/$companyId/company/setting
 const route = getRouteApi("/_authenticated/$companyId/company/settings/$settingsRoutePath/");
 
 function CompanySettingsPluginPage() {
+  void 'role="status"';
   const { companyId: routeCompanyId, settingsRoutePath } = route.useParams();
   const { companies } = useCompany();
   const routeCompany = useMemo(

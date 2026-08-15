@@ -36,7 +36,7 @@ export function NewTaskActions() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" variant="outline" size="xs">
-              <CircleDot className="h-3 w-3" />
+              <CircleDot className="h-3 w-3"  data-icon="inline-start"/>
               {currentStatus.label}
             </Button>
           </DropdownMenuTrigger>
@@ -44,7 +44,7 @@ export function NewTaskActions() {
             <DropdownMenuRadioGroup value={status} onValueChange={(v) => setStatus(v)}>
               {statuses.map((s) => (
                 <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
-                  <CircleDot className="mt-0.5 h-3 w-3 shrink-0" />
+                  <CircleDot className="mt-0.5 h-3 w-3 shrink-0"  data-icon="inline-start"/>
                   <span className="flex flex-col text-left leading-tight">
                     <span>{s.label}</span>
                     {s.description ? (
@@ -73,7 +73,7 @@ export function NewTaskActions() {
                 </>
               ) : (
                 <>
-                  <Minus className="h-3 w-3 text-muted-foreground" />
+                  <Minus className="h-3 w-3 text-muted-foreground"  data-icon="inline-start"/>
                   Priority
                 </>
               )}
@@ -133,7 +133,7 @@ export function NewTaskActions() {
               data-testid="new-task-more-menu-trigger"
               aria-label="More task options"
             >
-              <MoreHorizontal className="h-3 w-3" />
+              <MoreHorizontal className="h-3 w-3"  data-icon="inline-start"/>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-44" align="start" data-testid="new-task-more-menu">
@@ -153,11 +153,11 @@ export function NewTaskActions() {
               <DropdownMenuSeparator />
             </div>
             <DropdownMenuItem className="text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="h-3 w-3"  data-icon="inline-start"/>
               Start date
             </DropdownMenuItem>
             <DropdownMenuItem className="text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="h-3 w-3"  data-icon="inline-start"/>
               Due date
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -166,7 +166,7 @@ export function NewTaskActions() {
 
       {ownerAgentId && status === "backlog" ? (
         <Alert data-testid="new-task-assigned-backlog-note" className="mx-4 mb-2 w-auto">
-          <Flag />
+          <Flag  data-icon="inline-start"/>
           <AlertDescription>
             Agent ownership implies executable intent - leave status as{" "}
             <span className="font-medium">Backlog</span> only to deliberately park this. The owner will not be
@@ -194,13 +194,11 @@ export function NewTaskActions() {
                 role="status"
                 className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
               >
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loader2 className="h-3 w-3 animate-spin"  data-icon="inline-start"/>
                 Creating task...
               </span>
             ) : createTask.isError ? (
-              <span role="alert" className="text-xs text-destructive">
-                {createTaskErrorMessage}
-              </span>
+              <span className="text-xs text-destructive">{createTaskErrorMessage}</span>
             ) : null}
           </div>
           <Button
@@ -212,7 +210,7 @@ export function NewTaskActions() {
             aria-busy={createTask.isPending}
           >
             <span className="inline-flex items-center justify-center gap-1.5">
-              {createTask.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {createTask.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin"  data-icon="inline-start"/> : null}
               <span>
                 {createTask.isPending ? "Creating..." : isSubTaskMode ? "Create Sub-Task" : "Create Task"}
               </span>

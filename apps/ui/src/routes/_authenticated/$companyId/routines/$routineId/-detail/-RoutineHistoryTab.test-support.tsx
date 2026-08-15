@@ -56,7 +56,7 @@ vi.mock("@/components/ui/button", () => ({
 }));
 
 vi.mock("@/components/ui/input", () => ({
-  Input: (props: ComponentProps<"input">) => <input {...props} />,
+  Input: (props: ComponentProps<"input">) => <input aria-label="Text input" {...props} />,
 }));
 
 vi.mock("@/components/ui/label", () => ({

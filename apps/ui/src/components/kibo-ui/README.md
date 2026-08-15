@@ -40,6 +40,9 @@ Compatibility-only corrections from the generated registry output:
   Kibo's provider and losing keyboard focus.
 - `status/index.tsx` disables the decorative ping animation when the user asks
   the operating system to reduce motion.
+- Accessible names, explicit button types, focus-visible rings, and native
+  form constraints were added on banner, color-picker, combobox, editor, and
+  gantt controls so icon-only and unlabeled registry call sites remain operable.
 
 Default Kibo layout, styling, and interactions remain unchanged; additive hooks
 only take effect when a domain adapter opts into them. Recheck every correction

@@ -167,7 +167,7 @@ export function FormDialog({
       onClick={() => onExpandedChange(!expanded)}
       className="absolute right-12 top-3"
     >
-      {expanded ? <Minimize2 /> : <Maximize2 />}
+      {expanded ? <Minimize2  data-icon="inline-start"/> : <Maximize2  data-icon="inline-start"/>}
     </Button>
   ) : null;
   return (

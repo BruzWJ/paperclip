@@ -175,6 +175,17 @@ export interface PromptInputControllerProps {
 const PromptInputController = createContext<PromptInputControllerProps | null>(null);
 const ProviderAttachmentsContext = createContext<AttachmentsContext | null>(null);
 
+interface PromptInputFormState {
+  isSubmitting: boolean;
+  clearValidationError: () => void;
+}
+
+const PromptInputFormContext = createContext<PromptInputFormState>({
+  isSubmitting: false,
+  // oxlint-disable-next-line eslint(no-empty-function)
+  clearValidationError: () => {},
+});
+
 export const usePromptInputController = () => {
   const ctx = useContext(PromptInputController);
   if (!ctx) {
@@ -379,7 +390,7 @@ export const PromptInputActionAddAttachments = ({
 
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
-      <ImageIcon className="mr-2 size-4" /> {label}
+      <ImageIcon className="mr-2 size-4"  data-icon="inline-start"/> {label}
     </DropdownMenuItem>
   );
 };
@@ -422,7 +433,7 @@ export const PromptInputActionAddScreenshot = ({
 
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
-      <Monitor className="mr-2 size-4" />
+      <Monitor className="mr-2 size-4"  data-icon="inline-start"/>
       {label}
     </DropdownMenuItem>
   );
@@ -473,6 +484,10 @@ export const PromptInput = ({
   // ----- Local attachments (only used when no provider)
   const [items, setItems] = useState<(FileUIPart & { id: string })[]>([]);
   const files = usingProvider ? controller.attachments.files : items;
+
+  // ----- Submission state (validation + pending)
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // ----- Local referenced sources (always local to PromptInput)
   const [referencedSources, setReferencedSources] = useState<(SourceDocumentUIPart & { id: string })[]>([]);
@@ -763,6 +778,10 @@ export const PromptInput = ({
     async (event) => {
       event.preventDefault();
 
+      if (isSubmitting) {
+        return;
+      }
+
       const form = event.currentTarget;
       const text = usingProvider
         ? controller.textInput.value
@@ -770,6 +789,15 @@ export const PromptInput = ({
             const formData = new FormData(form);
             return (formData.get("message") as string) || "";
           })();
+
+      // Field-level validation: a submission needs a message or an attachment.
+      if (text.trim().length === 0 && files.length === 0) {
+        setValidationError("Please enter a message or attach a file before sending.");
+        return;
+      }
+
+      setValidationError(null);
+      setIsSubmitting(true);
 
       // Reset form immediately after capturing text to avoid race condition
       // where user input during async blob conversion would be lost
@@ -815,9 +843,19 @@ export const PromptInput = ({
         }
       } catch {
         // Don't clear on error - user may want to retry
+      } finally {
+        setIsSubmitting(false);
       }
     },
-    [usingProvider, controller, files, onSubmit, clear],
+    [isSubmitting, usingProvider, controller, files, onSubmit, clear],
+  );
+
+  const formState = useMemo<PromptInputFormState>(
+    () => ({
+      isSubmitting,
+      clearValidationError: () => setValidationError(null),
+    }),
+    [isSubmitting],
   );
 
   // Render with or without local provider
@@ -831,10 +869,25 @@ export const PromptInput = ({
         onChange={handleChange}
         ref={inputRef}
         title="Upload files"
+        required={false}
         type="file"
       />
-      <form className={cn("w-full", className)} onSubmit={handleSubmit} ref={formRef} {...props}>
+      <form
+        aria-busy={isSubmitting}
+        className={cn("w-full", className)}
+        onSubmit={handleSubmit}
+        ref={formRef}
+        {...props}
+      >
+        <button className="sr-only" disabled={isSubmitting} type="submit">
+          {isSubmitting ? "Sending" : "Send"}
+        </button>
         <InputGroup className="overflow-hidden">{children}</InputGroup>
+        {validationError ? (
+          <p role="alert" className="px-2 pt-2 text-sm text-destructive">
+            {validationError}
+          </p>
+        ) : null}
       </form>
     </>
   );
@@ -845,9 +898,11 @@ export const PromptInput = ({
 
   // Always provide LocalAttachmentsContext so children get validated add function
   return (
-    <LocalAttachmentsContext.Provider value={attachmentsCtx}>
-      {withReferencedSources}
-    </LocalAttachmentsContext.Provider>
+    <PromptInputFormContext.Provider value={formState}>
+      <LocalAttachmentsContext.Provider value={attachmentsCtx}>
+        {withReferencedSources}
+      </LocalAttachmentsContext.Provider>
+    </PromptInputFormContext.Provider>
   );
 };
 
@@ -868,6 +923,7 @@ export const PromptInputTextarea = ({
 }: PromptInputTextareaProps) => {
   const controller = useOptionalPromptInputController();
   const attachments = usePromptInputAttachments();
+  const { clearValidationError } = useContext(PromptInputFormContext);
   const [isComposing, setIsComposing] = useState(false);
 
   const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = useCallback(
@@ -945,12 +1001,16 @@ export const PromptInputTextarea = ({
     ? {
         onChange: (e: ChangeEvent<HTMLTextAreaElement>) => {
           controller.textInput.setInput(e.currentTarget.value);
+          clearValidationError();
           onChange?.(e);
         },
         value: controller.textInput.value,
       }
     : {
-        onChange,
+        onChange: (e: ChangeEvent<HTMLTextAreaElement>) => {
+          clearValidationError();
+          onChange?.(e);
+        },
       };
 
   return (
@@ -1042,7 +1102,7 @@ export const PromptInputActionMenuTrigger = ({
 }: PromptInputActionMenuTriggerProps) => (
   <DropdownMenuTrigger asChild>
     <PromptInputButton className={className} {...props}>
-      {children ?? <PlusIcon className="size-4" />}
+      {children ?? <PlusIcon className="size-4"  data-icon="inline-start"/>}
     </PromptInputButton>
   </DropdownMenuTrigger>
 );
@@ -1075,16 +1135,19 @@ export const PromptInputSubmit = ({
   children,
   ...props
 }: PromptInputSubmitProps) => {
+  const { isSubmitting } = useContext(PromptInputFormContext);
   const isGenerating = status === "submitted" || status === "streaming";
 
-  let Icon = <CornerDownLeftIcon className="size-4" />;
+  let Icon = <CornerDownLeftIcon className="size-4"  data-icon="inline-start"/>;
 
-  if (status === "submitted") {
+  if (isSubmitting) {
+    Icon = <Spinner />;
+  } else if (status === "submitted") {
     Icon = <Spinner />;
   } else if (status === "streaming") {
-    Icon = <SquareIcon className="size-4" />;
+    Icon = <SquareIcon className="size-4"  data-icon="inline-start"/>;
   } else if (status === "error") {
-    Icon = <XIcon className="size-4" />;
+    Icon = <XIcon className="size-4"  data-icon="inline-start"/>;
   }
 
   const handleClick = useCallback(
@@ -1101,8 +1164,9 @@ export const PromptInputSubmit = ({
 
   return (
     <InputGroupButton
-      aria-label={isGenerating ? "Stop" : "Submit"}
+      aria-label={isSubmitting ? "Sending" : isGenerating ? "Stop" : "Submit"}
       className={cn(className)}
+      disabled={isSubmitting}
       onClick={handleClick}
       size={size}
       type={isGenerating && onStop ? "button" : "submit"}
@@ -1122,6 +1186,7 @@ export type PromptInputSelectTriggerProps = ComponentProps<typeof SelectTrigger>
 
 export const PromptInputSelectTrigger = ({ className, ...props }: PromptInputSelectTriggerProps) => (
   <SelectTrigger
+    aria-label="Prompt option"
     className={cn(
       "border-none bg-transparent font-medium text-muted-foreground shadow-none transition-colors",
       "hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",

@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { accessApi } from "@/api/access";
 import { authApi } from "@/api/auth";
 import { companiesListQueryOptions } from "@/api/companies-query";
@@ -195,7 +196,8 @@ function InviteLandingContent() {
     password.trim().length > 0 &&
     (authMode === "sign_in" || (name.trim().length > 0 && password.trim().length >= 8));
 
-  const acceptMutation = useMutation({
+  const acceptMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+  useMutation({
     mutationFn: async () => {
       if (!invite) throw new Error("Invite not found");
       if (isCheckingExistingMembership) {

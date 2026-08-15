@@ -42,7 +42,7 @@ export function NewTaskEditorContent() {
             onClick={() => setExpanded(!expanded)}
             disabled={createTask.isPending}
           >
-            {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            {expanded ? <Minimize2 className="h-3.5 w-3.5"  data-icon="inline-start"/> : <Maximize2 className="h-3.5 w-3.5"  data-icon="inline-start"/>}
           </Button>
           <Button
             type="button"
@@ -87,7 +87,7 @@ export function NewTaskEditorContent() {
           <div className="px-4 pb-2">
             <Item variant="muted" size="sm">
               <ItemMedia>
-                <ListTree />
+                <ListTree  data-icon="inline-start"/>
               </ItemMedia>
               <ItemContent>
                 <ItemTitle>Sub-task of {parentTaskLabel}</ItemTitle>

@@ -108,21 +108,26 @@ function PrimaryOutput({ item, creatorName, onMediaClick }: InteractiveTaskOutpu
           />
         </AspectRatio>
       ) : image && meta ? (
-        <Button
-          asChild={!onMediaClick}
-          variant="ghost"
-          className="h-auto aspect-video rounded-none bg-black p-0"
-          aria-label={onMediaClick ? `Browse ${filename} in gallery` : `Open ${filename}`}
-          onClick={() => onMediaClick?.(item)}
-        >
-          {onMediaClick ? (
+        onMediaClick ? (
+          <Button
+            variant="ghost"
+            className="h-auto aspect-video rounded-none bg-black p-0"
+            aria-label={`Browse ${filename} in gallery`}
+            onClick={() => onMediaClick(item)}
+          >
             <img src={meta.contentPath} alt={filename} className="size-full object-contain" />
-          ) : (
-            <a href={meta.openPath} target="_blank" rel="noreferrer">
-              <img src={meta.contentPath} alt={filename} className="size-full object-contain" />
-            </a>
-          )}
-        </Button>
+          </Button>
+        ) : (
+          <a
+            href={meta.openPath}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open ${filename}`}
+            className="inline-flex h-auto aspect-video w-full items-center justify-center rounded-none bg-black p-0"
+          >
+            <img src={meta.contentPath} alt={filename} className="size-full object-contain" />
+          </a>
+        )
       ) : (
         <CardUI.CardContent className="flex aspect-video items-center justify-center">
           <Badge
@@ -147,21 +152,21 @@ function PrimaryOutput({ item, creatorName, onMediaClick }: InteractiveTaskOutpu
           <>
             {media && onMediaClick ? (
               <Button variant="outline" size="sm" onClick={() => onMediaClick(item)}>
-                <Maximize2 />
+                <Maximize2  data-icon="inline-start"/>
                 Browse
               </Button>
             ) : null}
             {!media || !onMediaClick || video ? (
               <Button asChild variant="outline" size="sm">
                 <a href={meta.openPath} target="_blank" rel="noreferrer">
-                  <ExternalLink />
+                  <ExternalLink  data-icon="inline-start"/>
                   Open
                 </a>
               </Button>
             ) : null}
             <Button asChild size="sm">
               <a href={meta.downloadPath} aria-label={`Download ${filename}`}>
-                <Download />
+                <Download  data-icon="inline-start"/>
                 Download
               </a>
             </Button>
@@ -196,12 +201,12 @@ function OutputRow({ item, creatorName }: TaskOutputItemProps) {
         <AttachmentUI.AttachmentActions>
           <AttachmentUI.AttachmentAction asChild title="Open in new tab">
             <a href={meta.openPath} target="_blank" rel="noreferrer" aria-label={`Open ${filename}`}>
-              <ExternalLink />
+              <ExternalLink  data-icon="inline-start"/>
             </a>
           </AttachmentUI.AttachmentAction>
           <AttachmentUI.AttachmentAction asChild title="Download">
             <a href={meta.downloadPath} aria-label={`Download ${filename}`}>
-              <Download />
+              <Download  data-icon="inline-start"/>
             </a>
           </AttachmentUI.AttachmentAction>
         </AttachmentUI.AttachmentActions>
@@ -225,7 +230,7 @@ export function TaskOutputSection({
   return (
     <section className="space-y-3" aria-label="Task outputs">
       <header className="flex items-center gap-2">
-        <Play className="size-4" aria-hidden="true" />
+        <Play className="size-4" aria-hidden="true"  data-icon="inline-start"/>
         <h3 className="text-sm font-medium">Output</h3>
         <Badge variant="secondary">{count}</Badge>
       </header>

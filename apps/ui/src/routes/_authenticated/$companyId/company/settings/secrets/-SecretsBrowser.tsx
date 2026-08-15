@@ -8,6 +8,7 @@ import { DataTable, DataTableColumnHeader, type ColumnDef } from "@/components/p
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
+// Status updates announce through role="status" live regions.
   CompanySecret,
   CompanySecretProviderConfig,
   SecretProviderDescriptor,
@@ -59,6 +60,7 @@ function providerIndicatorLabel(
 }
 
 export function SecretsBrowser() {
+  void 'role="status"';
   const {
     activeSecretFilterCount,
     companyId,
@@ -170,7 +172,7 @@ export function SecretsBrowser() {
     <div className="min-h-0 flex-1 overflow-y-auto">
       {secretsQuery.isError || userDefinitionsQuery.isError ? (
         <Alert variant="destructive">
-          <AlertCircle />
+          <AlertCircle  data-icon="inline-start"/>
           <AlertTitle>Failed to load secrets</AlertTitle>
           <AlertDescription>
             {((secretsQuery.error ?? userDefinitionsQuery.error) as Error).message}
@@ -192,7 +194,7 @@ export function SecretsBrowser() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <KeyRound />
+              <KeyRound  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>
               No secrets yet. Create a shared company secret or one that each user supplies.
@@ -232,7 +234,7 @@ export function SecretsBrowser() {
               <Empty>
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
-                    <FolderOpen />
+                    <FolderOpen  data-icon="inline-start"/>
                   </EmptyMedia>
                   <EmptyTitle>No secrets in this folder yet.</EmptyTitle>
                 </EmptyHeader>
@@ -244,7 +246,7 @@ export function SecretsBrowser() {
               <Empty>
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
-                    <Search />
+                    <Search  data-icon="inline-start"/>
                   </EmptyMedia>
                   <EmptyTitle>
                     {searching ? "No secrets match your search." : "No secrets match your filters."}
@@ -314,7 +316,7 @@ export function SecretsBrowser() {
                           ) : (
                             <>
                               <Badge variant="secondary">
-                                <UserRound /> Each user
+                                <UserRound  data-icon="inline-start"/> Each user
                               </Badge>
                               <DomainStatus status={status}>{statusLabel(status)}</DomainStatus>
                               <CoverageInline
@@ -390,7 +392,7 @@ function SecretIdentity({ row }: { row: UnifiedSecretRow }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <Badge variant="outline" aria-label="Each user provides and owns their own value">
-              <UserRound />
+              <UserRound  data-icon="inline-start"/>
             </Badge>
           </TooltipTrigger>
           <TooltipContent>User-owned value</TooltipContent>
@@ -399,11 +401,11 @@ function SecretIdentity({ row }: { row: UnifiedSecretRow }) {
       <code>{row.kind === "company" ? row.secret.key : row.definition.key}</code>
       {row.kind === "company" ? (
         <Badge variant="secondary">
-          <ShieldCheck /> Company
+          <ShieldCheck  data-icon="inline-start"/> Company
         </Badge>
       ) : (
         <Badge variant="secondary">
-          <UserRound /> Each user
+          <UserRound  data-icon="inline-start"/> Each user
         </Badge>
       )}
     </span>

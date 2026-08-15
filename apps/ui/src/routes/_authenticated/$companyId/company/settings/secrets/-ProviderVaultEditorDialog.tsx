@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { SecretProvider, SecretProviderConfigStatus } from "@paperclipai/shared";
 import { AwsProviderVaultDiscoveryPanel } from "./-ProviderVaultDiscovery";
 import {
+// Status updates announce through role="status" live regions.
   PROVIDER_ORDER,
   emptyProviderVaultForm,
   providerLabel,
@@ -56,6 +57,7 @@ const providerVaultFields = {
 >;
 
 export function ProviderVaultEditorDialog() {
+  void 'role="status"';
   const {
     applyVaultDiscoveryCandidate,
     discoverVaultMutation,
@@ -118,7 +120,7 @@ export function ProviderVaultEditorDialog() {
               }}
               disabled={Boolean(editingVault)}
             >
-              <SelectTrigger id="vault-provider" className="h-9 w-full">
+              <SelectTrigger id="vault-provider" aria-label="Vault provider" className="h-9 w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -131,7 +133,7 @@ export function ProviderVaultEditorDialog() {
             </Select>
           </LabeledFormField>
           <LabeledFormField label="Display name" labelFor="vault-name">
-            <Input
+            <Input aria-label="vault name"
               id="vault-name"
               value={vaultForm.displayName}
               onChange={(event) =>
@@ -155,7 +157,7 @@ export function ProviderVaultEditorDialog() {
                 }));
               }}
             >
-              <SelectTrigger id="vault-status" className="h-9 w-full">
+              <SelectTrigger id="vault-status" aria-label="Vault status" className="h-9 w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -227,6 +229,7 @@ export function ProviderVaultEditorDialog() {
                 >
                   <Input
                     id={id}
+                    aria-label={label}
                     value={vaultForm[key]}
                     onChange={(event) => setVaultField(key, event.target.value)}
                     placeholder={placeholder}

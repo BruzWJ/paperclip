@@ -456,6 +456,7 @@ export const EditorProvider = ({
   slashSuggestions = defaultSlashSuggestions,
   ...props
 }: EditorProviderProps) => {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const defaultExtensions = [
     StarterKit.configure({
       codeBlock: false,
@@ -704,6 +705,7 @@ type EditorButtonProps = {
 
 const BubbleMenuButton = ({ name, isActive, command, icon: Icon, hideName }: EditorButtonProps) => (
   <Button
+    aria-label={name}
     className={`flex gap-4 ${hideName ? "" : "w-full"}`}
     onClick={() => command()}
     size="sm"
@@ -711,7 +713,7 @@ const BubbleMenuButton = ({ name, isActive, command, icon: Icon, hideName }: Edi
   >
     <Icon className="shrink-0 text-muted-foreground" size={12} />
     {!hideName && <span className="flex-1 text-left">{name}</span>}
-    {isActive() ? <CheckIcon className="shrink-0 text-muted-foreground" size={12} /> : null}
+    {isActive() ? <CheckIcon className="shrink-0 text-muted-foreground" size={12}  data-icon="inline-start"/> : null}
   </Button>
 );
 
@@ -967,7 +969,7 @@ export const EditorSelector = ({
       <PopoverTrigger asChild>
         <Button className="gap-2 rounded-none border-none" size="sm" variant="ghost">
           <span className="whitespace-nowrap text-xs">{title}</span>
-          <ChevronDownIcon size={12} />
+          <ChevronDownIcon size={12}  data-icon="inline-end"/>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className={cn("w-48 p-1", className)} sideOffset={5} {...props}>
@@ -1124,6 +1126,7 @@ export type EditorLinkSelectorProps = {
 
 export const EditorLinkSelector = ({ open, onOpenChange }: EditorLinkSelectorProps) => {
   const [url, setUrl] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const inputReference = useRef<HTMLInputElement>(null);
   const { editor } = useCurrentEditor();
 
@@ -1161,13 +1164,15 @@ export const EditorLinkSelector = ({ open, onOpenChange }: EditorLinkSelectorPro
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = (event) => {
     event.preventDefault();
-
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     const href = getUrlFromString(url);
 
     if (href) {
       editor.chain().focus().setLink({ href }).run();
       onOpenChange?.(false);
     }
+    setIsSubmitting(false);
   };
 
   const defaultValue = (editor.getAttributes("link") as { href?: string }).href;
@@ -1176,7 +1181,7 @@ export const EditorLinkSelector = ({ open, onOpenChange }: EditorLinkSelectorPro
     <Popover modal onOpenChange={onOpenChange} open={open}>
       <PopoverTrigger asChild>
         <Button className="gap-2 rounded-none border-none" size="sm" variant="ghost">
-          <ExternalLinkIcon size={12} />
+          <ExternalLinkIcon data-icon="inline-start" size={12} />
           <p
             className={cn("text-xs underline decoration-text-muted underline-offset-4", {
               "text-primary": editor.isActive("link"),
@@ -1187,19 +1192,25 @@ export const EditorLinkSelector = ({ open, onOpenChange }: EditorLinkSelectorPro
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-60 p-0" sideOffset={10}>
-        <form className="flex p-1" onSubmit={handleSubmit}>
+        <form aria-busy={isSubmitting} className="flex p-1" onSubmit={handleSubmit}>
+          <button className="sr-only" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Saving" : "Save"}
+          </button>
           <input
             aria-label="Link URL"
-            className="flex-1 bg-background p-1 text-sm outline-none"
+            className="flex-1 bg-background p-1 text-sm outline-none focus-visible:ring"
             defaultValue={defaultValue ?? ""}
+            minLength={1}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="Paste a link"
             ref={inputReference}
+            required
             type="text"
             value={url}
           />
           {editor.getAttributes("link").href ? (
             <Button
+              aria-label="Remove link"
               className="flex h-8 items-center rounded-sm p-1 text-destructive transition-all hover:bg-destructive-foreground dark:hover:bg-destructive"
               onClick={() => {
                 editor.chain().focus().unsetLink().run();
@@ -1209,11 +1220,11 @@ export const EditorLinkSelector = ({ open, onOpenChange }: EditorLinkSelectorPro
               type="button"
               variant="outline"
             >
-              <TrashIcon size={12} />
+              <TrashIcon size={12}  data-icon="inline-start"/>
             </Button>
           ) : (
-            <Button className="h-8" size="icon" variant="secondary">
-              <CheckIcon size={12} />
+            <Button aria-label="Apply link" className="h-8" size="icon" type="submit" variant="secondary">
+              <CheckIcon size={12}  data-icon="inline-start"/>
             </Button>
           )}
         </form>
@@ -1364,8 +1375,8 @@ export const EditorTableColumnMenu = ({ children }: EditorTableColumnMenuProps) 
         )}
         style={{ top, left }}
       >
-        <Button size="icon" variant="ghost">
-          <EllipsisIcon className="text-muted-foreground" size={16} />
+        <Button aria-label="Table column menu" size="icon" variant="ghost">
+          <EllipsisIcon className="text-muted-foreground" size={16}  data-icon="inline-start"/>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>{children}</DropdownMenuContent>
@@ -1431,8 +1442,9 @@ export const EditorTableRowMenu = ({ children }: EditorTableRowMenuProps) => {
           size="icon"
           style={{ top, left }}
           variant="ghost"
+          aria-label="Table row menu"
         >
-          <EllipsisVerticalIcon className="text-muted-foreground" size={12} />
+          <EllipsisVerticalIcon className="text-muted-foreground" size={12}  data-icon="inline-start"/>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>{children}</DropdownMenuContent>
@@ -1455,7 +1467,7 @@ export const EditorTableColumnBefore = () => {
 
   return (
     <DropdownMenuItem className="flex items-center gap-2" onClick={handleClick}>
-      <ArrowLeftIcon className="text-muted-foreground" size={16} />
+      <ArrowLeftIcon className="text-muted-foreground" size={16}  data-icon="inline-start"/>
       <span>Add column before</span>
     </DropdownMenuItem>
   );
@@ -1476,7 +1488,7 @@ export const EditorTableColumnAfter = () => {
 
   return (
     <DropdownMenuItem className="flex items-center gap-2" onClick={handleClick}>
-      <ArrowRightIcon className="text-muted-foreground" size={16} />
+      <ArrowRightIcon className="text-muted-foreground" size={16}  data-icon="inline-start"/>
       <span>Add column after</span>
     </DropdownMenuItem>
   );
@@ -1497,7 +1509,7 @@ export const EditorTableRowBefore = () => {
 
   return (
     <DropdownMenuItem className="flex items-center gap-2" onClick={handleClick}>
-      <ArrowUpIcon className="text-muted-foreground" size={16} />
+      <ArrowUpIcon className="text-muted-foreground" size={16}  data-icon="inline-start"/>
       <span>Add row before</span>
     </DropdownMenuItem>
   );
@@ -1518,7 +1530,7 @@ export const EditorTableRowAfter = () => {
 
   return (
     <DropdownMenuItem className="flex items-center gap-2" onClick={handleClick}>
-      <ArrowDownIcon className="text-muted-foreground" size={16} />
+      <ArrowDownIcon className="text-muted-foreground" size={16}  data-icon="inline-start"/>
       <span>Add row after</span>
     </DropdownMenuItem>
   );
@@ -1539,7 +1551,7 @@ export const EditorTableColumnDelete = () => {
 
   return (
     <DropdownMenuItem className="flex items-center gap-2" onClick={handleClick}>
-      <TrashIcon className="text-destructive" size={16} />
+      <TrashIcon className="text-destructive" size={16}  data-icon="inline-start"/>
       <span>Delete column</span>
     </DropdownMenuItem>
   );
@@ -1560,7 +1572,7 @@ export const EditorTableRowDelete = () => {
 
   return (
     <DropdownMenuItem className="flex items-center gap-2" onClick={handleClick}>
-      <TrashIcon className="text-destructive" size={16} />
+      <TrashIcon className="text-destructive" size={16}  data-icon="inline-start"/>
       <span>Delete row</span>
     </DropdownMenuItem>
   );
@@ -1583,12 +1595,13 @@ export const EditorTableHeaderColumnToggle = () => {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
+          aria-label="Toggle header column"
           className="flex items-center gap-2 rounded-full"
           onClick={handleClick}
           size="icon"
           variant="ghost"
         >
-          <ColumnsIcon className="text-muted-foreground" size={16} />
+          <ColumnsIcon className="text-muted-foreground" size={16}  data-icon="inline-start"/>
         </Button>
       </TooltipTrigger>
       <TooltipContent>
@@ -1615,12 +1628,13 @@ export const EditorTableHeaderRowToggle = () => {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
+          aria-label="Toggle header row"
           className="flex items-center gap-2 rounded-full"
           onClick={handleClick}
           size="icon"
           variant="ghost"
         >
-          <RowsIcon className="text-muted-foreground" size={16} />
+          <RowsIcon className="text-muted-foreground" size={16}  data-icon="inline-start"/>
         </Button>
       </TooltipTrigger>
       <TooltipContent>
@@ -1647,12 +1661,13 @@ export const EditorTableDelete = () => {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
+          aria-label="Delete table"
           className="flex items-center gap-2 rounded-full"
           onClick={handleClick}
           size="icon"
           variant="ghost"
         >
-          <TrashIcon className="text-destructive" size={16} />
+          <TrashIcon className="text-destructive" size={16}  data-icon="inline-start"/>
         </Button>
       </TooltipTrigger>
       <TooltipContent>
@@ -1679,12 +1694,13 @@ export const EditorTableMergeCells = () => {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
+          aria-label="Merge cells"
           className="flex items-center gap-2 rounded-full"
           onClick={handleClick}
           size="icon"
           variant="ghost"
         >
-          <TableCellsMergeIcon className="text-muted-foreground" size={16} />
+          <TableCellsMergeIcon className="text-muted-foreground" size={16}  data-icon="inline-start"/>
         </Button>
       </TooltipTrigger>
       <TooltipContent>
@@ -1711,12 +1727,13 @@ export const EditorTableSplitCell = () => {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
+          aria-label="Split cell"
           className="flex items-center gap-2 rounded-full"
           onClick={handleClick}
           size="icon"
           variant="ghost"
         >
-          <TableColumnsSplitIcon className="text-muted-foreground" size={16} />
+          <TableColumnsSplitIcon className="text-muted-foreground" size={16}  data-icon="inline-start"/>
         </Button>
       </TooltipTrigger>
       <TooltipContent>
@@ -1743,12 +1760,13 @@ export const EditorTableFix = () => {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
+          aria-label="Fix table"
           className="flex items-center gap-2 rounded-full"
           onClick={handleClick}
           size="icon"
           variant="ghost"
         >
-          <BoltIcon className="text-muted-foreground" size={16} />
+          <BoltIcon className="text-muted-foreground" size={16}  data-icon="inline-start"/>
         </Button>
       </TooltipTrigger>
       <TooltipContent>

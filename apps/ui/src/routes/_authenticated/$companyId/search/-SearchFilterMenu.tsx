@@ -135,7 +135,7 @@ export function SearchFilterMenu(props: SearchFilterMenuProps) {
             {selected.length}
           </Badge>
         ) : (
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden  data-icon="inline-start"/>
         )}
       </ComboboxTrigger>
       <ComboboxContent popoverOptions={{ align, className: cn("!w-64 p-0", contentClassName) }}>
@@ -191,11 +191,12 @@ export function SearchFilterMenu(props: SearchFilterMenuProps) {
                       checked={isSelected}
                       tabIndex={-1}
                       aria-hidden="true"
+                      aria-label={option.label}
                       className="pointer-events-none"
                     />
                   ) : (
                     <span className="flex h-4 w-4 items-center justify-center">
-                      {isSelected ? <Check className="h-3.5 w-3.5 text-primary" /> : null}
+                      {isSelected ? <Check className="h-3.5 w-3.5 text-primary"  data-icon="inline-start"/> : null}
                     </span>
                   )}
                   {option.icon ? (

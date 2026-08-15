@@ -44,7 +44,7 @@ export function ProjectDetailScreen(props: ProjectDetailProps) {
   if (model.state === "error")
     return (
       <Alert variant="destructive">
-        <AlertTriangle />
+        <AlertTriangle  data-icon="inline-start"/>
         <AlertTitle>Could not load project</AlertTitle>
         <AlertDescription>{model.message}</AlertDescription>
       </Alert>
@@ -113,7 +113,7 @@ function ProjectDetailView({
               aria-label="Dismiss project membership notice"
               onClick={() => setDismissedLeftProjectIds((current) => new Set(current).add(project.id))}
             >
-              <X />
+              <X  data-icon="inline-start"/>
             </Button>
           </AlertDescription>
         </Alert>
@@ -156,7 +156,7 @@ function ProjectDetailView({
               })
             }
           >
-            {projectStarPending ? <Spinner /> : <Star />}
+            {projectStarPending ? <Spinner /> : <Star  data-icon="inline-start"/>}
           </Toggle>
         </div>
       </div>

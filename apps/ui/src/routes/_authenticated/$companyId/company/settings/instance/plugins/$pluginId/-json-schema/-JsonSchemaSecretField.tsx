@@ -90,7 +90,7 @@ export const SecretField = React.memo(
         disabled={disabled}
         aria-label={isVisible ? "Hide secret" : "Show secret"}
       >
-        {isVisible ? <EyeOff /> : <Eye />}
+        {isVisible ? <EyeOff  data-icon="inline-start"/> : <Eye  data-icon="inline-start"/>}
       </InputGroupButton>
     );
 

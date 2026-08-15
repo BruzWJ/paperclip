@@ -104,7 +104,7 @@ export function RunsSection() {
         <Empty className="border-0">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Play />
+              <Play  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>No runs yet</EmptyTitle>
             <EmptyDescription>
@@ -175,7 +175,7 @@ export function RunsSection() {
                       aria-label={`Remove ${filter.label}: ${filter.value} filter`}
                       onClick={() => removeFilter(filter.key)}
                     >
-                      <X />
+                      <X  data-icon="inline-start"/>
                     </Button>
                   </Badge>
                 ))}
@@ -190,7 +190,7 @@ export function RunsSection() {
             <Empty className="border-0">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <SlidersHorizontal />
+                  <SlidersHorizontal  data-icon="inline-start"/>
                 </EmptyMedia>
                 <EmptyTitle>No matching runs</EmptyTitle>
                 <EmptyDescription>No runs match these filters.</EmptyDescription>
@@ -281,7 +281,7 @@ export function ActivitySection() {
       <Empty className="border-0">
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <ActivityIcon />
+            <ActivityIcon  data-icon="inline-start"/>
           </EmptyMedia>
           <EmptyTitle>No activity yet</EmptyTitle>
           <EmptyDescription>Routine changes and runs will appear here.</EmptyDescription>

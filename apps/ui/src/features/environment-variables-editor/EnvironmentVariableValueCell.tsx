@@ -92,6 +92,7 @@ export function EnvironmentVariableValueCell({
   onSubmitSecretPopover,
   onUndo,
 }: EnvironmentVariableValueCellProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   return (
     <div className="col-span-2 col-start-1 row-start-2 min-w-0 @[40rem]/env:col-span-1 @[40rem]/env:col-start-2 @[40rem]/env:row-start-1">
       <Popover
@@ -117,13 +118,13 @@ export function EnvironmentVariableValueCell({
                     <DropdownMenuTrigger asChild disabled={disabled || isPending}>
                       <InputGroupButton size="sm" aria-label="Value source">
                         {row.source === "text" ? (
-                          <TypeIcon />
+                          <TypeIcon  data-icon="inline-start"/>
                         ) : row.source === "secret" ? (
-                          <KeyRound />
+                          <KeyRound  data-icon="inline-start"/>
                         ) : (
-                          <UserRound />
+                          <UserRound  data-icon="inline-start"/>
                         )}
-                        <ChevronDown />
+                        <ChevronDown  data-icon="inline-start"/>
                       </InputGroupButton>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
@@ -187,7 +188,7 @@ export function EnvironmentVariableValueCell({
                       disabled={disabled || isPending}
                       title="This value looks sensitive — store it as a secret"
                     >
-                      <ShieldAlert />
+                      <ShieldAlert  data-icon="inline-start"/>
                       <span className="hidden @[30rem]/env:inline">Store as secret</span>
                     </InputGroupButton>
                     <InputGroupButton
@@ -197,7 +198,7 @@ export function EnvironmentVariableValueCell({
                       aria-label="Dismiss sensitive-value suggestion"
                       title="Dismiss — keep this value as plain text"
                     >
-                      <X />
+                      <X  data-icon="inline-start"/>
                     </InputGroupButton>
                   </InputGroupAddon>
                 ) : null}

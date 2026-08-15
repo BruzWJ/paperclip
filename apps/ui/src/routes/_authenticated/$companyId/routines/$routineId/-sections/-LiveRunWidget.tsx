@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -77,7 +78,7 @@ export function LiveRunWidget({ taskId, companyId }: TaskScope) {
                           }}
                         >
                           Open run
-                          <ExternalLink />
+                          <ExternalLink data-icon="inline-end" />
                         </Link>
                       </Button>
                     </ItemFooter>

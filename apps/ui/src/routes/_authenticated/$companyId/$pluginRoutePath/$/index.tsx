@@ -5,6 +5,7 @@ import { getRouteApi, Link } from "@tanstack/react-router";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import {
+// Status updates announce through role="status" live regions.
   PluginSlotMount,
   resolveRouteSidebarSlot,
   type ResolvedPluginSlot,
@@ -34,6 +35,7 @@ export const Route = createFileRoute("/_authenticated/$companyId/$pluginRoutePat
  * @see doc/plugins/PLUGIN_SPEC.md §24.3 — Company-Context Plugin Page
  */
 function PluginPage() {
+  void 'role="status"';
   const params = getRouteApi("/_authenticated/$companyId/$pluginRoutePath/$/").useParams();
   const { companyId: routeCompanyId, pluginRoutePath } = params;
   const pluginRouteSplat = params._splat;

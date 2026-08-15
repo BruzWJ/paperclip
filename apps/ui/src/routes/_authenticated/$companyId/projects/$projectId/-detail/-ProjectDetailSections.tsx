@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { agentsApi } from "@/api/agents";
 import { projectsApi } from "@/api/projects";
 import { tasksApi } from "@/api/tasks";
@@ -135,7 +136,7 @@ export function ProjectTilePicker({
               <ComboboxItem key={name} value={name} onSelect={() => onSelectIcon(name)}>
                 <Icon />
                 <span className="flex-1 capitalize">{name}</span>
-                {(icon ?? DEFAULT_PROJECT_ICON) === name ? <Check /> : null}
+                {(icon ?? DEFAULT_PROJECT_ICON) === name ? <Check  data-icon="inline-start"/> : null}
               </ComboboxItem>
             ))}
           </ComboboxGroup>

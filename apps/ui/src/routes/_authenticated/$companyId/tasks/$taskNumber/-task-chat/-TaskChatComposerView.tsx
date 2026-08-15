@@ -98,6 +98,7 @@ function mentionLabel(mention: MentionOption) {
 }
 
 export function TaskChatComposerView(props: ReturnType<typeof useTaskChatComposerController>) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const {
     attachmentError,
     body,
@@ -162,7 +163,7 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
                 data-testid="task-chat-reply-target"
                 aria-label={`Replying to ${replyTarget.authorLabel}`}
               >
-                <ReplyIcon className="size-4 shrink-0" aria-hidden="true" />
+                <ReplyIcon className="size-4 shrink-0" aria-hidden="true"  data-icon="inline-start"/>
                 <span className="truncate">
                   {replyTarget.authorLabel} · {replyTarget.preview}
                 </span>
@@ -173,7 +174,7 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
                   disabled={isSubmitting}
                   onClick={onClearReply}
                 >
-                  <XIcon className="size-4" />
+                  <XIcon className="size-4"  data-icon="inline-start"/>
                 </PromptInputButton>
               </div>
             ) : null}
@@ -197,7 +198,7 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
             {canAcceptFiles || mentions.length > 0 ? (
               <PromptInputActionMenu open={mentionMenuOpen} onOpenChange={setMentionMenuOpen}>
                 <PromptInputActionMenuTrigger tooltip="Add context">
-                  <PaperclipIcon className="size-4" />
+                  <PaperclipIcon className="size-4"  data-icon="inline-start"/>
                 </PromptInputActionMenuTrigger>
                 <PromptInputActionMenuContent>
                   {canAcceptFiles ? <PromptInputActionAddAttachments label="Attach files" /> : null}

@@ -68,6 +68,7 @@ export const ConversationScrollButton = ({ className, ...props }: ConversationSc
   return (
     !isAtBottom && (
       <Button
+        aria-label="Scroll to bottom"
         className={cn(
           "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full dark:bg-background dark:hover:bg-muted",
           className,
@@ -78,7 +79,7 @@ export const ConversationScrollButton = ({ className, ...props }: ConversationSc
         variant="outline"
         {...props}
       >
-        <ArrowDownIcon className="size-4" />
+        <ArrowDownIcon className="size-4"  data-icon="inline-start"/>
       </Button>
     )
   );
@@ -136,7 +137,7 @@ export const ConversationDownload = ({
       variant="outline"
       {...props}
     >
-      {children ?? <DownloadIcon className="size-4" />}
+      {children ?? <DownloadIcon className="size-4"  data-icon="inline-start"/>}
     </Button>
   );
 };

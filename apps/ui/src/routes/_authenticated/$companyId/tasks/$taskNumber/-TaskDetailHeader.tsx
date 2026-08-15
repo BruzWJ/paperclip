@@ -89,42 +89,42 @@ function TaskControlMenu({
           aria-label="More task actions"
           title="More task actions"
         >
-          <MoreHorizontal />
+          <MoreHorizontal  data-icon="inline-start"/>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end">
         <DropdownMenuLabel>Work controls</DropdownMenuLabel>
         {canPauseLeafWork ? (
           <DropdownMenuItem onSelect={() => onAction("pause")}>
-            <PauseCircle />
+            <PauseCircle  data-icon="inline-end"/>
             Pause work...
           </DropdownMenuItem>
         ) : null}
         {canResumeLeafWork ? (
           <DropdownMenuItem onSelect={() => onAction("resume")}>
-            <PlayCircle />
+            <PlayCircle  data-icon="inline-end"/>
             Resume work
           </DropdownMenuItem>
         ) : null}
         {canShowSubtreeControls ? (
           <>
             <DropdownMenuItem onSelect={() => onAction("pause")}>
-              <PauseCircle />
+              <PauseCircle  data-icon="inline-end"/>
               Pause subtree...
             </DropdownMenuItem>
             {canResumeSubtree ? (
               <DropdownMenuItem onSelect={() => onAction("resume")}>
-                <PlayCircle />
+                <PlayCircle  data-icon="inline-end"/>
                 Resume subtree
               </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem variant="destructive" onSelect={() => onAction("cancel")}>
-              <XCircle />
+              <XCircle  data-icon="inline-end"/>
               Cancel subtree...
             </DropdownMenuItem>
             {canRestoreSubtree ? (
               <DropdownMenuItem onSelect={() => onAction("restore")}>
-                <Repeat />
+                <Repeat  data-icon="inline-end"/>
                 Restore subtree...
               </DropdownMenuItem>
             ) : null}
@@ -201,7 +201,7 @@ export function TaskDetailHeader() {
                 }}
                 disabled={archivePending}
               >
-                <Archive />
+                <Archive  data-icon="inline-start"/>
               </HeaderIconAction>
             ) : null}
 
@@ -212,7 +212,7 @@ export function TaskDetailHeader() {
                   label={copied ? "Task copied" : "Copy task as markdown"}
                   onClick={copyTaskToClipboard}
                 >
-                  {copied ? <Check /> : <Copy />}
+                  {copied ? <Check  data-icon="inline-start"/> : <Copy  data-icon="inline-start"/>}
                 </HeaderIconAction>
                 {(isMobile || !panelVisible) && (
                   <HeaderIconAction
@@ -223,7 +223,7 @@ export function TaskDetailHeader() {
                       else setPanelVisible(true);
                     }}
                   >
-                    <SlidersHorizontal />
+                    <SlidersHorizontal  data-icon="inline-start"/>
                   </HeaderIconAction>
                 )}
               </>
@@ -261,7 +261,7 @@ export function TaskDetailHeader() {
                   params={{ companyId, routineId: task.originId }}
                   title={`Routine execution from routine ${task.originId}`}
                 >
-                  <Repeat /> Routine
+                  <Repeat  data-icon="inline-start"/> Routine
                 </Link>
               </Badge>
             ) : null}

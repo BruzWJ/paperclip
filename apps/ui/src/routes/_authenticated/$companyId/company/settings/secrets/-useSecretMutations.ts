@@ -65,6 +65,7 @@ export function useSecretMutations({
   invalidateAll,
   state,
 }: UseSecretMutationsOptions) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const { providerConfigs, providerHealthQuery, providers, selectedSecret } = data;
   const {
     createForm,

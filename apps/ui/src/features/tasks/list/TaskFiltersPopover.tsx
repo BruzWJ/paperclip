@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -98,12 +99,13 @@ export function TaskFiltersPopover({
           size={iconOnly ? "icon-sm" : "sm"}
           title={iconOnly ? "Filter" : undefined}
         >
-          <Filter />
+          <Filter  data-icon="inline-start"/>
           {!iconOnly ? "Filter" : null}
           {activeFilterCount > 0 ? <Badge variant="secondary">{activeFilterCount}</Badge> : null}
           {!iconOnly && activeFilterCount > 0 ? (
             <X
               aria-label="Clear filters"
+              data-icon="inline-start"
               onClick={(event) => {
                 event.stopPropagation();
                 onChange(defaultTaskFilterState);
@@ -251,7 +253,7 @@ export function TaskFiltersPopover({
                         htmlFor={`${filterControlId}-owner-user-${user.id}`}
                         className="min-w-0 gap-2"
                       >
-                        <User className="h-3.5 w-3.5 text-muted-foreground" />
+                        <User className="h-3.5 w-3.5 text-muted-foreground"  data-icon="inline-start"/>
                         {user.id === currentUserId ? "Me" : user.name}
                       </FieldLabel>
                     </Field>
@@ -292,9 +294,9 @@ export function TaskFiltersPopover({
                       {selectedCreatorOptions.map((creator) => (
                         <Badge key={creator.id} variant="secondary" className="gap-1 pr-1">
                           {creator.kind === "agent" ? (
-                            <Bot className="h-3 w-3" />
+                            <Bot className="h-3 w-3"  data-icon="inline-start"/>
                           ) : (
-                            <User className="h-3 w-3" />
+                            <User className="h-3 w-3"  data-icon="inline-start"/>
                           )}
                           <span>{creator.label}</span>
                           <Button
@@ -308,7 +310,7 @@ export function TaskFiltersPopover({
                             }
                             aria-label={`Remove creator ${creator.label}`}
                           >
-                            <X />
+                            <X  data-icon="inline-start"/>
                           </Button>
                         </Badge>
                       ))}
@@ -344,12 +346,12 @@ export function TaskFiltersPopover({
                                 }
                               >
                                 {creator.kind === "agent" ? (
-                                  <Bot className="h-3.5 w-3.5" />
+                                  <Bot className="h-3.5 w-3.5"  data-icon="inline-start"/>
                                 ) : (
-                                  <User className="h-3.5 w-3.5" />
+                                  <User className="h-3.5 w-3.5"  data-icon="inline-start"/>
                                 )}
                                 <span className="min-w-0 flex-1 truncate">{creator.label}</span>
-                                {selected ? <Check /> : null}
+                                {selected ? <Check  data-icon="inline-start"/> : null}
                               </ComboboxItem>
                             );
                           })}

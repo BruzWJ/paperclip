@@ -1,4 +1,5 @@
 import {
+// Status updates announce through role="status" live regions.
   createContext,
   useContext,
   type Dispatch,

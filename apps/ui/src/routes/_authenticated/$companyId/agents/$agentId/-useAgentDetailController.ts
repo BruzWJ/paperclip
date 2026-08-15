@@ -30,6 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 const ZERO_AMOUNT = parseMoneyAmount("0");
 
 export function formatOrgChainHealthPath(agent: AgentDetailRecord) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   return (
     agent.orgChainHealth?.fullChain
       .map((entry) => `${entry.name}${entry.status !== "idle" ? ` (${entry.status})` : ""}`)
@@ -38,6 +39,7 @@ export function formatOrgChainHealthPath(agent: AgentDetailRecord) {
 }
 
 export function useAgentDetailController({
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   companyId,
   agentId,
   urlTab,

@@ -68,6 +68,7 @@ export function ImportFromVaultDialog({
   onImportComplete,
   onManageVaults,
 }: ImportFromVaultDialogProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
   const awsVaults = useMemo(() => awsVaultOptions(providerConfigs), [providerConfigs]);
   const eligible = useMemo(() => eligibleVaults(providerConfigs), [providerConfigs]);
@@ -309,7 +310,7 @@ export function ImportFromVaultDialog({
               onClick={() => handleClose()}
               aria-label="Close import dialog"
             >
-              <X />
+              <X  data-icon="inline-start"/>
             </Button>
           </DialogHeader>
 

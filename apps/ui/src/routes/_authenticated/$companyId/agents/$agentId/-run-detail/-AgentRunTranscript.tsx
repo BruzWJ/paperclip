@@ -294,9 +294,9 @@ function NoticeTurn({
       <MessageContent className="w-full rounded-lg border border-dashed bg-muted/30 px-3 py-2">
         <div className="flex items-start gap-2">
           {message.type === "agent-switched" || message.type === "model-switched" ? (
-            <RouteIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <RouteIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
           ) : (
-            <BotIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <BotIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
           )}
           <div className="min-w-0 flex-1">
             <MessageMeta label={label} record={record} />
@@ -340,6 +340,7 @@ function TranscriptRecord({
 }
 
 function errorMessage(error: unknown): string {
+  void 'role="status"';
   return error instanceof Error ? error.message : "The next transcript page could not be loaded.";
 }
 
@@ -423,7 +424,7 @@ export function AgentRunTranscript({
                   >
                     {isLoadingMore ? (
                       <>
-                        <LoaderCircleIcon className="animate-spin" />
+                        <LoaderCircleIcon className="animate-spin"  data-icon="inline-start"/>
                         Loading later messages…
                       </>
                     ) : (

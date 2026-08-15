@@ -137,7 +137,7 @@ function Timeline() {
 
   const header = (
     <div className="flex items-center gap-2">
-      <GanttChartSquare className="h-6 w-6 text-muted-foreground" />
+      <GanttChartSquare className="h-6 w-6 text-muted-foreground"  data-icon="inline-start"/>
       <h1 className="text-3xl font-semibold tracking-tight">Work Timeline</h1>
     </div>
   );
@@ -248,7 +248,7 @@ function Timeline() {
           aria-label="Zoom out"
           title="Zoom out"
         >
-          <Minus className="h-3 w-3" />
+          <Minus className="h-3 w-3"  data-icon="inline-start"/>
         </Button>
         <Button
           type="button"
@@ -258,7 +258,7 @@ function Timeline() {
           aria-label="Zoom in"
           title="Zoom in"
         >
-          <Plus className="h-3 w-3" />
+          <Plus className="h-3 w-3"  data-icon="inline-start"/>
         </Button>
         <Button
           type="button"
@@ -268,7 +268,7 @@ function Timeline() {
           aria-label="Reset zoom"
           title="Reset zoom"
         >
-          <RotateCcw className="h-3 w-3" />
+          <RotateCcw className="h-3 w-3"  data-icon="inline-start"/>
         </Button>
       </div>
     </div>
@@ -286,7 +286,7 @@ function Timeline() {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <GanttChartSquare />
+                <GanttChartSquare  data-icon="inline-start"/>
               </EmptyMedia>
               <EmptyTitle>{dateRangeError}</EmptyTitle>
             </EmptyHeader>
@@ -299,7 +299,7 @@ function Timeline() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <GanttChartSquare />
+              <GanttChartSquare  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>
               Couldn&apos;t load the timeline. The aggregation endpoint may be unavailable.
@@ -316,7 +316,7 @@ function Timeline() {
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <GanttChartSquare />
+                  <GanttChartSquare  data-icon="inline-start"/>
                 </EmptyMedia>
                 <EmptyTitle>No activity in this window.</EmptyTitle>
               </EmptyHeader>

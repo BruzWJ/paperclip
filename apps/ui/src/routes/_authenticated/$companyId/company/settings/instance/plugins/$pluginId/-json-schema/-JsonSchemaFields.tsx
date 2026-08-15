@@ -65,7 +65,7 @@ export const ArrayField = React.memo(
               onChange([...items, newItem]);
             }}
           >
-            <Plus className="mr-2 h-4 w-4" />
+            <Plus className="mr-2 h-4 w-4"  data-icon="inline-start"/>
             {isComplex ? "Add item" : "Add"}
           </Button>
         </div>
@@ -104,7 +104,7 @@ export const ArrayField = React.memo(
                   onChange(newItems);
                 }}
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-4 w-4"  data-icon="inline-start"/>
                 <span className="sr-only">Remove item</span>
               </Button>
             </Card>
@@ -157,9 +157,9 @@ export const ObjectField = React.memo(
                 {propSchema.description && <FieldDescription>{propSchema.description}</FieldDescription>}
               </FieldContent>
               {isCollapsed ? (
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <ChevronRight className="h-4 w-4 text-muted-foreground"  data-icon="inline-start"/>
               ) : (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                <ChevronDown className="h-4 w-4 text-muted-foreground"  data-icon="inline-start"/>
               )}
             </Button>
           </CollapsibleTrigger>

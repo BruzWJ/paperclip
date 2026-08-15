@@ -63,7 +63,7 @@ export function RoutineActivityRow({ event }: { event: RoutineActivityEvent }) {
                 {summarizeDetails(event.details)}
               </ItemUI.ItemDescription>
             </ItemUI.ItemContent>
-            {hasPayload ? <ChevronRight className="size-3.5 group-data-[state=open]:rotate-90" /> : null}
+            {hasPayload ? <ChevronRight className="size-3.5 group-data-[state=open]:rotate-90"  data-icon="inline-start"/> : null}
           </Button>
         </ItemUI.Item>
       </Collapse.CollapsibleTrigger>

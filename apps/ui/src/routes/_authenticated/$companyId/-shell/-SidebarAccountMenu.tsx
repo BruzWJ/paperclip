@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, LogOut, Megaphone, UserRound, UserRoundPen } from "lucide-react";
@@ -27,6 +28,7 @@ function deriveInitials(name: string) {
 }
 
 export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: ControlledOpenStateProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const [internalOpen, setInternalOpen] = useState(false);
   const queryClient = useQueryClient();
   const companyId = useCompanyRouteId();
@@ -118,7 +120,7 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
                     onClick={closeNavigationChrome}
                   >
                     <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
-                      <UserRound className="size-4" />
+                      <UserRound className="size-4"  data-icon="inline-start"/>
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium text-foreground">View profile</span>
@@ -140,7 +142,7 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
                   onClick={closeNavigationChrome}
                 >
                   <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
-                    <UserRoundPen className="size-4" />
+                    <UserRoundPen className="size-4"  data-icon="inline-start"/>
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium text-foreground">Edit profile</span>
@@ -157,7 +159,7 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
               >
                 <a href={DOCS_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
                   <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
-                    <BookOpen className="size-4" />
+                    <BookOpen className="size-4"  data-icon="inline-start"/>
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium text-foreground">Documentation</span>
@@ -174,7 +176,7 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
               >
                 <a href={FEEDBACK_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
                   <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
-                    <Megaphone className="size-4" />
+                    <Megaphone className="size-4"  data-icon="inline-start"/>
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium text-foreground">Feedback</span>
@@ -200,7 +202,7 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
                 aria-busy={signOutMutation.isPending}
               >
                 <span className="mt-0.5 rounded-lg border border-border bg-background/70 p-2 text-muted-foreground">
-                  <LogOut className="size-4" />
+                  <LogOut className="size-4"  data-icon="inline-start"/>
                 </span>
                 <span className="min-w-0 flex-1">
                   <span aria-live="polite" className="block text-sm font-medium text-foreground">

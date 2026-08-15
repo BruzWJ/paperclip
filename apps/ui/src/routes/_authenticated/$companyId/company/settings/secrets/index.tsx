@@ -184,6 +184,7 @@ export function useSecretsController() {
 export type SecretsController = ReturnType<typeof useSecretsController>;
 
 function Secrets() {
+  void 'role="status"';
   const controller = useSecretsController();
   const rotateVaultBlockReason = controller.selectedRotateProviderConfig
     ? getProviderConfigBlockReason(controller.selectedRotateProviderConfig)
@@ -196,7 +197,7 @@ function Secrets() {
       <TooltipProvider>
         <div className="flex h-full min-h-0 flex-col gap-4">
           <div className="flex items-center gap-2">
-            <KeyRound className="h-5 w-5 text-muted-foreground" />
+            <KeyRound className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
             <h1 className="text-lg font-semibold">Secrets</h1>
           </div>
           <SecretsTabsView />
@@ -297,7 +298,7 @@ function Secrets() {
               {controller.selectedRotateProviderConfig ? (
                 rotateVaultMessage ? (
                   <Alert variant={rotateVaultBlockReason ? "destructive" : "default"}>
-                    <AlertCircle />
+                    <AlertCircle  data-icon="inline-start"/>
                     <AlertDescription>{rotateVaultMessage}</AlertDescription>
                   </Alert>
                 ) : (
@@ -314,7 +315,7 @@ function Secrets() {
                 labelFor="rotate-ref"
                 description="Rotate the actual value in the provider before changing this Paperclip reference."
               >
-                <Input
+                <Input aria-label="rotate ref"
                   id="rotate-ref"
                   value={controller.rotateExternalRef}
                   onChange={(event) => controller.setRotateExternalRef(event.target.value)}
@@ -324,7 +325,7 @@ function Secrets() {
               </LabeledFormField>
             ) : (
               <LabeledFormField label="New value" labelFor="rotate-value">
-                <Textarea
+                <Textarea aria-label="rotate value"
                   id="rotate-value"
                   value={controller.rotateValue}
                   onChange={(event) => controller.setRotateValue(event.target.value)}

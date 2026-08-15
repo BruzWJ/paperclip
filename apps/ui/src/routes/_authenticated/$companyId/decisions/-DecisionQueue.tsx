@@ -96,7 +96,7 @@ export function DecisionQueue({
                             "size-3.5 shrink-0 text-muted-foreground transition-transform",
                             !collapsed && "rotate-90",
                           )}
-                        />
+                         data-icon="inline-start"/>
                         <span className="truncate text-sm font-semibold uppercase tracking-wide">
                           {group.label}
                         </span>
@@ -188,7 +188,7 @@ function HiddenDecisionCurtain({
                   "size-3.5 shrink-0 text-muted-foreground transition-transform",
                   open && "rotate-90",
                 )}
-              />
+               data-icon="inline-start"/>
               <span className="truncate text-sm font-semibold uppercase tracking-wide">
                 {label} ({items.length})
               </span>
@@ -238,11 +238,11 @@ function DecisionZeroState() {
     <Empty className="border py-20">
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <CheckCircle2 />
+          <CheckCircle2  data-icon="inline-start"/>
         </EmptyMedia>
         <EmptyTitle>You're all caught up</EmptyTitle>
         <EmptyDescription className="flex items-center gap-1.5">
-          <Inbox />
+          <Inbox  data-icon="inline-start"/>
           Nothing needs a decision from you right now.
         </EmptyDescription>
       </EmptyHeader>

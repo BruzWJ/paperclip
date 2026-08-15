@@ -33,6 +33,7 @@ interface RoutinesBrowserProps {
 }
 
 export function RoutinesBrowser({ controller }: RoutinesBrowserProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   if (controller.status !== "ready") return null;
   const {
     activeFolder,
@@ -147,7 +148,7 @@ export function RoutinesBrowser({ controller }: RoutinesBrowserProps) {
               <Empty className="border-0">
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
-                    <Repeat />
+                    <Repeat  data-icon="inline-start"/>
                   </EmptyMedia>
                   <EmptyTitle>No routines</EmptyTitle>
                   <EmptyDescription>
@@ -159,7 +160,7 @@ export function RoutinesBrowser({ controller }: RoutinesBrowserProps) {
               <Empty className="border-0">
                 <EmptyHeader>
                   <EmptyMedia variant="icon">
-                    <Repeat />
+                    <Repeat  data-icon="inline-start"/>
                   </EmptyMedia>
                   <EmptyTitle>No routines</EmptyTitle>
                   <EmptyDescription>
@@ -194,7 +195,7 @@ export function RoutinesBrowser({ controller }: RoutinesBrowserProps) {
                       {group.label ? (
                         <CollapsibleTrigger asChild>
                           <Button variant="outline" className={cn("w-full justify-start", isOpen && "mb-1")}>
-                            <ChevronRight className="transition-transform [[data-state=open]_&]:rotate-90" />
+                            <ChevronRight className="transition-transform [[data-state=open]_&]:rotate-90"  data-icon="inline-start"/>
                             {group.label}
                             <Badge variant="secondary">{group.items.length}</Badge>
                           </Button>
@@ -268,7 +269,7 @@ export function RoutinesBrowser({ controller }: RoutinesBrowserProps) {
 function FolderIconHeader({ label, count }: { label: string; count: number }) {
   return (
     <div className="flex min-w-0 items-center gap-2 text-sm">
-      <Repeat className="h-3.5 w-3.5 text-muted-foreground" />
+      <Repeat className="h-3.5 w-3.5 text-muted-foreground"  data-icon="inline-start"/>
       <span className="truncate font-medium">{label}</span>
       <span className="text-muted-foreground">
         {count} routine{count === 1 ? "" : "s"}

@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { Message, MessageContent, MessageResponse, MessageToolbar } from "@/components/ai-elements/message";
 import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
 import {

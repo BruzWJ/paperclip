@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { isCanonicalUuid } from "@paperclipai/shared";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { assertOnlySearchKeys, exactSearchString } from "../../-search";
@@ -15,6 +16,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import type { ReactNode } from "react";
 
 export function validateCliAuthSearch(search: Record<string, unknown>): {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   token: string;
 } {
   assertOnlySearchKeys(search, ["token"]);

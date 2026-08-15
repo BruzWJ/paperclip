@@ -49,7 +49,7 @@ export function RoutineVariablesHint() {
           onClick={() => setOpen(true)}
           aria-label="Show variable help"
         >
-          <HelpCircle />
+          <HelpCircle  data-icon="inline-start"/>
         </Button>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>

@@ -31,6 +31,7 @@ const markdownPad = "px-1";
 const AUTOSAVE_DEBOUNCE_MS = 900;
 
 export function queueContainedBlurCommit(container: HTMLDivElement, onCommit: () => void) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   let frameId = requestAnimationFrame(() => {
     frameId = requestAnimationFrame(() => {
       frameId = 0;

@@ -171,21 +171,21 @@ export function TableColumnHeader<TData, TValue>({
           >
             <span>{title}</span>
             {column.getIsSorted() === "desc" ? (
-              <ArrowDownIcon className="ml-2 h-4 w-4" />
+              <ArrowDownIcon className="ml-2 h-4 w-4"  data-icon="inline-start"/>
             ) : column.getIsSorted() === "asc" ? (
-              <ArrowUpIcon className="ml-2 h-4 w-4" />
+              <ArrowUpIcon className="ml-2 h-4 w-4"  data-icon="inline-start"/>
             ) : (
-              <ChevronsUpDownIcon className="ml-2 h-4 w-4" />
+              <ChevronsUpDownIcon className="ml-2 h-4 w-4"  data-icon="inline-start"/>
             )}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
           <DropdownMenuItem onClick={handleSortAsc}>
-            <ArrowUpIcon className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+            <ArrowUpIcon className="mr-2 h-3.5 w-3.5 text-muted-foreground/70"  data-icon="inline-start"/>
             Asc
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleSortDesc}>
-            <ArrowDownIcon className="mr-2 h-3.5 w-3.5 text-muted-foreground/70" />
+            <ArrowDownIcon className="mr-2 h-3.5 w-3.5 text-muted-foreground/70"  data-icon="inline-start"/>
             Desc
           </DropdownMenuItem>
         </DropdownMenuContent>

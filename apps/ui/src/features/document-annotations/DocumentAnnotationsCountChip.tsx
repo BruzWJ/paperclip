@@ -38,7 +38,7 @@ export function DocumentAnnotationsCountChip({
       }
       aria-expanded={panelOpen}
     >
-      <MessageSquare aria-hidden="true" />
+      <MessageSquare aria-hidden="true"  data-icon="inline-start"/>
       <span className="tabular-nums">{openCount}</span>
       <span className="hidden sm:inline">{openCount === 1 ? "comment" : "comments"}</span>
     </Button>

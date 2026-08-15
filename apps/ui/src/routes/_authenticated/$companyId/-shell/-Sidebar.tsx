@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import {
   Inbox,
   CircleDot,
@@ -87,7 +88,7 @@ export function Sidebar() {
       onClick={() => openNewTask()}
       aria-label={rail ? "New Task" : undefined}
     >
-      <SquarePen className="h-4 w-4 shrink-0" />
+      <SquarePen className="h-4 w-4 shrink-0"  data-icon="inline-start"/>
       <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : "truncate"}>New Task</span>
     </SidebarMenuButton>
   );
@@ -111,8 +112,13 @@ export function Sidebar() {
               aria-label="Open search"
               title="Open search"
             >
-              <Link to="/$companyId/search" params={{ companyId }}>
-                <Search className="h-4 w-4" />
+              <Link
+                to="/$companyId/search"
+                params={{ companyId }}
+                aria-label="Open search"
+                title="Open search"
+              >
+                <Search className="h-4 w-4"  data-icon="inline-start"/>
               </Link>
             </Button>
             {/* Desktop-only collapse/expand affordance. While peeking (hover flyout
@@ -131,7 +137,7 @@ export function Sidebar() {
                   title="Keep sidebar expanded"
                   onClick={() => setCollapsed(false)}
                 >
-                  <Pin className="h-4 w-4" />
+                  <Pin className="h-4 w-4"  data-icon="inline-start"/>
                 </Button>
               ) : (
                 <Button
@@ -143,7 +149,7 @@ export function Sidebar() {
                   title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
                   onClick={() => toggleCollapsed()}
                 >
-                  {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                  {collapsed ? <PanelLeftOpen className="h-4 w-4"  data-icon="inline-start"/> : <PanelLeftClose className="h-4 w-4"  data-icon="inline-start"/>}
                 </Button>
               )
             ) : null}

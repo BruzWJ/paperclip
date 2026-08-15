@@ -72,6 +72,7 @@ export function InviteLandingForm({
   joinButtonLabel: string;
   onAccept: () => void;
 }) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   return (
     <div className="min-h-screen bg-background px-6 py-12 text-foreground">
       <div className="mx-auto max-w-5xl">
@@ -177,7 +178,7 @@ export function InviteLandingForm({
                   >
                     {authMode === "sign_up" ? (
                       <LabeledFormField label="Name" labelFor="invite-name">
-                        <Input
+                        <Input aria-label="invite name"
                           id="invite-name"
                           name="name"
                           value={name}
@@ -195,7 +196,7 @@ export function InviteLandingForm({
                       </LabeledFormField>
                     ) : null}
                     <LabeledFormField label="Email" labelFor="invite-email">
-                      <Input
+                      <Input aria-label="invite email"
                         id="invite-email"
                         name="email"
                         type="email"
@@ -213,7 +214,7 @@ export function InviteLandingForm({
                       />
                     </LabeledFormField>
                     <LabeledFormField label="Password" labelFor="invite-password">
-                      <Input
+                      <Input aria-label="invite password"
                         id="invite-password"
                         name="password"
                         type="password"

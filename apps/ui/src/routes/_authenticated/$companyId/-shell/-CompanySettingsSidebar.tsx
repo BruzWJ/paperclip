@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useQuery } from "@tanstack/react-query";
 import {
   ChevronLeft,
@@ -78,14 +79,14 @@ export function CompanySettingsSidebar() {
                 }}
                 className="text-muted-foreground"
               >
-                <ChevronLeft />
+                <ChevronLeft  data-icon="inline-start"/>
                 <span>{selectedCompany?.name ?? "Company"}</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
         <div className="flex items-center gap-2 px-2 py-1">
-          <Settings className="h-4 w-4 text-muted-foreground shrink-0" />
+          <Settings className="h-4 w-4 text-muted-foreground shrink-0"  data-icon="inline-start"/>
           <span className="flex-1 truncate text-sm font-bold text-foreground">Company Settings</span>
         </div>
       </SidebarHeader>

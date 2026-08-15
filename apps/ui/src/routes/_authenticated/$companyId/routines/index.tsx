@@ -216,10 +216,10 @@ export function RoutinesHeaderTabs({ controller }: RoutinesHeaderTabsProps) {
           {routineViewState.groupBy === "folder" ? (
             <div className="md:hidden">
               <Button variant="outline" size="sm" onClick={() => setMobileFoldersOpen(true)}>
-                {folderSelection === "all" ? <FolderIcon /> : <FolderSwatch color={selectedFolder?.color} />}
+                {folderSelection === "all" ? <FolderIcon  data-icon="inline-start"/> : <FolderSwatch color={selectedFolder?.color} />}
                 <span className="truncate">{selectedFolderLabel}</span>
                 <span className="text-xs text-muted-foreground">{selectedFolderCount}</span>
-                <ChevronDown />
+                <ChevronDown  data-icon="inline-end"/>
               </Button>
             </div>
           ) : null}

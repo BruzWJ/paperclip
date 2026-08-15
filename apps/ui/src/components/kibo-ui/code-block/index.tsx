@@ -375,7 +375,11 @@ export const CodeBlockFiles = ({
       className={cn("flex grow flex-row items-center gap-2", className)}
       {...props}
     >
-      {data.map(children)}
+      {data.length === 0 ? (
+        <p className="px-2 text-sm text-muted-foreground">No files</p>
+      ) : (
+        data.map(children)
+      )}
     </div>
   );
 };
@@ -431,6 +435,7 @@ export const CodeBlockSelectTrigger = ({
   ...props
 }: CodeBlockSelectTriggerProps) => (
   <SelectTrigger
+    aria-label="Code file"
     className={cn(
       "w-fit border-none text-muted-foreground text-xs shadow-none",
       className

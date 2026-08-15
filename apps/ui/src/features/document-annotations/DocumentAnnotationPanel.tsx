@@ -54,6 +54,7 @@ export interface AnnotationPanelProps {
 }
 
 export function DocumentAnnotationPanel(props: AnnotationPanelProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   if (props.isMobile) {
     return (
       <Sheet open={props.open} onOpenChange={props.onOpenChange}>
@@ -346,7 +347,7 @@ export function AnnotationPanelBody(props: AnnotationPanelProps) {
             }}
             aria-label="Close annotation panel"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4"  data-icon="inline-start"/>
           </Button>
         </ItemActions>
       </Item>

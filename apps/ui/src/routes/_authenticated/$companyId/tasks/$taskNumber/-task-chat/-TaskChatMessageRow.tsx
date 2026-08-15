@@ -194,7 +194,7 @@ function QueuedMessage({
                       disabled={isInterrupting}
                       onClick={() => void onInterruptQueued(runId)}
                     >
-                      <SquareIcon className="size-4" />
+                      <SquareIcon className="size-4"  data-icon="inline-end"/>
                     </QueueItemAction>
                   ) : null}
                   {commentId && onCancelQueued ? (
@@ -203,7 +203,7 @@ function QueuedMessage({
                       title="Cancel queued message"
                       onClick={() => onCancelQueued(commentId)}
                     >
-                      <MessageSquareXIcon className="size-4" />
+                      <MessageSquareXIcon className="size-4"  data-icon="inline-end"/>
                     </QueueItemAction>
                   ) : null}
                 </QueueItemActions>

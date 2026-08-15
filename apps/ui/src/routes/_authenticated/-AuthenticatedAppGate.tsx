@@ -15,6 +15,7 @@ import { BOOTSTRAP_ADMIN_COMMAND } from "@/bootstrapSetup";
 import { ShieldCheck, Terminal, TriangleAlert } from "lucide-react";
 
 export function AuthenticatedAppGate() {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const location = useRouterState({
     select: (state) => state.resolvedLocation ?? state.location,
   });
@@ -141,7 +142,7 @@ export function AuthenticatedAppGate() {
             {claimMutation.isSuccess ? (
               <>
                 <Alert>
-                  <ShieldCheck aria-hidden />
+                  <ShieldCheck aria-hidden  data-icon="inline-start"/>
                   <AlertTitle>You&apos;re the instance admin</AlertTitle>
                   <AlertDescription>
                     Setup is complete. Taking you to onboarding to create your first company...
@@ -199,7 +200,7 @@ export function AuthenticatedAppGate() {
                     </p>
                     {claimError ? (
                       <Alert variant="destructive" className="mt-4">
-                        <TriangleAlert aria-hidden />
+                        <TriangleAlert aria-hidden  data-icon="inline-start"/>
                         <AlertTitle>{errorCopy.title}</AlertTitle>
                         {errorCopy.body ? <AlertDescription>{errorCopy.body}</AlertDescription> : null}
                       </Alert>
@@ -208,7 +209,7 @@ export function AuthenticatedAppGate() {
                 ) : null}
                 <div className="mt-6 border-t border-border pt-5">
                   <div className="flex items-center gap-2 text-sm font-medium">
-                    <Terminal className="size-4" aria-hidden />
+                    <Terminal className="size-4" aria-hidden  data-icon="inline-start"/>
                     <span>Prefer to finish setup from the host?</span>
                   </div>
                   <p className="mt-2 text-sm text-muted-foreground">

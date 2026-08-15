@@ -85,7 +85,7 @@ export function VariablesSection() {
             and instructions.
           </p>
           <Button variant="secondary" size="sm" onClick={() => navigateToSection("overview")}>
-            <Edit3 />
+            <Edit3  data-icon="inline-start"/>
             Edit instructions
           </Button>
         </AlertDescription>
@@ -101,7 +101,7 @@ export function VariablesSection() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Braces />
+              <Braces  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>No variables yet</EmptyTitle>
             <EmptyDescription>

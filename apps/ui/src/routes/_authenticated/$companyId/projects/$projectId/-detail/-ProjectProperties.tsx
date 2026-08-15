@@ -200,7 +200,7 @@ export function ProjectProperties({
                         onClick={() => removeGoal(goal.id)}
                         aria-label={`Remove goal ${goal.title}`}
                       >
-                        <X className="h-3 w-3" />
+                        <X className="h-3 w-3"  data-icon="inline-start"/>
                       </Button>
                     )}
                   </Badge>
@@ -370,7 +370,7 @@ export function ProjectProperties({
                   triggerAsChild
                   trigger={
                     <Button size="sm" variant="destructive" disabled={archivePending}>
-                      {archivePending ? <Spinner /> : project.archivedAt ? <ArchiveRestore /> : <Archive />}
+                      {archivePending ? <Spinner /> : project.archivedAt ? <ArchiveRestore  data-icon="inline-start"/> : <Archive  data-icon="inline-start"/>}
                       {project.archivedAt ? "Unarchive project" : "Archive project"}
                     </Button>
                   }

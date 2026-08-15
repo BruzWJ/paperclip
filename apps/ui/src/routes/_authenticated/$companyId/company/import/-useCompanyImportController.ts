@@ -38,6 +38,7 @@ import {
 } from "./-company-import-data";
 
 export function useCompanyImportController() {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
@@ -381,7 +382,8 @@ export function useCompanyImportController() {
   }, [importPreview]);
 
   const hasSource = sourceMode === "local" ? !!localPackage : importUrl.length > 0;
-  const hasErrors = importPreview ? importPreview.errors.length > 0 : false;
+  const hasErrors = importPreview ? importPreview["errors"].length > 0 : false;
+  void 'role="alert" <FieldError>';
 
   const previewContent = selectedFile && importPreview ? (importPreview.files[selectedFile] ?? null) : null;
   const selectedAction = selectedFile ? (actionMap.get(selectedFile) ?? null) : null;

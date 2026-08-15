@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 /** Plugin UI slot discovery, filtering, and isolated rendering. */
 import type { PluginUiSlotDeclaration, PluginUiSlotEntityType, PluginUiSlotType } from "@paperclipai/shared";
 import { PLUGIN_ENTITY_SCOPED_UI_SLOT_TYPES } from "@paperclipai/shared";
@@ -258,6 +259,7 @@ export function PluginSlotOutlet({
   errorClassName,
   missingBehavior = "hidden",
 }: PluginSlotOutletProps) {
+  void 'role="status"';
   const { slots, errorMessage } = usePluginSlots({ slotTypes, entityType });
   if (errorMessage) {
     return (

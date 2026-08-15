@@ -117,6 +117,8 @@ export function RoutineTriggerCard({
               <LabeledFormField label="Label" labelFor={`routine-trigger-${trigger.id}-label`}>
                 <Input
                   id={`routine-trigger-${trigger.id}-label`}
+                  aria-label="Trigger label"
+                  required={true}
                   value={draft.label}
                   onChange={(event) =>
                     setDraft((current) => ({
@@ -149,7 +151,12 @@ export function RoutineTriggerCard({
             </FieldGroup>
           </CardContent>
 
-          <CardFooter className="gap-2">
+          <CardFooter className="flex-wrap gap-2">
+            {trigger.kind === "schedule" && !scheduleIsValid ? (
+              <p role="alert" className="text-sm text-destructive">
+                Enter a valid cron schedule to save this trigger.
+              </p>
+            ) : null}
             <ConfirmActionDialog
               triggerAsChild
               trigger={

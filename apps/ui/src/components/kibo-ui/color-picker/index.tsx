@@ -290,6 +290,7 @@ export const ColorPickerEyeDropper = ({
 
   return (
     <Button
+      aria-label="Pick color from screen"
       className={cn("shrink-0 text-muted-foreground", className)}
       onClick={handleEyeDropper}
       size="icon"
@@ -297,7 +298,7 @@ export const ColorPickerEyeDropper = ({
       variant="outline"
       {...props}
     >
-      <PipetteIcon size={16} />
+      <PipetteIcon size={16}  data-icon="inline-start"/>
     </Button>
   );
 };
@@ -314,7 +315,7 @@ export const ColorPickerOutput = ({
 
   return (
     <Select onValueChange={setMode} value={mode}>
-      <SelectTrigger className="h-8 w-20 shrink-0 text-xs" {...props}>
+      <SelectTrigger aria-label="Color format" className="h-8 w-20 shrink-0 text-xs" {...props}>
         <SelectValue placeholder="Mode" />
       </SelectTrigger>
       <SelectContent>
@@ -334,6 +335,7 @@ const PercentageInput = ({ className, ...props }: PercentageInputProps) => {
   return (
     <div className="relative">
       <Input
+        aria-label="Alpha percentage"
         readOnly
         type="text"
         {...props}
@@ -370,6 +372,7 @@ export const ColorPickerFormat = ({
         {...props}
       >
         <Input
+          aria-label="Hex color value"
           className="h-8 rounded-r-none bg-secondary px-2 text-xs shadow-none"
           readOnly
           type="text"
@@ -396,6 +399,7 @@ export const ColorPickerFormat = ({
       >
         {rgb.map((value, index) => (
           <Input
+            aria-label={`RGB ${["red", "green", "blue"][index] ?? "channel"} value`}
             className={cn(
               "h-8 rounded-r-none bg-secondary px-2 text-xs shadow-none",
               index && "rounded-l-none",
@@ -421,6 +425,7 @@ export const ColorPickerFormat = ({
     return (
       <div className={cn("w-full rounded-md shadow-sm", className)} {...props}>
         <Input
+          aria-label="CSS color value"
           className="h-8 w-full bg-secondary px-2 text-xs shadow-none"
           readOnly
           type="text"
@@ -447,6 +452,7 @@ export const ColorPickerFormat = ({
       >
         {hsl.map((value, index) => (
           <Input
+            aria-label={`HSL ${["hue", "saturation", "lightness"][index] ?? "channel"} value`}
             className={cn(
               "h-8 rounded-r-none bg-secondary px-2 text-xs shadow-none",
               index && "rounded-l-none",

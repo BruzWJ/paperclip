@@ -157,7 +157,7 @@ export function BlockedInboxView({
     const message = error instanceof Error ? error.message : "Couldn't load the Blocked tab.";
     return (
       <Alert data-testid="blocked-inbox-error">
-        <AlertTriangle aria-hidden="true" />
+        <AlertTriangle aria-hidden="true"  data-icon="inline-start"/>
         <AlertTitle>Couldn&apos;t load the Blocked tab.</AlertTitle>
         <AlertDescription>
           <p>Other Inbox tabs still work. {message}</p>
@@ -221,7 +221,7 @@ export function BlockedInboxView({
                                 "size-3.5 shrink-0 text-muted-foreground transition-transform",
                                 !isCollapsed && "rotate-90",
                               )}
-                            />
+                             data-icon="inline-start"/>
                             <span className="truncate text-sm font-semibold uppercase tracking-wide">
                               {group.label} · {group.rows.length}
                             </span>
@@ -244,7 +244,7 @@ function BlockedInboxEmptyState() {
     <Empty data-testid="blocked-inbox-empty">
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <CheckCircle2 aria-hidden="true" />
+          <CheckCircle2 aria-hidden="true"  data-icon="inline-start"/>
         </EmptyMedia>
         <EmptyTitle>No work is stopped.</EmptyTitle>
         <EmptyDescription>

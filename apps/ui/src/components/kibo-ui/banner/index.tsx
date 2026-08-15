@@ -117,13 +117,14 @@ export const BannerClose = ({
 
   return (
     <Button
+      aria-label="Dismiss banner"
       className={cn("shrink-0 bg-transparent hover:bg-background/10 hover:text-background", className)}
       onClick={handleClick}
       size={size}
       variant={variant}
       {...props}
     >
-      <XIcon size={18} />
+      <XIcon size={18}  data-icon="inline-start"/>
     </Button>
   );
 };

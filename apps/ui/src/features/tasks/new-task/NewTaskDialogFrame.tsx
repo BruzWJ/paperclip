@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { nextWorkMode } from "@/lib/work-mode-meta";
 import { isWorkModeEscapeShortcut, MOBILE_DIALOG_HEIGHT } from "./model";
@@ -50,6 +50,7 @@ export function NewTaskDialogFrame() {
           }
         }}
       >
+        <DialogTitle className="sr-only">Create a task</DialogTitle>
         <NewTaskEditorContent />
         <NewTaskActions />
       </DialogContent>

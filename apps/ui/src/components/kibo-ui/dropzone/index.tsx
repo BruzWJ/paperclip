@@ -62,7 +62,7 @@ export const Dropzone = ({
     disabled,
     onDrop: (acceptedFiles, fileRejections, event) => {
       if (fileRejections.length > 0) {
-        const message = fileRejections.at(0)?.errors.at(0)?.message;
+        const message = fileRejections.at(0)?.errors[0]?.message;
         onError?.(new Error(message));
         return;
       }
@@ -90,7 +90,7 @@ export const Dropzone = ({
           className,
         )}
       >
-        <input {...getInputProps({ "aria-label": ariaLabel })} disabled={disabled} />
+        <input {...getInputProps()} aria-label={ariaLabel ?? "Upload files"} disabled={disabled} />
         {children}
       </div>
     </DropzoneContext.Provider>
@@ -128,7 +128,7 @@ export const DropzoneContent = ({ children, className }: DropzoneContentProps) =
   return (
     <div className={cn("flex flex-col items-center justify-center", className)}>
       <div className="flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
-        <UploadIcon size={16} />
+        <UploadIcon size={16}  data-icon="inline-start"/>
       </div>
       <p className="my-2 w-full truncate font-medium text-sm">
         {src.length > maxLabelItems
@@ -176,7 +176,7 @@ export const DropzoneEmptyState = ({ children, className }: DropzoneEmptyStatePr
   return (
     <div className={cn("flex flex-col items-center justify-center", className)}>
       <div className="flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
-        <UploadIcon size={16} />
+        <UploadIcon size={16}  data-icon="inline-start"/>
       </div>
       <p className="my-2 w-full truncate text-wrap font-medium text-sm">
         Upload {maxFiles === 1 ? "a file" : "files"}

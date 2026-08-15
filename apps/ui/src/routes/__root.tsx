@@ -20,7 +20,6 @@ import { PanelProvider } from "@/context/PanelContext";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { DialogProvider } from "@/context/DialogContext";
 import { EditorAutocompleteProvider } from "@/context/EditorAutocompleteContext";
-import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -73,7 +72,13 @@ function RootComponent() {
                       >
                         <Outlet />
                       </Suspense>
-                      <Suspense fallback={null}>
+                      <Suspense
+                        fallback={
+                          <div className="sr-only" role="status">
+                            Loading onboarding
+                          </div>
+                        }
+                      >
                         <OnboardingWizardVariant />
                       </Suspense>
                     </DialogProvider>
@@ -83,7 +88,6 @@ function RootComponent() {
             </CompanyAwareBreadcrumbProvider>
           </TooltipProvider>
         </LiveUpdatesProvider>
-        <Toaster position="bottom-left" visibleToasts={5} />
       </EditorAutocompleteProvider>
     </CompanyProvider>
   );

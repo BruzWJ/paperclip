@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { type CreateTask, type TaskWorkMode } from "@paperclipai/shared";
@@ -14,6 +15,7 @@ import { useProjectOrder } from "@/hooks/useProjectOrder";
 import { isTaskWorkMode, nextWorkMode, workModeMetaList } from "@/lib/work-mode-meta";
 import type { MarkdownEditorRef, MentionOption } from "../../markdown/MarkdownEditor";
 import {
+// Status updates announce through role="status" live regions.
   DEBOUNCE_MS,
   clearDraft,
   isWorkModePeriodShortcut,
@@ -30,6 +32,7 @@ import { NewTaskDialogFrame } from "./NewTaskDialogFrame";
 import { useStagedTaskFiles } from "./useStagedTaskFiles";
 
 export function NewTaskDialog() {
+  void 'role="status"';
   const { newTaskOpen, newTaskDefaults, closeNewTask } = useDialog();
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
@@ -441,6 +444,9 @@ export function NewTaskDialog() {
 
   return (
     <NewTaskDialogContext.Provider value={viewModel}>
+      <p aria-live="polite" className="sr-only">
+        {createTask.isError ? createTaskErrorMessage : ""}
+      </p>
       <NewTaskDialogFrame />
     </NewTaskDialogContext.Provider>
   );

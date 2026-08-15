@@ -118,7 +118,7 @@ export function ImageGalleryModal({ items, initialIndex, open, onOpenChange }: I
         </Reel>
         <Button variant="outline" asChild>
           <a href={attachmentDownloadPath(current)} download={filename} aria-label={`Download ${filename}`}>
-            <Download />
+            <Download  data-icon="inline-start"/>
             Download
           </a>
         </Button>

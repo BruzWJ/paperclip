@@ -51,13 +51,13 @@ function Goals() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Target />
+              <Target  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>No goals yet.</EmptyTitle>
           </EmptyHeader>
           <EmptyContent>
             <Button onClick={() => openNewGoal()}>
-              <Plus />
+              <Plus  data-icon="inline-start"/>
               Add Goal
             </Button>
           </EmptyContent>

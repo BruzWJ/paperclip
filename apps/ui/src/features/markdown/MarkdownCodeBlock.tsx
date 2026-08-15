@@ -61,7 +61,7 @@ export function MarkdownCodeBlock({ children }: { children: ReactNode }) {
           title={wrapLabel}
           className="paperclip-markdown-codeblock-wrap size-8"
         >
-          <WrapText aria-hidden="true" className="size-4" />
+          <WrapText aria-hidden="true" className="size-4"  data-icon="inline-start"/>
         </Toggle>
         <CodeBlockCopyButton aria-label="Copy code" title="Copy code" />
       </CodeBlockHeader>

@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { PLUGIN_LAUNCHER_BOUNDS, type PluginLauncherBounds } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Component, createElement, useMemo, type CSSProperties, type ErrorInfo, type ReactNode } from "react";

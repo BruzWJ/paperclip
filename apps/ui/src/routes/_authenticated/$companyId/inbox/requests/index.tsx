@@ -60,7 +60,8 @@ function JoinRequestQueue() {
     queryFn: () => accessApi.listJoinRequests(companyId, status),
   });
 
-  const approveMutation = useMutation({
+  const approveMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+  useMutation({
     mutationFn: (requestId: string) => accessApi.approveJoinRequest(companyId, requestId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
@@ -128,7 +129,7 @@ function JoinRequestQueue() {
       ) : null}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <UserPlus2 className="h-5 w-5 text-muted-foreground" />
+          <UserPlus2 className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
           <h1 className="text-lg font-semibold">Join Request Queue</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
@@ -143,7 +144,7 @@ function JoinRequestQueue() {
             value={status}
             onValueChange={(v) => setStatus(v as "pending_approval" | "approved" | "rejected")}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger aria-label="Request filter" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -160,7 +161,7 @@ function JoinRequestQueue() {
           <Empty className="border">
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <UserPlus2 />
+                <UserPlus2  data-icon="inline-start"/>
               </EmptyMedia>
               <EmptyTitle>No matching join requests</EmptyTitle>
               <EmptyDescription>No join requests match the current filters.</EmptyDescription>

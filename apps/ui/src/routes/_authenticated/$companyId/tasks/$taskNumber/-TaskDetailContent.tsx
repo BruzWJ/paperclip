@@ -23,7 +23,7 @@ export function TaskDetailContent() {
     <Tabs value={resolvedTab} onValueChange={setDetailTab} className="space-y-3">
       <TabsList variant="line" className="w-full justify-start gap-1">
         <TabsTrigger value="chat" className="gap-1.5">
-          <MessageSquare className="h-3.5 w-3.5" />
+          <MessageSquare className="h-3.5 w-3.5"  data-icon="inline-start"/>
           Chat
         </TabsTrigger>
         {taskPluginTabItems.map((item) => (

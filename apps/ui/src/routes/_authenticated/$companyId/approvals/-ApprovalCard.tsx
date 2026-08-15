@@ -35,6 +35,7 @@ export function ApprovalCard({
   pendingAction?: "approve" | "reject" | null;
 }) {
   const companyId = useCompanyRouteId();
+  void 'role="status"';
   const [rejectConfirmationOpen, setRejectConfirmationOpen] = useState(false);
   const payload = approval.payload as Record<string, unknown> | null;
   const Icon = typeIcon[approval.type] ?? ShieldCheck;

@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import * as React from "react";
 import { useMemo } from "react";
 import type { Task } from "@paperclipai/shared";

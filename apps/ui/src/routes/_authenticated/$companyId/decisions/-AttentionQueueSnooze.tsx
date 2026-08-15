@@ -56,7 +56,7 @@ export function SnoozeSubmenu({ onSnooze }: { onSnooze: (snoozedUntil: string) =
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
-        <AlarmClock className="h-4 w-4" />
+        <AlarmClock className="h-4 w-4"  data-icon="inline-start"/>
         Snooze
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent>
@@ -75,7 +75,7 @@ export function SnoozeSubmenu({ onSnooze }: { onSnooze: (snoozedUntil: string) =
               aria-label="Snooze date"
               className="w-full"
             />
-            <Input
+            <Input aria-label="attention snooze time"
               id="attention-snooze-time"
               type="time"
               value={customTime}

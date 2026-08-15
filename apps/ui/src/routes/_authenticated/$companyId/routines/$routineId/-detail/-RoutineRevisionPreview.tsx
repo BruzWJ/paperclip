@@ -129,7 +129,7 @@ export function RevisionPreview({
               aria-label={restoreLabel}
               className={!isHistorical ? "text-muted-foreground/60" : undefined}
             >
-              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5"  data-icon="inline-start"/>
               {restoreLabel}
             </Button>
           </CardAction>

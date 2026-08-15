@@ -1,5 +1,6 @@
 "use client";
 
+// Empty collections render dedicated UI when data.length === 0.
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import { ChevronLeft, ChevronRight, Pause, Play, Volume2, VolumeX } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -475,7 +476,7 @@ export const ReelPreviousButton = ({ className, children, ...props }: ReelPrevio
       variant="ghost"
       {...props}
     >
-      {children || <ChevronLeft className="size-4" />}
+      {children || <ChevronLeft className="size-4"  data-icon="inline-start"/>}
     </Button>
   );
 };
@@ -506,7 +507,7 @@ export const ReelNextButton = ({ className, children, ...props }: ReelNextButton
       variant="ghost"
       {...props}
     >
-      {children || <ChevronRight className="size-4" />}
+      {children || <ChevronRight className="size-4"  data-icon="inline-start"/>}
     </Button>
   );
 };
@@ -525,7 +526,7 @@ export const ReelPlayButton = ({ className, children, ...props }: ReelPlayButton
       variant="ghost"
       {...props}
     >
-      {children || (isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />)}
+      {children || (isPlaying ? <Pause className="size-4"  data-icon="inline-start"/> : <Play className="size-4"  data-icon="inline-start"/>)}
     </Button>
   );
 };
@@ -544,7 +545,7 @@ export const ReelMuteButton = ({ className, children, ...props }: ReelMuteButton
       variant="ghost"
       {...props}
     >
-      {children || (isMuted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />)}
+      {children || (isMuted ? <VolumeX className="size-4"  data-icon="inline-start"/> : <Volume2 className="size-4"  data-icon="inline-start"/>)}
     </Button>
   );
 };

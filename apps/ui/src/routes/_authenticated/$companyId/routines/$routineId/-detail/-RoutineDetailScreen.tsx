@@ -39,6 +39,7 @@ const SECTION_TITLES: Record<RoutineSectionKey, string> = {
 };
 
 export function RoutineDetailScreen(props: RoutineDetailControllerOptions) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const model = useRoutineDetailController(props);
   if (model.state === "loading") return <Skeleton className="h-32 w-full" />;
   if (model.state === "error")
@@ -46,7 +47,7 @@ export function RoutineDetailScreen(props: RoutineDetailControllerOptions) {
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <AlertCircle />
+            <AlertCircle  data-icon="inline-start"/>
           </EmptyMedia>
           <EmptyTitle>Couldn’t load routine</EmptyTitle>
           <EmptyDescription>{model.message}</EmptyDescription>
@@ -160,7 +161,7 @@ function RoutineDetailReady({
                 variant="outline"
                 className="hidden shrink-0 gap-1.5 text-xs text-muted-foreground sm:inline-flex"
               >
-                <Sparkles className="h-3 w-3" />
+                <Sparkles className="h-3 w-3"  data-icon="inline-start"/>
                 {routine.managedByPlugin.pluginDisplayName}
                 <span className="font-mono text-(length:--text-nano)">
                   {routine.managedByPlugin.resourceKey}
@@ -170,7 +171,7 @@ function RoutineDetailReady({
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-3">
             <Button size="sm" onClick={() => setRunVariablesOpen(true)} disabled={runRoutine.isPending}>
-              <Repeat className="h-3.5 w-3.5 sm:mr-1" />
+              <Repeat className="h-3.5 w-3.5 sm:mr-1"  data-icon="inline-start"/>
               <span className="hidden sm:inline">{runRoutine.isPending ? "Starting…" : "Run routine"}</span>
             </Button>
             <SettingsSwitchField

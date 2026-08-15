@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import type { ReactNode, RefObject } from "react";
 import { AlertCircle, KeyRound, Plus, RotateCcw, Save, UserRound } from "lucide-react";
 import type { CompanySecret, UserSecretDefinition } from "@paperclipai/shared";
@@ -74,7 +75,7 @@ export function EnvironmentVariablesEditorView({
       <div ref={editorRootRef} className="@container/env space-y-2">
         {attentionCount > 1 ? (
           <p className="inline-flex items-center gap-1.5 text-(length:--text-micro) font-medium text-amber-700 dark:text-amber-400">
-            <AlertCircle className="size-3.5" />
+            <AlertCircle className="size-3.5"  data-icon="inline-start"/>
             {attentionCount} bindings need attention
           </p>
         ) : null}
@@ -121,14 +122,14 @@ export function EnvironmentVariablesEditorView({
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
           <Button type="button" onClick={onAddRow} disabled={disabled} variant="ghost" size="sm">
-            <Plus className="size-3.5" />
+            <Plus className="size-3.5" data-icon="inline-start" />
             Add variable
           </Button>
 
           {quickBind.length > 0 && !disabled ? (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="inline-flex items-center gap-1 text-(length:--text-micro) text-muted-foreground/70">
-                <KeyRound className="size-3" />
+                <KeyRound className="size-3"  data-icon="inline-start"/>
                 Recently used:
               </span>
               {quickBind.map((secret) => (
@@ -163,11 +164,11 @@ export function EnvironmentVariablesEditorView({
             </div>
             <div className="flex items-center gap-2">
               <Button type="button" onClick={onRevertDraft} variant="outline">
-                <RotateCcw className="size-4" />
+                <RotateCcw className="size-4" data-icon="inline-start" />
                 Revert
               </Button>
               <Button type="button" onClick={onSaveDraft}>
-                <Save className="size-4" />
+                <Save className="size-4" data-icon="inline-start" />
                 Save
               </Button>
             </div>
@@ -177,7 +178,7 @@ export function EnvironmentVariablesEditorView({
         {hint ? <p className="text-(length:--text-micro) text-muted-foreground/70">{hint}</p> : null}
         {rows.some((row) => row.source === "user_secret" && row.userSecretKey) ? (
           <p className="inline-flex items-start gap-1 text-(length:--text-micro) text-muted-foreground/70">
-            <UserRound className="mt-0.5 size-3 shrink-0" />
+            <UserRound className="mt-0.5 size-3 shrink-0"  data-icon="inline-start"/>
             <span>
               User secrets resolve from the user responsible for the run. Required bindings fail until that
               user sets their value under Secrets → My secrets.

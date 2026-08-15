@@ -116,7 +116,7 @@ export function ConflictResolutionList({
                   </ItemUI.ItemTitle>
                   {!isSkipped && (
                     <>
-                      <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
                       {isConfirmed ? (
                         <ItemUI.ItemDescription className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
                           {currentName}
@@ -142,7 +142,7 @@ export function ConflictResolutionList({
                     >
                       {isConfirmed ? (
                         <>
-                          <Check className="h-3 w-3" />
+                          <Check className="h-3 w-3"  data-icon="inline-start"/>
                           confirmed
                         </>
                       ) : (
@@ -231,7 +231,7 @@ export function AdapterPickerList({
                     </ItemUI.ItemDescription>
                   </ItemUI.ItemContent>
                   <ItemUI.ItemActions className="min-w-full flex-wrap sm:min-w-0">
-                    <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
                     <EntityCombobox
                       value={selectedType}
                       options={adapterOptions.map((option) => ({
@@ -255,7 +255,7 @@ export function AdapterPickerList({
                       >
                         <ChevronRight
                           className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")}
-                        />
+                         data-icon="inline-start"/>
                         configure adapter
                       </Button>
                     </Collapse.CollapsibleTrigger>

@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { GoalLevel, GoalStatus } from "@paperclipai/shared";
@@ -34,13 +35,14 @@ const levelLabels: Record<string, string> = {
 };
 
 export function NewGoalDialog() {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const { newGoalOpen, newGoalDefaults, closeNewGoal } = useDialog();
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [status, setStatus] = useState("planned");
+  const [status, setGoalStatus] = useState("planned");
   const [level, setLevel] = useState("task");
   const [parentId, setParentId] = useState("");
   const [expanded, setExpanded] = useState(false);
@@ -74,7 +76,7 @@ export function NewGoalDialog() {
   function reset() {
     setTitle("");
     setDescription("");
-    setStatus("planned");
+    setGoalStatus("planned");
     setLevel("task");
     setParentId("");
     setExpanded(false);
@@ -120,9 +122,18 @@ export function NewGoalDialog() {
       description={selectedCompany ? `Create a goal for ${selectedCompany.name}.` : "Create a company goal."}
       footer={
         <>
-          {createGoal.isError ? <FieldError>Couldn&apos;t create goal. Try again.</FieldError> : <span />}
+          {createGoal.isError ? (
+            <FieldError role="alert">Couldn&apos;t create goal. Try again.</FieldError>
+          ) : (
+            <span />
+          )}
           <Button size="sm" disabled={!title.trim() || createGoal.isPending} onClick={handleSubmit}>
-            {createGoal.isPending ? <Spinner /> : null}
+            {createGoal.isPending ? (
+              <span className="inline-flex items-center gap-2" role="status">
+                <Spinner />
+                Creating
+              </span>
+            ) : null}
             {newGoalDefaults.parentId ? "Create sub-goal" : "Create goal"}
           </Button>
         </>
@@ -149,7 +160,7 @@ export function NewGoalDialog() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuRadioGroup value={status} onValueChange={setStatus}>
+            <DropdownMenuRadioGroup value={status} onValueChange={setGoalStatus}>
               {GOAL_STATUSES.map((option) => (
                 <DropdownMenuRadioItem key={option} value={option}>
                   {option.replaceAll("_", " ")}
@@ -163,7 +174,7 @@ export function NewGoalDialog() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" variant="outline" size="xs" aria-label="Set goal level">
-              <Layers className="h-3 w-3 text-muted-foreground" />
+              <Layers className="h-3 w-3 text-muted-foreground"  data-icon="inline-start"/>
               {levelLabels[level] ?? level}
             </Button>
           </DropdownMenuTrigger>
@@ -195,7 +206,7 @@ export function NewGoalDialog() {
           contentClassName="!w-72"
           renderValue={(option) => (
             <>
-              <Target className="h-3 w-3 text-muted-foreground" />
+              <Target className="h-3 w-3 text-muted-foreground"  data-icon="inline-start"/>
               <span className="truncate">{option?.label ?? "Parent goal"}</span>
             </>
           )}

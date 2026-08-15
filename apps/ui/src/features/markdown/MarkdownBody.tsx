@@ -221,11 +221,11 @@ export function MarkdownBodyImpl({
         const isGitHubLink = isGitHubUrl(href);
         const isExternal = isExternalHttpUrl(href);
         const leadingIcon = isGitHubLink ? (
-          <Github aria-hidden="true" className="mr-1 inline h-3.5 w-3.5 align-(--va-0_125em)" />
+          <Github aria-hidden="true" className="mr-1 inline h-3.5 w-3.5 align-(--va-0_125em)"  data-icon="inline-start"/>
         ) : null;
         const trailingIcon =
           isExternal && !isGitHubLink ? (
-            <ExternalLink aria-hidden="true" className="ml-1 inline h-3 w-3 align-(--va-0_125em)" />
+            <ExternalLink aria-hidden="true" className="ml-1 inline h-3 w-3 align-(--va-0_125em)"  data-icon="inline-start"/>
           ) : null;
         if (!isExternal && !isNonRouterAnchor(href, anchorProps.download)) {
           return (

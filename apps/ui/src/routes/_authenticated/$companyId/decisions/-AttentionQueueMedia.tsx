@@ -116,7 +116,7 @@ export function ExpandedImages({
                 <ItemTitle>{extra} more</ItemTitle>
                 <ItemDescription className="inline-flex items-center gap-1 text-(length:--text-nano)">
                   View task
-                  <ExternalLink className="h-3 w-3" />
+                  <ExternalLink className="h-3 w-3"  data-icon="inline-start"/>
                 </ItemDescription>
               </ItemContent>
             </Item>

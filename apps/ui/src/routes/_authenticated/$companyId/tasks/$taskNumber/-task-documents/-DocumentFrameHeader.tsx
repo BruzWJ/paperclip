@@ -95,7 +95,7 @@ export function DocumentFrameHeader({
               size="icon-xs"
               aria-label={folded ? `Expand ${documentKey} document` : `Collapse ${documentKey} document`}
             >
-              {folded ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {folded ? <ChevronRight className="h-3.5 w-3.5"  data-icon="inline-start"/> : <ChevronDown className="h-3.5 w-3.5"  data-icon="inline-start"/>}
             </Button>
           </CollapsibleTrigger>
           {documentLabel ? (
@@ -129,7 +129,7 @@ export function DocumentFrameHeader({
                   )}
                 >
                   rev {revisionMenu.displayedRevisionNumber}
-                  <ChevronDown className="h-3 w-3" />
+                  <ChevronDown className="h-3 w-3"  data-icon="inline-end"/>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-72">

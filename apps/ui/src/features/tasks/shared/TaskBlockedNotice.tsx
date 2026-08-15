@@ -53,12 +53,12 @@ function BlockerChip({ blocker, running = false }: { blocker: TaskRelationTaskSu
 
 function WaitingStepGlyph({ status }: { status: WaitingStepStatus }) {
   if (status === "done") {
-    return <CheckCircle2 aria-hidden />;
+    return <CheckCircle2 aria-hidden  data-icon="inline-start"/>;
   }
   if (status === "running") {
     return <Spinner aria-hidden />;
   }
-  return <Circle aria-hidden />;
+  return <Circle aria-hidden  data-icon="inline-start"/>;
 }
 
 function WaitingOnLiveWorkNotice({
@@ -112,7 +112,7 @@ function WaitingOnLiveWorkNotice({
       data-testid="task-blocked-notice-live"
       className="mb-3"
     >
-      <Circle className="animate-pulse fill-current" aria-hidden="true" />
+      <Circle className="animate-pulse fill-current" aria-hidden="true"  data-icon="inline-start"/>
       <AlertTitle>Waiting on live work</AlertTitle>
       <AlertDescription className="gap-2">
         <p>
@@ -143,7 +143,7 @@ function WaitingOnLiveWorkNotice({
           ))}
           <Item size="sm" variant="muted">
             <ItemMedia variant="icon">
-              <Circle aria-hidden />
+              <Circle aria-hidden  data-icon="inline-start"/>
             </ItemMedia>
             <ItemContent>
               <ItemDescription>This task — resumes automatically when the chain is done</ItemDescription>
@@ -165,7 +165,7 @@ function WaitingOnLiveWorkNotice({
         {parkedBlockers.length > 0 ? (
           <div data-testid="task-blocked-notice-parked-row" className="flex flex-wrap items-center gap-1.5">
             <span className="inline-flex items-center gap-1 text-xs font-medium">
-              <Flag className="h-3 w-3" aria-hidden />
+              <Flag className="h-3 w-3" aria-hidden  data-icon="inline-start"/>
               Blocked by parked work
             </span>
             {parkedBlockers.map((blocker) => (
@@ -287,7 +287,7 @@ export function TaskBlockedNotice({
 
   return (
     <Alert role="note" data-blocker-attention-state={blockerAttention?.state} className="mb-3">
-      <AlertTriangle aria-hidden="true" />
+      <AlertTriangle aria-hidden="true"  data-icon="inline-start"/>
       <AlertTitle>Blocked</AlertTitle>
       <AlertDescription className="gap-1.5">
         {blockers.length > 0 || taskStatus === "blocked" ? (
@@ -369,7 +369,7 @@ export function TaskBlockedNotice({
                 className="flex flex-wrap items-center gap-1.5 pt-0.5"
               >
                 <span className="inline-flex items-center gap-1 text-xs font-medium">
-                  <Flag className="h-3 w-3" aria-hidden />
+                  <Flag className="h-3 w-3" aria-hidden  data-icon="inline-start"/>
                   Blocked by parked work
                 </span>
                 {parkedBlockers.map((blocker) => (

@@ -182,7 +182,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
       <ItemActions className="w-full sm:w-auto">
         {runNowButton ? (
           <Button variant="outline" size="sm" disabled={runDisabled} onClick={() => onRunNow(routine)}>
-            <Play className="h-3.5 w-3.5" />
+            <Play className="h-3.5 w-3.5"  data-icon="inline-start"/>
             {runningRoutineId === routine.id ? "Running..." : "Run now"}
           </Button>
         ) : null}
@@ -203,7 +203,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${routine.title}`}>
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreHorizontal className="h-4 w-4"  data-icon="inline-start"/>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

@@ -38,6 +38,7 @@ vi.mock("@/features/secrets/pickers/SecretBindingPicker", () => ({
     disabled?: boolean;
   }) => (
     <select
+      aria-label="Secret binding"
       data-testid="secret-binding-picker"
       value={value?.secretId ?? ""}
       onChange={(event) => {

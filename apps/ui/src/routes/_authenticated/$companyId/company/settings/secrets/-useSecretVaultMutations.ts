@@ -43,6 +43,7 @@ export interface UseSecretVaultMutationsOptions {
 }
 
 export function useSecretVaultMutations({ companyId, invalidateAll, state }: UseSecretVaultMutationsOptions) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const {
     editingVault,
     setEditingVault,

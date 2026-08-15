@@ -179,7 +179,7 @@ export function AgentAdapterSection({
         {showAdapterTypeField ? (
           <LabeledFormField label="Adapter type" description={help.adapterType}>
             <Select value={adapterType} onValueChange={onAdapterTypeChange}>
-              <SelectTrigger size="sm" className="w-full shadow-none">
+              <SelectTrigger aria-label="Adapter" size="sm" className="w-full shadow-none">
                 <SelectValue placeholder="Select an adapter" />
               </SelectTrigger>
               <SelectContent align="start">

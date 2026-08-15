@@ -23,6 +23,7 @@ export function useTaskDetailCoreMutations({
   currentUserId,
   cacheActions,
 }: TaskDetailCoreMutationsOptions) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");

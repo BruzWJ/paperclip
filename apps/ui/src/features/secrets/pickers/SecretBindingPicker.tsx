@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { Spinner } from "@/components/ui/spinner";
 import { useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -52,6 +53,7 @@ export function SecretBindingPicker({
   disabled,
   statusFilter = ["active"],
 }: SecretBindingPickerProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
   const companyId = useCompanyRouteId();
   const [createOpen, setCreateOpen] = useState(false);
@@ -123,7 +125,7 @@ export function SecretBindingPicker({
         labelActions={
           value ? (
             <Button type="button" variant="link" size="xs" onClick={() => onChange(null)} disabled={disabled}>
-              <X className="h-3 w-3" /> Clear
+              <X className="h-3 w-3" data-icon="inline-start" /> Clear
             </Button>
           ) : undefined
         }
@@ -195,7 +197,7 @@ export function SecretBindingPicker({
           </FieldDescription>
         ) : selectedMissing ? (
           <Alert variant="destructive">
-            <AlertCircle className="h-3 w-3" />
+            <AlertCircle className="h-3 w-3"  data-icon="inline-start"/>
             <AlertDescription>
               The previously selected secret is no longer available. Pick another or remove the binding.
             </AlertDescription>
@@ -235,6 +237,7 @@ export function SecretBindingPicker({
           <LabeledFormField label="Name" labelFor="secret-name">
             <Input
               id="secret-name"
+              aria-label="Name"
               value={createDraft.name}
               onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))}
               placeholder="OPENAI_API_KEY"
@@ -248,6 +251,7 @@ export function SecretBindingPicker({
           >
             <Textarea
               id="secret-value"
+              aria-label="Value"
               value={createDraft.value}
               onChange={(event) => setCreateDraft((current) => ({ ...current, value: event.target.value }))}
               rows={3}
@@ -258,6 +262,7 @@ export function SecretBindingPicker({
           <LabeledFormField label="Description" labelFor="secret-description">
             <Input
               id="secret-description"
+              aria-label="Description"
               value={createDraft.description}
               onChange={(event) =>
                 setCreateDraft((current) => ({ ...current, description: event.target.value }))

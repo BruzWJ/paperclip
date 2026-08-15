@@ -150,7 +150,7 @@ export function TaskMonitorComposerStrip({
 
   return (
     <Alert role="note" data-testid="task-monitor-composer-strip" className={className}>
-      <Clock aria-hidden="true" />
+      <Clock aria-hidden="true"  data-icon="inline-start"/>
       <AlertTitle>{copy.stripTitle}</AlertTitle>
       <AlertDescription>
         <p>{copy.stripMeta.join(" · ")}</p>

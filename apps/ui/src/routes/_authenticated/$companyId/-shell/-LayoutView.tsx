@@ -115,11 +115,10 @@ export function MobileBottomNav({ visible, companyId }: { visible: boolean; comp
 
   return (
     <nav
-      className={cn(
-        "fixed inset-x-0 bottom-0 z-30 grid h-16 grid-cols-5 border-t bg-background p-1 md:hidden",
-        !visible && "translate-y-full",
-      )}
+      className="fixed inset-x-0 bottom-0 z-30 grid h-16 grid-cols-5 flex-wrap border-t bg-background p-1 md:hidden"
       aria-label="Mobile navigation"
+      data-hidden={!visible || undefined}
+      style={visible ? undefined : { transform: "translateY(100%)" }}
     >
       {items.map((item) => {
         const Icon = item.icon;
@@ -296,7 +295,7 @@ export function LayoutView({
                             onClick={() => setPanelVisible(false)}
                             aria-label="Close properties panel"
                           >
-                            <X />
+                            <X  data-icon="inline-start"/>
                           </Button>
                         </CardAction>
                       </CardHeader>
@@ -314,7 +313,13 @@ export function LayoutView({
         </div>
         {isMobile ? <MobileBottomNav visible={mobileNavVisible} companyId={companyId} /> : null}
         <CommandPalette />
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={
+            <div className="sr-only" role="status">
+              Loading dialogs
+            </div>
+          }
+        >
           <NewTaskDialog />
           <NewProjectDialog />
           <NewGoalDialog />

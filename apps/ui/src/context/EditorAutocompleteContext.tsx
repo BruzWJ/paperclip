@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { buildRoutineMentionHref } from "@paperclipai/shared";

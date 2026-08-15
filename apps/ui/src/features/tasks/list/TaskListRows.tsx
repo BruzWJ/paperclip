@@ -74,7 +74,7 @@ export function TaskListRows() {
                         "h-3.5 w-3.5 shrink-0 transition-transform",
                         !viewState.collapsedGroups.includes(group.key) && "rotate-90",
                       )}
-                    />
+                     data-icon="inline-start"/>
                     <span className="truncate text-sm font-semibold uppercase tracking-wide">
                       {group.label}
                     </span>
@@ -89,7 +89,7 @@ export function TaskListRows() {
                   aria-label={`New task in ${group.label}`}
                   onClick={() => openCreateTaskDialog(group)}
                 >
-                  <Plus className="h-3 w-3" />
+                  <Plus className="h-3 w-3"  data-icon="inline-start"/>
                 </Button>
               </Item>
             ) : null}
@@ -261,7 +261,7 @@ export function TaskListRows() {
                             >
                               <ChevronRight
                                 className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")}
-                              />
+                               data-icon="inline-start"/>
                             </Button>
                           ) : (
                             <span
@@ -292,7 +292,7 @@ export function TaskListRows() {
                                     "h-3.5 w-3.5 transition-transform",
                                     isExpanded && "rotate-90",
                                   )}
-                                />
+                                 data-icon="inline-start"/>
                               </Button>
                             ) : (
                               <span className="hidden w-4 shrink-0 sm:block" />
@@ -405,7 +405,7 @@ export function TaskListRows() {
       })}
       {remainingTaskRowCount > 0 || hasMoreTasks || isLoadingMoreTasks ? (
         <div className="py-2" data-testid="tasks-load-more-sentinel">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground" role="status">
             {isLoadingMoreTasks
               ? "Loading more tasks..."
               : remainingTaskRowCount > 0

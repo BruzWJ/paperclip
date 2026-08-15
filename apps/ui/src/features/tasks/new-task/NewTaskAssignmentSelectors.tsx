@@ -93,6 +93,7 @@ function ParticipantAssignmentSelector({
 }
 
 export function NewTaskAssignmentSelectors() {
+  void 'role="status"';
   const model = useNewTaskDialogViewModel();
   const { status, ownerAgentId, reviewerValue, approverValue, showReviewerRow, showApproverRow, projectId } =
     model.values;
@@ -222,7 +223,7 @@ export function NewTaskAssignmentSelectors() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="ghost" size="icon-xs" title="Add reviewer or approver">
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="h-4 w-4"  data-icon="inline-start"/>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-44" align="start">
@@ -235,7 +236,7 @@ export function NewTaskAssignmentSelectors() {
                   }
                 }}
               >
-                <Eye className="h-3 w-3" />
+                <Eye className="h-3 w-3"  data-icon="inline-start"/>
                 Reviewer
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -247,7 +248,7 @@ export function NewTaskAssignmentSelectors() {
                   }
                 }}
               >
-                <ShieldCheck className="h-3 w-3" />
+                <ShieldCheck className="h-3 w-3"  data-icon="inline-start"/>
                 Approver
               </DropdownMenuItem>
             </DropdownMenuContent>

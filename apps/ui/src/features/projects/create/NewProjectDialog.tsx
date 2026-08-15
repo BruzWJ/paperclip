@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { isAbsoluteProjectFolder, isCanonicalProjectRepositoryUrl } from "@paperclipai/shared";
@@ -54,7 +55,7 @@ function OptionalCodebaseFieldLabel({ label, help }: { label: string; help: stri
       <span className="text-xs text-muted-foreground/50">optional</span>
       <Tooltip delayDuration={300}>
         <TooltipTrigger asChild>
-          <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/50" />
+          <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/50"  data-icon="inline-start"/>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
           {help}
@@ -65,6 +66,7 @@ function OptionalCodebaseFieldLabel({ label, help }: { label: string; help: stri
 }
 
 export function NewProjectDialog() {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const { newProjectOpen, closeNewProject } = useDialog();
   const companyId = useCompanyRouteId();
   const { selectedCompany } = useCompany();
@@ -233,6 +235,7 @@ export function NewProjectDialog() {
         >
           <Input
             id="new-project-repo-url"
+            aria-label="Repo URL"
             className="h-7 px-2 text-xs"
             value={repoUrl}
             onChange={(event) => {
@@ -256,6 +259,7 @@ export function NewProjectDialog() {
           <div className="flex items-center gap-2">
             <Input
               id="new-project-local-folder"
+              aria-label="Local folder"
               className="h-7 px-2 font-mono text-xs"
               value={localFolder}
               onChange={(event) => {
@@ -299,7 +303,7 @@ export function NewProjectDialog() {
 
         {selectedGoals.map((goal) => (
           <Badge key={goal.id} variant="secondary" className="gap-1">
-            <Target className="h-3 w-3 text-muted-foreground" />
+            <Target className="h-3 w-3 text-muted-foreground"  data-icon="inline-start"/>
             <span className="max-w-(--sz-160px) truncate">{goal.title}</span>
             <Button
               variant="ghost"
@@ -309,7 +313,7 @@ export function NewProjectDialog() {
               aria-label={`Remove goal ${goal.title}`}
               type="button"
             >
-              <X className="h-3 w-3" />
+              <X className="h-3 w-3"  data-icon="inline-start"/>
             </Button>
           </Badge>
         ))}
@@ -328,9 +332,9 @@ export function NewProjectDialog() {
             aria-label="Add goal"
           >
             {selectedGoals.length > 0 ? (
-              <Plus className="h-3 w-3 text-muted-foreground" />
+              <Plus className="h-3 w-3 text-muted-foreground"  data-icon="inline-start"/>
             ) : (
-              <Target className="h-3 w-3 text-muted-foreground" />
+              <Target className="h-3 w-3 text-muted-foreground"  data-icon="inline-start"/>
             )}
             {selectedGoals.length > 0 ? "+ Goal" : "Goal"}
           </ComboboxTrigger>

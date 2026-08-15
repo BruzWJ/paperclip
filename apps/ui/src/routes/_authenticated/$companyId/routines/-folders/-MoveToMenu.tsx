@@ -96,7 +96,7 @@ export function MoveToMenuItems({ folders, currentFolderId, onMove, onCreateAndM
     <>
       <InputGroup className="h-8">
         <InputGroupAddon>
-          <Search />
+          <Search  data-icon="inline-start"/>
         </InputGroupAddon>
         <InputGroupInput
           aria-label="Search folders"
@@ -110,13 +110,13 @@ export function MoveToMenuItems({ folders, currentFolderId, onMove, onCreateAndM
       <DropdownMenuItem onSelect={() => onMove(null)}>
         <FolderSwatch color={null} />
         Unfiled
-        {currentFolderId == null ? <Check className="ml-auto h-3.5 w-3.5" /> : null}
+        {currentFolderId == null ? <Check className="ml-auto h-3.5 w-3.5"  data-icon="inline-start"/> : null}
       </DropdownMenuItem>
       {visibleFolders.map((folder) => (
         <DropdownMenuItem key={folder.id} onSelect={() => onMove(folder.id)}>
           <FolderSwatch color={folder.color} />
           <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-          {currentFolderId === folder.id ? <Check className="ml-auto h-3.5 w-3.5" /> : null}
+          {currentFolderId === folder.id ? <Check className="ml-auto h-3.5 w-3.5"  data-icon="inline-start"/> : null}
         </DropdownMenuItem>
       ))}
       {visibleFolders.length === 0 ? (
@@ -124,7 +124,7 @@ export function MoveToMenuItems({ folders, currentFolderId, onMove, onCreateAndM
       ) : null}
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={onCreateAndMove}>
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className="h-3.5 w-3.5"  data-icon="inline-start"/>
         New folder...
       </DropdownMenuItem>
     </>

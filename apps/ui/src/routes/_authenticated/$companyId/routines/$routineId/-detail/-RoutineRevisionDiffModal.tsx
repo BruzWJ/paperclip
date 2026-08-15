@@ -118,7 +118,7 @@ export function RoutineRevisionDiffModal({
           </Button>
           {leftIsHistorical && left && (
             <Button onClick={() => onRestore(left)}>
-              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5"  data-icon="inline-start"/>
               Restore rev {left.revisionNumber} as new revision
             </Button>
           )}

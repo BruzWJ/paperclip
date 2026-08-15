@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { secretsApi } from "@/api/secrets";
 import { coverageSummaryLabel } from "@/routes/_authenticated/$companyId/company/settings/secrets/-user-secret-presentation";
 import { queryKeys } from "@/lib/queryKeys";
@@ -33,7 +34,7 @@ export function CoverageInline({
   if (coverageQuery.isError) return <DomainStatus status="unhealthy">Coverage unavailable</DomainStatus>;
   return (
     <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
-      <Users className="h-3 w-3" />
+      <Users className="h-3 w-3"  data-icon="inline-start"/>
       <span className="truncate">
         {compact && summary
           ? `${summary.configuredCount}/${summary.configuredCount + summary.missingCount + summary.inactiveCount} set`
@@ -128,7 +129,7 @@ export function UserSecretCoverageTab({
   return (
     <div className="space-y-3 text-sm">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Users className="h-3.5 w-3.5" />
+        <Users className="h-3.5 w-3.5"  data-icon="inline-start"/>
         <span>{coverageSummaryLabel(summary)}</span>
       </div>
       <div className="grid grid-cols-3 gap-2">

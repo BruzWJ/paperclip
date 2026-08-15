@@ -54,7 +54,7 @@ export function AwsProviderVaultDiscoveryPanel({
           disabled={!canDiscover || loading}
           data-testid="aws-vault-discovery-button"
         >
-          {loading ? <Spinner className="h-3.5 w-3.5 mr-1" /> : <Search className="h-3.5 w-3.5 mr-1" />}
+          {loading ? <Spinner className="h-3.5 w-3.5 mr-1" /> : <Search className="h-3.5 w-3.5 mr-1"  data-icon="inline-start"/>}
           Find existing AWS values
         </Button>
       </div>
@@ -74,7 +74,7 @@ export function AwsProviderVaultDiscoveryPanel({
 
       {warnings.length > 0 ? (
         <Alert>
-          <AlertTriangle />
+          <AlertTriangle  data-icon="inline-start"/>
           <AlertTitle>Discovery warnings</AlertTitle>
           <AlertDescription>{warnings.join(" ")}</AlertDescription>
         </Alert>
@@ -91,7 +91,7 @@ export function AwsProviderVaultDiscoveryPanel({
       {preview && preview.candidates.length > 0 ? (
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Database className="h-3.5 w-3.5" />
+            <Database className="h-3.5 w-3.5"  data-icon="inline-start"/>
             <span>
               {preview.candidates.length} candidate
               {preview.candidates.length === 1 ? "" : "s"} from {preview.sampledSecretCount} sampled secret
@@ -132,7 +132,7 @@ export function AwsProviderVaultDiscoveryError({ form, error }: { form: Provider
   };
   return (
     <Alert variant="destructive" data-testid="aws-vault-discovery-error">
-      <AlertCircle aria-hidden="true" />
+      <AlertCircle aria-hidden="true"  data-icon="inline-start"/>
       <AlertTitle>
         {isAccessDenied ? "AWS discovery needs ListSecrets permission" : "AWS discovery failed"}
       </AlertTitle>
@@ -208,7 +208,7 @@ export function AwsProviderVaultDiscoveryCandidateRow({
       </ItemActions>
       {candidate.warnings.length > 0 ? (
         <Alert>
-          <AlertTriangle />
+          <AlertTriangle  data-icon="inline-start"/>
           <AlertDescription>{candidate.warnings.join(" ")}</AlertDescription>
         </Alert>
       ) : null}

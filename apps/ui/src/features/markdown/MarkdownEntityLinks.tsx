@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode } from "react";

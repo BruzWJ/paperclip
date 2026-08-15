@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { accessApi } from "@/api/access";
 import { pluginsApi } from "@/api/plugins";
 import { InstalledPluginsSection } from "@/routes/_authenticated/$companyId/company/settings/instance/plugins/-InstalledPluginsSection";
@@ -86,7 +87,8 @@ function PluginManager() {
       }),
     ]);
 
-  const installMutation = useMutation({
+  const installMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+  useMutation({
     mutationFn: (params: PluginInstallRequest) => pluginsApi.install(params),
     onSuccess: async () => {
       await invalidatePluginQueries();
@@ -185,7 +187,7 @@ function PluginManager() {
       ) : null}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Puzzle className="h-6 w-6 text-muted-foreground" />
+          <Puzzle className="h-6 w-6 text-muted-foreground"  data-icon="inline-start"/>
           <h1 className="text-xl font-semibold">Plugin Manager</h1>
         </div>
 
@@ -223,7 +225,7 @@ function PluginManager() {
           >
             <div className="py-4">
               <LabeledFormField label="npm Package Name" labelFor="packageName">
-                <Input
+                <Input aria-label="packageName"
                   id="packageName"
                   placeholder="@paperclipai/plugin-example"
                   value={installPackage}
@@ -236,7 +238,7 @@ function PluginManager() {
       </div>
 
       <Alert>
-        <AlertTriangle />
+        <AlertTriangle  data-icon="inline-start"/>
         <AlertTitle>Plugins are alpha.</AlertTitle>
         <AlertDescription>
           The plugin runtime and API surface are still changing. Expect breaking changes while this feature
@@ -334,7 +336,7 @@ function PluginManager() {
       >
         <div className="space-y-4">
           <Alert variant="destructive">
-            <AlertTriangle />
+            <AlertTriangle  data-icon="inline-start"/>
             <AlertTitle>What errored</AlertTitle>
             <AlertDescription className="break-words">
               {errorDetailsPlugin ? getPluginErrorSummary(errorDetailsPlugin) : "No error summary available."}

@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { agentsApi } from "@/api/agents";
 import { ApiError } from "@/api/client";
 import { AgentConfigForm } from "@/features/agents/configuration/AgentConfigForm";
@@ -35,6 +36,7 @@ export function AgentConfigurePage({
   onCancelActionChange,
   onSavingChange,
 }: AgentConfigurationPanelProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const [revisionsOpen, setRevisionsOpen] = useState(false);
 
   const { data: adapterRevisions } = useQuery({
@@ -54,7 +56,7 @@ export function AgentConfigurePage({
       <Collapsible open={revisionsOpen} onOpenChange={setRevisionsOpen}>
         <CollapsibleTrigger asChild>
           <Button variant="ghost">
-            <ChevronDown className={revisionsOpen ? undefined : "-rotate-90"} />
+            <ChevronDown className={revisionsOpen ? undefined : "-rotate-90"}  data-icon="inline-start"/>
             Immutable adapter revisions
             <Badge variant="secondary">{adapterRevisions?.length ?? 0}</Badge>
           </Button>

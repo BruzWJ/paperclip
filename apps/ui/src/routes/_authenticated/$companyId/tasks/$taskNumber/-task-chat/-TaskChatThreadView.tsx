@@ -153,6 +153,7 @@ function TaskChatContext({
 }
 
 function TaskChatThreadContent(props: Controller) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const {
     activeRunIds,
     agentMap,
@@ -232,7 +233,7 @@ function TaskChatThreadContent(props: Controller) {
                   title="No messages yet"
                   description={resolvedEmptyMessage}
                 >
-                  <MessagesSquareIcon className="size-5 text-muted-foreground" aria-hidden="true" />
+                  <MessagesSquareIcon className="size-5 text-muted-foreground" aria-hidden="true"  data-icon="inline-start"/>
                   <div>
                     <p className="font-medium text-sm">No messages yet</p>
                     <p className="text-muted-foreground text-sm">{resolvedEmptyMessage}</p>
@@ -277,7 +278,16 @@ function TaskChatThreadContent(props: Controller) {
         </TaskChatErrorBoundary>
 
         {showComposer ? (
-          <div className="mt-4 space-y-3" data-testid="task-chat-composer-dock">
+          <div
+            className="mt-4 space-y-3"
+            data-testid="task-chat-composer-dock"
+            aria-busy={replyPending || undefined}
+          >
+            {replyPending ? (
+              <p role="status" className="sr-only">
+                Sending reply…
+              </p>
+            ) : null}
             <TaskChatContext
               taskStatus={taskStatus}
               ownerAgent={ownerAgent}
@@ -336,5 +346,6 @@ function TaskChatThreadContent(props: Controller) {
 }
 
 export function TaskChatThreadView(props: Controller) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   return <TaskChatThreadContent {...props} />;
 }

@@ -64,7 +64,7 @@ export function OnboardingCompanyNameStep({
     <div className="space-y-5">
       <div className="mb-1 flex items-center gap-3">
         <div className="bg-muted/50 p-2">
-          <Building2 className="h-5 w-5 text-muted-foreground" />
+          <Building2 className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
         </div>
         <div>
           <h3 className="font-medium">Name your company</h3>
@@ -143,7 +143,7 @@ export function OnboardingGrowStep({
     <div className="space-y-5">
       <div className="mb-1 flex items-center gap-3">
         <div className="bg-muted/50 p-2">
-          <Sparkles className="h-5 w-5 text-muted-foreground" />
+          <Sparkles className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
         </div>
         <div>
           <h3 className="font-medium">Tell us about your team</h3>
@@ -261,7 +261,7 @@ export function OnboardingMissionPathSelector({
         className="grid gap-2 md:grid-cols-2"
       >
         <ChoiceboxItem id="mission-path-direct" value="direct">
-          <Sparkles className="h-4 w-4" />
+          <Sparkles className="h-4 w-4"  data-icon="inline-start"/>
           <ChoiceboxItemHeader>
             <ChoiceboxItemTitle>I know my mission</ChoiceboxItemTitle>
             <ChoiceboxItemDescription>Type it directly</ChoiceboxItemDescription>
@@ -269,7 +269,7 @@ export function OnboardingMissionPathSelector({
           <ChoiceboxIndicator id="mission-path-direct" />
         </ChoiceboxItem>
         <ChoiceboxItem id="mission-path-questionnaire" value="questionnaire">
-          <ListTodo className="h-4 w-4" />
+          <ListTodo className="h-4 w-4"  data-icon="inline-start"/>
           <ChoiceboxItemHeader>
             <ChoiceboxItemTitle>Help me figure it out</ChoiceboxItemTitle>
             <ChoiceboxItemDescription>Answer a few questions</ChoiceboxItemDescription>

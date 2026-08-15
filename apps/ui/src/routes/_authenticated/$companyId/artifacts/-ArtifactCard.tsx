@@ -19,7 +19,7 @@ function PlaceholderPreview({ label }: { label?: string }) {
       className="relative flex w-full items-center justify-center overflow-hidden bg-muted"
     >
       <div className="flex flex-col items-center gap-1.5 text-muted-foreground/50">
-        <Paperclip className="h-7 w-7" aria-hidden="true" />
+        <Paperclip className="h-7 w-7" aria-hidden="true"  data-icon="inline-start"/>
         {label ? (
           <span className="text-(length:--text-micro) font-medium uppercase tracking-wide">{label}</span>
         ) : null}
@@ -65,7 +65,7 @@ function VideoPreview({ artifact }: { artifact: CompanyArtifact }) {
         className="relative flex w-full items-center justify-center overflow-hidden bg-black/80"
       >
         <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15">
-          <Play className="h-5 w-5 translate-x-0.5 text-white" aria-hidden="true" />
+          <Play className="h-5 w-5 translate-x-0.5 text-white" aria-hidden="true"  data-icon="inline-start"/>
         </div>
       </AspectRatio>
     );
@@ -126,7 +126,7 @@ function VideoPreview({ artifact }: { artifact: CompanyArtifact }) {
       />
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <div className="flex h-11 w-11 items-center justify-center rounded-full bg-black/55">
-          <Play className="h-5 w-5 translate-x-0.5 text-white" aria-hidden="true" />
+          <Play className="h-5 w-5 translate-x-0.5 text-white" aria-hidden="true"  data-icon="inline-start"/>
         </div>
       </div>
     </AspectRatio>
@@ -203,7 +203,7 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
                   aria-label="Open file in new tab"
                   onClick={(event) => event.stopPropagation()}
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
+                  <ExternalLink className="h-3.5 w-3.5"  data-icon="inline-end"/>
                 </a>
               </Button>
             ) : null}
@@ -216,7 +216,7 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
                   aria-label="Download file"
                   onClick={(event) => event.stopPropagation()}
                 >
-                  <Download className="h-3.5 w-3.5" />
+                  <Download className="h-3.5 w-3.5"  data-icon="inline-end"/>
                 </a>
               </Button>
             ) : null}

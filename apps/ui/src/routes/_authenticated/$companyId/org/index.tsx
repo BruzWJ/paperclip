@@ -358,7 +358,7 @@ function OrgChart() {
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <Network />
+            <Network  data-icon="inline-start"/>
           </EmptyMedia>
           <EmptyTitle>No organizational hierarchy defined.</EmptyTitle>
         </EmptyHeader>

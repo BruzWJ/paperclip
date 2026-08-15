@@ -217,7 +217,7 @@ export function SelectStep(props: SelectStepProps) {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Cloud />
+              <Cloud  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>No AWS provider vault configured. Add one to import secrets.</EmptyTitle>
           </EmptyHeader>
@@ -288,7 +288,7 @@ export function SelectStep(props: SelectStepProps) {
 
         <InputGroup className="ml-auto w-64">
           <InputGroupAddon>
-            <Search />
+            <Search  data-icon="inline-start"/>
           </InputGroupAddon>
           <InputGroupInput
             value={searchInput}
@@ -312,7 +312,7 @@ export function SelectStep(props: SelectStepProps) {
           disabled={previewLoading || !vaultId}
           aria-label="Refresh remote secrets"
         >
-          {previewLoading ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          {previewLoading ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5"  data-icon="inline-start"/>}
         </Button>
       </div>
 
@@ -335,7 +335,7 @@ export function SelectStep(props: SelectStepProps) {
       <div className="min-h-0 flex-1 overflow-y-auto" data-testid="vault-table-scroll">
         {previewError ? (
           <Alert variant="destructive" className="m-5" data-testid="preview-error-banner">
-            <AlertCircle />
+            <AlertCircle  data-icon="inline-start"/>
             <AlertTitle>{previewErrorTitle}</AlertTitle>
             <AlertDescription>
               <p>
@@ -345,7 +345,7 @@ export function SelectStep(props: SelectStepProps) {
               </p>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={onRefresh}>
-                  <RefreshCw /> Retry
+                  <RefreshCw  data-icon="inline-start"/> Retry
                 </Button>
                 {permissionError ? (
                   <a
@@ -354,7 +354,7 @@ export function SelectStep(props: SelectStepProps) {
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-xs font-medium underline"
                   >
-                    IAM reference <ExternalLink />
+                    IAM reference <ExternalLink  data-icon="inline-start"/>
                   </a>
                 ) : null}
               </div>
@@ -369,7 +369,7 @@ export function SelectStep(props: SelectStepProps) {
         ) : candidates.length === 0 ? (
           <Empty>
             <EmptyHeader>
-              <EmptyMedia variant="icon">{debouncedQuery ? <Search /> : <Database />}</EmptyMedia>
+              <EmptyMedia variant="icon">{debouncedQuery ? <Search  data-icon="inline-start"/> : <Database  data-icon="inline-start"/>}</EmptyMedia>
               <EmptyTitle>{debouncedQuery ? "No matching remote secrets" : "No remote secrets"}</EmptyTitle>
               <EmptyDescription>
                 {debouncedQuery

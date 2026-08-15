@@ -14,6 +14,7 @@ function NativeSelect({
       data-slot="native-select-wrapper"
     >
       <select
+        aria-label="Select"
         data-slot="native-select"
         data-size={size}
         className={cn(

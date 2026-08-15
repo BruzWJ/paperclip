@@ -52,7 +52,7 @@ export function SecretCreateError({
 
   return (
     <Alert variant="destructive" data-testid="secret-create-error">
-      <AlertCircle aria-hidden="true" />
+      <AlertCircle aria-hidden="true"  data-icon="inline-start"/>
       <AlertTitle>
         {isAccessDenied ? "AWS secret creation needs CreateSecret permission" : "AWS secret creation failed"}
       </AlertTitle>

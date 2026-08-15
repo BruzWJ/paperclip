@@ -58,7 +58,7 @@ export function useTaskPropertiesOwnership({
     </span>
   ) : ownerUserLabel ? (
     <>
-      <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
       <span className="min-w-0 truncate text-sm" title={ownerUserLabel}>
         {ownerUserLabel}
       </span>
@@ -123,7 +123,7 @@ export function useTaskPropertiesOwnership({
             <AgentIcon icon={option.agent.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
             {option.value === selectedOwnerAgentId ? (
-              <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true" />
+              <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true"  data-icon="inline-start"/>
             ) : null}
           </Button>
         ))}
@@ -168,7 +168,7 @@ export function useTaskPropertiesOwnership({
             className={cn("w-full justify-start text-xs", inline && "min-h-11")}
             onClick={() => toggleExecutionParticipant(stageType, `user:${currentUserId}`)}
           >
-            <User className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <User className="h-3 w-3 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
             Assign to me
           </Button>
         )}
@@ -180,7 +180,7 @@ export function useTaskPropertiesOwnership({
             className={cn("w-full justify-start text-xs", inline && "min-h-11")}
             onClick={() => toggleExecutionParticipant(stageType, `user:${creatorUserId}`)}
           >
-            <User className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <User className="h-3 w-3 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
             {creatorUserLabel || "Requester"}
           </Button>
         )}
@@ -198,7 +198,7 @@ export function useTaskPropertiesOwnership({
               className={cn("w-full justify-start text-xs", inline && "min-h-11")}
               onClick={() => toggleExecutionParticipant(stageType, option.id)}
             >
-              <User className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <User className="h-3 w-3 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
               {option.label}
             </Button>
           ))}

@@ -29,6 +29,7 @@ export interface UseInboxMutationsOptions {
 
 /** Owns inbox approval, archive, and read-state mutations. */
 export function useInboxMutations({ companyId, tab, state }: UseInboxMutationsOptions) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
   const {
     setActionError,
@@ -44,7 +45,7 @@ export function useInboxMutations({ companyId, tab, state }: UseInboxMutationsOp
     markItemRead,
   } = state;
   const canArchiveFromTab = isMineInboxTab(tab);
-  const { approveMutation, rejectMutation } = useApprovalMutations(companyId, setActionError);
+  const { approveMutation, rejectMutation } = useApprovalMutations(companyId);
 
   const approveJoinMutation = useMutation({
     mutationFn: (joinRequest: JoinRequest) => accessApi.approveJoinRequest(companyId, joinRequest.id),

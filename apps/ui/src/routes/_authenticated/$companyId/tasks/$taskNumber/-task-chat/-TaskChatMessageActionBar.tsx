@@ -63,7 +63,7 @@ export function TaskChatMessageActionBar({
         aria-label={copyLabel}
         onClick={() => void copy(getThreadMessageCopyText(message), "text")}
       >
-        {copiedText ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
+        {copiedText ? <CheckIcon className="size-4"  data-icon="inline-start"/> : <CopyIcon className="size-4"  data-icon="inline-start"/>}
       </MessageAction>
       {anchorId ? (
         <MessageAction
@@ -74,12 +74,12 @@ export function TaskChatMessageActionBar({
             void copy(`${window.location.origin}${window.location.pathname}#${anchorId}`, "link")
           }
         >
-          {copiedLink ? <CheckIcon className="size-4" /> : <LinkIcon className="size-4" />}
+          {copiedLink ? <CheckIcon className="size-4"  data-icon="inline-start"/> : <LinkIcon className="size-4"  data-icon="inline-start"/>}
         </MessageAction>
       ) : null}
       {replyTarget && onReply ? (
         <MessageAction tooltip="Reply" label="Reply" aria-label="Reply" onClick={() => onReply(replyTarget)}>
-          <ReplyIcon className="size-4" />
+          <ReplyIcon className="size-4"  data-icon="inline-end"/>
         </MessageAction>
       ) : null}
       {isRunActive && runId && onStopRun ? (
@@ -90,7 +90,7 @@ export function TaskChatMessageActionBar({
           disabled={isStoppingRun}
           onClick={() => void onStopRun(runId)}
         >
-          <SquareIcon className="size-4" />
+          <SquareIcon className="size-4"  data-icon="inline-end"/>
         </MessageAction>
       ) : null}
     </MessageActions>

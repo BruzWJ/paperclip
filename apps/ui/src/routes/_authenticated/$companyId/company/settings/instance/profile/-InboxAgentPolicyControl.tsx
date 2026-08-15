@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Inbox, Save } from "lucide-react";
@@ -64,6 +65,7 @@ export function InboxAgentPolicyControl({
   companyId: string | null | undefined;
   userId: string;
 }) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Draft | null>(null);
   const lastServerKeyRef = useRef<string | null>(null);
@@ -147,7 +149,7 @@ export function InboxAgentPolicyControl({
     <section className="space-y-4" aria-label="Let agents tidy my inbox">
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <Inbox className="h-5 w-5 text-muted-foreground" />
+          <Inbox className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
           <h2 className="text-base font-semibold">Let agents tidy my inbox</h2>
         </div>
         <p className="max-w-2xl text-sm text-muted-foreground">
@@ -235,7 +237,7 @@ export function InboxAgentPolicyControl({
           disabled={!isDirty || updateMutation.isPending}
           onClick={() => draft && updateMutation.mutate(draft)}
         >
-          {updateMutation.isPending ? <Spinner /> : <Save className="size-4" />}
+          {updateMutation.isPending ? <Spinner /> : <Save className="size-4"  data-icon="inline-start"/>}
           {updateMutation.isPending ? "Saving…" : "Save"}
         </Button>
       </div>

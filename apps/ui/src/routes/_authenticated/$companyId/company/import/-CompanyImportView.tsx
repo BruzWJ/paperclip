@@ -16,6 +16,7 @@ import {
 import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
 import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { FieldError } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -292,7 +293,7 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
               onClick={() => importMutation.mutate()}
               disabled={importMutation.isPending || hasErrors || selectedCount === 0}
             >
-              <Download className="mr-1.5 h-3.5 w-3.5" />
+              <Download className="mr-1.5 h-3.5 w-3.5"  data-icon="inline-start"/>
               {importMutation.isPending
                 ? "Importing..."
                 : `Import ${selectedCount} file${selectedCount === 1 ? "" : "s"}`}
@@ -312,7 +313,7 @@ export function CompanyImportView({ controller }: CompanyImportViewProps) {
 
           {/* Errors */}
           {importPreview.errors.length > 0 && (
-            <Alert variant="destructive" className="mx-5 mt-3">
+            <Alert variant="destructive" role="alert" className="mx-5 mt-3">
               <AlertDescription>
                 {importPreview.errors.map((error) => (
                   <p key={error}>{error}</p>

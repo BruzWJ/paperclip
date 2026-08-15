@@ -25,6 +25,7 @@ export function useProjectPropertiesFields({
   onFieldUpdate?: (field: ProjectConfigFieldKey, data: Record<string, unknown>) => void;
   getFieldSaveState?: (field: ProjectConfigFieldKey) => ProjectFieldSaveState;
 }) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const companyId = useCompanyRouteId();
   const queryClient = useQueryClient();
   const [codebaseEditor, setCodebaseEditor] = useState<"local" | "repo" | null>(null);

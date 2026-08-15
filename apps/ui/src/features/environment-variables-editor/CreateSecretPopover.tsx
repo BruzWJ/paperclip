@@ -132,7 +132,7 @@ export function SecretPopoverForm({
               aria-label={reveal ? "Hide value" : "Show value"}
               onClick={() => setReveal((prev) => !prev)}
             >
-              {reveal ? <EyeOff /> : <Eye />}
+              {reveal ? <EyeOff  data-icon="inline-start"/> : <Eye  data-icon="inline-start"/>}
             </InputGroupButton>
           </InputGroupAddon>
         </InputGroup>
@@ -146,7 +146,7 @@ export function SecretPopoverForm({
           Cancel
         </Button>
         <Button type="button" size="sm" onClick={() => void handleSubmit()} disabled={!canSubmit}>
-          {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin"  data-icon="inline-start"/> : null}
           {ctaLabel}
         </Button>
       </div>

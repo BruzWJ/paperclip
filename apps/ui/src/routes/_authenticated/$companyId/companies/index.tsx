@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -59,7 +60,8 @@ function Companies() {
   const [editName, setEditName] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  const editMutation = useMutation({
+  const editMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+  useMutation({
     mutationFn: ({ id, newName }: { id: string; newName: string }) =>
       companiesApi.update(id, { name: newName }),
     onSuccess: () => {
@@ -177,7 +179,7 @@ function Companies() {
                         disabled={editMutation.isPending}
                         aria-label="Save company name"
                       >
-                        <Check className="h-3.5 w-3.5" />
+                        <Check className="h-3.5 w-3.5"  data-icon="inline-start"/>
                       </Button>
                       <Button
                         variant="ghost"
@@ -186,7 +188,7 @@ function Companies() {
                         onClick={cancelEdit}
                         aria-label="Cancel company rename"
                       >
-                        <X className="h-3.5 w-3.5 text-muted-foreground" />
+                        <X className="h-3.5 w-3.5 text-muted-foreground"  data-icon="inline-start"/>
                       </Button>
                     </div>
                   ) : (
@@ -203,7 +205,7 @@ function Companies() {
                         }}
                         aria-label="Rename company"
                       >
-                        <Pencil className="h-3 w-3" />
+                        <Pencil className="h-3 w-3"  data-icon="inline-start"/>
                       </Button>
                     </div>
                   )}
@@ -222,17 +224,17 @@ function Companies() {
                         className="pointer-events-auto text-muted-foreground opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
                         aria-label="Company actions"
                       >
-                        <MoreHorizontal className="h-4 w-4" />
+                        <MoreHorizontal className="h-4 w-4"  data-icon="inline-start"/>
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => startEdit(company.id, company.name)}>
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Pencil className="h-3.5 w-3.5"  data-icon="inline-end"/>
                         Rename
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem variant="destructive" onClick={() => setConfirmDeleteId(company.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-3.5 w-3.5"  data-icon="inline-end"/>
                         Delete Company
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -243,19 +245,19 @@ function Companies() {
               {/* Stats row */}
               <div className="pointer-events-none relative z-10 mt-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground sm:gap-5">
                 <div className="flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5" />
+                  <Users className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   <span>
                     {agentCount} {agentCount === 1 ? "agent" : "agents"}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <CircleDot className="h-3.5 w-3.5" />
+                  <CircleDot className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   <span>
                     {taskCount} {taskCount === 1 ? "task" : "tasks"}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 tabular-nums">
-                  <DollarSign className="h-3.5 w-3.5" />
+                  <DollarSign className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   <span>
                     {formatMoneyAmount(company.knownSpendAmount, company.budgetCurrency)}
                     {hasBudget ? (
@@ -266,7 +268,7 @@ function Companies() {
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 ml-auto">
-                  <Calendar className="h-3.5 w-3.5" />
+                  <Calendar className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   <span>Created {relativeTime(company.createdAt)}</span>
                 </div>
               </div>

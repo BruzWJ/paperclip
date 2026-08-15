@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { startTransition, useEffect, useRef, useState } from "react";
 import { TASK_STATUSES } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
@@ -47,7 +48,7 @@ export function TaskSearchInput({
   return (
     <InputGroup className="w-48 sm:w-64 md:w-80">
       <InputGroupAddon>
-        <Search />
+        <Search  data-icon="inline-start"/>
       </InputGroupAddon>
       <InputGroupInput
         value={draftValue}

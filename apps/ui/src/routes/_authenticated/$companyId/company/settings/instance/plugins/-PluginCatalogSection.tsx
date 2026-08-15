@@ -35,7 +35,7 @@ export function PluginCatalogSection({
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-2">
-        <Puzzle className="h-5 w-5 text-muted-foreground" />
+        <Puzzle className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
         <h2 className="text-base font-semibold">Available Plugins</h2>
         <Badge variant="outline">Local catalog</Badge>
       </div>
@@ -60,7 +60,7 @@ export function PluginCatalogSection({
         <Empty className="border">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Puzzle />
+              <Puzzle  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>No plugins available</EmptyTitle>
             <EmptyDescription>No local plugins are available in this installation.</EmptyDescription>

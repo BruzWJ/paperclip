@@ -54,6 +54,7 @@ export function RoutineHistoryTab({
   onRestoreSecretMaterials,
   onRestored,
 }: Props) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const secretLookup = useMemo<SecretLookup>(
     () => new Map((secrets ?? []).map((secret) => [secret.id, secret])),
     [secrets],
@@ -184,7 +185,7 @@ export function RoutineHistoryTab({
   if (revisionsQuery.error) {
     return (
       <Alert variant="destructive">
-        <AlertCircle />
+        <AlertCircle  data-icon="inline-start"/>
         <AlertTitle>Could not load revisions</AlertTitle>
         <AlertDescription>
           <p>
@@ -263,7 +264,7 @@ export function RoutineHistoryTab({
                 <Empty>
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
-                      <HistoryIcon />
+                      <HistoryIcon  data-icon="inline-start"/>
                     </EmptyMedia>
                     <EmptyTitle>No edits yet</EmptyTitle>
                   </EmptyHeader>

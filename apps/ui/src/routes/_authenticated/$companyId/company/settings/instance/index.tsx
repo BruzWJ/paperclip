@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -68,7 +69,8 @@ function InstanceGeneralSettings() {
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const signOutMutation = useMutation({
+  const signOutMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+  useMutation({
     mutationFn: () => authApi.signOut(),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.auth.session });
@@ -224,7 +226,7 @@ function InstanceGeneralSettings() {
       ) : null}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <SlidersHorizontal className="h-5 w-5 text-muted-foreground" />
+          <SlidersHorizontal className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
           <h1 className="text-lg font-semibold">General</h1>
         </div>
         <p className="text-sm text-muted-foreground">
@@ -294,7 +296,7 @@ function InstanceGeneralSettings() {
             />
             {worktreeRunExecutionState.kind === "armed" ? (
               <Alert>
-                <Play />
+                <Play  data-icon="inline-start"/>
                 <AlertDescription>
                   Running routines created after{" "}
                   <span className="font-medium">
@@ -306,7 +308,7 @@ function InstanceGeneralSettings() {
             ) : null}
             {worktreeRunExecutionState.kind === "fail_closed" ? (
               <Alert variant="destructive">
-                <AlertTriangle />
+                <AlertTriangle  data-icon="inline-start"/>
                 <AlertTitle>Automatic execution is suppressed.</AlertTitle>
                 <AlertDescription>
                   {worktreeRunExecutionState.reason === "instance_mismatch"
@@ -335,7 +337,7 @@ function InstanceGeneralSettings() {
                 disabled={signOutMutation.isPending}
                 onClick={() => signOutMutation.mutate()}
               >
-                <LogOut className="size-4" />
+                <LogOut className="size-4"  data-icon="inline-start"/>
                 {signOutMutation.isPending ? "Signing out..." : "Sign out"}
               </Button>
             </ItemActions>

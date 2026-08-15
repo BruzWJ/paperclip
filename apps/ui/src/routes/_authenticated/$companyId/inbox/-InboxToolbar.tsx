@@ -24,7 +24,7 @@ function InboxSearch({ className }: { className: string }) {
   return (
     <InputGroup className={className}>
       <InputGroupAddon>
-        <Search />
+        <Search  data-icon="inline-start"/>
       </InputGroupAddon>
       <InputGroupInput
         aria-label="Search inbox"
@@ -70,7 +70,7 @@ function InboxGroupPicker<T extends string>({
           className={cn("h-8 w-8 shrink-0", value !== "none" && "bg-accent")}
           title="Group"
         >
-          <Layers className="h-3.5 w-3.5" />
+          <Layers className="h-3.5 w-3.5"  data-icon="inline-start"/>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-44 p-0">
@@ -84,7 +84,7 @@ function InboxGroupPicker<T extends string>({
               onClick={() => onValueChange(optionValue)}
             >
               <span>{label}</span>
-              {value === optionValue ? <Check className="h-3.5 w-3.5" /> : null}
+              {value === optionValue ? <Check className="h-3.5 w-3.5"  data-icon="inline-start"/> : null}
             </Button>
           ))}
         </div>
@@ -203,7 +203,7 @@ export function InboxToolbar() {
                       className="h-8 w-8 shrink-0"
                       title="Sort"
                     >
-                      <ArrowUpDown className="h-3.5 w-3.5" />
+                      <ArrowUpDown className="h-3.5 w-3.5"  data-icon="inline-start"/>
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-48 p-0">
@@ -217,7 +217,7 @@ export function InboxToolbar() {
                           onClick={() => setBlockedSortBy(value)}
                         >
                           <span>{label}</span>
-                          {blockedSortBy === value ? <Check className="h-3.5 w-3.5" /> : null}
+                          {blockedSortBy === value ? <Check className="h-3.5 w-3.5"  data-icon="inline-start"/> : null}
                         </Button>
                       ))}
                     </div>
@@ -234,7 +234,7 @@ export function InboxToolbar() {
                   onClick={toggleNesting}
                   title={nestingEnabled ? "Disable parent-child nesting" : "Enable parent-child nesting"}
                 >
-                  <ListTree className="h-3.5 w-3.5" />
+                  <ListTree className="h-3.5 w-3.5"  data-icon="inline-start"/>
                 </Button>
                 {taskFiltersPopover}
                 <InboxGroupPicker

@@ -134,7 +134,7 @@ function Search() {
         <h1 className="sr-only">Search</h1>
         <InputGroup className="h-10">
           <InputGroupAddon>
-            <SearchIcon aria-hidden />
+            <SearchIcon aria-hidden  data-icon="inline-start"/>
           </InputGroupAddon>
           <InputGroupInput
             ref={inputRef}
@@ -159,7 +159,7 @@ function Search() {
           {draftQuery.length > 0 ? (
             <InputGroupAddon align="inline-end">
               <InputGroupButton size="icon-xs" onClick={handleClear} aria-label="Clear search">
-                <X />
+                <X  data-icon="inline-start"/>
               </InputGroupButton>
             </InputGroupAddon>
           ) : null}
@@ -236,7 +236,7 @@ function Search() {
                   className="h-8 gap-1.5 text-xs font-normal"
                   onClick={() => onSheetOpenChange(true)}
                 >
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  <SlidersHorizontal className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   Filters
                   {activeFilterCount > 0 ? (
                     <Badge className="ml-0.5 min-w-4 px-1 text-(length:--text-nano) tabular-nums">

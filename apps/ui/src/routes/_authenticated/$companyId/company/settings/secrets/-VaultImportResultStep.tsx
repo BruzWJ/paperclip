@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";

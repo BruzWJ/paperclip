@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TaskAttachment } from "@paperclipai/shared";
@@ -77,7 +78,7 @@ function AttachmentActions({
           aria-label={`Browse ${filename} in gallery`}
           onClick={() => onPreview(attachment)}
         >
-          <Maximize2 className="h-4 w-4" />
+          <Maximize2 className="h-4 w-4"  data-icon="inline-start"/>
         </Button>
       ) : null}
       <Button asChild variant="ghost" size="icon-sm" title="Open in new tab">
@@ -87,12 +88,12 @@ function AttachmentActions({
           rel="noreferrer"
           aria-label={`Open ${filename}`}
         >
-          <ExternalLink className="h-4 w-4" />
+          <ExternalLink className="h-4 w-4"  data-icon="inline-start"/>
         </a>
       </Button>
       <Button asChild variant="ghost" size="icon-sm" title="Download">
         <a href={attachmentDownloadPath(attachment)} aria-label={`Download ${filename}`}>
-          <Download className="h-4 w-4" />
+          <Download className="h-4 w-4"  data-icon="inline-start"/>
         </a>
       </Button>
       {onDelete ? (
@@ -104,7 +105,7 @@ function AttachmentActions({
           onClick={() => onDelete(attachment.id)}
           disabled={deletePending}
         >
-          <Trash2 className="h-4 w-4" />
+          <Trash2 className="h-4 w-4"  data-icon="inline-start"/>
         </Button>
       ) : null}
     </div>
@@ -131,7 +132,7 @@ function MarkdownAttachmentCard({ attachment, onDelete, deletePending }: Attachm
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
-            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <FileText className="h-4 w-4 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
             <span className="truncate text-sm font-medium" title={filename}>
               {filename}
             </span>
@@ -273,7 +274,7 @@ export function TaskAttachmentsSection({
     <div className="space-y-3 rounded-lg">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Paperclip className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+          <Paperclip className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true"  data-icon="inline-start"/>
           <h3 className="text-sm font-medium text-muted-foreground">Attachments</h3>
           <span className="text-xs text-muted-foreground">{attachments.length}</span>
         </div>
@@ -309,7 +310,7 @@ export function TaskAttachmentsSection({
                     onClick={() => requestDelete(attachment.id)}
                     title="Delete attachment"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   </AttachmentAction>
                 </AttachmentActionGroup>
               ) : null}

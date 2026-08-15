@@ -31,6 +31,7 @@ import {
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
 export function validateNewAgentSearch(search: Record<string, unknown>): {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   adapterType?: string;
 } {
   assertOnlySearchKeys(search, ["adapterType"]);
@@ -192,6 +193,7 @@ function NewAgent() {
             <LabeledFormField label="Name" labelFor="agent-name">
               <Input
                 id="agent-name"
+                aria-label="Name"
                 placeholder="Agent name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
@@ -205,6 +207,7 @@ function NewAgent() {
             >
               <Input
                 id="agent-title"
+                aria-label="Title"
                 placeholder="Title (display only)"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
@@ -217,6 +220,7 @@ function NewAgent() {
             >
               <Textarea
                 id="agent-capabilities"
+                aria-label="Capabilities"
                 className="min-h-24"
                 value={capabilities}
                 onChange={(event) => setCapabilities(event.target.value)}
@@ -230,6 +234,7 @@ function NewAgent() {
             >
               <Textarea
                 id="agent-instructions"
+                aria-label="Agent instructions"
                 className="min-h-24"
                 value={instruction}
                 onChange={(event) => setInstruction(event.target.value)}
@@ -326,6 +331,7 @@ function NewAgent() {
             >
               <Input
                 id="initial-task-title"
+                aria-label="Title"
                 placeholder="Task title (optional)"
                 value={initialTaskTitle}
                 onChange={(event) => setInitialTaskTitle(event.target.value)}
@@ -338,6 +344,7 @@ function NewAgent() {
             >
               <Textarea
                 id="initial-task-request"
+                aria-label="Request"
                 className="min-h-28"
                 placeholder="Describe the first concrete assignment"
                 value={initialRequest}

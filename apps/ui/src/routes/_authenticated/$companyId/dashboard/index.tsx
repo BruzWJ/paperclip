@@ -253,7 +253,7 @@ function Dashboard() {
 
       {hasNoAgents && (
         <Alert>
-          <Bot />
+          <Bot  data-icon="inline-start"/>
           <AlertTitle>You have no agents.</AlertTitle>
           <AlertDescription>
             <Button variant="outline" size="sm" onClick={openNewAgent}>
@@ -269,7 +269,7 @@ function Dashboard() {
         <>
           {data.budgets.activeIncidents > 0 ? (
             <Alert variant="destructive">
-              <PauseCircle />
+              <PauseCircle  data-icon="inline-start"/>
               <AlertTitle>
                 {data.budgets.activeIncidents} active budget incident
                 {data.budgets.activeIncidents === 1 ? "" : "s"}

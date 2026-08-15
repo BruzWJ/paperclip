@@ -70,12 +70,12 @@ export function BudgetIncidentCard({
               limit of {formatMoneyAmount(incident.limitAmount, incident.budgetCurrency)}.
             </CardDescription>
           </div>
-          <AlertOctagon className="size-5 text-destructive" />
+          <AlertOctagon className="size-5 text-destructive"  data-icon="inline-start"/>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <Alert variant="destructive">
-          <PauseCircle />
+          <PauseCircle  data-icon="inline-start"/>
           <AlertDescription>
             {incident.scopeType === "project"
               ? "Project execution is paused. New work in this project will not start until you resolve the budget incident."
@@ -87,6 +87,7 @@ export function BudgetIncidentCard({
           <div className="flex flex-col gap-3 sm:flex-row">
             <Input
               id={budgetInputId}
+              aria-label={`New budget (${incident.budgetCurrency})`}
               value={draftAmount}
               onChange={(event) => setDraftAmount(event.target.value)}
               inputMode="decimal"
@@ -99,7 +100,7 @@ export function BudgetIncidentCard({
                 if (parsed) onRaiseAndResume(parsed);
               }}
             >
-              <ArrowUpRight className="h-4 w-4" />
+              <ArrowUpRight className="h-4 w-4"  data-icon="inline-start"/>
               {isMutating ? "Applying..." : "Raise budget & resume"}
             </Button>
           </div>

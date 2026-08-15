@@ -25,7 +25,7 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Info />
+              <Info  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>No secrets selected. Go back to pick remote secrets to import.</EmptyTitle>
           </EmptyHeader>
@@ -65,6 +65,7 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   <LabeledFormField label="Paperclip name">
                     <Input
+                      aria-label="Paperclip name"
                       value={draft.name}
                       onChange={(e) =>
                         updateDraft(draft.candidate.externalRef, {
@@ -80,6 +81,7 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
                   </LabeledFormField>
                   <LabeledFormField label="Key">
                     <Input
+                      aria-label="Key"
                       value={draft.key}
                       onChange={(e) =>
                         updateDraft(draft.candidate.externalRef, {
@@ -100,6 +102,7 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
                   </LabeledFormField>
                   <LabeledFormField label="Description (optional)">
                     <Input
+                      aria-label="Description"
                       value={draft.description}
                       onChange={(e) =>
                         updateDraft(draft.candidate.externalRef, {
@@ -114,7 +117,7 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
                 </div>
                 {error && (
                   <FieldError id={errorId} data-testid={`review-error-${draft.candidate.externalRef}`}>
-                    <AlertTriangle />
+                    <AlertTriangle  data-icon="inline-start"/>
                     {error}
                   </FieldError>
                 )}
@@ -127,7 +130,7 @@ export function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, imp
                   aria-label={`Remove ${draft.candidate.remoteName}`}
                   disabled={importing}
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-3.5 w-3.5"  data-icon="inline-start"/>
                 </Button>
               </ItemActions>
             </Item>

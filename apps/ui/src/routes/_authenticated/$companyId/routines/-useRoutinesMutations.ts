@@ -71,6 +71,7 @@ export async function moveRoutineSelection(input: {
 }
 
 export function useRoutinesMutations(input: RoutinesMutationContext) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const {
     companyId,
     queryClient,

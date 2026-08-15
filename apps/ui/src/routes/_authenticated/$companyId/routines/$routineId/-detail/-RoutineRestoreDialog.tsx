@@ -40,7 +40,7 @@ export function RestoreConfirmDialog({
       description={`This creates a new revision ${newRevisionNumber} with the same content as revision ${target.revisionNumber}. Revisions ${target.revisionNumber}–${currentRevisionNumber} stay in history and are not modified.`}
       confirmLabel={
         <>
-          <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+          <RotateCcw className="mr-1.5 h-3.5 w-3.5"  data-icon="inline-start"/>
           Restore as revision {newRevisionNumber}
         </>
       }
@@ -89,7 +89,7 @@ export function RestoreConfirmDialog({
         })}
       </ItemGroup>
       <LabeledFormField label="Change summary (optional)" labelFor="restore-change-summary">
-        <Input
+        <Input aria-label="restore change summary"
           id="restore-change-summary"
           value={changeSummary}
           placeholder="Why are you restoring? Visible in history."

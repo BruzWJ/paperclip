@@ -221,7 +221,7 @@ export const EntityCombobox = forwardRef<HTMLButtonElement, EntityComboboxProps>
           <Check
             aria-hidden="true"
             className={cn("ml-auto size-4", option.id === value ? "opacity-100" : "opacity-0")}
-          />
+           data-icon="inline-start"/>
         ) : null}
       </ComboboxItem>
     );
@@ -286,7 +286,7 @@ export const EntityCombobox = forwardRef<HTMLButtonElement, EntityComboboxProps>
               ? renderValue(selector.currentOption)
               : (selector.currentOption?.label ?? placeholder)}
           </span>
-          {showTriggerIndicator ? <ChevronsUpDown className="size-4 shrink-0 opacity-50" /> : null}
+          {showTriggerIndicator ? <ChevronsUpDown className="size-4 shrink-0 opacity-50"  data-icon="inline-start"/> : null}
         </ComboboxTrigger>
       </span>
       <ComboboxContent

@@ -40,7 +40,7 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
   if (controller.status === "error") {
     return (
       <Alert variant="destructive">
-        <AlertTriangle />
+        <AlertTriangle  data-icon="inline-start"/>
         <AlertTitle>Could not load agent</AlertTitle>
         <AlertDescription>{controller.error.message}</AlertDescription>
       </Alert>
@@ -142,14 +142,14 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
               aria-label="Dismiss agent membership notice"
               onClick={() => setDismissedLeftAgentIds((current) => new Set(current).add(agent.id))}
             >
-              <X />
+              <X  data-icon="inline-start"/>
             </Button>
           </AlertDescription>
         </Alert>
       ) : null}
       {hasInvalidOrgChain ? (
         <Alert>
-          <AlertTriangle />
+          <AlertTriangle  data-icon="inline-start"/>
           <AlertTitle>Invalid reporting chain</AlertTitle>
           <AlertDescription>
             <p>{agent.name} cannot accept tasks or start runs until its reporting chain is repaired.</p>
@@ -169,8 +169,8 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
         <div className="border-b pb-3">
           <Button asChild variant="ghost" size="sm" className="max-w-full">
             <Link to="/$companyId/agents/$agentId/$tab" params={{ companyId, agentId, tab: "runs" }}>
-              <ArrowLeftIcon />
-              <AgentIcon icon={agent.icon} className="size-4" />
+              <ArrowLeftIcon data-icon="inline-start" />
+              <AgentIcon icon={agent.icon} className="size-4" data-icon="inline-start" />
               <span className="truncate">{agent.name} runs</span>
             </Link>
           </Button>
@@ -201,7 +201,7 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
                 })
               }
             >
-              {agentStarPending ? <Spinner /> : <Star />}
+              {agentStarPending ? <Spinner /> : <Star  data-icon="inline-start"/>}
             </Toggle>
             <AgentActionButtons
               agent={agent}
@@ -263,14 +263,14 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
 
       {actionError && (
         <Alert variant="destructive">
-          <AlertTriangle />
+          <AlertTriangle  data-icon="inline-start"/>
           <AlertTitle>Agent action failed</AlertTitle>
           <AlertDescription>{actionError}</AlertDescription>
         </Alert>
       )}
       {isPendingApproval && (
         <Alert>
-          <CheckCircle2 />
+          <CheckCircle2  data-icon="inline-start"/>
           <AlertTitle>Board approval required</AlertTitle>
           <AlertDescription>
             <span>This agent is pending board approval and cannot be invoked yet.</span>
@@ -284,7 +284,7 @@ export function AgentDetailView({ controller }: AgentDetailViewProps) {
       )}
       {isPluginTriage && agent.pluginManagement && (
         <Alert>
-          <AlertTriangle />
+          <AlertTriangle  data-icon="inline-start"/>
           <AlertTitle>Plugin-managed agent awaiting board triage</AlertTitle>
           <AlertDescription>
             <p>

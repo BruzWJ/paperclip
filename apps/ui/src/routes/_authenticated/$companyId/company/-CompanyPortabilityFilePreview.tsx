@@ -91,7 +91,7 @@ export function CompanyPortabilityFilePreview({
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <Package />
+            <Package  data-icon="inline-start"/>
           </EmptyMedia>
           <EmptyTitle>Select a file to preview its contents.</EmptyTitle>
         </EmptyHeader>

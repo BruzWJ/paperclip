@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -67,7 +68,7 @@ export function DecisionToolbar({
             title="Filter"
             aria-label="Filter"
           >
-            <ListFilter />
+            <ListFilter  data-icon="inline-start"/>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
@@ -83,7 +84,7 @@ export function DecisionToolbar({
             title="Group"
             aria-label="Group"
           >
-            <Layers />
+            <Layers  data-icon="inline-start"/>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -103,7 +104,7 @@ export function DecisionToolbar({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button type="button" variant="outline" size="icon-sm" title="Sort" aria-label="Sort">
-            <ArrowUpDown />
+            <ArrowUpDown  data-icon="inline-start"/>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">

@@ -123,7 +123,7 @@ export function FoldCurtain({
               className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
             >
               {expanded ? lessLabel : moreLabel}
-              {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {expanded ? <ChevronUp className="h-3.5 w-3.5"  data-icon="inline-start"/> : <ChevronDown className="h-3.5 w-3.5"  data-icon="inline-start"/>}
             </Button>
           </CollapsibleTrigger>
         </div>

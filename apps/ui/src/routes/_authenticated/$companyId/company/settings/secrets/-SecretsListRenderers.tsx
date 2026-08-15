@@ -54,20 +54,20 @@ export function SecretsRowActions({ row }: { row: UnifiedSecretRow }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${name}`}>
-          <MoreHorizontal className="h-4 w-4" />
+          <MoreHorizontal className="h-4 w-4"  data-icon="inline-start"/>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuItem onSelect={() => openSecretRow(row)}>
-          <KeyRound className="h-4 w-4" /> View details
+          <KeyRound className="h-4 w-4"  data-icon="inline-end"/> View details
         </DropdownMenuItem>
         {row.kind === "company" ? (
           <>
             <DropdownMenuItem onSelect={() => setUsageDialogSecretId(row.secret.id)}>
-              <Link2 className="h-4 w-4" /> View references ({row.secret.referenceCount ?? 0})
+              <Link2 className="h-4 w-4"  data-icon="inline-end"/> View references ({row.secret.referenceCount ?? 0})
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => openRotateSecret(row.secret)}>
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="h-4 w-4"  data-icon="inline-end"/>
               {row.secret.managedMode === "external_reference" ? "Update reference" : "Update value"}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -81,9 +81,9 @@ export function SecretsRowActions({ row }: { row: UnifiedSecretRow }) {
               }
             >
               {row.secret.status === "active" ? (
-                <Ban className="h-4 w-4" />
+                <Ban className="h-4 w-4"  data-icon="inline-start"/>
               ) : (
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4"  data-icon="inline-start"/>
               )}
               {row.secret.status === "active" ? "Disable" : "Activate"}
             </DropdownMenuItem>
@@ -97,15 +97,15 @@ export function SecretsRowActions({ row }: { row: UnifiedSecretRow }) {
               }
             >
               {row.secret.status === "archived" ? (
-                <ArchiveRestore className="h-4 w-4" />
+                <ArchiveRestore className="h-4 w-4"  data-icon="inline-start"/>
               ) : (
-                <Archive className="h-4 w-4" />
+                <Archive className="h-4 w-4"  data-icon="inline-start"/>
               )}
               {row.secret.status === "archived" ? "Unarchive" : "Archive"}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => setDeleteConfirm(row.secret)}>
-              <Trash2 className="h-4 w-4" /> Delete secret
+              <Trash2 className="h-4 w-4"  data-icon="inline-end"/> Delete secret
             </DropdownMenuItem>
           </>
         ) : (
@@ -121,13 +121,13 @@ export function SecretsRowActions({ row }: { row: UnifiedSecretRow }) {
                 )
               }
             >
-              <KeyRound className="h-4 w-4" />
+              <KeyRound className="h-4 w-4"  data-icon="inline-start"/>
               {myUserSecrets.find((entry) => entry.definition.id === row.definition.id)?.secret
                 ? "Update my value"
                 : "Set my value"}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => openEditDefinition(row.definition)}>
-              <Pencil className="h-4 w-4" /> Edit definition
+              <Pencil className="h-4 w-4"  data-icon="inline-end"/> Edit definition
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -140,9 +140,9 @@ export function SecretsRowActions({ row }: { row: UnifiedSecretRow }) {
               }
             >
               {row.definition.status === "active" ? (
-                <Ban className="h-4 w-4" />
+                <Ban className="h-4 w-4"  data-icon="inline-start"/>
               ) : (
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4"  data-icon="inline-start"/>
               )}
               {row.definition.status === "active" ? "Disable" : "Activate"}
             </DropdownMenuItem>
@@ -156,9 +156,9 @@ export function SecretsRowActions({ row }: { row: UnifiedSecretRow }) {
               }
             >
               {row.definition.status === "archived" ? (
-                <ArchiveRestore className="h-4 w-4" />
+                <ArchiveRestore className="h-4 w-4"  data-icon="inline-start"/>
               ) : (
-                <Archive className="h-4 w-4" />
+                <Archive className="h-4 w-4"  data-icon="inline-start"/>
               )}
               {row.definition.status === "archived" ? "Unarchive" : "Archive"}
             </DropdownMenuItem>
@@ -167,7 +167,7 @@ export function SecretsRowActions({ row }: { row: UnifiedSecretRow }) {
               variant="destructive"
               onSelect={() => setDefinitionDeleteConfirm(row.definition)}
             >
-              <Trash2 className="h-4 w-4" /> Delete definition
+              <Trash2 className="h-4 w-4"  data-icon="inline-end"/> Delete definition
             </DropdownMenuItem>
           </>
         )}
@@ -182,14 +182,14 @@ export function SecretsFolderItem({ folder }: { folder: SecretPathFolder }) {
     <Item asChild variant="outline">
       <Link to="." search={folderSearch(folder.path)} activeOptions={{ exact: true, includeSearch: true }}>
         <ItemMedia variant="icon">
-          <Folder />
+          <Folder  data-icon="inline-start"/>
         </ItemMedia>
         <ItemContent>
           <ItemTitle>{folder.name}</ItemTitle>
           <ItemDescription>{formatSecretPathCounts(folder.secretCount, folder.folderCount)}</ItemDescription>
         </ItemContent>
         <ItemActions>
-          <ChevronRight />
+          <ChevronRight  data-icon="inline-start"/>
         </ItemActions>
       </Link>
     </Item>
@@ -201,7 +201,7 @@ export function SecretsUpItem() {
   const parentLabel = parentFolderPath ? parentFolderPath.split("/").pop()! : "All secrets";
   const target = (
     <Link to="." search={folderSearch(parentFolderPath)} activeOptions={{ exact: true, includeSearch: true }}>
-      <CornerLeftUp /> Up to {parentLabel}
+      <CornerLeftUp  data-icon="inline-start"/> Up to {parentLabel}
     </Link>
   );
   return (

@@ -52,7 +52,7 @@ export function FolderFormDialog({
     >
       <div className="space-y-4">
         <LabeledFormField className="gap-2" label="Name" labelFor="folder-name">
-          <Input
+          <Input aria-label="folder name"
             id="folder-name"
             value={name}
             onChange={(event) => setName(event.target.value)}

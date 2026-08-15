@@ -43,6 +43,7 @@ export function useTaskPropertiesMonitor({
   state,
   data,
 }: UseTaskPropertiesMonitorOptions) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const [executionDecision, setExecutionDecision] = useState<ExecutionStageDecision | null>(null);
   const currentExecutionLabel = (() => {
     if (!task.executionState?.currentStageType) return null;
@@ -177,10 +178,9 @@ export function useTaskPropertiesMonitor({
           <span
             className="inline-flex min-w-0 items-start gap-1.5 border-0 bg-transparent p-0 text-left font-inherit text-inherit"
             data-testid="monitor-row-trigger"
-            onClick={() => state.setMonitorDetailsOpen(false)}
           >
             {monitorNextCheckAt ? (
-              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true"  data-icon="inline-start"/>
             ) : null}
             <span className="flex min-w-0 flex-col items-start">
               <span

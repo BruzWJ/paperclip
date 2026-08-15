@@ -81,7 +81,7 @@ function CompanySettings() {
         </p>
       ) : null}
       <div className="flex items-center gap-2">
-        <Settings className="h-5 w-5 text-muted-foreground" />
+        <Settings className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
         <h1 className="text-lg font-semibold">Company Settings</h1>
       </div>
 

@@ -48,7 +48,7 @@ export function InboxRowUnreadSlot({
           className="size-4 rounded-md p-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-30"
           aria-label="Dismiss from inbox"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="h-3.5 w-3.5"  data-icon="inline-start"/>
         </Button>
       ) : (
         <span className="inline-flex h-4 w-4" aria-hidden="true" />

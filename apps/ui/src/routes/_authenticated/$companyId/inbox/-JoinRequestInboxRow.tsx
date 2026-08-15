@@ -44,7 +44,7 @@ export function JoinRequestInboxRow({
         />
       ) : null}
       <ItemMedia variant="icon">
-        <UserPlus />
+        <UserPlus  data-icon="inline-start"/>
       </ItemMedia>
       <ItemContent>
         <ItemTitle>{label}</ItemTitle>

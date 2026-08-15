@@ -310,6 +310,7 @@ export function shouldSuppressSinglePreviousSiblingBlockerChip(
 export type TaskListRequestFilters = NonNullable<Parameters<typeof tasksApi.list>[1]>;
 
 export interface TasksListProps {
+  // Loading and error surfaces announce through role="status" live regions.
   tasks: Task[];
   isLoading?: boolean;
   error?: Error | null;

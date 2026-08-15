@@ -38,6 +38,7 @@ interface RoutineComposerDialogProps {
 }
 
 export function RoutineComposerDialog({ controller }: RoutineComposerDialogProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   if (controller.status !== "ready") return null;
   return <ReadyRoutineComposerDialog controller={controller} />;
 }
@@ -277,9 +278,9 @@ function ReadyRoutineComposerDialog({
                     </p>
                   </div>
                   {advancedOpen ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    <ChevronDown className="h-4 w-4 text-muted-foreground"  data-icon="inline-start"/>
                   ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    <ChevronRight className="h-4 w-4 text-muted-foreground"  data-icon="inline-start"/>
                   )}
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-3">
@@ -352,7 +353,7 @@ function ReadyRoutineComposerDialog({
                 onClick={() => createRoutine.mutate()}
                 disabled={createRoutine.isPending || !draft.title.trim()}
               >
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="mr-2 h-4 w-4"  data-icon="inline-start"/>
                 {createRoutine.isPending ? "Creating..." : "Create routine"}
               </Button>
               {createRoutine.isError ? (

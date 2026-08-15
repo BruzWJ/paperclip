@@ -72,7 +72,7 @@ export function FailedRunInboxRow({
         />
       ) : null}
       <ItemMedia variant="icon">
-        <XCircle />
+        <XCircle  data-icon="inline-start"/>
       </ItemMedia>
       <ItemContent>
         {agentId ? (
@@ -86,7 +86,7 @@ export function FailedRunInboxRow({
       {!showUnreadSlot ? (
         <ItemActions>
           <Button variant="ghost" size="icon-sm" onClick={onDismiss} aria-label="Dismiss">
-            <X />
+            <X  data-icon="inline-start"/>
           </Button>
         </ItemActions>
       ) : null}

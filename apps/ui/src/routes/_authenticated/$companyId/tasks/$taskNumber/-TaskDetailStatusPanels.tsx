@@ -30,7 +30,7 @@ export function TaskDetailStatusPanels() {
         <nav className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
           {[...ancestors].reverse().map((ancestor, i) => (
             <span key={ancestor.id} className="flex items-center gap-1">
-              {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
+              {i > 0 && <ChevronRight className="h-3 w-3 shrink-0"  data-icon="inline-start"/>}
               <TaskLinkQuicklook
                 taskId={ancestor.id}
                 taskNumber={ancestor.taskNumber}
@@ -42,19 +42,19 @@ export function TaskDetailStatusPanels() {
               </TaskLinkQuicklook>
             </span>
           ))}
-          <ChevronRight className="h-3 w-3 shrink-0" />
+          <ChevronRight className="h-3 w-3 shrink-0"  data-icon="inline-start"/>
           <span className="text-foreground/60 truncate max-w-(--sz-200px)">{taskDisplayTitle(task)}</span>
         </nav>
       )}
       {task.hiddenAt && (
         <Alert variant="destructive">
-          <EyeOff />
+          <EyeOff  data-icon="inline-start"/>
           <AlertDescription>This task is hidden</AlertDescription>
         </Alert>
       )}
       {activePauseHold && (
         <Alert>
-          <CirclePause />
+          <CirclePause  data-icon="inline-start"/>
           {activePauseHold.isRoot ? (
             <>
               <AlertTitle>

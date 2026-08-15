@@ -61,14 +61,14 @@ export function ArtifactGroupCard({ group, linkOptions }: ArtifactGroupCardProps
             <ArtifactPreview artifact={preview} />
           ) : (
             <div className="flex aspect-video w-full items-center justify-center bg-accent/20 text-muted-foreground/50">
-              <Layers className="h-7 w-7" aria-hidden="true" />
+              <Layers className="h-7 w-7" aria-hidden="true"  data-icon="inline-start"/>
             </div>
           )}
           <Badge
             variant="ghost"
             className="absolute right-2 top-2 bg-background/85 text-(length:--text-micro) text-foreground/90 shadow-sm backdrop-blur"
           >
-            <Layers className="h-3 w-3" aria-hidden="true" />
+            <Layers className="h-3 w-3" aria-hidden="true"  data-icon="inline-start"/>
             {group.count}
           </Badge>
         </div>

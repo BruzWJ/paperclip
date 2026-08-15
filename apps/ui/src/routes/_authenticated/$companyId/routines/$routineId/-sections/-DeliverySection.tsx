@@ -164,7 +164,7 @@ export function NextFiresPreview({
                   {entry.note ? <ItemDescription>({entry.note})</ItemDescription> : null}
                 </ItemContent>
                 <ItemMedia>
-                  <ArrowRight />
+                  <ArrowRight  data-icon="inline-start"/>
                 </ItemMedia>
                 <ItemActions>
                   <DomainStatus status={entry.disposition}>{entry.label}</DomainStatus>

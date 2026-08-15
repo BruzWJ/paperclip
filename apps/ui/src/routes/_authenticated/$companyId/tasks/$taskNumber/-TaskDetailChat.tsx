@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { tasksApi } from "@/api/tasks";
 import { TaskChatConfirmation } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatConfirmation";
 import { TaskChatThread } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread";

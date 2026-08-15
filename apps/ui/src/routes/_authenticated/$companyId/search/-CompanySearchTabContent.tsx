@@ -83,7 +83,7 @@ export function ZeroResultsRecovery({
     <Empty data-testid="search-zero-results-recovery">
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <FilterX aria-hidden />
+          <FilterX aria-hidden  data-icon="inline-start"/>
         </EmptyMedia>
         <EmptyTitle>No results with these filters</EmptyTitle>
         <EmptyDescription>
@@ -172,7 +172,7 @@ export function CompanySearchTabContent({
                     onClick={() => onRecentClick(entry)}
                     className="w-full justify-start"
                   >
-                    <SearchIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <SearchIcon className="h-3.5 w-3.5 text-muted-foreground"  data-icon="inline-start"/>
                     <span className="flex-1 truncate">{entry}</span>
                   </Button>
                 </Item>
@@ -203,7 +203,7 @@ export function CompanySearchTabContent({
     const status = apiError?.status;
     return (
       <Alert variant="destructive" className="mx-auto my-12 max-w-xl">
-        <AlertTriangle aria-hidden />
+        <AlertTriangle aria-hidden  data-icon="inline-start"/>
         <AlertTitle>Couldn’t run that search</AlertTitle>
         <AlertDescription>
           <p>
@@ -255,7 +255,7 @@ export function CompanySearchTabContent({
       <Empty className="mx-auto max-w-xl border-0">
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <FileQuestion aria-hidden />
+            <FileQuestion aria-hidden  data-icon="inline-start"/>
           </EmptyMedia>
           <EmptyTitle>No results for &ldquo;{trimmedQuery}&rdquo;</EmptyTitle>
           <EmptyDescription>

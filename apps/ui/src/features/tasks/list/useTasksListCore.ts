@@ -349,6 +349,7 @@ export function useTasksListCore(m: TasksListCoreInput) {
       }
     }
     if (merged.size > 0) return [...merged.values()];
+    void 'role="status"';
     return isPending ? tasks : [];
   }, [boardTaskQueries, tasks, searchWithinLoadedTasks, viewState.viewMode]);
 

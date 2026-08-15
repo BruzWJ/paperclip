@@ -136,7 +136,7 @@ function SearchResultRowImpl({ result, agentsById, isActive, className }: Search
     return (
       <SearchResultTarget result={result} className={cn(ROW_BASE, isActive && "bg-muted/40", className)}>
         <ItemUI.ItemMedia variant="icon">
-          <Bot className="h-3 w-3" />
+          <Bot className="h-3 w-3"  data-icon="inline-start"/>
         </ItemUI.ItemMedia>
         <ItemUI.ItemContent className="min-w-0">
           <ItemUI.ItemTitle className="max-w-full truncate">{result.title}</ItemUI.ItemTitle>
@@ -157,7 +157,7 @@ function SearchResultRowImpl({ result, agentsById, isActive, className }: Search
     return (
       <SearchResultTarget result={result} className={cn(ROW_BASE, isActive && "bg-muted/40", className)}>
         <ItemUI.ItemMedia>
-          <Hexagon className="h-4 w-4 text-muted-foreground" />
+          <Hexagon className="h-4 w-4 text-muted-foreground"  data-icon="inline-start"/>
         </ItemUI.ItemMedia>
         <ItemUI.ItemContent className="min-w-0">
           <ItemUI.ItemTitle className="max-w-full truncate">{result.title}</ItemUI.ItemTitle>
@@ -181,7 +181,7 @@ function SearchResultRowImpl({ result, agentsById, isActive, className }: Search
     return (
       <SearchResultTarget result={result} className={cn(ROW_BASE, isActive && "bg-muted/40", className)}>
         <ItemUI.ItemMedia>
-          <Paperclip className="h-4 w-4 text-muted-foreground" />
+          <Paperclip className="h-4 w-4 text-muted-foreground"  data-icon="inline-start"/>
         </ItemUI.ItemMedia>
         <ItemUI.ItemContent className="min-w-0">
           <ItemUI.ItemTitle className="w-full flex-wrap">

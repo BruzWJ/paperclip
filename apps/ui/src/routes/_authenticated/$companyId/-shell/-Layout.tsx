@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useNavigationAction } from "@/lib/navigation-action";
 import { useQuery } from "@tanstack/react-query";

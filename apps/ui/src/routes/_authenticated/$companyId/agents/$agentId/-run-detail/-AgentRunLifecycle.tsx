@@ -73,9 +73,9 @@ function PromptSources({
   return (
     <Sources>
       <SourcesTrigger count={sources.length} className="group">
-        <BookOpenIcon className="size-4" />
+        <BookOpenIcon className="size-4"  data-icon="inline-start"/>
         <span className="font-medium">Prompt sources · {sources.length}</span>
-        <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+        <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180"  data-icon="inline-start"/>
       </SourcesTrigger>
       <SourcesContent>
         {sources.map((source) => (

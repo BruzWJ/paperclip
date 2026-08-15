@@ -131,7 +131,7 @@ function Activity() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <History />
+              <History  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>No activity yet.</EmptyTitle>
           </EmptyHeader>

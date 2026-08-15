@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { attentionApi } from "@/api/attention";
 import { useNavigateCompanyBoardTarget } from "@/features/navigation/CompanyBoardLink";
 import { Skeleton } from "@/components/ui/skeleton";

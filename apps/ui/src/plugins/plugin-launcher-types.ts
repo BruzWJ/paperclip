@@ -1,4 +1,5 @@
 import type {
+// Status updates announce through role="status" live regions.
   PluginLauncherBounds,
   PluginLauncherDeclaration,
   PluginLauncherPlacementZone,

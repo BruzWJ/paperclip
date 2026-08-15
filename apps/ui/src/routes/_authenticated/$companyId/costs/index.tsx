@@ -103,7 +103,8 @@ function Costs() {
     ]);
   };
 
-  const policyMutation = useMutation({
+  const policyMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+  useMutation({
     mutationFn: (input: { policy: BudgetPolicySummary; limitAmount: MoneyAmount }) =>
       budgetsApi.upsertPolicy(companyId, {
         scopeType: input.policy.scopeType,
@@ -146,7 +147,7 @@ function Costs() {
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <TriangleAlert />
+            <TriangleAlert  data-icon="inline-start"/>
           </EmptyMedia>
           <EmptyTitle>Cost and budget data could not be loaded.</EmptyTitle>
         </EmptyHeader>
@@ -203,7 +204,7 @@ function Costs() {
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-wrap items-center gap-2">
-        <CalendarRange className="h-4 w-4 text-muted-foreground" />
+        <CalendarRange className="h-4 w-4 text-muted-foreground"  data-icon="inline-start"/>
         {PRESET_KEYS.map((key) => (
           <Button
             key={key}
@@ -330,7 +331,7 @@ function Costs() {
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <ReceiptText />
+                  <ReceiptText  data-icon="inline-start"/>
                 </EmptyMedia>
                 <EmptyTitle>No finance events in this range.</EmptyTitle>
               </EmptyHeader>

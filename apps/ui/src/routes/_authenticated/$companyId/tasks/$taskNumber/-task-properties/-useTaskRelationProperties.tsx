@@ -119,6 +119,7 @@ export function useTaskRelationProperties({
       variant="ghost"
       size={inline ? "icon-lg" : "icon-xs"}
       className={inline ? "size-11!" : undefined}
+      aria-label="Open parent task"
     >
       <TaskLinkQuicklook
         taskId={parentTaskId}
@@ -126,7 +127,7 @@ export function useTaskRelationProperties({
         onClick={(event) => event.stopPropagation()}
         aria-label="Open parent task"
       >
-        <ArrowUpRight />
+        <ArrowUpRight  data-icon="inline-end"/>
       </TaskLinkQuicklook>
     </Button>
   ) : undefined;
@@ -254,7 +255,7 @@ export function useTaskRelationProperties({
                 {candidate.title}
               </span>
               {selected && (
-                <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true" />
+                <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true"  data-icon="inline-start"/>
               )}
             </Button>
           );
@@ -275,7 +276,7 @@ export function useTaskRelationProperties({
       className={inline ? "min-h-11" : undefined}
       onClick={onClick}
     >
-      <Plus className="h-3 w-3" />
+      <Plus className="h-3 w-3"  data-icon="inline-start"/>
       Add blocker
     </Button>
   );

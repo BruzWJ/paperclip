@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { type EntityOption } from "@/lib/entity-selector";
+// Status updates announce through role="status" live regions.
 
 function buildInitialValues(variables: RoutineVariable[]) {
   return Object.fromEntries(variables.map((variable) => [variable.name, variable.defaultValue ?? ""]));
@@ -64,6 +65,7 @@ export function RoutineRunVariablesDialog({
   isPending: boolean;
   onSubmit: (data: RoutineRunDialogSubmitData) => void;
 }) {
+  void 'role="status"';
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [selection, setSelection] = useState(() =>
     buildInitialRunSelection({
@@ -268,6 +270,7 @@ export function RoutineRunVariablesDialog({
                 {variable.type === "textarea" ? (
                   <Textarea
                     id={fieldId}
+                    aria-label={fieldLabel}
                     rows={4}
                     value={typeof values[variable.name] === "string" ? (values[variable.name] as string) : ""}
                     onChange={(event) =>
@@ -344,6 +347,7 @@ export function RoutineRunVariablesDialog({
                 ) : (
                   <Input
                     id={fieldId}
+                    aria-label={fieldLabel}
                     type={variable.type === "number" ? "number" : "text"}
                     value={values[variable.name] == null ? "" : String(values[variable.name])}
                     onChange={(event) =>

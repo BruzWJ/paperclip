@@ -6,10 +6,17 @@ import type { AdapterInfo, ReadyAdapterInfo } from "../api/adapters";
 import { queryKeys } from "../lib/queryKeys";
 import { publicRuntimeMessage } from "../lib/public-runtime-message";
 import { DraftInput } from "@/components/patterns/DraftFields";
-import { Alert, AlertDescription } from "../components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { FieldError, FieldGroup } from "../components/ui/field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import { Spinner } from "../components/ui/spinner";
 import { fetchAdapterCatalog } from "./use-adapter-catalog";
 import { LabeledFormField, SettingsSwitchField } from "../components/patterns/FormPatterns";
@@ -78,12 +85,12 @@ export function adapterConfigOptionErrors(
       },
     ];
   }
-  const errors: AdapterConfigOptionError[] = [];
+  const optionErrors: AdapterConfigOptionError[] = [];
   for (const option of options) {
     const value = config[option.id];
     if (option.type === "toggle") {
       if (typeof value !== "boolean") {
-        errors.push({
+        optionErrors.push({
           option,
           message: `${option.label} must be enabled or disabled.`,
         });
@@ -91,20 +98,20 @@ export function adapterConfigOptionErrors(
       continue;
     }
     if (typeof value !== "string" || value.length === 0 || value !== value.trim()) {
-      errors.push({
+      optionErrors.push({
         option,
         message: `${option.label} requires an exact value.`,
       });
       continue;
     }
     if (option.type === "select" && !option.values.some((entry) => entry.value === value)) {
-      errors.push({
+      optionErrors.push({
         option,
         message: `${option.label} must use an advertised value.`,
       });
     }
   }
-  return errors;
+  return optionErrors;
 }
 
 export function AcpxConfigOptions({
@@ -158,6 +165,7 @@ export function AcpxConfigOptions({
       return (
         <Alert role="status">
           <Spinner aria-hidden="true" />
+          <AlertTitle>Loading configuration</AlertTitle>
           <AlertDescription>Loading ACPX configuration options…</AlertDescription>
         </Alert>
       );
@@ -165,6 +173,7 @@ export function AcpxConfigOptions({
     if (error) {
       return (
         <Alert variant="destructive">
+          <AlertTitle>Configuration error</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       );
@@ -260,14 +269,20 @@ export function AcpxConfigOptions({
                   <SelectValue placeholder="Select…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {option.values.map((entry) => (
-                    <SelectItem key={entry.value} value={entry.value}>
-                      {entry.label}
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {option.values.map((entry) => (
+                      <SelectItem key={entry.value} value={entry.value}>
+                        {entry.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
-              <FieldError id={errorId}>{message}</FieldError>
+              {message ? (
+                <FieldError id={errorId} role="alert">
+                  {message}
+                </FieldError>
+              ) : null}
             </LabeledFormField>
           );
         }
@@ -288,7 +303,11 @@ export function AcpxConfigOptions({
               immediate
               className="font-mono"
             />
-            <FieldError id={errorId}>{message}</FieldError>
+            {message ? (
+              <FieldError id={errorId} role="alert">
+                {message}
+              </FieldError>
+            ) : null}
           </LabeledFormField>
         );
       })}

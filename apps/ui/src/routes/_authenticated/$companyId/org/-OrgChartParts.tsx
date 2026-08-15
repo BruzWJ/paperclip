@@ -135,7 +135,7 @@ export function OrgChartZoomControls({
         title="Zoom in"
         aria-label="Zoom in"
       >
-        <Plus />
+        <Plus  data-icon="inline-start"/>
       </Button>
       <Button
         type="button"
@@ -145,7 +145,7 @@ export function OrgChartZoomControls({
         title="Zoom out"
         aria-label="Zoom out"
       >
-        <Minus />
+        <Minus  data-icon="inline-start"/>
       </Button>
       <Button
         type="button"
@@ -155,7 +155,7 @@ export function OrgChartZoomControls({
         title="Fit to screen"
         aria-label="Fit chart to screen"
       >
-        <Maximize2 />
+        <Maximize2  data-icon="inline-start"/>
       </Button>
     </ButtonGroup>
   );

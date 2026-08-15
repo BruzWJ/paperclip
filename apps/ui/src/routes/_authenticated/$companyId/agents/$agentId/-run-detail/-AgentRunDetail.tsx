@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import {
   runsApi,
   type BoundedRunRecords,
@@ -41,6 +42,7 @@ export function AgentRunDetail({
   agent: Agent;
   companyId: string;
 }) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const [messagePageState, setMessagePageState] = useState<MessagePageState>({
     runId: "",
     detailUpdatedAt: 0,
@@ -105,7 +107,7 @@ export function AgentRunDetail({
   if (!detailQuery.data) {
     return (
       <Alert variant="destructive">
-        <AlertTriangleIcon />
+        <AlertTriangleIcon  data-icon="inline-start"/>
         <AlertTitle>Could not load this run</AlertTitle>
         <AlertDescription>
           <p>
@@ -114,7 +116,7 @@ export function AgentRunDetail({
               : "The joined execution record is unavailable."}
           </p>
           <Button type="button" size="sm" variant="outline" onClick={() => void detailQuery.refetch()}>
-            <RefreshCwIcon />
+            <RefreshCwIcon data-icon="inline-start" />
             Retry
           </Button>
         </AlertDescription>
@@ -144,7 +146,7 @@ export function AgentRunDetail({
 
       {detailQuery.error ? (
         <Alert variant="destructive">
-          <AlertTriangleIcon />
+          <AlertTriangleIcon  data-icon="inline-start"/>
           <AlertTitle>Could not refresh this run</AlertTitle>
           <AlertDescription>Showing the most recently loaded execution record.</AlertDescription>
         </Alert>
@@ -152,7 +154,7 @@ export function AgentRunDetail({
 
       {detail.run.terminalReasonCode ? (
         <Alert variant={FAILURE_STATUSES.has(detail.run.status) ? "destructive" : "default"}>
-          <AlertTriangleIcon />
+          <AlertTriangleIcon  data-icon="inline-start"/>
           <AlertTitle className="capitalize">
             {humanizeRunValue(detail.run.terminalClassification ?? detail.run.status)}
           </AlertTitle>

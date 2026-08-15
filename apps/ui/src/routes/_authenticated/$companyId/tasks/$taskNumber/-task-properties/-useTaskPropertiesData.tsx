@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deriveOriginatingActor, type Task, type TaskLabel } from "@paperclipai/shared";
@@ -41,6 +42,7 @@ export function useTaskPropertiesData({
   hasActiveRun,
   state,
 }: UseTaskPropertiesDataOptions) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const companyId = useCompanyRouteId();
   const queryClient = useQueryClient();
   const normalizedBlockedBySearch = state.blockedBySearch.trim();

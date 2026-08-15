@@ -13,6 +13,7 @@ const BYTES_PER_MIB = 1024 * 1024;
 export const MAX_COMPANY_ATTACHMENT_MAX_MIB = MAX_COMPANY_ATTACHMENT_MAX_BYTES / BYTES_PER_MIB;
 
 export function useCompanySettingsController() {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const companyId = useCompanyRouteId();
   const { companies, selectedCompany } = useCompany();
   const queryClient = useQueryClient();

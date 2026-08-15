@@ -58,7 +58,7 @@ export function MermaidDiagramBlock({ source, darkMode }: { source: string; dark
 
   return (
     <Alert variant={error ? "destructive" : "default"}>
-      {error ? <AlertCircle /> : <Spinner />}
+      {error ? <AlertCircle  data-icon="inline-start"/> : <Spinner />}
       <AlertTitle>{error ? "Unable to render Mermaid diagram" : "Rendering diagram"}</AlertTitle>
       <AlertDescription>
         {error ? <p>{error}</p> : null}

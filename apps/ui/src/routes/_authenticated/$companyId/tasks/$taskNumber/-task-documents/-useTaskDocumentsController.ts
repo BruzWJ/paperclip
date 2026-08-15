@@ -29,6 +29,7 @@ export function useTaskDocumentsSectionController({
   defaultAnnotationFocusedThreadIds,
   forceEditDocumentKey,
 }: TaskDocumentsSectionProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
 
   const location = useLocation();

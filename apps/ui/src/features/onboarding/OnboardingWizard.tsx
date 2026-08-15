@@ -247,7 +247,7 @@ export function OnboardingWizard() {
           onClick={handleClose}
           className="absolute top-4 left-4 z-10 text-muted-foreground/60 hover:text-foreground"
         >
-          <X className="h-5 w-5" />
+          <X className="h-5 w-5"  data-icon="inline-start"/>
           <span className="sr-only">Close</span>
         </Button>
 
@@ -328,7 +328,7 @@ export function OnboardingWizard() {
                 <div className="space-y-5">
                   <div className="flex items-center gap-3 mb-1">
                     <div className="bg-muted/50 p-2">
-                      <Building2 className="h-5 w-5 text-muted-foreground" />
+                      <Building2 className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
                     </div>
                     <div>
                       <h3 className="font-medium">Define your mission</h3>
@@ -412,7 +412,7 @@ export function OnboardingWizard() {
                       {loading ? (
                         <Spinner className="h-3.5 w-3.5 mr-1" />
                       ) : (
-                        <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                        <ArrowRight className="h-3.5 w-3.5 mr-1"  data-icon="inline-start"/>
                       )}
                       {loading ? "Creating..." : "Create company"}
                     </Button>

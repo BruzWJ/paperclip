@@ -69,7 +69,7 @@ export function BreadcrumbBar() {
       onClick={toggleSidebar}
       aria-label="Open sidebar"
     >
-      <Menu className="h-5 w-5" />
+      <Menu className="h-5 w-5"  data-icon="inline-start"/>
     </Button>
   );
 

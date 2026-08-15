@@ -29,6 +29,7 @@ export interface TaskChatApprovalDecisionInput {
   action: "approve" | "reject";
 }
 
+// Confirmation pending state is announced with role="status".
 export interface TaskChatConfirmationProps {
   approval: Approval;
   requesterAgent?: Agent | null;
@@ -104,7 +105,7 @@ export function TaskChatConfirmation({
       className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-muted-foreground")}
     >
       View details
-      <ExternalLink aria-hidden="true" />
+      <ExternalLink aria-hidden="true"  data-icon="inline-start"/>
     </Link>
   );
 
@@ -174,7 +175,7 @@ export function TaskChatConfirmation({
         <ConfirmationRequest>
           {isBudgetStop ? (
             <div className="flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-              <WalletCards className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <WalletCards className="mt-0.5 size-4 shrink-0" aria-hidden="true"  data-icon="inline-start"/>
               <p>
                 This budget stop is governed by company budget controls. Review the request here, then resolve
                 it from Costs.
@@ -193,7 +194,7 @@ export function TaskChatConfirmation({
 
         <ConfirmationAccepted>
           <div className="flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-sm">
-            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true"  data-icon="inline-start"/>
             <div className="min-w-0">
               <p className="font-medium text-foreground">Request approved</p>
               <p className="text-muted-foreground">
@@ -206,9 +207,9 @@ export function TaskChatConfirmation({
         <ConfirmationRejected>
           <div className="flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-sm">
             {approval.status === "cancelled" ? (
-              <CircleSlash2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <CircleSlash2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true"  data-icon="inline-start"/>
             ) : (
-              <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+              <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true"  data-icon="inline-start"/>
             )}
             <div className="min-w-0">
               <p className="font-medium text-foreground">
@@ -232,7 +233,7 @@ export function TaskChatConfirmation({
               params={{ companyId: approval.companyId }}
               className={buttonVariants({ variant: "outline", size: "sm" })}
             >
-              <WalletCards aria-hidden="true" />
+              <WalletCards aria-hidden="true"  data-icon="inline-start"/>
               Open budget controls
             </Link>
           ) : (

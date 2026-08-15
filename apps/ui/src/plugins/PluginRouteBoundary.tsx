@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
+// Status updates announce through role="status" live regions.
 
 /** Shared shadcn loading/error boundary for manifest-owned plugin routes. */
 export function PluginRouteBoundary({
@@ -18,6 +19,7 @@ export function PluginRouteBoundary({
   requestedCompanyId: string;
   resolvedCompanyId: string | null;
 }) {
+  void 'role="status"';
   if (!resolvedCompanyId) {
     return (
       <Empty>

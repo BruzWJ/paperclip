@@ -220,7 +220,7 @@ function TaskDocumentCardHeader({ controller, doc, model }: TaskDocumentPresenta
               onClick={() => toggleDocumentLock(doc, !isLocked)}
               disabled={lockActionPending}
             >
-              {isLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+              {isLocked ? <Lock className="h-3.5 w-3.5"  data-icon="inline-start"/> : <Unlock className="h-3.5 w-3.5"  data-icon="inline-start"/>}
             </Button>
           ) : isLocked ? (
             <Button
@@ -230,7 +230,7 @@ function TaskDocumentCardHeader({ controller, doc, model }: TaskDocumentPresenta
               title="Locked document"
               aria-label="Locked document"
             >
-              <Lock className="h-3.5 w-3.5" />
+              <Lock className="h-3.5 w-3.5"  data-icon="inline-start"/>
             </Button>
           ) : null}
           <Button
@@ -244,9 +244,9 @@ function TaskDocumentCardHeader({ controller, doc, model }: TaskDocumentPresenta
             onClick={() => void copyDocumentBody(doc.key, displayedBody)}
           >
             {copiedDocumentKey === doc.key ? (
-              <Check className="h-3.5 w-3.5" />
+              <Check className="h-3.5 w-3.5"  data-icon="inline-start"/>
             ) : (
-              <Copy className="h-3.5 w-3.5" />
+              <Copy className="h-3.5 w-3.5"  data-icon="inline-start"/>
             )}
           </Button>
           <DropdownMenu>
@@ -257,31 +257,31 @@ function TaskDocumentCardHeader({ controller, doc, model }: TaskDocumentPresenta
                 className="text-muted-foreground"
                 title="Document actions"
               >
-                <MoreHorizontal className="h-3.5 w-3.5" />
+                <MoreHorizontal className="h-3.5 w-3.5"  data-icon="inline-start"/>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {!isHistoricalPreview && !isLocked ? (
                 <DropdownMenuItem onClick={() => beginEdit(doc.key)}>
-                  <FilePenLine className="h-3.5 w-3.5" />
+                  <FilePenLine className="h-3.5 w-3.5"  data-icon="inline-end"/>
                   Edit document
                 </DropdownMenuItem>
               ) : null}
               {!isHistoricalPreview && !isLocked ? <DropdownMenuSeparator /> : null}
               <DropdownMenuItem onClick={() => downloadDocumentFile(doc.key, displayedBody)}>
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-3.5 w-3.5"  data-icon="inline-end"/>
                 Download document
               </DropdownMenuItem>
               {doc.latestRevisionNumber > 1 ? (
                 <DropdownMenuItem onClick={() => setDiffViewKey(doc.key)}>
-                  <Diff className="h-3.5 w-3.5" />
+                  <Diff className="h-3.5 w-3.5"  data-icon="inline-end"/>
                   View diff
                 </DropdownMenuItem>
               ) : null}
               {canDeleteDocuments && !isLocked ? <DropdownMenuSeparator /> : null}
               {canDeleteDocuments && !isLocked ? (
                 <DropdownMenuItem variant="destructive" onClick={() => setConfirmDeleteKey(doc.key)}>
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-3.5 w-3.5"  data-icon="inline-end"/>
                   Delete document
                 </DropdownMenuItem>
               ) : null}

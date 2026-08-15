@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
@@ -54,7 +55,7 @@ export function MissingUserSecretsBanner({
 
   return (
     <Alert className={className}>
-      <AlertTriangle aria-hidden="true" />
+      <AlertTriangle aria-hidden="true"  data-icon="inline-start"/>
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>
         <p>

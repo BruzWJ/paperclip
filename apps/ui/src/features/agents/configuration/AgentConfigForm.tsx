@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useOptionalCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { Button } from "@/components/ui/button";
 import { Item, ItemActions, ItemContent, ItemDescription } from "@/components/ui/item";
@@ -34,6 +35,7 @@ export const emptyOverlay: AgentConfigOverlay = {
 };
 
 export function isOverlayDirty(overlay: AgentConfigOverlay): boolean {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   return (
     Object.keys(overlay.identity).length > 0 ||
     overlay.adapterType !== undefined ||

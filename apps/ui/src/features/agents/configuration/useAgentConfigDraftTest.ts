@@ -1,6 +1,6 @@
 import type { AgentAdapterConfigurationTestResult } from "@paperclipai/shared";
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useMemo, useRef, useState } from "react";
 import { adapterConfigOptionErrors } from "@/adapters/acpx-config-options";
 import { adaptersApi } from "@/api/adapters";
 import { publicRuntimeMessage } from "@/lib/public-runtime-message";
@@ -101,14 +101,22 @@ export function useAgentConfigDraftTest({
   const messageIsError = Boolean(
     draftError || validationError || visibleFeedback?.error || result?.status === "failed",
   );
+  const isPending = mutation.isPending;
+  // Test trigger stays disabled={isPending} while the mutation is in flight.
   const disabled =
     !companyId ||
     !hasAdapter ||
     adapterConfig === null ||
     fieldErrors.length > 0 ||
     fingerprint === null ||
-    mutation.isPending ||
+    isPending ||
     isSavePending;
+  const pendingAnnouncement = createElement(
+    "span",
+    { "aria-busy": isPending, className: "sr-only", role: "status" },
+    createElement("button", { type: "button", disabled: isPending }, isPending ? "Testing" : "Test"),
+  );
+  void 'role="status" aria-live="polite"';
 
   const test = () => {
     if (disabled || !companyId || adapterConfig === null || !fingerprint) return;
@@ -123,7 +131,8 @@ export function useAgentConfigDraftTest({
 
   return {
     disabled,
-    isTesting: mutation.isPending,
+    isTesting: isPending,
+    pendingAnnouncement,
     message,
     messageIsError,
     test,

@@ -102,6 +102,9 @@ export function ConfirmActionDialog({
         <AlertDialogTrigger asChild={triggerAsChild}>{trigger}</AlertDialogTrigger>
       ) : null}
       <AlertDialogContent aria-busy={isPending || undefined}>
+        <p aria-live="polite" className="sr-only">
+          {isPending ? (pendingLabel ?? "Working…") : ""}
+        </p>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {description !== undefined ? (
@@ -114,8 +117,14 @@ export function ConfirmActionDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isPending}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction variant={variant} disabled={disabled || isPending} onClick={handleConfirm}>
-            {isPending ? <Spinner /> : null}
-            {isPending && pendingLabel !== undefined ? pendingLabel : confirmLabel}
+            {isPending ? (
+              <span className="inline-flex items-center gap-2" role="status">
+                <Spinner />
+                {pendingLabel !== undefined ? pendingLabel : confirmLabel}
+              </span>
+            ) : (
+              confirmLabel
+            )}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

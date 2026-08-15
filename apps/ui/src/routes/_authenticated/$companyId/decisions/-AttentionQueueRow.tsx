@@ -129,7 +129,7 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                 className="mt-0.5 shrink-0 text-muted-foreground"
                 aria-label={expanded ? "Collapse decision" : "Expand decision"}
               >
-                {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                {expanded ? <ChevronDown className="h-4 w-4"  data-icon="inline-start"/> : <ChevronRight className="h-4 w-4"  data-icon="inline-start"/>}
               </Button>
             </CollapsibleTrigger>
           ) : (
@@ -185,14 +185,14 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                         className="text-muted-foreground"
                         aria-label="Row actions"
                       >
-                        <MoreHorizontal className="h-4 w-4" />
+                        <MoreHorizontal className="h-4 w-4"  data-icon="inline-start"/>
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       {snoozeHandler && <SnoozeSubmenu onSnooze={(iso) => snoozeHandler(item, iso)} />}
                       {dismissHandler && (
                         <DropdownMenuItem onClick={() => dismissHandler(item)}>
-                          <X className="h-4 w-4" />
+                          <X className="h-4 w-4"  data-icon="inline-end"/>
                           Dismiss
                         </DropdownMenuItem>
                       )}

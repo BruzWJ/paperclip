@@ -49,7 +49,7 @@ export function CompanyMemberEditDialog({
         <div className="grid gap-4 md:grid-cols-2">
           <LabeledFormField label="Company role" labelFor="member-company-role">
             <Select value={role} onValueChange={onRoleChange}>
-              <SelectTrigger id="member-company-role" className="w-full">
+              <SelectTrigger id="member-company-role" aria-label="Company role" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -63,7 +63,7 @@ export function CompanyMemberEditDialog({
           </LabeledFormField>
           <LabeledFormField label="Membership status" labelFor="member-membership-status">
             <Select value={status} onValueChange={onStatusChange}>
-              <SelectTrigger id="member-membership-status" className="w-full">
+              <SelectTrigger id="member-membership-status" aria-label="Membership status" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

@@ -93,7 +93,7 @@ export function ActiveAgentsPanel({
         <Empty className="border" role="status">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Bot aria-hidden="true" />
+              <Bot aria-hidden="true"  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyTitle>{emptyMessage}</EmptyTitle>
             <EmptyDescription>Agent activity will appear here when a task run starts.</EmptyDescription>
@@ -161,13 +161,13 @@ const AgentRunCard = memo(function AgentRunCard({
             </div>
           </div>
           {agentRef ? (
-            <Button asChild variant="outline" size="icon-sm">
+            <Button asChild variant="outline" size="icon-sm" aria-label={`Open ${agentName}'s ${run.kind} run`}>
               <Link
                 to="/$companyId/agents/$agentId/runs/$runId"
                 params={{ companyId, agentId: agentRef, runId: run.id }}
                 aria-label={`Open ${agentName}'s ${run.kind} run`}
               >
-                <ExternalLink aria-hidden="true" />
+                <ExternalLink aria-hidden="true"  data-icon="inline-start"/>
               </Link>
             </Button>
           ) : null}

@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { Spinner } from "@/components/ui/spinner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
@@ -159,7 +160,7 @@ export function SidebarStarredProjects() {
                     unstar(project);
                   }}
                 >
-                  {unstarPending ? <Spinner /> : <Star />}
+                  {unstarPending ? <Spinner /> : <Star  data-icon="inline-start"/>}
                 </Toggle>
               </span>
             ) : null}
@@ -169,7 +170,7 @@ export function SidebarStarredProjects() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <SidebarMenuAction aria-label={`Open actions for ${project.name}`}>
-                    <MoreHorizontal className="h-3.5 w-3.5" />
+                    <MoreHorizontal className="h-3.5 w-3.5"  data-icon="inline-start"/>
                   </SidebarMenuAction>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
@@ -183,7 +184,7 @@ export function SidebarStarredProjects() {
                     {unstarPending ? (
                       <Spinner className="size-4" />
                     ) : (
-                      <Star className="size-4 fill-current" />
+                      <Star className="size-4 fill-current"  data-icon="inline-start"/>
                     )}
                     <span>Remove from starred</span>
                   </DropdownMenuItem>
@@ -195,7 +196,7 @@ export function SidebarStarredProjects() {
                     }}
                     disabled={pending}
                   >
-                    {leavePending ? <Spinner className="size-4" /> : <LogOut className="size-4" />}
+                    {leavePending ? <Spinner className="size-4" /> : <LogOut className="size-4"  data-icon="inline-start"/>}
                     <span>Leave project</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>

@@ -69,7 +69,7 @@ export function OwnerChip({
     return (
       <Badge variant="secondary" className={className} data-testid="owner-chip" data-kind="user">
         <span className="sr-only">User </span>
-        <User className="h-3 w-3 shrink-0 text-muted-foreground" />
+        <User className="h-3 w-3 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
         <span className="max-w-(--sz-12rem) truncate">{userLabel(owner.ownerUserId, resolvers)}</span>
       </Badge>
     );
@@ -314,7 +314,7 @@ export function PauseAffectsSummaryView({
   const visibleBuckets = summary.buckets.filter((bucket) => bucket.count > 0);
   return (
     <Alert data-testid="pause-affects-summary" className={className}>
-      <PauseCircle aria-hidden />
+      <PauseCircle aria-hidden  data-icon="inline-start"/>
       <AlertTitle>What this affects</AlertTitle>
       <AlertDescription>
         {summary.nothingLive ? (

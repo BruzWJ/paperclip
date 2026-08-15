@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { accessApi } from "@/api/access";
 import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";

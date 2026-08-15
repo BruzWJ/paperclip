@@ -100,11 +100,11 @@ export function ProjectCodebaseSection({
                       rel="noreferrer"
                       className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
                     >
-                      <Github className="h-3 w-3 shrink-0" />
+                      <Github className="h-3 w-3 shrink-0"  data-icon="inline-start"/>
                       <span className="min-w-0 break-all">
                         {formatProjectRepositoryUrl(codebase.repoUrl)}
                       </span>
-                      <ExternalLink className="h-3 w-3 shrink-0" />
+                      <ExternalLink className="h-3 w-3 shrink-0"  data-icon="inline-start"/>
                     </a>
                   ) : (
                     <span className="min-w-0 break-all text-xs text-muted-foreground">
@@ -129,7 +129,7 @@ export function ProjectCodebaseSection({
                       triggerAsChild
                       trigger={
                         <Button variant="ghost" size="icon-xs" disabled={pending} aria-label="Clear repo">
-                          <Trash2 />
+                          <Trash2  data-icon="inline-start"/>
                         </Button>
                       }
                       title="Clear repository URL?"
@@ -179,7 +179,7 @@ export function ProjectCodebaseSection({
                           disabled={pending}
                           aria-label="Clear local folder"
                         >
-                          <Trash2 />
+                          <Trash2  data-icon="inline-start"/>
                         </Button>
                       }
                       title="Clear local execution folder?"

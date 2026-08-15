@@ -311,7 +311,7 @@ export const AttachmentRemove = ({
       variant="ghost"
       {...props}
     >
-      {children ?? <XIcon />}
+      {children ?? <XIcon  data-icon="inline-start"/>}
       <span className="sr-only">{label}</span>
     </Button>
   );

@@ -79,7 +79,8 @@ function InstanceAccess() {
     );
   }, [userAccessQuery.data]);
 
-  const updateCompanyAccessMutation = useMutation({
+  const updateCompanyAccessMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+  useMutation({
     mutationFn: () => accessApi.setUserCompanyAccess(selectedUserId!, [...selectedCompanyIds]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
@@ -149,7 +150,7 @@ function InstanceAccess() {
       ) : null}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <Shield className="h-5 w-5 text-muted-foreground" />
+          <Shield className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
           <h1 className="text-lg font-semibold">Instance Access</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
@@ -165,7 +166,7 @@ function InstanceAccess() {
           </CardHeader>
           <CardContent className="space-y-4">
             <LabeledFormField label="Search users" labelFor="instance-user-search">
-              <Input
+              <Input aria-label="instance user search"
                 id="instance-user-search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -184,7 +185,7 @@ function InstanceAccess() {
                   <ChoiceboxItemHeader className="min-w-0">
                     <ChoiceboxItemTitle className="truncate">
                       {user.name || user.email || user.id}
-                      {user.isInstanceAdmin ? <ShieldCheck className="h-4 w-4" /> : null}
+                      {user.isInstanceAdmin ? <ShieldCheck className="h-4 w-4"  data-icon="inline-start"/> : null}
                     </ChoiceboxItemTitle>
                     <ChoiceboxItemDescription className="truncate">
                       {user.email || user.id}

@@ -88,7 +88,7 @@ export function SecretsToolbar() {
   return (
     <>
       <Alert role="note">
-        <Info />
+        <Info  data-icon="inline-start"/>
         <AlertTitle>Use secrets by binding them to runtime environment variables.</AlertTitle>
         <AlertDescription>
           <p>
@@ -106,7 +106,7 @@ export function SecretsToolbar() {
       <div className="flex flex-wrap items-center gap-2">
         <InputGroup className="w-48 sm:w-64 md:w-80">
           <InputGroupAddon>
-            <Search />
+            <Search  data-icon="inline-start"/>
           </InputGroupAddon>
           <InputGroupInput
             value={search}
@@ -125,7 +125,7 @@ export function SecretsToolbar() {
               className="relative"
               title={activeSecretFilterCount > 0 ? `Filters: ${activeSecretFilterCount}` : "Filter"}
             >
-              <Filter className="h-3.5 w-3.5" />
+              <Filter className="h-3.5 w-3.5"  data-icon="inline-start"/>
               {activeSecretFilterCount > 0 ? (
                 <Badge className="absolute -right-1 -top-1">{activeSecretFilterCount}</Badge>
               ) : null}
@@ -149,7 +149,7 @@ export function SecretsToolbar() {
                       setProvidedByFilter("all");
                     }}
                   >
-                    <X className="h-3 w-3" />
+                    <X className="h-3 w-3"  data-icon="inline-start"/>
                     Clear
                   </Button>
                 ) : null}

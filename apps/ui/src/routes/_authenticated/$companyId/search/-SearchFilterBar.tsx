@@ -87,7 +87,7 @@ export function buildSearchFilterOptions({
     owner.push({
       value: currentUserId,
       label: "Me",
-      icon: <User className="h-3.5 w-3.5 text-muted-foreground" />,
+      icon: <User className="h-3.5 w-3.5 text-muted-foreground"  data-icon="inline-start"/>,
       count: count(counts?.ownerUserId, currentUserId),
       searchText: "me mine",
     });
@@ -218,7 +218,7 @@ export function SearchSortMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" aria-label="Sort results">
-          <ArrowUpDown aria-hidden />
+          <ArrowUpDown aria-hidden  data-icon="inline-start"/>
           <span className="hidden text-muted-foreground sm:inline">Sort:</span>
           {SORT_LABELS[value]}
         </Button>
@@ -263,7 +263,7 @@ export function SearchFilterChips({
             aria-label={`Remove filter ${chip.label}`}
             onClick={() => onChange(chip.remove(filters))}
           >
-            <X />
+            <X  data-icon="inline-start"/>
           </Button>
         </Badge>
       ))}

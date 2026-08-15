@@ -141,7 +141,7 @@ export function InboxWorkItems() {
                                         "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
                                         !isGroupCollapsed && "rotate-90",
                                       )}
-                                    />
+                                     data-icon="inline-start"/>
                                   </span>
                                   <span className="truncate text-sm font-semibold uppercase tracking-wide">
                                     {group.label}
@@ -160,7 +160,7 @@ export function InboxWorkItems() {
                                     openCreateTaskForGroup(group);
                                   }}
                                 >
-                                  <Plus className="h-3 w-3" />
+                                  <Plus className="h-3 w-3"  data-icon="inline-start"/>
                                 </Button>
                               ) : null}
                             </div>

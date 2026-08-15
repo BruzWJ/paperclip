@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import type { Agent } from "@paperclipai/shared";
 import { User } from "lucide-react";
 import { AgentIcon } from "../AgentIconPicker";
@@ -63,7 +64,7 @@ export function ReportsToPicker({
         <>
           {unknownManager ? (
             <>
-              <User className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <User className="h-3 w-3 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
               <span className="min-w-0 truncate text-muted-foreground">Unknown manager (stale ID)</span>
             </>
           ) : current ? (
@@ -75,7 +76,7 @@ export function ReportsToPicker({
             </>
           ) : (
             <>
-              <User className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <User className="h-3 w-3 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
               <span className="min-w-0 truncate">{disabled ? disabledEmptyLabel : chooseLabel}</span>
             </>
           )}

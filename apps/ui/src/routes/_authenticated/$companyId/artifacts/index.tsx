@@ -254,7 +254,7 @@ function Artifacts() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <InputGroup className="w-full sm:max-w-sm">
           <InputGroupAddon>
-            <Search />
+            <Search  data-icon="inline-start"/>
           </InputGroupAddon>
           <InputGroupInput
             value={draftQuery}
@@ -269,7 +269,7 @@ function Artifacts() {
                 onClick={() => setDraftQuery("")}
                 aria-label="Clear artifact search"
               >
-                <X />
+                <X  data-icon="inline-start"/>
               </InputGroupButton>
             </InputGroupAddon>
           ) : null}
@@ -288,7 +288,7 @@ function Artifacts() {
                 data-group-by={groupBy}
                 className={cn("h-8 w-8 shrink-0", grouping && "bg-accent")}
               >
-                <Layers className="h-3.5 w-3.5" aria-hidden="true" />
+                <Layers className="h-3.5 w-3.5" aria-hidden="true"  data-icon="inline-start"/>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
@@ -338,7 +338,7 @@ function Artifacts() {
               search={backToStacksSearch}
               data-testid="artifact-stack-back"
             >
-              <ArrowLeft aria-hidden="true" />
+              <ArrowLeft aria-hidden="true"  data-icon="inline-start"/>
               All stacks
             </Link>
           </Button>
@@ -365,7 +365,7 @@ function Artifacts() {
       ) : items.length === 0 ? (
         <Empty>
           <EmptyHeader>
-            <EmptyMedia variant="icon">{showGroupCards ? <Layers /> : <Package />}</EmptyMedia>
+            <EmptyMedia variant="icon">{showGroupCards ? <Layers  data-icon="inline-start"/> : <Package  data-icon="inline-start"/>}</EmptyMedia>
             <EmptyTitle>{emptyMessage}</EmptyTitle>
           </EmptyHeader>
         </Empty>

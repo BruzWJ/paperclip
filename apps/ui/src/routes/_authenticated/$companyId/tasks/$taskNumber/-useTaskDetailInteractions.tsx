@@ -204,9 +204,9 @@ export function useTaskDetailInteractions({
     }
     setMobileToolbar(
       <div className="flex w-full items-center">
-        <Button variant="ghost" size="icon-sm" asChild>
+        <Button variant="ghost" size="icon-sm" asChild aria-label="Back to inbox">
           <Link to="/$companyId/inbox" params={{ companyId }} aria-label="Back to inbox">
-            <ArrowLeft />
+            <ArrowLeft  data-icon="inline-start"/>
           </Link>
         </Button>
 
@@ -219,23 +219,23 @@ export function useTaskDetailInteractions({
               disabled={archivePending}
               aria-label="Archive from inbox"
             >
-              <Archive />
+              <Archive  data-icon="inline-start"/>
             </Button>
           ) : null}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="More actions">
-                <MoreVertical />
+                <MoreVertical  data-icon="inline-start"/>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => inboxToolbarCallbacksRef.current.onCopy()}>
-                <Copy />
+                <Copy  data-icon="inline-end"/>
                 Copy as markdown
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => inboxToolbarCallbacksRef.current.onProperties()}>
-                <SlidersHorizontal />
+                <SlidersHorizontal  data-icon="inline-end"/>
                 Properties
               </DropdownMenuItem>
             </DropdownMenuContent>

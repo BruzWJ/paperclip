@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, GripVertical, LogOut, Plus, Settings, UserPlus } from "lucide-react";
@@ -52,7 +53,7 @@ function CompanyMenuItem({
       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-(length:--text-nano) text-muted-foreground">
         {company.taskPrefix}
       </span>
-      {isSelected ? <Check className="size-4 text-muted-foreground" /> : null}
+      {isSelected ? <Check className="size-4 text-muted-foreground"  data-icon="inline-start"/> : null}
     </DropdownMenuItem>
   );
 }
@@ -69,7 +70,7 @@ function ReorderableCompanyItem({ company, index }: { company: Company; index: n
       >
         <CompanyAvatar company={company} />
         <span className="min-w-0 flex-1 truncate">{company.name}</span>
-        <GripVertical className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <GripVertical className="size-4 shrink-0 text-muted-foreground" aria-hidden="true"  data-icon="inline-start"/>
         <span className="sr-only">Reorder {company.name}</span>
       </ListItem>
     </ListGroup>
@@ -77,6 +78,7 @@ function ReorderableCompanyItem({ company, index }: { company: Company; index: n
 }
 
 export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: ControlledOpenStateProps = {}) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const [internalOpen, setInternalOpen] = useState(false);
   const [isEditingOrder, setIsEditingOrder] = useState(false);
   const queryClient = useQueryClient();
@@ -194,7 +196,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Contr
               {selectedCompany?.name ?? "Select company"}
             </span>
           </span>
-          {!rail && <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />}
+          {!rail && <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground"  data-icon="inline-start"/>}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={8} className="w-64 p-1">
@@ -242,7 +244,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Contr
           className="gap-2 py-2 text-muted-foreground"
           disabled={isEditingOrder}
         >
-          <Plus className="size-4" />
+          <Plus className="size-4"  data-icon="inline-start"/>
           <span>Create new company...</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -258,7 +260,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Contr
               closeNavigationChrome();
             }}
           >
-            <UserPlus className="size-4" />
+            <UserPlus className="size-4"  data-icon="inline-start"/>
             <span className="truncate">
               {selectedCompany ? `Invite people to ${selectedCompany.name}` : "Invite people"}
             </span>
@@ -276,7 +278,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Contr
               closeNavigationChrome();
             }}
           >
-            <Settings className="size-4" />
+            <Settings className="size-4"  data-icon="inline-start"/>
             <span>Company settings</span>
           </Link>
         </DropdownMenuItem>
@@ -289,7 +291,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Contr
               disabled={isEditingOrder || signOutMutation.isPending}
               aria-busy={signOutMutation.isPending}
             >
-              <LogOut className="size-4" />
+              <LogOut className="size-4"  data-icon="inline-start"/>
               <span aria-live="polite">{signOutMutation.isPending ? "Signing out..." : "Sign out"}</span>
             </DropdownMenuItem>
           </>

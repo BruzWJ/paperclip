@@ -103,7 +103,7 @@ export function ProviderVaultsTab({
   if (error) {
     return (
       <Alert variant="destructive">
-        <AlertCircle />
+        <AlertCircle  data-icon="inline-start"/>
         <AlertDescription>Failed to load provider vaults: {(error as Error).message}</AlertDescription>
         <Button variant="ghost" size="sm" onClick={onRetry}>
           Retry
@@ -192,7 +192,7 @@ export function ProviderVaultsTab({
                           {config.displayName}
                           {config.isDefault ? (
                             <Badge>
-                              <Star />
+                              <Star  data-icon="inline-start"/>
                               Default
                             </Badge>
                           ) : null}
@@ -217,7 +217,7 @@ export function ProviderVaultsTab({
                             onClick={() => onEdit(config)}
                             aria-label="Edit secret provider configuration"
                           >
-                            <Edit3 />
+                            <Edit3  data-icon="inline-start"/>
                           </Button>
                         </CardAction>
                       </CardHeader>
@@ -249,7 +249,7 @@ export function ProviderVaultsTab({
                           {pending ? (
                             <Spinner className="mr-1 h-3.5 w-3.5" />
                           ) : (
-                            <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                            <RefreshCw className="mr-1 h-3.5 w-3.5"  data-icon="inline-start"/>
                           )}
                           Check health
                         </Button>

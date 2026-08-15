@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { agentsApi } from "@/api/agents";
 import { approvalsApi } from "@/api/approvals";
 import { approvalLabel, ApprovalPayloadRenderer, typeIcon } from "@/features/approvals/ApprovalPayload";
@@ -117,7 +118,8 @@ function ApprovalDetail() {
     });
   };
 
-  const approveMutation = useMutation({
+  const approveMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+  useMutation({
     mutationFn: () => approvalsApi.approve(approvalId!),
     onSuccess: () => {
       setError(null);
@@ -268,7 +270,7 @@ function ApprovalDetail() {
       ) : null}
       {showApprovedBanner && (
         <Alert role="status">
-          <CheckCircle2 />
+          <CheckCircle2  data-icon="inline-start"/>
           <AlertTitle>Approval confirmed</AlertTitle>
           <AlertDescription>
             <p>Requesting agent was notified to review this approval and linked tasks.</p>
@@ -310,7 +312,7 @@ function ApprovalDetail() {
             <Collapsible open={showRawPayload} onOpenChange={setShowRawPayload}>
               <CollapsibleTrigger asChild>
                 <Button type="button" variant="ghost" size="sm">
-                  <ChevronRight className={showRawPayload ? "rotate-90" : undefined} />
+                  <ChevronRight className={showRawPayload ? "rotate-90" : undefined}  data-icon="inline-start"/>
                   See full request
                 </Button>
               </CollapsibleTrigger>

@@ -208,7 +208,8 @@ function CompanyInvites() {
     [invitesQuery.data?.pages],
   );
 
-  const createInviteMutation = useMutation({
+  const createInviteMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+  useMutation({
     mutationFn: () =>
       accessApi.createCompanyInvite(companyId, {
         userRole,
@@ -281,7 +282,7 @@ function CompanyInvites() {
       ) : null}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <MailPlus className="h-5 w-5 text-muted-foreground" />
+          <MailPlus className="h-5 w-5 text-muted-foreground"  data-icon="inline-start"/>
           <h1 className="text-lg font-semibold">Company Invites</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
@@ -364,12 +365,12 @@ function CompanyInvites() {
                         setLatestInviteCopied(copied);
                       }}
                     >
-                      <Copy />
+                      <Copy  data-icon="inline-start"/>
                       Copy link
                     </InputGroupButton>
                     <InputGroupButton asChild>
                       <a href={latestInviteUrl} target="_blank" rel="noreferrer">
-                        <ExternalLink />
+                        <ExternalLink  data-icon="inline-start"/>
                         Open invite
                       </a>
                     </InputGroupButton>

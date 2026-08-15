@@ -127,7 +127,7 @@ export function SecretDetailsSheet() {
           <>
             <SheetHeader className="space-y-3">
               <SheetTitle className="flex min-w-0 items-center gap-2 pr-8 text-base">
-                <KeyRound className="h-4 w-4 shrink-0" />
+                <KeyRound className="h-4 w-4 shrink-0"  data-icon="inline-start"/>
                 <span className="min-w-0 flex-1 truncate">{selectedSecret.name}</span>
                 <span className="shrink-0">
                   <DomainStatus status={selectedSecret.status}>
@@ -141,7 +141,7 @@ export function SecretDetailsSheet() {
               <SecretKeyRow value={selectedSecret.key} onCopy={() => copySecretKey(selectedSecret.key)} />
               <div className="flex flex-wrap gap-1.5">
                 <Badge variant="secondary">
-                  <ShieldCheck className="h-3 w-3" /> Company
+                  <ShieldCheck className="h-3 w-3"  data-icon="inline-start"/> Company
                 </Badge>
                 <Badge variant="secondary">{modeLabel(selectedSecret.managedMode)}</Badge>
                 <Badge variant="secondary">{providerLabel(providers, selectedSecret.provider)}</Badge>
@@ -170,9 +170,9 @@ export function SecretDetailsSheet() {
                     }
                   >
                     {selectedSecret.status === "active" ? (
-                      <Ban className="h-4 w-4" />
+                      <Ban className="h-4 w-4"  data-icon="inline-start"/>
                     ) : (
-                      <CheckCircle2 className="h-4 w-4" />
+                      <CheckCircle2 className="h-4 w-4"  data-icon="inline-start"/>
                     )}
                     {selectedSecret.status === "active" ? "Disable" : "Activate"}
                   </DropdownMenuItem>
@@ -186,15 +186,15 @@ export function SecretDetailsSheet() {
                     }
                   >
                     {selectedSecret.status === "archived" ? (
-                      <ArchiveRestore className="h-4 w-4" />
+                      <ArchiveRestore className="h-4 w-4"  data-icon="inline-start"/>
                     ) : (
-                      <Archive className="h-4 w-4" />
+                      <Archive className="h-4 w-4"  data-icon="inline-start"/>
                     )}
                     {selectedSecret.status === "archived" ? "Unarchive" : "Archive"}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem variant="destructive" onSelect={() => setDeleteConfirm(selectedSecret)}>
-                    <Trash2 className="h-4 w-4" /> Delete secret
+                    <Trash2 className="h-4 w-4"  data-icon="inline-end"/> Delete secret
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -237,7 +237,7 @@ export function SecretDetailsSheet() {
           <>
             <SheetHeader className="space-y-3">
               <SheetTitle className="flex min-w-0 items-center gap-2 pr-8 text-base">
-                <UserRound className="h-4 w-4 shrink-0" />
+                <UserRound className="h-4 w-4 shrink-0"  data-icon="inline-start"/>
                 <span className="min-w-0 flex-1 truncate">{selectedDefinition.name}</span>
                 <span className="shrink-0">
                   <DomainStatus status={selectedDefinition.status}>
@@ -254,7 +254,7 @@ export function SecretDetailsSheet() {
               />
               <div className="flex flex-wrap gap-1.5">
                 <Badge variant="secondary">
-                  <UserRound /> Each user
+                  <UserRound  data-icon="inline-start"/> Each user
                 </Badge>
                 <Badge variant="secondary">
                   <CoverageInline companyId={companyId} definitionId={selectedDefinition.id} compact />
@@ -289,7 +289,7 @@ export function SecretDetailsSheet() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52">
                   <DropdownMenuItem onSelect={() => openEditDefinition(selectedDefinition)}>
-                    <Pencil className="h-4 w-4" /> Edit definition
+                    <Pencil className="h-4 w-4"  data-icon="inline-end"/> Edit definition
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -302,9 +302,9 @@ export function SecretDetailsSheet() {
                     }
                   >
                     {selectedDefinition.status === "active" ? (
-                      <Ban className="h-4 w-4" />
+                      <Ban className="h-4 w-4"  data-icon="inline-start"/>
                     ) : (
-                      <CheckCircle2 className="h-4 w-4" />
+                      <CheckCircle2 className="h-4 w-4"  data-icon="inline-start"/>
                     )}
                     {selectedDefinition.status === "active" ? "Disable" : "Activate"}
                   </DropdownMenuItem>
@@ -318,9 +318,9 @@ export function SecretDetailsSheet() {
                     }
                   >
                     {selectedDefinition.status === "archived" ? (
-                      <ArchiveRestore className="h-4 w-4" />
+                      <ArchiveRestore className="h-4 w-4"  data-icon="inline-start"/>
                     ) : (
-                      <Archive className="h-4 w-4" />
+                      <Archive className="h-4 w-4"  data-icon="inline-start"/>
                     )}
                     {selectedDefinition.status === "archived" ? "Unarchive" : "Archive"}
                   </DropdownMenuItem>
@@ -329,7 +329,7 @@ export function SecretDetailsSheet() {
                     variant="destructive"
                     onSelect={() => setDefinitionDeleteConfirm(selectedDefinition)}
                   >
-                    <Trash2 className="h-4 w-4" /> Delete definition
+                    <Trash2 className="h-4 w-4"  data-icon="inline-end"/> Delete definition
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

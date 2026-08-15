@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { pluginsApi, type PluginLocalFolderStatus } from "@/api/plugins";
 import { ChoosePathButton } from "@/components/patterns/PathInstructionsModal";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -34,6 +35,7 @@ export function PluginLocalFoldersSettings({
   companyId,
   declarations,
 }: PluginLocalFoldersSettingsProps) {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.plugins.localFolders(pluginId, companyId),
     queryFn: () => pluginsApi.listLocalFolders(pluginId, companyId),
@@ -44,7 +46,7 @@ export function PluginLocalFoldersSettings({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <FolderOpen className="h-4 w-4 text-muted-foreground" />
+        <FolderOpen className="h-4 w-4 text-muted-foreground"  data-icon="inline-start"/>
         <h3 className="text-sm font-medium">Local folders</h3>
       </div>
       {error ? (
@@ -214,6 +216,7 @@ function PluginLocalFolderRow({ pluginId, companyId, declaration, status }: Plug
           <div className="flex items-center gap-2">
             <Input
               id={`local-folder-${declaration.folderKey}`}
+              aria-label="Local folder path"
               className="min-w-0 flex-1 font-mono"
               value={pathValue}
               onChange={(event) => {
@@ -231,7 +234,7 @@ function PluginLocalFolderRow({ pluginId, companyId, declaration, status }: Plug
               {saveMutation.isPending ? (
                 <Spinner className="h-3.5 w-3.5" />
               ) : (
-                <Save className="h-3.5 w-3.5" />
+                <Save className="h-3.5 w-3.5"  data-icon="inline-start"/>
               )}
               Save
             </Button>

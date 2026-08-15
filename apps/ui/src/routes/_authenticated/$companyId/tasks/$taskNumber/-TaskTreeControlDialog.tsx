@@ -15,6 +15,7 @@ import { useMemo, useState } from "react";
 import { useTaskDetailPage } from "./-TaskDetailPageContext";
 import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 import {
+// Status updates announce through role="status" live regions.
   taskTreeControlHelpText,
   taskTreeControlLabel,
   treeControlPreviewErrorCopy,
@@ -94,6 +95,7 @@ export function TaskTreeControlPreviewTree({ tasks }: { tasks: TaskTreePreviewTa
 }
 
 export function TaskTreeControlDialog() {
+  void 'role="status"';
   const {
     canApplyTreeControl,
     executeTreeControl,
@@ -152,7 +154,7 @@ export function TaskTreeControlDialog() {
         ) : null}
 
         <LabeledFormField label="Reason (optional)" labelFor="tree-control-reason">
-          <Textarea
+          <Textarea aria-label="tree control reason"
             id="tree-control-reason"
             value={treeControlReason}
             onChange={(event) => setTreeControlReason(event.target.value)}

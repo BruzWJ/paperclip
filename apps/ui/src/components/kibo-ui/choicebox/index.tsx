@@ -22,7 +22,7 @@ import {
 export type ChoiceboxProps = ComponentProps<typeof RadioGroup>;
 
 export const Choicebox = ({ className, ...props }: ChoiceboxProps) => (
-  <RadioGroup className={cn("w-full", className)} {...props} />
+  <RadioGroup aria-label={props["aria-label"] ?? "Options"} className={cn("w-full", className)} {...props} />
 );
 
 type ChoiceboxItemContextValue = {

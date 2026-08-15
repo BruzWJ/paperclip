@@ -155,7 +155,7 @@ export function AgentRunToolTrace({ tool, isCurrent }: { tool: AssistantTool; is
                   key={`${tool.id}-output-path-${index}`}
                   className="flex min-w-0 items-start gap-2 text-xs"
                 >
-                  <FileTextIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                  <FileTextIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
                   <code className="break-all">{path}</code>
                 </li>
               ))}

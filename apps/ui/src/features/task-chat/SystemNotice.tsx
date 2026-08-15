@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { useId, useState, type ReactNode } from "react";
 import { ChevronDown, CircleCheck, Info, OctagonAlert, TriangleAlert, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -253,7 +254,7 @@ export function SystemNotice({
                 <span>{open ? "Hide details" : "Details"}</span>
                 <ChevronDown
                   className={cn("h-3.5 w-3.5 transition-transform duration-150", open && "rotate-180")}
-                />
+                 data-icon="inline-end"/>
               </Button>
             </CollapsibleTrigger>
           ) : null}

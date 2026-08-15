@@ -144,7 +144,7 @@ function SidebarSectionHeader({
             size="icon-xs"
             aria-label={collapsible.open ? `Collapse ${label}` : `Expand ${label}`}
           >
-            <ChevronRight className={caretClassName} aria-hidden="true" />
+            <ChevronRight className={caretClassName} aria-hidden="true"  data-icon="inline-start"/>
           </Button>
         </CollapsibleTrigger>
       ) : null}

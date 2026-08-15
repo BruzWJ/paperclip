@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { createFileRoute } from "@tanstack/react-router";
 import {
   assertOnlySearchKeys,

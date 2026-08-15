@@ -94,7 +94,7 @@ export function TasksListView() {
       <div className="flex items-center justify-between gap-2 sm:gap-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Button size="sm" variant="outline" onClick={() => openCreateTaskDialog()}>
-            <Plus className="h-4 w-4 sm:mr-1" />
+            <Plus className="h-4 w-4 sm:mr-1"  data-icon="inline-start"/>
             <span className="hidden sm:inline">{createButtonLabel}</span>
           </Button>
           <TaskSearchInput
@@ -118,10 +118,10 @@ export function TasksListView() {
             aria-label="View mode"
           >
             <ToggleGroupItem value="list" title="List view" aria-label="List view">
-              <List className="h-3.5 w-3.5" />
+              <List className="h-3.5 w-3.5"  data-icon="inline-start"/>
             </ToggleGroupItem>
             <ToggleGroupItem value="board" title="Board view" aria-label="Board view">
-              <SquareKanban className="h-3.5 w-3.5" />
+              <SquareKanban className="h-3.5 w-3.5"  data-icon="inline-start"/>
             </ToggleGroupItem>
           </ToggleGroup>
 
@@ -139,7 +139,7 @@ export function TasksListView() {
                 viewState.nestingEnabled ? "Disable parent-child nesting" : "Enable parent-child nesting"
               }
             >
-              <ListTree className="h-3.5 w-3.5" />
+              <ListTree className="h-3.5 w-3.5"  data-icon="inline-start"/>
             </Button>
           )}
 
@@ -157,7 +157,7 @@ export function TasksListView() {
                 }
                 title={boardCompactCards ? "Use comfortable cards" : "Use compact cards"}
               >
-                <ChevronsDownUp className="h-3.5 w-3.5" />
+                <ChevronsDownUp className="h-3.5 w-3.5"  data-icon="inline-start"/>
               </Button>
               <Button
                 type="button"
@@ -171,7 +171,7 @@ export function TasksListView() {
                 }
                 title={boardCollapsedStatuses.length > 0 ? "Expand cold lanes" : "Collapse cold lanes"}
               >
-                <PanelTopClose className="h-3.5 w-3.5" />
+                <PanelTopClose className="h-3.5 w-3.5"  data-icon="inline-start"/>
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -185,7 +185,7 @@ export function TasksListView() {
                     )}
                     title="Cards per column"
                   >
-                    <ListCollapse className="h-3.5 w-3.5" />
+                    <ListCollapse className="h-3.5 w-3.5"  data-icon="inline-start"/>
                     <span className="min-w-4 text-xs tabular-nums">{viewState.boardColumnPageSize}</span>
                   </Button>
                 </DropdownMenuTrigger>
@@ -221,7 +221,7 @@ export function TasksListView() {
                 disabled={!boardDensityCustomized}
                 title="Reset board density"
               >
-                <RotateCcw className="h-3.5 w-3.5" />
+                <RotateCcw className="h-3.5 w-3.5"  data-icon="inline-start"/>
               </Button>
             </>
           )}
@@ -262,7 +262,7 @@ export function TasksListView() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Sort">
-                  <ArrowUpDown className="h-3.5 w-3.5" />
+                  <ArrowUpDown className="h-3.5 w-3.5"  data-icon="inline-start"/>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
@@ -306,7 +306,7 @@ export function TasksListView() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Group">
-                  <Layers className="h-3.5 w-3.5" />
+                  <Layers className="h-3.5 w-3.5"  data-icon="inline-start"/>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
@@ -371,13 +371,13 @@ export function TasksListView() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <CircleDot />
+              <CircleDot  data-icon="inline-start"/>
             </EmptyMedia>
             <EmptyDescription>No tasks match the current filters or search.</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
             <Button onClick={() => openCreateTaskDialog()}>
-              <Plus />
+              <Plus  data-icon="inline-start"/>
               {createActionLabel}
             </Button>
           </EmptyContent>

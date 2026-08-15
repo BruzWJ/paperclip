@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useQuery } from "@tanstack/react-query";
@@ -61,6 +62,7 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
                     variant="ghost"
                     size="xs"
                     className="h-auto p-0 hover:bg-transparent hover:opacity-80"
+                    aria-label="Change goal status"
                   >
                     <DomainStatus status={goal.status} />
                   </Button>

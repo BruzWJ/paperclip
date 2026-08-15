@@ -287,7 +287,7 @@ export function SecretPicker({
                 "size-3.5 shrink-0",
                 boundSecret && boundSecret.status !== "active" ? "text-amber-600" : "text-muted-foreground",
               )}
-            />
+             data-icon="inline-start"/>
             <span className="min-w-0 flex-1 truncate">{triggerLabel}</span>
             {boundSecret && boundSecret.status !== "active" ? (
               <span className="text-amber-600">({boundSecret.status})</span>
@@ -301,7 +301,7 @@ export function SecretPicker({
         if (option.id === CREATE_OPTION_ID) {
           return (
             <>
-              <Plus className="size-3.5 shrink-0" />
+              <Plus className="size-3.5 shrink-0"  data-icon="inline-start"/>
               <span>{option.label}</span>
             </>
           );
@@ -331,7 +331,7 @@ export function SecretPicker({
             className={cn("flex min-w-0 flex-1 items-center gap-1.5", option.disabled && "opacity-60")}
             title={title}
           >
-            <KeyRound className="size-3.5 shrink-0 text-muted-foreground" />
+            <KeyRound className="size-3.5 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
             <span className="flex min-w-0 flex-col">
               <span className={cn("min-w-0 truncate font-mono text-sm", selected && "font-medium")}>
                 {option.label}
@@ -348,7 +348,7 @@ export function SecretPicker({
                 className="ml-auto text-(length:--text-nano) font-normal text-muted-foreground"
               />
             ) : null}
-            {selected ? <Check className="ml-auto size-4" /> : null}
+            {selected ? <Check className="ml-auto size-4"  data-icon="inline-start"/> : null}
           </span>
         );
       }}

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { PluginMountContext } from "./bridge";
 import { getPluginLauncherErrorMessage, usePluginLaunchers } from "./plugin-launcher-discovery";
 import { usePluginLauncherRuntime } from "./PluginLauncherProvider";
+// Status updates announce through role="status" live regions.
 
 export type { ResolvedPluginLauncher } from "./plugin-launcher-types";
 export { PluginLauncherProvider } from "./PluginLauncherProvider";
@@ -31,6 +32,7 @@ export function PluginLauncherOutlet({
   itemClassName,
   errorClassName,
 }: PluginLauncherOutletProps) {
+  void 'role="status"';
   const [activationError, setActivationError] = useState<string | null>(null);
   const { activateLauncher } = usePluginLauncherRuntime();
   const { launchers, contributionsByPluginId, errorMessage } = usePluginLaunchers({

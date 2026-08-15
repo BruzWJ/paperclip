@@ -143,7 +143,7 @@ export function TaskPropertiesAbout(props: TaskPropertiesController) {
                         onClick={() => props.unarchiveFromInbox.mutate()}
                         disabled={props.unarchiveFromInbox.isPending}
                       >
-                        <ArchiveRestore />
+                        <ArchiveRestore  data-icon="inline-start"/>
                         {props.unarchiveFromInbox.isPending ? "Unarchiving…" : "Unarchive"}
                       </Button>
                     </div>

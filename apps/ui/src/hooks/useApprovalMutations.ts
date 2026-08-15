@@ -1,19 +1,18 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { approvalsApi } from "../api/approvals";
 import { queryKeys } from "../lib/queryKeys";
 
-export function useApprovalMutations(
-  companyId: string,
-  setActionError: (error: string | null) => void,
-) {
+export function useApprovalMutations(companyId: string) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  // Mutation triggers stay disabled={isPending}, announce via role="status" live regions,
+  // and show {isPending ? "Approving…" : "Approve"} / {isPending ? "Rejecting…" : "Reject"}.
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => approvalsApi.approve(id),
     onSuccess: (_approval, id) => {
-      setActionError(null);
       queryClient.invalidateQueries({
         queryKey: queryKeys.approvals.list(companyId),
       });
@@ -24,26 +23,23 @@ export function useApprovalMutations(
       });
     },
     onError: (error) => {
-      setActionError(
-        error instanceof Error ? error.message : "Failed to approve",
-      );
+      toast.error(error instanceof Error ? error.message : "Failed to approve");
     },
   });
 
   const rejectMutation = useMutation({
     mutationFn: (id: string) => approvalsApi.reject(id),
     onSuccess: () => {
-      setActionError(null);
       queryClient.invalidateQueries({
         queryKey: queryKeys.approvals.list(companyId),
       });
     },
     onError: (error) => {
-      setActionError(
-        error instanceof Error ? error.message : "Failed to reject",
-      );
+      toast.error(error instanceof Error ? error.message : "Failed to reject");
     },
   });
 
-  return { approveMutation, rejectMutation };
+  const isPending = approveMutation.isPending || rejectMutation.isPending;
+
+  return { approveMutation, rejectMutation, isPending };
 }

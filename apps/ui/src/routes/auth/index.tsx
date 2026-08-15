@@ -1,3 +1,4 @@
+// Empty collections render dedicated UI when data.length === 0.
 import { createFileRoute } from "@tanstack/react-router";
 import { assertOnlySearchKeys, optionalCanonicalInternalPathSearch } from "../-search";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -16,6 +17,7 @@ import { ThemeSelector } from "@/components/patterns/ThemeSelector";
 import { LabeledFormField } from "@/components/patterns/FormPatterns";
 
 export function validateAuthSearch(search: Record<string, unknown>): {
+  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   next?: string;
 } {
   assertOnlySearchKeys(search, ["next"]);
@@ -141,7 +143,7 @@ function AuthPage() {
             <FieldGroup className="gap-4">
               {mode === "sign_up" && (
                 <LabeledFormField data-invalid={error ? true : undefined} label="Name" labelFor="name">
-                  <Input
+                  <Input aria-label="name"
                     id="name"
                     name="name"
                     value={name}
@@ -156,7 +158,7 @@ function AuthPage() {
                 </LabeledFormField>
               )}
               <LabeledFormField data-invalid={error ? true : undefined} label="Email" labelFor="email">
-                <Input
+                <Input aria-label="email"
                   id="email"
                   name="email"
                   type="email"
@@ -171,7 +173,7 @@ function AuthPage() {
                 />
               </LabeledFormField>
               <LabeledFormField data-invalid={error ? true : undefined} label="Password" labelFor="password">
-                <Input
+                <Input aria-label="password"
                   id="password"
                   name="password"
                   type="password"
