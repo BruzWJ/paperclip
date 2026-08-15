@@ -8,8 +8,8 @@ import { FieldError } from "@/components/ui/field";
 import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Input } from "@/components/ui/input";
 import { cn, relativeTime } from "@/lib/utils";
-import { MarkdownEditor } from "../../../../../../features/markdown/MarkdownEditor";
-import { TaskDocumentAnnotations } from "../../../../../../features/document-annotations/TaskDocumentAnnotations";
+import { MarkdownEditor } from "../../../-markdown/-MarkdownEditor";
+import { TaskDocumentAnnotations } from "../../../-document-annotations/-TaskDocumentAnnotations";
 import { isPlanKey, renderFoldableBody } from "./-TaskDocumentUtils";
 
 import type { TaskDocumentPresentationProps } from "./-TaskDocumentCard";

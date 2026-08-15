@@ -13,7 +13,7 @@ import { isSecretRefBinding } from "./-JsonSchemaUtils";
 import {
   SecretBindingPicker,
   type SecretBindingValue,
-} from "@/features/secrets/pickers/SecretBindingPicker";
+} from "@/routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/-json-schema/-SecretBindingPicker";
 
 const TEXTAREA_THRESHOLD = 200;
 

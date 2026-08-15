@@ -1,6 +1,6 @@
-import { BudgetPolicyCard } from "@/features/budgets/BudgetPolicyCard";
-import { InlineEditor } from "@/features/markdown/InlineEditor";
-import { MembershipAction } from "@/features/resource-memberships/MembershipAction";
+import { BudgetPolicyCard } from "@/routes/_authenticated/$companyId/-BudgetPolicyCard";
+import { InlineEditor } from "@/routes/_authenticated/$companyId/-markdown/-InlineEditor";
+import { MembershipAction } from "@/routes/_authenticated/$companyId/-MembershipAction";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProjectProperties } from "@/routes/_authenticated/$companyId/projects/$projectId/-detail/-ProjectProperties";

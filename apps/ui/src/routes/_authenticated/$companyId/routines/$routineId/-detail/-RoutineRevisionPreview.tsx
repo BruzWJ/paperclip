@@ -8,7 +8,7 @@ import { type RoutineRevision } from "@paperclipai/shared";
 import { RotateCcw, Search } from "lucide-react";
 import { relativeTime } from "@/lib/utils";
 import type { NamedEntityLookup } from "@/lib/presentation-contracts";
-import { MarkdownBody } from "../../../../../../features/markdown/MarkdownBody";
+import { MarkdownBody } from "../../../-markdown/-MarkdownBody";
 
 import {
   formatVariableDefault,

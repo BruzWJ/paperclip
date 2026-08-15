@@ -1,4 +1,4 @@
-import { approvalLabel } from "@/features/approvals/ApprovalPayload";
+import { approvalLabel } from "@/routes/_authenticated/$companyId/-approval-presentation/-ApprovalPayload";
 import type { InboxWorkItem } from "@/lib/inbox";
 import { matchesInboxTaskSearch } from "@/lib/inbox";
 import { formatOwnerUserLabel } from "@/lib/task-owners";

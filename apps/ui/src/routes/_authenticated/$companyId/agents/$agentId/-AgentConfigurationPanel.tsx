@@ -1,7 +1,7 @@
 // Empty collections render dedicated UI when data.length === 0.
 import { agentsApi } from "@/api/agents";
 import { ApiError } from "@/api/client";
-import { AgentConfigForm } from "@/features/agents/configuration/AgentConfigForm";
+import { AgentConfigForm } from "@/routes/_authenticated/$companyId/-agent-configuration/-AgentConfigForm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";

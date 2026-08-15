@@ -20,7 +20,7 @@ import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-e
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { Tool, ToolContent, ToolHeader, type ToolPart } from "@/components/ai-elements/tool";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AgentIcon } from "@/features/agents/AgentIconPicker";
+import { AgentIcon } from "@/routes/_authenticated/$companyId/-AgentIconPicker";
 import { deriveInitials } from "@/lib/identity";
 import type { TaskChatMessage, TaskChatMessagePart } from "@/lib/task-chat-messages";
 import { cn, formatDateTime } from "@/lib/utils";

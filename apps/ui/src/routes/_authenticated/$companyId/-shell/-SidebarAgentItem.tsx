@@ -13,7 +13,7 @@ import type { Agent } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle, LogOut, MoreHorizontal, PauseCircle, Pencil, PlayCircle, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AgentIcon } from "../../../../features/agents/AgentIconPicker";
+import { AgentIcon } from "../-AgentIconPicker";
 import { SidebarNavItem } from "./-SidebarNavItem";
 import { Toggle } from "@/components/ui/toggle";
 import { SidebarMenuItem } from "@/components/ui/sidebar";

@@ -8,7 +8,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { authApi } from "@/api/auth";
 import { Button } from "@/components/ui/button";
-import { CompanyAvatar } from "@/features/companies/CompanyAvatar";
+import { CompanyAvatar } from "@/routes/-company-presentation/-CompanyAvatar";
 import {
   DropdownMenu,
   DropdownMenuContent,

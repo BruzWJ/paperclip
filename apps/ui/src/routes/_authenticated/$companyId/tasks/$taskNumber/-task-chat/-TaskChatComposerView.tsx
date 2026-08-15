@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import { forwardRef, useState } from "react";
 
-import type { MentionOption } from "../../../../../../features/markdown/MarkdownEditor";
+import type { MentionOption } from "../../../-markdown/-MarkdownEditor";
 import {
   shouldRenderComposerOwnerPreview,
   type TaskChatComposerHandle,

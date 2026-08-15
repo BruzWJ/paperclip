@@ -16,7 +16,7 @@ import { InputGroup, InputGroupButton, InputGroupInput } from "@/components/ui/i
 import type { EnvBinding } from "@paperclipai/shared";
 import { Braces, Edit3 } from "lucide-react";
 import { useMemo } from "react";
-import { EnvironmentVariablesEditor } from "../../../../../../features/environment-variables-editor";
+import { EnvironmentVariablesEditor } from "../../../-environment-variables-editor/-EnvironmentVariablesEditor";
 import { RoutineVariablesEditor } from "../-detail/-RoutineVariablesEditor";
 import { useRoutineDetail } from "./-context";
 

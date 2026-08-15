@@ -8,9 +8,9 @@ assumptions.
 
 The retained patterns cover reusable selectors, tables and trees, file and code
 views, form/dialog layouts, status presentation, media display, and accessible
-interaction helpers. Paperclip-specific orchestration belongs in
-`apps/ui/src/features/`; a helper with only one route consumer belongs beside
-that route in a Router-ignored `-` file or directory.
+interaction helpers. Paperclip-specific orchestration belongs beside its route
+consumer, or at the closest common route ancestor when shared, in a
+Router-ignored `-` file or directory under `apps/ui/src/routes/`.
 
 The form layouts are adapted from the official Kibo Patterns examples
 `field/layouts/field-layouts-6`, `dialog/standard/dialog-standard-6`, and

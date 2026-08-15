@@ -6,7 +6,7 @@ import { BlockedInboxView } from "@/routes/_authenticated/$companyId/inbox/-Bloc
 import { Banner, BannerClose, BannerIcon, BannerTitle } from "@/components/kibo-ui/banner";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TaskFiltersPopover } from "@/features/tasks/list/TaskFiltersPopover";
+import { TaskFiltersPopover } from "@/routes/_authenticated/$companyId/-tasks-list/-TaskFiltersPopover";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";

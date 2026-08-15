@@ -1,7 +1,7 @@
 import { useState, type ComponentProps, type ReactNode } from "react";
 
-import { InlineEditor } from "@/features/markdown/InlineEditor";
-import { MarkdownBody } from "@/features/markdown/MarkdownBody";
+import { InlineEditor } from "@/routes/_authenticated/$companyId/-markdown/-InlineEditor";
+import { MarkdownBody } from "@/routes/_authenticated/$companyId/-markdown/-MarkdownBody";
 import { TaskMonitorBanner } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-TaskMonitorBanner";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Badge } from "@/components/ui/badge";

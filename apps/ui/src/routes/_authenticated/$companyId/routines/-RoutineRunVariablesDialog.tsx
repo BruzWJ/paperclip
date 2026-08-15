@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { type Agent, type Project, type RoutineVariable } from "@paperclipai/shared";
-import { AgentIcon } from "../../../../features/agents/AgentIconPicker";
+import { AgentIcon } from "../-AgentIconPicker";
 import { DatePicker } from "@/components/patterns/DatePicker";
 import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";

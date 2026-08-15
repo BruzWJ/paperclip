@@ -21,7 +21,7 @@ vi.mock("@/api/routines", async () => {
   };
 });
 
-vi.mock("../../../../../../features/markdown/MarkdownBody", () => ({
+vi.mock("../../../-markdown/-MarkdownBody", () => ({
   MarkdownBody: ({ children }: { children: string }) => <div>{children}</div>,
 }));
 

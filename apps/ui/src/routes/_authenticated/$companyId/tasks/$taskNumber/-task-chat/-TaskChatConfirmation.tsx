@@ -18,7 +18,7 @@ import {
   approvalSubject,
   typeIcon,
   typeLabel,
-} from "@/features/approvals/ApprovalPayload";
+} from "@/routes/_authenticated/$companyId/-approval-presentation/-ApprovalPayload";
 import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

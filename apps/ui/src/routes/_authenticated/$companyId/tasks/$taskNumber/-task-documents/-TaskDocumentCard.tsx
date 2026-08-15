@@ -16,7 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { deriveDocumentRevisionState } from "@/lib/document-revisions";
 import { DocumentFrameHeader } from "./-DocumentFrameHeader";
-import { DocumentAnnotationsCountChip } from "../../../../../../features/document-annotations/TaskDocumentAnnotations";
+import { DocumentAnnotationsCountChip } from "../../../-document-annotations/-TaskDocumentAnnotations";
 import { downloadDocumentFile, getRevisionActor, isPlanKey, titlesMatchKey } from "./-TaskDocumentUtils";
 
 import { TaskDocumentBodyEditor, TaskDocumentRevisionNotices } from "./-TaskDocumentBodyEditor";

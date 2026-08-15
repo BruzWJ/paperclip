@@ -6,7 +6,7 @@ import type { Task } from "@paperclipai/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskSiblingNavigation } from "./-TaskSiblingNavigation";
 
-vi.mock("../../../../../features/tasks/shared/TaskLinkQuicklook", () => ({
+vi.mock("../../-TaskLinkQuicklook", () => ({
   TaskLinkQuicklook: ({
     children,
     taskId: _taskId,

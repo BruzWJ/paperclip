@@ -8,8 +8,8 @@ import type {
   UserSecretDefinition,
 } from "@paperclipai/shared";
 import { MyUserSecretsTab } from "@/routes/_authenticated/$companyId/company/settings/secrets/-MyUserSecretsTab";
-import { MissingUserSecretsBanner } from "@/features/secrets/user-secrets/MissingUserSecretsBanner";
-import { EnvironmentVariablesEditor } from "@/features/environment-variables-editor";
+import { MissingUserSecretsBanner } from "@/routes/_authenticated/$companyId/-shell/-new-task/-MissingUserSecretsBanner";
+import { EnvironmentVariablesEditor } from "@/routes/_authenticated/$companyId/-environment-variables-editor/-EnvironmentVariablesEditor";
 import type { MyUserSecretEntry } from "@/api/secrets";
 import { queryKeys } from "@/lib/queryKeys";
 

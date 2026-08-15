@@ -1,4 +1,4 @@
-import { MarkdownBody } from "@/features/markdown/MarkdownBody";
+import { MarkdownBody } from "@/routes/_authenticated/$companyId/-markdown/-MarkdownBody";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";
 import { Button } from "@/components/ui/button";

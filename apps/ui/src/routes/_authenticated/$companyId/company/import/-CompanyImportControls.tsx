@@ -1,7 +1,7 @@
 import { listUIAdapters } from "@/adapters";
 import { useAdapterCatalogSyncState } from "@/adapters/use-adapter-catalog";
-import { defaultCreateValues } from "@/features/agents/configuration/agent-config-defaults";
-import { AgentConfigForm } from "@/features/agents/configuration/AgentConfigForm";
+import { defaultCreateValues } from "@/routes/_authenticated/$companyId/-agent-configuration/-agent-config-defaults";
+import { AgentConfigForm } from "@/routes/_authenticated/$companyId/-agent-configuration/-AgentConfigForm";
 import type { FileTreeNode } from "@/components/patterns/FileTree";
 import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { Badge } from "@/components/ui/badge";

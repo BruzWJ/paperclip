@@ -7,7 +7,7 @@ import { agentsApi } from "@/api/agents";
 import { inboxAgentPolicyApi } from "@/api/inbox-agent-policy";
 import { queryKeys } from "@/lib/queryKeys";
 import { isAgentTaskTarget } from "@/lib/company-members";
-import { AgentIcon } from "../../../../../../../features/agents/AgentIconPicker";
+import { AgentIcon } from "../../../../-AgentIconPicker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";

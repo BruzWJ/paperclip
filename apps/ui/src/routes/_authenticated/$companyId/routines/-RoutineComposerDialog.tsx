@@ -1,5 +1,5 @@
-import { AgentIcon } from "@/features/agents/AgentIconPicker";
-import { MarkdownEditor } from "@/features/markdown/MarkdownEditor";
+import { AgentIcon } from "@/routes/_authenticated/$companyId/-AgentIconPicker";
+import { MarkdownEditor } from "@/routes/_authenticated/$companyId/-markdown/-MarkdownEditor";
 import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Alert, AlertDescription } from "@/components/ui/alert";

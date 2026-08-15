@@ -13,7 +13,7 @@ import { secretsApi, type MyUserSecretEntry } from "@/api/secrets";
 import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "sonner";
 import { useCurrentUserId } from "@/hooks/useCurrentUserId";
-import { SetMyUserSecretDialog } from "../../../../../../features/secrets/user-secrets/SetMyUserSecretDialog";
+import { SetMyUserSecretDialog } from "../../../-SetMyUserSecretDialog";
 import { getRelativeSecretPath } from "./-secret-path";
 import { myValueLabel, myValueState } from "./-my-value-state";
 

@@ -12,7 +12,7 @@ import type { CompanyUserProfile } from "@/lib/company-members";
 import { type ComposerOwnerPreview } from "@/lib/owner-transition";
 import { type TaskChatComment, type TaskChatMessage } from "@/lib/task-chat-messages";
 import type { EntityOption } from "@/lib/entity-selector";
-import { type MentionOption } from "../../../../../../features/markdown/MarkdownEditor";
+import { type MentionOption } from "../../../-markdown/-MarkdownEditor";
 import type { CommentOwnerChange } from "../-task-detail-model";
 /** Returns the plain-text content used by message copy and reply previews. */
 export function getThreadMessageCopyText(message: TaskChatMessage): string {

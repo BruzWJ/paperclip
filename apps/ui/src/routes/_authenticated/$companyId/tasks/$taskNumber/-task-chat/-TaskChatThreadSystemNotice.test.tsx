@@ -7,11 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskChatThread } from "./-TaskChatThread";
 import type { TaskChatComment } from "@/lib/task-chat-messages";
 
-vi.mock("../../../../../../features/markdown/MarkdownBody", () => ({
+vi.mock("../../../-markdown/-MarkdownBody", () => ({
   MarkdownBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("../../../../../../features/markdown/MarkdownEditor", () => ({
+vi.mock("../../../-markdown/-MarkdownEditor", () => ({
   MarkdownEditor: () => <textarea aria-label="Task chat editor" />,
 }));
 
@@ -21,8 +21,8 @@ vi.mock("@/components/ui/tooltip", () => ({
   TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
-vi.mock("../../../../../../features/agents/AgentIconPicker", () => ({ AgentIcon: () => null }));
-vi.mock("../../../../../../features/tasks/shared/TaskLinkQuicklook", () => ({
+vi.mock("../../../-AgentIconPicker", () => ({ AgentIcon: () => null }));
+vi.mock("../../../-TaskLinkQuicklook", () => ({
   TaskLinkQuicklook: ({
     children,
     taskId: _taskId,

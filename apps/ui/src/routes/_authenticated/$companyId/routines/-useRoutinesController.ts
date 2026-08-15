@@ -8,8 +8,8 @@ import {
   selectedFolderFromList,
   type FolderSelection,
 } from "@/routes/_authenticated/$companyId/routines/-folders/-FolderControls";
-import type { MarkdownEditorRef, MentionOption } from "@/features/markdown/MarkdownEditor";
-import { nextRoutineStatus } from "@/features/routines/list/RoutineList";
+import type { MarkdownEditorRef, MentionOption } from "@/routes/_authenticated/$companyId/-markdown/-MarkdownEditor";
+import { nextRoutineStatus } from "@/routes/_authenticated/$companyId/routines/-list/-RoutineList";
 import {
   useRoutineAssignmentPresentation,
   useRoutineDirectoryData,

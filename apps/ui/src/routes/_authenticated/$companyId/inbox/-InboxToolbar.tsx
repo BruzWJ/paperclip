@@ -1,4 +1,4 @@
-import { TaskColumnPicker } from "@/features/tasks/list/TaskColumns";
+import { TaskColumnPicker } from "@/routes/_authenticated/$companyId/-tasks-list/-TaskColumns";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";

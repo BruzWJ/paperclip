@@ -14,8 +14,8 @@ import { getRouteComponent } from "@/test/route-component";
 import {
   SecretBindingPicker,
   type SecretBindingValue,
-} from "@/features/secrets/pickers/SecretBindingPicker";
-import { EnvironmentVariablesEditor } from "@/features/environment-variables-editor";
+} from "@/routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/-json-schema/-SecretBindingPicker";
+import { EnvironmentVariablesEditor } from "@/routes/_authenticated/$companyId/-environment-variables-editor/-EnvironmentVariablesEditor";
 import {
   Card,
   CardContent,

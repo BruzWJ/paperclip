@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { attentionImageUrl } from "@/lib/attention";
 import { Badge } from "@/components/ui/badge";
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
-import { CompanyBoardLink } from "../../../../features/navigation/CompanyBoardLink";
+import { CompanyBoardLink } from "@/routes/-CompanyBoardLink";
 import { getProjectIcon } from "@/lib/project-icons";
 
 /** Inline project identity keeps useful context without a competing badge. */

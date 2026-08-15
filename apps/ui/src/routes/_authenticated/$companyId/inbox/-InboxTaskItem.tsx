@@ -3,8 +3,8 @@ import { ChevronRight } from "lucide-react";
 
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
-import { InboxTaskMetaLeading, InboxTaskTrailingColumns, taskActivityText } from "@/features/tasks/list/TaskColumns";
-import { TaskRow } from "@/features/tasks/list/TaskRow";
+import { InboxTaskMetaLeading, InboxTaskTrailingColumns, taskActivityText } from "@/routes/_authenticated/$companyId/-tasks-list/-TaskColumns";
+import { TaskRow } from "@/routes/_authenticated/$companyId/-tasks-list/-TaskRow";
 import {
   resolveInboxTaskBlockerAttention,
   resolveTaskLiveDescendantCount,

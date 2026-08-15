@@ -1,4 +1,4 @@
-import { AgentIcon } from "@/features/agents/AgentIconPicker";
+import { AgentIcon } from "@/routes/_authenticated/$companyId/-AgentIconPicker";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";
 import { formatUserLabel } from "@/lib/task-owners";

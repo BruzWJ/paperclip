@@ -6,7 +6,7 @@ import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
 import { cn } from "@/lib/utils";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
-import { TaskLinkQuicklook } from "../../../../../features/tasks/shared/TaskLinkQuicklook";
+import { TaskLinkQuicklook } from "../../-TaskLinkQuicklook";
 
 type TaskSiblingNavigationProps = {
   navigation: TaskSiblingNavigationState | null;

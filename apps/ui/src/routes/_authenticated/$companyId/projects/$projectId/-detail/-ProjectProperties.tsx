@@ -16,8 +16,8 @@ import { Archive, ArchiveRestore, Plus, X } from "lucide-react";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { cn, formatDate } from "@/lib/utils";
 import { DraftInput } from "@/components/patterns/DraftFields";
-import { EnvironmentVariablesEditor } from "../../../../../../features/environment-variables-editor";
-import { InlineEditor } from "../../../../../../features/markdown/InlineEditor";
+import { EnvironmentVariablesEditor } from "../../../-environment-variables-editor/-EnvironmentVariablesEditor";
+import { InlineEditor } from "../../../-markdown/-InlineEditor";
 
 import { ProjectCodebaseSection } from "./-ProjectCodebaseSection";
 import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";

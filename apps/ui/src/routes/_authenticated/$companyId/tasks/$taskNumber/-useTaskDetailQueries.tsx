@@ -7,7 +7,7 @@ import { projectsApi } from "@/api/projects";
 import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
 import { tasksApi } from "@/api/tasks";
 import { useProjectOrder } from "@/hooks/useProjectOrder";
-import type { MentionOption } from "@/features/markdown/MarkdownEditor";
+import type { MentionOption } from "@/routes/_authenticated/$companyId/-markdown/-MarkdownEditor";
 import {
   buildCompanyUserLabelMap,
   buildCompanyUserProfileMap,

@@ -1,7 +1,7 @@
 // Empty collections render dedicated UI when data.length === 0.
 import { agentsApi } from "@/api/agents";
 import { approvalsApi } from "@/api/approvals";
-import { approvalLabel, ApprovalPayloadRenderer, typeIcon } from "@/features/approvals/ApprovalPayload";
+import { approvalLabel, ApprovalPayloadRenderer, typeIcon } from "@/routes/_authenticated/$companyId/-approval-presentation/-ApprovalPayload";
 import { ApprovalComments } from "@/routes/_authenticated/$companyId/approvals/$approvalId/-ApprovalComments";
 import { JsonCodeBlock } from "@/components/patterns/JsonCodeBlock";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

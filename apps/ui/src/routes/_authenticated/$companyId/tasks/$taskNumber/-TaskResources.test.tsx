@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import type { Task, TaskAttachment, TaskWorkProduct } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/features/tasks/shared/TaskLinkQuicklook", () => ({
+vi.mock("@/routes/_authenticated/$companyId/-TaskLinkQuicklook", () => ({
   TaskLinkQuicklook: ({ children, title }: { children?: ReactNode; title?: string }) => (
     <a href="/task" title={title}>
       {children}

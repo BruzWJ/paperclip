@@ -17,7 +17,7 @@ import { cn, relativeTime } from "@/lib/utils";
 import { Bot, ExternalLink } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";
-import { TaskLinkQuicklook } from "../../../../features/tasks/shared/TaskLinkQuicklook";
+import { TaskLinkQuicklook } from "../-TaskLinkQuicklook";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";

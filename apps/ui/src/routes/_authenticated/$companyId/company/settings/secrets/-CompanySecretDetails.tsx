@@ -1,5 +1,5 @@
 import { accessApi, type CompanyUserDirectoryEntry } from "@/api/access";
-import { CompanyBoardLink } from "@/features/navigation/CompanyBoardLink";
+import { CompanyBoardLink } from "@/routes/-CompanyBoardLink";
 import { Badge } from "@/components/ui/badge";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { DetailList } from "@/components/patterns/DetailList";

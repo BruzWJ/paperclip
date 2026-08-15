@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, ExternalLink, MoreHorizontal, RotateCcw, X }
 import { memo } from "react";
 import { attentionDetailImages, attentionDetailLine, isInlineResolvable, sourceMeta } from "@/lib/attention";
 import { cn, relativeTime } from "@/lib/utils";
-import { CompanyBoardLink } from "../../../../features/navigation/CompanyBoardLink";
+import { CompanyBoardLink } from "@/routes/-CompanyBoardLink";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";

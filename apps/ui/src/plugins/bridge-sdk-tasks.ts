@@ -3,8 +3,8 @@ import { projectsApi } from "@/api/projects";
 import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
 import { tasksApi } from "@/api/tasks";
 import { FileTree } from "@/components/patterns/FileTree";
-import { MarkdownEditor } from "@/features/markdown/MarkdownEditor";
-import { TasksList as HostTasksList } from "@/features/tasks/list";
+import { MarkdownEditor } from "@/routes/_authenticated/$companyId/-markdown/-MarkdownEditor";
+import { TasksList as HostTasksList } from "@/routes/_authenticated/$companyId/-tasks-list/-TasksList";
 import { collectLiveTaskIds } from "@/lib/liveTaskIds";
 import { queryKeys } from "@/lib/queryKeys";
 import type {

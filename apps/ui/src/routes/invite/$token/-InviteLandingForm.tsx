@@ -7,7 +7,7 @@ import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { CompanyAvatar } from "@/features/companies/CompanyAvatar";
+import { CompanyAvatar } from "@/routes/-company-presentation/-CompanyAvatar";
 import { formatDate } from "@/lib/utils";
 import type { AuthFeedback, AuthMode } from "@/routes/invite/$token/-invite-auth";
 import type { Dispatch, SetStateAction } from "react";

@@ -16,7 +16,7 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompanyLiveTaskIds } from "@/hooks/useCompanyLiveTaskIds";
 import { queryKeys } from "@/lib/queryKeys";
 import { createTaskDetailLocationState } from "@/lib/taskDetailBreadcrumb";
-import { TasksList } from "@/features/tasks/list";
+import { TasksList } from "@/routes/_authenticated/$companyId/-tasks-list/-TasksList";
 import type { Task } from "@paperclipai/shared";
 
 export function validateTasksSearch(search: Record<string, unknown>): {

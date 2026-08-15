@@ -1,6 +1,6 @@
 import type { OrgNode } from "@/api/agents";
 import { AgentActionButtons } from "@/routes/_authenticated/$companyId/agents/-AgentActionButtons";
-import { MembershipAction } from "@/features/resource-memberships/MembershipAction";
+import { MembershipAction } from "@/routes/_authenticated/$companyId/-MembershipAction";
 import { DomainTree, type DomainTreeNode } from "@/components/patterns/DomainTree";
 import { Spinner } from "@/components/ui/spinner";
 import { Toggle } from "@/components/ui/toggle";

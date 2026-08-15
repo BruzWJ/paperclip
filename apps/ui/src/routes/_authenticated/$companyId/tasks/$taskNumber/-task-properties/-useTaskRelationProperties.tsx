@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { taskDisplayTitle } from "@/lib/task-display";
 import { cn } from "@/lib/utils";
-import { TaskLinkQuicklook } from "../../../../../../features/tasks/shared/TaskLinkQuicklook";
+import { TaskLinkQuicklook } from "../../../-TaskLinkQuicklook";
 import type { TaskPropertiesData } from "./-useTaskPropertiesData";
 import type { TaskPropertiesState } from "./-useTaskPropertiesState";
 

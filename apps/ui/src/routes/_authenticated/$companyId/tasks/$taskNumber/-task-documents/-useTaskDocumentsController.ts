@@ -5,7 +5,7 @@ import { useLocation } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import { deriveDocumentRevisionState } from "@/lib/document-revisions";
 import type { CompanyUserProfile } from "@/lib/company-members";
-import type { MentionOption } from "@/features/markdown/MarkdownEditor";
+import type { MentionOption } from "@/routes/_authenticated/$companyId/-markdown/-MarkdownEditor";
 
 import {
   compareTaskDocuments,

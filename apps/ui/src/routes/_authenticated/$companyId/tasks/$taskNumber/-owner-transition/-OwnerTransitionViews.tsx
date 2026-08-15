@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { cn } from "@/lib/utils";
 import type { NamedAgentSummary } from "@/lib/presentation-contracts";
-import { AgentIcon } from "../../../../../../features/agents/AgentIconPicker";
+import { AgentIcon } from "../../../-AgentIconPicker";
 import {
   classifyOwnerTransition,
   resolveRunStatusPresentation,

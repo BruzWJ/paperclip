@@ -8,7 +8,7 @@ import {
   MobileFolderSheet,
   MoveToMenu,
 } from "@/routes/_authenticated/$companyId/routines/-folders/-FolderControls";
-import { RoutineListRow } from "@/features/routines/list/RoutineList";
+import { RoutineListRow } from "@/routes/_authenticated/$companyId/routines/-list/-RoutineList";
 import { RoutineRunVariablesDialog } from "@/routes/_authenticated/$companyId/routines/-RoutineRunVariablesDialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";

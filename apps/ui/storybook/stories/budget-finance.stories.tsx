@@ -5,7 +5,7 @@ import {
   type BudgetPolicySummary,
 } from "@paperclipai/shared";
 import { BudgetIncidentCard } from "@/routes/_authenticated/$companyId/costs/-BudgetIncidentCard";
-import { BudgetPolicyCard } from "@/features/budgets/BudgetPolicyCard";
+import { BudgetPolicyCard } from "@/routes/_authenticated/$companyId/-BudgetPolicyCard";
 
 const windowStart = new Date("2026-04-01T00:00:00.000Z");
 const windowEnd = new Date("2026-05-01T00:00:00.000Z");

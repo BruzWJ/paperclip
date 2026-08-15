@@ -12,7 +12,7 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { GoalProperties } from "@/routes/_authenticated/$companyId/goals/$goalId/-GoalProperties";
 import { GoalTree } from "@/routes/_authenticated/$companyId/goals/-GoalTree";
-import { InlineEditor } from "@/features/markdown/InlineEditor";
+import { InlineEditor } from "@/routes/_authenticated/$companyId/-markdown/-InlineEditor";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";

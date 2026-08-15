@@ -9,7 +9,7 @@ import { buildCompanyUserProfileMap } from "@/lib/company-members";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { ActivityRow } from "@/features/activity/ActivityRow";
+import { ActivityRow } from "@/routes/_authenticated/$companyId/-activity/-ActivityRow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { History } from "lucide-react";

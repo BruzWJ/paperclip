@@ -6,7 +6,7 @@ import type {
   RoutineEnvConfig,
   RoutineVariable,
 } from "@paperclipai/shared";
-import type { MarkdownEditorRef, MentionOption } from "../../../../../../features/markdown/MarkdownEditor";
+import type { MarkdownEditorRef, MentionOption } from "../../../-markdown/-MarkdownEditor";
 import type { EntityOption } from "@/lib/entity-selector";
 import type { DirtyFieldDescriptor } from "../-detail/-RoutineHistoryTab";
 import type { RoutineTriggerResponse, RotateRoutineTriggerResponse } from "@/api/routines";

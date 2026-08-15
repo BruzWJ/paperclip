@@ -34,7 +34,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TaskLinkQuicklook } from "@/features/tasks/shared/TaskLinkQuicklook";
+import { TaskLinkQuicklook } from "@/routes/_authenticated/$companyId/-TaskLinkQuicklook";
 import { titleizeFilename } from "@/lib/document-file-names";
 import {
   attachmentDownloadPath,

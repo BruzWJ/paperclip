@@ -1,10 +1,10 @@
 import { AgentActionButtons } from "@/routes/_authenticated/$companyId/agents/-AgentActionButtons";
-import { AgentIcon, AgentIconPicker } from "@/features/agents/AgentIconPicker";
+import { AgentIcon, AgentIconPicker } from "@/routes/_authenticated/$companyId/-AgentIconPicker";
 import { AgentConfigurePage as AgentConfigurationPanel } from "@/routes/_authenticated/$companyId/agents/$agentId/-AgentConfigurationPanel";
 import { AgentOverview } from "@/routes/_authenticated/$companyId/agents/$agentId/-AgentOverview";
 import { AgentRunsPanel } from "@/routes/_authenticated/$companyId/agents/$agentId/-AgentRunsPanel";
-import { BudgetPolicyCard } from "@/features/budgets/BudgetPolicyCard";
-import { MembershipAction } from "@/features/resource-memberships/MembershipAction";
+import { BudgetPolicyCard } from "@/routes/_authenticated/$companyId/-BudgetPolicyCard";
+import { MembershipAction } from "@/routes/_authenticated/$companyId/-MembershipAction";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Toggle } from "@/components/ui/toggle";

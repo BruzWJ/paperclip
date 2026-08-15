@@ -6,7 +6,7 @@ import {
   RoutineListRow,
   type RoutineListProjectSummary,
   type RoutineListRowItem,
-} from "@/features/routines/list/RoutineList";
+} from "@/routes/_authenticated/$companyId/routines/-list/-RoutineList";
 import type { NamedAgentSummary } from "@/lib/presentation-contracts";
 
 const projectById = new Map<string, RoutineListProjectSummary>([

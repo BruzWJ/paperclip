@@ -40,7 +40,7 @@ vi.mock("@tanstack/react-router", () => ({
   }),
 }));
 
-vi.mock("@/features/markdown/MarkdownEditor", () => ({
+vi.mock("@/routes/_authenticated/$companyId/-markdown/-MarkdownEditor", () => ({
   MarkdownEditor: () => null,
 }));
 

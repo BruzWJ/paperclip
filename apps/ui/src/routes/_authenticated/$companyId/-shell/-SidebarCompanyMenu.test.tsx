@@ -39,7 +39,7 @@ vi.mock("@/api/sidebarPreferences", () => ({
   sidebarPreferencesApi: mockSidebarPreferencesApi,
 }));
 
-vi.mock("@/features/companies/CompanyAvatar", () => ({
+vi.mock("@/routes/-company-presentation/-CompanyAvatar", () => ({
   CompanyAvatar: ({
     companyName,
     brandColor,

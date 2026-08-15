@@ -8,9 +8,8 @@ Paperclip features and routes.
   branches to those files.
 - Paperclip-owned modules in `patterns/` may compose registry components, but
   they stay independent of feature state, API mutations, and route details.
-- Paperclip domain UI shared across route branches belongs in `../features/`.
-  Helpers used by only one route belong beside that route in a file or directory
-  whose basename starts with `-`.
+- Paperclip domain UI belongs beside its route consumer. If multiple route
+  branches share it, place it at their closest common ancestor under `../routes/`.
+  Non-route files and directories there must have a basename starting with `-`.
 
-Features and routes may import components. Components must not import features
-or routes.
+Routes may import components. Components must not import routes.

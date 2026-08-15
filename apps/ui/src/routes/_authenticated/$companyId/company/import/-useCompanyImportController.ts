@@ -1,6 +1,6 @@
 import { authApi } from "@/api/auth";
 import { companiesApi } from "@/api/companies";
-import { defaultCreateValues } from "@/features/agents/configuration/agent-config-defaults";
+import { defaultCreateValues } from "@/routes/_authenticated/$companyId/-agent-configuration/-agent-config-defaults";
 import type { AdapterPickerItem } from "@/routes/_authenticated/$companyId/company/import/-CompanyImportControls";
 import {
   buildFileTree,

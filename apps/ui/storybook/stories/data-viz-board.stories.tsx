@@ -4,7 +4,7 @@ import type { Task } from "@paperclipai/shared";
 import { ListFilter, Clock3, Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { KanbanBoard } from "@/features/tasks/list/KanbanBoard";
+import { KanbanBoard } from "@/routes/_authenticated/$companyId/-tasks-list/-KanbanBoard";
 import { createTask, storybookAgents, storybookTasks, storybookTaskRuns } from "../fixtures/paperclipData";
 import { StorySection as Section, StoryShell } from "./story-layout";
 import { useQueryClient } from "@tanstack/react-query";

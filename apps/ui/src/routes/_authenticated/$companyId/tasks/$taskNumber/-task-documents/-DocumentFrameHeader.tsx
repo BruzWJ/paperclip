@@ -14,7 +14,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AgentIcon } from "../../../../../../features/agents/AgentIconPicker";
+import { AgentIcon } from "../../../-AgentIconPicker";
 import { deriveInitials } from "@/lib/identity";
 import { buildDocumentAnnotationHash } from "@/lib/document-annotation-hash";
 

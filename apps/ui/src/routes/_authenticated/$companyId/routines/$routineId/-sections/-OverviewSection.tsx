@@ -7,10 +7,10 @@ import { Item, ItemGroup } from "@/components/ui/item";
 import { ArrowRight, Clock3, KeyRound, Play } from "lucide-react";
 import { useMemo, useState } from "react";
 import { timeAgo } from "@/lib/timeAgo";
-import { AgentIcon } from "../../../../../../features/agents/AgentIconPicker";
-import { MarkdownEditor } from "../../../../../../features/markdown/MarkdownEditor";
+import { AgentIcon } from "../../../-AgentIconPicker";
+import { MarkdownEditor } from "../../../-markdown/-MarkdownEditor";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../-detail/-RoutineVariablesEditor";
-import { DocumentAnnotationsCountChip, TaskDocumentAnnotations } from "../../../../../../features/document-annotations/TaskDocumentAnnotations";
+import { DocumentAnnotationsCountChip, TaskDocumentAnnotations } from "../../../-document-annotations/-TaskDocumentAnnotations";
 import { useRoutineDetail } from "./-context";
 
 export function OverviewSection({

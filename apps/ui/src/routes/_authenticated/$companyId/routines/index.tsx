@@ -2,7 +2,7 @@ import { FolderSwatch, selectedFolderFromList } from "@/routes/_authenticated/$c
 import { Skeleton } from "@/components/ui/skeleton";
 import { RoutineComposerDialog } from "@/routes/_authenticated/$companyId/routines/-RoutineComposerDialog";
 import { RoutinesBrowser, RoutinesDialogs } from "@/routes/_authenticated/$companyId/routines/-RoutinesBrowser";
-import { TasksList } from "@/features/tasks/list";
+import { TasksList } from "@/routes/_authenticated/$companyId/-tasks-list/-TasksList";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

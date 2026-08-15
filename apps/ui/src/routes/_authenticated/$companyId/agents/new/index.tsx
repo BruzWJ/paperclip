@@ -15,9 +15,9 @@ import { FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { AgentConfigForm } from "@/features/agents/configuration/AgentConfigForm";
+import { AgentConfigForm } from "@/routes/_authenticated/$companyId/-agent-configuration/-AgentConfigForm";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
-import { defaultCreateValues } from "@/features/agents/configuration/agent-config-defaults";
+import { defaultCreateValues } from "@/routes/_authenticated/$companyId/-agent-configuration/-agent-config-defaults";
 import { getUIAdapter } from "@/adapters";
 import { useAdapterCatalogSyncState } from "@/adapters/use-adapter-catalog";
 import { isValidAdapterType } from "@/adapters/metadata";
@@ -27,7 +27,7 @@ import {
   RuntimeAgentConfigurationFields,
   createEmptyRuntimeAgentConfigurationValues,
   type RuntimeAgentConfigurationValues,
-} from "@/features/agents/configuration/RuntimeAgentConfigurationFields";
+} from "@/routes/_authenticated/$companyId/-agent-configuration/-RuntimeAgentConfigurationFields";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 
 export function validateNewAgentSearch(search: Record<string, unknown>): {

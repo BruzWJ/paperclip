@@ -1,4 +1,4 @@
-import { AgentIcon } from "@/features/agents/AgentIconPicker";
+import { AgentIcon } from "@/routes/_authenticated/$companyId/-AgentIconPicker";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";

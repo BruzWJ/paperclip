@@ -12,7 +12,7 @@ import { buildCompanyUserProfileMap } from "@/lib/company-members";
 import { useDialogActions } from "@/context/DialogContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { ActivityRow } from "@/features/activity/ActivityRow";
+import { ActivityRow } from "@/routes/_authenticated/$companyId/-activity/-ActivityRow";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { deriveInitials } from "@/lib/identity";
@@ -27,7 +27,7 @@ import {
   PriorityChart,
   TaskStatusChart,
   SuccessRateChart,
-} from "@/features/activity/ActivityCharts";
+} from "@/routes/_authenticated/$companyId/-activity/-ActivityCharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";

@@ -4,7 +4,7 @@ import {
   RunActivityChart,
   SuccessRateChart,
   TaskStatusChart,
-} from "@/features/activity/ActivityCharts";
+} from "@/routes/_authenticated/$companyId/-activity/-ActivityCharts";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

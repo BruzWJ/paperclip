@@ -18,7 +18,7 @@ import {
   type BlockedInboxTaskRow,
   type BlockedInboxSort,
 } from "@/lib/blockedInbox";
-import { TaskRow } from "../../../../features/tasks/list/TaskRow";
+import { TaskRow } from "../-tasks-list/-TaskRow";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { deriveInitials } from "@/lib/identity";
 import { taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";

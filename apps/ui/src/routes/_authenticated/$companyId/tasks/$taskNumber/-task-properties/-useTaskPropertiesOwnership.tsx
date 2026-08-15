@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { trackRecentAssignee } from "@/lib/recent-assignees";
-import { AgentIcon } from "../../../../../../features/agents/AgentIconPicker";
+import { AgentIcon } from "../../../-AgentIconPicker";
 import { InterruptOwnerChangeConfirm, OwnerRunningBanner } from "../-owner-transition/-OwnerTransitionViews";
 import type { TaskPropertiesData } from "./-useTaskPropertiesData";
 import type { TaskPropertiesState } from "./-useTaskPropertiesState";

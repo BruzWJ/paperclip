@@ -12,8 +12,8 @@
  * @see PLUGIN_SPEC.md §19.0.2 — Bundle Isolation
  */
 
-import { ManagedRoutinesList as HostManagedRoutinesList } from "@/features/routines/list/ManagedRoutinesList";
-import { MarkdownBody } from "@/features/markdown/MarkdownBody";
+import { ManagedRoutinesList as HostManagedRoutinesList } from "@/routes/_authenticated/$companyId/routines/-list/-ManagedRoutinesList";
+import { MarkdownBody } from "@/routes/_authenticated/$companyId/-markdown/-MarkdownBody";
 import type { MarkdownBlockProps } from "@paperclipai/plugin-sdk/ui";
 import { createElement } from "react";
 import {

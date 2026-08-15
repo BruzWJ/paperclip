@@ -16,7 +16,7 @@ import {
   type OwnerAgentMention,
 } from "@/lib/owner-transition";
 import { captureComposerViewportSnapshot, restoreComposerViewportSnapshot } from "@/lib/task-chat-scroll";
-import type { MentionOption } from "../../../../../../features/markdown/MarkdownEditor";
+import type { MentionOption } from "../../../-markdown/-MarkdownEditor";
 import type { TaskChatComposerHandle, TaskChatComposerProps } from "./-TaskChatShared";
 import {
   COMPOSER_FOCUS_SCROLL_PADDING_PX,

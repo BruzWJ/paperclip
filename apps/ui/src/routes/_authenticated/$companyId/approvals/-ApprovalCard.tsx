@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { deriveInitials } from "@/lib/identity";
-import { approvalSubject, typeIcon, ApprovalPayloadRenderer, typeLabel } from "../../../../features/approvals/ApprovalPayload";
+import { approvalSubject, typeIcon, ApprovalPayloadRenderer, typeLabel } from "../-approval-presentation/-ApprovalPayload";
 import { timeAgo } from "@/lib/timeAgo";
 import type { Approval, Agent } from "@paperclipai/shared";
 import { cn } from "@/lib/utils";

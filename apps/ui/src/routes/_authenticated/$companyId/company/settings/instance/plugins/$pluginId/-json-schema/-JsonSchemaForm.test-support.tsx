@@ -27,7 +27,7 @@ export class ResizeObserverStub {
 // SecretBindingPicker pulls in CompanyContext + react-query. Stub it so we can
 // exercise SecretField in isolation. The stub renders a select with the same
 // onChange contract as the real picker.
-vi.mock("@/features/secrets/pickers/SecretBindingPicker", () => ({
+vi.mock("@/routes/_authenticated/$companyId/company/settings/instance/plugins/$pluginId/-json-schema/-SecretBindingPicker", () => ({
   SecretBindingPicker: ({
     value,
     onChange,

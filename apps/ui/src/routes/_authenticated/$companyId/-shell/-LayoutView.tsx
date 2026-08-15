@@ -42,13 +42,13 @@ import { SidebarAccountMenu } from "./-SidebarAccountMenu";
 import { SidebarShell } from "./-SidebarShell";
 import { StandaloneBrowserControls } from "./-StandaloneBrowserControls";
 
-const NewTaskDialog = lazyPage(() => import("../../../../features/tasks/new-task"), "NewTaskDialog");
+const NewTaskDialog = lazyPage(() => import("./-new-task/-NewTaskDialog"), "NewTaskDialog");
 const NewProjectDialog = lazyPage(
-  () => import("../../../../features/projects/create/NewProjectDialog"),
+  () => import("./-NewProjectDialog"),
   "NewProjectDialog",
 );
 const NewGoalDialog = lazyPage(
-  () => import("../../../../features/goals/create/NewGoalDialog"),
+  () => import("./-NewGoalDialog"),
   "NewGoalDialog",
 );
 

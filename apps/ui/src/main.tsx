@@ -4,7 +4,6 @@ import * as ReactDOM from "react-dom";
 import * as ReactDOMClient from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AppCommandMenu } from "./features/app-command-menu/AppCommandMenu";
 import { Toaster } from "./components/ui/sonner";
 import { ThemeProvider } from "./context/ThemeContext";
 import { initPluginBridge } from "./plugins/bridge-init";
@@ -39,7 +38,6 @@ ReactDOMClient.createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <Toaster position="bottom-left" visibleToasts={5} />
-        <AppCommandMenu />
         <RouterProvider router={router} />
       </ThemeProvider>
     </QueryClientProvider>

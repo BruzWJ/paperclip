@@ -115,7 +115,7 @@ export interface ServerAdapterModule {
 }
 
 // ---------------------------------------------------------------------------
-// UI config form values (moved from apps/ui/src/features/agents/configuration/AgentConfigForm.tsx)
+// UI config form values (shared with the route-owned AgentConfigForm)
 // ---------------------------------------------------------------------------
 
 export interface CreateConfigValues {

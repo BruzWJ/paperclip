@@ -1,6 +1,6 @@
 // Empty collections render dedicated UI when data.length === 0.
 import { attentionApi } from "@/api/attention";
-import { useNavigateCompanyBoardTarget } from "@/features/navigation/CompanyBoardLink";
+import { useNavigateCompanyBoardTarget } from "@/routes/-CompanyBoardLink";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { DecisionQueue } from "@/routes/_authenticated/$companyId/decisions/-DecisionQueue";

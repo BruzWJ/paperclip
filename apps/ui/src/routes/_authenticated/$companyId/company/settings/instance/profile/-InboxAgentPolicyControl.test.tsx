@@ -21,7 +21,7 @@ vi.mock("@/api/agents", () => ({ agentsApi: mockAgentsApi }));
 vi.mock("@/api/inbox-agent-policy", () => ({
   inboxAgentPolicyApi: mockInboxAgentPolicyApi,
 }));
-vi.mock("../../../../../../../features/agents/AgentIconPicker", () => ({ AgentIcon: () => null }));
+vi.mock("../../../../-AgentIconPicker", () => ({ AgentIcon: () => null }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;

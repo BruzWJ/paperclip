@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 const sourceRoot = fileURLToPath(new URL("../", import.meta.url));
 const componentsRoot = path.join(sourceRoot, "components");
-const featuresRoot = path.join(sourceRoot, "features");
+const legacyFeaturesRoot = path.join(sourceRoot, "features");
 const routesRoot = path.join(sourceRoot, "routes");
 
 const protectedComponentDirectories = new Set(["ai-elements", "kibo-ui", "ui"]);
@@ -121,8 +121,9 @@ describe("UI source ownership", () => {
     ).toEqual([]);
   });
 
-  it("keeps features independent of route modules", () => {
-    expect(forbiddenImports(sourceFiles(featuresRoot), ["routes"])).toEqual([]);
+  it("does not recreate a parallel feature layer or import from one", () => {
+    expect(existsSync(legacyFeaturesRoot)).toBe(false);
+    expect(forbiddenImports(sourceFiles(sourceRoot), ["features"])).toEqual([]);
   });
 
   it("marks non-route production files so TanStack Router ignores them", () => {

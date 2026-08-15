@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { TaskRelationTaskSummary } from "@paperclipai/shared";
-import { TaskBlockedNotice } from "@/features/tasks/shared/TaskBlockedNotice";
+import { TaskBlockedNotice } from "@/routes/_authenticated/$companyId/tasks/-TaskBlockedNotice";
 
 // Rule C (PAP-13554): when a human comment on a `blocked` task does not reopen
 // it, the blocked notice must state why and name the unresolved blocker leaf.

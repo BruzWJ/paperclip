@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArchiveRestore, Info } from "lucide-react";
 
-import { AgentIcon } from "@/features/agents/AgentIconPicker";
+import { AgentIcon } from "@/routes/_authenticated/$companyId/-AgentIconPicker";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";

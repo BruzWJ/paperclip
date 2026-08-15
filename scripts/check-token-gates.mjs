@@ -4,8 +4,7 @@
  *
  * Phase 2 (extraction) DONE-WHEN gate check for the design-token-extraction
  * run (see DESIGN.md and doc/design/TOKEN-AUDIT.md). Scans
- * `apps/ui/src/components/**`, `apps/ui/src/features/**`, and
- * `apps/ui/src/routes/**`
+ * `apps/ui/src/components/**` and `apps/ui/src/routes/**`
  * (excluding the CLI-managed shadcn, Kibo, and AI Elements registry sources
  * under `apps/ui/src/components/ui/**`, `apps/ui/src/components/kibo-ui/**`,
  * and `apps/ui/src/components/ai-elements/**`;
@@ -77,7 +76,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
 const UI_SRC = resolve(REPO_ROOT, "apps/ui/src");
-const SCAN_DIRS = ["components", "features", "routes"];
+const SCAN_DIRS = ["components", "routes"];
 const CSS_PATH = resolve(UI_SRC, "index.css");
 const REGISTRY_OWNED_DIRS = new Set([
   resolve(UI_SRC, "components", "ui"),

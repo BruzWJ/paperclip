@@ -1,7 +1,7 @@
 import { memo, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { Bot, FileText, Hexagon, MessageSquare, Paperclip, Quote } from "lucide-react";
 import type { Agent, CompanySearchHighlight, CompanySearchResult } from "@paperclipai/shared";
-import { CompanyBoardLink } from "@/features/navigation/CompanyBoardLink";
+import { CompanyBoardLink } from "@/routes/-CompanyBoardLink";
 import { cn } from "@/lib/utils";
 import { taskValueLabel } from "@/lib/task-blockers";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

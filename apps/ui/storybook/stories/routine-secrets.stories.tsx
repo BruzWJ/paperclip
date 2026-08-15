@@ -10,7 +10,7 @@ import type {
   RoutineRevision,
   RoutineRevisionSnapshotV1,
 } from "@paperclipai/shared";
-import { EnvironmentVariablesEditor } from "@/features/environment-variables-editor";
+import { EnvironmentVariablesEditor } from "@/routes/_authenticated/$companyId/-environment-variables-editor/-EnvironmentVariablesEditor";
 import { RoutineHistoryTab } from "@/routes/_authenticated/$companyId/routines/$routineId/-detail/-RoutineHistoryTab";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { queryKeys } from "@/lib/queryKeys";

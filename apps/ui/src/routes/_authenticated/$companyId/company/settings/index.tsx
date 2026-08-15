@@ -1,5 +1,5 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CompanyAvatar } from "@/features/companies/CompanyAvatar";
+import { CompanyAvatar } from "@/routes/-company-presentation/-CompanyAvatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";

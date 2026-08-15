@@ -5,12 +5,12 @@ import {
   RunActivityChart,
   SuccessRateChart,
   TaskStatusChart,
-} from "@/features/activity/ActivityCharts";
+} from "@/routes/_authenticated/$companyId/-activity/-ActivityCharts";
 import { createTaskExecutionRun } from "../fixtures/paperclipData";
 import { StorySection as Section, StoryShell } from "./story-layout";
 import { useEffect, useState } from "react";
 import { Archive, Play } from "lucide-react";
-import { OnboardingWizard } from "@/features/onboarding/OnboardingWizard";
+import { OnboardingWizard } from "@/routes/-onboarding/-OnboardingWizard";
 import { SwipeToArchive } from "@/routes/_authenticated/$companyId/inbox/-SwipeToArchive";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";

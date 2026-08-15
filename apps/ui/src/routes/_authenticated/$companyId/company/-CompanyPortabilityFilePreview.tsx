@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { parseFrontmatter, type FrontmatterData } from "../../../../components/patterns/FileTree";
-import { MarkdownBody } from "../../../../features/markdown/MarkdownBody";
+import { MarkdownBody } from "../-markdown/-MarkdownBody";
 import { CodeBlockPanel } from "@/components/patterns/CodeBlockPanel";
 import { DataTable, type ColumnDef } from "@/components/patterns/DataTable";
 import { ZoomableImage } from "@/components/patterns/ZoomableImage";

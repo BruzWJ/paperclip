@@ -1,6 +1,6 @@
 import type { CompanyMember, CompanyUserDirectoryEntry } from "@/api/access";
 import type { EntityOption } from "@/lib/entity-selector";
-import type { MentionOption } from "@/features/markdown/MarkdownEditor";
+import type { MentionOption } from "@/lib/markdown-mentions";
 import { isAgentStatusInvokable, type Agent, type Task, type Project } from "@paperclipai/shared";
 
 export interface CompanyUserProfile {

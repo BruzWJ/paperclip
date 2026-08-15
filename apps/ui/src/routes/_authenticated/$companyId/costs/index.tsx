@@ -1,7 +1,7 @@
 import { budgetsApi } from "@/api/budgets";
 import { costsApi } from "@/api/costs";
 import { BudgetIncidentCard } from "@/routes/_authenticated/$companyId/costs/-BudgetIncidentCard";
-import { BudgetPolicyCard } from "@/features/budgets/BudgetPolicyCard";
+import { BudgetPolicyCard } from "@/routes/_authenticated/$companyId/-BudgetPolicyCard";
 import {
   CostBreakdownRows,
   CostEventRows,

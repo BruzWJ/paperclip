@@ -1,5 +1,5 @@
 import { type RestoreRoutineRevisionResponse } from "@/api/routines";
-import { type MarkdownEditorRef, type MentionOption } from "@/features/markdown/MarkdownEditor";
+import { type MarkdownEditorRef, type MentionOption } from "@/routes/_authenticated/$companyId/-markdown/-MarkdownEditor";
 import {
   EDITABLE_SECTIONS,
   SECTION_FIELD_KEYS,

@@ -10,7 +10,7 @@ import * as CardUI from "@/components/ui/card";
 import * as EmptyUI from "@/components/ui/empty";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import { CompanyAvatar } from "@/features/companies/CompanyAvatar";
+import { CompanyAvatar } from "@/routes/-company-presentation/-CompanyAvatar";
 import { clearPendingInviteToken, rememberPendingInviteToken } from "@/lib/invite-memory";
 import { queryKeys } from "@/lib/queryKeys";
 import type { JoinRequest } from "@paperclipai/shared";

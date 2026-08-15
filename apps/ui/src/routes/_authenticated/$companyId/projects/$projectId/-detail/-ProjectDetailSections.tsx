@@ -2,8 +2,8 @@
 import { agentsApi } from "@/api/agents";
 import { projectsApi } from "@/api/projects";
 import { tasksApi } from "@/api/tasks";
-import { InlineEditor } from "@/features/markdown/InlineEditor";
-import { TasksList } from "@/features/tasks/list";
+import { InlineEditor } from "@/routes/_authenticated/$companyId/-markdown/-InlineEditor";
+import { TasksList } from "@/routes/_authenticated/$companyId/-tasks-list/-TasksList";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Combobox,

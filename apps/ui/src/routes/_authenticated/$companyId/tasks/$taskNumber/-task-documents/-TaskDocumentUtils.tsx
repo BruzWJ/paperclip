@@ -3,11 +3,11 @@ import type { DocumentRevision, Task, TaskDocument } from "@paperclipai/shared";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import { tasksApi } from "@/api/tasks";
-import type { DocumentActorLookups } from "@/features/document-annotations/DocumentActorLookups";
+import type { DocumentActorLookups } from "@/routes/_authenticated/$companyId/-document-annotations/-DocumentActorLookups";
 import { queryKeys } from "@/lib/queryKeys";
 import { type DocumentFrameHeaderRevisionActor } from "./-DocumentFrameHeader";
 import { FoldCurtain } from "../../../../../../components/patterns/FoldCurtain";
-import { MarkdownBody } from "../../../../../../features/markdown/MarkdownBody";
+import { MarkdownBody } from "../../../-markdown/-MarkdownBody";
 
 export type DraftState = {
   key: string;

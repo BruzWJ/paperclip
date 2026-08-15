@@ -3,7 +3,7 @@ import { GitFork, X } from "lucide-react";
 
 import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
-import { TaskLinkQuicklook } from "@/features/tasks/shared/TaskLinkQuicklook";
+import { TaskLinkQuicklook } from "@/routes/_authenticated/$companyId/-TaskLinkQuicklook";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Card } from "@/components/ui/card";

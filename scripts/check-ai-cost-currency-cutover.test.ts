@@ -20,9 +20,9 @@ function write(root: string, path: string, content: string): void {
 }
 
 const presentationPaths = [
-  "apps/ui/src/features/approvals/ApprovalPayload.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/-approval-presentation/-ApprovalPayload.tsx",
   "apps/ui/src/routes/_authenticated/$companyId/costs/-BudgetIncidentCard.tsx",
-  "apps/ui/src/features/budgets/BudgetPolicyCard.tsx",
+  "apps/ui/src/routes/_authenticated/$companyId/-BudgetPolicyCard.tsx",
   "apps/ui/src/routes/_authenticated/$companyId/agents/$agentId/index.tsx",
   "apps/ui/src/routes/_authenticated/$companyId/companies/index.tsx",
   "apps/ui/src/routes/_authenticated/$companyId/costs/index.tsx",
@@ -285,7 +285,7 @@ function fixtureRoot(): string {
             "formatMoneyAmount(summary.remainingAmount, summary.budgetCurrency);",
             "",
           ].join("\n")
-        : path.endsWith("/BudgetPolicyCard.tsx")
+        : path.endsWith("/-BudgetPolicyCard.tsx")
           ? [
               "formatMoneyAmount(summary.observedAmount, summary.budgetCurrency);",
               "formatMoneyAmount(summary.limitAmount, summary.budgetCurrency);",
@@ -623,7 +623,7 @@ test("rejects a non-uppercase catalog member and currency normalization", () => 
 
 test("fails closed when the company-aware budget UI formatter is bypassed", () => {
   const root = fixtureRoot();
-  const path = "apps/ui/src/features/budgets/BudgetPolicyCard.tsx";
+  const path = "apps/ui/src/routes/_authenticated/$companyId/-BudgetPolicyCard.tsx";
   write(
     root,
     path,
