@@ -8,10 +8,18 @@ import {
   DayPicker,
   getDefaultClassNames,
   type DayButton,
+  type DropdownProps,
 } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 function Calendar({
   className,
@@ -50,17 +58,17 @@ function Calendar({
         ),
         month: cn("flex w-full flex-col gap-4", defaultClassNames.month),
         nav: cn(
-          "absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1",
+          "pointer-events-none absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1",
           defaultClassNames.nav
         ),
         button_previous: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) p-0 select-none aria-disabled:opacity-50",
+          "pointer-events-auto size-(--cell-size) p-0 select-none aria-disabled:opacity-50",
           defaultClassNames.button_previous
         ),
         button_next: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) p-0 select-none aria-disabled:opacity-50",
+          "pointer-events-auto size-(--cell-size) p-0 select-none aria-disabled:opacity-50",
           defaultClassNames.button_next
         ),
         month_caption: cn(
@@ -160,6 +168,7 @@ function Calendar({
             <ChevronDownIcon className={cn("size-4", className)} {...props} />
           )
         },
+        Dropdown: CalendarDropdown,
         DayButton: CalendarDayButton,
         WeekNumber: ({ children, ...props }) => {
           return (
@@ -174,6 +183,51 @@ function Calendar({
       }}
       {...props}
     />
+  )
+}
+
+/**
+ * Keeps React Day Picker's month/year navigation behavior while rendering it
+ * with the app's shared shadcn Select primitive instead of a native select.
+ */
+function CalendarDropdown({
+  options,
+  value,
+  onChange,
+  disabled,
+  className,
+  style,
+  "aria-label": ariaLabel,
+}: DropdownProps) {
+  const selectedValue = typeof value === "number" || typeof value === "string" ? String(value) : undefined
+
+  return (
+    <Select
+      value={selectedValue}
+      disabled={disabled}
+      onValueChange={(nextValue) => {
+        onChange?.({ target: { value: nextValue } } as React.ChangeEvent<HTMLSelectElement>)
+      }}
+    >
+      <SelectTrigger
+        aria-label={ariaLabel}
+        className={cn("min-w-0", className)}
+        style={style}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options?.map((option) => (
+          <SelectItem
+            key={option.value}
+            value={String(option.value)}
+            disabled={option.disabled}
+          >
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 

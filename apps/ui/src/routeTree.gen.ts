@@ -27,7 +27,6 @@ import { Route as AuthenticatedCompanyIdDashboardIndexRouteImport } from './rout
 import { Route as AuthenticatedCompanyIdDecisionsIndexRouteImport } from './routes/_authenticated/$companyId/decisions/index'
 import { Route as AuthenticatedCompanyIdGoalsIndexRouteImport } from './routes/_authenticated/$companyId/goals/index'
 import { Route as AuthenticatedCompanyIdInboxIndexRouteImport } from './routes/_authenticated/$companyId/inbox/index'
-import { Route as AuthenticatedCompanyIdOrgIndexRouteImport } from './routes/_authenticated/$companyId/org/index'
 import { Route as AuthenticatedCompanyIdProjectsIndexRouteImport } from './routes/_authenticated/$companyId/projects/index'
 import { Route as AuthenticatedCompanyIdRoutinesIndexRouteImport } from './routes/_authenticated/$companyId/routines/index'
 import { Route as AuthenticatedCompanyIdSearchIndexRouteImport } from './routes/_authenticated/$companyId/search/index'
@@ -172,12 +171,6 @@ const AuthenticatedCompanyIdInboxIndexRoute =
   AuthenticatedCompanyIdInboxIndexRouteImport.update({
     id: '/inbox/',
     path: '/inbox/',
-    getParentRoute: () => AuthenticatedCompanyIdRouteRoute,
-  } as any)
-const AuthenticatedCompanyIdOrgIndexRoute =
-  AuthenticatedCompanyIdOrgIndexRouteImport.update({
-    id: '/org/',
-    path: '/org/',
     getParentRoute: () => AuthenticatedCompanyIdRouteRoute,
   } as any)
 const AuthenticatedCompanyIdProjectsIndexRoute =
@@ -469,7 +462,6 @@ export interface FileRoutesByFullPath {
   '/$companyId/decisions/': typeof AuthenticatedCompanyIdDecisionsIndexRoute
   '/$companyId/goals/': typeof AuthenticatedCompanyIdGoalsIndexRoute
   '/$companyId/inbox/': typeof AuthenticatedCompanyIdInboxIndexRoute
-  '/$companyId/org/': typeof AuthenticatedCompanyIdOrgIndexRoute
   '/$companyId/projects/': typeof AuthenticatedCompanyIdProjectsIndexRoute
   '/$companyId/routines/': typeof AuthenticatedCompanyIdRoutinesIndexRoute
   '/$companyId/search/': typeof AuthenticatedCompanyIdSearchIndexRoute
@@ -533,7 +525,6 @@ export interface FileRoutesByTo {
   '/$companyId/decisions': typeof AuthenticatedCompanyIdDecisionsIndexRoute
   '/$companyId/goals': typeof AuthenticatedCompanyIdGoalsIndexRoute
   '/$companyId/inbox': typeof AuthenticatedCompanyIdInboxIndexRoute
-  '/$companyId/org': typeof AuthenticatedCompanyIdOrgIndexRoute
   '/$companyId/projects': typeof AuthenticatedCompanyIdProjectsIndexRoute
   '/$companyId/routines': typeof AuthenticatedCompanyIdRoutinesIndexRoute
   '/$companyId/search': typeof AuthenticatedCompanyIdSearchIndexRoute
@@ -599,7 +590,6 @@ export interface FileRoutesById {
   '/_authenticated/$companyId/decisions/': typeof AuthenticatedCompanyIdDecisionsIndexRoute
   '/_authenticated/$companyId/goals/': typeof AuthenticatedCompanyIdGoalsIndexRoute
   '/_authenticated/$companyId/inbox/': typeof AuthenticatedCompanyIdInboxIndexRoute
-  '/_authenticated/$companyId/org/': typeof AuthenticatedCompanyIdOrgIndexRoute
   '/_authenticated/$companyId/projects/': typeof AuthenticatedCompanyIdProjectsIndexRoute
   '/_authenticated/$companyId/routines/': typeof AuthenticatedCompanyIdRoutinesIndexRoute
   '/_authenticated/$companyId/search/': typeof AuthenticatedCompanyIdSearchIndexRoute
@@ -665,7 +655,6 @@ export interface FileRouteTypes {
     | '/$companyId/decisions/'
     | '/$companyId/goals/'
     | '/$companyId/inbox/'
-    | '/$companyId/org/'
     | '/$companyId/projects/'
     | '/$companyId/routines/'
     | '/$companyId/search/'
@@ -729,7 +718,6 @@ export interface FileRouteTypes {
     | '/$companyId/decisions'
     | '/$companyId/goals'
     | '/$companyId/inbox'
-    | '/$companyId/org'
     | '/$companyId/projects'
     | '/$companyId/routines'
     | '/$companyId/search'
@@ -794,7 +782,6 @@ export interface FileRouteTypes {
     | '/_authenticated/$companyId/decisions/'
     | '/_authenticated/$companyId/goals/'
     | '/_authenticated/$companyId/inbox/'
-    | '/_authenticated/$companyId/org/'
     | '/_authenticated/$companyId/projects/'
     | '/_authenticated/$companyId/routines/'
     | '/_authenticated/$companyId/search/'
@@ -974,13 +961,6 @@ declare module '@tanstack/react-router' {
       path: '/inbox'
       fullPath: '/$companyId/inbox/'
       preLoaderRoute: typeof AuthenticatedCompanyIdInboxIndexRouteImport
-      parentRoute: typeof AuthenticatedCompanyIdRouteRoute
-    }
-    '/_authenticated/$companyId/org/': {
-      id: '/_authenticated/$companyId/org/'
-      path: '/org'
-      fullPath: '/$companyId/org/'
-      preLoaderRoute: typeof AuthenticatedCompanyIdOrgIndexRouteImport
       parentRoute: typeof AuthenticatedCompanyIdRouteRoute
     }
     '/_authenticated/$companyId/projects/': {
@@ -1305,7 +1285,6 @@ interface AuthenticatedCompanyIdRouteRouteChildren {
   AuthenticatedCompanyIdDecisionsIndexRoute: typeof AuthenticatedCompanyIdDecisionsIndexRoute
   AuthenticatedCompanyIdGoalsIndexRoute: typeof AuthenticatedCompanyIdGoalsIndexRoute
   AuthenticatedCompanyIdInboxIndexRoute: typeof AuthenticatedCompanyIdInboxIndexRoute
-  AuthenticatedCompanyIdOrgIndexRoute: typeof AuthenticatedCompanyIdOrgIndexRoute
   AuthenticatedCompanyIdProjectsIndexRoute: typeof AuthenticatedCompanyIdProjectsIndexRoute
   AuthenticatedCompanyIdRoutinesIndexRoute: typeof AuthenticatedCompanyIdRoutinesIndexRoute
   AuthenticatedCompanyIdSearchIndexRoute: typeof AuthenticatedCompanyIdSearchIndexRoute
@@ -1374,7 +1353,6 @@ const AuthenticatedCompanyIdRouteRouteChildren: AuthenticatedCompanyIdRouteRoute
       AuthenticatedCompanyIdGoalsIndexRoute,
     AuthenticatedCompanyIdInboxIndexRoute:
       AuthenticatedCompanyIdInboxIndexRoute,
-    AuthenticatedCompanyIdOrgIndexRoute: AuthenticatedCompanyIdOrgIndexRoute,
     AuthenticatedCompanyIdProjectsIndexRoute:
       AuthenticatedCompanyIdProjectsIndexRoute,
     AuthenticatedCompanyIdRoutinesIndexRoute:

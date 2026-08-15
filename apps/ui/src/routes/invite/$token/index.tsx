@@ -5,12 +5,12 @@ import { companiesListQueryOptions } from "@/api/companies-query";
 import { healthApi } from "@/api/health";
 import { InviteLandingForm } from "@/routes/invite/$token/-InviteLandingForm";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import * as CardUI from "@/components/ui/card";
 import * as EmptyUI from "@/components/ui/empty";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
+import { CompanyAvatar } from "@/features/companies/CompanyAvatar";
 import { clearPendingInviteToken, rememberPendingInviteToken } from "@/lib/invite-memory";
 import { queryKeys } from "@/lib/queryKeys";
 import type { JoinRequest } from "@paperclipai/shared";
@@ -34,6 +34,7 @@ export const Route = createFileRoute("/invite/$token/")({
 type AwaitingJoinApprovalPanelProps = {
   companyDisplayName: string;
   companyLogoUrl: string | null;
+  companyBrandColor: string | null;
   invitedByUserName: string | null;
 };
 
@@ -63,6 +64,7 @@ function InviteUnavailable({ children }: { children: string }) {
 function AwaitingJoinApprovalPanel({
   companyDisplayName,
   companyLogoUrl,
+  companyBrandColor,
   invitedByUserName,
 }: AwaitingJoinApprovalPanelProps) {
   const approverLabel = invitedByUserName ?? "A company admin";
@@ -70,10 +72,12 @@ function AwaitingJoinApprovalPanel({
   return (
     <CardUI.Card data-testid="invite-pending-approval">
       <CardUI.CardHeader className="flex-row items-center">
-        <Avatar>
-          <AvatarImage src={companyLogoUrl ?? undefined} alt={`${companyDisplayName} logo`} />
-          <AvatarFallback>{companyDisplayName.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
-        </Avatar>
+        <CompanyAvatar
+          companyName={companyDisplayName}
+          logoUrl={companyLogoUrl}
+          brandColor={companyBrandColor}
+          logoFit="contain"
+        />
         <CardUI.CardTitle>Request to join {companyDisplayName}</CardUI.CardTitle>
       </CardUI.CardHeader>
       <CardUI.CardContent className="space-y-4">
@@ -174,6 +178,7 @@ function InviteLandingContent() {
   const companyName = invite?.companyName?.trim() || null;
   const companyDisplayName = companyName || "this Paperclip company";
   const companyLogoUrl = invite?.companyLogoUrl?.trim() || null;
+  const companyBrandColor = invite?.companyBrandColor?.trim() || null;
   const invitedByUserName = invite?.invitedByUserName?.trim() || null;
   const requestedUserRole = formatUserRole(invite?.userRole);
   const inviteJoinRequestStatus = invite?.joinRequestStatus ?? null;
@@ -327,6 +332,7 @@ function InviteLandingContent() {
       <AwaitingJoinApprovalPanel
         companyDisplayName={companyDisplayName}
         companyLogoUrl={companyLogoUrl}
+        companyBrandColor={companyBrandColor}
         invitedByUserName={invitedByUserName}
       />
     );
@@ -364,10 +370,12 @@ function InviteLandingContent() {
     return joinedNow ? (
       <CardUI.Card>
         <CardUI.CardHeader className="flex-row items-center">
-          <Avatar>
-            <AvatarImage src={companyLogoUrl ?? undefined} alt={`${companyDisplayName} logo`} />
-            <AvatarFallback>{companyDisplayName.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
-          </Avatar>
+          <CompanyAvatar
+            companyName={companyDisplayName}
+            logoUrl={companyLogoUrl}
+            brandColor={companyBrandColor}
+            logoFit="contain"
+          />
           <CardUI.CardTitle>You joined the company</CardUI.CardTitle>
         </CardUI.CardHeader>
         <CardUI.CardFooter>
@@ -380,6 +388,7 @@ function InviteLandingContent() {
       <AwaitingJoinApprovalPanel
         companyDisplayName={companyDisplayName}
         companyLogoUrl={companyLogoUrl}
+        companyBrandColor={companyBrandColor}
         invitedByUserName={invitedByUserName}
       />
     );
@@ -390,6 +399,7 @@ function InviteLandingContent() {
       invite={invite}
       companyDisplayName={companyDisplayName}
       companyLogoUrl={companyLogoUrl}
+      companyBrandColor={companyBrandColor}
       invitedByUserName={invitedByUserName}
       requestedUserRole={requestedUserRole}
       sessionLabel={sessionLabel}

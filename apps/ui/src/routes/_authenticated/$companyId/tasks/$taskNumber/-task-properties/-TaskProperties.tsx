@@ -11,7 +11,6 @@ import { useTaskRelationProperties } from "./-useTaskRelationProperties";
 interface TaskPropertiesProps {
   task: Task;
   childTasks?: Task[];
-  onAddSubTask?: () => void;
   onUpdate: (data: Record<string, unknown>) => void;
   inline?: boolean;
   hasActiveRun?: boolean;
@@ -20,7 +19,6 @@ interface TaskPropertiesProps {
 function useTaskPropertiesController({
   task,
   childTasks = [],
-  onAddSubTask,
   onUpdate,
   inline,
   hasActiveRun = false,
@@ -29,7 +27,6 @@ function useTaskPropertiesController({
   const base = {
     task,
     childTasks,
-    onAddSubTask,
     onUpdate,
     inline,
     hasActiveRun,

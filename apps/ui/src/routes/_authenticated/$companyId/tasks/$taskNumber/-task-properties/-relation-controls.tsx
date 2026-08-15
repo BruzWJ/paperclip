@@ -1,5 +1,5 @@
 import type { Task } from "@paperclipai/shared";
-import { GitFork, Plus, X } from "lucide-react";
+import { GitFork, X } from "lucide-react";
 
 import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import type { TaskPropertiesController } from "./-TaskProperties";
 import { TaskPropertiesSection, TaskPropertyPicker, TaskPropertyRow } from "./-TaskPropertyPrimitives";
 
-export function RemovableTaskReferencePill({
+function RemovableTaskReferencePill({
   task,
   onRemove,
   inline = false,
@@ -62,7 +62,7 @@ export function RemovableTaskReferencePill({
             aria-label={removeLabel}
             title={removeLabel}
           >
-            <X  data-icon="inline-start"/>
+            <X data-icon="inline-start" />
           </Button>
         }
         title="Remove blocker?"
@@ -76,7 +76,7 @@ export function RemovableTaskReferencePill({
 }
 
 export function TaskPropertiesRelationships(props: TaskPropertiesController) {
-  const { inline = false, childTasks, onAddSubTask } = props;
+  const { inline = false } = props;
   const s = props.state;
   const hasVisibleBlockers = props.visibleBlockedByRelations.length > 0;
 
@@ -223,57 +223,6 @@ export function TaskPropertiesRelationships(props: TaskPropertiesController) {
           ) : (
             <span className="text-sm text-muted-foreground">None</span>
           )}
-        </TaskPropertyRow>
-
-        <TaskPropertyRow label="Sub-tasks">
-          {childTasks.length > 0 ? (
-            props.visibleChildTasks.map((child) => (
-              <Button
-                key={child.id}
-                asChild
-                variant="outline"
-                size={inline ? "default" : "xs"}
-                className={inline ? "min-h-11" : undefined}
-              >
-                <TaskLinkQuicklook
-                  taskId={child.id}
-                  taskNumber={child.taskNumber}
-                  title={taskDisplayTitle(child)}
-                >
-                  <DomainStatus status={child.boardPresentationStatus} />
-                  {taskReferenceLabel(child)}
-                </TaskLinkQuicklook>
-              </Button>
-            ))
-          ) : (
-            <span className="text-sm text-muted-foreground">None</span>
-          )}
-          {s.subTasksExpanded || props.hiddenChildTaskCount > 0 ? (
-            <Button
-              type="button"
-              variant="outline"
-              size={inline ? "default" : "xs"}
-              className={inline ? "min-h-11" : undefined}
-              onClick={() => s.setSubTasksExpanded((expanded) => !expanded)}
-              aria-label={
-                s.subTasksExpanded ? "Show fewer items" : `Show ${props.hiddenChildTaskCount} more items`
-              }
-            >
-              {s.subTasksExpanded ? "Show less" : `Show ${props.hiddenChildTaskCount} more`}
-            </Button>
-          ) : null}
-          {onAddSubTask ? (
-            <Button
-              type="button"
-              variant="outline"
-              size={inline ? "default" : "xs"}
-              className={inline ? "min-h-11" : undefined}
-              onClick={onAddSubTask}
-            >
-              <Plus  data-icon="inline-start"/>
-              Add sub-task
-            </Button>
-          ) : null}
         </TaskPropertyRow>
 
         {props.relatedTasks.length > 0 ? (

@@ -58,7 +58,7 @@ export interface DocumentFrameHeaderProps {
 
 function RevisionActorAvatar({ actor }: { actor: DocumentFrameHeaderRevisionActor }) {
   return (
-    <Avatar size="sm" className={cn("shrink-0", actor.kind === "agent" && "rounded-md")}>
+    <Avatar size="sm" className="shrink-0">
       {actor.kind === "agent" ? (
         <AvatarFallback>
           <AgentIcon icon={actor.agentIcon} className="h-3 w-3" />

@@ -20,7 +20,7 @@ import {
   type OptimisticTaskComment,
 } from "@/lib/optimistic-task-comments";
 import { buildSubTaskDefaultsForViewer } from "@/lib/subTaskDefaults";
-import { buildTaskSiblingNavigation, shouldRenderRichSubTasksSection } from "@/lib/task-detail-subtasks";
+import { buildTaskSiblingNavigation } from "@/lib/task-detail-subtasks";
 import { buildTaskPropertiesPanelKey } from "@/lib/task-properties-panel-key";
 import { filterTaskDescendants } from "@/lib/task-tree";
 import { keepPreviousDataForSameQueryTail } from "@/lib/query-placeholder-data";
@@ -332,9 +332,8 @@ export function useTaskDetailDerivedData({
     () => buildTaskPropertiesPanelKey(task ?? null, childTasks),
     [childTasks, task],
   );
-  const panelTask = useMemo(() => task ?? null, [task?.id, taskPanelKey]);
+  const panelTask = useMemo(() => task ?? null, [task?.documentSummaries, task?.id, taskPanelKey]);
   const panelChildTasks = useMemo(() => childTasks, [taskPanelKey]);
-  const showRichSubTasksSection = shouldRenderRichSubTasksSection(childTasksLoading, childTasks.length);
   const siblingNavigation = useMemo(
     () =>
       task && !childTasksLoading && !siblingTasksLoading && !siblingTasksError
@@ -382,7 +381,6 @@ export function useTaskDetailDerivedData({
     taskPanelKey,
     panelTask,
     panelChildTasks,
-    showRichSubTasksSection,
     siblingNavigation,
     openNewSubTask,
     isNamedUserCreator,

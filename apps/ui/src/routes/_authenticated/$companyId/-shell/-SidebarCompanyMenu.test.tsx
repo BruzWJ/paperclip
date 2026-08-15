@@ -18,6 +18,11 @@ const mockAuthApi = vi.hoisted(() => ({
 const mockNavigate = vi.hoisted(() => vi.fn());
 const mockOpenOnboarding = vi.hoisted(() => vi.fn());
 const mockSetSidebarOpen = vi.hoisted(() => vi.fn());
+const mockSetPeekHeld = vi.hoisted(() => vi.fn());
+const mockSidebarState = vi.hoisted(() => ({
+  collapsed: false,
+  peeking: false,
+}));
 const mockSidebarPreferencesApi = vi.hoisted(() => ({
   getCompanyOrder: vi.fn(),
   updateCompanyOrder: vi.fn(),
@@ -32,6 +37,18 @@ vi.mock("@/api/auth", () => ({
 
 vi.mock("@/api/sidebarPreferences", () => ({
   sidebarPreferencesApi: mockSidebarPreferencesApi,
+}));
+
+vi.mock("@/features/companies/CompanyAvatar", () => ({
+  CompanyAvatar: ({
+    companyName,
+    brandColor,
+  }: {
+    companyName: string;
+    brandColor?: string | null;
+  }) => (
+    <span data-testid="company-avatar" data-company-name={companyName} data-brand-color={brandColor ?? undefined} />
+  ),
 }));
 
 vi.mock("@/hooks/useCompanyRouteId", () => ({
@@ -101,6 +118,8 @@ vi.mock("@/context/SidebarContext", () => ({
   useSidebar: () => ({
     isMobile: false,
     setSidebarOpen: mockSetSidebarOpen,
+    setPeekHeld: mockSetPeekHeld,
+    ...mockSidebarState,
   }),
 }));
 
@@ -120,6 +139,8 @@ describe("SidebarCompanyMenu", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    mockSidebarState.collapsed = false;
+    mockSidebarState.peeking = false;
     container = document.createElement("div");
     document.body.appendChild(container);
     mockAuthApi.getSession.mockResolvedValue({
@@ -173,10 +194,62 @@ describe("SidebarCompanyMenu", () => {
 
     expect(document.body.textContent).toContain("Create new company...");
     expect(document.body.textContent).not.toContain("Add company...");
+    expect(mockSetPeekHeld).toHaveBeenLastCalledWith(true);
 
     act(() => {
       root.unmount();
     });
+    expect(mockSetPeekHeld).toHaveBeenLastCalledWith(false);
+  });
+
+  it("uses a fixed square trigger in the collapsed rail", async () => {
+    mockSidebarState.collapsed = true;
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <SidebarCompanyMenu />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    const trigger = container.querySelector('button[aria-label="Open Acme Labs company switcher"]');
+    expect(trigger?.getAttribute("class")).toContain("size-8");
+    expect(trigger?.getAttribute("class")).toContain("flex-none");
+    expect(trigger?.getAttribute("class")).toContain("justify-center");
+    expect(trigger?.getAttribute("class")).toContain("p-1");
+    expect(trigger?.getAttribute("class")).not.toContain("flex-1");
+    expect(trigger?.getAttribute("class")).not.toContain("h-9");
+    expect(trigger?.getAttribute("title")).toBe("Acme Labs");
+
+    act(() => root.unmount());
+  });
+
+  it("uses the company brand color in the generated company avatar", async () => {
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <SidebarCompanyMenu />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    const avatar = container.querySelector<HTMLElement>('[data-testid="company-avatar"]');
+    expect(avatar?.dataset.companyName).toBe("Acme Labs");
+    expect(avatar?.dataset.brandColor).toBe("#3366ff");
+
+    act(() => root.unmount());
   });
 
   it("shows the requested company actions and signs out through the dropdown", async () => {

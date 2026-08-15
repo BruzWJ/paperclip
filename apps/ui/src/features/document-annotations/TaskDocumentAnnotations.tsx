@@ -52,14 +52,6 @@ export interface TaskDocumentAnnotationsProps {
   onPanelOpenChange: (open: boolean) => void;
   agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
   userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
-  /** Seed which thread is focused on mount. Used by Storybook/screenshot harness. */
-  defaultFocusedThreadId?: string;
-  /**
-   * Seed the composer with a pending anchor and open the panel once. Used when
-   * a host captures a selection before the annotated document wrapper exists.
-   */
-  initialComposerAnchor?: PendingAnchor | null;
-  onInitialComposerAnchorConsumed?: () => void;
 }
 
 export function TaskDocumentAnnotations({
@@ -75,14 +67,11 @@ export function TaskDocumentAnnotations({
   onPanelOpenChange,
   agentMap,
   userProfileMap,
-  defaultFocusedThreadId,
-  initialComposerAnchor,
-  onInitialComposerAnchorConsumed,
 }: TaskDocumentAnnotationsProps) {
   const selectionDebugEnabled = isSelectionDebugEnabled();
   if (selectionDebugEnabled) initializeSelectionDebug();
   const containerRef = useRef<HTMLElement | null>(null);
-  const [focusedThreadId, setFocusedThreadId] = useState<string | null>(defaultFocusedThreadId ?? null);
+  const [focusedThreadId, setFocusedThreadId] = useState<string | null>(null);
   const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
   const [selectionAnchor, setSelectionAnchor] = useState<PendingAnchor | null>(null);
   const [composerAnchor, setComposerAnchor] = useState<PendingAnchor | null>(null);
@@ -96,7 +85,6 @@ export function TaskDocumentAnnotations({
   const hashHandledRef = useRef<string | null>(null);
   // Bus token to ask the body layer to capture the current selection into a pendingAnchor.
   const [captureSelectionRequestId, setCaptureSelectionRequestId] = useState(0);
-  const consumedInitialAnchorRef = useRef<PendingAnchor | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
@@ -220,16 +208,6 @@ export function TaskDocumentAnnotations({
     },
     [newCommentDisabled, onPanelOpenChange],
   );
-
-  useEffect(() => {
-    if (!initialComposerAnchor) return;
-    if (consumedInitialAnchorRef.current === initialComposerAnchor) return;
-    if (newCommentDisabled) return;
-    consumedInitialAnchorRef.current = initialComposerAnchor;
-    setComposerAnchor(initialComposerAnchor);
-    onPanelOpenChange(true);
-    onInitialComposerAnchorConsumed?.();
-  }, [initialComposerAnchor, newCommentDisabled, onInitialComposerAnchorConsumed, onPanelOpenChange]);
 
   const handleThreadFocus = useCallback(
     (threadId: string | null) => {

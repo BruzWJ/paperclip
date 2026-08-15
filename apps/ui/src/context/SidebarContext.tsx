@@ -25,6 +25,7 @@ interface SidebarContextValue {
   collapseLocked: boolean;
   peeking: boolean;
   setPeeking: (next: boolean) => void;
+  setPeekHeld: (next: boolean) => void;
   forceCollapsed: boolean;
   setForceCollapsed: (next: boolean) => void;
   routeRequestsCollapsed: boolean;
@@ -114,6 +115,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   const [routeRequestsCollapsed, setRouteRequestsCollapsed] = useState(false);
   const [forceCollapsed, setForceCollapsed] = useState(false);
   const [rawPeeking, setPeeking] = useState(false);
+  const [peekHeld, setPeekHeld] = useState(false);
   const [pointerCanPeek, setPointerCanPeek] = useState(readPointerCanPeek);
 
   useEffect(() => {
@@ -144,7 +146,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   const desktopCollapsed = forceCollapsed || pinnedOrRequested;
   const collapsed = !isMobile && desktopCollapsed;
   const collapseLocked = !isMobile && forceCollapsed;
-  const peeking = rawPeeking && collapsed && pointerCanPeek;
+  const peeking = (rawPeeking || peekHeld) && collapsed && pointerCanPeek;
 
   const setCollapsed = useCallback((next: boolean) => {
     setUserCollapsed(next);
@@ -170,6 +172,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
       collapseLocked,
       peeking,
       setPeeking,
+      setPeekHeld,
       forceCollapsed,
       setForceCollapsed,
       routeRequestsCollapsed,

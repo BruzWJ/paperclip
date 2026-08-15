@@ -28,13 +28,13 @@ export function AttributionAvatar({
   return (
     <Avatar
       size="sm"
-      className={cn("ring-1 ring-border", actor.kind === "agent" && "rounded-md")}
+      className="ring-1 ring-border"
       role="img"
       aria-label={accessibleLabel}
       data-testid={`task-${testIdLabel}-avatar`}
     >
       {actor.kind === "agent" ? (
-        <AvatarFallback className="rounded-md bg-secondary text-secondary-foreground">
+        <AvatarFallback className="bg-secondary text-secondary-foreground">
           <AgentIcon icon={actor.agentIcon} className="size-3" />
         </AvatarFallback>
       ) : (

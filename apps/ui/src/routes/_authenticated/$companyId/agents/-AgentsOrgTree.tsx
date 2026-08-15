@@ -1,4 +1,5 @@
 import type { OrgNode } from "@/api/agents";
+import { AgentActionButtons } from "@/routes/_authenticated/$companyId/agents/-AgentActionButtons";
 import { MembershipAction } from "@/features/resource-memberships/MembershipAction";
 import { DomainTree, type DomainTreeNode } from "@/components/patterns/DomainTree";
 import { Spinner } from "@/components/ui/spinner";
@@ -76,7 +77,7 @@ export function AgentsOrgTree({
       renderIcon={({ node }) => {
         const agent = agentMap.get(node.id);
         return agent?.orgChainHealth?.status === "invalid_org_chain" ? (
-          <AlertTriangle className="size-4 text-muted-foreground" aria-label="Invalid reporting chain"  data-icon="inline-start"/>
+          <AlertTriangle className="size-4 text-muted-foreground" aria-label="Invalid reporting chain" data-icon="inline-start" />
         ) : (
           <DomainStatus status={node.value.status}>
             <span className="sr-only">{node.value.status.replace(/_/g, " ")}</span>
@@ -129,6 +130,9 @@ export function AgentsOrgTree({
             <span className="hidden w-20 justify-end sm:flex">
               <DomainStatus status={node.value.status} />
             </span>
+            <div className="hidden sm:flex">
+              <AgentActionButtons agent={agent} companyId={companyId} showStatus={false} />
+            </div>
             <MembershipAction
               state={membershipState}
               mutation={membershipMutation}
@@ -151,7 +155,7 @@ export function AgentsOrgTree({
                 })
               }
             >
-              {starPending ? <Spinner /> : <Star  data-icon="inline-start"/>}
+              {starPending ? <Spinner /> : <Star data-icon="inline-start" />}
             </Toggle>
           </div>
         );
@@ -160,7 +164,7 @@ export function AgentsOrgTree({
   );
 }
 
-/** Configuration state shared by the list and org views. */
+/** Configuration state shared by the tree and org-chart views. */
 export function AgentMetaColumns({ agent }: { agent: Agent }) {
   const configurationLabel = agent.currentAdapterConfigRevisionId ? "Configured" : "Not configured";
   return (

@@ -23,7 +23,6 @@ export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentP
     imageUploadHandler,
     agentMap,
     userProfileMap,
-    defaultAnnotationFocusedThreadIds,
     locationHash,
     draft,
     setDraft,
@@ -121,7 +120,6 @@ export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentP
             onPanelOpenChange={(next) => setAnnotationPanelOpen(doc.key, next)}
             agentMap={agentMap}
             userProfileMap={userProfileMap}
-            defaultFocusedThreadId={defaultAnnotationFocusedThreadIds?.[doc.key]}
           >
             {renderedDocumentBody}
           </TaskDocumentAnnotations>
@@ -141,7 +139,6 @@ interface NewTaskDocumentEditorProps {
 }
 
 export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps) {
-  void 'role="status"';
   const {
     draft,
     setDraft,
@@ -232,7 +229,6 @@ export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps
 }
 
 export function TaskDocumentRevisionNotices({ controller, doc, model }: TaskDocumentPresentationProps) {
-  void 'role="status"';
   const {
     setDocumentConflict,
     restoreDocumentRevision,

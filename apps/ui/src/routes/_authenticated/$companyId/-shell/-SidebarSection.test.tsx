@@ -108,6 +108,10 @@ describe("SidebarSection", () => {
     expect(projectsLabel?.parentElement?.textContent).toBe("Projects");
     expect(projectsLabel?.querySelector("svg")).toBeNull();
     expect(container.querySelector('button[aria-label="Collapse Projects"] svg')).toBeTruthy();
+    for (const group of container.querySelectorAll('[data-sidebar="group"]')) {
+      expect(group.getAttribute("class")).toContain("p-3");
+      expect(group.getAttribute("class")).toContain("py-2");
+    }
   });
 
   it("keeps collapse on the caret and opens the menu from the heading", async () => {
@@ -316,7 +320,7 @@ describe("SidebarSection", () => {
     expect(onAction).toHaveBeenCalledTimes(1);
   });
 
-  it("replaces the header with a divider and drops the caret in the collapsed rail", async () => {
+  it("preserves expanded item positions in the collapsed rail", async () => {
     sidebarState.collapsed = true;
     const currentRoot = createRoot(container);
     root = currentRoot;
@@ -343,7 +347,7 @@ describe("SidebarSection", () => {
     });
     await flushReact();
 
-    // The clipped header text is gone; the caret/menu trigger is not rendered.
+    // Interactive header controls are omitted from the rail.
     expect(container.querySelector('button[aria-label="Collapse Projects"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Projects section actions"]')).toBeNull();
 
@@ -353,6 +357,14 @@ describe("SidebarSection", () => {
     );
     expect(label?.className).toContain("sr-only");
     expect(container.querySelector('a[href="/projects"]')).toBeTruthy();
+
+    const group = container.querySelector('[data-sidebar="group"]');
+    expect(group?.getAttribute("class")).toContain("p-3");
+    expect(group?.getAttribute("class")).toContain("py-2");
+
+    const headerFootprint = container.querySelector('[data-sidebar="group-label"]');
+    expect(headerFootprint?.getAttribute("class")).toContain("h-8");
+    expect(headerFootprint?.getAttribute("class")).toContain("group-data-[collapsible=icon]:mt-0");
   });
 
   it("restores the full header while peeking even when collapsed", async () => {

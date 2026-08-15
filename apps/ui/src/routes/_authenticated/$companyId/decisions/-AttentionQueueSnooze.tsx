@@ -1,7 +1,7 @@
 import { AlarmClock } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DatePicker, TimePicker } from "@/components/patterns/DatePicker";
 import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import {
   DropdownMenuItem,
@@ -56,7 +56,7 @@ export function SnoozeSubmenu({ onSnooze }: { onSnooze: (snoozedUntil: string) =
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
-        <AlarmClock className="h-4 w-4"  data-icon="inline-start"/>
+        <AlarmClock className="h-4 w-4" data-icon="inline-start" />
         Snooze
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent>
@@ -68,18 +68,17 @@ export function SnoozeSubmenu({ onSnooze }: { onSnooze: (snoozedUntil: string) =
         <DropdownMenuSeparator />
         <LabeledFormField className="gap-1.5 px-2 py-1.5" label="Custom">
           <div className="flex flex-col gap-1.5">
-            <Input
-              type="date"
+            <DatePicker
               value={customDate}
-              onChange={(event) => setCustomDate(event.target.value)}
-              aria-label="Snooze date"
+              onValueChange={setCustomDate}
+              ariaLabel="Snooze date"
               className="w-full"
             />
-            <Input aria-label="attention snooze time"
+            <TimePicker
+              ariaLabel="attention snooze time"
               id="attention-snooze-time"
-              type="time"
               value={customTime}
-              onChange={(e) => setCustomTime(e.target.value)}
+              onValueChange={setCustomTime}
               onKeyDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               className="h-auto rounded-sm bg-background px-2 py-1 text-xs shadow-none"

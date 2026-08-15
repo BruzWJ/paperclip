@@ -52,6 +52,8 @@ interface SidebarSectionProps {
   headerAction?: SidebarSectionHeaderAction;
 }
 
+export const SIDEBAR_GROUP_LAYOUT_CLASSNAME = "p-3 py-2";
+
 function SidebarSectionHeader({
   collapsible,
   headerAction,
@@ -170,19 +172,12 @@ export function SidebarSection({ label, children, collapsible, menu, headerActio
   const rail = collapsed && !peeking && !forceExpanded;
   const content = <SidebarGroupContent className="flex flex-col gap-0.5">{children}</SidebarGroupContent>;
 
-  // Collapsed rail: the section header would only show a clipped sliver of its
-  // label, so replace it with a thin divider. The label stays in the a11y tree,
-  // per-section carets/menus are dropped (no room + no toggle target in the
-  // rail), and the items always render so their icons stay reachable.
-  //
-  // The header wrapper mirrors the expanded header's vertical footprint exactly
-  // (outer `px-3 py-1.5 pointer-coarse:py-1` + inner `min-h-6`) so item icons land
-  // at the identical y-position in both states — no movement on collapse/expand
-  // (PAP-10676). The divider is vertically centered within that same row.
+  // Keep the expanded header's exact footprint in the rail so every item below
+  // it retains the same x/y position when the sidebar changes state.
   if (rail) {
     return (
-      <SidebarGroup>
-        <SidebarGroupLabel>
+      <SidebarGroup className={SIDEBAR_GROUP_LAYOUT_CLASSNAME}>
+        <SidebarGroupLabel className="group-data-[collapsible=icon]:mt-0">
           <span className="sr-only">{label}</span>
         </SidebarGroupLabel>
         {content}
@@ -193,7 +188,7 @@ export function SidebarSection({ label, children, collapsible, menu, headerActio
   if (collapsible) {
     return (
       <Collapsible asChild open={collapsible.open} onOpenChange={collapsible.onOpenChange}>
-        <SidebarGroup>
+        <SidebarGroup className={SIDEBAR_GROUP_LAYOUT_CLASSNAME}>
           <SidebarSectionHeader
             label={label}
             collapsible={collapsible}
@@ -207,7 +202,7 @@ export function SidebarSection({ label, children, collapsible, menu, headerActio
   }
 
   return (
-    <SidebarGroup>
+    <SidebarGroup className={SIDEBAR_GROUP_LAYOUT_CLASSNAME}>
       <SidebarSectionHeader label={label} menu={menu} headerAction={headerAction} />
       {content}
     </SidebarGroup>

@@ -3,6 +3,8 @@ import { ACTIVE_TASK_EXECUTION_RUN_STATUSES } from "@/api/runs";
 import { type NavigationAction } from "@/lib/navigation-action";
 import { type ClientTaskComment } from "@/lib/optimistic-task-comments";
 import { queryKeys } from "@/lib/queryKeys";
+import { parseDocumentAnnotationHash } from "@/lib/document-annotation-hash";
+import { parseTaskArtifactFragment, type TaskArtifactFragment } from "@/lib/task-artifact-fragment";
 import { type TaskDetailSource } from "@/lib/taskDetailBreadcrumb";
 import {
   type TaskExecutionRunEnvelopeRecord,
@@ -109,6 +111,18 @@ export function readTaskRunStateFromCache(queryClient: QueryClient, taskId: stri
 export function isMarkdownFile(file: File) {
   const name = file.name.toLowerCase();
   return name.endsWith(".md") || name.endsWith(".markdown") || file.type === "text/markdown";
+}
+
+export type TaskDetailResourceReveal =
+  { kind: "artifact"; target: TaskArtifactFragment } | { kind: "document"; documentKey: string };
+
+export function resolveTaskDetailResourceReveal(locationHash: string): TaskDetailResourceReveal | null {
+  const fragment = locationHash.startsWith("#") ? locationHash.slice(1) : locationHash;
+  const artifact = parseTaskArtifactFragment(fragment);
+  if (artifact) return { kind: "artifact", target: artifact };
+
+  const document = parseDocumentAnnotationHash(fragment ? `#${fragment}` : "");
+  return document ? { kind: "document", documentKey: document.documentKey } : null;
 }
 
 export function taskDetailSourceLabel(source: TaskDetailSource | null): string {

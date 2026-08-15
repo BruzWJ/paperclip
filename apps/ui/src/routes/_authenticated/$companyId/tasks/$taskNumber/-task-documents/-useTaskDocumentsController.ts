@@ -1,34 +1,42 @@
-import type { DocumentRevision, TaskDocument } from "@paperclipai/shared";
+import type { Agent, DocumentRevision, Task, TaskDocument } from "@paperclipai/shared";
 import { isSystemTaskDocumentKey, taskDocumentKeySchema } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import { deriveDocumentRevisionState } from "@/lib/document-revisions";
+import type { CompanyUserProfile } from "@/lib/company-members";
+import type { MentionOption } from "@/features/markdown/MarkdownEditor";
 
 import {
   documentHasUnsavedChanges,
   isPlanKey,
   makeTaskDocumentSubject,
   type DraftState,
-  type TaskDocumentsSectionProps,
 } from "./-TaskDocumentUtils";
 import { useTaskDocumentDraftActions } from "./-useTaskDocumentDraftActions";
 import { useTaskDocumentEditorState, useTaskDocumentEffects } from "./-useTaskDocumentEffects";
 
+interface TaskDocumentsControllerOptions {
+  task: Task;
+  canDeleteDocuments: boolean;
+  canManageDocumentLocks?: boolean;
+  mentions?: MentionOption[];
+  imageUploadHandler?: (file: File) => Promise<string>;
+  agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
+  userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
+  presentationActive?: boolean;
+}
+
 export function useTaskDocumentsSectionController({
   task,
-  subject,
   canDeleteDocuments,
   canManageDocumentLocks = false,
   mentions,
   imageUploadHandler,
-  extraActions,
   agentMap,
   userProfileMap,
-  defaultAnnotationPanelOpenKeys,
-  defaultAnnotationFocusedThreadIds,
-  forceEditDocumentKey,
-}: TaskDocumentsSectionProps) {
+  presentationActive = true,
+}: TaskDocumentsControllerOptions) {
   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
 
@@ -36,16 +44,9 @@ export function useTaskDocumentsSectionController({
 
   const locationHash = location.hash ? `#${location.hash}` : "";
 
-  const documentSubject = useMemo(() => {
-    if (subject) return subject;
-    if (!task) throw new Error("TaskDocumentsSection requires either task or subject");
-    return makeTaskDocumentSubject(task);
-  }, [task, subject]);
+  const documentSubject = useMemo(() => makeTaskDocumentSubject(task), [task]);
 
-  const editorState = useTaskDocumentEditorState({
-    documentSubject,
-    defaultAnnotationPanelOpenKeys,
-  });
+  const editorState = useTaskDocumentEditorState({ documentSubject });
   const {
     setConfirmDeleteKey,
     setError,
@@ -257,10 +258,9 @@ export function useTaskDocumentsSectionController({
 
   useTaskDocumentEffects({
     documentSubject,
-    documents,
     sortedDocuments,
     locationHash,
-    forceEditDocumentKey: forceEditDocumentKey ?? undefined,
+    presentationActive,
     editorState,
     draftActions,
   });
@@ -296,10 +296,8 @@ export function useTaskDocumentsSectionController({
     canManageDocumentLocks,
     mentions,
     imageUploadHandler,
-    extraActions,
     agentMap,
     userProfileMap,
-    defaultAnnotationFocusedThreadIds,
     locationHash,
     documentSubject,
     ...editorState,

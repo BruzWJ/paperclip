@@ -26,7 +26,7 @@ describe("RoutineVariablesEditor", () => {
     document.body.innerHTML = "";
   });
 
-  it("renders date variable defaults with the date input", () => {
+  it("renders date variable defaults with the date picker", () => {
     const root = createRoot(container);
     const variables: RoutineVariable[] = [
       {
@@ -50,11 +50,11 @@ describe("RoutineVariablesEditor", () => {
       );
     });
 
-    const dateInput = container.querySelector<HTMLInputElement>(
-      'input[type="date"][aria-label="startDate default value"]',
+    const datePicker = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="startDate default value"]',
     );
-    expect(dateInput).toBeTruthy();
-    expect(dateInput?.value).toBe("2026-06-26");
+    expect(datePicker).toBeTruthy();
+    expect(datePicker?.textContent).toContain("June 26th, 2026");
 
     flushUi(() => root.unmount());
   });

@@ -6,6 +6,7 @@ import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
+import { deriveInitials } from "@/lib/identity";
 import { useSidebar } from "@/context/SidebarContext";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -18,14 +19,6 @@ import type { ControlledOpenStateProps } from "@/lib/presentation-contracts";
 
 const DOCS_URL = "https://docs.paperclip.ing/";
 const FEEDBACK_URL = "https://paperclip.ing/feedback";
-
-function deriveInitials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return `${parts[0]?.[0] ?? ""}${parts[parts.length - 1]?.[0] ?? ""}`.toUpperCase();
-  }
-  return name.slice(0, 2).toUpperCase();
-}
 
 export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: ControlledOpenStateProps) {
   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
@@ -61,20 +54,25 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
   }
 
   return (
-    <div className="border-t border-r border-border bg-background px-3 py-2">
+    <div className={cn("border-t border-r border-border bg-background py-2", rail ? "px-4" : "px-2")}>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="ghost"
-            className="h-auto w-full justify-start px-3 py-2"
+            className={cn(
+              rail
+                ? "size-8 flex-none justify-center gap-0 p-1"
+                : "h-8 w-full justify-start gap-2 px-3 py-1",
+            )}
             aria-label="Open account menu"
+            title={rail ? displayName : undefined}
           >
             <Avatar size="sm">
               {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
               <AvatarFallback>{initials}</AvatarFallback>
             </Avatar>
-            <span className={cn("min-w-0 flex-1 truncate", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}>
+            <span className={cn("min-w-0 flex-1 text-left truncate", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}>
               {displayName}
             </span>
           </Button>
@@ -120,7 +118,7 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
                     onClick={closeNavigationChrome}
                   >
                     <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
-                      <UserRound className="size-4"  data-icon="inline-start"/>
+                      <UserRound className="size-4" data-icon="inline-start" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium text-foreground">View profile</span>
@@ -142,7 +140,7 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
                   onClick={closeNavigationChrome}
                 >
                   <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
-                    <UserRoundPen className="size-4"  data-icon="inline-start"/>
+                    <UserRoundPen className="size-4" data-icon="inline-start" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium text-foreground">Edit profile</span>
@@ -159,7 +157,7 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
               >
                 <a href={DOCS_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
                   <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
-                    <BookOpen className="size-4"  data-icon="inline-start"/>
+                    <BookOpen className="size-4" data-icon="inline-start" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium text-foreground">Documentation</span>
@@ -176,7 +174,7 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
               >
                 <a href={FEEDBACK_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
                   <span className="mt-0.5 rounded-sm border border-border bg-background/70 p-2 text-muted-foreground">
-                    <Megaphone className="size-4"  data-icon="inline-start"/>
+                    <Megaphone className="size-4" data-icon="inline-start" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium text-foreground">Feedback</span>
@@ -202,7 +200,7 @@ export function SidebarAccountMenu({ open: controlledOpen, onOpenChange }: Contr
                 aria-busy={signOutMutation.isPending}
               >
                 <span className="mt-0.5 rounded-lg border border-border bg-background/70 p-2 text-muted-foreground">
-                  <LogOut className="size-4"  data-icon="inline-start"/>
+                  <LogOut className="size-4" data-icon="inline-start" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span aria-live="polite" className="block text-sm font-medium text-foreground">

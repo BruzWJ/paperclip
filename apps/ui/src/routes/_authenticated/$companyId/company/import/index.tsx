@@ -15,9 +15,9 @@ function CompanyImport() {
   useEffect(() => {
     setBreadcrumbs([
       {
-        label: "Org Chart",
+        label: "Agents",
         renderLink: (content) => (
-          <Link to="/$companyId/org" params={{ companyId: controller.companyId }}>
+          <Link to="/$companyId/agents" params={{ companyId: controller.companyId }}>
             {content}
           </Link>
         ),

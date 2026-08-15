@@ -1,10 +1,6 @@
 import { agentsApi, type OrgNode } from "@/api/agents";
 import { ACTIVE_TASK_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
-import { AgentActionButtons } from "@/routes/_authenticated/$companyId/agents/-AgentActionButtons";
-import { MembershipAction } from "@/features/resource-memberships/MembershipAction";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Spinner } from "@/components/ui/spinner";
-import { Toggle } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -15,15 +11,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -31,24 +18,18 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useDialogActions } from "@/context/DialogContext";
 import { useSidebar } from "@/context/SidebarContext";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import {
-  isStarred,
-  resourceMembershipState,
-  useResourceMembershipMutation,
-  useResourceMemberships,
-} from "@/hooks/useResourceMemberships";
+import { useResourceMembershipMutation, useResourceMemberships } from "@/hooks/useResourceMemberships";
 import type { AgentFilterTab, AgentLiveRunSummary } from "@/lib/agent-filter-tabs";
 import { indexEntitiesById } from "@/lib/presentation-contracts";
 import { queryKeys } from "@/lib/queryKeys";
-import { DomainStatus } from "@/components/patterns/DomainStatus";
-import { cn } from "@/lib/utils";
 import { type Agent } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, Bot, GitBranch, List, Plus, Star } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { Bot, GitBranch, List, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { AgentMetaColumns, AgentsOrgTree } from "@/routes/_authenticated/$companyId/agents/-AgentsOrgTree";
+import { AgentsOrgChart } from "@/routes/_authenticated/$companyId/agents/-AgentsOrgChart";
+import { AgentsOrgTree } from "@/routes/_authenticated/$companyId/agents/-AgentsOrgTree";
 
 const AGENT_FILTER_TAB_ITEMS: { value: AgentFilterTab; label: string }[] = [
   { value: "all", label: "All" },
@@ -104,9 +85,7 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
   const { isMobile } = useSidebar();
-  const [view, setView] = useState<"list" | "org">("org");
-  const forceListView = isMobile;
-  const effectiveView: "list" | "org" = forceListView ? "list" : view;
+  const [view, setView] = useState<"tree" | "chart">("chart");
 
   const visibleTabItems = AGENT_FILTER_TAB_ITEMS;
 
@@ -119,12 +98,10 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
     queryFn: () => agentsApi.list(companyId),
   });
 
-  const { data: orgTree } = useQuery({
+  const { data: orgTree, isLoading: isOrgLoading } = useQuery({
     queryKey: queryKeys.org(companyId),
     queryFn: () => agentsApi.org(companyId),
-    enabled: effectiveView === "org",
   });
-
   const activeRunStatuses = ACTIVE_TASK_EXECUTION_RUN_STATUSES;
   const runsQueryKey = [...queryKeys.runs(companyId, { status: activeRunStatuses }), "agents-page"] as const;
   const { data: runPage } = useQuery({
@@ -162,134 +139,30 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
     }
   }
 
-  // Map agentId -> first live run + live run count
+  const agentMap = useMemo(() => indexEntitiesById(agents), [agents]);
   const liveRunByAgent = useMemo(() => {
     const map = new Map<string, AgentLiveRunSummary>();
-    for (const r of runPage?.items ?? []) {
-      const existing = map.get(r.targetAgentId);
+    for (const run of runPage?.items ?? []) {
+      const existing = map.get(run.targetAgentId);
       if (existing) {
         existing.liveCount += 1;
         continue;
       }
-      map.set(r.targetAgentId, { runId: r.id, liveCount: 1 });
+      map.set(run.targetAgentId, { runId: run.id, liveCount: 1 });
     }
     return map;
   }, [runPage?.items]);
-
-  const agentMap = useMemo(() => indexEntitiesById(agents), [agents]);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Agents" }]);
   }, [setBreadcrumbs]);
 
-  if (isLoading) {
+  if (isLoading || isOrgLoading) {
     return <Skeleton className="h-32 w-full" />;
   }
 
   const filtered = filterAgents(agents ?? [], tab);
   const filteredOrg = filterOrgTree(orgTree ?? [], tab);
-  const renderAgentRow = (agent: Agent) => {
-    const hasInvalidOrgChain = agent.orgChainHealth?.status === "invalid_org_chain";
-    const agentPending =
-      membershipMutation.isPending &&
-      membershipMutation.variables?.resourceType === "agent" &&
-      membershipMutation.variables.resourceId === agent.id;
-    const agentStarPending = agentPending && membershipMutation.variables?.starred !== undefined;
-    const agentStarred = isStarred(membershipsQuery.data, "agent", agent.id);
-    return (
-      <Item
-        key={agent.id}
-        size="sm"
-        className={cn(
-          agent.pausedAt && tab !== "paused" ? "opacity-50" : "",
-          resourceMembershipState(membershipsQuery.data, "agent", agent.id) === "left"
-            ? "sm:text-foreground/55"
-            : "",
-        )}
-      >
-        <ItemMedia>
-          {hasInvalidOrgChain ? (
-            <AlertTriangle
-              className="h-3.5 w-3.5 text-muted-foreground"
-              aria-label="Invalid reporting chain"
-             data-icon="inline-start"/>
-          ) : (
-            <DomainStatus status={agent.status} />
-          )}
-        </ItemMedia>
-        <ItemContent className="min-w-0">
-          <Link
-            to="/$companyId/agents/$agentId"
-            params={{ companyId, agentId: agent.id }}
-            className="min-w-0 no-underline"
-          >
-            <ItemTitle>{agent.name}</ItemTitle>
-            {agent.title || agent.capabilities ? (
-              <ItemDescription>{agent.title ?? agent.capabilities}</ItemDescription>
-            ) : null}
-          </Link>
-        </ItemContent>
-        <div className="hidden xl:flex">
-          <AgentMetaColumns agent={agent} />
-        </div>
-        <ItemActions>
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-3">
-              {liveRunByAgent.has(agent.id) && (
-                <Link
-                  to="/$companyId/agents/$agentId/runs/$runId"
-                  params={{
-                    companyId,
-                    agentId: agent.id,
-                    runId: liveRunByAgent.get(agent.id)!.runId,
-                  }}
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <DomainStatus status="running">
-                    Live
-                    {liveRunByAgent.get(agent.id)!.liveCount > 1
-                      ? ` (${liveRunByAgent.get(agent.id)!.liveCount})`
-                      : ""}
-                  </DomainStatus>
-                </Link>
-              )}
-              <span className="w-20 flex justify-end">
-                <DomainStatus status={agent.status} />
-              </span>
-              <div>
-                <AgentActionButtons agent={agent} companyId={companyId} showStatus={false} />
-              </div>
-              <Toggle
-                size="sm"
-                pressed={agentStarred}
-                disabled={agentStarPending}
-                aria-label={`${agentStarred ? "Unstar" : "Star"} ${agent.name}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  membershipMutation.mutate({
-                    resourceType: "agent",
-                    resourceId: agent.id,
-                    resourceName: agent.name,
-                    starred: !agentStarred,
-                  });
-                }}
-              >
-                {agentStarPending ? <Spinner /> : <Star  data-icon="inline-start"/>}
-              </Toggle>
-            </div>
-            <MembershipAction
-              state={resourceMembershipState(membershipsQuery.data, "agent", agent.id)}
-              mutation={membershipMutation}
-              resourceId={agent.id}
-              resourceName={agent.name}
-              resourceType="agent"
-            />
-          </div>
-        </ItemActions>
-      </Item>
-    );
-  };
 
   return (
     <div className="space-y-4">
@@ -319,31 +192,23 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
           </Tabs>
         )}
         <div className="flex items-center gap-2">
-          {/* View toggle */}
-          {!forceListView && (
-            <ToggleGroup
-              type="single"
-              value={effectiveView}
-              onValueChange={(value) => {
-                if (value) setView(value as "list" | "org");
-              }}
-              variant="outline"
-              size="sm"
-              aria-label="View mode"
-            >
-              <ToggleGroupItem value="list" className="px-1.5" title="List view" aria-label="List view">
-                <List className="h-3.5 w-3.5"  data-icon="inline-start"/>
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="org"
-                className="px-1.5"
-                title="Org chart view"
-                aria-label="Org chart view"
-              >
-                <GitBranch className="h-3.5 w-3.5"  data-icon="inline-start"/>
-              </ToggleGroupItem>
-            </ToggleGroup>
-          )}
+          <ToggleGroup
+            type="single"
+            value={view}
+            onValueChange={(value) => {
+              if (value) setView(value as "tree" | "chart");
+            }}
+            variant="outline"
+            size="sm"
+            aria-label="Agent view"
+          >
+            <ToggleGroupItem value="tree" className="px-1.5" title="Tree view" aria-label="Tree view">
+              <List className="h-3.5 w-3.5" data-icon="inline-start" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="chart" className="px-1.5" title="Org chart view" aria-label="Org chart view">
+              <GitBranch className="h-3.5 w-3.5" data-icon="inline-start" />
+            </ToggleGroupItem>
+          </ToggleGroup>
           <Button size="sm" variant="outline" onClick={openNewAgent}>
             <Plus data-icon="inline-start" className="h-3.5 w-3.5 mr-1.5" />
             New Agent
@@ -380,19 +245,7 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
         </Empty>
       )}
 
-      {/* List view */}
-      {effectiveView === "list" && filtered.length > 0 && (
-        <ItemGroup>{filtered.map(renderAgentRow)}</ItemGroup>
-      )}
-
-      {effectiveView === "list" && agents && agents.length > 0 && filtered.length === 0 && (
-        <Empty className="border-0 py-8 md:py-8">
-          <EmptyDescription>No agents match the selected status.</EmptyDescription>
-        </Empty>
-      )}
-
-      {/* Org chart view */}
-      {effectiveView === "org" && filteredOrg.length > 0 && (
+      {view === "tree" && filteredOrg.length > 0 && (
         <AgentsOrgTree
           key={tab}
           nodes={filteredOrg}
@@ -404,13 +257,21 @@ export function AgentsScreen({ tab }: { tab: AgentFilterTab }) {
         />
       )}
 
-      {effectiveView === "org" && orgTree && orgTree.length > 0 && filteredOrg.length === 0 && (
+      {view === "chart" && filteredOrg.length > 0 && (
+        <AgentsOrgChart
+          key={tab}
+          nodes={filteredOrg}
+          agentMap={agentMap}
+        />
+      )}
+
+      {orgTree && orgTree.length > 0 && filteredOrg.length === 0 && (
         <Empty className="border-0 py-8 md:py-8">
           <EmptyDescription>No agents match the selected status.</EmptyDescription>
         </Empty>
       )}
 
-      {effectiveView === "org" && orgTree && orgTree.length === 0 && (
+      {orgTree && orgTree.length === 0 && (
         <Empty className="border-0 py-8 md:py-8">
           <EmptyDescription>No organizational hierarchy defined.</EmptyDescription>
         </Empty>

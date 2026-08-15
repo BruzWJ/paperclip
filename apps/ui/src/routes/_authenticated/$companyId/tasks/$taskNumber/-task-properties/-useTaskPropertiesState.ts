@@ -23,7 +23,6 @@ export function useTaskPropertiesState(task: Task) {
   const [blockedBySearch, setBlockedBySearch] = useState("");
   const [blockedByExpanded, setBlockedByExpanded] = useState(false);
   const [blockingExpanded, setBlockingExpanded] = useState(false);
-  const [subTasksExpanded, setSubTasksExpanded] = useState(false);
   const [relatedTasksExpanded, setRelatedTasksExpanded] = useState(false);
   const [parentOpen, setParentOpen] = useState(false);
   const [parentSearch, setParentSearch] = useState("");
@@ -49,7 +48,6 @@ export function useTaskPropertiesState(task: Task) {
   useEffect(() => {
     setBlockedByExpanded(false);
     setBlockingExpanded(false);
-    setSubTasksExpanded(false);
     setRelatedTasksExpanded(false);
   }, [task.id]);
 
@@ -82,8 +80,6 @@ export function useTaskPropertiesState(task: Task) {
     setBlockedByExpanded,
     blockingExpanded,
     setBlockingExpanded,
-    subTasksExpanded,
-    setSubTasksExpanded,
     relatedTasksExpanded,
     setRelatedTasksExpanded,
     parentOpen,

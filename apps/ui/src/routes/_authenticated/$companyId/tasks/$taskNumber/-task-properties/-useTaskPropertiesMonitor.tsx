@@ -15,6 +15,7 @@ import {
 } from "@/lib/task-monitor";
 import { timeAgo } from "@/lib/timeAgo";
 import { cn } from "@/lib/utils";
+import { DateTimePicker } from "@/components/patterns/DatePicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -180,7 +181,11 @@ export function useTaskPropertiesMonitor({
             data-testid="monitor-row-trigger"
           >
             {monitorNextCheckAt ? (
-              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true"  data-icon="inline-start"/>
+              <Clock
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+                data-icon="inline-start"
+              />
             ) : null}
             <span className="flex min-w-0 flex-col items-start">
               <span
@@ -265,12 +270,14 @@ export function useTaskPropertiesMonitor({
   const monitorContent = (
     <div className="flex w-full flex-col gap-2">
       <div className="flex flex-col gap-2 md:flex-row">
-        <Input
-          aria-label="Schedule monitor reminder"
-          type="datetime-local"
-          className={cn("text-xs", inline ? "min-h-11" : "h-8")}
+        <DateTimePicker
           value={state.monitorAtInput}
-          onChange={(event) => state.setMonitorAtInput(event.target.value)}
+          onValueChange={state.setMonitorAtInput}
+          dateAriaLabel="Monitor reminder date"
+          timeAriaLabel="Monitor reminder time"
+          className="min-w-0"
+          datePickerClassName={cn("text-xs", inline ? "min-h-11" : "h-8")}
+          timeInputClassName={cn("text-xs", inline ? "min-h-11" : "h-8")}
         />
         <Input
           aria-label="Monitor reminder notes"

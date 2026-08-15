@@ -27,6 +27,7 @@ import {
   type AgentSidebarSortMode,
 } from "@/lib/agent-order";
 import { queryKeys } from "@/lib/queryKeys";
+import { cn } from "@/lib/utils";
 import { SidebarSection } from "./-SidebarSection";
 
 import { AGENT_SORT_CHOICES, isAgentSortModeUpdatedDetail, sortAgents } from "./-SidebarAgentSort";
@@ -393,7 +394,10 @@ export function SidebarAgents() {
         <p
           aria-live="polite"
           role="status"
-          className="mx-2 px-2 py-1 text-(length:--text-micro) text-muted-foreground"
+          className={cn(
+            "mx-2 whitespace-nowrap px-2 py-1 text-(length:--text-micro) text-muted-foreground",
+            rail && "opacity-0",
+          )}
         >
           {pauseResumeAgent.isPending ? "Updating agent…" : "Updating agent membership…"}
         </p>

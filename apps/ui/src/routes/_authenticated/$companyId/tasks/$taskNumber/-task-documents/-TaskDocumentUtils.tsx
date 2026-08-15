@@ -1,16 +1,13 @@
 import type { DocumentAnnotationTarget } from "@/api/document-annotations";
-import type { Agent, DocumentRevision, Task, TaskDocument } from "@paperclipai/shared";
+import type { DocumentRevision, Task, TaskDocument } from "@paperclipai/shared";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { type ReactNode } from "react";
 import { ApiError } from "@/api/client";
 import { tasksApi } from "@/api/tasks";
-import type { CompanyUserProfile } from "@/lib/company-members";
 import type { DocumentActorLookups } from "@/features/document-annotations/DocumentActorLookups";
 import { queryKeys } from "@/lib/queryKeys";
 import { type DocumentFrameHeaderRevisionActor } from "./-DocumentFrameHeader";
 import { FoldCurtain } from "../../../../../../components/patterns/FoldCurtain";
 import { MarkdownBody } from "../../../../../../features/markdown/MarkdownBody";
-import { type MentionOption } from "../../../../../../features/markdown/MarkdownEditor";
 
 export type DraftState = {
   key: string;
@@ -140,21 +137,6 @@ export function getRevisionActor(
 export function documentHasUnsavedChanges(doc: TaskDocument, draft: DraftState | null) {
   if (!draft || draft.isNew || draft.key !== doc.key) return false;
   return draft.body !== doc.body || (doc.title ?? "") !== draft.title;
-}
-
-export interface TaskDocumentsSectionProps {
-  task?: Task;
-  subject?: DocumentSubjectConfig;
-  canDeleteDocuments: boolean;
-  canManageDocumentLocks?: boolean;
-  mentions?: MentionOption[];
-  imageUploadHandler?: (file: File) => Promise<string>;
-  extraActions?: ReactNode;
-  agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
-  userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
-  defaultAnnotationPanelOpenKeys?: string[];
-  defaultAnnotationFocusedThreadIds?: Readonly<Record<string, string>>;
-  forceEditDocumentKey?: string | null;
 }
 
 export function toDocumentSummary(document: TaskDocument) {

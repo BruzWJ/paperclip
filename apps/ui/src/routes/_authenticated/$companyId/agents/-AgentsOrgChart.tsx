@@ -1,20 +1,15 @@
-import { agentsApi } from "@/api/agents";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import type { OrgNode } from "@/api/agents";
 import {
   OrgChartActions,
   OrgChartAgentCard,
   OrgChartEdges,
   OrgChartZoomControls,
-} from "@/routes/_authenticated/$companyId/org/-OrgChartParts";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
+} from "@/routes/_authenticated/$companyId/agents/-OrgChartParts";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import { queryKeys } from "@/lib/queryKeys";
-import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Network } from "lucide-react";
+import type { Agent } from "@paperclipai/shared";
+import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { indexEntitiesById, type Point2D } from "@/lib/presentation-contracts";
+import type { Point2D } from "@/lib/presentation-contracts";
 import {
   ORG_CARD_HEIGHT,
   ORG_CARD_WIDTH,
@@ -23,10 +18,6 @@ import {
   flattenOrgLayout,
   layoutOrgForest,
 } from "./-org-layout";
-
-export const Route = createFileRoute("/_authenticated/$companyId/org/")({
-  component: OrgChart,
-});
 
 const MIN_ZOOM = 0.2;
 
@@ -68,31 +59,17 @@ function touchCenter(a: React.Touch, b: React.Touch, container: HTMLDivElement):
   };
 }
 
-// ── Main component ──────────────────────────────────────────────────────
+interface AgentsOrgChartProps {
+  nodes: OrgNode[];
+  agentMap: Map<string, Agent>;
+}
 
-function OrgChart() {
+export function AgentsOrgChart({ nodes, agentMap }: AgentsOrgChartProps) {
   const companyId = useCompanyRouteId();
-  const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
 
-  const { data: orgTree, isLoading } = useQuery({
-    queryKey: queryKeys.org(companyId),
-    queryFn: () => agentsApi.org(companyId),
-  });
-
-  const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(companyId),
-    queryFn: () => agentsApi.list(companyId),
-  });
-
-  const agentMap = useMemo(() => indexEntitiesById(agents), [agents]);
-
-  useEffect(() => {
-    setBreadcrumbs([{ label: "Org Chart" }]);
-  }, [setBreadcrumbs]);
-
   // Layout computation
-  const layout = useMemo(() => layoutOrgForest(orgTree ?? []), [orgTree]);
+  const layout = useMemo(() => layoutOrgForest(nodes), [nodes]);
   const allNodes = useMemo(() => flattenOrgLayout(layout), [layout]);
   const edges = useMemo(() => collectOrgEdges(layout), [layout]);
 
@@ -349,25 +326,8 @@ function OrgChart() {
     };
   }, [pan, zoom]);
 
-  if (isLoading) {
-    return <Skeleton className="h-32 w-full" />;
-  }
-
-  if (orgTree && orgTree.length === 0) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Network  data-icon="inline-start"/>
-          </EmptyMedia>
-          <EmptyTitle>No organizational hierarchy defined.</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
-
   return (
-    <div className="flex h-(--sz-calc-38) min-h-(--sz-420px) flex-col md:h-full md:min-h-0">
+    <div className="flex h-(--sz-calc-38) min-h-(--sz-420px) flex-col">
       <OrgChartActions companyId={companyId} />
       <div
         ref={containerRef}

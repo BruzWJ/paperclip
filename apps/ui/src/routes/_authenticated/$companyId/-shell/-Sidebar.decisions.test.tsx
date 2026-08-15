@@ -9,6 +9,10 @@ import { Sidebar } from "./-Sidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 
 const mockAttentionList = vi.hoisted(() => vi.fn());
+const mockSidebarState = vi.hoisted(() => ({
+  collapsed: false,
+  peeking: false,
+}));
 const COMPANY_ID = vi.hoisted(() => "11111111-1111-4111-8111-111111111111");
 
 vi.mock("@/api/attention", () => ({
@@ -57,9 +61,8 @@ vi.mock("@/context/CompanyContext", () => ({
 vi.mock("@/context/SidebarContext", () => ({
   useSidebar: () => ({
     isMobile: false,
-    collapsed: false,
     collapseLocked: false,
-    peeking: false,
+    ...mockSidebarState,
     toggleCollapsed: vi.fn(),
     setCollapsed: vi.fn(),
     setSidebarOpen: vi.fn(),
@@ -85,6 +88,8 @@ describe("Sidebar Decisions navigation", () => {
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
+    mockSidebarState.collapsed = false;
+    mockSidebarState.peeking = false;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -125,5 +130,25 @@ describe("Sidebar Decisions navigation", () => {
   it("keeps Decisions hidden when the attention feed has no Board mention", async () => {
     await renderWithItems([{ sourceKind: "approval" }]);
     expect(container.querySelector(`a[href="/${COMPANY_ID}/decisions"]`)).toBeNull();
+  });
+
+  it("keeps the navigation skeleton fixed between expanded and rail states", async () => {
+    await renderWithItems([]);
+
+    const expandedNavClass = container.querySelector("nav")?.getAttribute("class");
+    const expandedTopGroupClass = container
+      .querySelector("nav > [data-sidebar=\"group\"]")
+      ?.getAttribute("class");
+
+    mockSidebarState.collapsed = true;
+    await renderWithItems([]);
+
+    expect(container.querySelector("nav")?.getAttribute("class")).toBe(expandedNavClass);
+    expect(container.querySelector("nav > [data-sidebar=\"group\"]")?.getAttribute("class")).toBe(
+      expandedTopGroupClass,
+    );
+    expect(expandedNavClass).toContain("gap-4");
+    expect(expandedTopGroupClass).toContain("p-3");
+    expect(expandedTopGroupClass).toContain("py-2");
   });
 });

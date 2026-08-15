@@ -234,6 +234,13 @@ describe("SidebarContext", () => {
       expect(capturedValue?.collapsed).toBe(true);
       act(() => capturedValue?.setPeeking(true));
       expect(capturedValue?.peeking).toBe(true);
+
+      act(() => capturedValue?.setPeekHeld(true));
+      act(() => capturedValue?.setPeeking(false));
+      expect(capturedValue?.peeking).toBe(true);
+
+      act(() => capturedValue?.setPeekHeld(false));
+      expect(capturedValue?.peeking).toBe(false);
     });
 
     it("does not peek when expanded", () => {

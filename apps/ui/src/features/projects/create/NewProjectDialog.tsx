@@ -13,6 +13,7 @@ import { assetsApi } from "@/api/assets";
 import { buildMarkdownMentionOptions } from "@/lib/company-members";
 import { queryKeys } from "@/lib/queryKeys";
 import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
+import { DatePicker } from "@/components/patterns/DatePicker";
 import { EntityCreationFields } from "@/features/entity-creation/EntityCreationFields";
 import {
   Combobox,
@@ -55,7 +56,7 @@ function OptionalCodebaseFieldLabel({ label, help }: { label: string; help: stri
       <span className="text-xs text-muted-foreground/50">optional</span>
       <Tooltip delayDuration={300}>
         <TooltipTrigger asChild>
-          <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/50"  data-icon="inline-start"/>
+          <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/50" data-icon="inline-start" />
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-(--sz-240px) text-xs">
           {help}
@@ -303,7 +304,7 @@ export function NewProjectDialog() {
 
         {selectedGoals.map((goal) => (
           <Badge key={goal.id} variant="secondary" className="gap-1">
-            <Target className="h-3 w-3 text-muted-foreground"  data-icon="inline-start"/>
+            <Target className="h-3 w-3 text-muted-foreground" data-icon="inline-start" />
             <span className="max-w-(--sz-160px) truncate">{goal.title}</span>
             <Button
               variant="ghost"
@@ -313,7 +314,7 @@ export function NewProjectDialog() {
               aria-label={`Remove goal ${goal.title}`}
               type="button"
             >
-              <X className="h-3 w-3"  data-icon="inline-start"/>
+              <X className="h-3 w-3" data-icon="inline-start" />
             </Button>
           </Badge>
         ))}
@@ -332,9 +333,9 @@ export function NewProjectDialog() {
             aria-label="Add goal"
           >
             {selectedGoals.length > 0 ? (
-              <Plus className="h-3 w-3 text-muted-foreground"  data-icon="inline-start"/>
+              <Plus className="h-3 w-3 text-muted-foreground" data-icon="inline-start" />
             ) : (
-              <Target className="h-3 w-3 text-muted-foreground"  data-icon="inline-start"/>
+              <Target className="h-3 w-3 text-muted-foreground" data-icon="inline-start" />
             )}
             {selectedGoals.length > 0 ? "+ Goal" : "Goal"}
           </ComboboxTrigger>
@@ -360,11 +361,11 @@ export function NewProjectDialog() {
         </Combobox>
 
         {/* Target date */}
-        <Input
-          type="date"
+        <DatePicker
           value={targetDate}
-          onChange={(event) => setTargetDate(event.target.value)}
-          aria-label="Target date"
+          onValueChange={setTargetDate}
+          ariaLabel="Target date"
+          size="xs"
           className="h-7 w-auto px-2 text-xs"
         />
       </div>

@@ -17,6 +17,7 @@ import {
   getTaskOutputs,
   isImageContentType,
   isVideoLikeOutput,
+  type TaskOutputItem,
 } from "@/lib/task-output";
 import type { Task, TaskAttachment, TaskWorkProduct } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
@@ -46,13 +47,9 @@ export interface TaskDetailInteractionsOptions {
   isNamedUserCreator: boolean;
   isSystemEscalationHumanOwner: boolean;
   isUserCreatorWithdrawalOwner: boolean;
-  copied: boolean;
   setCopied: Dispatch<SetStateAction<boolean>>;
-  mobilePropsOpen: boolean;
-  setMobilePropsOpen: Dispatch<SetStateAction<boolean>>;
-  galleryOpen: boolean;
+  setMobileInspectorOpen: Dispatch<SetStateAction<boolean>>;
   setGalleryOpen: Dispatch<SetStateAction<boolean>>;
-  galleryIndex: number;
   setGalleryIndex: Dispatch<SetStateAction<number>>;
 }
 
@@ -75,13 +72,9 @@ export function useTaskDetailInteractions({
   isNamedUserCreator,
   isSystemEscalationHumanOwner,
   isUserCreatorWithdrawalOwner,
-  copied,
   setCopied,
-  mobilePropsOpen,
-  setMobilePropsOpen,
-  galleryOpen,
+  setMobileInspectorOpen,
   setGalleryOpen,
-  galleryIndex,
   setGalleryIndex,
 }: TaskDetailInteractionsOptions) {
   const { invalidateTaskDetail, invalidateTaskRunState, upsertCommentInCache, invalidateTaskCollections } =
@@ -152,6 +145,29 @@ export function useTaskDetailInteractions({
     },
     [mediaGalleryItems],
   );
+  const openAttachmentInGallery = useCallback(
+    (attachment: TaskAttachment) => {
+      const index = mediaGalleryItems.findIndex((item) => item.id === attachment.id);
+      setGalleryIndex(index >= 0 ? index : 0);
+      setGalleryOpen(true);
+    },
+    [mediaGalleryItems, setGalleryIndex, setGalleryOpen],
+  );
+  const openOutputInGallery = useCallback(
+    (item: TaskOutputItem) => {
+      const metadata = item.metadata;
+      if (!metadata) return;
+      const index = mediaGalleryItems.findIndex(
+        (galleryItem) =>
+          galleryItem.contentPath === metadata.contentPath ||
+          galleryItem.id === `work-product-${item.id}` ||
+          galleryItem.id === metadata.attachmentId,
+      );
+      setGalleryIndex(index >= 0 ? index : 0);
+      setGalleryOpen(true);
+    },
+    [mediaGalleryItems, setGalleryIndex, setGalleryOpen],
+  );
 
   const copyTaskToClipboard = async () => {
     if (!task) return;
@@ -181,7 +197,7 @@ export function useTaskDetailInteractions({
       }
     },
     onCopy: () => copyTaskToClipboard(),
-    onProperties: () => setMobilePropsOpen(true),
+    onTaskDetails: () => setMobileInspectorOpen(true),
   });
   inboxToolbarCallbacksRef.current = {
     onArchive: () => {
@@ -190,7 +206,7 @@ export function useTaskDetailInteractions({
       }
     },
     onCopy: () => copyTaskToClipboard(),
-    onProperties: () => setMobilePropsOpen(true),
+    onTaskDetails: () => setMobileInspectorOpen(true),
   };
 
   const showInboxToolbar = isMobile && isFromInbox;
@@ -206,7 +222,7 @@ export function useTaskDetailInteractions({
       <div className="flex w-full items-center">
         <Button variant="ghost" size="icon-sm" asChild aria-label="Back to inbox">
           <Link to="/$companyId/inbox" params={{ companyId }} aria-label="Back to inbox">
-            <ArrowLeft  data-icon="inline-start"/>
+            <ArrowLeft data-icon="inline-start" />
           </Link>
         </Button>
 
@@ -219,24 +235,24 @@ export function useTaskDetailInteractions({
               disabled={archivePending}
               aria-label="Archive from inbox"
             >
-              <Archive  data-icon="inline-start"/>
+              <Archive data-icon="inline-start" />
             </Button>
           ) : null}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="More actions">
-                <MoreVertical  data-icon="inline-start"/>
+                <MoreVertical data-icon="inline-start" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => inboxToolbarCallbacksRef.current.onCopy()}>
-                <Copy  data-icon="inline-end"/>
+                <Copy data-icon="inline-end" />
                 Copy as markdown
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => inboxToolbarCallbacksRef.current.onProperties()}>
-                <SlidersHorizontal  data-icon="inline-end"/>
-                Properties
+              <DropdownMenuItem onSelect={() => inboxToolbarCallbacksRef.current.onTaskDetails()}>
+                <SlidersHorizontal data-icon="inline-end" />
+                Task details
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -327,17 +343,11 @@ export function useTaskDetailInteractions({
   );
 
   return {
-    copied,
-    setCopied,
-    mobilePropsOpen,
-    setMobilePropsOpen,
-    galleryOpen,
-    setGalleryOpen,
-    galleryIndex,
-    setGalleryIndex,
     attachmentList,
     mediaGalleryItems,
     handleChatImageClick,
+    openAttachmentInGallery,
+    openOutputInGallery,
     copyTaskToClipboard,
     archivePending,
     canArchiveFromInbox,

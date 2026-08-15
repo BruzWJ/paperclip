@@ -4,32 +4,16 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AnyRouter } from "@tanstack/react-router";
-import { canonicalizeMoneyAmount } from "@paperclipai/shared";
+import { canonicalizeMoneyAmount, type Agent } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestRouter } from "@/test/TestRouter";
-import { getRouteComponent } from "@/test/route-component";
-import { Route } from ".";
-
-const OrgChart = getRouteComponent(Route);
-
-const orgMock = vi.fn();
-const listMock = vi.fn();
+import type { OrgNode } from "@/api/agents";
+import { AgentsOrgChart } from "./-AgentsOrgChart";
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const LEAD_AGENT_ID = "22222222-2222-4222-8222-222222222222";
 const ENGINEER_AGENT_ID = "33333333-3333-4333-8333-333333333333";
-const ORG_PATH = `/${COMPANY_ID}/org`;
-
-vi.mock("@/context/BreadcrumbContext", () => ({
-  useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }),
-}));
-
-vi.mock("@/api/agents", () => ({
-  agentsApi: {
-    org: () => orgMock(),
-    list: () => listMock(),
-  },
-}));
+const AGENTS_PATH = `/${COMPANY_ID}/agents`;
 
 vi.mock("@/features/agents/AgentIconPicker", () => ({
   AgentIcon: () => <span data-testid="agent-icon" />,
@@ -38,7 +22,7 @@ vi.mock("@/features/agents/AgentIconPicker", () => ({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-const orgTree = [
+const orgTree: OrgNode[] = [
   {
     id: LEAD_AGENT_ID,
     name: "Lead",
@@ -56,12 +40,11 @@ const orgTree = [
   },
 ];
 
-const agents = [
+const agents: Agent[] = [
   {
     id: LEAD_AGENT_ID,
     companyId: COMPANY_ID,
     name: "Lead",
-    subtitle: "Lead",
     title: null,
     status: "idle",
     reportsTo: null,
@@ -80,7 +63,6 @@ const agents = [
     id: ENGINEER_AGENT_ID,
     companyId: COMPANY_ID,
     name: "Engineer",
-    subtitle: "Engineer",
     title: null,
     status: "idle",
     reportsTo: LEAD_AGENT_ID,
@@ -96,6 +78,8 @@ const agents = [
     pausedAt: null,
   },
 ];
+
+const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
 
 function createTouchEvent(
   type: string,
@@ -118,7 +102,7 @@ async function flushReact() {
   });
 }
 
-describe("OrgChart mobile gestures", () => {
+describe("AgentsOrgChart mobile gestures", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
   let queryClient: QueryClient;
@@ -130,8 +114,6 @@ describe("OrgChart mobile gestures", () => {
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    orgMock.mockResolvedValue(orgTree);
-    listMock.mockResolvedValue(agents);
     vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
 
     Object.defineProperty(HTMLElement.prototype, "clientWidth", {
@@ -192,13 +174,13 @@ describe("OrgChart mobile gestures", () => {
     vi.clearAllMocks();
   });
 
-  async function renderOrgChart() {
+  async function renderAgentsOrgChart() {
     root = createRoot(container);
     await act(async () => {
       root.render(
-        <TestRouter initialEntries={[ORG_PATH]} routerRef={routerRef}>
+        <TestRouter initialEntries={[AGENTS_PATH]} routerRef={routerRef}>
           <QueryClientProvider client={queryClient}>
-            <OrgChart />
+            <AgentsOrgChart nodes={orgTree} agentMap={agentMap} />
           </QueryClientProvider>
         </TestRouter>,
       );
@@ -216,7 +198,7 @@ describe("OrgChart mobile gestures", () => {
   }
 
   it("pans the chart with one-finger touch drag", async () => {
-    const { viewport, layer } = await renderOrgChart();
+    const { viewport, layer } = await renderAgentsOrgChart();
 
     await act(async () => {
       viewport.dispatchEvent(
@@ -232,7 +214,7 @@ describe("OrgChart mobile gestures", () => {
   });
 
   it("suppresses card navigation after a touch pan", async () => {
-    const { viewport } = await renderOrgChart();
+    const { viewport } = await renderAgentsOrgChart();
     const card = container.querySelector("[data-org-card]") as HTMLDivElement;
 
     await act(async () => {
@@ -248,11 +230,11 @@ describe("OrgChart mobile gestures", () => {
       );
     });
 
-    expect(routerRef.current?.state.location.pathname).toBe(ORG_PATH);
+    expect(routerRef.current?.state.location.pathname).toBe(AGENTS_PATH);
   });
 
   it("allows card navigation after a touch tap without movement", async () => {
-    const { viewport } = await renderOrgChart();
+    const { viewport } = await renderAgentsOrgChart();
     const card = container.querySelector("[data-org-card]") as HTMLDivElement;
 
     await act(async () => {
@@ -272,7 +254,7 @@ describe("OrgChart mobile gestures", () => {
     });
   });
   it("pinch-zooms toward the touch center", async () => {
-    const { viewport, layer } = await renderOrgChart();
+    const { viewport, layer } = await renderAgentsOrgChart();
 
     await act(async () => {
       viewport.dispatchEvent(

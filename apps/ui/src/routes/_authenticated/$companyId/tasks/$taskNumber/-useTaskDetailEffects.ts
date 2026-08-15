@@ -1,4 +1,3 @@
-import { TaskProperties } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-properties/-TaskProperties";
 import type { TaskChatComposerHandle } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread";
 import type { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import type { usePanel } from "@/context/PanelContext";
@@ -8,7 +7,6 @@ import {
   resolveTaskDetailGoKeyAction,
 } from "@/lib/keyboardShortcuts";
 import type { NavigationAction } from "@/lib/navigation-action";
-import { parseTaskArtifactFragment } from "@/lib/task-artifact-fragment";
 import type { TaskDetailSource } from "@/lib/taskDetailBreadcrumb";
 import type { Task, TaskAttachment, TaskTreeControlMode, TaskWorkProduct } from "@paperclipai/shared";
 import { useQueryClient } from "@tanstack/react-query";
@@ -29,8 +27,13 @@ import {
 } from "@/lib/optimistic-task-comments";
 import { queryKeys } from "@/lib/queryKeys";
 
-import { shouldScrollTaskDetailToTopOnNavigation, taskDetailSourceLabel } from "./-task-detail-model";
+import {
+  resolveTaskDetailResourceReveal,
+  shouldScrollTaskDetailToTopOnNavigation,
+  taskDetailSourceLabel,
+} from "./-task-detail-model";
 import { TaskDetailSourceLink } from "./-TaskDetailChat";
+import { TaskInspector, type TaskInspectorProps, type TaskInspectorTab } from "./-TaskInspector";
 import type { useTaskDetailActionMutations } from "./-useTaskDetailActionMutations";
 import type { useTaskDetailCoreMutations } from "./-useTaskDetailCoreMutations";
 
@@ -45,19 +48,38 @@ export interface TaskDetailEffectsOptions {
   panelTask: Task | null;
   panelChildTasks: Task[];
   taskPanelKey: string;
+  childTasksLoading: boolean;
+  inspectorTab: TaskInspectorTab;
+  setInspectorTab: Dispatch<SetStateAction<TaskInspectorTab>>;
+  liveTaskIds: TaskInspectorProps["liveTaskIds"];
+  mutedChildTaskIds: TaskInspectorProps["mutedChildTaskIds"];
+  childPauseBadgeById: TaskInspectorProps["childPauseBadgeById"];
+  taskLinkState: TaskInspectorProps["taskLinkState"];
+  attachmentList: TaskAttachment[];
+  attachmentsInitialLoading: boolean;
+  attachmentError: string | null;
+  attachmentUploadPending: boolean;
+  handleAttachmentFiles: TaskInspectorProps["onUploadFiles"];
+  deleteAttachment: ReturnType<typeof useTaskDetailActionMutations>["deleteAttachment"];
+  openAttachmentInGallery: TaskInspectorProps["onPreviewAttachment"];
+  openOutputInGallery: TaskInspectorProps["onPreviewOutput"];
+  openDocumentsWorkspace: () => void;
   resolvedHasActiveRun: boolean;
   openNewSubTask: () => void;
   handleTaskPropertiesUpdate: (data: Record<string, unknown>) => void;
   openPanel: ReturnType<typeof usePanel>["openPanel"];
   closePanel: ReturnType<typeof usePanel>["closePanel"];
+  setPanelVisible: ReturnType<typeof usePanel>["setPanelVisible"];
   markTaskRead: ReturnType<typeof useTaskDetailCoreMutations>["markTaskRead"];
   archiveFromInbox: ReturnType<typeof useTaskDetailActionMutations>["archiveFromInbox"];
   keyboardShortcutsEnabled: boolean;
   navigateToTaskSource: (replace?: boolean) => Promise<unknown> | unknown;
   setDetailTab: Dispatch<SetStateAction<string>>;
   locationHash: string;
+  isMobile: boolean;
+  setMobileInspectorOpen: Dispatch<SetStateAction<boolean>>;
+  setDocumentsWorkspaceOpen: Dispatch<SetStateAction<boolean>>;
   workProducts?: TaskWorkProduct[];
-  attachments?: TaskAttachment[];
   detailTab: string;
 }
 
@@ -73,19 +95,38 @@ export function useTaskDetailEffects({
   panelTask,
   panelChildTasks,
   taskPanelKey,
+  childTasksLoading,
+  inspectorTab,
+  setInspectorTab,
+  liveTaskIds,
+  mutedChildTaskIds,
+  childPauseBadgeById,
+  taskLinkState,
+  attachmentList,
+  attachmentsInitialLoading,
+  attachmentError,
+  attachmentUploadPending,
+  handleAttachmentFiles,
+  deleteAttachment,
+  openAttachmentInGallery,
+  openOutputInGallery,
+  openDocumentsWorkspace,
   resolvedHasActiveRun,
   openNewSubTask,
   handleTaskPropertiesUpdate,
   openPanel,
   closePanel,
+  setPanelVisible,
   markTaskRead,
   archiveFromInbox,
   keyboardShortcutsEnabled,
   navigateToTaskSource,
   setDetailTab,
   locationHash,
+  isMobile,
+  setMobileInspectorOpen,
+  setDocumentsWorkspaceOpen,
   workProducts,
-  attachments,
   detailTab,
 }: TaskDetailEffectsOptions) {
   const lastMarkedReadTaskIdRef = useRef<string | null>(null);
@@ -94,6 +135,8 @@ export function useTaskDetailEffects({
   const [pendingCommentComposerFocusKey, setPendingCommentComposerFocusKey] = useState(0);
   const goToInboxShortcutArmedRef = useRef(false);
   const goToInboxShortcutTimeoutRef = useRef<number | null>(null);
+  const resourceRevealKeyRef = useRef<string | null>(null);
+  const resourceRevealTaskIdRef = useRef(taskId);
   const canQuickArchiveFromInbox = keyboardShortcutsEnabled && !task?.hiddenAt;
 
   useEffect(() => {
@@ -111,12 +154,7 @@ export function useTaskDetailEffects({
         label: breadcrumbTaskIdentifier,
       },
     ]);
-  }, [
-    breadcrumbTaskIdentifier,
-    companyId,
-    setBreadcrumbs,
-    taskDetailSource,
-  ]);
+  }, [breadcrumbTaskIdentifier, companyId, setBreadcrumbs, taskDetailSource]);
 
   useEffect(() => {
     const previousTaskId = lastScrollTaskIdRef.current;
@@ -148,23 +186,61 @@ export function useTaskDetailEffects({
       return;
     }
     openPanel(
-      createElement(TaskProperties, {
+      createElement(TaskInspector, {
+        key: panelTask.id,
+        activeTab: inspectorTab,
+        onTabChange: setInspectorTab,
         task: panelTask,
         childTasks: panelChildTasks,
+        childTasksLoading,
+        liveTaskIds,
+        mutedChildTaskIds,
+        childPauseBadgeById,
+        taskLinkState,
         onAddSubTask: openNewSubTask,
-        onUpdate: handleTaskPropertiesUpdate,
+        attachments: attachmentList,
+        attachmentsLoading: attachmentsInitialLoading,
+        attachmentError,
+        attachmentUploadPending,
+        onUploadFiles: handleAttachmentFiles,
+        attachmentDeletePending: deleteAttachment.isPending,
+        onDeleteAttachment: deleteAttachment.mutate,
+        onPreviewAttachment: openAttachmentInGallery,
+        workProducts,
+        onPreviewOutput: openOutputInGallery,
+        onOpenDocuments: openDocumentsWorkspace,
+        onUpdateTask: handleTaskPropertiesUpdate,
         hasActiveRun: resolvedHasActiveRun,
       }),
+      { title: "Task details" },
     );
   }, [
+    attachmentError,
+    attachmentList,
+    attachmentUploadPending,
+    attachmentsInitialLoading,
+    childPauseBadgeById,
+    childTasksLoading,
     closePanel,
+    deleteAttachment.isPending,
+    deleteAttachment.mutate,
+    handleAttachmentFiles,
     handleTaskPropertiesUpdate,
+    inspectorTab,
+    liveTaskIds,
+    mutedChildTaskIds,
+    openAttachmentInGallery,
+    openDocumentsWorkspace,
     taskPanelKey,
     openNewSubTask,
+    openOutputInGallery,
     openPanel,
     panelChildTasks,
     panelTask,
     resolvedHasActiveRun,
+    setInspectorTab,
+    taskLinkState,
+    workProducts,
   ]);
   useEffect(() => () => closePanel(), [closePanel]);
 
@@ -261,9 +337,31 @@ export function useTaskDetailEffects({
   }, [keyboardShortcutsEnabled, navigateToTaskSource, setDetailTab]);
 
   useEffect(() => {
-    const target = parseTaskArtifactFragment(locationHash);
-    if (!target) return;
-    const targetId = `${target.kind}-${target.id}`;
+    if (resourceRevealTaskIdRef.current === taskId) return;
+    resourceRevealTaskIdRef.current = taskId;
+    resourceRevealKeyRef.current = null;
+    setDocumentsWorkspaceOpen(false);
+    setMobileInspectorOpen(false);
+  }, [setDocumentsWorkspaceOpen, setMobileInspectorOpen, taskId]);
+
+  useEffect(() => {
+    const reveal = resolveTaskDetailResourceReveal(locationHash);
+    if (!reveal) return;
+
+    const revealKey = `${taskId}:${locationHash}`;
+    if (resourceRevealKeyRef.current !== revealKey) {
+      resourceRevealKeyRef.current = revealKey;
+      if (reveal.kind === "document") {
+        setDocumentsWorkspaceOpen(true);
+      } else {
+        setInspectorTab("resources");
+        if (isMobile) setMobileInspectorOpen(true);
+        else setPanelVisible(true);
+      }
+    }
+
+    if (reveal.kind !== "artifact") return;
+    const targetId = `${reveal.target.kind}-${reveal.target.id}`;
     let cancelled = false;
     let attempts = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -289,7 +387,17 @@ export function useTaskDetailEffects({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [locationHash, workProducts, attachments]);
+  }, [
+    attachmentList,
+    isMobile,
+    locationHash,
+    setDocumentsWorkspaceOpen,
+    setInspectorTab,
+    setMobileInspectorOpen,
+    setPanelVisible,
+    taskId,
+    workProducts,
+  ]);
 
   useEffect(() => {
     if (pendingCommentComposerFocusKey === 0 || detailTab !== "chat") return;
@@ -303,7 +411,9 @@ export function useTaskDetailEffects({
 export function useTaskDetailState() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<TaskInspectorTab>("details");
+  const [documentsWorkspaceOpen, setDocumentsWorkspaceOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("chat");
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
@@ -311,14 +421,20 @@ export function useTaskDetailState() {
   const [treeControlMode, setTreeControlMode] = useState<TaskTreeControlMode>("pause");
   const [treeControlReason, setTreeControlReason] = useState("");
   const [treeControlCancelConfirmed, setTreeControlCancelConfirmed] = useState(false);
+  const openDocumentsWorkspace = useCallback(() => setDocumentsWorkspaceOpen(true), []);
 
   return {
     moreOpen,
     setMoreOpen,
     copied,
     setCopied,
-    mobilePropsOpen,
-    setMobilePropsOpen,
+    mobileInspectorOpen,
+    setMobileInspectorOpen,
+    inspectorTab,
+    setInspectorTab,
+    documentsWorkspaceOpen,
+    setDocumentsWorkspaceOpen,
+    openDocumentsWorkspace,
     detailTab,
     setDetailTab,
     galleryOpen,

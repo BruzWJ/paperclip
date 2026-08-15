@@ -1,5 +1,6 @@
 import type { OrgNode } from "@/api/agents";
 
+// Shared layout primitives for the agents hierarchy canvas.
 export const ORG_CARD_WIDTH = 200;
 export const ORG_CARD_HEIGHT = 100;
 export const ORG_PADDING = 60;

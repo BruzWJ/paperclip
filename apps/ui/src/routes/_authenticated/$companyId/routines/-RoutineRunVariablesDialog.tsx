@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { type Agent, type Project, type RoutineVariable } from "@paperclipai/shared";
 import { AgentIcon } from "../../../../features/agents/AgentIconPicker";
+import { DatePicker } from "@/components/patterns/DatePicker";
 import { EntityCombobox } from "@/components/patterns/EntityCombobox";
 import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "@/lib/recent-assignees";
@@ -332,17 +333,16 @@ export function RoutineRunVariablesDialog({
                     </SelectContent>
                   </Select>
                 ) : shouldUseDateInput(variable) ? (
-                  <Input
+                  <DatePicker
                     id={fieldId}
-                    type="date"
                     value={values[variable.name] == null ? "" : String(values[variable.name])}
-                    onChange={(event) =>
+                    onValueChange={(value) =>
                       setValues((current) => ({
                         ...current,
-                        [variable.name]: event.target.value,
+                        [variable.name]: value,
                       }))
                     }
-                    aria-label={fieldLabel}
+                    ariaLabel={fieldLabel}
                   />
                 ) : (
                   <Input

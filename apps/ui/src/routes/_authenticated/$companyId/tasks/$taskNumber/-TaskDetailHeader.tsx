@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 
 import { InlineEditor } from "@/features/markdown/InlineEditor";
 import { MarkdownBody } from "@/features/markdown/MarkdownBody";
@@ -6,6 +6,7 @@ import { TaskMonitorBanner } from "@/routes/_authenticated/$companyId/tasks/$tas
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +23,8 @@ import { Link } from "@tanstack/react-router";
 import {
   Archive,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   MoreHorizontal,
   PauseCircle,
@@ -37,6 +40,15 @@ type HeaderIconActionProps = Omit<ComponentProps<typeof Button>, "aria-label" | 
   label: string;
   children: ReactNode;
 };
+
+function summarizeTaskRequest(request: string) {
+  return request
+    .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
+    .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
+    .replace(/[#>*_`~-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function HeaderIconAction({ label, children, ...props }: HeaderIconActionProps) {
   return (
@@ -89,42 +101,42 @@ function TaskControlMenu({
           aria-label="More task actions"
           title="More task actions"
         >
-          <MoreHorizontal  data-icon="inline-start"/>
+          <MoreHorizontal data-icon="inline-start" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end">
         <DropdownMenuLabel>Work controls</DropdownMenuLabel>
         {canPauseLeafWork ? (
           <DropdownMenuItem onSelect={() => onAction("pause")}>
-            <PauseCircle  data-icon="inline-end"/>
+            <PauseCircle data-icon="inline-end" />
             Pause work...
           </DropdownMenuItem>
         ) : null}
         {canResumeLeafWork ? (
           <DropdownMenuItem onSelect={() => onAction("resume")}>
-            <PlayCircle  data-icon="inline-end"/>
+            <PlayCircle data-icon="inline-end" />
             Resume work
           </DropdownMenuItem>
         ) : null}
         {canShowSubtreeControls ? (
           <>
             <DropdownMenuItem onSelect={() => onAction("pause")}>
-              <PauseCircle  data-icon="inline-end"/>
+              <PauseCircle data-icon="inline-end" />
               Pause subtree...
             </DropdownMenuItem>
             {canResumeSubtree ? (
               <DropdownMenuItem onSelect={() => onAction("resume")}>
-                <PlayCircle  data-icon="inline-end"/>
+                <PlayCircle data-icon="inline-end" />
                 Resume subtree
               </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem variant="destructive" onSelect={() => onAction("cancel")}>
-              <XCircle  data-icon="inline-end"/>
+              <XCircle data-icon="inline-end" />
               Cancel subtree...
             </DropdownMenuItem>
             {canRestoreSubtree ? (
               <DropdownMenuItem onSelect={() => onAction("restore")}>
-                <Repeat  data-icon="inline-end"/>
+                <Repeat data-icon="inline-end" />
                 Restore subtree...
               </DropdownMenuItem>
             ) : null}
@@ -136,6 +148,7 @@ function TaskControlMenu({
 }
 
 export function TaskDetailHeader() {
+  const [requestOpen, setRequestOpen] = useState(false);
   const {
     agentMap,
     archiveFromInbox,
@@ -154,7 +167,7 @@ export function TaskDetailHeader() {
     isMobile,
     moreOpen,
     panelVisible,
-    setMobilePropsOpen,
+    setMobileInspectorOpen,
     setMoreOpen,
     setPanelVisible,
     setReopenDialogOpen,
@@ -191,7 +204,11 @@ export function TaskDetailHeader() {
             />
           </div>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1 pt-0.5" role="group" aria-label="Task utilities">
+          <div
+            className="ml-auto flex shrink-0 items-center gap-1 pt-0.5"
+            role="group"
+            aria-label="Task utilities"
+          >
             {!isMobile && canArchiveFromInbox ? (
               <HeaderIconAction
                 size={actionButtonSize}
@@ -201,7 +218,7 @@ export function TaskDetailHeader() {
                 }}
                 disabled={archivePending}
               >
-                <Archive  data-icon="inline-start"/>
+                <Archive data-icon="inline-start" />
               </HeaderIconAction>
             ) : null}
 
@@ -212,18 +229,18 @@ export function TaskDetailHeader() {
                   label={copied ? "Task copied" : "Copy task as markdown"}
                   onClick={copyTaskToClipboard}
                 >
-                  {copied ? <Check  data-icon="inline-start"/> : <Copy  data-icon="inline-start"/>}
+                  {copied ? <Check data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
                 </HeaderIconAction>
                 {(isMobile || !panelVisible) && (
                   <HeaderIconAction
                     size={actionButtonSize}
-                    label="Show properties"
+                    label="Show task details"
                     onClick={() => {
-                      if (isMobile) setMobilePropsOpen(true);
+                      if (isMobile) setMobileInspectorOpen(true);
                       else setPanelVisible(true);
                     }}
                   >
-                    <SlidersHorizontal  data-icon="inline-start"/>
+                    <SlidersHorizontal data-icon="inline-start" />
                   </HeaderIconAction>
                 )}
               </>
@@ -261,7 +278,7 @@ export function TaskDetailHeader() {
                   params={{ companyId, routineId: task.originId }}
                   title={`Routine execution from routine ${task.originId}`}
                 >
-                  <Repeat  data-icon="inline-start"/> Routine
+                  <Repeat data-icon="inline-start" /> Routine
                 </Link>
               </Badge>
             ) : null}
@@ -330,18 +347,41 @@ export function TaskDetailHeader() {
 
       <TaskMonitorBanner task={task} />
 
-      <section className="space-y-2 border-t border-border pt-4">
-        <h2 className="text-xs font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
-          Immutable request
-        </h2>
+      <Collapsible
+        open={requestOpen}
+        onOpenChange={setRequestOpen}
+        className="space-y-2 border-t border-border pt-4"
+      >
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+            Immutable request
+          </h2>
+          {task.request ? (
+            <CollapsibleTrigger asChild>
+              <Button type="button" variant="ghost" size="xs" className="ml-auto text-muted-foreground">
+                {requestOpen ? "Hide full request" : "View full request"}
+                {requestOpen ? <ChevronUp data-icon="inline-end" /> : <ChevronDown data-icon="inline-end" />}
+              </Button>
+            </CollapsibleTrigger>
+          ) : null}
+        </div>
         {task.request ? (
-          <MarkdownBody className="text-sm leading-7 text-foreground">{task.request}</MarkdownBody>
+          <>
+            {!requestOpen ? (
+              <p className="line-clamp-2 break-words text-sm leading-6 text-muted-foreground">
+                {summarizeTaskRequest(task.request) || "View the full request for formatted content."}
+              </p>
+            ) : null}
+            <CollapsibleContent>
+              <MarkdownBody className="text-sm leading-7 text-foreground">{task.request}</MarkdownBody>
+            </CollapsibleContent>
+          </>
         ) : (
           <p className="text-sm text-muted-foreground">
             Canonical request unavailable for this historical task.
           </p>
         )}
-      </section>
+      </Collapsible>
     </div>
   );
 }

@@ -152,9 +152,9 @@ export function CompanyExportScreen({
   useEffect(() => {
     setBreadcrumbs([
       {
-        label: "Org Chart",
+        label: "Agents",
         renderLink: (content) => (
-          <Link to="/$companyId/org" params={{ companyId }}>
+          <Link to="/$companyId/agents" params={{ companyId }}>
             {content}
           </Link>
         ),

@@ -3,12 +3,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
-import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
 import {
   ORG_CARD_HEIGHT,
   ORG_CARD_WIDTH,
   type OrgLayoutEdge,
-} from "@/routes/_authenticated/$companyId/org/-org-layout";
+} from "@/routes/_authenticated/$companyId/agents/-org-layout";
 import type { Point2D } from "@/lib/presentation-contracts";
 import type { Agent } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
@@ -55,41 +54,49 @@ export function OrgChartAgentCard({
   onClick: () => void;
   onClickCapture: MouseEventHandler;
 }) {
+  const statusLabel = status.replaceAll("_", " ");
+
   return (
-    <Item
-      asChild
-      variant="outline"
-      size="sm"
-      className="absolute cursor-pointer flex-nowrap bg-card text-left shadow-sm hover:bg-accent/50"
+    <Button
+      type="button"
+      variant="ghost"
+      className="absolute h-auto w-full cursor-pointer items-stretch justify-start gap-0 overflow-hidden rounded-lg bg-card p-0 text-left text-foreground shadow-sm transition-[background-color,border-color,box-shadow] duration-200 hover:border-primary/50 hover:bg-accent/40 hover:text-foreground hover:shadow-md focus-visible:z-10 motion-reduce:transition-none"
       style={{ left: x, top: y, width, minHeight }}
       data-org-card
+      onClick={onClick}
+      onClickCapture={onClickCapture}
     >
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-auto w-full justify-start whitespace-normal p-0 hover:bg-transparent"
-        onClick={onClick}
-        onClickCapture={onClickCapture}
-      >
-        <ItemMedia>
-          <Avatar>
-            <AvatarFallback>
-              <AgentIcon icon={agent?.icon} />
+      <span className="flex min-w-0 flex-1 flex-col justify-between gap-2 px-3 py-2.5">
+        <span className="flex min-w-0 items-start gap-2.5">
+          <Avatar size="lg" className="bg-muted/80 ring-1 ring-border/80">
+            <AvatarFallback className="bg-muted/80 text-muted-foreground">
+              <AgentIcon icon={agent?.icon} className="size-5" />
             </AvatarFallback>
           </Avatar>
-        </ItemMedia>
-        <ItemContent className="min-w-0 text-left">
-          <ItemTitle className="max-w-full">
-            <span className="truncate">{name}</span>
-            <DomainStatus status={status} className="shrink-0 capitalize">
-              {status.replaceAll("_", " ")}
-            </DomainStatus>
-          </ItemTitle>
-          {agent?.title ? <ItemDescription className="truncate">{agent.title}</ItemDescription> : null}
-          {agent?.capabilities ? <ItemDescription>{agent.capabilities}</ItemDescription> : null}
-        </ItemContent>
-      </Button>
-    </Item>
+          <span className="min-w-0 flex-1 pt-0.5">
+            <span className="block truncate text-sm leading-snug font-semibold">{name}</span>
+            {agent?.title ? (
+              <span className="mt-0.5 block truncate text-(length:--text-micro) text-muted-foreground">
+                {agent.title}
+              </span>
+            ) : null}
+          </span>
+        </span>
+        <span className="flex min-w-0 items-center gap-2 border-t border-border/70 pt-1.5">
+          <DomainStatus
+            status={status}
+            className="shrink-0 border-0 bg-transparent px-0 py-0 text-(length:--text-micro) capitalize"
+          >
+            {statusLabel}
+          </DomainStatus>
+          {agent?.capabilities ? (
+            <span className="min-w-0 truncate text-(length:--text-micro) text-muted-foreground">
+              {agent.capabilities}
+            </span>
+          ) : null}
+        </span>
+      </span>
+    </Button>
   );
 }
 
@@ -135,7 +142,7 @@ export function OrgChartZoomControls({
         title="Zoom in"
         aria-label="Zoom in"
       >
-        <Plus  data-icon="inline-start"/>
+        <Plus data-icon="inline-start" />
       </Button>
       <Button
         type="button"
@@ -145,7 +152,7 @@ export function OrgChartZoomControls({
         title="Zoom out"
         aria-label="Zoom out"
       >
-        <Minus  data-icon="inline-start"/>
+        <Minus data-icon="inline-start" />
       </Button>
       <Button
         type="button"
@@ -155,7 +162,7 @@ export function OrgChartZoomControls({
         title="Fit to screen"
         aria-label="Fit chart to screen"
       >
-        <Maximize2  data-icon="inline-start"/>
+        <Maximize2 data-icon="inline-start" />
       </Button>
     </ButtonGroup>
   );

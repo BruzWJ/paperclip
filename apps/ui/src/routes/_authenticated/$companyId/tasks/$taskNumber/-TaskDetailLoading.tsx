@@ -1,37 +1,17 @@
 import { Badge } from "@/components/ui/badge";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { readTaskDetailHeaderSeed } from "@/lib/taskDetailBreadcrumb";
 import { taskValueLabel } from "@/lib/task-blockers";
-import { cn } from "@/lib/utils";
 import { Repeat } from "lucide-react";
 
-export function TaskSectionSkeleton({
-  titleWidth = "w-28",
-  rows = 3,
-}: {
-  titleWidth?: string;
-  rows?: number;
-}) {
-  return (
-    <Card className="gap-3 p-3">
-      <Skeleton className={cn("h-4", titleWidth)} />
-      <CardContent className="space-y-2 p-0">
-        {Array.from({ length: rows }).map((_, index) => (
-          <Skeleton key={index} className="h-12 w-full rounded-md" />
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-export function TaskChatSkeleton() {
+function TaskChatSkeleton() {
   return (
     <Card className="gap-3 p-3">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <Skeleton className="h-8 w-8 rounded-full" />
+          <Skeleton className="h-8 w-8 rounded-md" />
           <div className="space-y-2">
             <Skeleton className="h-3 w-24" />
             <Skeleton className="h-3 w-16" />
@@ -45,7 +25,7 @@ export function TaskChatSkeleton() {
             <Skeleton className="ml-auto h-3 w-20" />
             <Skeleton className="ml-auto h-3 w-14" />
           </div>
-          <Skeleton className="h-8 w-8 rounded-full" />
+          <Skeleton className="h-8 w-8 rounded-md" />
         </div>
         <Skeleton className="ml-auto h-16 w-(--pct-85) rounded-xl" />
       </div>
@@ -88,7 +68,7 @@ export function TaskDetailLoadingState({
               <Badge variant="secondary">{taskValueLabel(headerSeed.priority)} priority</Badge>
               {headerSeed.originKind === "routine_execution" && headerSeed.originId ? (
                 <Badge variant="secondary" title={`Routine execution from routine ${headerSeed.originId}`}>
-                  <Repeat  data-icon="inline-start"/>
+                  <Repeat data-icon="inline-start" />
                   Routine
                 </Badge>
               ) : null}
@@ -109,8 +89,6 @@ export function TaskDetailLoadingState({
       <Skeleton className="h-28 w-full rounded-lg border border-border" />
 
       <TaskChatSkeleton />
-
-      <TaskSectionSkeleton titleWidth="w-24" rows={3} />
     </div>
   );
 }

@@ -2,13 +2,10 @@ import { tasksApi } from "@/api/tasks";
 import { Button } from "@/components/ui/button";
 import { computePauseAffectsSummary } from "@/lib/owner-transition";
 import type { Agent, Task, TaskTreeControlMode } from "@paperclipai/shared";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import { isMarkdownFile } from "./-task-detail-model";
-import type {
-  useTaskDetailActionMutations,
-  useTaskDetailTreeMutation,
-} from "./-useTaskDetailActionMutations";
+import type { useTaskDetailActionMutations } from "./-useTaskDetailActionMutations";
 import type { useTaskDetailCoreMutations } from "./-useTaskDetailCoreMutations";
 
 export interface TaskDetailTreeDerivedOptions {
@@ -23,12 +20,10 @@ export interface TaskDetailTreeDerivedOptions {
   activeRootPauseHolds: Awaited<ReturnType<typeof tasksApi.listTreeHolds>>;
   activeCancelHolds: Awaited<ReturnType<typeof tasksApi.listTreeHolds>>;
   treeControlCancelConfirmed: boolean;
-  attachmentListLength: number;
   uploadAttachment: ReturnType<typeof useTaskDetailActionMutations>["uploadAttachment"];
   importMarkdownDocument: ReturnType<typeof useTaskDetailActionMutations>["importMarkdownDocument"];
   commitHumanOwnerStatus: ReturnType<typeof useTaskDetailCoreMutations>["commitHumanOwnerStatus"];
   withdrawAndCancelTask: ReturnType<typeof useTaskDetailCoreMutations>["withdrawAndCancelTask"];
-  executeTreeControl: ReturnType<typeof useTaskDetailTreeMutation>;
   isNamedUserCreator: boolean;
   isSystemEscalationHumanOwner: boolean;
   isUserCreatorWithdrawalOwner: boolean;
@@ -47,12 +42,10 @@ export function useTaskDetailTreeDerived({
   activeRootPauseHolds,
   activeCancelHolds,
   treeControlCancelConfirmed,
-  attachmentListLength,
   uploadAttachment,
   importMarkdownDocument,
   commitHumanOwnerStatus,
   withdrawAndCancelTask,
-  executeTreeControl,
   isNamedUserCreator,
   isSystemEscalationHumanOwner,
   isUserCreatorWithdrawalOwner,
@@ -112,15 +105,18 @@ export function useTaskDetailTreeDerived({
     [activePauseHold?.holdId, activeRootPauseHoldsForDisplay],
   );
 
-  const handleAttachmentFiles = async (files: File[]) => {
-    for (const file of files) {
-      if (isMarkdownFile(file)) {
-        await importMarkdownDocument.mutateAsync(file);
-      } else {
-        await uploadAttachment.mutateAsync(file);
+  const handleAttachmentFiles = useCallback(
+    async (files: File[]) => {
+      for (const file of files) {
+        if (isMarkdownFile(file)) {
+          await importMarkdownDocument.mutateAsync(file);
+        } else {
+          await uploadAttachment.mutateAsync(file);
+        }
       }
-    }
-  };
+    },
+    [importMarkdownDocument.mutateAsync, uploadAttachment.mutateAsync],
+  );
 
   const treePreviewWarnings = treeControlPreview?.warnings ?? [];
   const heldDescendantCount =
@@ -251,7 +247,6 @@ export function useTaskDetailTreeDerived({
     activeRootPauseHold,
     ancestors: task?.ancestors ?? [],
     handleAttachmentFiles,
-    hasAttachments: attachmentListLength > 0,
     treePreviewWarnings,
     heldDescendantCount,
     canShowSubtreeControls,
@@ -266,6 +261,5 @@ export function useTaskDetailTreeDerived({
     humanLifecycleFormControls,
     canApplyTreeControl,
     attachmentUploadPending,
-    executeTreeControl,
   };
 }

@@ -17,10 +17,9 @@ type DraftActions = ReturnType<typeof useTaskDocumentDraftActions>;
 
 export interface UseTaskDocumentEffectsOptions {
   documentSubject: DocumentSubjectConfig;
-  documents: TaskDocument[] | undefined;
   sortedDocuments: TaskDocument[];
   locationHash: string;
-  forceEditDocumentKey?: string;
+  presentationActive?: boolean;
   editorState: TaskDocumentEditorState;
   draftActions: DraftActions;
 }
@@ -28,10 +27,9 @@ export interface UseTaskDocumentEffectsOptions {
 /** Coordinates persistence, deep-link highlighting, and autosave side effects. */
 export function useTaskDocumentEffects({
   documentSubject,
-  documents,
   sortedDocuments,
   locationHash,
-  forceEditDocumentKey,
+  presentationActive = true,
   editorState,
   draftActions,
 }: UseTaskDocumentEffectsOptions) {
@@ -43,19 +41,11 @@ export function useTaskDocumentEffects({
     autosaveDebounceRef,
     copiedDocumentTimerRef,
     hasScrolledToHashRef,
-    initialEditAppliedRef,
     setDocumentConflict,
     setFoldedDocumentKeys,
     setHighlightDocumentKey,
   } = editorState;
-  const { beginEdit, resetAutosaveState, markDocumentDirty, commitDraft } = draftActions;
-  useEffect(() => {
-    if (!forceEditDocumentKey || initialEditAppliedRef.current) return;
-    const target = (documents ?? []).find((entry) => entry.key === forceEditDocumentKey);
-    if (!target) return;
-    initialEditAppliedRef.current = true;
-    beginEdit(forceEditDocumentKey);
-  }, [beginEdit, documents, forceEditDocumentKey, initialEditAppliedRef]);
+  const { resetAutosaveState, markDocumentDirty, commitDraft } = draftActions;
 
   useEffect(() => {
     setFoldedDocumentKeys(loadFoldedDocumentKeys(documentSubject.id));
@@ -90,6 +80,7 @@ export function useTaskDocumentEffects({
   }, [documentConflict, setDocumentConflict, sortedDocuments]);
 
   useEffect(() => {
+    if (!presentationActive) return;
     const target = parseDocumentAnnotationHash(locationHash);
     if (!target) return;
     const documentKey = target.documentKey;
@@ -106,7 +97,14 @@ export function useTaskDocumentEffects({
       3000,
     );
     return () => clearTimeout(timer);
-  }, [hasScrolledToHashRef, locationHash, setFoldedDocumentKeys, setHighlightDocumentKey, sortedDocuments]);
+  }, [
+    hasScrolledToHashRef,
+    locationHash,
+    presentationActive,
+    setFoldedDocumentKeys,
+    setHighlightDocumentKey,
+    sortedDocuments,
+  ]);
 
   useEffect(
     () => () => {
@@ -148,14 +146,10 @@ export function useTaskDocumentEffects({
 
 export interface UseTaskDocumentEditorStateOptions {
   documentSubject: DocumentSubjectConfig;
-  defaultAnnotationPanelOpenKeys?: string[];
 }
 
 /** Centralizes the local editor, revision, and annotation UI state. */
-export function useTaskDocumentEditorState({
-  documentSubject,
-  defaultAnnotationPanelOpenKeys,
-}: UseTaskDocumentEditorStateOptions) {
+export function useTaskDocumentEditorState({ documentSubject }: UseTaskDocumentEditorStateOptions) {
   const newDocumentKeyInputId = useId();
   const newDocumentKeyErrorId = useId();
   const newDocumentTitleInputId = useId();
@@ -166,9 +160,7 @@ export function useTaskDocumentEditorState({
   const [foldedDocumentKeys, setFoldedDocumentKeys] = useState<string[]>(() =>
     loadFoldedDocumentKeys(documentSubject.id),
   );
-  const [annotationPanelOpenKeys, setAnnotationPanelOpenKeys] = useState<string[]>(
-    () => defaultAnnotationPanelOpenKeys ?? [],
-  );
+  const [annotationPanelOpenKeys, setAnnotationPanelOpenKeys] = useState<string[]>([]);
   const [autosaveDocumentKey, setAutosaveDocumentKey] = useState<string | null>(null);
   const [copiedDocumentKey, setCopiedDocumentKey] = useState<string | null>(null);
   const [highlightDocumentKey, setHighlightDocumentKey] = useState<string | null>(null);
@@ -178,7 +170,6 @@ export function useTaskDocumentEditorState({
   const autosaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copiedDocumentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasScrolledToHashRef = useRef(false);
-  const initialEditAppliedRef = useRef(false);
   const autosave = useAutosaveIndicator();
 
   return {
@@ -212,7 +203,6 @@ export function useTaskDocumentEditorState({
     autosaveDebounceRef,
     copiedDocumentTimerRef,
     hasScrolledToHashRef,
-    initialEditAppliedRef,
     autosaveState: autosave.state,
     markDirty: autosave.markDirty,
     reset: autosave.reset,

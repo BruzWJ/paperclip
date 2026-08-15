@@ -101,7 +101,6 @@ function TaskPropertiesScenario({ inline = false }: { inline?: boolean }) {
       childTasks={childTasks}
       inline={inline}
       hasActiveRun
-      onAddSubTask={() => undefined}
       onUpdate={(patch) => setTask((current) => applyTaskPatch(current, patch))}
     />
   );

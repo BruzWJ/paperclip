@@ -31,7 +31,7 @@ export const AvatarStack = ({
       return (
         <div
           className={cn(
-            "size-full shrink-0 overflow-hidden rounded-full",
+            "size-full shrink-0 overflow-hidden rounded-md",
             '[&_[data-slot="avatar"]]:size-full',
             className,
           )}

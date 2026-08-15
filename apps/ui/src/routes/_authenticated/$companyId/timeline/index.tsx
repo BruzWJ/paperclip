@@ -1,5 +1,5 @@
 import { workTimelineApi, type WorkTimelineParams } from "@/api/workTimeline";
-import { Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/patterns/DatePicker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WorkTimelineGantt } from "@/routes/_authenticated/$companyId/timeline/-WorkTimelineGantt";
 import { Button } from "@/components/ui/button";
@@ -137,7 +137,7 @@ function Timeline() {
 
   const header = (
     <div className="flex items-center gap-2">
-      <GanttChartSquare className="h-6 w-6 text-muted-foreground"  data-icon="inline-start"/>
+      <GanttChartSquare className="h-6 w-6 text-muted-foreground" data-icon="inline-start" />
       <h1 className="text-3xl font-semibold tracking-tight">Work Timeline</h1>
     </div>
   );
@@ -192,29 +192,15 @@ function Timeline() {
         <ToggleGroupItem value="7d">7 days</ToggleGroupItem>
         <ToggleGroupItem value="30d">30 days</ToggleGroupItem>
       </ToggleGroup>
-      <Input
-        type="date"
-        value={dateRange.fromDate}
-        onChange={(event) => {
+      <DateRangePicker
+        value={{ from: dateRange.fromDate, to: dateRange.toDate }}
+        onValueChange={({ from, to }) => {
           setRangePreset("custom");
-          setDateRange((prev) => ({
-            ...prev,
-            fromDate: event.target.value,
-          }));
+          setDateRange({ fromDate: from, toDate: to });
         }}
-        className="h-8 w-(--sz-150px) text-xs"
-        aria-label="Timeline start date"
-      />
-      <span>to</span>
-      <Input
-        type="date"
-        value={dateRange.toDate}
-        onChange={(event) => {
-          setRangePreset("custom");
-          setDateRange((prev) => ({ ...prev, toDate: event.target.value }));
-        }}
-        className="h-8 w-(--sz-150px) text-xs"
-        aria-label="Timeline end date"
+        ariaLabel="Timeline date range"
+        size="sm"
+        className="w-full sm:w-auto"
       />
     </ButtonGroup>
   );
@@ -248,7 +234,7 @@ function Timeline() {
           aria-label="Zoom out"
           title="Zoom out"
         >
-          <Minus className="h-3 w-3"  data-icon="inline-start"/>
+          <Minus className="h-3 w-3" data-icon="inline-start" />
         </Button>
         <Button
           type="button"
@@ -258,7 +244,7 @@ function Timeline() {
           aria-label="Zoom in"
           title="Zoom in"
         >
-          <Plus className="h-3 w-3"  data-icon="inline-start"/>
+          <Plus className="h-3 w-3" data-icon="inline-start" />
         </Button>
         <Button
           type="button"
@@ -268,7 +254,7 @@ function Timeline() {
           aria-label="Reset zoom"
           title="Reset zoom"
         >
-          <RotateCcw className="h-3 w-3"  data-icon="inline-start"/>
+          <RotateCcw className="h-3 w-3" data-icon="inline-start" />
         </Button>
       </div>
     </div>
@@ -286,7 +272,7 @@ function Timeline() {
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <GanttChartSquare  data-icon="inline-start"/>
+                <GanttChartSquare data-icon="inline-start" />
               </EmptyMedia>
               <EmptyTitle>{dateRangeError}</EmptyTitle>
             </EmptyHeader>
@@ -299,7 +285,7 @@ function Timeline() {
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <GanttChartSquare  data-icon="inline-start"/>
+              <GanttChartSquare data-icon="inline-start" />
             </EmptyMedia>
             <EmptyTitle>
               Couldn&apos;t load the timeline. The aggregation endpoint may be unavailable.
@@ -316,7 +302,7 @@ function Timeline() {
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <GanttChartSquare  data-icon="inline-start"/>
+                  <GanttChartSquare data-icon="inline-start" />
                 </EmptyMedia>
                 <EmptyTitle>No activity in this window.</EmptyTitle>
               </EmptyHeader>

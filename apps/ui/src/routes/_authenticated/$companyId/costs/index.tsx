@@ -9,10 +9,9 @@ import {
   FinanceCurrencyCard,
   FinanceEventRows,
 } from "@/routes/_authenticated/$companyId/costs/-CostSummaryCards";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
+import { DateRangePicker } from "@/components/patterns/DatePicker";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -103,21 +102,21 @@ function Costs() {
     ]);
   };
 
-  const policyMutation =   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
-  useMutation({
-    mutationFn: (input: { policy: BudgetPolicySummary; limitAmount: MoneyAmount }) =>
-      budgetsApi.upsertPolicy(companyId, {
-        scopeType: input.policy.scopeType,
-        scopeId: input.policy.scopeId,
-        windowKind: input.policy.windowKind,
-        limitAmount: input.limitAmount,
-        warnPercent: input.policy.warnPercent,
-        hardStopEnabled: input.policy.hardStopEnabled,
-        notifyEnabled: input.policy.notifyEnabled,
-        isActive: input.policy.isActive,
-      }),
-    onSuccess: invalidateBudgetViews,
-  });
+  const policyMutation = // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+    useMutation({
+      mutationFn: (input: { policy: BudgetPolicySummary; limitAmount: MoneyAmount }) =>
+        budgetsApi.upsertPolicy(companyId, {
+          scopeType: input.policy.scopeType,
+          scopeId: input.policy.scopeId,
+          windowKind: input.policy.windowKind,
+          limitAmount: input.limitAmount,
+          warnPercent: input.policy.warnPercent,
+          hardStopEnabled: input.policy.hardStopEnabled,
+          notifyEnabled: input.policy.notifyEnabled,
+          isActive: input.policy.isActive,
+        }),
+      onSuccess: invalidateBudgetViews,
+    });
 
   const incidentMutation = useMutation({
     mutationFn: (input: {
@@ -147,7 +146,7 @@ function Costs() {
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <TriangleAlert  data-icon="inline-start"/>
+            <TriangleAlert data-icon="inline-start" />
           </EmptyMedia>
           <EmptyTitle>Cost and budget data could not be loaded.</EmptyTitle>
         </EmptyHeader>
@@ -204,7 +203,7 @@ function Costs() {
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-wrap items-center gap-2">
-        <CalendarRange className="h-4 w-4 text-muted-foreground"  data-icon="inline-start"/>
+        <CalendarRange className="h-4 w-4 text-muted-foreground" data-icon="inline-start" />
         {PRESET_KEYS.map((key) => (
           <Button
             key={key}
@@ -216,21 +215,15 @@ function Costs() {
           </Button>
         ))}
         {preset === "custom" ? (
-          <ButtonGroup className="ml-auto flex items-center gap-2" aria-label="Custom cost date range">
-            <Input
-              type="date"
-              value={customFrom}
-              onChange={(event) => setCustomFrom(event.target.value)}
-              aria-label="Cost range start date"
-            />
-            <span className="text-xs text-muted-foreground">to</span>
-            <Input
-              type="date"
-              value={customTo}
-              onChange={(event) => setCustomTo(event.target.value)}
-              aria-label="Cost range end date"
-            />
-          </ButtonGroup>
+          <DateRangePicker
+            value={{ from: customFrom, to: customTo }}
+            onValueChange={({ from, to }) => {
+              setCustomFrom(from);
+              setCustomTo(to);
+            }}
+            ariaLabel="Custom cost date range"
+            className="ml-auto w-full sm:w-auto"
+          />
         ) : null}
       </div>
 
@@ -331,7 +324,7 @@ function Costs() {
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <ReceiptText  data-icon="inline-start"/>
+                  <ReceiptText data-icon="inline-start" />
                 </EmptyMedia>
                 <EmptyTitle>No finance events in this range.</EmptyTitle>
               </EmptyHeader>

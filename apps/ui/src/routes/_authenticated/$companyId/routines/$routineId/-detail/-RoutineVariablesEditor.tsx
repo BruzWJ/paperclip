@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { DatePicker } from "@/components/patterns/DatePicker";
 import { LabeledFormField } from "@/components/patterns/FormPatterns";
 
 const variableTypes: RoutineVariable["type"][] = ["text", "textarea", "number", "boolean", "select", "date"];
@@ -263,18 +264,17 @@ export function RoutineVariablesEditor({
                         </LabeledFormField>
                       </FieldGroup>
                     ) : variable.type === "date" ? (
-                      <Input
-                        type="date"
+                      <DatePicker
                         value={typeof variable.defaultValue === "string" ? variable.defaultValue : ""}
-                        onChange={(event) =>
+                        onValueChange={(value) =>
                           onChange(
                             updateVariableList(syncedVariables, variable.name, (current) => ({
                               ...current,
-                              defaultValue: event.target.value || null,
+                              defaultValue: value || null,
                             })),
                           )
                         }
-                        aria-label={`${variable.label ?? variable.name} default value`}
+                        ariaLabel={`${variable.label ?? variable.name} default value`}
                       />
                     ) : (
                       <Input

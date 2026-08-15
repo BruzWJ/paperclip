@@ -1,5 +1,5 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { CompanyAvatar } from "@/features/companies/CompanyAvatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AccessibleDropzone } from "@/components/patterns/AccessibleDropzone";
@@ -120,12 +120,12 @@ function CompanySettings() {
         <CardContent>
           <div className="flex items-start gap-4">
             <div className="shrink-0">
-              <Avatar size="lg">
-                <AvatarImage src={logoUrl || undefined} alt={`${companyName || selectedCompany.name} logo`} />
-                <AvatarFallback>
-                  {(companyName || selectedCompany.name).trim().charAt(0).toUpperCase() || "?"}
-                </AvatarFallback>
-              </Avatar>
+              <CompanyAvatar
+                companyName={companyName || selectedCompany.name}
+                logoUrl={logoUrl || null}
+                brandColor={brandColor || null}
+                size="lg"
+              />
             </div>
             <div className="flex-1 space-y-3">
               <LabeledFormField label="Logo" description="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image.">
@@ -264,8 +264,8 @@ function CompanySettings() {
         <CardContent>
           <p className="text-sm text-muted-foreground">
             Import and export have moved to dedicated pages accessible from the{" "}
-            <Link to="/$companyId/org" params={{ companyId }} className="underline hover:text-foreground">
-              Org Chart
+            <Link to="/$companyId/agents" params={{ companyId }} className="underline hover:text-foreground">
+              Agents
             </Link>{" "}
             header.
           </p>

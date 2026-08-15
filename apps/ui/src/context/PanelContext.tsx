@@ -4,8 +4,9 @@ const STORAGE_KEY = "paperclip:panel-visible";
 
 interface PanelContextValue {
   panelContent: ReactNode | null;
+  panelTitle: string;
   panelVisible: boolean;
-  openPanel: (content: ReactNode) => void;
+  openPanel: (content: ReactNode, options?: { title?: string }) => void;
   closePanel: () => void;
   setPanelVisible: (visible: boolean) => void;
   togglePanelVisible: () => void;
@@ -31,15 +32,15 @@ function writePreference(visible: boolean) {
 }
 
 export function PanelProvider({ children }: { children: ReactNode }) {
-  const [panelContent, setPanelContent] = useState<ReactNode | null>(null);
+  const [panel, setPanel] = useState<{ content: ReactNode; title: string } | null>(null);
   const [panelVisible, setPanelVisibleState] = useState(readPreference);
 
-  const openPanel = useCallback((content: ReactNode) => {
-    setPanelContent(content);
+  const openPanel = useCallback((content: ReactNode, options?: { title?: string }) => {
+    setPanel({ content, title: options?.title ?? "Properties" });
   }, []);
 
   const closePanel = useCallback(() => {
-    setPanelContent(null);
+    setPanel(null);
   }, []);
 
   const setPanelVisible = useCallback((visible: boolean) => {
@@ -57,7 +58,15 @@ export function PanelProvider({ children }: { children: ReactNode }) {
 
   return (
     <PanelContext.Provider
-      value={{ panelContent, panelVisible, openPanel, closePanel, setPanelVisible, togglePanelVisible }}
+      value={{
+        panelContent: panel?.content ?? null,
+        panelTitle: panel?.title ?? "Properties",
+        panelVisible,
+        openPanel,
+        closePanel,
+        setPanelVisible,
+        togglePanelVisible,
+      }}
     >
       {children}
     </PanelContext.Provider>

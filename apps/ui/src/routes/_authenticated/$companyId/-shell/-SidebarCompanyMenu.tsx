@@ -1,5 +1,5 @@
 // Empty collections render dedicated UI when data.length === 0.
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, GripVertical, LogOut, Plus, Settings, UserPlus } from "lucide-react";
 import { ListGroup, ListItem, ListItems, ListProvider, type DragEndEvent } from "@/components/kibo-ui/list";
@@ -8,7 +8,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
 import { authApi } from "@/api/auth";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { CompanyAvatar } from "@/features/companies/CompanyAvatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,12 +25,14 @@ import type { ControlledOpenStateProps } from "@/lib/presentation-contracts";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "@/lib/utils";
 import { useSidebar } from "@/context/SidebarContext";
 
-function CompanyAvatar({ company }: { company: Company }) {
+function CompanyMenuAvatar({ company }: { company: Company }) {
   return (
-    <Avatar size="sm">
-      <AvatarImage src={company.logoUrl ?? undefined} alt={`${company.name} logo`} />
-      <AvatarFallback>{company.name.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
-    </Avatar>
+    <CompanyAvatar
+      companyName={company.name}
+      logoUrl={company.logoUrl}
+      brandColor={company.brandColor}
+      size="sm"
+    />
   );
 }
 
@@ -48,7 +50,7 @@ function CompanyMenuItem({
       onSelect={() => onSelect(company)}
       className={cn("min-w-0 gap-2 py-2", isSelected && "bg-accent text-accent-foreground")}
     >
-      <CompanyAvatar company={company} />
+      <CompanyMenuAvatar company={company} />
       <span className="min-w-0 flex-1 truncate">{company.name}</span>
       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-(length:--text-nano) text-muted-foreground">
         {company.taskPrefix}
@@ -68,7 +70,7 @@ function ReorderableCompanyItem({ company, index }: { company: Company; index: n
         parent="companies"
         className="rounded-none border-0 bg-transparent px-2 py-2 shadow-none"
       >
-        <CompanyAvatar company={company} />
+        <CompanyMenuAvatar company={company} />
         <span className="min-w-0 flex-1 truncate">{company.name}</span>
         <GripVertical className="size-4 shrink-0 text-muted-foreground" aria-hidden="true"  data-icon="inline-start"/>
         <span className="sr-only">Reorder {company.name}</span>
@@ -84,12 +86,18 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Contr
   const queryClient = useQueryClient();
   const { companies, selectedCompany } = useCompany();
   const { openOnboarding } = useDialogActions();
-  const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
+  const { isMobile, setSidebarOpen, collapsed, peeking, setPeekHeld } = useSidebar();
   const rail = collapsed && !peeking;
   const navigate = useNavigate();
   const companyId = useCompanyRouteId();
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
+
+  useEffect(() => {
+    setPeekHeld(open);
+    return () => setPeekHeld(false);
+  }, [open, setPeekHeld]);
+
   const sidebarCompanies = useMemo(
     () => companies.filter((company) => company.status !== "archived"),
     [companies],
@@ -170,26 +178,16 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Contr
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          // `px-3` (not px-2) so the logo's left edge lines up with the nav icon
-          // column (nav px-3 + item px-3) and, crucially, stays put between states:
-          // the Button's default size adds `has-[>svg]:px-3`, so with the chevron
-          // svg present (expanded) it was already 12px but without it (rail) it fell
-          // back to 8px — a 4px horizontal jump on collapse (PAP-10676).
-          className="h-9 flex-1 justify-start gap-2 px-3 text-left"
+          className={cn(
+            rail ? "size-8 flex-none justify-center p-1" : "h-9 flex-1 justify-start gap-2 px-3 text-left",
+          )}
           aria-label={
             selectedCompany ? `Open ${selectedCompany.name} company switcher` : "Open company switcher"
           }
+          title={rail ? (selectedCompany?.name ?? "Select company") : undefined}
         >
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            {selectedCompany ? (
-              <Avatar size="sm">
-                <AvatarImage
-                  src={selectedCompany.logoUrl ?? undefined}
-                  alt={`${selectedCompany.name} logo`}
-                />
-                <AvatarFallback>{selectedCompany.name.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
-              </Avatar>
-            ) : null}
+          <span className={cn("flex min-w-0 flex-1 items-center", rail ? "justify-center gap-0" : "gap-2")}>
+            {selectedCompany ? <CompanyMenuAvatar company={selectedCompany} /> : null}
             <span
               className={cn("truncate text-sm font-bold text-foreground", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}
             >

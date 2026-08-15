@@ -8,7 +8,6 @@ import {
   History,
   Search,
   SquarePen,
-  Network,
   Repeat,
   Package,
   Settings,
@@ -23,7 +22,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import { SidebarSection } from "./-SidebarSection";
+import { SIDEBAR_GROUP_LAYOUT_CLASSNAME, SidebarSection } from "./-SidebarSection";
 import { SidebarNavItem } from "./-SidebarNavItem";
 import { SidebarAgents } from "./-SidebarAgents";
 import { SidebarStarredProjects } from "./-SidebarStarredProjects";
@@ -35,7 +34,7 @@ import { attentionBadgeCount } from "@/lib/attention";
 import { queryKeys } from "@/lib/queryKeys";
 import { useInboxBadge } from "@/hooks/useInboxBadge";
 import { Button } from "@/components/ui/button";
-import { SIDEBAR_RAIL_HIDDEN_LABEL } from "@/lib/utils";
+import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "@/lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarCompanyMenu } from "./-SidebarCompanyMenu";
@@ -95,7 +94,7 @@ export function Sidebar() {
 
   return (
     <>
-      <SidebarHeader className="h-12 shrink-0 flex-row items-center">
+      <SidebarHeader className={cn("h-12 shrink-0 flex-row items-center", rail && "justify-center p-4 py-2")}>
         <SidebarCompanyMenu />
         {/* In the collapsed rail the search/toggle controls don't fit beside the
             logo — keeping them would overflow the 64px rail and squeeze the logo
@@ -159,7 +158,7 @@ export function Sidebar() {
 
       <SidebarContent>
         <nav className="flex flex-col gap-4 px-1">
-          <SidebarGroup className="p-0">
+          <SidebarGroup className={SIDEBAR_GROUP_LAYOUT_CLASSNAME}>
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>{newTaskButton}</SidebarMenuItem>
@@ -247,15 +246,17 @@ export function Sidebar() {
             <PluginSlotOutlet
               slotTypes={["sidebar"]}
               context={pluginContext}
-              className="flex flex-col gap-0.5"
+              className={cn("flex flex-col gap-0.5", rail && "hidden")}
               itemClassName="text-(length:--text-compact) font-medium"
+              errorClassName={rail ? "hidden" : undefined}
               missingBehavior="placeholder"
             />
             <PluginLauncherOutlet
               placementZones={["sidebar"]}
               context={pluginContext}
-              className="flex flex-col gap-0.5"
+              className={cn("flex flex-col gap-0.5", rail && "hidden")}
               itemClassName="text-(length:--text-compact) font-medium"
+              errorClassName={rail ? "hidden" : undefined}
             />
           </SidebarSection>
 
@@ -263,11 +264,6 @@ export function Sidebar() {
 
           <SidebarSection label="Company" collapsible={{ open: companyOpen, onOpenChange: setCompanyOpen }}>
             <SidebarMenu>
-              <SidebarNavItem
-                linkOptions={{ to: "/$companyId/org", params: { companyId } }}
-                label="Org"
-                icon={Network}
-              />
               <SidebarNavItem
                 linkOptions={{
                   to: "/$companyId/timeline",
@@ -306,8 +302,9 @@ export function Sidebar() {
           <PluginSlotOutlet
             slotTypes={["sidebarPanel"]}
             context={pluginContext}
-            className="flex flex-col gap-3"
+            className={cn("flex flex-col gap-3", rail && "hidden")}
             itemClassName="rounded-lg border border-border p-3"
+            errorClassName={rail ? "hidden" : undefined}
             missingBehavior="placeholder"
           />
         </nav>

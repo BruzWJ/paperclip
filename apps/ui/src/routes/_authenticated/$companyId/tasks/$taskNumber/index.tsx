@@ -1,4 +1,3 @@
-// Empty collections render dedicated UI when data.length === 0.
 import { parseTaskNumber } from "@paperclipai/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, getRouteApi, notFound, useLocation, useNavigate } from "@tanstack/react-router";
@@ -21,11 +20,12 @@ import { getTaskDetailQueryOptions, seedTaskDetailCache } from "@/lib/taskDetail
 
 import { TaskDetailHeader } from "./-TaskDetailHeader";
 import { TaskDetailContent } from "./-TaskDetailContent";
+import { TaskDetailExtensionToolbar, TaskDetailExtensionViews } from "./-TaskDetailExtensions";
+import { TaskDetailInspectorSheet } from "./-TaskInspector";
 import { TaskDetailLoadingState } from "./-TaskDetailLoading";
 import { TaskDetailPageProvider } from "./-TaskDetailPageContext";
 import { TaskDetailStatusPanels } from "./-TaskDetailStatusPanels";
-import { TaskDetailWorkProducts } from "./-TaskDetailWorkProducts";
-import { TaskDetailPropertiesSheet } from "./-TaskDetailWorkProducts";
+import { TaskDocumentWorkspaceDialog } from "./-TaskDocumentWorkspaceDialog";
 import { TaskTreeControlDialog } from "./-TaskTreeControlDialog";
 import { taskDetailSourceRouteOptions } from "./-task-detail-model";
 import { useTaskDetailActionMutations, useTaskDetailTreeMutation } from "./-useTaskDetailActionMutations";
@@ -35,10 +35,6 @@ import { useTaskDetailCacheActions, useTaskDetailEffects, useTaskDetailState } f
 import { useTaskDetailInteractions } from "./-useTaskDetailInteractions";
 import { useTaskDetailDerivedData, useTaskDetailQueries } from "./-useTaskDetailQueries";
 import { useTaskDetailTreeDerived } from "./-useTaskDetailTreeDerived";
-// Status updates announce through role="status" live regions.
-
-export { shouldScrollTaskDetailToTopOnNavigation } from "./-task-detail-model";
-export type { AttributionActor } from "./-TaskAttribution";
 
 export const Route = createFileRoute("/_authenticated/$companyId/tasks/$taskNumber/")({
   loader: async ({ abortController, context, params }) => {
@@ -167,26 +163,6 @@ export function useTaskDetailController() {
   });
 
   const isFromInbox = resolvedTaskDetailState?.taskDetailSource === "inbox";
-  const effectState = useTaskDetailEffects({
-    ...queryData,
-    ...derivedData,
-    ...coreMutations,
-    ...actionMutations,
-    ...localState,
-    companyId,
-    taskId,
-    task,
-    breadcrumbTaskIdentifier: task?.identifier ?? routeTask.identifier,
-    taskDetailSource,
-    setBreadcrumbs,
-    navigationType,
-    openPanel,
-    closePanel,
-    navigateToTaskSource,
-    locationHash: location.hash,
-    detailTab: localState.detailTab,
-  });
-
   const interactions = useTaskDetailInteractions({
     ...queryData,
     ...derivedData,
@@ -209,8 +185,31 @@ export function useTaskDetailController() {
     ...coreMutations,
     ...localState,
     task,
-    attachmentListLength: interactions.attachmentList.length,
-    executeTreeControl,
+  });
+
+  const effectState = useTaskDetailEffects({
+    ...queryData,
+    ...derivedData,
+    ...coreMutations,
+    ...actionMutations,
+    ...localState,
+    ...interactions,
+    ...treeDerived,
+    companyId,
+    taskId,
+    task,
+    breadcrumbTaskIdentifier: task?.identifier ?? routeTask.identifier,
+    taskDetailSource,
+    taskLinkState: resolvedTaskDetailState ?? location.state,
+    setBreadcrumbs,
+    navigationType,
+    openPanel,
+    closePanel,
+    setPanelVisible,
+    navigateToTaskSource,
+    locationHash: location.hash,
+    detailTab: localState.detailTab,
+    isMobile,
   });
 
   if (isLoading) return { kind: "loading" as const, taskHeaderSeed };
@@ -246,7 +245,6 @@ export function useTaskDetailController() {
 export type TaskDetailController = Extract<ReturnType<typeof useTaskDetailController>, { kind: "ready" }>;
 
 function TaskDetail() {
-  void 'role="status"';
   const controller = useTaskDetailController();
 
   if (controller.kind === "loading") {
@@ -264,16 +262,19 @@ function TaskDetail() {
   return (
     <TaskDetailPageProvider value={controller}>
       <>
-        <TaskDetailStatusPanels />
-        <TaskDetailHeader />
-        <TaskDetailWorkProducts />
+        <div className="space-y-6">
+          <TaskDetailStatusPanels />
+          <TaskDetailHeader />
+          <TaskDetailExtensionToolbar />
+          <TaskDetailContent />
+          <TaskDetailExtensionViews />
+        </div>
         <ImageGalleryModal
           items={controller.mediaGalleryItems}
           initialIndex={controller.galleryIndex}
           open={controller.galleryOpen}
           onOpenChange={controller.setGalleryOpen}
         />
-        <TaskDetailContent />
         <TaskTreeControlDialog />
         <FormDialog
           open={controller.reopenDialogOpen}
@@ -308,7 +309,8 @@ function TaskDetail() {
             />
           </LabeledFormField>
         </FormDialog>
-        <TaskDetailPropertiesSheet />
+        <TaskDetailInspectorSheet />
+        <TaskDocumentWorkspaceDialog />
       </>
     </TaskDetailPageProvider>
   );

@@ -122,7 +122,7 @@ export function SidebarStarredProjects() {
               asChild
               isActive={isActive}
               tooltip={rail ? project.name : undefined}
-              className={cn("min-w-0 flex-1", !rail && "pl-6 pr-8")}
+              className={cn("min-w-0", rail ? "flex-none" : "flex-1 pl-6 pr-8")}
             >
               <Link
                 to="/$companyId/projects/$projectId/tasks"
@@ -132,12 +132,17 @@ export function SidebarStarredProjects() {
                   if (isMobile) setSidebarOpen(false);
                 }}
               >
-                <Avatar size="sm" style={{ backgroundColor: project.color ?? undefined }} aria-hidden="true">
+                <Avatar
+                  size={rail ? "default" : "sm"}
+                  className={rail ? "size-4" : undefined}
+                  style={{ backgroundColor: project.color ?? undefined }}
+                  aria-hidden="true"
+                >
                   <AvatarFallback className={project.color ? "bg-transparent" : undefined}>
-                    <ProjectIcon />
+                    <ProjectIcon className={rail ? "size-3.5" : undefined} />
                   </AvatarFallback>
                 </Avatar>
-                <span className="flex-1 truncate">{project.name}</span>
+                <span className={rail ? "sr-only" : "flex-1 truncate"}>{project.name}</span>
                 {!rail && project.pauseReason === "budget" ? (
                   <DomainStatus status="hard_stop" title="Project paused by budget">
                     <span className="sr-only">Project paused by budget</span>

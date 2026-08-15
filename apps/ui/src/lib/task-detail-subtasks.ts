@@ -24,13 +24,12 @@ export type TaskSiblingNavigation = {
   totalCount: number;
 };
 
-export function shouldRenderRichSubTasksSection(childTasksLoading: boolean, childTaskCount: number): boolean {
-  return childTasksLoading || childTaskCount > 0;
-}
-
 const MIN_CHILD_TASKS_FOR_PROGRESS_SUMMARY = 2;
 
-export function shouldRenderSubTaskProgressSummary(enabled: boolean | undefined, childTaskCount: number): boolean {
+export function shouldRenderSubTaskProgressSummary(
+  enabled: boolean | undefined,
+  childTaskCount: number,
+): boolean {
   return enabled === true && childTaskCount >= MIN_CHILD_TASKS_FOR_PROGRESS_SUMMARY;
 }
 
@@ -45,7 +44,9 @@ export function buildSubTaskProgressSummary(tasks: Task[]): SubTaskProgressSumma
   const nextTask = orderedTasks.find((task) => isActionableStatus(task.boardPresentationStatus)) ?? null;
   const remainingTasks = orderedTasks.filter((task) => !isTerminalStatus(task.boardPresentationStatus));
   const blockedTask =
-    nextTask === null && remainingTasks.length > 0 && remainingTasks.every((task) => task.boardPresentationStatus === "blocked")
+    nextTask === null &&
+    remainingTasks.length > 0 &&
+    remainingTasks.every((task) => task.boardPresentationStatus === "blocked")
       ? remainingTasks[0]
       : null;
 

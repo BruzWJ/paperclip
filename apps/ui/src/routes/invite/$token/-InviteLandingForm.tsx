@@ -1,6 +1,5 @@
 import { accessApi } from "@/api/access";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldError } from "@/components/ui/field";
@@ -8,6 +7,7 @@ import { LabeledFormField } from "@/components/patterns/FormPatterns";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { CompanyAvatar } from "@/features/companies/CompanyAvatar";
 import { formatDate } from "@/lib/utils";
 import type { AuthFeedback, AuthMode } from "@/routes/invite/$token/-invite-auth";
 import type { Dispatch, SetStateAction } from "react";
@@ -17,6 +17,7 @@ export function InviteLandingForm({
   invite,
   companyDisplayName,
   companyLogoUrl,
+  companyBrandColor,
   invitedByUserName,
   requestedUserRole,
   sessionLabel,
@@ -46,6 +47,7 @@ export function InviteLandingForm({
   invite: Invite;
   companyDisplayName: string;
   companyLogoUrl: string | null;
+  companyBrandColor: string | null;
   invitedByUserName: string | null;
   requestedUserRole: string | null;
   sessionLabel: string;
@@ -79,10 +81,13 @@ export function InviteLandingForm({
         <div className="grid gap-6 lg:grid-cols-(--gtc-36)">
           <Card>
             <CardHeader className="flex-row items-start gap-4">
-              <Avatar size="lg">
-                <AvatarImage src={companyLogoUrl ?? undefined} alt={`${companyDisplayName} logo`} />
-                <AvatarFallback>{companyDisplayName.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
-              </Avatar>
+              <CompanyAvatar
+                companyName={companyDisplayName}
+                logoUrl={companyLogoUrl}
+                brandColor={companyBrandColor}
+                logoFit="contain"
+                size="lg"
+              />
               <div className="min-w-0 space-y-2">
                 <CardDescription>You&apos;ve been invited to join Paperclip</CardDescription>
                 <CardTitle className="text-2xl">

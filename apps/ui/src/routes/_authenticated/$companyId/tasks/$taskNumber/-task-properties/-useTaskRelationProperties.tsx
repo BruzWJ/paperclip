@@ -14,7 +14,6 @@ const TASK_PROPERTY_RELATION_PREVIEW_COUNT = 5;
 
 interface UseTaskRelationPropertiesOptions {
   task: Task;
-  childTasks: Task[];
   inline?: boolean;
   onUpdate: (data: Record<string, unknown>) => void;
   state: TaskPropertiesState;
@@ -23,7 +22,6 @@ interface UseTaskRelationPropertiesOptions {
 
 export function useTaskRelationProperties({
   task,
-  childTasks,
   inline,
   onUpdate,
   state,
@@ -44,7 +42,6 @@ export function useTaskRelationProperties({
     setBlockedBySearch,
     blockedByExpanded,
     blockingExpanded,
-    subTasksExpanded,
     relatedTasksExpanded,
     parentSearch,
     setParentSearch,
@@ -56,10 +53,6 @@ export function useTaskRelationProperties({
     ? blockedByRelations
     : blockedByRelations.slice(0, TASK_PROPERTY_RELATION_PREVIEW_COUNT);
   const hiddenBlockedByCount = blockedByRelations.length - visibleBlockedByRelations.length;
-  const visibleChildTasks = subTasksExpanded
-    ? childTasks
-    : childTasks.slice(0, TASK_PROPERTY_RELATION_PREVIEW_COUNT);
-  const hiddenChildTaskCount = childTasks.length - visibleChildTasks.length;
   const blockingTasks = task.blocks ?? [];
   const visibleBlockingTasks = blockingExpanded
     ? blockingTasks
@@ -127,7 +120,7 @@ export function useTaskRelationProperties({
         onClick={(event) => event.stopPropagation()}
         aria-label="Open parent task"
       >
-        <ArrowUpRight  data-icon="inline-end"/>
+        <ArrowUpRight data-icon="inline-end" />
       </TaskLinkQuicklook>
     </Button>
   ) : undefined;
@@ -255,7 +248,11 @@ export function useTaskRelationProperties({
                 {candidate.title}
               </span>
               {selected && (
-                <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true"  data-icon="inline-start"/>
+                <Check
+                  className="ml-auto h-3.5 w-3.5 shrink-0 text-foreground"
+                  aria-hidden="true"
+                  data-icon="inline-start"
+                />
               )}
             </Button>
           );
@@ -276,7 +273,7 @@ export function useTaskRelationProperties({
       className={inline ? "min-h-11" : undefined}
       onClick={onClick}
     >
-      <Plus className="h-3 w-3"  data-icon="inline-start"/>
+      <Plus className="h-3 w-3" data-icon="inline-start" />
       Add blocker
     </Button>
   );
@@ -284,8 +281,6 @@ export function useTaskRelationProperties({
   return {
     visibleBlockedByRelations,
     hiddenBlockedByCount,
-    visibleChildTasks,
-    hiddenChildTaskCount,
     blockingTasks,
     visibleBlockingTasks,
     hiddenBlockingTaskCount,

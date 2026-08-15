@@ -10,7 +10,6 @@ import { HexColorPicker } from "@/components/patterns/BrandColorPicker";
 import { cn } from "@/lib/utils";
 import type { useTaskPropertiesData } from "./-useTaskPropertiesData";
 import type { useTaskPropertiesState } from "./-useTaskPropertiesState";
-// Status updates announce through role="status" live regions.
 
 export function useTaskLabelProperties({
   task,
@@ -23,7 +22,6 @@ export function useTaskLabelProperties({
   state: ReturnType<typeof useTaskPropertiesState>;
   data: ReturnType<typeof useTaskPropertiesData>;
 }) {
-  void 'role="status"';
   const selectedTaskLabels = useMemo(() => {
     const selectedIds = task.labelIds ?? [];
     if (selectedIds.length === 0) return task.labels ?? [];
@@ -72,7 +70,7 @@ export function useTaskLabelProperties({
         aria-label="Add label"
         title="Add label"
       >
-        <Plus className="h-3 w-3"  data-icon="inline-start"/>
+        <Plus className="h-3 w-3" data-icon="inline-start" />
         Add label
       </Button>
     ) : undefined;
@@ -109,7 +107,13 @@ export function useTaskLabelProperties({
                   style={{ backgroundColor: label.color }}
                 />
                 <span className="flex-1 truncate text-left">{label.name}</span>
-                {selected && <Check className="h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true"  data-icon="inline-start"/>}
+                {selected && (
+                  <Check
+                    className="h-3.5 w-3.5 shrink-0 text-foreground"
+                    aria-hidden="true"
+                    data-icon="inline-start"
+                  />
+                )}
               </Button>
             );
           })}
@@ -143,7 +147,7 @@ export function useTaskLabelProperties({
             })
           }
         >
-          <Plus className="h-3 w-3"  data-icon="inline-start"/>
+          <Plus className="h-3 w-3" data-icon="inline-start" />
           {data.createLabel.isPending ? "Creating…" : "Create label"}
         </Button>
       </div>

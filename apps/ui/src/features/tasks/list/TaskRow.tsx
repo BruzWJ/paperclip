@@ -124,7 +124,7 @@ export function TaskRow({
         // instantly. A fade (transition-colors) leaves a trail of fading bands
         // when scrubbing the mouse fast across the list.
         "group relative flex-nowrap items-start text-inherit sm:items-center",
-        !hideDivider && "border-b border-border last:border-b-0",
+        !hideDivider && "border-border",
         selected ? "hover:bg-transparent" : "hover:bg-accent/50",
         checklistCurrentStep ? "bg-primary/5" : null,
         className,
@@ -191,42 +191,42 @@ export function TaskRow({
           ) : null}
           {treeGuides > 0
             ? Array.from({ length: treeGuides }, (_, level) => {
-                // The innermost guide lands on THIS row's own chevron column; if
-                // the row has a chevron, break the line around it so it isn't
-                // crossed out.
-                const gapForChevron = chevronInGuide && level === treeGuides - 1;
-                return (
-                  // Tree guide: occupies the same flex slot as the parent's
-                  // chevron column so the line lands under the parent's status
-                  // column; stretched past the row padding so consecutive rows
-                  // read as one continuous line.
-                  <span
-                    key={`guide-${level}`}
-                    aria-hidden="true"
-                    className="relative hidden w-4 shrink-0 self-stretch sm:block"
-                  >
-                    {/* The connector drops from under the ancestor's STATUS icon,
+              // The innermost guide lands on THIS row's own chevron column; if
+              // the row has a chevron, break the line around it so it isn't
+              // crossed out.
+              const gapForChevron = chevronInGuide && level === treeGuides - 1;
+              return (
+                // Tree guide: occupies the same flex slot as the parent's
+                // chevron column so the line lands under the parent's status
+                // column; stretched past the row padding so consecutive rows
+                // read as one continuous line.
+                <span
+                  key={`guide-${level}`}
+                  aria-hidden="true"
+                  className="relative hidden w-4 shrink-0 self-stretch sm:block"
+                >
+                  {/* The connector drops from under the ancestor's STATUS icon,
                     not its chevron: the status column sits one level (w-4 slot
                     + gap-2 = 2rem) right of this guide slot's left edge.
                     bg-background underlay: dark-mode --border is translucent,
                     so overlapping row segments would stack brighter without
                     an opaque base. */}
-                    <span className="absolute -inset-y-3 left-8 w-px bg-background">
-                      {gapForChevron ? (
-                        // Two border segments centering a 14px (h-3.5) transparent
-                        // gap for the row's own chevron.
-                        <span className="absolute inset-0 flex flex-col">
-                          <span className="flex-1 bg-border" />
-                          <span className="h-3.5 shrink-0" />
-                          <span className="flex-1 bg-border" />
-                        </span>
-                      ) : (
-                        <span className="absolute inset-0 bg-border" />
-                      )}
-                    </span>
+                  <span className="absolute -inset-y-3 left-8 w-px bg-background">
+                    {gapForChevron ? (
+                      // Two border segments centering a 14px (h-3.5) transparent
+                      // gap for the row's own chevron.
+                      <span className="absolute inset-0 flex flex-col">
+                        <span className="flex-1 bg-border" />
+                        <span className="h-3.5 shrink-0" />
+                        <span className="flex-1 bg-border" />
+                      </span>
+                    ) : (
+                      <span className="absolute inset-0 bg-border" />
+                    )}
                   </span>
-                );
-              })
+                </span>
+              );
+            })
             : null}
           {desktopLeadingSpacer ? <span className="hidden w-3.5 shrink-0 sm:block" /> : null}
           {desktopMetaLeading ?? (

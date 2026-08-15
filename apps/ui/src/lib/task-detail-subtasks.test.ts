@@ -5,7 +5,6 @@ import type { Task } from "@paperclipai/shared";
 import {
   buildTaskSiblingNavigation,
   buildSubTaskProgressSummary,
-  shouldRenderRichSubTasksSection,
   shouldRenderSubTaskProgressSummary,
 } from "./task-detail-subtasks";
 
@@ -39,20 +38,6 @@ function siblingTask(
     ...overrides,
   } as Task;
 }
-
-describe("shouldRenderRichSubTasksSection", () => {
-  it("shows the rich sub-tasks section while child tasks are loading", () => {
-    expect(shouldRenderRichSubTasksSection(true, 0)).toBe(true);
-  });
-
-  it("shows the rich sub-tasks section when at least one child task exists", () => {
-    expect(shouldRenderRichSubTasksSection(false, 1)).toBe(true);
-  });
-
-  it("hides the rich sub-tasks section when there are no child tasks", () => {
-    expect(shouldRenderRichSubTasksSection(false, 0)).toBe(false);
-  });
-});
 
 describe("shouldRenderSubTaskProgressSummary", () => {
   it("requires both the opt-in flag and multiple child tasks", () => {
@@ -136,13 +121,20 @@ describe("buildTaskSiblingNavigation", () => {
   });
 
   it("hides navigation for root tasks without children or hidden current tasks", () => {
-    expect(buildTaskSiblingNavigation(siblingTask("1", "2026-04-01T00:00:00.000Z", [], { parentId: null }), []))
-      .toBeNull();
-    expect(buildTaskSiblingNavigation(siblingTask("1", "2026-04-01T00:00:00.000Z", [], { parentId: null }), [
-      siblingTask("2", "2026-04-02T00:00:00.000Z", [], { parentId: null }),
-    ])).toBeNull();
-    expect(buildTaskSiblingNavigation(siblingTask("1", "2026-04-01T00:00:00.000Z", [], { hiddenAt: new Date() }), []))
-      .toBeNull();
+    expect(
+      buildTaskSiblingNavigation(siblingTask("1", "2026-04-01T00:00:00.000Z", [], { parentId: null }), []),
+    ).toBeNull();
+    expect(
+      buildTaskSiblingNavigation(siblingTask("1", "2026-04-01T00:00:00.000Z", [], { parentId: null }), [
+        siblingTask("2", "2026-04-02T00:00:00.000Z", [], { parentId: null }),
+      ]),
+    ).toBeNull();
+    expect(
+      buildTaskSiblingNavigation(
+        siblingTask("1", "2026-04-01T00:00:00.000Z", [], { hiddenAt: new Date() }),
+        [],
+      ),
+    ).toBeNull();
   });
 
   it("hides navigation when the current task is the only visible child", () => {
@@ -158,11 +150,7 @@ describe("buildTaskSiblingNavigation", () => {
   it("returns only next for the first sibling and only previous for the last sibling", () => {
     const first = siblingTask("1", "2026-04-01T00:00:00.000Z");
     const last = siblingTask("3", "2026-04-03T00:00:00.000Z");
-    const siblings = [
-      siblingTask("2", "2026-04-02T00:00:00.000Z"),
-      last,
-      first,
-    ];
+    const siblings = [siblingTask("2", "2026-04-02T00:00:00.000Z"), last, first];
 
     expect(buildTaskSiblingNavigation(first, siblings)).toMatchObject({
       previous: null,
@@ -176,10 +164,14 @@ describe("buildTaskSiblingNavigation", () => {
 
   it("uses the first direct child as next when a root task has no sibling next", () => {
     const current = siblingTask("1", "2026-04-01T00:00:00.000Z", [], { parentId: null });
-    const navigation = buildTaskSiblingNavigation(current, [], [
-      siblingTask("3", "2026-04-03T00:00:00.000Z", ["2"], { parentId: "1" }),
-      siblingTask("2", "2026-04-02T00:00:00.000Z", [], { parentId: "1" }),
-    ]);
+    const navigation = buildTaskSiblingNavigation(
+      current,
+      [],
+      [
+        siblingTask("3", "2026-04-03T00:00:00.000Z", ["2"], { parentId: "1" }),
+        siblingTask("2", "2026-04-02T00:00:00.000Z", [], { parentId: "1" }),
+      ],
+    );
 
     expect(navigation).toMatchObject({
       previous: null,
@@ -189,13 +181,14 @@ describe("buildTaskSiblingNavigation", () => {
 
   it("uses the first direct child as next when the current sibling is last", () => {
     const current = siblingTask("2", "2026-04-02T00:00:00.000Z");
-    const navigation = buildTaskSiblingNavigation(current, [
-      siblingTask("1", "2026-04-01T00:00:00.000Z"),
+    const navigation = buildTaskSiblingNavigation(
       current,
-    ], [
-      siblingTask("4", "2026-04-04T00:00:00.000Z", ["3"], { parentId: "2" }),
-      siblingTask("3", "2026-04-03T00:00:00.000Z", [], { parentId: "2" }),
-    ]);
+      [siblingTask("1", "2026-04-01T00:00:00.000Z"), current],
+      [
+        siblingTask("4", "2026-04-04T00:00:00.000Z", ["3"], { parentId: "2" }),
+        siblingTask("3", "2026-04-03T00:00:00.000Z", [], { parentId: "2" }),
+      ],
+    );
 
     expect(navigation).toMatchObject({
       previous: { id: "1" },

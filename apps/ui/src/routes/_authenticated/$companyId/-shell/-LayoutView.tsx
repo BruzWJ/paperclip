@@ -43,8 +43,14 @@ import { SidebarShell } from "./-SidebarShell";
 import { StandaloneBrowserControls } from "./-StandaloneBrowserControls";
 
 const NewTaskDialog = lazyPage(() => import("../../../../features/tasks/new-task"), "NewTaskDialog");
-const NewProjectDialog = lazyPage(() => import("../../../../features/projects/create/NewProjectDialog"), "NewProjectDialog");
-const NewGoalDialog = lazyPage(() => import("../../../../features/goals/create/NewGoalDialog"), "NewGoalDialog");
+const NewProjectDialog = lazyPage(
+  () => import("../../../../features/projects/create/NewProjectDialog"),
+  "NewProjectDialog",
+);
+const NewGoalDialog = lazyPage(
+  () => import("../../../../features/goals/create/NewGoalDialog"),
+  "NewGoalDialog",
+);
 
 export type LayoutViewProps = {
   keyboardShortcutsEnabled: boolean;
@@ -176,10 +182,12 @@ export function LayoutView({
   onPanelFocusCapture,
   onPanelBlurCapture,
 }: LayoutViewProps) {
-  const { panelContent, panelVisible, setPanelVisible } = usePanel();
+  const { panelContent, panelTitle, panelVisible, setPanelVisible } = usePanel();
   const { newAgentOpen, closeNewAgent, openNewTask } = useDialog();
   const navigate = useNavigate();
-  const showPropertiesPanel = !isMobile && Boolean(panelContent) && panelVisible;
+  const showPanel = !isMobile && Boolean(panelContent) && panelVisible;
+  const panelHeadingId = "paperclip-context-panel-title";
+  const closePanelLabel = `Close ${panelTitle.charAt(0).toLowerCase()}${panelTitle.slice(1)} panel`;
 
   return (
     <GeneralSettingsProvider value={{ keyboardShortcutsEnabled }}>
@@ -228,7 +236,7 @@ export function LayoutView({
             <div
               className={cn(
                 isMobile &&
-                "sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85",
+                  "sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85",
               )}
             >
               <StandaloneBrowserControls mobile={isMobile} />
@@ -281,21 +289,25 @@ export function LayoutView({
                   )}
                 </main>
               </ResizablePanel>
-              {showPropertiesPanel ? (
+              {showPanel ? (
                 <>
                   <ResizableHandle />
                   <ResizablePanel defaultSize="25" minSize={240} maxSize={520}>
-                    <Card className="hidden h-full min-h-0 gap-0 rounded-none border-0 py-0 md:flex">
+                    <Card
+                      role="complementary"
+                      aria-labelledby={panelHeadingId}
+                      className="hidden h-full min-h-0 gap-0 rounded-none border-0 py-0 md:flex"
+                    >
                       <CardHeader className="border-b">
-                        <CardTitle>Properties</CardTitle>
+                        <CardTitle id={panelHeadingId}>{panelTitle}</CardTitle>
                         <CardAction>
                           <Button
                             variant="ghost"
                             size="icon-xs"
                             onClick={() => setPanelVisible(false)}
-                            aria-label="Close properties panel"
+                            aria-label={closePanelLabel}
                           >
-                            <X  data-icon="inline-start"/>
+                            <X data-icon="inline-start" />
                           </Button>
                         </CardAction>
                       </CardHeader>
