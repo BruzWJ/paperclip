@@ -25,14 +25,14 @@ export type DocumentFrameHeaderRevisionActor = {
   imageUrl?: string | null;
 };
 
-export type DocumentFrameHeaderRevision = {
+type DocumentFrameHeaderRevision = {
   id: string;
   revisionNumber: number;
   createdAt: string | Date;
   actor: DocumentFrameHeaderRevisionActor;
 };
 
-export type DocumentFrameHeaderRevisionMenu = {
+type DocumentFrameHeaderRevisionMenu = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   loading: boolean;
@@ -41,12 +41,11 @@ export type DocumentFrameHeaderRevisionMenu = {
   currentRevisionId: string | null;
   displayedRevisionNumber: number;
   historicalPreview: boolean;
-  onSelectRevision: (revisionId: string, isCurrentRevision: boolean) => void;
+  onSelectRevision: (revisionId: string) => void;
 };
 
-export interface DocumentFrameHeaderProps {
+interface DocumentFrameHeaderProps {
   documentKey: string;
-  documentLabel?: string;
   folded: boolean;
   revisionMenu?: DocumentFrameHeaderRevisionMenu;
   updatedAt?: string | Date | null;
@@ -75,7 +74,6 @@ function RevisionActorAvatar({ actor }: { actor: DocumentFrameHeaderRevisionActo
 
 export function DocumentFrameHeader({
   documentKey,
-  documentLabel,
   folded,
   revisionMenu,
   updatedAt,
@@ -95,27 +93,19 @@ export function DocumentFrameHeader({
               size="icon-xs"
               aria-label={folded ? `Expand ${documentKey} document` : `Collapse ${documentKey} document`}
             >
-              {folded ? <ChevronRight className="h-3.5 w-3.5"  data-icon="inline-start"/> : <ChevronDown className="h-3.5 w-3.5"  data-icon="inline-start"/>}
+              {folded ? (
+                <ChevronRight className="h-3.5 w-3.5" data-icon="inline-start" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" data-icon="inline-start" />
+              )}
             </Button>
           </CollapsibleTrigger>
-          {documentLabel ? (
-            <>
-              <span className="truncate text-sm font-semibold text-foreground">{documentLabel}</span>
-              <Badge
-                variant="outline"
-                className="border-border font-mono text-(length:--text-nano) uppercase tracking-(--tracking-eyebrow) text-muted-foreground"
-              >
-                {documentKey}
-              </Badge>
-            </>
-          ) : (
-            <Badge
-              variant="outline"
-              className="border-border font-mono text-(length:--text-nano) uppercase tracking-(--tracking-eyebrow) text-muted-foreground"
-            >
-              {documentKey}
-            </Badge>
-          )}
+          <Badge
+            variant="outline"
+            className="border-border font-mono text-(length:--text-nano) uppercase tracking-(--tracking-eyebrow) text-muted-foreground"
+          >
+            {documentKey}
+          </Badge>
           {sourceTrustSlot}
           {revisionMenu ? (
             <DropdownMenu open={revisionMenu.open} onOpenChange={revisionMenu.onOpenChange}>
@@ -129,7 +119,7 @@ export function DocumentFrameHeader({
                   )}
                 >
                   rev {revisionMenu.displayedRevisionNumber}
-                  <ChevronDown className="h-3 w-3"  data-icon="inline-end"/>
+                  <ChevronDown className="h-3 w-3" data-icon="inline-end" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-72">
@@ -146,7 +136,7 @@ export function DocumentFrameHeader({
                         <DropdownMenuRadioItem
                           key={revision.id}
                           value={revision.id}
-                          onSelect={() => revisionMenu.onSelectRevision(revision.id, isCurrentRevision)}
+                          onSelect={() => revisionMenu.onSelectRevision(revision.id)}
                           className="items-start"
                         >
                           <div className="flex min-w-0 flex-col">

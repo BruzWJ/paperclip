@@ -1,9 +1,9 @@
-// Empty collections render dedicated UI when data.length === 0.
-import { Message, MessageContent, MessageResponse, MessageToolbar } from "@/components/ai-elements/message";
+import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
 import {
   mapCommentMetadataToSystemNoticeSections,
   systemNoticeLabelForTone,
+  type SystemNoticeMetadataRow,
 } from "@/lib/system-notice-comment";
 import { formatDateTime } from "@/lib/utils";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
@@ -11,17 +11,16 @@ import { Link } from "@tanstack/react-router";
 import { useContext } from "react";
 import type { TaskChatMessage } from "@/lib/task-chat-messages";
 
-import type { SystemNoticeMetadataRow } from "../../../../../../features/task-chat/SystemNotice";
-import { TaskChatMessageActionBar } from "./-TaskChatMessageActionBar";
+import { TaskChatMessageActionsMenu } from "./-TaskChatMessageActionsMenu";
 import {
   getThreadMessageCopyText,
   isTaskCommentMetadata,
   isTaskCommentPresentation,
   TaskChatCtx,
 } from "./-TaskChatShared";
-import { taskChatMessageCustom } from "./-TaskChatMessageUtils";
+import { commentDateLabel, taskChatMessageCustom } from "./-TaskChatMessageUtils";
 
-export interface SystemNoticeCommentRowProps {
+interface SystemNoticeCommentRowProps {
   message: TaskChatMessage;
   anchorId?: string;
 }
@@ -48,15 +47,7 @@ function MetadataValue({ row, companyId }: { row: SystemNoticeMetadataRow; compa
       <span>{row.name}</span>
     );
   }
-  return row.agentId ? (
-    <Link
-      to="/$companyId/agents/$agentId/runs/$runId"
-      params={{ companyId, agentId: row.agentId, runId: row.runId }}
-    >
-      {row.status ? `${row.status} · ` : ""}
-      {row.runId}
-    </Link>
-  ) : (
+  return (
     <span>
       {row.status ? `${row.status} · ` : ""}
       {row.runId}
@@ -64,50 +55,46 @@ function MetadataValue({ row, companyId }: { row: SystemNoticeMetadataRow; compa
   );
 }
 
-/** A system-authored transcript entry composed only from AI Elements surfaces. */
 export function SystemNoticeCommentRow({ message, anchorId }: SystemNoticeCommentRowProps) {
-  const { agentMap, onImageClick } = useContext(TaskChatCtx);
-  const routeCompanyId = useCompanyRouteId();
+  const { onImageClick } = useContext(TaskChatCtx);
+  const companyId = useCompanyRouteId();
   const custom = taskChatMessageCustom(message);
   const presentation = isTaskCommentPresentation(custom.presentation) ? custom.presentation : null;
   const metadata = isTaskCommentMetadata(custom.commentMetadata) ? custom.commentMetadata : null;
   const tone = presentation?.tone ?? "neutral";
   const label = systemNoticeLabelForTone(tone, presentation?.title);
   const body = getThreadMessageCopyText(message);
-  const runAgentId = typeof custom.runAgentId === "string" ? custom.runAgentId : null;
-  const runId = typeof custom.runId === "string" ? custom.runId : null;
-  const runAgent = runAgentId ? agentMap?.get(runAgentId) : null;
-  const companyId = routeCompanyId;
-  const sections = mapCommentMetadataToSystemNoticeSections(metadata, { runAgentId });
-  const sourceLabel = runAgent?.name ?? "Paperclip";
+  const sections = mapCommentMetadataToSystemNoticeSections(metadata);
 
   return (
-    <Message from="assistant" role="status" aria-label={label}>
+    <Message from="assistant" role="status" aria-label={label} className="max-w-full gap-1.5">
       <MessageContent
         onClick={(event) => {
           const target = event.target;
           if (target instanceof HTMLImageElement && target.src) onImageClick?.(target.src);
         }}
       >
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span>{label}</span>
-          <span aria-hidden="true">·</span>
-          {runAgent && runId ? (
-            <Link
-              to="/$companyId/agents/$agentId/runs/$runId"
-              params={{ companyId, agentId: runAgent.id, runId }}
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{label}</span>
+            <span aria-hidden="true">·</span>
+            <span>Paperclip</span>
+            <span aria-hidden="true">·</span>
+            <time
+              dateTime={message.createdAt.toISOString()}
+              title={formatDateTime(message.createdAt)}
+              className="text-(length:--text-micro)"
             >
-              {sourceLabel}
-            </Link>
-          ) : (
-            <span>{sourceLabel}</span>
-          )}
-          {message.createdAt ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <span>{formatDateTime(message.createdAt)}</span>
-            </>
-          ) : null}
+              {commentDateLabel(message.createdAt)}
+            </time>
+          </div>
+          <TaskChatMessageActionsMenu
+            message={message}
+            authorLabel="Paperclip"
+            anchorId={anchorId}
+            copyLabel="Copy system notice"
+            linkLabel="Copy link to system notice"
+          />
         </div>
         <MessageResponse>{body}</MessageResponse>
 
@@ -131,15 +118,6 @@ export function SystemNoticeCommentRow({ message, anchorId }: SystemNoticeCommen
           </Task>
         ) : null}
       </MessageContent>
-      <MessageToolbar>
-        <TaskChatMessageActionBar
-          message={message}
-          authorLabel={sourceLabel}
-          anchorId={anchorId}
-          copyLabel="Copy system notice"
-          linkLabel="Copy link to system notice"
-        />
-      </MessageToolbar>
     </Message>
   );
 }

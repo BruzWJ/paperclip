@@ -2,8 +2,6 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { QueryKey } from "@tanstack/react-query";
 import type { DocumentRevision } from "@paperclipai/shared";
-import { tasksApi } from "@/api/tasks";
-import { queryKeys } from "@/lib/queryKeys";
 import { relativeTime } from "@/lib/utils";
 import { DiffCodeBlock } from "@/components/patterns/DiffCodeBlock";
 import { RevisionCombobox } from "@/components/patterns/RevisionCombobox";
@@ -17,7 +15,6 @@ function getRevisionLabel(revision: DocumentRevision) {
 }
 
 export function DocumentDiffModal({
-  taskId,
   documentKey,
   latestRevisionNumber,
   open,
@@ -25,18 +22,16 @@ export function DocumentDiffModal({
   revisionsQueryKey,
   revisionsQueryFn,
 }: {
-  taskId?: string;
   documentKey: string;
   latestRevisionNumber: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  revisionsQueryKey?: QueryKey;
-  revisionsQueryFn?: () => Promise<DocumentRevision[]>;
+  revisionsQueryKey: QueryKey;
+  revisionsQueryFn: () => Promise<DocumentRevision[]>;
 }) {
   const { data: revisions } = useQuery({
-    queryKey: revisionsQueryKey ?? queryKeys.tasks.documentRevisions(taskId ?? "", documentKey),
-    queryFn: () =>
-      revisionsQueryFn ? revisionsQueryFn() : tasksApi.listDocumentRevisions(taskId ?? "", documentKey),
+    queryKey: revisionsQueryKey,
+    queryFn: revisionsQueryFn,
     enabled: open,
   });
 

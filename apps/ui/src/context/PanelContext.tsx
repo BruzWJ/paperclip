@@ -2,11 +2,19 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 
 const STORAGE_KEY = "paperclip:panel-visible";
 
+type PanelHeaderMode = "shell" | "content";
+
+interface PanelOptions {
+  title?: string;
+  headerMode?: PanelHeaderMode;
+}
+
 interface PanelContextValue {
   panelContent: ReactNode | null;
+  panelHeaderMode: PanelHeaderMode;
   panelTitle: string;
   panelVisible: boolean;
-  openPanel: (content: ReactNode, options?: { title?: string }) => void;
+  openPanel: (content: ReactNode, options?: PanelOptions) => void;
   closePanel: () => void;
   setPanelVisible: (visible: boolean) => void;
   togglePanelVisible: () => void;
@@ -32,11 +40,19 @@ function writePreference(visible: boolean) {
 }
 
 export function PanelProvider({ children }: { children: ReactNode }) {
-  const [panel, setPanel] = useState<{ content: ReactNode; title: string } | null>(null);
+  const [panel, setPanel] = useState<{
+    content: ReactNode;
+    headerMode: PanelHeaderMode;
+    title: string;
+  } | null>(null);
   const [panelVisible, setPanelVisibleState] = useState(readPreference);
 
-  const openPanel = useCallback((content: ReactNode, options?: { title?: string }) => {
-    setPanel({ content, title: options?.title ?? "Properties" });
+  const openPanel = useCallback((content: ReactNode, options?: PanelOptions) => {
+    setPanel({
+      content,
+      headerMode: options?.headerMode ?? "shell",
+      title: options?.title ?? "Properties",
+    });
   }, []);
 
   const closePanel = useCallback(() => {
@@ -60,6 +76,7 @@ export function PanelProvider({ children }: { children: ReactNode }) {
     <PanelContext.Provider
       value={{
         panelContent: panel?.content ?? null,
+        panelHeaderMode: panel?.headerMode ?? "shell",
         panelTitle: panel?.title ?? "Properties",
         panelVisible,
         openPanel,

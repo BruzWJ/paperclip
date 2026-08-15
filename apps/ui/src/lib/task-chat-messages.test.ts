@@ -2,19 +2,11 @@ import type { TaskChatMessage } from "./task-chat-messages";
 import type { BoardTaskCommentGroupPage, BoardTaskRunSegmentPart } from "@paperclipai/shared";
 import { describe, expect, it } from "vitest";
 import { flattenBoardTaskCommentGroupPages } from "./optimistic-task-comments";
-import {
-  buildTaskChatMessages,
-  formatDurationWords,
-  isCoTSegmentActive,
-  stabilizeThreadMessages,
-  type TaskChatComment,
-} from "./task-chat-messages";
+import { buildTaskChatMessages, stabilizeThreadMessages, type TaskChatComment } from "./task-chat-messages";
 
 function comment(overrides: Partial<TaskChatComment> = {}): TaskChatComment {
   return {
     id: "comment-1",
-    companyId: "company-1",
-    taskId: "task-1",
     authorType: "user",
     authorAgentId: null,
     authorUserId: "user-1",
@@ -22,7 +14,6 @@ function comment(overrides: Partial<TaskChatComment> = {}): TaskChatComment {
     presentation: null,
     metadata: null,
     createdAt: "2026-07-31T12:00:00.000Z",
-    updatedAt: "2026-07-31T12:00:00.000Z",
     ...overrides,
   };
 }
@@ -35,6 +26,50 @@ function textOf(message: TaskChatMessage) {
 }
 
 describe("buildTaskChatMessages", () => {
+  it("keeps the board-projected plugin label and renders the plugin as an incoming sender", () => {
+    const pages = [
+      {
+        groups: [
+          {
+            root: {
+              id: "plugin-comment",
+              author: {
+                type: "plugin",
+                label: "Deployment automation",
+                agentId: null,
+                userId: null,
+                pluginKey: "deployments",
+              },
+              body: "Deployment preview is ready.",
+              presentation: null,
+              metadata: null,
+              sourceTrust: null,
+              runState: null,
+              canonicalSequence: 1,
+              immediateParentDisplayReference: null,
+              createdAt: new Date("2026-07-31T12:00:00.000Z"),
+              updatedAt: new Date("2026-07-31T12:00:00.000Z"),
+            },
+            replyCount: 0,
+            runSegmentCount: 0,
+            entries: [],
+            entriesNextCursor: null,
+          },
+        ],
+        nextCursor: null,
+      },
+    ] satisfies BoardTaskCommentGroupPage[];
+
+    const comments = flattenBoardTaskCommentGroupPages(pages);
+    const messages = buildTaskChatMessages({ comments });
+
+    expect(comments[0]).toMatchObject({ authorLabel: "Deployment automation" });
+    expect(messages[0]).toMatchObject({
+      role: "assistant",
+      metadata: { custom: { authorName: "Deployment automation" } },
+    });
+  });
+
   it("preserves ordered board run-segment text, reasoning, and tool parts", () => {
     const parts = [
       { type: "text", text: "Starting the investigation." },
@@ -93,15 +128,11 @@ describe("buildTaskChatMessages", () => {
         nextCursor: null,
       },
     ] satisfies BoardTaskCommentGroupPage[];
-    const comments = flattenBoardTaskCommentGroupPages(pages, {
-      companyId: "company-1",
-      taskId: "task-1",
-    });
+    const comments = flattenBoardTaskCommentGroupPages(pages);
 
     expect(comments[1]).toMatchObject({
       boardEntryKind: "run_segment",
       boardRunSegmentParts: parts,
-      boardRunSegmentStatus: "error",
     });
 
     const messages = buildTaskChatMessages({ comments });
@@ -110,24 +141,16 @@ describe("buildTaskChatMessages", () => {
       { type: "reasoning", text: "I should inspect the failing check first." },
       {
         type: "tool-call",
-        toolCallId: "segment-1:tool:2",
         toolName: "read_logs",
-        args: {},
-        argsText: "",
+        status: "completed",
       },
       { type: "text", text: "The failure is isolated." },
       {
         type: "tool-call",
-        toolCallId: "segment-1:tool:4",
         toolName: "run_tests",
-        args: {},
-        argsText: "",
+        status: "error",
       },
     ]);
-    expect(messages[1]?.metadata.custom).toMatchObject({
-      boardRunSegmentParts: parts,
-      boardRunSegmentStatus: "error",
-    });
   });
 
   it("uses the canonical board projection order for grouped reply and run-progress rows", () => {
@@ -151,7 +174,6 @@ describe("buildTaskChatMessages", () => {
             tone: "neutral",
             detailsDefaultOpen: false,
           },
-          runId: "run-1",
           runState: "working",
           boardEntryKind: "run_segment",
           boardGroupRootId: "root",
@@ -162,7 +184,6 @@ describe("buildTaskChatMessages", () => {
           body: "Original comment",
           boardEntryKind: "comment",
           boardGroupRootId: "root",
-          boardIsRoot: true,
           boardOrder: 1,
         }),
         comment({
@@ -183,7 +204,6 @@ describe("buildTaskChatMessages", () => {
       metadata: {
         custom: {
           kind: "run-progress",
-          runId: "run-1",
           boardGroupRootId: "root",
         },
       },
@@ -249,29 +269,5 @@ describe("thread message stability", () => {
 
     expect(second.messages).toBe(first.messages);
     expect(second.messages[0]).toBe(first.messages[0]);
-  });
-});
-
-describe("display helpers", () => {
-  it("marks only the last reasoning segment active", () => {
-    expect(
-      isCoTSegmentActive({
-        isMessageRunning: true,
-        segmentIndex: 1,
-        segmentCount: 2,
-      }),
-    ).toBe(true);
-    expect(
-      isCoTSegmentActive({
-        isMessageRunning: true,
-        segmentIndex: 0,
-        segmentCount: 2,
-      }),
-    ).toBe(false);
-  });
-
-  it("formats elapsed durations", () => {
-    expect(formatDurationWords(59_000)).toBe("59 seconds");
-    expect(formatDurationWords(60_000)).toBe("1 minute");
   });
 });

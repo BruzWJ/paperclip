@@ -27,8 +27,9 @@ vi.mock("@/components/ui/sheet", () => ({
   Sheet: ({ open, children }: { open?: boolean; children?: ReactNode }) =>
     open ? <div data-testid="task-sheet">{children}</div> : null,
   SheetContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  SheetHeader: ({ children }: { children?: ReactNode }) => <header>{children}</header>,
-  SheetTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
+  SheetTitle: ({ children, className }: { children?: ReactNode; className?: string }) => (
+    <h2 className={className}>{children}</h2>
+  ),
 }));
 
 import { TaskDetailInspectorSheet, TaskInspector, type TaskInspectorProps } from "./-TaskInspector";
@@ -90,12 +91,21 @@ describe("TaskInspector", () => {
   it("defaults to Details and switches to the compact Resources surface", () => {
     act(() => root.render(<TaskInspector {...inspectorProps()} />));
 
+    const tabList = container.querySelector('[role="tablist"]');
+    expect(tabList?.parentElement?.classList.contains("sticky")).toBe(true);
+    expect(tabList?.parentElement?.classList.contains("top-0")).toBe(true);
     expect(
       container
         .querySelector('[data-testid="task-properties"]')
         ?.closest('[role="tabpanel"]')
         ?.getAttribute("data-state"),
     ).toBe("active");
+    expect(
+      container
+        .querySelector('[data-testid="task-properties"]')
+        ?.closest('[role="tabpanel"]')
+        ?.classList.contains("p-4"),
+    ).toBe(true);
 
     act(() => root.render(<TaskInspector {...inspectorProps({ activeTab: "resources" })} />));
 
@@ -140,7 +150,8 @@ describe("TaskInspector", () => {
     act(() => root.render(<TaskDetailInspectorSheet />));
 
     expect(container.querySelector('[data-testid="task-sheet"]')).not.toBeNull();
-    expect(container.textContent).toContain("Task details");
+    expect(container.querySelector("h2")?.textContent).toBe("Task details");
+    expect(container.querySelector("h2")?.classList.contains("sr-only")).toBe(true);
     expect(container.querySelector('[data-testid="task-properties"]')).not.toBeNull();
   });
 });

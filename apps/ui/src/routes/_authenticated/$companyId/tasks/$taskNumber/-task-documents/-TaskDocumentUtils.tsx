@@ -26,7 +26,7 @@ export type DocumentConflictState = {
 
 export type DocumentSubjectConfig = {
   id: string;
-  detailQueryKey?: QueryKey;
+  detailQueryKey: QueryKey;
   documentsQueryKey: QueryKey;
   idleDocumentRevisionsQueryKey: QueryKey;
   documentRevisionsQueryKey: (key: string) => QueryKey;
@@ -42,19 +42,16 @@ export type DocumentSubjectConfig = {
       baseRevisionId: string | null;
     },
   ) => Promise<TaskDocument>;
-  deleteDocument?: (key: string) => Promise<unknown>;
-  restoreDocumentRevision?: (key: string, revisionId: string) => Promise<TaskDocument>;
-  setDocumentLock?: (key: string, locked: boolean) => Promise<TaskDocument>;
-  syncDetailCache?: (queryClient: QueryClient, document: TaskDocument) => void;
-  hideSystemDocuments?: boolean;
-  annotations?: {
-    target: (documentKey: string) => DocumentAnnotationTarget;
-  } | null;
+  deleteDocument: (key: string) => Promise<unknown>;
+  restoreDocumentRevision: (key: string, revisionId: string) => Promise<TaskDocument>;
+  setDocumentLock: (key: string, locked: boolean) => Promise<TaskDocument>;
+  syncDetailCache: (queryClient: QueryClient, document: TaskDocument) => void;
+  annotationTarget: (documentKey: string) => DocumentAnnotationTarget;
 };
 
 export const DOCUMENT_AUTOSAVE_DEBOUNCE_MS = 900;
 
-export const getFoldedDocumentsStorageKey = (taskId: string) => `paperclip:task-document-folds:${taskId}`;
+const getFoldedDocumentsStorageKey = (taskId: string) => `paperclip:task-document-folds:${taskId}`;
 
 export function loadFoldedDocumentKeys(taskId: string) {
   if (typeof window === "undefined") return [];
@@ -85,6 +82,15 @@ export function renderFoldableBody(body: string, className?: string) {
 
 export function isPlanKey(key: string) {
   return key === "plan";
+}
+
+export function compareTaskDocuments(
+  left: Pick<TaskDocument, "key" | "updatedAt">,
+  right: Pick<TaskDocument, "key" | "updatedAt">,
+) {
+  if (left.key === "plan" && right.key !== "plan") return -1;
+  if (left.key !== "plan" && right.key === "plan") return 1;
+  return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
 }
 
 export function titlesMatchKey(title: string | null | undefined, key: string) {
@@ -139,7 +145,7 @@ export function documentHasUnsavedChanges(doc: TaskDocument, draft: DraftState |
   return draft.body !== doc.body || (doc.title ?? "") !== draft.title;
 }
 
-export function toDocumentSummary(document: TaskDocument) {
+function toDocumentSummary(document: TaskDocument) {
   return {
     id: document.id,
     companyId: document.companyId,
@@ -197,13 +203,10 @@ export function makeTaskDocumentSubject(task: Task): DocumentSubjectConfig {
         };
       });
     },
-    hideSystemDocuments: true,
-    annotations: {
-      target: (documentKey) => ({
-        kind: "task",
-        taskId: task.id,
-        documentKey,
-      }),
-    },
+    annotationTarget: (documentKey) => ({
+      kind: "task",
+      taskId: task.id,
+      documentKey,
+    }),
   };
 }

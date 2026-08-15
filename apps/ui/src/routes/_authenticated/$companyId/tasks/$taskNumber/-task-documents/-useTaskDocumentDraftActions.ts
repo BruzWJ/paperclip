@@ -10,7 +10,7 @@ import {
 } from "./-TaskDocumentUtils";
 import type { TaskDocumentEditorState } from "./-useTaskDocumentEffects";
 
-export interface UseTaskDocumentDraftActionsOptions {
+interface UseTaskDocumentDraftActionsOptions {
   documentSubject: DocumentSubjectConfig;
   sortedDocuments: TaskDocument[];
   upsertDocument: {

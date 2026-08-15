@@ -14,6 +14,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { hasAssignedBacklogBlocker, taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
@@ -231,17 +233,31 @@ export function TaskDetailHeader() {
                 >
                   {copied ? <Check data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
                 </HeaderIconAction>
-                {(isMobile || !panelVisible) && (
+                {isMobile ? (
                   <HeaderIconAction
                     size={actionButtonSize}
                     label="Show task details"
-                    onClick={() => {
-                      if (isMobile) setMobileInspectorOpen(true);
-                      else setPanelVisible(true);
-                    }}
+                    onClick={() => setMobileInspectorOpen(true)}
                   >
                     <SlidersHorizontal data-icon="inline-start" />
                   </HeaderIconAction>
+                ) : (
+                  <div className="flex h-8 items-center gap-2 px-1">
+                    <Label
+                      htmlFor="task-details-panel-toggle"
+                      className="cursor-pointer gap-1.5 text-xs text-muted-foreground"
+                    >
+                      <SlidersHorizontal className="size-4" aria-hidden="true" />
+                      Details
+                    </Label>
+                    <Switch
+                      id="task-details-panel-toggle"
+                      size="sm"
+                      checked={panelVisible}
+                      onCheckedChange={setPanelVisible}
+                      aria-label="Task details panel"
+                    />
+                  </div>
                 )}
               </>
             ) : null}

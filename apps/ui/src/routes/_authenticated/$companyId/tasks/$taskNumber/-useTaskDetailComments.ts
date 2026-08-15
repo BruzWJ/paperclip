@@ -16,14 +16,13 @@ import {
   TASK_COMMENT_PAGE_SIZE,
 } from "./-task-detail-model";
 
-export interface TaskDetailCommentsOptions {
-  companyId: string;
+interface TaskDetailCommentsOptions {
   taskId: string;
   detailTab: string;
 }
 
 /** Owns grouped comment pagination, continuation expansion, and refresh. */
-export function useTaskDetailComments({ companyId, taskId, detailTab }: TaskDetailCommentsOptions) {
+export function useTaskDetailComments({ taskId, detailTab }: TaskDetailCommentsOptions) {
   const queryClient = useQueryClient();
   const [commentGroupContinuations, setCommentGroupContinuations] = useState<
     ReadonlyMap<string, BoardTaskCommentGroupContinuation>
@@ -58,13 +57,8 @@ export function useTaskDetailComments({ companyId, taskId, detailTab }: TaskDeta
       keepPreviousDataForSameQueryTail<InfiniteData<BoardTaskCommentGroupPage, string | null>>(taskId),
   });
   const comments = useMemo(
-    () =>
-      flattenBoardTaskCommentGroupPages(
-        commentPages?.pages,
-        { companyId, taskId },
-        commentGroupContinuations,
-      ),
-    [commentGroupContinuations, commentPages?.pages, taskId, companyId],
+    () => flattenBoardTaskCommentGroupPages(commentPages?.pages, commentGroupContinuations),
+    [commentGroupContinuations, commentPages?.pages],
   );
 
   const loadMoreCommentGroup = useCallback(

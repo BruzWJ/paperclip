@@ -1,12 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
-import {
-  createUniqueDocumentKey,
-  fileBaseName,
-  isTextDocumentFile,
-  slugifyDocumentKey,
-  titleizeFilename,
-  type StagedTaskFile,
-} from "./model";
+import { fileBaseName, slugifyDocumentKey, titleizeFilename } from "@/lib/document-file-names";
+import { createUniqueDocumentKey, isTextDocumentFile, type StagedTaskFile } from "./model";
 
 export function useStagedTaskFiles({
   setStagedFiles,

@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TaskLinkQuicklook } from "@/features/tasks/shared/TaskLinkQuicklook";
+import { titleizeFilename } from "@/lib/document-file-names";
 import {
   attachmentDownloadPath,
   attachmentFilename,
@@ -53,6 +54,7 @@ import {
   type TaskOutputItem,
 } from "@/lib/task-output";
 import { cn, relativeTime } from "@/lib/utils";
+import { compareTaskDocuments } from "./-task-documents/-TaskDocumentUtils";
 
 const COMPACT_RESOURCE_LIMIT = 6;
 
@@ -161,7 +163,6 @@ interface ResourceFileRowProps {
   openPath?: string;
   downloadPath?: string;
   onPreview?: () => void;
-  showOpenAction?: boolean;
   onDelete?: () => void;
   deletePending?: boolean;
 }
@@ -174,7 +175,6 @@ function ResourceFileRow({
   openPath,
   downloadPath,
   onPreview,
-  showOpenAction = false,
   onDelete,
   deletePending = false,
 }: ResourceFileRowProps) {
@@ -209,7 +209,7 @@ function ResourceFileRow({
         </ItemTitle>
         <ItemDescription className="text-(length:--text-micro)">{description}</ItemDescription>
       </ItemContent>
-      {onPreview || (showOpenAction && openPath) || downloadPath || onDelete ? (
+      {onPreview || downloadPath || onDelete ? (
         <ItemActions className="gap-0.5">
           {onPreview ? (
             <Button
@@ -221,19 +221,6 @@ function ResourceFileRow({
               onClick={onPreview}
             >
               <Maximize2 data-icon="inline-start" />
-            </Button>
-          ) : null}
-          {showOpenAction && openPath ? (
-            <Button asChild variant="ghost" size="icon-xs">
-              <a
-                href={openPath}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={`Open ${filename}`}
-                title="Open in new tab"
-              >
-                <ExternalLink data-icon="inline-start" />
-              </a>
             </Button>
           ) : null}
           {downloadPath ? (
@@ -263,17 +250,6 @@ function ResourceFileRow({
   );
 }
 
-function documentLabel(document: NonNullable<Task["documentSummaries"]>[number]) {
-  const title = document.title?.trim();
-  if (title) return title;
-  if (document.key === "plan") return "Plan";
-  return document.key
-    .split(/[-_]/u)
-    .filter(Boolean)
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
-    .join(" ");
-}
-
 export function TaskResources({
   task,
   childTasks,
@@ -298,15 +274,10 @@ export function TaskResources({
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const [confirmDeleteAttachment, setConfirmDeleteAttachment] = useState<TaskAttachment | null>(null);
   const subTasks = childTasks.filter((child) => child.parentId === task.id);
-  const nestedSubTaskCount = Math.max(childTasks.length - subTasks.length, 0);
   const outputs = getTaskOutputs(workProducts).items;
   const documents = (task.documentSummaries ?? [])
     .filter((document) => !isSystemTaskDocumentKey(document.key))
-    .sort((left, right) => {
-      if (left.key === "plan" && right.key !== "plan") return -1;
-      if (left.key !== "plan" && right.key === "plan") return 1;
-      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
-    });
+    .sort(compareTaskDocuments);
 
   return (
     <div className="space-y-6">
@@ -330,49 +301,41 @@ export function TaskResources({
         {childTasksLoading ? (
           <ResourceLoadingRows label="sub-tasks" />
         ) : (
-          <>
-            <CompactResourceList
-              items={subTasks}
-              emptyMessage="No sub-tasks yet."
-              renderItem={(child) => (
-                <Item
-                  key={child.id}
-                  asChild
-                  size="sm"
-                  className={cn("px-2 py-2", mutedChildTaskIds.has(child.id) && "opacity-60")}
+          <CompactResourceList
+            items={subTasks}
+            emptyMessage="No sub-tasks yet."
+            renderItem={(child) => (
+              <Item
+                key={child.id}
+                asChild
+                size="sm"
+                className={cn("px-2 py-2", mutedChildTaskIds.has(child.id) && "opacity-60")}
+              >
+                <TaskLinkQuicklook
+                  taskId={child.id}
+                  taskNumber={child.taskNumber}
+                  taskPrefetch={child}
+                  state={taskLinkState}
+                  title={taskDisplayTitle(child)}
                 >
-                  <TaskLinkQuicklook
-                    taskId={child.id}
-                    taskNumber={child.taskNumber}
-                    taskPrefetch={child}
-                    state={taskLinkState}
-                    title={taskDisplayTitle(child)}
-                  >
-                    <ItemContent className="min-w-0">
-                      <ItemTitle className="w-full min-w-0">
-                        <span className="truncate">{taskDisplayTitle(child)}</span>
-                      </ItemTitle>
-                      <ItemDescription className="flex flex-wrap items-center gap-1.5 text-(length:--text-micro)">
-                        <span className="font-mono">{child.identifier}</span>
-                        <DomainStatus status={child.boardPresentationStatus} />
-                        {liveTaskIds.has(child.id) ? <Badge variant="secondary">Live</Badge> : null}
-                        {childPauseBadgeById.has(child.id) ? (
-                          <Badge variant="outline">{childPauseBadgeById.get(child.id)}</Badge>
-                        ) : null}
-                      </ItemDescription>
-                    </ItemContent>
-                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  </TaskLinkQuicklook>
-                </Item>
-              )}
-            />
-            {nestedSubTaskCount > 0 ? (
-              <p className="text-(length:--text-micro) text-muted-foreground">
-                {nestedSubTaskCount} nested sub-task{nestedSubTaskCount === 1 ? "" : "s"} available through
-                the direct children.
-              </p>
-            ) : null}
-          </>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="w-full min-w-0">
+                      <span className="truncate">{taskDisplayTitle(child)}</span>
+                    </ItemTitle>
+                    <ItemDescription className="flex flex-wrap items-center gap-1.5 text-(length:--text-micro)">
+                      <span className="font-mono">{child.identifier}</span>
+                      <DomainStatus status={child.boardPresentationStatus} />
+                      {liveTaskIds.has(child.id) ? <Badge variant="secondary">Live</Badge> : null}
+                      {childPauseBadgeById.has(child.id) ? (
+                        <Badge variant="outline">{childPauseBadgeById.get(child.id)}</Badge>
+                      ) : null}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                </TaskLinkQuicklook>
+              </Item>
+            )}
+          />
         )}
       </ResourceSection>
 
@@ -470,7 +433,6 @@ export function TaskResources({
                 openPath={metadata?.openPath}
                 downloadPath={metadata?.downloadPath}
                 onPreview={canPreview ? () => onPreviewOutput(item) : undefined}
-                showOpenAction
               />
             );
           }}
@@ -497,17 +459,17 @@ export function TaskResources({
         <CompactResourceList
           items={documents}
           emptyMessage="No task documents yet."
-          renderItem={(document) => {
-            const label = documentLabel(document);
-            return (
-              <Item key={document.id} asChild size="sm" className="px-2 py-2">
+          renderItem={(document) => (
+            <Item key={document.id} asChild size="sm" className="px-2 py-2">
                 <button type="button" className="w-full text-left" onClick={onOpenDocuments}>
                   <ItemMedia>
                     <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
                   </ItemMedia>
                   <ItemContent className="min-w-0">
                     <ItemTitle className="w-full min-w-0">
-                      <span className="truncate">{label}</span>
+                      <span className="truncate">
+                        {document.title?.trim() || titleizeFilename(document.key)}
+                      </span>
                       {document.lockedAt ? <Badge variant="secondary">Locked</Badge> : null}
                     </ItemTitle>
                     <ItemDescription className="text-(length:--text-micro)">
@@ -517,17 +479,14 @@ export function TaskResources({
                   </ItemContent>
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 </button>
-              </Item>
-            );
-          }}
+            </Item>
+          )}
         />
       </ResourceSection>
 
       <ConfirmActionDialog
         open={Boolean(confirmDeleteAttachment)}
-        onOpenChange={(open) => {
-          if (!open) setConfirmDeleteAttachment(null);
-        }}
+        onOpenChange={(open) => !open && setConfirmDeleteAttachment(null)}
         title="Delete attachment?"
         description={
           confirmDeleteAttachment
@@ -538,9 +497,7 @@ export function TaskResources({
         pendingLabel="Deleting…"
         variant="destructive"
         pending={attachmentDeletePending}
-        onConfirm={() => {
-          if (confirmDeleteAttachment) onDeleteAttachment(confirmDeleteAttachment.id);
-        }}
+        onConfirm={() => confirmDeleteAttachment && onDeleteAttachment(confirmDeleteAttachment.id)}
       />
     </div>
   );

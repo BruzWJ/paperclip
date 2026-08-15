@@ -1,17 +1,8 @@
-import type { Agent } from "@paperclipai/shared";
 import type { ClientTaskComment } from "./optimistic-task-comments";
-import { formatOwnerUserLabel } from "./task-owners";
 import type { TimestampedEntity } from "./presentation-contracts";
 
 export type TaskChatComment = ClientTaskComment & {
-  runAgentId?: string | null;
-  interruptedRunId?: string | null;
-  clientId?: string;
   clientStatus?: "pending" | "queued";
-  queueState?: "queued";
-  queueTargetRunId?: string | null;
-  queueReason?: "hold" | "active_run" | "other";
-  followUpRequested?: boolean;
 };
 
 export type TaskChatMessagePart =
@@ -19,11 +10,8 @@ export type TaskChatMessagePart =
   | { type: "reasoning"; text: string }
   | {
       type: "tool-call";
-      toolCallId: string;
       toolName: string;
-      args: Record<string, never>;
-      argsText: string;
-      result?: unknown;
+      status: "pending" | "running" | "completed" | "error";
     };
 
 /** Board transcript view-model consumed directly by AI Elements renderers. */
@@ -32,30 +20,20 @@ export interface TaskChatMessage {
   role: "user" | "assistant" | "system";
   createdAt: Date;
   content: TaskChatMessagePart[];
-  status?: { type: "running" } | { type: "complete"; reason: "stop" };
-  attachments?: [];
-  metadata: {
-    custom: Record<string, unknown>;
-    [key: string]: unknown;
-  };
+  status?: { type: "running" };
+  metadata: { custom: Record<string, unknown> };
 }
-
-type MessageWithOrder = {
-  createdAtMs: number;
-  order: number;
-  message: TaskChatMessage;
-};
 
 export interface StableThreadMessageCacheEntry {
   fingerprint: string;
   message: TaskChatMessage;
 }
 
-function toDate(value: Date | string | null | undefined) {
-  return value instanceof Date ? value : new Date(value ?? Date.now());
+function toDate(value: Date | string) {
+  return value instanceof Date ? value : new Date(value);
 }
 
-function toTimestamp(value: Date | string | null | undefined) {
+function toTimestamp(value: Date | string) {
   return toDate(value).getTime();
 }
 
@@ -95,20 +73,10 @@ function sortByCreated<T extends TimestampedEntity>(items: readonly T[]) {
   });
 }
 
-function createAssistantMetadata(custom: Record<string, unknown>) {
-  return {
-    unstable_state: null,
-    unstable_annotations: [],
-    unstable_data: [],
-    steps: [],
-    custom,
-  } as const;
-}
-
 function createRunSegmentContent(comment: TaskChatComment): TaskChatMessage["content"] | null {
   if (!comment.boardRunSegmentParts) return null;
 
-  return comment.boardRunSegmentParts.map((part, index) => {
+  return comment.boardRunSegmentParts.map((part) => {
     if (part.type === "text") {
       return { type: "text", text: part.text };
     }
@@ -117,48 +85,24 @@ function createRunSegmentContent(comment: TaskChatComment): TaskChatMessage["con
     }
     return {
       type: "tool-call",
-      toolCallId: `${comment.id}:tool:${index}`,
       toolName: part.name,
-      args: {},
-      argsText: "",
+      status: part.status,
     };
   });
 }
 
-function authorNameForComment(
-  comment: TaskChatComment,
-  agentMap?: Map<string, Agent>,
-  currentUserId?: string | null,
-  userLabelMap?: ReadonlyMap<string, string> | null,
-) {
-  if (comment.authorAgentId) {
-    return (
-      agentMap?.get(comment.authorAgentId)?.name ??
-      (comment.authorType === "system" ? "Paperclip" : comment.authorAgentId.slice(0, 8))
-    );
-  }
-  if (!comment.authorUserId) {
-    return comment.authorType === "system" ? "Paperclip" : "You";
-  }
-  return (
-    userLabelMap?.get(comment.authorUserId)?.trim() ||
-    formatOwnerUserLabel(comment.authorUserId, currentUserId, userLabelMap) ||
-    "You"
-  );
+function authorNameForComment(comment: TaskChatComment) {
+  const projectedLabel = comment.authorLabel?.trim();
+  if (projectedLabel) return projectedLabel;
+  if (comment.authorType === "system") return "Paperclip";
+  if (comment.authorType === "plugin") return "Plugin";
+  if (comment.authorAgentId) return comment.authorAgentId.slice(0, 8);
+  return "You";
 }
 
-function createCommentMessage(args: {
-  comment: TaskChatComment;
-  agentMap?: Map<string, Agent>;
-  currentUserId?: string | null;
-  userLabelMap?: ReadonlyMap<string, string> | null;
-  companyId?: string | null;
-  projectId?: string | null;
-}): TaskChatMessage {
-  const { comment, agentMap, currentUserId, userLabelMap, companyId, projectId } = args;
+function createCommentMessage(comment: TaskChatComment): TaskChatMessage {
   const isSystemNotice = comment.authorType === "system";
   const isRunProgress = comment.presentation?.kind === "run_progress";
-  const authorName = authorNameForComment(comment, agentMap, currentUserId, userLabelMap);
   const custom = {
     kind: isSystemNotice
       ? "system_notice"
@@ -169,29 +113,15 @@ function createCommentMessage(args: {
           : "comment",
     commentId: comment.id,
     anchorId: `comment-${comment.id}`,
-    authorName,
+    authorName: authorNameForComment(comment),
     authorType: comment.authorType,
     authorAgentId: comment.authorAgentId,
     authorUserId: comment.authorUserId,
-    companyId: companyId ?? comment.companyId,
-    projectId: projectId ?? null,
-    runId: comment.runId ?? null,
-    runAgentId: comment.runAgentId ?? comment.authorAgentId,
     clientStatus: comment.clientStatus ?? null,
-    queueState: comment.queueState ?? null,
-    queueTargetRunId: comment.queueTargetRunId ?? null,
-    queueReason: comment.queueReason ?? null,
-    interruptedRunId: comment.interruptedRunId ?? null,
-    followUpRequested: comment.followUpRequested === true,
     presentation: comment.presentation ?? null,
     commentMetadata: comment.metadata ?? null,
     sourceTrust: comment.sourceTrust ?? null,
-    runState: comment.runState ?? null,
-    boardEntryKind: comment.boardEntryKind ?? null,
-    boardRunSegmentParts: comment.boardRunSegmentParts ?? null,
-    boardRunSegmentStatus: comment.boardRunSegmentStatus ?? null,
     boardGroupRootId: comment.boardGroupRootId ?? null,
-    boardIsRoot: comment.boardIsRoot === true,
     boardGroupHasMore: comment.boardGroupHasMore === true,
     boardGroupContinuationLoading: comment.boardGroupContinuationLoading === true,
     boardGroupContinuationError: comment.boardGroupContinuationError ?? null,
@@ -218,7 +148,7 @@ function createCommentMessage(args: {
     };
     return message;
   }
-  if (comment.authorAgentId) {
+  if (comment.authorAgentId || comment.authorType === "plugin") {
     const runSegmentContent = createRunSegmentContent(comment);
     const message: TaskChatMessage = {
       id: comment.id,
@@ -226,10 +156,10 @@ function createCommentMessage(args: {
       createdAt,
       content: runSegmentContent ?? [{ type: "text", text: contentText }],
       status:
-        comment.runState === "queued" || comment.runState === "working"
+        comment.authorAgentId && (comment.runState === "queued" || comment.runState === "working")
           ? { type: "running" }
-          : { type: "complete", reason: "stop" },
-      metadata: createAssistantMetadata(custom),
+          : undefined,
+      metadata: { custom },
     };
     return message;
   }
@@ -238,82 +168,23 @@ function createCommentMessage(args: {
     role: "user",
     createdAt,
     content: [{ type: "text", text: contentText }],
-    attachments: [],
     metadata: { custom },
   };
   return message;
 }
 
-export function isCoTSegmentActive(args: {
-  isMessageRunning: boolean;
-  segmentIndex: number;
-  segmentCount: number;
-}) {
-  const { isMessageRunning, segmentIndex, segmentCount } = args;
-  if (!isMessageRunning) return false;
-  if (segmentCount <= 0 || segmentIndex < 0) return true;
-  return segmentIndex === segmentCount - 1;
-}
-
-export function formatDurationWords(ms: number | null) {
-  if (ms === null || !Number.isFinite(ms) || ms <= 0) return null;
-  const totalSeconds = Math.max(1, Math.round(ms / 1000));
-  if (totalSeconds < 60) {
-    return `${totalSeconds} second${totalSeconds === 1 ? "" : "s"}`;
-  }
-  const totalMinutes = Math.round(totalSeconds / 60);
-  if (totalMinutes < 60) {
-    return `${totalMinutes} minute${totalMinutes === 1 ? "" : "s"}`;
-  }
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (minutes === 0) {
-    return `${hours} hour${hours === 1 ? "" : "s"}`;
-  }
-  return `${hours} hour${hours === 1 ? "" : "s"} ${minutes} minute${minutes === 1 ? "" : "s"}`;
-}
-
-export function buildTaskChatMessages(args: {
-  comments: readonly TaskChatComment[];
-  companyId?: string | null;
-  projectId?: string | null;
-  agentMap?: Map<string, Agent>;
-  currentUserId?: string | null;
-  userLabelMap?: ReadonlyMap<string, string> | null;
-}) {
-  const { comments, companyId, projectId, agentMap, currentUserId, userLabelMap } = args;
-  const orderedMessages: MessageWithOrder[] = [];
+export function buildTaskChatMessages(args: { comments: readonly TaskChatComment[] }) {
+  const { comments } = args;
   const hasGroupedBoardProjection = comments.some((comment) => comment.boardOrder !== undefined);
   const orderedComments = hasGroupedBoardProjection
-    ? [...comments].sort((left, right) => (left.boardOrder ?? 0) - (right.boardOrder ?? 0))
+    ? [...comments].sort(
+        (left, right) => (left.boardOrder ?? 0) - (right.boardOrder ?? 0) || left.id.localeCompare(right.id),
+      )
     : sortByCreated(comments);
-
-  for (const comment of orderedComments) {
-    orderedMessages.push({
-      createdAtMs: hasGroupedBoardProjection ? (comment.boardOrder ?? 0) : toTimestamp(comment.createdAt),
-      order: 1,
-      message: createCommentMessage({
-        comment,
-        agentMap,
-        currentUserId,
-        userLabelMap,
-        companyId,
-        projectId,
-      }),
-    });
-  }
   const seenIds = new Set<string>();
-  return orderedMessages
-    .sort((left, right) => {
-      const timeDifference = left.createdAtMs - right.createdAtMs;
-      if (timeDifference) return timeDifference;
-      const orderDifference = left.order - right.order;
-      return orderDifference || left.message.id.localeCompare(right.message.id);
-    })
-    .map((entry) => entry.message)
-    .filter((message) => {
-      if (seenIds.has(message.id)) return false;
-      seenIds.add(message.id);
-      return true;
-    });
+  return orderedComments.map(createCommentMessage).filter((message) => {
+    if (seenIds.has(message.id)) return false;
+    seenIds.add(message.id);
+    return true;
+  });
 }

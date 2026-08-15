@@ -15,7 +15,10 @@ import {
 } from "@/lib/company-members";
 import { collectLiveTaskIds } from "@/lib/liveTaskIds";
 import {
+  applyOptimisticTaskFieldUpdate,
+  applyOptimisticTaskFieldUpdateToCollection,
   mergeTaskComments,
+  matchesTaskId,
   type ClientTaskComment,
   type OptimisticTaskComment,
 } from "@/lib/optimistic-task-comments";
@@ -36,7 +39,7 @@ import type {
   TaskTreeControlMode,
   TaskWorkProduct,
 } from "@paperclipai/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 export interface TaskDetailQueriesOptions {
@@ -332,7 +335,7 @@ export function useTaskDetailDerivedData({
     () => buildTaskPropertiesPanelKey(task ?? null, childTasks),
     [childTasks, task],
   );
-  const panelTask = useMemo(() => task ?? null, [task?.documentSummaries, task?.id, taskPanelKey]);
+  const panelTask = useMemo(() => task ?? null, [task?.documentSummaries, taskPanelKey]);
   const panelChildTasks = useMemo(() => childTasks, [taskPanelKey]);
   const siblingNavigation = useMemo(
     () =>

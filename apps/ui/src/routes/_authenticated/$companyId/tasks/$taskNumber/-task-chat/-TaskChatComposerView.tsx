@@ -49,22 +49,56 @@ import {
   shouldRenderComposerOwnerPreview,
   type TaskChatComposerHandle,
   type TaskChatComposerProps,
+  type TaskChatReplyTarget,
 } from "./-TaskChatShared";
 import { useTaskChatComposerController } from "./-useTaskChatComposerController";
 
-function PromptAttachments() {
+function ComposerHeader({
+  replyTarget,
+  isSubmitting,
+  onClearReply,
+}: {
+  replyTarget: TaskChatReplyTarget | null;
+  isSubmitting: boolean;
+  onClearReply?: () => void;
+}) {
   const attachments = usePromptInputAttachments();
-  if (attachments.files.length === 0) return null;
+  if (!replyTarget && attachments.files.length === 0) return null;
+
   return (
-    <Attachments variant="inline">
-      {attachments.files.map((file) => (
-        <Attachment key={file.id} data={file} onRemove={() => attachments.remove(file.id)}>
-          <AttachmentPreview />
-          <AttachmentInfo />
-          <AttachmentRemove />
-        </Attachment>
-      ))}
-    </Attachments>
+    <PromptInputHeader>
+      {replyTarget ? (
+        <div
+          className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground"
+          aria-label={`Replying to ${replyTarget.authorLabel}`}
+        >
+          <ReplyIcon className="size-4 shrink-0" aria-hidden="true" data-icon="inline-start" />
+          <span className="truncate">
+            {replyTarget.authorLabel} · {replyTarget.preview}
+          </span>
+          <PromptInputButton
+            className="ml-auto"
+            tooltip="Cancel reply"
+            aria-label="Cancel reply"
+            disabled={isSubmitting}
+            onClick={onClearReply}
+          >
+            <XIcon className="size-4" data-icon="inline-start" />
+          </PromptInputButton>
+        </div>
+      ) : null}
+      {attachments.files.length > 0 ? (
+        <Attachments variant="inline">
+          {attachments.files.map((file) => (
+            <Attachment key={file.id} data={file} onRemove={() => attachments.remove(file.id)}>
+              <AttachmentPreview />
+              <AttachmentInfo />
+              <AttachmentRemove />
+            </Attachment>
+          ))}
+        </Attachments>
+      ) : null}
+    </PromptInputHeader>
   );
 }
 
@@ -97,8 +131,7 @@ function mentionLabel(mention: MentionOption) {
   return mention.kind === "task" ? mention.taskIdentifier : `@${mention.name}`;
 }
 
-export function TaskChatComposerView(props: ReturnType<typeof useTaskChatComposerController>) {
-  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+function TaskChatComposerView(props: ReturnType<typeof useTaskChatComposerController>) {
   const {
     attachmentError,
     body,
@@ -133,7 +166,7 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
   return (
     <div ref={composerContainerRef} data-testid="task-chat-composer">
       {coachVisible && plainNameCandidate ? (
-        <Suggestions className="mb-2" aria-live="polite" data-testid="composer-mention-coach">
+        <Suggestions className="mb-2" aria-live="polite">
           <Suggestion
             suggestion={`Insert @${coachAgentName}`}
             onClick={insertCoachMention}
@@ -155,32 +188,7 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
         onSubmit={handleSubmit}
         data-pending-work-mode={resolvedTaskWorkMode}
       >
-        {replyTarget || canAcceptFiles ? (
-          <PromptInputHeader>
-            {replyTarget ? (
-              <div
-                className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground"
-                data-testid="task-chat-reply-target"
-                aria-label={`Replying to ${replyTarget.authorLabel}`}
-              >
-                <ReplyIcon className="size-4 shrink-0" aria-hidden="true"  data-icon="inline-start"/>
-                <span className="truncate">
-                  {replyTarget.authorLabel} · {replyTarget.preview}
-                </span>
-                <PromptInputButton
-                  className="ml-auto"
-                  tooltip="Cancel reply"
-                  aria-label="Cancel reply"
-                  disabled={isSubmitting}
-                  onClick={onClearReply}
-                >
-                  <XIcon className="size-4"  data-icon="inline-start"/>
-                </PromptInputButton>
-              </div>
-            ) : null}
-            <PromptAttachments />
-          </PromptInputHeader>
-        ) : null}
+        <ComposerHeader replyTarget={replyTarget} isSubmitting={isSubmitting} onClearReply={onClearReply} />
 
         <PromptInputBody>
           <PromptInputTextarea
@@ -198,7 +206,7 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
             {canAcceptFiles || mentions.length > 0 ? (
               <PromptInputActionMenu open={mentionMenuOpen} onOpenChange={setMentionMenuOpen}>
                 <PromptInputActionMenuTrigger tooltip="Add context">
-                  <PaperclipIcon className="size-4"  data-icon="inline-start"/>
+                  <PaperclipIcon className="size-4" data-icon="inline-start" />
                 </PromptInputActionMenuTrigger>
                 <PromptInputActionMenuContent>
                   {canAcceptFiles ? <PromptInputActionAddAttachments label="Attach files" /> : null}
@@ -258,10 +266,10 @@ export function TaskChatComposerView(props: ReturnType<typeof useTaskChatCompose
       </PromptInput>
 
       {shouldRenderComposerOwnerPreview(body, ownerPreview) ? (
-        <Task defaultOpen className="mt-2" data-testid="composer-owner-preview">
+        <Task defaultOpen className="mt-2">
           <TaskTrigger title="Delivery" />
           <TaskContent>
-            <TaskItem role="status" aria-live="polite" data-kind={ownerPreview.kind}>
+            <TaskItem role="status" aria-live="polite">
               {ownerPreview.text}
               {ownerPreview.chip
                 ? ` ${ownerOptions.find((option) => option.id === `agent:${ownerPreview.chip?.id}`)?.label ?? "the selected agent"}`

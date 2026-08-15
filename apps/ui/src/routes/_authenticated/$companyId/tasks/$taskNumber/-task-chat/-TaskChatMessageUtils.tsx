@@ -2,7 +2,7 @@ import type { CompanyUserProfile } from "@/lib/company-members";
 import type { TaskChatMessage } from "@/lib/task-chat-messages";
 import { timeAgo } from "@/lib/timeAgo";
 import { formatShortDate } from "@/lib/utils";
-import type { CommentOwnerChange } from "./-TaskChatShared";
+import type { CommentOwnerChange } from "../-task-detail-model";
 
 export const DRAFT_DEBOUNCE_MS = 800;
 export const COMPOSER_FOCUS_SCROLL_PADDING_PX = 96;
@@ -38,15 +38,14 @@ export function parseOwnerChange(target: string): CommentOwnerChange | null {
   return ownerAgentId ? { ownerAgentId } : null;
 }
 
-export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function commentDateLabel(date: Date | string | undefined): string {
-  if (!date) return "";
+export function commentDateLabel(date: Date | string): string {
   return Date.now() - new Date(date).getTime() < WEEK_MS ? timeAgo(date) : formatShortDate(date);
 }
 
 export function taskChatMessageCustom(message: TaskChatMessage): Record<string, unknown> {
-  return (message.metadata?.custom ?? {}) as Record<string, unknown>;
+  return message.metadata.custom;
 }
 
 export function taskChatMessageKind(message: TaskChatMessage): string {
@@ -57,27 +56,6 @@ export function taskChatMessageKind(message: TaskChatMessage): string {
 export function taskChatMessageAnchorId(message: TaskChatMessage): string | null {
   const custom = taskChatMessageCustom(message);
   return typeof custom.anchorId === "string" ? custom.anchorId : null;
-}
-
-export function taskChatMessageRunIsActive(message: TaskChatMessage, activeRunIds: ReadonlySet<string>) {
-  const runId = taskChatMessageCustom(message).runId;
-  return typeof runId === "string" && activeRunIds.has(runId);
-}
-
-export function taskChatMessageRunIsStopping(
-  message: TaskChatMessage,
-  stoppingRunId: string | null | undefined,
-) {
-  const runId = taskChatMessageCustom(message).runId;
-  return typeof runId === "string" && stoppingRunId === runId;
-}
-
-export function taskChatMessageQueuedRunIsInterrupting(
-  message: TaskChatMessage,
-  interruptingQueuedRunId: string | null | undefined,
-) {
-  const runId = taskChatMessageCustom(message).queueTargetRunId;
-  return typeof runId === "string" && interruptingQueuedRunId === runId;
 }
 
 export function resolveTaskChatHumanAuthor(args: {

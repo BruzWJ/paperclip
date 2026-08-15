@@ -1,4 +1,3 @@
-// Empty collections render dedicated UI when data.length === 0.
 import { tasksApi } from "@/api/tasks";
 import { TaskChatConfirmation } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatConfirmation";
 import { TaskChatThread } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread";
@@ -11,11 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { memo, useMemo, type ReactNode } from "react";
 
-import {
-  TaskDetailComment,
-  resolveInterruptibleTaskRun,
-  taskDetailSourceRouteOptions,
-} from "./-task-detail-model";
+import { resolveInterruptibleTaskRun, taskDetailSourceRouteOptions } from "./-task-detail-model";
 import { useTaskDetailPage } from "./-TaskDetailPageContext";
 
 export const TaskDetailChat = memo(function TaskDetailChat() {
@@ -49,7 +44,6 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
     suggestedOwnerValue,
     task,
     threadComments: comments,
-    userLabelMap,
     userProfileMap,
   } = useTaskDetailPage();
   const taskId = task.id;
@@ -64,16 +58,14 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
   );
   const interruptibleTaskRun = resolveInterruptibleTaskRun(activeRuns);
   const activeRunIds = useMemo(() => new Set(activeRuns.map((run) => run.id)), [activeRuns]);
-  const commentsWithRunMeta = useMemo<TaskDetailComment[]>(() => {
+  const commentsWithQueueState = useMemo(() => {
     return comments.map((comment) => {
-      const nextComment: TaskDetailComment = { ...comment };
       const queuedTargetRunId = locallyQueuedCommentRunIds.get(comment.id) ?? null;
-      const locallyQueuedComment = applyLocalQueuedTaskCommentState(nextComment, {
+      return applyLocalQueuedTaskCommentState(comment, {
         queuedTargetRunId,
         targetRunIsLive: queuedTargetRunId ? activeRunIds.has(queuedTargetRunId) : false,
         runningRunId: interruptibleTaskRun?.id ?? null,
       });
-      return locallyQueuedComment;
     });
   }, [activeRunIds, comments, locallyQueuedCommentRunIds, interruptibleTaskRun]);
 
@@ -101,22 +93,17 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
           </div>
         ) : null
       }
-      comments={commentsWithRunMeta}
+      comments={commentsWithQueueState}
       hasActiveRun={activeRuns.length > 0}
-      activeRunIds={activeRunIds}
       hasOlderComments={hasOlderComments}
       commentsLoadingOlder={commentsLoadingOlder}
       onLoadOlderComments={loadOlderComments}
       taskId={taskId}
       blockedBy={task.blockedBy ?? []}
       liveTaskIds={liveTaskIds}
-      blockerAttention={task.blockerAttention ?? null}
-      companyId={task.companyId}
-      projectId={task.projectId ?? null}
       taskStatus={task.boardPresentationStatus}
       agentMap={agentMap}
       currentUserId={currentUserId}
-      userLabelMap={userLabelMap}
       userProfileMap={userProfileMap}
       draftKey={`paperclip:task-comment-draft:${task.id}`}
       enableOwnerChange

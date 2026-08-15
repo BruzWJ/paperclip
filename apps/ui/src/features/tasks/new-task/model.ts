@@ -63,28 +63,6 @@ export function isTextDocumentFile(file: File) {
   );
 }
 
-export function fileBaseName(filename: string) {
-  return filename.replace(/\.[^.]+$/, "");
-}
-
-export function slugifyDocumentKey(input: string) {
-  return (
-    input
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "document"
-  );
-}
-
-export function titleizeFilename(input: string) {
-  return input
-    .split(/[-_ ]+/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 export function createUniqueDocumentKey(baseKey: string, stagedFiles: StagedTaskFile[]) {
   const existingKeys = new Set(
     stagedFiles

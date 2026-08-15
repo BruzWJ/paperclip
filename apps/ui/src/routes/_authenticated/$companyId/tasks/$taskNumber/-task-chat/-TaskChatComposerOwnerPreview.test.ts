@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeComposerOwnerPreview } from "@/lib/owner-transition";
-import { shouldRenderComposerOwnerPreview } from "./-TaskChatThread";
+import { shouldRenderComposerOwnerPreview } from "./-TaskChatShared";
 
 describe("shouldRenderComposerOwnerPreview", () => {
   it("skips the spacer wrapper when the preview is empty", () => {

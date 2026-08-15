@@ -5,7 +5,7 @@ import { formatUserLabel } from "@/lib/task-owners";
 import { cn } from "@/lib/utils";
 import { deriveOriginatingActor, type Agent, type Task } from "@paperclipai/shared";
 
-export type AttributionActor = {
+type AttributionActor = {
   kind: "agent" | "user";
   id: string;
   name: string;
@@ -13,7 +13,7 @@ export type AttributionActor = {
   agentIcon?: string | null;
 };
 
-export function AttributionAvatar({
+function AttributionAvatar({
   label,
   actor,
   via,

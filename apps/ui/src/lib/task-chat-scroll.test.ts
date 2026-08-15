@@ -5,7 +5,6 @@ import {
   captureComposerViewportSnapshot,
   isWindowScrollable,
   restoreComposerViewportSnapshot,
-  shouldPreserveComposerViewport,
 } from "./task-chat-scroll";
 
 function mockTop(element: HTMLElement, top: number) {
@@ -103,29 +102,5 @@ describe("task-chat-scroll", () => {
     scrollByMock.mockRestore();
     composer.remove();
     mainContent.remove();
-  });
-
-  it("does not preserve the composer viewport just because the composer is visible", () => {
-    const composer = document.createElement("div");
-    document.body.appendChild(composer);
-    mockTop(composer, 540);
-
-    expect(shouldPreserveComposerViewport(composer)).toBe(false);
-
-    composer.remove();
-  });
-
-  it("preserves the composer viewport when focus stays inside the composer", () => {
-    const composer = document.createElement("div");
-    const input = document.createElement("textarea");
-    composer.appendChild(input);
-    document.body.appendChild(composer);
-    mockTop(composer, 1200);
-
-    input.focus();
-
-    expect(shouldPreserveComposerViewport(composer)).toBe(true);
-
-    composer.remove();
   });
 });

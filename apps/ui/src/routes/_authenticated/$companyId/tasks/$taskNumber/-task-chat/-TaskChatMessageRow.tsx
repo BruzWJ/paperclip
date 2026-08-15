@@ -3,12 +3,10 @@ import {
   ChainOfThoughtContent,
   ChainOfThoughtHeader,
 } from "@/components/ai-elements/chain-of-thought";
-import { Message, MessageContent, MessageResponse, MessageToolbar } from "@/components/ai-elements/message";
+import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import {
   Queue,
   QueueItem,
-  QueueItemAction,
-  QueueItemActions,
   QueueItemContent,
   QueueItemDescription,
   QueueItemIndicator,
@@ -21,13 +19,16 @@ import {
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { Tool, ToolContent, ToolHeader, type ToolPart } from "@/components/ai-elements/tool";
-import type { BoardTaskRunSegmentPart } from "@paperclipai/shared";
-import { MessageSquareXIcon, SquareIcon } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { AgentIcon } from "@/features/agents/AgentIconPicker";
+import { deriveInitials } from "@/lib/identity";
+import type { TaskChatMessage, TaskChatMessagePart } from "@/lib/task-chat-messages";
+import { cn, formatDateTime } from "@/lib/utils";
+import { PlugIcon } from "lucide-react";
 import { memo, useContext } from "react";
-import type { TaskChatMessage } from "@/lib/task-chat-messages";
 
 import { SystemNoticeCommentRow } from "./-SystemNoticeCommentRow";
-import { TaskChatMessageActionBar } from "./-TaskChatMessageActionBar";
+import { TaskChatMessageActionsMenu } from "./-TaskChatMessageActionsMenu";
 import { getThreadMessageCopyText, isSourceTrustMetadata, TaskChatCtx } from "./-TaskChatShared";
 import {
   commentDateLabel,
@@ -35,29 +36,13 @@ import {
   taskChatMessageAnchorId,
   taskChatMessageCustom,
   taskChatMessageKind,
-  taskChatMessageQueuedRunIsInterrupting,
-  taskChatMessageRunIsActive,
-  taskChatMessageRunIsStopping,
 } from "./-TaskChatMessageUtils";
 
-export interface TaskChatMessageRowProps {
-  message: TaskChatMessage;
-  activeRunIds: ReadonlySet<string>;
-  stoppingRunId?: string | null;
-  interruptingQueuedRunId?: string | null;
-}
-
-function toolState(status: Extract<BoardTaskRunSegmentPart, { type: "tool" }>["status"]): ToolPart["state"] {
+function toolState(status: Extract<TaskChatMessagePart, { type: "tool-call" }>["status"]): ToolPart["state"] {
   if (status === "pending") return "input-streaming";
   if (status === "running") return "input-available";
   if (status === "error") return "output-error";
   return "output-available";
-}
-
-function runSegmentParts(custom: Record<string, unknown>): readonly BoardTaskRunSegmentPart[] {
-  return Array.isArray(custom.boardRunSegmentParts)
-    ? (custom.boardRunSegmentParts as readonly BoardTaskRunSegmentPart[])
-    : [];
 }
 
 function ImmediateParent({ custom }: { custom: Record<string, unknown> }) {
@@ -65,56 +50,23 @@ function ImmediateParent({ custom }: { custom: Record<string, unknown> }) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const reference = value as Record<string, unknown>;
   if (typeof reference.authorLabel !== "string" || typeof reference.excerpt !== "string") return null;
-  return <MessageResponse>{`> **${reference.authorLabel}** · ${reference.excerpt}`}</MessageResponse>;
-}
-
-function MessageMeta({
-  author,
-  message,
-  custom,
-}: {
-  author: string;
-  message: TaskChatMessage;
-  custom: Record<string, unknown>;
-}) {
-  const clientStatus = typeof custom.clientStatus === "string" ? custom.clientStatus : null;
-  const sourceTrust = isSourceTrustMetadata(custom.sourceTrust) ? custom.sourceTrust : null;
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-      <span>{author}</span>
-      {message.createdAt ? (
-        <>
-          <span aria-hidden="true">·</span>
-          <a href={taskChatMessageAnchorId(message) ? `#${taskChatMessageAnchorId(message)}` : undefined}>
-            {commentDateLabel(message.createdAt)}
-          </a>
-        </>
-      ) : null}
-      {clientStatus ? (
-        <>
-          <span aria-hidden="true">·</span>
-          <span>{clientStatus === "pending" ? "Sending…" : clientStatus}</span>
-        </>
-      ) : null}
-      {sourceTrust ? (
-        <>
-          <span aria-hidden="true">·</span>
-          <span>
-            {sourceTrust.disposition === "promoted" ? "Promoted from low-trust" : "Low-trust source"}
-          </span>
-        </>
-      ) : null}
-    </div>
+    <blockquote className="border-l-2 border-border bg-muted/40 py-2 pr-3 pl-3 text-muted-foreground">
+      <p className="text-(length:--text-micro) font-medium text-foreground">
+        Replying to {reference.authorLabel}
+      </p>
+      <p className="line-clamp-2 text-sm">{reference.excerpt}</p>
+    </blockquote>
   );
 }
 
-function RunSegment({ message, custom }: { message: TaskChatMessage; custom: Record<string, unknown> }) {
-  const parts = runSegmentParts(custom);
+function RunSegment({ message }: { message: TaskChatMessage }) {
+  const parts = message.content;
   const traceParts = parts.filter((part) => part.type !== "text");
   const textParts = parts.filter(
-    (part): part is Extract<BoardTaskRunSegmentPart, { type: "text" }> => part.type === "text",
+    (part): part is Extract<TaskChatMessagePart, { type: "text" }> => part.type === "text",
   );
-  const working = custom.boardRunSegmentStatus === "working" || custom.runState === "working";
+  const working = message.status?.type === "running";
 
   return (
     <>
@@ -134,10 +86,10 @@ function RunSegment({ message, custom }: { message: TaskChatMessage; custom: Rec
                 </Reasoning>
               ) : (
                 <Tool
-                  key={`tool:${index}:${part.name}`}
+                  key={`tool:${index}:${part.toolName}`}
                   defaultOpen={part.status === "running" || part.status === "error"}
                 >
-                  <ToolHeader type="dynamic-tool" toolName={part.name} state={toolState(part.status)} />
+                  <ToolHeader type="dynamic-tool" toolName={part.toolName} state={toolState(part.status)} />
                   <ToolContent>
                     <p className="text-sm text-muted-foreground">
                       The board transcript exposes this tool&apos;s name and status only.
@@ -162,18 +114,7 @@ function RunSegment({ message, custom }: { message: TaskChatMessage; custom: Rec
   );
 }
 
-function QueuedMessage({
-  message,
-  custom,
-  isInterrupting,
-}: {
-  message: TaskChatMessage;
-  custom: Record<string, unknown>;
-  isInterrupting: boolean;
-}) {
-  const { onCancelQueued, onInterruptQueued } = useContext(TaskChatCtx);
-  const commentId = typeof custom.commentId === "string" ? custom.commentId : null;
-  const runId = typeof custom.queueTargetRunId === "string" ? custom.queueTargetRunId : null;
+function QueuedMessage({ message }: { message: TaskChatMessage }) {
   return (
     <Queue>
       <QueueSection defaultOpen>
@@ -186,31 +127,8 @@ function QueuedMessage({
               <div className="flex items-start gap-2">
                 <QueueItemIndicator />
                 <QueueItemContent>{getThreadMessageCopyText(message)}</QueueItemContent>
-                <QueueItemActions>
-                  {runId && onInterruptQueued ? (
-                    <QueueItemAction
-                      aria-label="Interrupt current run"
-                      title="Interrupt current run"
-                      disabled={isInterrupting}
-                      onClick={() => void onInterruptQueued(runId)}
-                    >
-                      <SquareIcon className="size-4"  data-icon="inline-end"/>
-                    </QueueItemAction>
-                  ) : null}
-                  {commentId && onCancelQueued ? (
-                    <QueueItemAction
-                      aria-label="Cancel queued message"
-                      title="Cancel queued message"
-                      onClick={() => onCancelQueued(commentId)}
-                    >
-                      <MessageSquareXIcon className="size-4"  data-icon="inline-end"/>
-                    </QueueItemAction>
-                  ) : null}
-                </QueueItemActions>
               </div>
-              <QueueItemDescription>
-                {isInterrupting ? "Interrupting…" : "Waiting for the active run to finish"}
-              </QueueItemDescription>
+              <QueueItemDescription>Waiting for the active run to finish</QueueItemDescription>
             </QueueItem>
           </QueueList>
         </QueueSectionContent>
@@ -219,7 +137,7 @@ function QueuedMessage({
   );
 }
 
-export function TaskChatCommentGroupContinuation({ message }: { message: TaskChatMessage }) {
+function TaskChatCommentGroupContinuation({ message }: { message: TaskChatMessage }) {
   const { onLoadMoreCommentGroup } = useContext(TaskChatCtx);
   const custom = taskChatMessageCustom(message);
   const rootCommentId = typeof custom.boardGroupRootId === "string" ? custom.boardGroupRootId : null;
@@ -229,7 +147,7 @@ export function TaskChatCommentGroupContinuation({ message }: { message: TaskCha
     typeof custom.boardGroupContinuationError === "string" ? custom.boardGroupContinuationError : null;
   if (!rootCommentId || (!hasMore && !loading && !error)) return null;
   return (
-    <div data-testid="task-chat-comment-group-continuation" data-root-comment-id={rootCommentId}>
+    <div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {hasMore && onLoadMoreCommentGroup ? (
         <Suggestions>
@@ -246,96 +164,159 @@ export function TaskChatCommentGroupContinuation({ message }: { message: TaskCha
 
 export const TaskChatMessageRow = memo(function TaskChatMessageRow({
   message,
-  activeRunIds,
-  stoppingRunId,
-  interruptingQueuedRunId,
-}: TaskChatMessageRowProps) {
-  const { currentUserId, userProfileMap, onImageClick } = useContext(TaskChatCtx);
+}: {
+  message: TaskChatMessage;
+}) {
+  const { agentMap, currentUserId, userProfileMap, onImageClick } = useContext(TaskChatCtx);
   const custom = taskChatMessageCustom(message);
   const kind = taskChatMessageKind(message);
   const anchorId = taskChatMessageAnchorId(message);
-  const authorName = typeof custom.authorName === "string" ? custom.authorName : "Agent";
-  const human = resolveTaskChatHumanAuthor({
-    authorName,
-    authorUserId: typeof custom.authorUserId === "string" ? custom.authorUserId : null,
-    currentUserId,
-    userProfileMap,
-  });
-  const resolvedAuthor = message.role === "user" ? human.authorName : authorName;
-  const isRunActive = taskChatMessageRunIsActive(message, activeRunIds);
-  const isStoppingRun = taskChatMessageRunIsStopping(message, stoppingRunId);
-  const isInterruptingQueuedRun = taskChatMessageQueuedRunIsInterrupting(message, interruptingQueuedRunId);
 
   if (message.role === "system" && kind === "system_notice") {
     return (
-      <div data-testid="task-chat-message-row" data-message-role="system" data-message-kind={kind}>
+      <article id={anchorId ?? message.id} data-message-role="system">
         <SystemNoticeCommentRow message={message} anchorId={anchorId ?? undefined} />
         <TaskChatCommentGroupContinuation message={message} />
-      </div>
+      </article>
     );
   }
 
-  const queued = custom.queueState === "queued" || custom.clientStatus === "queued";
+  const authorName = typeof custom.authorName === "string" ? custom.authorName : "Agent";
+  const authorType =
+    custom.authorType === "agent" || custom.authorType === "plugin" || custom.authorType === "system"
+      ? custom.authorType
+      : "user";
+  const authorAgentId = typeof custom.authorAgentId === "string" ? custom.authorAgentId : null;
+  const authorUserId = typeof custom.authorUserId === "string" ? custom.authorUserId : null;
+  const agent = authorAgentId ? agentMap?.get(authorAgentId) : null;
+  const human = resolveTaskChatHumanAuthor({
+    authorName,
+    authorUserId,
+    currentUserId,
+    userProfileMap,
+  });
+  const humanIsCurrentUser =
+    human.isCurrentUser || (authorType === "user" && !authorUserId && authorName.trim() === "You");
+  const senderKind =
+    authorType === "plugin"
+      ? "plugin"
+      : authorType === "agent" || authorAgentId || message.role === "assistant"
+        ? "agent"
+        : "human";
+  const senderName =
+    senderKind === "agent"
+      ? (agent?.name ?? authorName)
+      : senderKind === "human"
+        ? human.authorName
+        : authorName;
+  const senderRole =
+    senderKind === "agent"
+      ? "Agent"
+      : senderKind === "plugin"
+        ? "Plugin"
+        : humanIsCurrentUser
+          ? "You"
+          : "Member";
+  const senderIsCurrentUser = senderKind === "human" && humanIsCurrentUser;
+  const showSenderRole = senderRole.toLowerCase() !== senderName.toLowerCase();
+  const clientStatus = typeof custom.clientStatus === "string" ? custom.clientStatus : null;
+  const sourceTrust = isSourceTrustMetadata(custom.sourceTrust) ? custom.sourceTrust : null;
+  const senderLabelId = `task-chat-sender-${message.id}`;
+
+  const queued = custom.clientStatus === "queued";
   return (
-    <div
-      data-testid="task-chat-message-row"
-      data-message-role={message.role}
-      data-message-kind={kind}
-      data-board-group-entry={custom.boardIsRoot !== true && custom.boardGroupRootId ? "true" : undefined}
-    >
-      <Message from={message.role === "user" ? "user" : "assistant"}>
-        <MessageContent
-          onClick={(event) => {
-            const target = event.target;
-            if (target instanceof HTMLImageElement && target.src) onImageClick?.(target.src);
-          }}
-        >
-          <MessageMeta author={resolvedAuthor} message={message} custom={custom} />
-          <ImmediateParent custom={custom} />
-          {queued ? (
-            <QueuedMessage message={message} custom={custom} isInterrupting={isInterruptingQueuedRun} />
-          ) : kind === "run-segment" ? (
-            <RunSegment message={message} custom={custom} />
-          ) : (
-            <MessageResponse isAnimating={message.role === "assistant" && message.status?.type === "running"}>
-              {getThreadMessageCopyText(message)}
-            </MessageResponse>
+    <article id={anchorId ?? message.id} aria-labelledby={senderLabelId} data-message-role={message.role}>
+      <Message from={senderIsCurrentUser ? "user" : "assistant"} className="max-w-full gap-1.5">
+        <div
+          className={cn(
+            "flex w-full min-w-0 items-center gap-2",
+            senderIsCurrentUser ? "justify-end" : "justify-start",
           )}
-        </MessageContent>
-        {!queued ? (
-          <MessageToolbar className={message.role === "user" ? "justify-end" : "justify-start"}>
-            <TaskChatMessageActionBar
+        >
+          <Avatar size="sm">
+            {senderKind === "human" && human.avatarUrl ? <AvatarImage src={human.avatarUrl} alt="" /> : null}
+            <AvatarFallback
+              className={cn(
+                senderKind === "agent" && "bg-primary/10 text-primary",
+                senderKind === "plugin" && "bg-accent text-accent-foreground",
+              )}
+            >
+              {senderKind === "agent" ? (
+                <span aria-hidden="true">
+                  <AgentIcon icon={agent?.icon} className="size-3.5" />
+                </span>
+              ) : senderKind === "plugin" ? (
+                <PlugIcon className="size-3.5" aria-hidden="true" data-icon="inline-start" />
+              ) : (
+                deriveInitials(senderName)
+              )}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-muted-foreground">
+            <span id={senderLabelId} className="min-w-0 truncate text-sm font-medium text-foreground">
+              {senderName}
+            </span>
+            {showSenderRole ? (
+              <span className="shrink-0 text-(length:--text-micro) font-medium">{senderRole}</span>
+            ) : null}
+            <span aria-hidden="true">·</span>
+            <a
+              href={`#${anchorId ?? message.id}`}
+              className="shrink-0 text-(length:--text-micro) hover:text-foreground focus-visible:text-foreground"
+            >
+              <time dateTime={message.createdAt.toISOString()} title={formatDateTime(message.createdAt)}>
+                {commentDateLabel(message.createdAt)}
+              </time>
+            </a>
+            {clientStatus ? (
+              <span className="text-(length:--text-micro)">
+                · {clientStatus === "pending" ? "Sending…" : clientStatus}
+              </span>
+            ) : null}
+            {sourceTrust ? (
+              <span className="text-(length:--text-micro)">
+                · {sourceTrust.disposition === "promoted" ? "Promoted from low-trust" : "Low-trust source"}
+              </span>
+            ) : null}
+          </div>
+          {!queued ? (
+            <TaskChatMessageActionsMenu
               message={message}
-              authorLabel={resolvedAuthor}
+              authorLabel={senderName}
               anchorId={anchorId}
-              isRunActive={isRunActive}
-              isStoppingRun={isStoppingRun}
+              align={senderIsCurrentUser ? "end" : "start"}
             />
-          </MessageToolbar>
-        ) : null}
+          ) : null}
+        </div>
+        <div
+          className={cn(
+            "flex w-full min-w-0",
+            senderIsCurrentUser ? "justify-end pr-0 sm:pr-8" : "justify-start pl-0 sm:pl-8",
+          )}
+        >
+          <MessageContent
+            className={cn("max-w-3xl", queued && "w-full")}
+            onClick={(event) => {
+              const target = event.target;
+              if (target instanceof HTMLImageElement && target.src) onImageClick?.(target.src);
+            }}
+          >
+            <ImmediateParent custom={custom} />
+            {queued ? (
+              <QueuedMessage message={message} />
+            ) : kind === "run-segment" ? (
+              <RunSegment message={message} />
+            ) : (
+              <MessageResponse
+                isAnimating={message.role === "assistant" && message.status?.type === "running"}
+              >
+                {getThreadMessageCopyText(message)}
+              </MessageResponse>
+            )}
+          </MessageContent>
+        </div>
       </Message>
       <TaskChatCommentGroupContinuation message={message} />
-    </div>
+    </article>
   );
-}, areTaskChatMessageRowPropsEqual);
-
-export function areTaskChatMessageRowPropsEqual(
-  previous: TaskChatMessageRowProps,
-  next: TaskChatMessageRowProps,
-) {
-  if (previous.message !== next.message) return false;
-  if (
-    taskChatMessageRunIsActive(previous.message, previous.activeRunIds) !==
-    taskChatMessageRunIsActive(next.message, next.activeRunIds)
-  )
-    return false;
-  if (
-    taskChatMessageRunIsStopping(previous.message, previous.stoppingRunId) !==
-    taskChatMessageRunIsStopping(next.message, next.stoppingRunId)
-  )
-    return false;
-  return (
-    taskChatMessageQueuedRunIsInterrupting(previous.message, previous.interruptingQueuedRunId) ===
-    taskChatMessageQueuedRunIsInterrupting(next.message, next.interruptingQueuedRunId)
-  );
-}
+});

@@ -9,7 +9,6 @@ import {
 import type { NavigationAction } from "@/lib/navigation-action";
 import type { TaskDetailSource } from "@/lib/taskDetailBreadcrumb";
 import type { Task, TaskAttachment, TaskTreeControlMode, TaskWorkProduct } from "@paperclipai/shared";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   createElement,
   useCallback,
@@ -19,14 +18,6 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import {
-  applyOptimisticTaskFieldUpdate,
-  applyOptimisticTaskFieldUpdateToCollection,
-  matchesTaskId,
-  type ClientTaskComment,
-} from "@/lib/optimistic-task-comments";
-import { queryKeys } from "@/lib/queryKeys";
-
 import {
   resolveTaskDetailResourceReveal,
   shouldScrollTaskDetailToTopOnNavigation,
@@ -212,7 +203,7 @@ export function useTaskDetailEffects({
         onUpdateTask: handleTaskPropertiesUpdate,
         hasActiveRun: resolvedHasActiveRun,
       }),
-      { title: "Task details" },
+      { title: "Task details", headerMode: "content" },
     );
   }, [
     attachmentError,
@@ -449,79 +440,5 @@ export function useTaskDetailState() {
     setTreeControlReason,
     treeControlCancelConfirmed,
     setTreeControlCancelConfirmed,
-  };
-}
-
-/** Centralizes cache updates shared by task-detail mutations. */
-export function useTaskDetailCacheActions(companyId: string, taskId: string) {
-  const queryClient = useQueryClient();
-  const invalidateTaskDetail = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.tasks.detail(taskId) });
-  }, [taskId, queryClient]);
-  const invalidateTaskThreadLazily = useCallback(() => {
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.tasks.detail(taskId),
-      refetchType: "inactive",
-    });
-  }, [taskId, queryClient]);
-  const invalidateTaskRunState = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["tasks", "runs", taskId] });
-  }, [taskId, queryClient]);
-  const upsertCommentInCache = useCallback(
-    (_comment: ClientTaskComment) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.comments(taskId),
-      });
-    },
-    [taskId, queryClient],
-  );
-  const invalidateTaskCollections = useCallback(() => {
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.tasks.list(companyId),
-    });
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.tasks.listMineByMe(companyId),
-    });
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.tasks.listTouchedByMe(companyId),
-    });
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.tasks.listUnreadTouchedByMe(companyId),
-    });
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.sidebarBadges(companyId),
-    });
-  }, [queryClient, companyId]);
-  const applyOptimisticTaskCacheUpdate = useCallback(
-    (canonicalTaskId: string, data: Record<string, unknown>) => {
-      queryClient.setQueryData<Task>(queryKeys.tasks.detail(canonicalTaskId), (cached) =>
-        cached ? applyOptimisticTaskFieldUpdate(cached, data) : cached,
-      );
-      queryClient.setQueryData<Task[] | undefined>(queryKeys.tasks.list(companyId), (cached) =>
-        applyOptimisticTaskFieldUpdateToCollection(cached, canonicalTaskId, data),
-      );
-    },
-    [queryClient, companyId],
-  );
-  const mergeTaskResponseIntoCaches = useCallback(
-    (nextTask: Task) => {
-      queryClient.setQueryData<Task>(queryKeys.tasks.detail(nextTask.id), (cached) =>
-        cached ? { ...cached, ...nextTask } : nextTask,
-      );
-      queryClient.setQueryData<Task[] | undefined>(queryKeys.tasks.list(companyId), (cached) =>
-        cached?.map((item) => (matchesTaskId(item, nextTask.id) ? { ...item, ...nextTask } : item)),
-      );
-    },
-    [queryClient, companyId],
-  );
-
-  return {
-    invalidateTaskDetail,
-    invalidateTaskThreadLazily,
-    invalidateTaskRunState,
-    upsertCommentInCache,
-    invalidateTaskCollections,
-    applyOptimisticTaskCacheUpdate,
-    mergeTaskResponseIntoCaches,
   };
 }

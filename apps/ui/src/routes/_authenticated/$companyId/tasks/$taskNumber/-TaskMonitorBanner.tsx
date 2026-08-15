@@ -4,7 +4,6 @@ import type { Task } from "@paperclipai/shared";
 
 import { Banner, BannerIcon, BannerTitle } from "@/components/kibo-ui/banner";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   deriveMonitorState,
   formatMonitorAbsolute,
@@ -16,42 +15,22 @@ import {
 } from "@/lib/task-monitor";
 
 /**
- * States in which the waiting-monitor surfaces (top banner + composer strip)
- * are shown. `cleared` and `none` hide both surfaces entirely — see
- * wireframe 04 (PAP-14557).
+ * States in which the waiting-monitor banner is shown.
  */
 const WAITING_STATES: readonly MonitorDisplayState[] = ["scheduled", "retrying", "due-now", "overdue"];
 
-export function isWaitingMonitorState(state: MonitorDisplayState): boolean {
+function isWaitingMonitorState(state: MonitorDisplayState): boolean {
   return WAITING_STATES.includes(state);
 }
 
-export function hasVisibleMonitorSurface(task: Task): boolean {
-  const derived = deriveMonitorState(task);
-  return isWaitingMonitorState(derived.state) && derived.nextCheckAt !== null;
-}
-
-export interface MonitorSurfaceCopy {
-  /** Prominent lead for the top banner, e.g. "Monitor reminder — due in 2h 12m". */
+interface MonitorSurfaceCopy {
   bannerTitle: string;
-  /** Prominent lead for the composer strip, e.g. "Resumes in 2h 12m". */
-  stripTitle: string;
-  /** Muted detail line for the banner (absolute time carries a "(your time)" hint). */
   bannerMeta: string[];
-  /** Muted detail line for the composer strip. */
-  stripMeta: string[];
-  /** `warning` (amber) once overdue, `info` (blue) while still on schedule. */
   tone: "info" | "warning";
 }
 
-function capitalize(value: string): string {
-  return value.length === 0 ? value : `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
-}
-
 /**
- * Pure copy builder shared by the banner and the composer strip so both
- * surfaces render one consistent copy system (see wireframe 04). Kept free of
- * hooks/`Date.now()` so it is deterministic under test.
+ * Pure copy builder kept free of hooks/`Date.now()` so it is deterministic under test.
  */
 export function buildMonitorSurfaceCopy(
   derived: DerivedMonitorState,
@@ -63,40 +42,30 @@ export function buildMonitorSurfaceCopy(
   const absolute = formatMonitorAbsolute(derived.nextCheckAt, {}, now); // local time, e.g. "Today, 4:08 PM"
 
   let bannerTitle: string;
-  let stripTitle: string;
-  let statusHint: string | null = null;
   switch (derived.state) {
     case "scheduled":
     case "retrying":
       bannerTitle = `Monitor reminder — due ${eta}`;
-      stripTitle = `Due ${eta}`;
       break;
     case "due-now":
       bannerTitle = "Monitor reminder — due now";
-      stripTitle = "Due now";
       break;
     case "overdue":
     default:
       bannerTitle = `Monitor reminder — ${eta}`;
-      stripTitle = capitalize(eta);
       break;
   }
 
   const attemptLabel = derived.attemptCount >= 1 ? `Attempt ${derived.attemptCount}` : null;
   const serviceLabel = derived.serviceName ? `Watching: ${derived.serviceName}` : null;
 
-  const bannerMeta = [statusHint, `${absolute} (your time)`, attemptLabel, serviceLabel].filter(
+  const bannerMeta = [`${absolute} (your time)`, attemptLabel, serviceLabel].filter(
     (piece): piece is string => Boolean(piece),
-  );
-  const stripMeta = [statusHint, absolute, attemptLabel, serviceLabel].filter((piece): piece is string =>
-    Boolean(piece),
   );
 
   return {
     bannerTitle,
-    stripTitle,
     bannerMeta,
-    stripMeta,
     tone: derived.state === "overdue" ? "warning" : "info",
   };
 }
@@ -110,7 +79,7 @@ function useMonitorSurfaceCopy(task: Task): MonitorSurfaceCopy | null {
   return useMemo(() => buildMonitorSurfaceCopy(deriveMonitorState(task, now), now), [task, now]);
 }
 
-export interface TaskMonitorSurfaceProps {
+interface TaskMonitorSurfaceProps {
   task: Task;
 }
 
@@ -132,30 +101,5 @@ export function TaskMonitorBanner({ task }: TaskMonitorSurfaceProps) {
       </BannerTitle>
       <DomainStatus status={copy.tone}>{copy.tone === "warning" ? "Overdue" : "Scheduled"}</DomainStatus>
     </Banner>
-  );
-}
-
-/**
- * Slim, inline (not sticky) strip anchored directly above the reply composer.
- * Mirrors the banner's monitor state and makes clear that only an explicit
- * agent mention queues execution (PAP-14557 decisions 2 +
- * wireframe 02).
- */
-export function TaskMonitorComposerStrip({
-  task,
-  className,
-}: TaskMonitorSurfaceProps & { className?: string }) {
-  const copy = useMonitorSurfaceCopy(task);
-  if (!copy) return null;
-
-  return (
-    <Alert role="note" data-testid="task-monitor-composer-strip" className={className}>
-      <Clock aria-hidden="true"  data-icon="inline-start"/>
-      <AlertTitle>{copy.stripTitle}</AlertTitle>
-      <AlertDescription>
-        <p>{copy.stripMeta.join(" · ")}</p>
-        <p>Use an explicit @mention to queue the agent; this reminder does not trigger a run.</p>
-      </AlertDescription>
-    </Alert>
   );
 }

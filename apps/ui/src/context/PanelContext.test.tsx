@@ -10,15 +10,24 @@ import { PanelProvider, usePanel } from "./PanelContext";
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 function PanelHarness() {
-  const { closePanel, openPanel, panelContent, panelTitle } = usePanel();
+  const { closePanel, openPanel, panelContent, panelHeaderMode, panelTitle } = usePanel();
   return (
     <div>
       <span data-testid="panel-title">{panelTitle}</span>
+      <span data-testid="panel-header-mode">{panelHeaderMode}</span>
       <div data-testid="panel-content">{panelContent}</div>
       <button type="button" onClick={() => openPanel(<span>Default content</span>)}>
         Open default
       </button>
-      <button type="button" onClick={() => openPanel(<span>Task content</span>, { title: "Task details" })}>
+      <button
+        type="button"
+        onClick={() =>
+          openPanel(<span>Task content</span>, {
+            title: "Task details",
+            headerMode: "content",
+          })
+        }
+      >
         Open task
       </button>
       <button type="button" onClick={closePanel}>
@@ -51,23 +60,26 @@ describe("PanelContext", () => {
     container.remove();
   });
 
-  it("keeps the legacy Properties title for one-argument callers", () => {
+  it("keeps the default Properties title for one-argument callers", () => {
     const buttons = Array.from(container.querySelectorAll("button"));
     act(() => buttons.find((button) => button.textContent === "Open default")?.click());
 
     expect(container.querySelector('[data-testid="panel-title"]')?.textContent).toBe("Properties");
+    expect(container.querySelector('[data-testid="panel-header-mode"]')?.textContent).toBe("shell");
     expect(container.querySelector('[data-testid="panel-content"]')?.textContent).toBe("Default content");
   });
 
-  it("publishes a custom title atomically and resets it when closed", () => {
+  it("publishes a content-owned header atomically and resets it when closed", () => {
     const buttons = Array.from(container.querySelectorAll("button"));
     act(() => buttons.find((button) => button.textContent === "Open task")?.click());
 
     expect(container.querySelector('[data-testid="panel-title"]')?.textContent).toBe("Task details");
+    expect(container.querySelector('[data-testid="panel-header-mode"]')?.textContent).toBe("content");
     expect(container.querySelector('[data-testid="panel-content"]')?.textContent).toBe("Task content");
 
     act(() => buttons.find((button) => button.textContent === "Close")?.click());
     expect(container.querySelector('[data-testid="panel-title"]')?.textContent).toBe("Properties");
+    expect(container.querySelector('[data-testid="panel-header-mode"]')?.textContent).toBe("shell");
     expect(container.querySelector('[data-testid="panel-content"]')?.textContent).toBe("");
   });
 });

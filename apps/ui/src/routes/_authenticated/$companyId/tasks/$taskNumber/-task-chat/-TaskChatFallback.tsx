@@ -7,15 +7,14 @@ import { Message, MessageContent, MessageResponse } from "@/components/ai-elemen
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import type { TaskChatMessage } from "@/lib/task-chat-messages";
 
-export type TaskChatErrorBoundaryProps = {
+type TaskChatErrorBoundaryProps = {
   resetKey: string;
   messages: readonly TaskChatMessage[];
   emptyMessage: string;
-  variant: "full" | "embedded";
   children: ReactNode;
 };
 
-export type TaskChatErrorBoundaryState = { hasError: boolean };
+type TaskChatErrorBoundaryState = { hasError: boolean };
 
 export class TaskChatErrorBoundary extends Component<TaskChatErrorBoundaryProps, TaskChatErrorBoundaryState> {
   override state: TaskChatErrorBoundaryState = { hasError: false };
@@ -45,15 +44,15 @@ export class TaskChatErrorBoundary extends Component<TaskChatErrorBoundaryProps,
   }
 }
 
-export function fallbackAuthorLabel(message: TaskChatMessage) {
-  const custom = message.metadata?.custom as Record<string, unknown> | undefined;
-  if (typeof custom?.authorName === "string") return custom.authorName;
+function fallbackAuthorLabel(message: TaskChatMessage) {
+  const custom = message.metadata.custom;
+  if (typeof custom.authorName === "string") return custom.authorName;
   if (message.role === "assistant") return "Agent";
   if (message.role === "user") return "You";
   return "System";
 }
 
-export function fallbackTextParts(message: TaskChatMessage) {
+function fallbackTextParts(message: TaskChatMessage) {
   const lines: string[] = [];
   for (const part of message.content) {
     if (part.type === "text" || part.type === "reasoning") {
@@ -65,7 +64,7 @@ export function fallbackTextParts(message: TaskChatMessage) {
   return lines;
 }
 
-export function TaskChatFallbackThread({
+function TaskChatFallbackThread({
   messages,
   emptyMessage,
 }: {

@@ -6,9 +6,6 @@ import {
 } from "@/components/ai-elements/conversation";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
 import { useLocation } from "@tanstack/react-router";
 import { MessagesSquareIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
@@ -18,7 +15,6 @@ import type { useTaskChatThreadController } from "./-TaskChatThread";
 import { TaskChatComposer } from "./-TaskChatComposerView";
 import { TaskChatErrorBoundary } from "./-TaskChatFallback";
 import { TaskChatMessageRow } from "./-TaskChatMessageRow";
-import { taskChatMessageAnchorId } from "./-TaskChatMessageUtils";
 import { TaskChatCtx } from "./-TaskChatShared";
 
 type Controller = ReturnType<typeof useTaskChatThreadController>;
@@ -28,57 +24,29 @@ const EMPTY_PROMPTS = [
   "What should happen next?",
   "Give me a concise progress update",
 ] as const;
+const EMPTY_MESSAGE = "This task conversation is empty. Start with a message below.";
 
-function TaskChatHashNavigation({
-  messages,
-  autoScrollToHashOnInitialLoad,
-}: {
-  messages: readonly TaskChatMessage[];
-  autoScrollToHashOnInitialLoad: boolean;
-}) {
+function TaskChatHashNavigation({ messages }: { messages: readonly TaskChatMessage[] }) {
   const location = useLocation();
   const lastScrolledHashRef = useRef<string | null>(null);
   const decidedInitialHashRef = useRef(false);
 
   useEffect(() => {
     const hash = location.hash ? `#${location.hash}` : window.location.hash;
-    if (!["#comment-", "#run-"].some((prefix) => hash.startsWith(prefix))) return;
+    if (!hash.startsWith("#comment-")) return;
     if (!messages.length || lastScrolledHashRef.current === hash) return;
     if (!decidedInitialHashRef.current) {
       decidedInitialHashRef.current = true;
-      if (!autoScrollToHashOnInitialLoad) {
-        lastScrolledHashRef.current = hash;
-        return;
-      }
+      lastScrolledHashRef.current = hash;
+      return;
     }
     const element = document.getElementById(hash.slice(1));
     if (!element) return;
     element.scrollIntoView({ block: "center", behavior: "smooth" });
     lastScrolledHashRef.current = hash;
-  }, [autoScrollToHashOnInitialLoad, location.hash, messages]);
+  }, [location.hash, messages]);
 
   return null;
-}
-
-function MessageItem({
-  message,
-  activeRunIds,
-  stoppingRunId,
-  interruptingQueuedRunId,
-}: Pick<Controller, "activeRunIds" | "stoppingRunId" | "interruptingQueuedRunId"> & {
-  message: TaskChatMessage;
-}) {
-  const anchorId = taskChatMessageAnchorId(message) ?? message.id;
-  return (
-    <div id={anchorId} data-message-anchor={anchorId}>
-      <TaskChatMessageRow
-        message={message}
-        activeRunIds={activeRunIds}
-        stoppingRunId={stoppingRunId}
-        interruptingQueuedRunId={interruptingQueuedRunId}
-      />
-    </div>
-  );
 }
 
 function TaskChatContext({
@@ -87,19 +55,10 @@ function TaskChatContext({
   ownerUserId,
   unresolvedBlockers,
   liveTaskIds,
-  onResumeFromBacklog,
-  resumeFromBacklogPending,
   composerAccessory,
 }: Pick<
   Controller,
-  | "taskStatus"
-  | "ownerAgent"
-  | "ownerUserId"
-  | "unresolvedBlockers"
-  | "liveTaskIds"
-  | "onResumeFromBacklog"
-  | "resumeFromBacklogPending"
-  | "composerAccessory"
+  "taskStatus" | "ownerAgent" | "ownerUserId" | "unresolvedBlockers" | "liveTaskIds" | "composerAccessory"
 >) {
   const hasBacklogOwner = taskStatus === "backlog" && Boolean(ownerAgent || ownerUserId);
   const hasPausedOwner = ownerAgent?.status === "paused";
@@ -108,26 +67,13 @@ function TaskChatContext({
   }
 
   return (
-    <Task defaultOpen data-testid="task-chat-context">
+    <Task defaultOpen>
       <TaskTrigger title="Task context" />
       <TaskContent>
         {hasBacklogOwner ? (
-          <TaskItem data-testid="task-owner-backlog-notice">
+          <TaskItem>
             {ownerAgent?.name ?? "The current user owner"} is parked. Ordinary messages remain comments; an
             explicit agent mention can still queue triage.
-            {onResumeFromBacklog ? (
-              <Button
-                className="ml-2"
-                size="sm"
-                variant="outline"
-                onClick={onResumeFromBacklog}
-                disabled={resumeFromBacklogPending}
-                data-testid="task-owner-backlog-resume"
-              >
-                {resumeFromBacklogPending ? <Spinner /> : null}
-                {resumeFromBacklogPending ? "Resuming…" : "Resume now"}
-              </Button>
-            ) : null}
           </TaskItem>
         ) : null}
         {unresolvedBlockers.length > 0 ? (
@@ -152,19 +98,15 @@ function TaskChatContext({
   );
 }
 
-function TaskChatThreadContent(props: Controller) {
-  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
+export function TaskChatThreadView(props: Controller) {
   const {
-    activeRunIds,
     agentMap,
-    autoScrollToHashOnInitialLoad,
     commentsLoadingOlder,
     composerAccessory,
     composerDisabledReason,
     composerHint,
     composerRef,
     currentOwnerValue,
-    currentUserId,
     draftKey,
     enableOwnerChange,
     errorBoundaryResetKey,
@@ -172,51 +114,38 @@ function TaskChatThreadContent(props: Controller) {
     hasActiveRun,
     hasOlderComments,
     imageUploadHandler,
-    interruptingQueuedRunId,
     liveTaskIds,
     mentions,
     messages,
     onAdd,
     onAttachImage,
-    onCancelRun,
     onLoadOlderComments,
     onRefreshLatestComments,
-    onResumeFromBacklog,
     ownerAgent,
     ownerOptions,
     ownerUserId,
     replyPending,
     replyTarget,
-    resolvedEmptyMessage,
-    resolvedShowJumpToLatest,
-    resumeFromBacklogPending,
     setReplyPending,
     setReplyTarget,
     showComposer,
-    stoppingRunId,
     suggestedOwnerValue,
     taskStatus,
     taskWorkMode,
     unresolvedBlockers,
-    userLabelMap,
-    variant,
   } = props;
 
   return (
     <TaskChatCtx.Provider value={props.chatCtx}>
-      <div data-testid="thread-root">
+      <div>
         <TaskChatErrorBoundary
           resetKey={errorBoundaryResetKey}
           messages={messages}
-          emptyMessage={resolvedEmptyMessage}
-          variant={variant}
+          emptyMessage={EMPTY_MESSAGE}
         >
-          <Conversation className={cn(variant === "embedded" ? "h-(--sz-28dvh)" : "h-(--sz-70vh)")}>
-            <TaskChatHashNavigation
-              messages={messages}
-              autoScrollToHashOnInitialLoad={autoScrollToHashOnInitialLoad}
-            />
-            <ConversationContent data-testid="thread-viewport">
+          <Conversation className="h-(--sz-70vh)">
+            <TaskChatHashNavigation messages={messages} />
+            <ConversationContent className="gap-6 p-3 sm:p-4">
               {hasOlderComments ? (
                 <Suggestions className="justify-center">
                   <Suggestion
@@ -228,15 +157,15 @@ function TaskChatThreadContent(props: Controller) {
               ) : null}
 
               {messages.length === 0 ? (
-                <ConversationEmptyState
-                  icon={<MessagesSquareIcon className="size-5" />}
-                  title="No messages yet"
-                  description={resolvedEmptyMessage}
-                >
-                  <MessagesSquareIcon className="size-5 text-muted-foreground" aria-hidden="true"  data-icon="inline-start"/>
+                <ConversationEmptyState>
+                  <MessagesSquareIcon
+                    className="size-5 text-muted-foreground"
+                    aria-hidden="true"
+                    data-icon="inline-start"
+                  />
                   <div>
                     <p className="font-medium text-sm">No messages yet</p>
-                    <p className="text-muted-foreground text-sm">{resolvedEmptyMessage}</p>
+                    <p className="text-muted-foreground text-sm">{EMPTY_MESSAGE}</p>
                   </div>
                   {showComposer ? (
                     <Suggestions>
@@ -255,34 +184,20 @@ function TaskChatThreadContent(props: Controller) {
                   ) : null}
                 </ConversationEmptyState>
               ) : (
-                messages.map((message) => (
-                  <MessageItem
-                    key={message.id}
-                    message={message}
-                    activeRunIds={activeRunIds}
-                    stoppingRunId={stoppingRunId}
-                    interruptingQueuedRunId={interruptingQueuedRunId}
-                  />
-                ))
+                messages.map((message) => <TaskChatMessageRow key={message.id} message={message} />)
               )}
             </ConversationContent>
-            {resolvedShowJumpToLatest ? (
-              <ConversationScrollButton
-                aria-label="Jump to latest message"
-                onPointerDown={() => {
-                  void Promise.resolve(onRefreshLatestComments?.()).catch(() => undefined);
-                }}
-              />
-            ) : null}
+            <ConversationScrollButton
+              aria-label="Jump to latest message"
+              onPointerDown={() => {
+                void Promise.resolve(onRefreshLatestComments?.()).catch(() => undefined);
+              }}
+            />
           </Conversation>
         </TaskChatErrorBoundary>
 
         {showComposer ? (
-          <div
-            className="mt-4 space-y-3"
-            data-testid="task-chat-composer-dock"
-            aria-busy={replyPending || undefined}
-          >
+          <div className="mt-4 space-y-3" aria-busy={replyPending || undefined}>
             {replyPending ? (
               <p role="status" className="sr-only">
                 Sending reply…
@@ -294,8 +209,6 @@ function TaskChatThreadContent(props: Controller) {
               ownerUserId={ownerUserId}
               unresolvedBlockers={unresolvedBlockers}
               liveTaskIds={liveTaskIds}
-              onResumeFromBacklog={onResumeFromBacklog}
-              resumeFromBacklogPending={resumeFromBacklogPending}
               composerAccessory={composerAccessory}
             />
             <TaskChatComposer
@@ -310,9 +223,7 @@ function TaskChatThreadContent(props: Controller) {
               suggestedOwnerValue={suggestedOwnerValue}
               mentions={mentions}
               agentMap={agentMap}
-              hasActiveRun={Boolean(hasActiveRun)}
-              currentUserId={currentUserId}
-              userLabelMap={userLabelMap}
+              hasActiveRun={hasActiveRun}
               composerDisabledReason={composerDisabledReason}
               composerHint={composerHint}
               taskWorkMode={taskWorkMode}
@@ -327,25 +238,14 @@ function TaskChatThreadContent(props: Controller) {
         ) : null}
 
         {footer ? (
-          <Task defaultOpen className="mt-4" data-testid="task-chat-thread-footer">
+          <Task defaultOpen className="mt-4">
             <TaskTrigger title="Adjacent work" />
             <TaskContent>
               <TaskItem>{footer}</TaskItem>
             </TaskContent>
           </Task>
         ) : null}
-
-        {hasActiveRun && onCancelRun ? (
-          <Button className="mt-3" variant="ghost" size="sm" onClick={() => void onCancelRun()}>
-            Stop current run
-          </Button>
-        ) : null}
       </div>
     </TaskChatCtx.Provider>
   );
-}
-
-export function TaskChatThreadView(props: Controller) {
-  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
-  return <TaskChatThreadContent {...props} />;
 }

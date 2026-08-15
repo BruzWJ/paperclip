@@ -15,11 +15,11 @@ import type { useTaskDocumentDraftActions } from "./-useTaskDocumentDraftActions
 export type TaskDocumentEditorState = ReturnType<typeof useTaskDocumentEditorState>;
 type DraftActions = ReturnType<typeof useTaskDocumentDraftActions>;
 
-export interface UseTaskDocumentEffectsOptions {
+interface UseTaskDocumentEffectsOptions {
   documentSubject: DocumentSubjectConfig;
   sortedDocuments: TaskDocument[];
   locationHash: string;
-  presentationActive?: boolean;
+  presentationActive: boolean;
   editorState: TaskDocumentEditorState;
   draftActions: DraftActions;
 }
@@ -29,7 +29,7 @@ export function useTaskDocumentEffects({
   documentSubject,
   sortedDocuments,
   locationHash,
-  presentationActive = true,
+  presentationActive,
   editorState,
   draftActions,
 }: UseTaskDocumentEffectsOptions) {
@@ -57,13 +57,7 @@ export function useTaskDocumentEffects({
 
   useEffect(() => {
     const validKeys = new Set(sortedDocuments.map((doc) => doc.key));
-    setFoldedDocumentKeys((current) => {
-      const next = current.filter((key) => validKeys.has(key));
-      if (next.length !== current.length) {
-        saveFoldedDocumentKeys(documentSubject.id, next);
-      }
-      return next;
-    });
+    setFoldedDocumentKeys((current) => current.filter((key) => validKeys.has(key)));
   }, [documentSubject.id, setFoldedDocumentKeys, sortedDocuments]);
 
   useEffect(() => {
@@ -144,7 +138,7 @@ export function useTaskDocumentEffects({
   ]);
 }
 
-export interface UseTaskDocumentEditorStateOptions {
+interface UseTaskDocumentEditorStateOptions {
   documentSubject: DocumentSubjectConfig;
 }
 

@@ -91,7 +91,6 @@ export function useTaskDetailController() {
   const isLoading = taskQuery.isLoading;
   const error = taskQuery.error;
   const commentData = useTaskDetailComments({
-    companyId,
     taskId,
     detailTab: localState.detailTab,
   });

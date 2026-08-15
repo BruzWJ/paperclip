@@ -1,7 +1,6 @@
 import { ApiError } from "@/api/client";
 import { ACTIVE_TASK_EXECUTION_RUN_STATUSES } from "@/api/runs";
 import { type NavigationAction } from "@/lib/navigation-action";
-import { type ClientTaskComment } from "@/lib/optimistic-task-comments";
 import { queryKeys } from "@/lib/queryKeys";
 import { parseDocumentAnnotationHash } from "@/lib/document-annotation-hash";
 import { parseTaskArtifactFragment, type TaskArtifactFragment } from "@/lib/task-artifact-fragment";
@@ -13,19 +12,8 @@ import {
 } from "@paperclipai/shared";
 import { type QueryClient } from "@tanstack/react-query";
 
-export { fileBaseName, slugifyDocumentKey, titleizeFilename } from "@/lib/document-file-names";
-
 export type CommentOwnerChange = {
   ownerAgentId: string;
-};
-
-export type TaskDetailComment = ClientTaskComment & {
-  runId?: string | null;
-  runAgentId?: string | null;
-  interruptedRunId?: string | null;
-  queueState?: "queued";
-  queueTargetRunId?: string | null;
-  queueReason?: "hold" | "active_run" | "other";
 };
 
 export const TASK_COMMENT_PAGE_SIZE = 50;
@@ -34,26 +22,26 @@ export const TASK_COMMENT_AUTOLOAD_LIMIT = TASK_COMMENT_PAGE_SIZE * 3;
 
 export const JUMP_TO_LATEST_MAX_COMMENT_PAGES = 10;
 
-export const TREE_CONTROL_MODE_LABEL: Record<TaskTreeControlMode, string> = {
+const TREE_CONTROL_MODE_LABEL: Record<TaskTreeControlMode, string> = {
   pause: "Pause subtree",
   resume: "Resume subtree",
   cancel: "Cancel subtree",
   restore: "Restore subtree",
 };
 
-export const LEAF_WORK_CONTROL_MODE_LABEL: Partial<Record<TaskTreeControlMode, string>> = {
+const LEAF_WORK_CONTROL_MODE_LABEL: Partial<Record<TaskTreeControlMode, string>> = {
   pause: "Pause work",
   resume: "Resume work",
 };
 
-export const TREE_CONTROL_MODE_HELP_TEXT: Record<TaskTreeControlMode, string> = {
+const TREE_CONTROL_MODE_HELP_TEXT: Record<TaskTreeControlMode, string> = {
   pause: "Pause active execution in this task subtree until an explicit resume.",
   resume: "Release the active subtree pause hold so held work can continue.",
   cancel: "Cancel non-terminal tasks in this subtree and stop queued/running work where possible.",
   restore: "Restore tasks cancelled by this subtree operation so work can resume.",
 };
 
-export const LEAF_WORK_CONTROL_MODE_HELP_TEXT: Partial<Record<TaskTreeControlMode, string>> = {
+const LEAF_WORK_CONTROL_MODE_HELP_TEXT: Partial<Record<TaskTreeControlMode, string>> = {
   pause: "Pause active execution on this task until an explicit resume.",
   resume: "Release the active pause hold so this task can continue.",
 };

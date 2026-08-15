@@ -6,14 +6,33 @@ import { TaskChatConfirmation } from "@/routes/_authenticated/$companyId/tasks/$
 import type { TaskChatComment } from "@/lib/task-chat-messages";
 
 const AGENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const SECOND_AGENT_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const USER_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const OTHER_USER_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const TASK_ID = "22222222-2222-4222-8222-222222222222";
 
 const agent = {
   id: AGENT_ID,
   name: "Research agent",
-  icon: null,
+  icon: "search",
   status: "active",
 } as unknown as Agent;
+
+const secondAgent = {
+  id: SECOND_AGENT_ID,
+  name: "Deployment reliability and infrastructure agent",
+  icon: "shield",
+  status: "active",
+} as unknown as Agent;
+
+const agentMap = new Map([
+  [AGENT_ID, agent],
+  [SECOND_AGENT_ID, secondAgent],
+]);
+const userProfileMap = new Map([
+  [USER_ID, { label: "Avery Stone", image: null }],
+  [OTHER_USER_ID, { label: "Maya Chen", image: null }],
+]);
 
 const approval: Approval = {
   id: "33333333-3333-4333-8333-333333333333",
@@ -31,12 +50,9 @@ const approval: Approval = {
 };
 
 const baseComment = {
-  companyId: "11111111-1111-4111-8111-111111111111",
-  taskId: "22222222-2222-4222-8222-222222222222",
   metadata: null,
   presentation: null,
   sourceTrust: null,
-  updatedAt: "2026-08-14T18:00:00.000Z",
 } as const;
 
 const comments: TaskChatComment[] = [
@@ -50,7 +66,6 @@ const comments: TaskChatComment[] = [
     createdAt: "2026-08-14T17:57:00.000Z",
     boardEntryKind: "comment",
     boardGroupRootId: "comment-human",
-    boardIsRoot: true,
     boardOrder: 0,
   },
   {
@@ -63,9 +78,7 @@ const comments: TaskChatComment[] = [
     createdAt: "2026-08-14T17:58:00.000Z",
     boardEntryKind: "run_segment",
     boardGroupRootId: "comment-human",
-    boardIsRoot: false,
     boardOrder: 1,
-    boardRunSegmentStatus: "complete",
     runState: "terminal",
     boardRunSegmentParts: [
       {
@@ -78,6 +91,47 @@ const comments: TaskChatComment[] = [
         text: "The release changes the health-check default and deprecates the legacy build flag. Update the deployment template before the next rollout.",
       },
     ],
+  },
+  {
+    ...baseComment,
+    id: "comment-teammate",
+    authorType: "user",
+    authorAgentId: null,
+    authorUserId: OTHER_USER_ID,
+    body: "I confirmed the legacy flag is still present in the production template.",
+    createdAt: "2026-08-14T17:58:30.000Z",
+    boardEntryKind: "comment",
+    boardGroupRootId: "comment-human",
+    boardOrder: 2,
+    immediateParentDisplayReference: {
+      authorLabel: "Research agent",
+      excerpt: "Update the deployment template before the next rollout.",
+    },
+  },
+  {
+    ...baseComment,
+    id: "comment-plugin",
+    authorType: "plugin",
+    authorLabel: "Deployment automation",
+    authorAgentId: null,
+    authorUserId: null,
+    body: "Preview environment pap-2048 is ready and passed its health check.",
+    createdAt: "2026-08-14T17:58:45.000Z",
+    boardEntryKind: "comment",
+    boardGroupRootId: "comment-plugin",
+    boardOrder: 3,
+  },
+  {
+    ...baseComment,
+    id: "comment-second-agent",
+    authorType: "agent",
+    authorAgentId: SECOND_AGENT_ID,
+    authorUserId: null,
+    body: "I can update the health-check default after the approval is recorded.",
+    createdAt: "2026-08-14T17:58:50.000Z",
+    boardEntryKind: "comment",
+    boardGroupRootId: "comment-second-agent",
+    boardOrder: 4,
   },
   {
     ...baseComment,
@@ -95,8 +149,7 @@ const comments: TaskChatComment[] = [
     },
     boardEntryKind: "comment",
     boardGroupRootId: "comment-system",
-    boardIsRoot: true,
-    boardOrder: 2,
+    boardOrder: 5,
   },
   {
     ...baseComment,
@@ -108,11 +161,8 @@ const comments: TaskChatComment[] = [
     createdAt: "2026-08-14T18:00:00.000Z",
     boardEntryKind: "comment",
     boardGroupRootId: "comment-queued",
-    boardIsRoot: true,
-    boardOrder: 3,
+    boardOrder: 6,
     clientStatus: "queued",
-    queueState: "queued",
-    queueTargetRunId: "run-active",
   },
 ];
 
@@ -123,7 +173,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Native AI Elements task conversation: human messages, agent reasoning and tools, system notices, queued work, attachments, routing controls, and PromptInput composition.",
+          "Native AI Elements task conversation: human messages, agent reasoning and tools, system notices, queued work, attachments, and PromptInput composition.",
       },
     },
   },
@@ -141,16 +191,14 @@ export const FullConversation: Story = {
     <div className="mx-auto max-w-4xl p-6">
       <TaskChatThread
         comments={comments}
-        taskId={baseComment.taskId}
-        companyId={baseComment.companyId}
-        agentMap={new Map([[AGENT_ID, agent]])}
+        taskId={TASK_ID}
+        agentMap={agentMap}
         currentUserId={USER_ID}
-        userLabelMap={new Map([[USER_ID, "You"]])}
+        userProfileMap={userProfileMap}
         composerAccessory={
           <TaskChatConfirmation approval={approval} requesterAgent={agent} onDecision={() => undefined} />
         }
         hasActiveRun
-        activeRunIds={new Set(["run-active"])}
         enableOwnerChange
         ownerOptions={[{ id: `agent:${AGENT_ID}`, label: agent.name }]}
         currentOwnerValue={`agent:${AGENT_ID}`}
@@ -164,8 +212,22 @@ export const FullConversation: Story = {
           },
         ]}
         onAdd={async () => undefined}
-        onInterruptQueued={async () => undefined}
-        onCancelQueued={() => undefined}
+      />
+    </div>
+  ),
+};
+
+export const CompactSenderLayout: Story = {
+  render: () => (
+    <div className="mx-auto max-w-md p-3">
+      <TaskChatThread
+        comments={comments}
+        taskId={TASK_ID}
+        agentMap={agentMap}
+        currentUserId={USER_ID}
+        userProfileMap={userProfileMap}
+        showComposer={false}
+        onAdd={async () => undefined}
       />
     </div>
   ),
@@ -174,12 +236,7 @@ export const FullConversation: Story = {
 export const EmptyConversation: Story = {
   render: () => (
     <div className="mx-auto max-w-4xl p-6">
-      <TaskChatThread
-        comments={[]}
-        taskId={baseComment.taskId}
-        companyId={baseComment.companyId}
-        onAdd={async () => undefined}
-      />
+      <TaskChatThread comments={[]} taskId={TASK_ID} onAdd={async () => undefined} />
     </div>
   ),
 };

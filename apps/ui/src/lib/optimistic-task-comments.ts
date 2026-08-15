@@ -11,34 +11,24 @@ import type {
   TaskCommentPresentation,
   SourceTrustMetadata,
 } from "@paperclipai/shared";
-import type { TaskScope, TimestampedEntity } from "./presentation-contracts";
+import type { TimestampedEntity } from "./presentation-contracts";
 
 /** UI-only comment shape built exclusively from the board-safe read DTO. */
 export interface ClientTaskComment {
   id: string;
-  companyId: string;
-  taskId: string;
   authorType: TaskCommentAuthorType;
+  authorLabel?: string | null;
   authorAgentId: string | null;
   authorUserId: string | null;
-  authorPluginKey?: string | null;
   body: string;
   presentation: TaskCommentPresentation | null;
   metadata: TaskCommentMetadata | null;
   sourceTrust?: SourceTrustMetadata | null;
   createdAt: Date | string;
-  updatedAt: Date | string;
-  runId?: string | null;
-  canonicalSourceKind?: string;
-  interruptedRunId?: string | null;
-  followUpRequested?: boolean;
-  canonicalSequence?: number;
   immediateParentDisplayReference?: BoardTaskCommentParentReference | null;
   boardEntryKind?: "comment" | "run_segment";
   boardRunSegmentParts?: readonly BoardTaskRunSegmentPart[];
-  boardRunSegmentStatus?: BoardTaskRunSegmentEntry["status"];
   boardGroupRootId?: string;
-  boardIsRoot?: boolean;
   boardOrder?: number;
   runState?: "queued" | "working" | "terminal" | null;
   boardGroupHasMore?: boolean;
@@ -57,14 +47,11 @@ export interface BoardTaskCommentGroupContinuation {
 export interface OptimisticTaskComment extends ClientTaskComment {
   clientId: string;
   clientStatus: "pending" | "queued";
-  queueTargetRunId?: string | null;
 }
 
-export type TaskTimelineComment = ClientTaskComment | OptimisticTaskComment;
-export type LocallyQueuedTaskComment<T extends ClientTaskComment> = T & {
+type TaskTimelineComment = ClientTaskComment | OptimisticTaskComment;
+type LocallyQueuedTaskComment<T extends ClientTaskComment> = T & {
   clientStatus: "queued";
-  queueState: "queued";
-  queueTargetRunId: string;
 };
 
 function toTimestamp(value: Date | string) {
@@ -88,20 +75,14 @@ export function sortTaskComments<T extends TimestampedEntity>(comments: T[]) {
 }
 
 export function createOptimisticTaskComment(params: {
-  companyId: string;
-  taskId: string;
   body: string;
   authorUserId: string | null;
   clientStatus?: OptimisticTaskComment["clientStatus"];
-  queueTargetRunId?: string | null;
 }): OptimisticTaskComment {
-  const now = new Date();
   const clientId = createOptimisticCommentId();
   return {
     id: clientId,
     clientId,
-    companyId: params.companyId,
-    taskId: params.taskId,
     authorType: "user",
     authorAgentId: null,
     authorUserId: params.authorUserId,
@@ -109,9 +90,7 @@ export function createOptimisticTaskComment(params: {
     presentation: null,
     metadata: null,
     clientStatus: params.clientStatus ?? "pending",
-    queueTargetRunId: params.queueTargetRunId ?? null,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: new Date(),
   };
 }
 
@@ -130,8 +109,6 @@ export function applyLocalQueuedTaskCommentState<T extends ClientTaskComment>(
   return {
     ...comment,
     clientStatus: "queued",
-    queueState: "queued",
-    queueTargetRunId: queuedTargetRunId,
   };
 }
 
@@ -157,32 +134,25 @@ export function mergeTaskComments(
 
 function boardCommentToClient(
   comment: BoardTaskComment,
-  scope: TaskScope,
   placement: {
     rootId: string;
-    isRoot: boolean;
     order: number;
   },
 ): ClientTaskComment {
   return {
     id: comment.id,
-    companyId: scope.companyId,
-    taskId: scope.taskId,
     authorType: comment.author.type,
+    authorLabel: comment.author.label,
     authorAgentId: comment.author.agentId,
     authorUserId: comment.author.userId,
-    authorPluginKey: comment.author.pluginKey,
     body: comment.body,
     presentation: comment.presentation,
     metadata: comment.metadata,
     sourceTrust: comment.sourceTrust,
     createdAt: comment.createdAt,
-    updatedAt: comment.updatedAt,
-    canonicalSequence: comment.canonicalSequence,
     immediateParentDisplayReference: comment.immediateParentDisplayReference,
     boardEntryKind: "comment",
     boardGroupRootId: placement.rootId,
-    boardIsRoot: placement.isRoot,
     boardOrder: placement.order,
     runState: comment.runState,
   };
@@ -190,36 +160,22 @@ function boardCommentToClient(
 
 function boardRunSegmentToClient(
   segment: BoardTaskRunSegmentEntry,
-  scope: TaskScope,
   placement: { rootId: string; order: number },
 ): ClientTaskComment {
-  const body = segment.parts
-    .map((part) => {
-      if (part.type === "tool") return `${part.name} — ${part.status}`;
-      return part.text;
-    })
-    .filter((part) => part.trim().length > 0)
-    .join("\n\n");
   return {
     id: segment.id,
-    companyId: scope.companyId,
-    taskId: scope.taskId,
     authorType: "agent",
+    authorLabel: segment.author.label,
     authorAgentId: segment.author.agentId,
     authorUserId: null,
-    authorPluginKey: null,
-    body,
+    body: "",
     presentation: null,
     metadata: null,
     createdAt: segment.createdAt,
-    updatedAt: segment.updatedAt,
-    canonicalSequence: segment.canonicalSequence,
     immediateParentDisplayReference: segment.immediateParentDisplayReference,
     boardEntryKind: "run_segment",
     boardRunSegmentParts: segment.parts,
-    boardRunSegmentStatus: segment.status,
     boardGroupRootId: placement.rootId,
-    boardIsRoot: false,
     boardOrder: placement.order,
     runState: segment.status === "working" ? "working" : "terminal",
   };
@@ -231,7 +187,6 @@ function boardRunSegmentToClient(
  */
 export function flattenBoardTaskCommentGroupPages(
   pages: readonly BoardTaskCommentGroupPage[] | undefined,
-  scope: TaskScope,
   continuations?: ReadonlyMap<string, BoardTaskCommentGroupContinuation>,
 ): ClientTaskComment[] {
   const orderedGroups = (pages ?? [])
@@ -243,9 +198,8 @@ export function flattenBoardTaskCommentGroupPages(
   for (const group of orderedGroups) {
     const groupComments: ClientTaskComment[] = [];
     groupComments.push(
-      boardCommentToClient(group.root, scope, {
+      boardCommentToClient(group.root, {
         rootId: group.root.id,
-        isRoot: true,
         order: order++,
       }),
     );
@@ -264,12 +218,11 @@ export function flattenBoardTaskCommentGroupPages(
     for (const entry of entries) {
       groupComments.push(
         entry.kind === "comment"
-          ? boardCommentToClient(entry, scope, {
+          ? boardCommentToClient(entry, {
               rootId: group.root.id,
-              isRoot: false,
               order: order++,
             })
-          : boardRunSegmentToClient(entry, scope, {
+          : boardRunSegmentToClient(entry, {
               rootId: group.root.id,
               order: order++,
             }),

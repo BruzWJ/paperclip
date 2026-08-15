@@ -8,6 +8,7 @@ import type { CompanyUserProfile } from "@/lib/company-members";
 import type { MentionOption } from "@/features/markdown/MarkdownEditor";
 
 import {
+  compareTaskDocuments,
   documentHasUnsavedChanges,
   isPlanKey,
   makeTaskDocumentSubject,
@@ -19,23 +20,23 @@ import { useTaskDocumentEditorState, useTaskDocumentEffects } from "./-useTaskDo
 interface TaskDocumentsControllerOptions {
   task: Task;
   canDeleteDocuments: boolean;
-  canManageDocumentLocks?: boolean;
-  mentions?: MentionOption[];
-  imageUploadHandler?: (file: File) => Promise<string>;
-  agentMap?: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
-  userProfileMap?: ReadonlyMap<string, CompanyUserProfile>;
-  presentationActive?: boolean;
+  canManageDocumentLocks: boolean;
+  mentions: MentionOption[];
+  imageUploadHandler: (file: File) => Promise<string>;
+  agentMap: ReadonlyMap<string, Pick<Agent, "id" | "name"> & Partial<Pick<Agent, "icon">>>;
+  userProfileMap: ReadonlyMap<string, CompanyUserProfile>;
+  presentationActive: boolean;
 }
 
 export function useTaskDocumentsSectionController({
   task,
   canDeleteDocuments,
-  canManageDocumentLocks = false,
+  canManageDocumentLocks,
   mentions,
   imageUploadHandler,
   agentMap,
   userProfileMap,
-  presentationActive = true,
+  presentationActive,
 }: TaskDocumentsControllerOptions) {
   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
@@ -77,11 +78,9 @@ export function useTaskDocumentsSectionController({
   });
 
   const invalidateTaskDocuments = useCallback(() => {
-    if (documentSubject.detailQueryKey) {
-      queryClient.invalidateQueries({
-        queryKey: documentSubject.detailQueryKey,
-      });
-    }
+    queryClient.invalidateQueries({
+      queryKey: documentSubject.detailQueryKey,
+    });
     queryClient.invalidateQueries({
       queryKey: documentSubject.documentsQueryKey,
     });
@@ -97,14 +96,14 @@ export function useTaskDocumentsSectionController({
 
   const syncDocumentCaches = useCallback(
     (document: TaskDocument) => {
-      if (documentSubject.hideSystemDocuments && isSystemTaskDocumentKey(document.key)) return;
+      if (isSystemTaskDocumentKey(document.key)) return;
       queryClient.setQueryData<TaskDocument[] | undefined>(documentSubject.documentsQueryKey, (current) => {
         if (!current) return [document];
         const existingIndex = current.findIndex((entry) => entry.key === document.key);
         if (existingIndex === -1) return [...current, document];
         return current.map((entry, index) => (index === existingIndex ? document : entry));
       });
-      documentSubject.syncDetailCache?.(queryClient, document);
+      documentSubject.syncDetailCache(queryClient, document);
     },
     [documentSubject, queryClient],
   );
@@ -120,10 +119,7 @@ export function useTaskDocumentsSectionController({
   });
 
   const deleteDocument = useMutation({
-    mutationFn: (key: string) =>
-      documentSubject.deleteDocument
-        ? documentSubject.deleteDocument(key)
-        : Promise.reject(new Error("Document deletion is not available")),
+    mutationFn: documentSubject.deleteDocument,
     onSuccess: () => {
       setError(null);
       setConfirmDeleteKey(null);
@@ -136,9 +132,7 @@ export function useTaskDocumentsSectionController({
 
   const restoreDocumentRevision = useMutation({
     mutationFn: ({ key, revisionId }: { key: string; revisionId: string }) =>
-      documentSubject.restoreDocumentRevision
-        ? documentSubject.restoreDocumentRevision(key, revisionId)
-        : Promise.reject(new Error("Document revision restore is not available")),
+      documentSubject.restoreDocumentRevision(key, revisionId),
     onSuccess: (document, variables) => {
       syncDocumentCaches(document);
       setSelectedRevisionIds((current) => ({
@@ -158,9 +152,7 @@ export function useTaskDocumentsSectionController({
 
   const setDocumentLock = useMutation({
     mutationFn: ({ key, locked }: { key: string; locked: boolean }) =>
-      documentSubject.setDocumentLock
-        ? documentSubject.setDocumentLock(key, locked)
-        : Promise.reject(new Error("Document locking is not available")),
+      documentSubject.setDocumentLock(key, locked),
     onSuccess: (document) => {
       syncDocumentCaches(document);
       setDraft((current) => (current?.key === document.key ? null : current));
@@ -175,16 +167,8 @@ export function useTaskDocumentsSectionController({
   });
 
   const sortedDocuments = useMemo(() => {
-    return (documents ?? [])
-      .filter((doc) => !documentSubject.hideSystemDocuments || !isSystemTaskDocumentKey(doc.key))
-      .sort((a, b) => {
-        if (a.key === "plan" && b.key !== "plan") return -1;
-        if (a.key !== "plan" && b.key === "plan") return 1;
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      });
-  }, [documentSubject.hideSystemDocuments, documents]);
-
-  const isEmpty = sortedDocuments.length === 0;
+    return (documents ?? []).filter((doc) => !isSystemTaskDocumentKey(doc.key)).sort(compareTaskDocuments);
+  }, [documents]);
 
   const newDocumentKeyError =
     draft?.isNew && draft.key.length > 0 && !taskDocumentKeySchema.safeParse(draft.key).success
@@ -307,7 +291,6 @@ export function useTaskDocumentsSectionController({
     restoreDocumentRevision,
     setDocumentLock,
     sortedDocuments,
-    isEmpty,
     newDocumentKeyError,
     ...draftActions,
     getDocumentRevisions,

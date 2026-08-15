@@ -916,14 +916,6 @@ span.paperclip-project-mention-chip {
   --sz-60vh: 60vh; /* Used by apps/ui/src/features/onboarding/OnboardingWizard.tsx (min-h-[60vh]). */
   --sz-18rem: 18rem; /* Extracted from apps/ui/src/features/tasks/shared/TaskBlockedNotice.tsx (max-w-[18rem]). */
   --sz-70vh: 70vh; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (max-h-[70vh]). */
-  --sz-calc-7: calc(
-    100% - 0.5rem
-  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (max-w-[calc(100%-0.5rem)]). */
-  --sz-28dvh: 28dvh; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (max-h-[28dvh]). */
-  --sz-15px: 15px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (p-[15px]). */
-  --sz-calc-8: calc(
-    env(safe-area-inset-bottom) + 20px
-  ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (bottom-[calc(env(safe-area-inset-bottom)+20px)]). */
   --sz-300px: 300px; /* Extracted from apps/ui/src/features/tasks/list/TaskColumns.tsx (w-[300px]). */
   --sz-calc-9: min(80vh, 42rem); /* Used by TaskFiltersPopover. */
   --sz-calc-10: min(
@@ -958,10 +950,7 @@ span.paperclip-project-mention-chip {
     calc(100dvh - 2rem),
     42rem
   ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/routines/-RoutineRunVariablesDialog.tsx (max-h-[min(calc(100dvh-2rem),42rem)]). */
-  --sz-calc-23: min(
-    32rem,
-    calc(100vw - 2rem)
-  ); /* Reserved searchable-select dialog maximum width. */
+  --sz-calc-23: min(32rem, calc(100vw - 2rem)); /* Reserved searchable-select dialog maximum width. */
   --sz-277px: 277px; /* Used by SidebarAccountMenu. */
   --sz-calc-24: calc(
     100vw - 1rem
@@ -1001,12 +990,9 @@ span.paperclip-project-mention-chip {
     34rem
   ); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/company/settings/secrets/index.tsx (max-h-[min(80vh,34rem)]). */
   --rad-3: 3px; /* Shared focus-ring width. */
-  --rad-4: 4px; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.tsx (rounded-br-[4px]). */
   --pct-90: 90%; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-documents/-DocumentDiffModal.tsx (max-w-[90%]). */
   --pct-85: 85%; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread.test.tsx (max-w-[85%]). */
   --pct-72: 72%; /* Extracted from apps/ui/src/routes/_authenticated/$companyId/tasks/$taskNumber/index.tsx (w-[72%]). */
-  --shadow-extract-4: 0 -12px 28px rgba(15, 23, 42, 0.08);
-  --shadow-extract-5: 0 -12px 28px rgba(0, 0, 0, 0.28);
   --shadow-extract-6: 0 0 0 1px var(--color-background); /* Extracted from apps/ui/src/features/document-annotations/DocumentAnnotationLayer.tsx (shadow-[0_0_0_1px_var(--color-background)]). */
   --shadow-extract-10: 0 1px 0 1px hsl(var(--border)); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/-shell/-KeyboardShortcutsCheatsheet.tsx (shadow-[0_1px_0_1px_hsl(var(--border))]). */
 }
@@ -1048,7 +1034,6 @@ span.paperclip-project-mention-chip {
    allow apps/ui/src/components/ui/alert-dialog.tsx — same tw-animate-css dead-class situation as dialog.tsx
 */
 :root {
-  --gtc-8: 7.5rem 1fr; /* Shared metadata grid. */
   --gtc-9: 300px minmax(0, 1fr); /* Extracted from apps/ui/src/routes/_authenticated/$companyId/routines/$routineId/-detail/-RoutineHistoryTab.tsx (grid-cols-[300px_minmax(0,1fr)]). */
   --gtc-13: minmax(0, 1fr) auto; /* Extracted from apps/ui/src/features/environment-variables-editor/Row.tsx (grid-cols-[minmax(0,1fr)_auto]). */
   --gtc-14: minmax(160px, 2fr) minmax(240px, 3fr) 32px; /* Extracted from apps/ui/src/features/environment-variables-editor/Row.tsx (grid-cols-[minmax(160px,2fr)_minmax(240px,3fr)_32px]). */

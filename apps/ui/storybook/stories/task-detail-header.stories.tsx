@@ -56,7 +56,7 @@ function TaskDetailHeaderScenario({ mobile = false }: { mobile?: boolean }) {
     copyTaskToClipboard: () => undefined,
     panelVisible,
     setPanelVisible,
-    setMobilePropsOpen: () => undefined,
+    setMobileInspectorOpen: () => undefined,
     moreOpen,
     setMoreOpen,
     canArchiveFromInbox: false,

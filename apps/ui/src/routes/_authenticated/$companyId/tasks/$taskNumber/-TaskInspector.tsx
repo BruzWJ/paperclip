@@ -1,8 +1,9 @@
 import { FolderOpen, SlidersHorizontal } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 import { useTaskDetailPage } from "./-TaskDetailPageContext";
 import { TaskResources, type TaskResourcesProps } from "./-TaskResources";
@@ -30,20 +31,24 @@ export function TaskInspector({
     <Tabs
       value={activeTab}
       onValueChange={(value) => onTabChange(value as TaskInspectorTab)}
-      className="space-y-4"
+      className="min-h-full gap-0"
     >
-      <TabsList variant="line" className="w-full justify-start gap-1" aria-label="Task details sections">
-        <TabsTrigger value="details" className="gap-1.5">
-          <SlidersHorizontal className="size-3.5" data-icon="inline-start" />
-          Details
-        </TabsTrigger>
-        <TabsTrigger value="resources" className="gap-1.5">
-          <FolderOpen className="size-3.5" data-icon="inline-start" />
-          Resources
-        </TabsTrigger>
-      </TabsList>
+      <div
+        className={cn("sticky top-0 z-10 border-b border-border bg-background px-4 py-2", inline && "pr-12")}
+      >
+        <TabsList variant="line" className="w-full justify-start" aria-label="Task details sections">
+          <TabsTrigger value="details">
+            <SlidersHorizontal className="size-3.5" data-icon="inline-start" />
+            Details
+          </TabsTrigger>
+          <TabsTrigger value="resources">
+            <FolderOpen className="size-3.5" data-icon="inline-start" />
+            Resources
+          </TabsTrigger>
+        </TabsList>
+      </div>
 
-      <TabsContent value="details">
+      <TabsContent value="details" className="p-4">
         <TaskProperties
           task={resourceProps.task}
           childTasks={resourceProps.childTasks}
@@ -53,7 +58,7 @@ export function TaskInspector({
         />
       </TabsContent>
 
-      <TabsContent value="resources">
+      <TabsContent value="resources" className="p-4">
         <TaskResources {...resourceProps} />
       </TabsContent>
     </Tabs>
@@ -91,43 +96,42 @@ export function TaskDetailInspectorSheet() {
 
   return (
     <Sheet open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}>
-      <SheetContent side="bottom" className="max-h-(--sz-85dvh) pb-(--sz-safe-bottom)">
-        <SheetHeader>
-          <SheetTitle>Task details</SheetTitle>
-        </SheetHeader>
-        <ScrollArea className="flex-1 overflow-y-auto">
-          <div className="px-4 pb-4">
-            <TaskInspector
-              key={task.id}
-              activeTab={inspectorTab}
-              onTabChange={setInspectorTab}
-              task={task}
-              childTasks={childTasks}
-              childTasksLoading={childTasksLoading}
-              liveTaskIds={liveTaskIds}
-              mutedChildTaskIds={mutedChildTaskIds}
-              childPauseBadgeById={childPauseBadgeById}
-              taskLinkState={resolvedTaskDetailState ?? location.state}
-              onAddSubTask={openNewSubTask}
-              attachments={attachmentList}
-              attachmentsLoading={attachmentsInitialLoading}
-              attachmentError={attachmentError}
-              attachmentUploadPending={attachmentUploadPending}
-              onUploadFiles={handleAttachmentFiles}
-              attachmentDeletePending={deleteAttachment.isPending}
-              onDeleteAttachment={deleteAttachment.mutate}
-              onPreviewAttachment={openAttachmentInGallery}
-              workProducts={workProducts}
-              onPreviewOutput={openOutputInGallery}
-              onOpenDocuments={() => {
-                openDocumentsWorkspace();
-                setMobileInspectorOpen(false);
-              }}
-              onUpdateTask={handleTaskPropertiesUpdate}
-              hasActiveRun={resolvedHasActiveRun}
-              inline
-            />
-          </div>
+      <SheetContent
+        side="bottom"
+        className="min-h-0 max-h-(--sz-85dvh) gap-0 overflow-hidden pb-(--sz-safe-bottom) [&>[data-slot=sheet-close]]:z-20"
+      >
+        <SheetTitle className="sr-only">Task details</SheetTitle>
+        <ScrollArea className="min-h-0 flex-1">
+          <TaskInspector
+            key={task.id}
+            activeTab={inspectorTab}
+            onTabChange={setInspectorTab}
+            task={task}
+            childTasks={childTasks}
+            childTasksLoading={childTasksLoading}
+            liveTaskIds={liveTaskIds}
+            mutedChildTaskIds={mutedChildTaskIds}
+            childPauseBadgeById={childPauseBadgeById}
+            taskLinkState={resolvedTaskDetailState ?? location.state}
+            onAddSubTask={openNewSubTask}
+            attachments={attachmentList}
+            attachmentsLoading={attachmentsInitialLoading}
+            attachmentError={attachmentError}
+            attachmentUploadPending={attachmentUploadPending}
+            onUploadFiles={handleAttachmentFiles}
+            attachmentDeletePending={deleteAttachment.isPending}
+            onDeleteAttachment={deleteAttachment.mutate}
+            onPreviewAttachment={openAttachmentInGallery}
+            workProducts={workProducts}
+            onPreviewOutput={openOutputInGallery}
+            onOpenDocuments={() => {
+              openDocumentsWorkspace();
+              setMobileInspectorOpen(false);
+            }}
+            onUpdateTask={handleTaskPropertiesUpdate}
+            hasActiveRun={resolvedHasActiveRun}
+            inline
+          />
         </ScrollArea>
       </SheetContent>
     </Sheet>

@@ -3,7 +3,6 @@ import { budgetsApi } from "@/api/budgets";
 import { isTaskExecutionRunActive, runsApi } from "@/api/runs";
 import { tasksApi } from "@/api/tasks";
 import { useCompany } from "@/context/CompanyContext";
-import { usePanel } from "@/context/PanelContext";
 import { useSidebar } from "@/context/SidebarContext";
 import {
   isStarred,
@@ -51,7 +50,6 @@ export function useAgentDetailController({
   urlRunId?: string;
 }) {
   const { companies } = useCompany();
-  const { closePanel } = usePanel();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -229,11 +227,6 @@ export function useAgentDetailController({
     },
     onError: (err) => setActionError(err instanceof Error ? err.message : "Agent termination failed"),
   });
-
-  useEffect(() => {
-    closePanel();
-    return () => closePanel();
-  }, [closePanel]);
 
   useEffect(() => {
     if (agentMembershipState !== "joined") return;

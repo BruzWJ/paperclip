@@ -1,8 +1,6 @@
-export type TaskChatScrollTarget =
-  | { type: "element"; element: HTMLElement }
-  | { type: "window" };
+type TaskChatScrollTarget = { type: "element"; element: HTMLElement } | { type: "window" };
 
-export interface ComposerViewportSnapshot {
+interface ComposerViewportSnapshot {
   composerViewportTop: number;
 }
 
@@ -15,10 +13,7 @@ export interface ComposerViewportSnapshot {
  * shell and the auth-free perf fixture leave the body scrollable, where window
  * scrolling is the correct behaviour.
  */
-export function isWindowScrollable(
-  doc: Document = document,
-  win: Window = window,
-): boolean {
+export function isWindowScrollable(doc: Document = document, win: Window = window): boolean {
   const candidates = [doc.scrollingElement, doc.documentElement, doc.body];
   for (const element of candidates) {
     if (!(element instanceof HTMLElement)) continue;
@@ -34,17 +29,14 @@ export function isWindowScrollable(
   return true;
 }
 
-export function resolveTaskChatScrollTarget(
-  doc: Document = document,
-  win: Window = window,
-): TaskChatScrollTarget {
+function resolveTaskChatScrollTarget(doc: Document = document, win: Window = window): TaskChatScrollTarget {
   const mainContent = doc.getElementById("main-content");
 
   if (mainContent instanceof HTMLElement) {
     const overflowY = win.getComputedStyle(mainContent).overflowY;
     const usesOwnScroll =
-      (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay")
-      && mainContent.scrollHeight > mainContent.clientHeight + 1;
+      (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
+      mainContent.scrollHeight > mainContent.clientHeight + 1;
 
     if (usesOwnScroll) {
       return { type: "element", element: mainContent };
@@ -62,19 +54,6 @@ export function captureComposerViewportSnapshot(
   return {
     composerViewportTop: composerElement.getBoundingClientRect().top,
   };
-}
-
-export function shouldPreserveComposerViewport(
-  composerElement: HTMLElement | null,
-  doc: Document = document,
-) {
-  if (!composerElement) return false;
-
-  const activeElement = doc.activeElement;
-  if (activeElement instanceof Node && composerElement.contains(activeElement)) {
-    return true;
-  }
-  return false;
 }
 
 export function restoreComposerViewportSnapshot(

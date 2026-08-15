@@ -2,7 +2,6 @@ import type {
   Agent,
   SourceTrustMetadata,
   TaskAttachment,
-  TaskBlockerAttention,
   TaskCommentMetadata,
   TaskCommentPresentation,
   TaskRelationTaskSummary,
@@ -14,6 +13,7 @@ import { type ComposerOwnerPreview } from "@/lib/owner-transition";
 import { type TaskChatComment, type TaskChatMessage } from "@/lib/task-chat-messages";
 import type { EntityOption } from "@/lib/entity-selector";
 import { type MentionOption } from "../../../../../../features/markdown/MarkdownEditor";
+import type { CommentOwnerChange } from "../-task-detail-model";
 /** Returns the plain-text content used by message copy and reply previews. */
 export function getThreadMessageCopyText(message: TaskChatMessage): string {
   return message.content
@@ -48,23 +48,15 @@ export function isSourceTrustMetadata(value: unknown): value is SourceTrustMetad
 export interface TaskChatMessageContext {
   agentMap?: Map<string, Agent>;
   currentUserId?: string | null;
-  userLabelMap?: ReadonlyMap<string, string> | null;
   userProfileMap?: ReadonlyMap<string, CompanyUserProfile> | null;
-  onStopRun?: (runId: string) => Promise<void>;
-  stopRunLabel?: string;
-  stoppingRunLabel?: string;
-  stopRunVariant?: "stop" | "pause";
-  onInterruptQueued?: (runId: string) => Promise<void>;
-  onCancelQueued?: (commentId: string) => void;
   onImageClick?: (src: string) => void;
-  onUploadImage?: (file: File) => Promise<string>;
   onReply?: (target: TaskChatReplyTarget) => void;
   onLoadMoreCommentGroup?: (rootCommentId: string) => Promise<void> | void;
 }
 
 export const TaskChatCtx = createContext<TaskChatMessageContext>({});
 
-export function truncateReplyPreview(text: string): string {
+function truncateReplyPreview(text: string): string {
   const compact = text.replace(/\s+/g, " ").trim();
   return compact.length <= 120 ? compact : `${compact.slice(0, 119)}…`;
 }
@@ -89,32 +81,6 @@ export interface TaskChatReplyTarget {
   preview: string;
 }
 
-export function resolveAssistantMessageFoldedState(args: {
-  messageId: string;
-  currentFolded: boolean;
-  isFoldable: boolean;
-  previousMessageId: string | null;
-  previousIsFoldable: boolean;
-}) {
-  const { messageId, currentFolded, isFoldable, previousMessageId, previousIsFoldable } = args;
-
-  if (messageId !== previousMessageId) return isFoldable;
-  if (!isFoldable) return false;
-  if (!previousIsFoldable) return true;
-  return currentFolded;
-}
-
-export function canStopTaskChatRun(args: {
-  runId: string | null;
-  runStatus: string | null;
-  activeRunIds: ReadonlySet<string>;
-}) {
-  const { runId, runStatus, activeRunIds } = args;
-  if (!runId) return false;
-  if (activeRunIds.has(runId)) return true;
-  return runStatus === "queued" || runStatus === "running";
-}
-
 export function useStableEvent<T extends (...args: never[]) => unknown>(
   callback: T | undefined,
 ): T | undefined {
@@ -130,10 +96,6 @@ export function useStableEvent<T extends (...args: never[]) => unknown>(
     // carries the current callback implementation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Boolean(callback)]);
-}
-
-export interface CommentOwnerChange {
-  ownerAgentId: string;
 }
 
 export function shouldRenderComposerOwnerPreview(body: string, preview: ComposerOwnerPreview): boolean {
@@ -164,8 +126,6 @@ export interface TaskChatComposerProps {
   agentMap?: Map<string, Agent>;
   /** Whether an agent run is currently in flight, so the composer can preview an interrupt. */
   hasActiveRun?: boolean;
-  currentUserId?: string | null;
-  userLabelMap?: ReadonlyMap<string, string> | null;
   composerDisabledReason?: string | null;
   composerHint?: string | null;
   taskWorkMode?: TaskWorkMode;
@@ -178,21 +138,14 @@ export interface TaskChatComposerProps {
 export interface TaskChatThreadProps {
   comments: TaskChatComment[];
   hasActiveRun?: boolean;
-  activeRunIds?: ReadonlySet<string>;
   taskId?: string | null;
   blockedBy?: TaskRelationTaskSummary[];
   /** Company-wide set of task ids with a live (queued/running) run. */
   liveTaskIds?: ReadonlySet<string>;
-  blockerAttention?: TaskBlockerAttention | null;
   ownerUserId?: string | null;
-  onResumeFromBacklog?: () => Promise<void> | void;
-  resumeFromBacklogPending?: boolean;
-  companyId?: string | null;
-  projectId?: string | null;
   taskStatus?: string;
   agentMap?: Map<string, Agent>;
   currentUserId?: string | null;
-  userLabelMap?: ReadonlyMap<string, string> | null;
   userProfileMap?: ReadonlyMap<string, CompanyUserProfile> | null;
   onAdd: (
     body: string,
@@ -201,11 +154,6 @@ export interface TaskChatThreadProps {
     replyToCommentId?: string,
   ) => Promise<void>;
   onLoadMoreCommentGroup?: (rootCommentId: string) => Promise<void> | void;
-  onCancelRun?: () => Promise<void>;
-  onStopRun?: (runId: string) => Promise<void>;
-  stopRunLabel?: string;
-  stoppingRunLabel?: string;
-  stopRunVariant?: "stop" | "pause";
   imageUploadHandler?: (file: File) => Promise<string>;
   onAttachImage?: (file: File) => Promise<TaskAttachment | void>;
   draftKey?: string;
@@ -217,18 +165,10 @@ export interface TaskChatThreadProps {
   composerDisabledReason?: string | null;
   composerHint?: string | null;
   showComposer?: boolean;
-  showJumpToLatest?: boolean;
   hasOlderComments?: boolean;
   commentsLoadingOlder?: boolean;
   onLoadOlderComments?: () => Promise<unknown> | void;
-  autoScrollToHashOnInitialLoad?: boolean;
-  emptyMessage?: string;
   footer?: ReactNode;
-  variant?: "full" | "embedded";
-  onInterruptQueued?: (runId: string) => Promise<void>;
-  onCancelQueued?: (commentId: string) => void;
-  interruptingQueuedRunId?: string | null;
-  stoppingRunId?: string | null;
   onImageClick?: (src: string) => void;
   composerRef?: Ref<TaskChatComposerHandle>;
   /** Optional node rendered inline directly above the sticky composer dock (e.g. the monitor strip). */

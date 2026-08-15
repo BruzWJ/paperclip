@@ -182,10 +182,11 @@ export function LayoutView({
   onPanelFocusCapture,
   onPanelBlurCapture,
 }: LayoutViewProps) {
-  const { panelContent, panelTitle, panelVisible, setPanelVisible } = usePanel();
+  const { panelContent, panelHeaderMode, panelTitle, panelVisible, setPanelVisible } = usePanel();
   const { newAgentOpen, closeNewAgent, openNewTask } = useDialog();
   const navigate = useNavigate();
   const showPanel = !isMobile && Boolean(panelContent) && panelVisible;
+  const shellOwnsPanelHeader = panelHeaderMode === "shell";
   const panelHeadingId = "paperclip-context-panel-title";
   const closePanelLabel = `Close ${panelTitle.charAt(0).toLowerCase()}${panelTitle.slice(1)} panel`;
 
@@ -295,25 +296,28 @@ export function LayoutView({
                   <ResizablePanel defaultSize="25" minSize={240} maxSize={520}>
                     <Card
                       role="complementary"
-                      aria-labelledby={panelHeadingId}
+                      aria-label={shellOwnsPanelHeader ? undefined : panelTitle}
+                      aria-labelledby={shellOwnsPanelHeader ? panelHeadingId : undefined}
                       className="hidden h-full min-h-0 gap-0 rounded-none border-0 py-0 md:flex"
                     >
-                      <CardHeader className="border-b">
-                        <CardTitle id={panelHeadingId}>{panelTitle}</CardTitle>
-                        <CardAction>
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => setPanelVisible(false)}
-                            aria-label={closePanelLabel}
-                          >
-                            <X data-icon="inline-start" />
-                          </Button>
-                        </CardAction>
-                      </CardHeader>
+                      {shellOwnsPanelHeader ? (
+                        <CardHeader className="border-b">
+                          <CardTitle id={panelHeadingId}>{panelTitle}</CardTitle>
+                          <CardAction>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => setPanelVisible(false)}
+                              aria-label={closePanelLabel}
+                            >
+                              <X data-icon="inline-start" />
+                            </Button>
+                          </CardAction>
+                        </CardHeader>
+                      ) : null}
                       <CardContent className="min-h-0 flex-1 p-0">
                         <ScrollArea className="h-full">
-                          <div className="p-4">{panelContent}</div>
+                          {shellOwnsPanelHeader ? <div className="p-4">{panelContent}</div> : panelContent}
                         </ScrollArea>
                       </CardContent>
                     </Card>

@@ -8,7 +8,6 @@ import {
 } from "@/routes/_authenticated/$companyId/projects/$projectId/-detail/-ProjectProperties";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
-import { usePanel } from "@/context/PanelContext";
 import { toast } from "sonner";
 import {
   isStarred,
@@ -43,7 +42,6 @@ export interface ProjectDetailProps {
   variant: ProjectDetailVariant;
   pluginTab?: string;
 }
-
 export function useProjectDetailController({
   companyId,
   projectId,
@@ -52,7 +50,6 @@ export function useProjectDetailController({
 }: ProjectDetailProps) {
   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const { companies } = useCompany();
-  const { closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -174,11 +171,6 @@ export function useProjectDetailController({
       { label: project?.name ?? projectId },
     ]);
   }, [setBreadcrumbs, project, projectId, companyId]);
-
-  useEffect(() => {
-    closePanel();
-    return () => closePanel();
-  }, [closePanel]);
 
   useEffect(() => {
     if (!project?.id || projectMembershipState !== "joined") return;

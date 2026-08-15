@@ -27,21 +27,12 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     taskId = null,
     blockedBy = [],
     liveTaskIds,
-    blockerAttention = null,
-    companyId,
-    projectId,
     taskStatus,
     agentMap,
     currentUserId,
-    userLabelMap,
     userProfileMap,
     onAdd,
     onLoadMoreCommentGroup,
-    onCancelRun,
-    onStopRun,
-    stopRunLabel,
-    stoppingRunLabel,
-    stopRunVariant,
     imageUploadHandler,
     onAttachImage,
     draftKey,
@@ -53,24 +44,13 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     composerDisabledReason = null,
     composerHint = null,
     showComposer = true,
-    showJumpToLatest,
-    autoScrollToHashOnInitialLoad = false,
-    emptyMessage,
     footer,
-    variant = "full",
-    onInterruptQueued,
-    onCancelQueued,
-    interruptingQueuedRunId = null,
-    stoppingRunId = null,
     onImageClick,
     composerRef,
     composerAccessory,
     taskWorkMode,
     onRefreshLatestComments,
     ownerUserId = null,
-    onResumeFromBacklog,
-    resumeFromBacklogPending = false,
-    activeRunIds: suppliedActiveRunIds,
     hasOlderComments = false,
     commentsLoadingOlder = false,
     onLoadOlderComments,
@@ -95,21 +75,7 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     [composerRef, replyPending],
   );
 
-  const emptyActiveRunIds = useMemo(() => new Set<string>(), []);
-  const activeRunIds = suppliedActiveRunIds ?? emptyActiveRunIds;
-
-  const rawMessages = useMemo(
-    () =>
-      buildTaskChatMessages({
-        comments,
-        companyId,
-        projectId,
-        agentMap,
-        currentUserId,
-        userLabelMap,
-      }),
-    [comments, companyId, projectId, agentMap, currentUserId, userLabelMap],
-  );
+  const rawMessages = useMemo(() => buildTaskChatMessages({ comments }), [comments]);
 
   const stableMessagesRef = useRef<readonly TaskChatMessage[]>([]);
   const stableMessageCacheRef = useRef<Map<string, StableThreadMessageCacheEntry>>(new Map());
@@ -138,53 +104,19 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     return agentMap?.get(currentOwnerValue.slice("agent:".length)) ?? null;
   }, [agentMap, currentOwnerValue]);
 
-  const stableOnStopRun = useStableEvent(onStopRun);
-  const stableOnInterruptQueued = useStableEvent(onInterruptQueued);
-  const stableOnCancelQueued = useStableEvent(onCancelQueued);
   const stableOnImageClick = useStableEvent(onImageClick);
-  const stableOnUploadImage = useStableEvent(imageUploadHandler);
 
   const chatCtx = useMemo<TaskChatMessageContext>(
     () => ({
       agentMap,
       currentUserId,
-      userLabelMap,
       userProfileMap,
-      onStopRun: stableOnStopRun,
-      stopRunLabel,
-      stoppingRunLabel,
-      stopRunVariant,
-      onInterruptQueued: stableOnInterruptQueued,
-      onCancelQueued: stableOnCancelQueued,
       onImageClick: stableOnImageClick,
-      onUploadImage: stableOnUploadImage,
       onReply: selectReplyTarget,
       onLoadMoreCommentGroup,
     }),
-    [
-      agentMap,
-      currentUserId,
-      userLabelMap,
-      userProfileMap,
-      stableOnStopRun,
-      stopRunLabel,
-      stoppingRunLabel,
-      stopRunVariant,
-      stableOnInterruptQueued,
-      stableOnCancelQueued,
-      stableOnImageClick,
-      stableOnUploadImage,
-      selectReplyTarget,
-      onLoadMoreCommentGroup,
-    ],
+    [agentMap, currentUserId, userProfileMap, stableOnImageClick, selectReplyTarget, onLoadMoreCommentGroup],
   );
-
-  const resolvedShowJumpToLatest = showJumpToLatest ?? variant === "full";
-  const resolvedEmptyMessage =
-    emptyMessage ??
-    (variant === "embedded"
-      ? "No run output yet."
-      : "This task conversation is empty. Start with a message below.");
 
   const previousErrorBoundaryMessagesRef = useRef<readonly TaskChatMessage[] | null>(null);
   const errorBoundaryResetVersionRef = useRef(0);
@@ -194,11 +126,7 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
   }
 
   return {
-    activeRunIds,
     agentMap,
-    autoScrollToHashOnInitialLoad,
-    blockedBy,
-    blockerAttention,
     chatCtx,
     commentsLoadingOlder,
     composerAccessory,
@@ -206,7 +134,6 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     composerHint,
     composerRef,
     currentOwnerValue,
-    currentUserId,
     draftKey,
     enableOwnerChange,
     errorBoundaryResetKey: String(errorBoundaryResetVersionRef.current),
@@ -214,34 +141,25 @@ export function useTaskChatThreadController(props: TaskChatThreadProps) {
     hasActiveRun,
     hasOlderComments,
     imageUploadHandler,
-    interruptingQueuedRunId,
     liveTaskIds,
     mentions,
     messages,
     onAdd,
     onAttachImage,
-    onCancelRun,
     onLoadOlderComments,
     onRefreshLatestComments,
-    onResumeFromBacklog,
     ownerAgent,
     ownerOptions,
     ownerUserId,
     replyPending,
     replyTarget,
-    resolvedEmptyMessage,
-    resolvedShowJumpToLatest,
-    resumeFromBacklogPending,
     setReplyPending,
     setReplyTarget,
     showComposer,
-    stoppingRunId,
     suggestedOwnerValue,
     taskStatus,
     taskWorkMode,
     unresolvedBlockers,
-    userLabelMap,
-    variant,
   };
 }
 
@@ -249,9 +167,4 @@ export function TaskChatThread(props: TaskChatThreadProps) {
   return <TaskChatThreadView {...useTaskChatThreadController(props)} />;
 }
 
-export {
-  canStopTaskChatRun,
-  resolveAssistantMessageFoldedState,
-  shouldRenderComposerOwnerPreview,
-} from "./-TaskChatShared";
-export type { TaskChatComposerHandle, TaskChatThreadProps } from "./-TaskChatShared";
+export type { TaskChatComposerHandle } from "./-TaskChatShared";

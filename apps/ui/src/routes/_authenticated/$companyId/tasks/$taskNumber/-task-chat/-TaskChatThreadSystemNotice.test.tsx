@@ -6,7 +6,6 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskChatThread } from "./-TaskChatThread";
 import type { TaskChatComment } from "@/lib/task-chat-messages";
-import type { Agent } from "@paperclipai/shared";
 
 vi.mock("../../../../../../features/markdown/MarkdownBody", () => ({
   MarkdownBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -44,10 +43,7 @@ vi.mock("@tanstack/react-router", () => ({
     params,
     ...props
   }: ComponentProps<"a"> & { to: string; params?: Record<string, string> }) => {
-    const href = to
-      .replace("$companyId", params?.companyId ?? "")
-      .replace("$agentId", params?.agentId ?? "")
-      .replace("$runId", params?.runId ?? "");
+    const href = to.replace("$companyId", params?.companyId ?? "").replace("$agentId", params?.agentId ?? "");
     return (
       <a href={href} {...props}>
         {children}
@@ -74,37 +70,32 @@ afterEach(() => {
   container.remove();
 });
 
-function renderThread(
-  comments: TaskChatComment[],
-  options: {
-    agentMap?: Map<string, Agent>;
-    taskStatus?: string;
-  } = {},
-) {
+function renderThread(comments: TaskChatComment[]) {
   act(() => {
-    root.render(
-      <TaskChatThread
-        comments={comments}
-        onAdd={async () => {}}
-        showComposer={false}
-        agentMap={options.agentMap}
-        taskStatus={options.taskStatus}
-      />,
-    );
+    root.render(<TaskChatThread comments={comments} onAdd={async () => {}} showComposer={false} />);
   });
+}
+
+async function openMessageActions(row: ParentNode = container) {
+  const trigger = [...row.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Message actions"),
+  )!;
+  await act(async () => {
+    trigger.focus();
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await Promise.resolve();
+  });
+  return trigger;
 }
 
 const baseTimestamps = {
   createdAt: new Date("2026-05-04T16:32:00.000Z"),
-  updatedAt: new Date("2026-05-04T16:32:00.000Z"),
 };
 
 describe("TaskChatThread system notice routing", () => {
   it("renders authorType=system comments as a SystemNotice rather than a user bubble", () => {
     const comment: TaskChatComment = {
       id: "comment-system",
-      companyId: "company-1",
-      taskId: "task-1",
       authorType: "system",
       authorAgentId: null,
       authorUserId: null,
@@ -150,7 +141,9 @@ describe("TaskChatThread system notice routing", () => {
     expect(container.textContent).toContain("Paperclip needs a disposition");
     // collapsed by default — metadata identifier should not be visible
     expect(container.textContent).not.toContain("PAP-3440");
-    const toggle = row?.querySelector("button[aria-expanded]") as HTMLButtonElement | null;
+    const toggle = [...(row?.querySelectorAll("button[aria-expanded]") ?? [])].find((button) =>
+      button.textContent?.includes("Details"),
+    );
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     expect(container.querySelectorAll('[data-message-role="user"]').length).toBe(0);
   });
@@ -158,8 +151,6 @@ describe("TaskChatThread system notice routing", () => {
   it("expands metadata when detailsDefaultOpen is true", () => {
     const comment: TaskChatComment = {
       id: "comment-system-open",
-      companyId: "company-1",
-      taskId: "task-1",
       authorType: "system",
       authorAgentId: null,
       authorUserId: null,
@@ -193,15 +184,15 @@ describe("TaskChatThread system notice routing", () => {
     const status = container.querySelector('[role="status"]');
     expect(status?.getAttribute("aria-label")).toBe("System alert");
     expect(container.textContent).toContain("Architect");
-    const toggle = container.querySelector("button[aria-expanded]");
+    const toggle = [...container.querySelectorAll("button[aria-expanded]")].find((button) =>
+      button.textContent?.includes("Details"),
+    );
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("keeps regular user comments rendering as user bubbles", () => {
     const comment: TaskChatComment = {
       id: "comment-user",
-      companyId: "company-1",
-      taskId: "task-1",
       authorType: "user",
       authorAgentId: null,
       authorUserId: "user-1",
@@ -221,8 +212,6 @@ describe("TaskChatThread system notice routing", () => {
   it("keeps agent-authored comments rendering as assistant bubbles even with system_notice presentation absent", () => {
     const comment: TaskChatComment = {
       id: "comment-agent",
-      companyId: "company-1",
-      taskId: "task-1",
       authorType: "agent",
       authorAgentId: "agent-1",
       authorUserId: null,
@@ -238,47 +227,7 @@ describe("TaskChatThread system notice routing", () => {
     expect(container.querySelector('[data-message-role="assistant"]')).not.toBeNull();
   });
 
-  it("labels system notice source as the originating run agent name when runAgentId is available", () => {
-    const codexAgent = {
-      id: "22222222-2222-4222-8222-222222222222",
-      name: "CodexCoder",
-    } as unknown as Agent;
-    const agentMap = new Map<string, Agent>([[codexAgent.id, codexAgent]]);
-    const comment: TaskChatComment = {
-      id: "comment-system-runagent",
-      companyId: "company-1",
-      taskId: "task-1",
-      authorType: "system",
-      authorAgentId: null,
-      authorUserId: null,
-      runId: "run-task-chat-01",
-      runAgentId: "22222222-2222-4222-8222-222222222222",
-      body: "Paperclip needs a disposition before this task can continue.",
-      presentation: {
-        kind: "system_notice",
-        tone: "warning",
-        title: "Missing task disposition",
-        detailsDefaultOpen: false,
-      },
-      metadata: null,
-      ...baseTimestamps,
-    };
-
-    renderThread([comment], { agentMap });
-
-    const status = container.querySelector('[role="status"]');
-    expect(status).not.toBeNull();
-    const sourceLink = status?.querySelector(
-      'a[href^="/11111111-1111-4111-8111-111111111111/agents/"]',
-    ) as HTMLAnchorElement | null;
-    expect(sourceLink?.getAttribute("href")).toBe(
-      "/11111111-1111-4111-8111-111111111111/agents/22222222-2222-4222-8222-222222222222/runs/run-task-chat-01",
-    );
-    expect(sourceLink?.textContent).toBe("CodexCoder");
-    expect(sourceLink?.textContent).not.toBe("You");
-  });
-
-  it("shows copy-link feedback on the link button only", async () => {
+  it("copies a system-notice permalink from the compact message menu", async () => {
     const writeText = vi.fn(async () => undefined);
     const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext");
     Object.defineProperty(window, "isSecureContext", {
@@ -291,8 +240,6 @@ describe("TaskChatThread system notice routing", () => {
     });
     const comment: TaskChatComment = {
       id: "comment-copy-link",
-      companyId: "company-1",
-      taskId: "task-1",
       authorType: "system",
       authorAgentId: null,
       authorUserId: null,
@@ -309,18 +256,17 @@ describe("TaskChatThread system notice routing", () => {
 
     renderThread([comment]);
 
-    const copyLink = container.querySelector(
-      'button[aria-label="Copy link to system notice"]',
-    ) as HTMLButtonElement;
-    const copyText = container.querySelector('button[aria-label="Copy system notice"]') as HTMLButtonElement;
+    const trigger = await openMessageActions();
+    const copyLink = [...document.body.querySelectorAll('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes("Copy link to system notice"),
+    ) as HTMLElement;
     await act(async () => {
       copyLink.click();
       await Promise.resolve();
     });
 
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("#comment-comment-copy-link"));
-    expect(copyLink.querySelector(".lucide-check")).not.toBeNull();
-    expect(copyText.querySelector(".lucide-check")).toBeNull();
+    expect(trigger.querySelector(".lucide-check")).not.toBeNull();
     if (originalSecureContext) {
       Object.defineProperty(window, "isSecureContext", originalSecureContext);
     } else {
@@ -332,13 +278,9 @@ describe("TaskChatThread system notice routing", () => {
   it("labels system notice source as Paperclip when no run agent can be resolved", () => {
     const comment: TaskChatComment = {
       id: "comment-system-no-author",
-      companyId: "company-1",
-      taskId: "task-1",
       authorType: "system",
       authorAgentId: null,
       authorUserId: null,
-      runId: null,
-      runAgentId: null,
       body: "System recovery completed.",
       presentation: {
         kind: "system_notice",
@@ -358,40 +300,9 @@ describe("TaskChatThread system notice routing", () => {
     expect(status?.textContent).not.toContain("You");
   });
 
-  it("renders unlinked Paperclip text when the run agent is unavailable", () => {
-    const comment: TaskChatComment = {
-      id: "comment-system-unknown-agent",
-      companyId: "company-1",
-      taskId: "task-1",
-      authorType: "system",
-      authorAgentId: null,
-      authorUserId: null,
-      runId: "run-xyz",
-      runAgentId: "agent-unknown",
-      body: "Disposition required.",
-      presentation: {
-        kind: "system_notice",
-        tone: "warning",
-        title: null,
-        detailsDefaultOpen: false,
-      },
-      metadata: null,
-      ...baseTimestamps,
-    };
-
-    renderThread([comment]);
-
-    const status = container.querySelector('[role="status"]');
-    const sourceLink = status?.querySelector('a[href*="/agents/"]') as HTMLAnchorElement | null;
-    expect(sourceLink).toBeNull();
-    expect(status?.textContent).toContain("Paperclip");
-  });
-
   it("keeps agent-authored comments as assistant bubbles even when presentation requests system_notice", () => {
     const comment: TaskChatComment = {
       id: "comment-agent-system",
-      companyId: "company-1",
-      taskId: "task-1",
       authorType: "agent",
       authorAgentId: "agent-1",
       authorUserId: null,

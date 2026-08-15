@@ -105,12 +105,9 @@ export function useTaskDetailActionMutations({
         : null;
       const optimisticComment = task
         ? createOptimisticTaskComment({
-            companyId: task.companyId,
-            taskId: task.id,
             body: message,
             authorUserId: currentUserId,
             clientStatus: queuedComment ? "queued" : "pending",
-            queueTargetRunId: queuedComment?.id ?? null,
           })
         : null;
       if (optimisticComment) {

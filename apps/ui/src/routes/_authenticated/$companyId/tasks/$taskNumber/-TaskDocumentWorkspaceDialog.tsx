@@ -10,22 +10,20 @@ function MountedTaskDocumentWorkspace() {
   const {
     agentMap,
     documentsWorkspaceOpen,
+    handleCommentImageUpload,
     mentionOptions,
     session,
     setDocumentsWorkspaceOpen,
     task,
-    uploadAttachment,
     userProfileMap,
   } = useTaskDetailPage();
+  const canManageDocuments = Boolean(session?.user?.id);
   const controller = useTaskDocumentsSectionController({
     task,
-    canDeleteDocuments: Boolean(session?.user?.id),
-    canManageDocumentLocks: Boolean(session?.user?.id),
+    canDeleteDocuments: canManageDocuments,
+    canManageDocumentLocks: canManageDocuments,
     mentions: mentionOptions,
-    imageUploadHandler: async (file) => {
-      const attachment = await uploadAttachment.mutateAsync(file);
-      return attachment.contentPath;
-    },
+    imageUploadHandler: handleCommentImageUpload,
     agentMap,
     userProfileMap,
     presentationActive: documentsWorkspaceOpen,

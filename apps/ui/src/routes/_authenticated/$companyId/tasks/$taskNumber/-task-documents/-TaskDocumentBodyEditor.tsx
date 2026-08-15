@@ -1,5 +1,4 @@
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -24,7 +23,6 @@ export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentP
     agentMap,
     userProfileMap,
     locationHash,
-    draft,
     setDraft,
     annotationPanelOpenKeys,
     autosaveDocumentKey,
@@ -35,14 +33,8 @@ export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentP
   } = controller;
   const { activeDraft, activeConflict, annotationTarget, isHistoricalPreview, displayedBody } = model;
 
-  let renderedDocumentBody: ReactNode;
-  if (isHistoricalPreview) {
-    renderedDocumentBody = renderFoldableBody(
-      displayedBody,
-      "paperclip-edit-in-place-content min-h-(--sz-220px) text-sm leading-7",
-    );
-  } else if (activeDraft) {
-    renderedDocumentBody = (
+  const renderedDocumentBody =
+    !isHistoricalPreview && activeDraft ? (
       <MarkdownEditor
         value={displayedBody}
         onChange={(body) => {
@@ -58,19 +50,18 @@ export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentP
         mentions={mentions}
         imageUploadHandler={imageUploadHandler}
         onSubmit={() =>
-          void commitDraft(activeDraft ?? draft, {
+          void commitDraft(activeDraft, {
             clearAfterSave: false,
             trackAutosave: true,
           })
         }
       />
+    ) : (
+      renderFoldableBody(
+        displayedBody,
+        "paperclip-edit-in-place-content min-h-(--sz-220px) text-sm leading-7",
+      )
     );
-  } else {
-    renderedDocumentBody = renderFoldableBody(
-      displayedBody,
-      "paperclip-edit-in-place-content min-h-(--sz-220px) text-sm leading-7",
-    );
-  }
 
   const documentStateLabel = isHistoricalPreview
     ? "Viewing historical revision"
@@ -103,29 +94,25 @@ export function TaskDocumentBodyEditor({ controller, doc, model }: TaskDocumentP
         />
       ) : null}
       <div className={cn("mt-3", !activeDraft && !isHistoricalPreview && "rounded-md hover:bg-accent/10")}>
-        {annotationTarget ? (
-          <TaskDocumentAnnotations
-            target={annotationTarget}
-            doc={doc}
-            bodyMarkdown={displayedBody}
-            draftDirty={
-              Boolean(activeDraft) &&
-              ((activeDraft?.body ?? doc.body) !== doc.body ||
-                (autosaveDocumentKey === doc.key && autosaveState === "saving"))
-            }
-            draftConflicted={Boolean(activeConflict)}
-            historicalPreview={isHistoricalPreview}
-            locationHash={locationHash}
-            panelOpen={annotationPanelOpenKeys.includes(doc.key)}
-            onPanelOpenChange={(next) => setAnnotationPanelOpen(doc.key, next)}
-            agentMap={agentMap}
-            userProfileMap={userProfileMap}
-          >
-            {renderedDocumentBody}
-          </TaskDocumentAnnotations>
-        ) : (
-          renderedDocumentBody
-        )}
+        <TaskDocumentAnnotations
+          target={annotationTarget}
+          doc={doc}
+          bodyMarkdown={displayedBody}
+          draftDirty={
+            Boolean(activeDraft) &&
+            ((activeDraft?.body ?? doc.body) !== doc.body ||
+              (autosaveDocumentKey === doc.key && autosaveState === "saving"))
+          }
+          draftConflicted={Boolean(activeConflict)}
+          historicalPreview={isHistoricalPreview}
+          locationHash={locationHash}
+          panelOpen={annotationPanelOpenKeys.includes(doc.key)}
+          onPanelOpenChange={(next) => setAnnotationPanelOpen(doc.key, next)}
+          agentMap={agentMap}
+          userProfileMap={userProfileMap}
+        >
+          {renderedDocumentBody}
+        </TaskDocumentAnnotations>
       </div>
       <div className="flex min-h-4 items-center justify-end">
         {documentStateLabel ? <DomainStatus status={documentState}>{documentStateLabel}</DomainStatus> : null}

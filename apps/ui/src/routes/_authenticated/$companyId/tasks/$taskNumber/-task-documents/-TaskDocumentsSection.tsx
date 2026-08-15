@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { Button } from "@/components/ui/button";
 import { DocumentDiffModal } from "./-DocumentDiffModal";
 import { NewTaskDocumentEditor } from "./-TaskDocumentBodyEditor";
@@ -7,87 +8,58 @@ import { TaskDocumentCard } from "./-TaskDocumentCard";
 import type { TaskDocumentsSectionController } from "./-useTaskDocumentsController";
 
 export function TaskDocumentsSectionView(controller: TaskDocumentsSectionController) {
+  const diffDocument = controller.diffViewKey
+    ? (controller.sortedDocuments.find((doc) => doc.key === controller.diffViewKey) ?? null)
+    : null;
+
   return (
     <div className="space-y-3">
-      <TaskDocumentsSectionHeader
-        empty={controller.isEmpty}
-        creatingDocument={Boolean(controller.draft?.isNew)}
-        onCreateDocument={controller.beginNewDocument}
-      />
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={controller.beginNewDocument}>
+          <Plus data-icon="inline-start" />
+          <span className="hidden sm:inline">New document</span>
+          <span className="sm:hidden">New</span>
+        </Button>
+      </div>
       {controller.error ? <p className="text-xs text-destructive">{controller.error}</p> : null}
       <NewTaskDocumentEditor controller={controller} />
-      <TaskDocumentList controller={controller} />
-      <TaskDocumentDiffView controller={controller} />
-    </div>
-  );
-}
-
-interface TaskDocumentListProps {
-  controller: TaskDocumentsSectionController;
-}
-
-function TaskDocumentList({ controller }: TaskDocumentListProps) {
-  return (
-    <div className="space-y-3">
-      {controller.sortedDocuments.map((doc) => (
-        <TaskDocumentCard key={doc.id} controller={controller} doc={doc} />
-      ))}
-    </div>
-  );
-}
-
-interface TaskDocumentDiffViewProps {
-  controller: TaskDocumentsSectionController;
-}
-
-function TaskDocumentDiffView({ controller }: TaskDocumentDiffViewProps) {
-  const { diffViewKey, setDiffViewKey, sortedDocuments, documentSubject } = controller;
-  if (!diffViewKey) return null;
-
-  const diffDoc = sortedDocuments.find((doc) => doc.key === diffViewKey);
-  if (!diffDoc) return null;
-
-  return (
-    <DocumentDiffModal
-      documentKey={diffDoc.key}
-      latestRevisionNumber={diffDoc.latestRevisionNumber}
-      revisionsQueryKey={documentSubject.documentRevisionsQueryKey(diffDoc.key)}
-      revisionsQueryFn={() => documentSubject.listDocumentRevisions(diffDoc.key)}
-      open
-      onOpenChange={(open) => {
-        if (!open) setDiffViewKey(null);
-      }}
-    />
-  );
-}
-
-interface TaskDocumentsSectionHeaderProps {
-  empty: boolean;
-  creatingDocument: boolean;
-  onCreateDocument: () => void;
-}
-
-function TaskDocumentsSectionHeader({
-  empty,
-  creatingDocument,
-  onCreateDocument,
-}: TaskDocumentsSectionHeaderProps) {
-  const createButton = (
-    <Button variant="outline" size="sm" onClick={onCreateDocument} className="shrink-0">
-      <Plus data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
-      <span className="hidden sm:inline">New document</span>
-      <span className="sm:hidden">New</span>
-    </Button>
-  );
-
-  if (empty && !creatingDocument) {
-    return <div className="flex min-w-0 justify-end">{createButton}</div>;
-  }
-
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <h3 className="w-full shrink-0 text-sm font-medium text-muted-foreground sm:w-auto">Documents</h3>
-      <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-auto">{createButton}</div>
+      <div className="space-y-3">
+        {controller.sortedDocuments.map((doc) => (
+          <TaskDocumentCard key={doc.id} controller={controller} doc={doc} />
+        ))}
+      </div>
+      {diffDocument ? (
+        <DocumentDiffModal
+          documentKey={diffDocument.key}
+          latestRevisionNumber={diffDocument.latestRevisionNumber}
+          revisionsQueryKey={controller.documentSubject.documentRevisionsQueryKey(diffDocument.key)}
+          revisionsQueryFn={() => controller.documentSubject.listDocumentRevisions(diffDocument.key)}
+          open
+          onOpenChange={(open) => {
+            if (!open) controller.setDiffViewKey(null);
+          }}
+        />
+      ) : null}
+      <ConfirmActionDialog
+        open={Boolean(controller.confirmDeleteKey)}
+        onOpenChange={(open) => {
+          if (!open) controller.setConfirmDeleteKey(null);
+        }}
+        title="Delete document?"
+        description={
+          controller.confirmDeleteKey
+            ? `This permanently deletes the ${controller.confirmDeleteKey} document and its revision history.`
+            : undefined
+        }
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        variant="destructive"
+        pending={controller.deleteDocument.isPending}
+        onConfirm={() => {
+          if (!controller.confirmDeleteKey) return;
+          return controller.deleteDocument.mutateAsync(controller.confirmDeleteKey).then(() => undefined);
+        }}
+      />
     </div>
   );
 }
