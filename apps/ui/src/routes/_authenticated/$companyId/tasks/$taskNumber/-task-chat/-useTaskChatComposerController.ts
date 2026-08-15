@@ -81,10 +81,13 @@ export function useTaskChatComposerController(
     onClearReply,
     onReplySubmitted,
     onReplyPendingChange,
+    pending = false,
+    disabled = false,
   } = props;
 
   const [body, setBody] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitting = isSubmitting || pending || disabled;
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const effectiveSuggestedOwnerValue = suggestedOwnerValue ?? currentOwnerValue;
   const [ownerTarget, setOwnerTarget] = useState(effectiveSuggestedOwnerValue);
@@ -285,7 +288,7 @@ export function useTaskChatComposerController(
     handleSubmit,
     insertCoachMention,
     insertMention,
-    isSubmitting,
+    isSubmitting: submitting,
     mentions,
     onClearReply,
     ownerOptions,

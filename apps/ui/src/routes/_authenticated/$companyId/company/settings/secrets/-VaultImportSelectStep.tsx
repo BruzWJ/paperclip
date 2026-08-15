@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/empty";
 import { cn, relativeTime as formatRelativeShort } from "@/lib/utils";
 import type { CompanySecretProviderConfig, RemoteSecretImportCandidate } from "@paperclipai/shared";
-import { useMemo } from "react";
+import { useMemo, type KeyboardEvent } from "react";
 import { AlertCircle, Cloud, Database, ExternalLink, RefreshCw, Search } from "lucide-react";
 
 import {
@@ -36,6 +36,16 @@ const PAGE_SIZE = 50;
 
 function candidateCellClassName(candidate: RemoteSecretImportCandidate, className?: string) {
   return cn("-m-2 p-2", candidate.importable ? "cursor-pointer" : "cursor-not-allowed", className);
+}
+
+function selectableCellKeyDown(onToggle: () => void) {
+  return (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onToggle();
+    }
+  };
 }
 
 interface SelectStepProps {
@@ -121,9 +131,18 @@ export function SelectStep(props: SelectStepProps) {
               className="-m-2 p-2"
               data-testid={`vault-row-${candidate.externalRef}`}
               data-row-state={candidate.status}
+              role="button"
+              tabIndex={0}
               onClick={(event) => {
                 event.stopPropagation();
                 if (event.target === event.currentTarget) toggleRow(candidate);
+              }}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  toggleRow(candidate);
+                }
               }}
             >
               <Checkbox
@@ -140,7 +159,13 @@ export function SelectStep(props: SelectStepProps) {
         accessorKey: "remoteName",
         header: ({ column }) => <DataTableColumnHeader column={column} title="Remote name" />,
         cell: ({ row }) => (
-          <div className={candidateCellClassName(row.original)} onClick={() => toggleRow(row.original)}>
+          <div
+            className={candidateCellClassName(row.original)}
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleRow(row.original)}
+            onKeyDown={selectableCellKeyDown(() => toggleRow(row.original))}
+          >
             <div className="text-sm font-medium leading-tight">{row.original.remoteName}</div>
           </div>
         ),
@@ -149,7 +174,13 @@ export function SelectStep(props: SelectStepProps) {
         accessorKey: "externalRef",
         header: ({ column }) => <DataTableColumnHeader column={column} title="Reference" />,
         cell: ({ row }) => (
-          <div className={candidateCellClassName(row.original)} onClick={() => toggleRow(row.original)}>
+          <div
+            className={candidateCellClassName(row.original)}
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleRow(row.original)}
+            onKeyDown={selectableCellKeyDown(() => toggleRow(row.original))}
+          >
             <span className="font-mono text-muted-foreground" title={row.original.externalRef}>
               {middleTruncate(row.original.externalRef, 50)}
             </span>
@@ -168,7 +199,13 @@ export function SelectStep(props: SelectStepProps) {
         },
         header: ({ column }) => <DataTableColumnHeader column={column} title="Last changed" />,
         cell: ({ row, getValue }) => (
-          <div className={candidateCellClassName(row.original)} onClick={() => toggleRow(row.original)}>
+          <div
+            className={candidateCellClassName(row.original)}
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleRow(row.original)}
+            onKeyDown={selectableCellKeyDown(() => toggleRow(row.original))}
+          >
             {formatRelativeShort(getValue<string>() || null)}
           </div>
         ),
@@ -179,7 +216,10 @@ export function SelectStep(props: SelectStepProps) {
         cell: ({ row }) => (
           <div
             className={candidateCellClassName(row.original, "font-mono")}
+            role="button"
+            tabIndex={0}
             onClick={() => toggleRow(row.original)}
+            onKeyDown={selectableCellKeyDown(() => toggleRow(row.original))}
           >
             {row.original.key}
           </div>
@@ -191,7 +231,13 @@ export function SelectStep(props: SelectStepProps) {
         cell: ({ row }) => {
           const candidate = row.original;
           return (
-            <div className={candidateCellClassName(candidate)} onClick={() => toggleRow(candidate)}>
+            <div
+              className={candidateCellClassName(candidate)}
+              role="button"
+              tabIndex={0}
+              onClick={() => toggleRow(candidate)}
+              onKeyDown={selectableCellKeyDown(() => toggleRow(candidate))}
+            >
               <div className="flex items-center gap-1.5">
                 <DomainStatus status={candidate.status}>{statusBadgeLabel(candidate.status)}</DomainStatus>
                 {candidate.status === "duplicate" &&

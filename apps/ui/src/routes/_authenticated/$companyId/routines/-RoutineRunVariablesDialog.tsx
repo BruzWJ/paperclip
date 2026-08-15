@@ -53,6 +53,7 @@ export function RoutineRunVariablesDialog({
   defaultAssigneeAgentId,
   variables,
   isPending,
+  disabled = false,
   onSubmit,
 }: {
   open: boolean;
@@ -64,9 +65,10 @@ export function RoutineRunVariablesDialog({
   defaultAssigneeAgentId?: string | null;
   variables: RoutineVariable[];
   isPending: boolean;
+  disabled?: boolean;
   onSubmit: (data: RoutineRunDialogSubmitData) => void;
 }) {
-  void 'role="status"';
+  const blocked = isPending || disabled;
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [selection, setSelection] = useState(() =>
     buildInitialRunSelection({
@@ -148,7 +150,7 @@ export function RoutineRunVariablesDialog({
   return (
     <FormDialog
       open={open}
-      onOpenChange={(next) => !isPending && onOpenChange(next)}
+      onOpenChange={(next) => !blocked && onOpenChange(next)}
       contentClassName="flex h-(--sz-calc-18) max-h-(--sz-calc-18) max-w-xl flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:max-h-(--sz-calc-20)"
       headerClassName="shrink-0 border-b border-border/60 px-6 pb-4 pr-12 pt-6"
       headerLeading={routineName ? <p className="text-muted-foreground text-sm">{routineName}</p> : null}
@@ -157,24 +159,29 @@ export function RoutineRunVariablesDialog({
       footerClassName="shrink-0 border-t border-border/60 bg-background px-6 pb-(--sz-calc-19) pt-4"
       footer={
         <>
-          {!isPending && !selection.assigneeAgentId ? (
+          {blocked ? (
+            <p role="status" className="sr-only">
+              Running routine…
+            </p>
+          ) : null}
+          {!blocked && !selection.assigneeAgentId ? (
             <FieldError className="mr-auto">Default agent required for this run.</FieldError>
-          ) : !isPending && missingRequired.length > 0 ? (
+          ) : !blocked && missingRequired.length > 0 ? (
             <FieldError className="mr-auto">Missing: {missingRequired.join(", ")}</FieldError>
           ) : (
             <span className="mr-auto" />
           )}
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={blocked}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isPending || !canSubmit}>
-            {isPending ? <Spinner /> : null}
-            {isPending ? "Running…" : "Run routine"}
+          <Button onClick={handleSubmit} disabled={blocked || !canSubmit}>
+            {blocked ? <Spinner /> : null}
+            {blocked ? "Running…" : "Run routine"}
           </Button>
         </>
       }
     >
-      <FieldSet disabled={isPending} aria-label="Routine run settings" className="min-h-0 flex-1 gap-0">
+      <FieldSet disabled={blocked} aria-label="Routine run settings" className="min-h-0 flex-1 gap-0">
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
           <FieldGroup className="grid gap-4 md:grid-cols-2">
             <LabeledFormField data-invalid={!selection.assigneeAgentId} label="Agent *">
@@ -190,7 +197,7 @@ export function RoutineRunVariablesDialog({
                   if (assigneeAgentId) trackRecentAssignee(assigneeAgentId);
                   setSelection((current) => ({ ...current, assigneeAgentId }));
                 }}
-                disabled={isPending}
+                disabled={blocked}
                 openOnFocus={false}
                 searchPlaceholder="Search agents..."
                 emptyMessage="No agents found."
@@ -224,7 +231,7 @@ export function RoutineRunVariablesDialog({
                   if (projectId) trackRecentProject(projectId);
                   setSelection((current) => ({ ...current, projectId }));
                 }}
-                disabled={isPending}
+                disabled={blocked}
                 openOnFocus={false}
                 searchPlaceholder="Search projects..."
                 emptyMessage="No projects found."

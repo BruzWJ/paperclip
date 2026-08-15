@@ -497,8 +497,9 @@ export function TaskResources({
         pendingLabel="Deleting…"
         variant="destructive"
         pending={attachmentDeletePending}
-        onConfirm={() => confirmDeleteAttachment && onDeleteAttachment(confirmDeleteAttachment.id)}
-      />
+        onConfirm={() => {
+          if (confirmDeleteAttachment) void onDeleteAttachment(confirmDeleteAttachment.id);
+        }}      />
     </div>
   );
 }

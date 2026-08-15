@@ -124,7 +124,7 @@ export function TaskChatThreadView(props: Controller) {
     ownerAgent,
     ownerOptions,
     ownerUserId,
-    replyPending,
+    replyPending: pending,
     replyTarget,
     setReplyPending,
     setReplyTarget,
@@ -197,8 +197,8 @@ export function TaskChatThreadView(props: Controller) {
         </TaskChatErrorBoundary>
 
         {showComposer ? (
-          <div className="mt-4 space-y-3" aria-busy={replyPending || undefined}>
-            {replyPending ? (
+          <div className="mt-4 space-y-3" aria-busy={pending || undefined}>
+            {pending ? (
               <p role="status" className="sr-only">
                 Sending reply…
               </p>
@@ -211,9 +211,12 @@ export function TaskChatThreadView(props: Controller) {
               liveTaskIds={liveTaskIds}
               composerAccessory={composerAccessory}
             />
+            {/* Submit trigger stays disabled={pending} and shows pending feedback while the reply is in flight. */}
             <TaskChatComposer
               ref={composerRef}
               onSubmit={onAdd}
+              pending={pending}
+              disabled={pending}
               onImageUpload={imageUploadHandler}
               onAttachImage={onAttachImage}
               draftKey={draftKey}
@@ -229,7 +232,7 @@ export function TaskChatThreadView(props: Controller) {
               taskWorkMode={taskWorkMode}
               replyTarget={replyTarget}
               onClearReply={() => {
-                if (!replyPending) setReplyTarget(null);
+                if (!pending) setReplyTarget(null);
               }}
               onReplySubmitted={() => setReplyTarget(null)}
               onReplyPendingChange={setReplyPending}

@@ -134,6 +134,11 @@ export function useTaskLabelProperties({
             onChange={(event) => state.setNewLabelName(event.target.value)}
           />
         </div>
+        {data.createLabel.isPending ? (
+          <p role="status" className="sr-only">
+            Creating label…
+          </p>
+        ) : null}
         <Button
           type="button"
           variant="outline"

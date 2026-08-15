@@ -247,6 +247,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   };
 
   const isSavePending = !isCreate && Boolean(props.isSaving);
+  const pending = isSavePending;
   const draftTestConfiguration = useMemo(() => {
     if (!hasAdapterType || !uiAdapter) {
       return { adapterConfig: null, error: null };
@@ -294,8 +295,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             <ItemDescription>Unsaved changes</ItemDescription>
           </ItemContent>
           <ItemActions>
-            <Button size="sm" onClick={handleSave} disabled={isSavePending}>
-              {isSavePending ? "Saving..." : "Save"}
+            <Button size="sm" onClick={handleSave} disabled={pending}>
+              {pending ? "Saving..." : "Save"}
             </Button>
           </ItemActions>
         </Item>
@@ -328,7 +329,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
       {!isCreate ? (
         <AgentRuntimeAccessSection
-          disabled={isSavePending}
+          disabled={pending}
           error={runtimeAccessQuery.isError}
           loading={runtimeAccessQuery.isLoading}
           onChange={markRuntimeAccess}

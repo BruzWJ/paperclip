@@ -164,7 +164,12 @@ function TaskChatComposerView(props: ReturnType<typeof useTaskChatComposerContro
   const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
 
   return (
-    <div ref={composerContainerRef} data-testid="task-chat-composer">
+    <div ref={composerContainerRef} data-testid="task-chat-composer" aria-busy={isSubmitting || undefined}>
+      {isSubmitting ? (
+        <p role="status" className="sr-only">
+          Sending message…
+        </p>
+      ) : null}
       {coachVisible && plainNameCandidate ? (
         <Suggestions className="mb-2" aria-live="polite">
           <Suggestion

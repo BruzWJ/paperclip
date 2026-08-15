@@ -9,6 +9,7 @@ import { ImageGalleryModal } from "@/routes/_authenticated/$companyId/tasks/$tas
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useDialogActions } from "@/context/DialogContext";
@@ -256,7 +257,16 @@ function TaskDetail() {
       </Alert>
     );
   }
-  if (controller.kind === "missing") return null;
+  if (controller.kind === "missing") {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>Task not found</EmptyTitle>
+          <EmptyDescription>This task does not exist or is not available in this company.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
 
   return (
     <TaskDetailPageProvider value={controller}>
@@ -285,6 +295,11 @@ function TaskDetail() {
           description="This audited command preserves the owner and execution session, clears the terminal disposition, and invokes the owner with the stored immutable request."
           footer={
             <>
+              {controller.reopenTask.isPending ? (
+                <p role="status" className="sr-only">
+                  Reopening task…
+                </p>
+              ) : null}
               <Button type="button" variant="outline" onClick={() => controller.setReopenDialogOpen(false)}>
                 Cancel
               </Button>

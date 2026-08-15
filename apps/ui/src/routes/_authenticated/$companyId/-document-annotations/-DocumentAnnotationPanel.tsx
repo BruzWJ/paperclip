@@ -414,7 +414,7 @@ export function AnnotationPanelBody(props: AnnotationPanelProps) {
           value={composerValue}
           onValueChange={setComposerValue}
           posting={createThread.isPending}
-          disabled={props.newCommentDisabled}
+          disabled={props.newCommentDisabled || createThread.isPending}
           hasBaseRevision={Boolean(props.baseRevisionId)}
           onCancel={() => {
             props.onClearPendingAnchor();

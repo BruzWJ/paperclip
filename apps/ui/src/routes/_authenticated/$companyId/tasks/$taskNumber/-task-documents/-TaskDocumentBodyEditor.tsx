@@ -203,6 +203,11 @@ export function NewTaskDocumentEditor({ controller }: NewTaskDocumentEditorProps
         onSubmit={() => void createDocument()}
       />
       <div className="flex items-center justify-end gap-2">
+        {upsertDocument.isPending ? (
+          <p role="status" className="sr-only">
+            Saving document…
+          </p>
+        ) : null}
         <Button variant="outline" size="sm" onClick={cancelDraft}>
           <X data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
           Cancel
@@ -229,6 +234,11 @@ export function TaskDocumentRevisionNotices({ controller, doc, model }: TaskDocu
 
   return (
     <>
+      {restoreDocumentRevision.isPending || upsertDocument.isPending ? (
+        <p role="status" className="sr-only">
+          {restoreDocumentRevision.isPending ? "Restoring revision…" : "Saving document…"}
+        </p>
+      ) : null}
       {isHistoricalPreview && selectedHistoricalRevision ? (
         <Alert>
           <AlertTitle>Viewing revision {selectedHistoricalRevision.revisionNumber}</AlertTitle>

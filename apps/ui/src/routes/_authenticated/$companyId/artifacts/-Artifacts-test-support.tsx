@@ -4,6 +4,7 @@ import type { CompanyArtifact, CompanyArtifactGroup } from "@/api/artifacts";
 import { TestRouter } from "@/test/TestRouter";
 import { getRouteComponent } from "@/test/route-component";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createContext, useContext } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { vi } from "vitest";
@@ -31,6 +32,7 @@ vi.mock("@/api/artifacts", () => ({
 
 // Render the menu inline (no radix portal / pointer-capture) so option clicks
 // are deterministic in jsdom.
+const RadioGroupContext = createContext<{ onValueChange?: (value: string) => void }>({});
 vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -42,40 +44,37 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   }: {
     children: React.ReactNode;
     onValueChange?: (value: string) => void;
-  }) => {
-    const resolveValue = (target: EventTarget | null) =>
-      (target as HTMLElement).closest("button")?.getAttribute("value") ?? null;
-    const selectFrom = (target: EventTarget | null) => {
-      const value = resolveValue(target);
-      if (value) onValueChange?.(value);
-    };
-    return (
-      <div
-        role="radiogroup"
-        tabIndex={0}
-        onPointerDown={(event) => selectFrom(event.target)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            selectFrom(event.target);
-          }
-        }}
-      >
-        {children}
-      </div>
-    );
-  },
+  }) => (
+    <RadioGroupContext.Provider value={{ onValueChange }}>
+      <div role="radiogroup">{children}</div>
+    </RadioGroupContext.Provider>
+  ),
   DropdownMenuRadioItem: ({
     children,
     onSelect,
+    value,
     ...rest
   }: {
     children: React.ReactNode;
     onSelect?: () => void;
-  }) => (
-    <button type="button" onClick={onSelect} {...rest}>
-      {children}
-    </button>
-  ),
+    value?: string;
+    [key: string]: unknown;
+  }) => {
+    const radioGroup = useContext(RadioGroupContext);
+    return (
+      <button
+        type="button"
+        value={value}
+        onClick={() => {
+          if (typeof value === "string") radioGroup.onValueChange?.(value);
+          onSelect?.();
+        }}
+        {...rest}
+      >
+        {children}
+      </button>
+    );
+  },
   DropdownMenuItem: ({
     children,
     onSelect,

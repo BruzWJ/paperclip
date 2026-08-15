@@ -124,6 +124,11 @@ export function TaskTreeControlDialog() {
       description={taskTreeControlHelpText(treeControlMode, treeControlScope)}
       footer={
         <>
+          {executeTreeControl.isPending ? (
+            <p role="status" className="sr-only">
+              Applying tree control…
+            </p>
+          ) : null}
           <Button
             variant="outline"
             onClick={() => setTreeControlOpen(false)}

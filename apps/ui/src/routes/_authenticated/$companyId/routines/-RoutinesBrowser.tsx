@@ -302,8 +302,16 @@ export function RoutinesDialogs({ controller }: { controller: RoutinesController
     updateFolder,
   } = controller;
 
+  const pending =
+    createFolder.isPending || updateFolder.isPending || deleteFolder.isPending || runRoutine.isPending;
+
   return (
-    <>
+    <div aria-busy={pending || undefined}>
+      {pending ? (
+        <p role="status" className="sr-only">
+          {runRoutine.isPending ? "Starting routine…" : "Updating folders…"}
+        </p>
+      ) : null}
       <FolderFormDialog
         open={folderDialogOpen}
         folder={folderDialogTarget}
@@ -349,10 +357,11 @@ export function RoutinesDialogs({ controller }: { controller: RoutinesController
         defaultAssigneeAgentId={runDialogRoutine?.assigneeAgentId ?? null}
         variables={runDialogRoutine?.variables ?? []}
         isPending={runRoutine.isPending}
+        disabled={runRoutine.isPending}
         onSubmit={(data) => {
           if (runDialogRoutine) runRoutine.mutate({ id: runDialogRoutine.id, data });
         }}
       />
-    </>
+    </div>
   );
 }

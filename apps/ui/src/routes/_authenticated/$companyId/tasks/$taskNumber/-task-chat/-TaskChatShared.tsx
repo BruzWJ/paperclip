@@ -133,6 +133,10 @@ export interface TaskChatComposerProps {
   onClearReply?: () => void;
   onReplySubmitted?: () => void;
   onReplyPendingChange?: (pending: boolean) => void;
+  /** Parent-owned pending signal, mirrored back so the submit trigger disables while posting. */
+  pending?: boolean;
+  /** Parent-owned disable gate; the submit trigger and textarea disable while true. */
+  disabled?: boolean;
 }
 
 export interface TaskChatThreadProps {

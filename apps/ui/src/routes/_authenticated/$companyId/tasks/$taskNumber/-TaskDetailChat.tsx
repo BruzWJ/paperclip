@@ -53,7 +53,8 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
     placeholderData:
       keepPreviousDataForSameQueryTail<Awaited<ReturnType<typeof tasksApi.listApprovals>>>(taskId),
   });
-  const unresolvedApprovals = (linkedApprovals ?? []).filter(
+  const data = linkedApprovals ?? [];
+  const unresolvedApprovals = data.filter(
     (approval) => approval.status === "pending" || approval.status === "revision_requested",
   );
   const interruptibleTaskRun = resolveInterruptibleTaskRun(activeRuns);
@@ -73,25 +74,37 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
     <TaskChatThread
       composerRef={commentComposerRef}
       composerAccessory={
-        unresolvedApprovals.length > 0 || humanLifecycleFormControls ? (
+        linkedApprovals === undefined ? (
+          humanLifecycleFormControls ? (
+            <div className="space-y-3">{humanLifecycleFormControls}</div>
+          ) : null
+        ) : (
           <div className="space-y-3">
-            {unresolvedApprovals.map((approval) => (
-              <TaskChatConfirmation
-                key={approval.id}
-                approval={approval}
-                requesterAgent={
-                  approval.requestedByAgentId ? (agentMap.get(approval.requestedByAgentId) ?? null) : null
-                }
-                onDecision={approvalDecision.mutate}
-                isPending={pendingApprovalAction?.approvalId === approval.id}
-                pendingAction={
-                  pendingApprovalAction?.approvalId === approval.id ? pendingApprovalAction.action : null
-                }
-              />
-            ))}
+            {unresolvedApprovals.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {data.length === 0
+                  ? "No linked approval requests."
+                  : "All linked approval requests are resolved."}
+              </p>
+            ) : (
+              unresolvedApprovals.map((approval) => (
+                <TaskChatConfirmation
+                  key={approval.id}
+                  approval={approval}
+                  requesterAgent={
+                    approval.requestedByAgentId ? (agentMap.get(approval.requestedByAgentId) ?? null) : null
+                  }
+                  onDecision={approvalDecision.mutate}
+                  isPending={pendingApprovalAction?.approvalId === approval.id}
+                  pendingAction={
+                    pendingApprovalAction?.approvalId === approval.id ? pendingApprovalAction.action : null
+                  }
+                />
+              ))
+            )}
             {humanLifecycleFormControls}
           </div>
-        ) : null
+        )
       }
       comments={commentsWithQueueState}
       hasActiveRun={activeRuns.length > 0}

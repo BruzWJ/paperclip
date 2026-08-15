@@ -13,6 +13,12 @@ import {
 import { cn } from "@/lib/utils";
 import type { ParentedEntity } from "@/lib/presentation-contracts";
 
+const DOMAIN_TREE_LABEL_CONTENT_SELECTOR = "[data-domain-tree-label-content]";
+
+function isDomainTreeLabelContent(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(DOMAIN_TREE_LABEL_CONTENT_SELECTOR) !== null;
+}
+
 export interface DomainTreeNode<T> {
   id: string;
   value: T;
@@ -203,21 +209,22 @@ export function DomainTree<T>({
             }}
             onFocus={() => setFocusedId(node.id)}
             onKeyDown={handleKeyDown}
-            onClick={() => {
+            onClick={(event) => {
+              if (isDomainTreeLabelContent(event.target)) return;
               if (state.hasChildren) handleToggle(node);
               else onActivate?.(node);
             }}
           >
             <TreeExpander hasChildren={state.hasChildren} onClick={() => handleToggle(node)} />
             {renderBeforeLabel ? (
-              <span className="contents" onClick={(event) => event.stopPropagation()}>
+              <span className="contents" data-domain-tree-label-content="">
                 {renderBeforeLabel(state)}
               </span>
             ) : null}
             <TreeIcon hasChildren={state.hasChildren} icon={renderIcon?.(state)} />
             <TreeLabel>{renderLabel(state)}</TreeLabel>
             {renderAfterLabel ? (
-              <span className="contents" onClick={(event) => event.stopPropagation()}>
+              <span className="contents" data-domain-tree-label-content="">
                 {renderAfterLabel(state)}
               </span>
             ) : null}
