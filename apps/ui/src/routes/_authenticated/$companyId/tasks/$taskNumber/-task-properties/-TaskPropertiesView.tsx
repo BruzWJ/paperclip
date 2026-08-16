@@ -60,7 +60,7 @@ export function TaskPropertiesView(props: TaskPropertiesController) {
                     </DomainStatus>
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent align="end">
+                <SelectContent position="popper" align="end">
                   {TASK_STATUSES.map((status) => (
                     <SelectItem
                       key={status}
@@ -84,7 +84,7 @@ export function TaskPropertiesView(props: TaskPropertiesController) {
                 >
                   <SelectValue>{taskValueLabel(task.priority)}</SelectValue>
                 </SelectTrigger>
-                <SelectContent align="end">
+                <SelectContent position="popper" align="end">
                   {TASK_PRIORITIES.map((priority) => (
                     <SelectItem key={priority} value={priority} className={inline ? "min-h-11" : undefined}>
                       {taskValueLabel(priority)}

@@ -251,7 +251,7 @@ function TaskChatComposerView(props: ReturnType<typeof useTaskChatComposerContro
                 <PromptInputSelectTrigger ref={ownerTriggerRef} aria-label="Owner">
                   <PromptInputSelectValue placeholder="Owner" />
                 </PromptInputSelectTrigger>
-                <PromptInputSelectContent>
+                <PromptInputSelectContent position="popper" align="start">
                   {ownerOptions.map((option) => (
                     <PromptInputSelectItem key={option.id} value={option.id} disabled={option.disabled}>
                       {option.label}
