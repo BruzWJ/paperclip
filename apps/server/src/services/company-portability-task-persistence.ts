@@ -208,6 +208,7 @@ export async function createPortableCanonicalTask(db: Db, input: PortableCanonic
                   userId: input.creatorUserId,
                 },
                 producingRun: null,
+                body: input.request,
               },
               idempotencyKey: aggregateKey,
             },

@@ -185,6 +185,44 @@ describe.sequential("cli auth routes", () => {
     expect(mockBoardAuthService.resolveBoardAccess).toHaveBeenCalledWith("user-1");
   });
 
+  it.sequential("returns the current CLI auth principal for an approved board key", async () => {
+    mockBoardAuthService.resolveBoardAccess.mockResolvedValue({
+      user: { id: "user-1", name: "User One", email: "user@example.com" },
+      companyIds: ["company-1"],
+      memberships: [],
+      isInstanceAdmin: false,
+    });
+    const app = await createApp(
+      testBoardKeyActor({
+        userId: "user-1",
+        keyId: "board-key-1",
+        isInstanceAdmin: false,
+        companyIds: ["company-1"],
+      }),
+    );
+
+    const res = await request(app).get("/api/cli-auth/me");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      user: { id: "user-1" },
+      userId: "user-1",
+      companyIds: ["company-1"],
+      source: "board_key",
+      keyId: "board-key-1",
+    });
+    expect(mockBoardAuthService.resolveBoardAccess).toHaveBeenCalledWith("user-1");
+  });
+
+  it.sequential("rejects an unauthenticated current CLI auth lookup", async () => {
+    const app = await createApp({ type: "none", source: "none" });
+
+    const res = await request(app).get("/api/cli-auth/me");
+
+    expect(res.status).toBe(401);
+    expect(mockBoardAuthService.resolveBoardAccess).not.toHaveBeenCalled();
+  });
+
   it.sequential("logs revoke activity with resolved audit company ids", async () => {
     mockBoardAuthService.assertCurrentBoardKey.mockResolvedValue({
       id: "board-key-3",

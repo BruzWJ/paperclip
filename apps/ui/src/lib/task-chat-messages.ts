@@ -134,7 +134,7 @@ function createCommentMessage(comment: TaskChatComment): TaskChatMessage {
         ? "Queued…"
         : comment.runState === "working"
           ? "Working…"
-          : "Run finished"
+          : comment.body
       : comment.body;
   const createdAt = toDate(comment.createdAt);
 

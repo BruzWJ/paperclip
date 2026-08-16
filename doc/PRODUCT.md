@@ -26,11 +26,14 @@ limited to:
 - its `reportsTo` relationship;
 - a free-text capabilities description used in the owner catalog.
 
-An agent may additionally have an optional board-owned `instruction`. For a
-new task, Paperclip queues it as its own bootstrap execution immediately
-before the unchanged task request. The work execution resumes that exact
-provider session. The instruction grants no authority and is not a provider
-system prompt or work-message prefix.
+An agent may additionally have an optional board-owned `instruction`. On that
+agent's first execution in an exact `(task, ownership epoch, agent)` lane,
+Paperclip queues it as its own bootstrap execution immediately before the
+unchanged work message. This also covers an agent first contacted on an
+existing task. The work execution resumes that exact provider session. Later
+executions in the same lane never replay the instruction or substitute a new
+provider session when exact carry is unavailable. The instruction grants no
+authority and is not a provider system prompt or work-message prefix.
 
 Other control-plane configuration—adapter binding, provider-native target
 declaration, context/action/mention dials, lifecycle state, budget, and

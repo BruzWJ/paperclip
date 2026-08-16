@@ -49,29 +49,50 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "apps/server/src/services/paperclip-managed-tool-registry.ts",
+    "apps/server/src/services/paperclip-managed-tool-definitions.ts",
     [
-      "type TaskExecutionRefMode = 'owner' | 'consult';",
-      "type ContextDial = {}; type PaperclipActionKey = string;",
       "export const PAPERCLIP_MANAGED_TOOL_NAMES = [];",
       "export const PAPERCLIP_MANAGED_TOOL_METADATA = {};",
       "export const boardMcpInputSchemas = {};",
       "export const BOARD_MANAGED_TOOLS = [];",
+      "",
+    ].join("\n"),
+  );
+  write(
+    root,
+    "apps/server/src/services/paperclip-managed-tool-runtime.ts",
+    [
+      "type TaskExecutionRefMode = 'owner' | 'consult';",
+      "type ContextDial = {}; type PaperclipActionKey = string;",
       "export interface PaperclipManagedToolRuntimeProjectionInput {",
       "  mode: TaskExecutionRefMode; contextDial: ContextDial;",
       "  actionGrants: Readonly<Partial<Record<PaperclipActionKey, boolean>>>;",
       "  isCurrentOwner: boolean; taskCreateDirectChildren: readonly unknown[];",
       "  taskAssignTargets: readonly unknown[]; creatorUpdateTargets: readonly unknown[];",
-      "  mentionTargets: readonly unknown[]; configureTargets: readonly unknown[];",
+      "  mentionTargets: readonly unknown[];",
       "}",
-      "function resolveContextRetrievalPolicy(input: unknown) { return input; }",
-      "function projectRuntimeTaskCreate(input: any) { resolveContextRetrievalPolicy(input.contextDial); if (input.actionGrants.task_create !== true) return null; return input.taskCreateDirectChildren; }",
-      "function projectRuntimeTaskAssign(input: any) { return input.taskAssignTargets; }",
-      "function projectRuntimeTaskUpdate(input: any) { return [input.creatorUpdateTargets, input.isCurrentOwner]; }",
-      "function projectRuntimeMentionAgent(input: any) { return input.mentionTargets; }",
-      "function projectRuntimeAgentConfigure(input: any) { if (input.actionGrants.agent_configure !== true || input.configureTargets.length === 0) return null; return {}; }",
-      "function projectRuntimeTool() {}",
       "export interface ProjectedPaperclipManagedToolDescriptor { normalizeRuntimeCommand(): unknown }",
+      "",
+    ].join("\n"),
+  );
+  write(
+    root,
+    "apps/server/src/services/paperclip-managed-task-tools.ts",
+    [
+      "function resolveContextRetrievalPolicy(input: unknown) { return input; }",
+      "export function projectRuntimeTaskCreate(input: any) { resolveContextRetrievalPolicy(input.contextDial); if (input.actionGrants.task_create !== true) return null; return input.taskCreateDirectChildren; }",
+      "export function projectRuntimeTaskAssign(input: any) { return input.taskAssignTargets; }",
+      "export function projectRuntimeTaskUpdate(input: any) { return [input.creatorUpdateTargets, input.isCurrentOwner]; }",
+      "export function projectRuntimeMentionAgent(input: any) { return input.mentionTargets; }",
+      "",
+    ].join("\n"),
+  );
+  write(
+    root,
+    "apps/server/src/services/paperclip-managed-tool-registry.ts",
+    [
+      "function projectRuntimeAgentConfigure(input: any) { if (input.actionGrants.agent_configure !== true) return null; return {}; }",
+      "function projectRuntimeTool() {}",
       "export function projectPaperclipManagedTools(input: PaperclipManagedToolRuntimeProjectionInput) { return [{ normalizeRuntimeCommand(payload, scope) {} }]; }",
       "",
     ].join("\n"),
@@ -81,14 +102,8 @@ function fixtureRoot(): string {
     "apps/server/src/services/runtime-interface-compiler-db.ts",
     [
       'import type { PaperclipManagedToolRuntimeProjectionInput } from "./paperclip-managed-tool-registry.js";',
-      "type ConfigureGrant = {}; type RuntimeAgentConfigureTarget = {};",
-      "interface Snapshot { configureGrants: readonly ConfigureGrant[] }",
-      "function explicitConfigureTargets(source: unknown, agents: unknown[], grants: readonly ConfigureGrant[]) { return new Set<string>(); }",
-      "export function build(snapshot: Snapshot, actionGrants: Record<string, boolean>, companyAgents: unknown[], sourceAgent: unknown) {",
-      "  const configureTargets: RuntimeAgentConfigureTarget[] = actionGrants.agent_configure === true",
-      "    ? (() => { const ids = explicitConfigureTargets(sourceAgent, companyAgents, snapshot.configureGrants); return [...ids].map(() => ({})); })()",
-      "    : [];",
-      "  return { configureTargets };",
+      "export function buildRuntimeInterfaceCompileInput(actionGrants: Record<string, boolean>, mentionTargets: unknown[]) {",
+      "  return { actionGrants, mentionTargets, };",
       "}",
       "",
     ].join("\n"),
@@ -164,21 +179,14 @@ test("rejects management rows in compile input and digest", () => {
   );
 });
 
-test("rejects configure target derivation without the action grant", () => {
+test("rejects configure authority in provider-interface compilation", () => {
   const root = fixtureRoot();
   const path = "apps/server/src/services/runtime-interface-compiler-db.ts";
   const original = readFileSync(join(root, path), "utf8");
-  write(
-    root,
-    path,
-    original.replace(
-      "actionGrants.agent_configure === true",
-      "snapshot.configureGrants.length >= 0",
-    ),
-  );
+  write(root, path, `${original}\nconst configureTargets = principalPermissionGrants;\n`);
   assert.ok(
     runtimeInterfaceCompilerBoundaryViolations(root).some((violation) =>
-      violation.includes("behind actionGrants.agent_configure"),
+      violation.includes("legacy agent_configure target-catalog path remains"),
     ),
   );
 });
@@ -190,7 +198,7 @@ test("rejects an agent_configure projection without the action grant", () => {
   write(
     root,
     path,
-    original.replace("input.actionGrants.agent_configure !== true || ", ""),
+    original.replace("if (input.actionGrants.agent_configure !== true) return null;", ""),
   );
   assert.ok(
     runtimeInterfaceCompilerBoundaryViolations(root).some((violation) =>

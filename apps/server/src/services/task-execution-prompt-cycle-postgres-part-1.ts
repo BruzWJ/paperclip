@@ -333,7 +333,7 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart1(
           initialCycle === null ||
           (attempt.sessionOperation === "new"
             ? initialCycle.kind === "new" ||
-              (initialCycle.kind === "singleton" && initialCycle.instructionless)
+              (initialCycle.kind === "singleton" && initialCycle.freshSessionAllowed)
             : attempt.sessionOperation === "resume"
               ? initialCycle.kind === "bootstrap_resume" || initialCycle.kind === "singleton"
               : false);

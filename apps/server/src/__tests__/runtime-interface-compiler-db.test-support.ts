@@ -130,12 +130,6 @@ export function snapshot(
     contextGrantKeys: ["read_task_comments", "list_company_tasks"],
     actionGrantKeys: ["task_create", "mention_agent", "agent_configure"],
     mentionReachGrantKeys: ["mention_any_descendant", "mention_any_ancestor"],
-    configureGrants: [
-      {
-        permissionKey: "agents:configure",
-        scope: { targetAgentIds: ["peer"] },
-      },
-    ],
     childTasks: [
       {
         id: "eligible-child",

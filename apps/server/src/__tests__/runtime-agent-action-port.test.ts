@@ -141,10 +141,6 @@ function replayingExecutor(
       taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [],
-      configureTargets: [
-        { id: capability.targetAgentId },
-        { id: TARGET_AGENT_ID },
-      ],
       pluginTools: [],
     } as const;
     const descriptor = compileRuntimeInterface(compileInput).byName.get(name);

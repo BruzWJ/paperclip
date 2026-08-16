@@ -11,6 +11,16 @@ const DATABASE_OWNER =
   "apps/server/src/services/runtime-interface-compiler-db.ts";
 const MANAGED_TOOL_REGISTRY =
   "apps/server/src/services/paperclip-managed-tool-registry.ts";
+const MANAGED_TOOL_DEFINITIONS =
+  "apps/server/src/services/paperclip-managed-tool-definitions.ts";
+const MANAGED_TOOL_RUNTIME =
+  "apps/server/src/services/paperclip-managed-tool-runtime.ts";
+const MANAGED_TASK_TOOLS =
+  "apps/server/src/services/paperclip-managed-task-tools.ts";
+const DATABASE_SNAPSHOT =
+  "apps/server/src/services/runtime-interface-compiler-snapshot.ts";
+const RUNTIME_AGENT_VALIDATOR =
+  "packages/shared/src/validators/runtime-agent-configuration.ts";
 const CAPABILITY_GATEWAY =
   "apps/server/src/services/prompt-capability-gateway.ts";
 const RUN_TOOLS_ROUTE = "apps/server/src/routes/run-tools.ts";
@@ -30,12 +40,16 @@ const COMPILER_REQUIRED = [
   "runtimeInterfaceDigest",
 ] as const;
 
-/** The canonical registry owns public schemas and dynamic runtime projections. */
-const REGISTRY_REQUIRED = [
+/** Canonical public names, metadata, and Board schemas have one owner. */
+const DEFINITIONS_REQUIRED = [
   "export const PAPERCLIP_MANAGED_TOOL_NAMES",
   "export const PAPERCLIP_MANAGED_TOOL_METADATA",
   "export const boardMcpInputSchemas",
   "export const BOARD_MANAGED_TOOLS",
+] as const;
+
+/** Canonical runtime projection contracts have one owner. */
+const RUNTIME_REQUIRED = [
   "export interface PaperclipManagedToolRuntimeProjectionInput",
   "contextDial: ContextDial",
   "actionGrants:",
@@ -44,22 +58,28 @@ const REGISTRY_REQUIRED = [
   "taskAssignTargets:",
   "creatorUpdateTargets:",
   "mentionTargets:",
-  "configureTargets:",
   "export interface ProjectedPaperclipManagedToolDescriptor",
+] as const;
+
+/** Task-specific descriptor projection has one owner. */
+const TASK_TOOLS_REQUIRED = [
   "resolveContextRetrievalPolicy(input.contextDial)",
-  "function projectRuntimeTaskCreate(",
+  "export function projectRuntimeTaskCreate(",
   "input.actionGrants.task_create !== true",
   "input.taskCreateDirectChildren",
-  "function projectRuntimeTaskAssign(",
+  "export function projectRuntimeTaskAssign(",
   "input.taskAssignTargets",
-  "function projectRuntimeTaskUpdate(",
+  "export function projectRuntimeTaskUpdate(",
   "input.creatorUpdateTargets",
   "input.isCurrentOwner",
-  "function projectRuntimeMentionAgent(",
+  "export function projectRuntimeMentionAgent(",
   "input.mentionTargets",
+] as const;
+
+/** The registry selects the closed tool set and owns non-task projections. */
+const REGISTRY_REQUIRED = [
   "function projectRuntimeAgentConfigure(",
   "input.actionGrants.agent_configure !== true",
-  "input.configureTargets",
   "function projectRuntimeTool(",
   "export function projectPaperclipManagedTools(",
   "normalizeRuntimeCommand(payload, scope)",
@@ -68,11 +88,9 @@ const REGISTRY_REQUIRED = [
 /** Database code derives a snapshot; it does not define a provider ABI. */
 const DATABASE_REQUIRED = [
   'from "./paperclip-managed-tool-registry.js";',
-  "function explicitConfigureTargets(",
-  "configureGrants: readonly ConfigureGrant[]",
-  "actionGrants.agent_configure === true",
-  "explicitConfigureTargets(",
-  ": []",
+  "export function buildRuntimeInterfaceCompileInput(",
+  "actionGrants,",
+  "mentionTargets,",
 ] as const;
 
 const CAPABILITY_REQUIRED = ["compileRuntimeInterface"] as const;
@@ -90,12 +108,10 @@ const MANAGED_PROJECTION_FIELDS = [
   "taskAssignTargets",
   "creatorUpdateTargets",
   "mentionTargets",
-  "configureTargets",
 ] as const;
 
 const MANAGED_CATALOG_TYPES = [
   "AgentCatalogEntry",
-  "RuntimeAgentConfigureTarget",
   "TaskCreateOwnerCatalogEntry",
   "TaskAssignOwnerCatalog",
   "CreatorUpdateTargetCatalogEntry",
@@ -149,9 +165,9 @@ function rejectPattern(
 }
 
 /**
- * Ensures the registry is the only canonical owner of managed
- * tool descriptor construction. The compiler is deliberately a selector and
- * assembler, while the provider gateway only consumes its compiled result.
+ * Ensures each managed-tool concern has one canonical owner. The registry
+ * selects those owned definitions and projections; the compiler only assembles
+ * them, and the provider gateway only consumes the compiled result.
  */
 export function runtimeInterfaceCompilerBoundaryViolations(
   repositoryRoot: string,
@@ -160,9 +176,20 @@ export function runtimeInterfaceCompilerBoundaryViolations(
     ...requireFileTokens(repositoryRoot, COMPILER, COMPILER_REQUIRED),
     ...requireFileTokens(
       repositoryRoot,
-      MANAGED_TOOL_REGISTRY,
-      REGISTRY_REQUIRED,
+      MANAGED_TOOL_DEFINITIONS,
+      DEFINITIONS_REQUIRED,
     ),
+    ...requireFileTokens(
+      repositoryRoot,
+      MANAGED_TOOL_RUNTIME,
+      RUNTIME_REQUIRED,
+    ),
+    ...requireFileTokens(
+      repositoryRoot,
+      MANAGED_TASK_TOOLS,
+      TASK_TOOLS_REQUIRED,
+    ),
+    ...requireFileTokens(repositoryRoot, MANAGED_TOOL_REGISTRY, REGISTRY_REQUIRED),
     ...requireFileTokens(repositoryRoot, DATABASE_OWNER, DATABASE_REQUIRED),
     ...requireFileTokens(
       repositoryRoot,
@@ -213,7 +240,7 @@ export function runtimeInterfaceCompilerBoundaryViolations(
         COMPILER,
         digest,
         "raw managed authority entered the assembled runtime-interface digest",
-        /\b(?:contextDial|actionGrants|isCurrentOwner|taskCreateDirectChildren|taskAssignTargets|creatorUpdateTargets|mentionTargets|configureTargets|principalPermission|permissionGrants|configureGrants|managementPermission)\b/,
+        /\b(?:contextDial|actionGrants|isCurrentOwner|taskCreateDirectChildren|taskAssignTargets|creatorUpdateTargets|mentionTargets|principalPermission|permissionGrants|configureGrants|managementPermission)\b/,
       );
     }
 
@@ -250,7 +277,7 @@ export function runtimeInterfaceCompilerBoundaryViolations(
       COMPILER,
       compiler,
       "imports a managed action schema/parser",
-      /from\s+["']zod["']|\b(?:createTaskSchema|runtimeAgentConfigureActionSchemaForTargets|runtimeAgentHireConfigurationSchema)\b/,
+      /from\s+["']zod["']|\b(?:createTaskSchema|runtimeAgentConfigureActionSchema|runtimeAgentHireConfigurationSchema)\b/,
     );
     for (const catalogType of MANAGED_CATALOG_TYPES) {
       if (compiler.includes(catalogType)) {
@@ -261,36 +288,41 @@ export function runtimeInterfaceCompilerBoundaryViolations(
     }
   }
 
-  const registry = read(repositoryRoot, MANAGED_TOOL_REGISTRY);
-  if (registry !== null) {
+  for (const path of [
+    MANAGED_TOOL_DEFINITIONS,
+    MANAGED_TOOL_RUNTIME,
+    MANAGED_TASK_TOOLS,
+    MANAGED_TOOL_REGISTRY,
+  ]) {
+    const source = read(repositoryRoot, path);
+    if (source === null) continue;
     rejectPattern(
       violations,
-      MANAGED_TOOL_REGISTRY,
-      registry,
-      "registry depends on the runtime-interface compiler",
+      path,
+      source,
+      "managed-tool owner depends on the runtime-interface compiler",
       /from\s+["'][^"']*runtime-interface-compiler[^"']*["']/,
     );
   }
 
-  const database = read(repositoryRoot, DATABASE_OWNER);
-  if (database !== null) {
-    const guardOffset = database.indexOf(
-      "actionGrants.agent_configure === true",
+  for (const path of [
+    DATABASE_OWNER,
+    DATABASE_SNAPSHOT,
+    MANAGED_TOOL_DEFINITIONS,
+    MANAGED_TOOL_REGISTRY,
+    MANAGED_TOOL_RUNTIME,
+    MANAGED_TASK_TOOLS,
+    RUNTIME_AGENT_VALIDATOR,
+  ]) {
+    const source = read(repositoryRoot, path);
+    if (source === null) continue;
+    rejectPattern(
+      violations,
+      path,
+      source,
+      "legacy agent_configure target-catalog path remains",
+      /\b(?:configureTargets|configureGrants|principalPermissionGrants|RuntimeAgentConfigureTarget|explicitConfigureTargets|runtimeAgentConfigureActionSchemaForTargets)\b/,
     );
-    const managementOffset = database.indexOf(
-      "explicitConfigureTargets(",
-      guardOffset,
-    );
-    const emptyOffset = database.indexOf(": []", managementOffset);
-    if (
-      guardOffset < 0 ||
-      managementOffset < 0 ||
-      emptyOffset < managementOffset
-    ) {
-      violations.push(
-        `${DATABASE_OWNER}: configure grants are not confined to explicitConfigureTargets behind actionGrants.agent_configure`,
-      );
-    }
   }
 
   for (const path of [CAPABILITY_GATEWAY, RUN_TOOLS_ROUTE]) {

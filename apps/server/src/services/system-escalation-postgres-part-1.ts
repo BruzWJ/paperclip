@@ -298,6 +298,7 @@ export async function appendAffectedCrossLink(
 ): Promise<void> {
   const affectedLabel = affected.identifier;
   const escalationLabel = escalationTask.identifier;
+  const message = `System escalation ${escalationLabel} was opened for ${affectedLabel} because the immutable creator endpoint is permanently unreceivable (${identity.immutableSource.reason as string}).`;
   await sessions.appendNonDispatchControlNotice(
     {
       companyId: input.companyId,
@@ -306,10 +307,11 @@ export async function appendAffectedCrossLink(
       sourceKind: "system_escalation_crosslink",
       immutableSourceKey: identity.id,
       sourceRecordId: identity.id,
-      exactText: `System escalation ${escalationLabel} was opened for ${affectedLabel} because the immutable creator endpoint is permanently unreceivable (${identity.immutableSource.reason as string}).`,
+      exactText: message,
       comment: {
         author: sourceAuthor(identity.systemSource),
         producingRun: null,
+        body: message,
       },
       allowTerminal: false,
     },

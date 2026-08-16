@@ -16,7 +16,7 @@ import {
 import {
   type TaskSessionExecutionActor,
   type TaskSessionExecutionSource,
-  type TaskSessionProjectedCommentSource,
+  type TaskSessionProjectedCommentAttribution,
 } from "./task-session/admission.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
@@ -91,7 +91,9 @@ export function creatorColumns(creator: OrdinaryTaskCreator) {
   }
 }
 
-export function projectedCommentSource(creator: OrdinaryTaskCreator): TaskSessionProjectedCommentSource {
+export function projectedCommentAttribution(
+  creator: OrdinaryTaskCreator,
+): TaskSessionProjectedCommentAttribution {
   if (creator.kind === "user/board") {
     return {
       author: { kind: "user", userId: creator.userId },

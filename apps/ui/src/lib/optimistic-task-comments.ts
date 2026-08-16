@@ -172,7 +172,6 @@ function boardRunSegmentToClient(
     presentation: null,
     metadata: null,
     createdAt: segment.createdAt,
-    immediateParentDisplayReference: segment.immediateParentDisplayReference,
     boardEntryKind: "run_segment",
     boardRunSegmentParts: segment.parts,
     boardGroupRootId: placement.rootId,

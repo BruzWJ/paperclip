@@ -1,6 +1,7 @@
 import {
   agentContextGrants,
   agents,
+  taskExecutionLanes,
   taskExecutionSessions,
   taskExecutionWorkspaceBindings,
   tasks,
@@ -17,7 +18,7 @@ import { localExecutionCorrelationFingerprint } from "./local-execution-correlat
 import { resolveRuntimeContextDial } from "./runtime-interface-compiler-db.js";
 
 const ROLE_BOOTSTRAP_SUFFIX =
-  "\n\nThis is your role bootstrap turn, not task work. Do not inspect the filesystem, workspace, repository, home directory, environment, global configuration, or provider configuration, and do not use provider-local tools. If you need organizational or company context, use only the Paperclip-managed tools available in this turn. Briefly acknowledge the role and end the turn; the task request will arrive as a separate queued turn.";
+  "\n\nThis is your role bootstrap turn, not task work. Do not inspect the filesystem, workspace, repository, home directory, environment, global configuration, or provider configuration, and do not use provider-local tools. If you need organizational or company context, use only the Paperclip-managed tools available in this turn. Briefly acknowledge the role and end the turn; the work message will arrive as a separate queued turn.";
 
 /** @internal Preserves the board-owned instruction bytes before the fixed suffix. */
 export function renderAgentInstructionBootstrap(instruction: string | null | undefined): string | null {
@@ -25,9 +26,9 @@ export function renderAgentInstructionBootstrap(instruction: string | null | und
 }
 
 /**
- * Sole target admission path. Exact carry resumes with one work ref; a target
- * without carry receives one atomic instruction/work pair, or the explicitly
- * authorized work singleton when its instruction is blank.
+ * Sole target admission path. Exact carry resumes with one work ref. A target
+ * lane's first admission receives one atomic instruction/work pair when an
+ * instruction exists; every other admission is the unchanged work singleton.
  */
 export async function admitTaskExecutionInTransaction(input: {
   readonly sessionAdmission: TaskSessionAdmissionService;
@@ -35,7 +36,7 @@ export async function admitTaskExecutionInTransaction(input: {
   readonly work: DispatchingExecutionSourceInput;
 }): Promise<TaskSessionAdmissionResult> {
   const work = input.work;
-  const [agentRows, taskRows, bindingRows, contextRows] = await Promise.all([
+  const [agentRows, taskRows, bindingRows, contextRows, laneRows] = await Promise.all([
     input.transaction
       .select({ instruction: agents.instruction })
       .from(agents)
@@ -83,10 +84,33 @@ export async function admitTaskExecutionInTransaction(input: {
         ),
       )
       .for("share"),
+    input.transaction
+      .select({ nextOrdinal: taskExecutionLanes.nextOrdinal })
+      .from(taskExecutionLanes)
+      .where(
+        and(
+          eq(taskExecutionLanes.companyId, work.companyId),
+          eq(taskExecutionLanes.taskId, work.taskId),
+          eq(taskExecutionLanes.ownershipEpoch, work.ownershipEpoch),
+          eq(taskExecutionLanes.targetAgentId, work.targetAgentId),
+        ),
+      )
+      .limit(2)
+      .for("update"),
   ]);
-  if (agentRows.length !== 1 || taskRows.length !== 1 || bindingRows.length !== 1) {
+  if (
+    agentRows.length !== 1 ||
+    taskRows.length !== 1 ||
+    bindingRows.length !== 1 ||
+    laneRows.length > 1
+  ) {
     throw new Error("Task execution target lost its canonical admission scope");
   }
+  const nextLaneOrdinal = laneRows[0]?.nextOrdinal ?? 0;
+  if (!Number.isSafeInteger(nextLaneOrdinal) || nextLaneOrdinal < 0) {
+    throw new Error("Task execution target has an invalid lane ordinal");
+  }
+  const firstTargetExecution = nextLaneOrdinal === 0;
   const contextDial = resolveRuntimeContextDial({
     capability: { targetAgentId: work.targetAgentId, executionMode: work.mode },
     task: taskRows[0]!,
@@ -119,7 +143,9 @@ export async function admitTaskExecutionInTransaction(input: {
     : [];
   if (carry.length > 1) throw new Error("Task execution target carry is ambiguous");
   const bootstrapText =
-    carry.length === 0 ? renderAgentInstructionBootstrap(agentRows[0]!.instruction) : null;
+    carry.length === 0 && firstTargetExecution
+      ? renderAgentInstructionBootstrap(agentRows[0]!.instruction)
+      : null;
   if (carry.length === 1 || bootstrapText === null) {
     return input.sessionAdmission.admitExecutionSource(work, input.transaction);
   }

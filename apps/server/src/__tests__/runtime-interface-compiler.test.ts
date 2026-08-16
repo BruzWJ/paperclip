@@ -18,7 +18,6 @@ describe("runtime interface compiler", () => {
           agent_configure: true,
           agent_hire: true,
         },
-        configureTargets: [{ id: "agent-2" }],
       }),
     );
     expect(result.descriptors.map((tool) => tool.name)).toEqual(["list_agents", "agent_read"]);
@@ -319,7 +318,6 @@ describe("runtime interface compiler", () => {
         ],
         creatorUpdateTargets: [{ taskId: "child", identifier: "PAP-2" }],
         mentionTargets: [{ id: "agent-2", name: "Reviewer", capabilities: null }],
-        configureTargets: [{ id: "agent-2" }],
       }),
     );
 

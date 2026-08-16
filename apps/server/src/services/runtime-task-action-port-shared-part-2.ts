@@ -1,7 +1,6 @@
 import {
   agents,
   companies,
-  taskExecutionAuthorities,
   taskExecutionLanes,
   taskSessions,
   tasks,
@@ -14,6 +13,7 @@ import {
   RuntimeTaskActionConflict,
   RuntimeTaskActionDenied,
   lockAgentCounterpartTarget,
+  lockCurrentAgentAuthority,
   lockTaskSessionState,
   lockTaskUpdateTarget,
   type AgentCounterpartTarget,
@@ -48,29 +48,21 @@ export async function lockTaskMentionRecipient(
   if (sessionState.task.ownerKind !== "agent" || !sessionState.task.ownerAgentId) {
     return { kind: "board", target };
   }
-  const authority = await tx
-    .select()
-    .from(taskExecutionAuthorities)
-    .where(
-      and(
-        eq(taskExecutionAuthorities.companyId, companyId),
-        eq(taskExecutionAuthorities.taskId, taskId),
-        eq(taskExecutionAuthorities.ownershipEpoch, sessionState.task.ownershipEpoch),
-        eq(taskExecutionAuthorities.agentId, sessionState.task.ownerAgentId),
-        eq(taskExecutionAuthorities.state, "current"),
-      ),
-    )
-    .limit(1)
-    .for("update")
-    .then((rows) => rows[0] ?? null);
-  if (!authority || authority.sessionId !== sessionState.session.id) {
+  const recipient = await lockCurrentAgentAuthority(tx, companyId, {
+    taskId,
+    ownershipEpoch: sessionState.task.ownershipEpoch,
+    agentId: sessionState.task.ownerAgentId,
+  });
+  if (!recipient || recipient.authority.sessionId !== sessionState.session.id) {
     throw new RuntimeTaskActionConflict("Mention target agent has no current task authority");
   }
+  const authority = recipient.authority;
   return {
     kind: "agent",
     target: {
       ...target,
       agentId: authority.agentId,
+      agentName: recipient.agentName,
       authorityId: authority.id,
       adapterConfigRevisionId: authority.auditAdapterConfigRevisionId,
       contextGeneration: sessionState.contextGeneration,

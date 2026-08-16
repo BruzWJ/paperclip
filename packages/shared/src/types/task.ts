@@ -732,7 +732,6 @@ export interface BoardTaskRunSegmentEntry {
   parts: BoardTaskRunSegmentPart[];
   status: "working" | "complete" | "error";
   canonicalSequence: number;
-  immediateParentDisplayReference: BoardTaskCommentParentReference | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -50,7 +50,8 @@ It does not export generic task mutation, checkout/release, general provider
 credentials, role-based authority, conversational agent sessions, arbitrary
 wake operations, generic managed-instruction injection, or interaction-card
 contracts. `agents.instruction` is the narrow exception: a bootstrap execution
-queued before a new task's unchanged work execution.
+queued before an agent's first unchanged work execution in an exact task,
+ownership-epoch, and target-agent lane.
 
 ### Adapters and `packages/adapter-utils`
 
@@ -124,10 +125,14 @@ mutate historical runs.
 - `run-tools.ts` is the sole provider-facing Paperclip route.
 - `runtime-tool-gateway.ts` is the ACPX ingress for validated compiled calls.
 - `runtime-task-action-port.ts` implements task actions.
-- `paperclip-agent-message.ts` defines the closed managed-tool prompt contract
-  and the per-tool renderers used at agent-mention admission. Tool producers
-  supply immutable arguments plus locked source/task context; the rendered
-  bytes become the one Session comment, execution-ref message, and ACPX source.
+- `paperclip-agent-message.ts` defines the closed managed-agent message contract
+  and the centralized renderers used at mention admission. Tool producers
+  supply one exact body plus locked source/task context. The sole managed-agent
+  renderer returns both artifacts: the Paperclip notification envelope used as
+  the execution-ref message and ACPX source, and the `@target` comment body.
+  Every projected comment carries explicit text; it never falls back to agent
+  delivery text. Notification envelopes are never persisted as comments and
+  are rendered only when an agent is actually dispatched.
 - `runtime-agent-configuration.ts` implements granted agent
   hire/configuration operations.
 
@@ -163,10 +168,14 @@ interface remains the only provider invocation and tool-injection surface.
 
 The task-execution resolver supplies the resolved local directory to the
 bounded ACPX path. ACPX launches the local compatible CLI itself; adapter
-definitions do not execute or transport provider work. A new instructed task
-queues a bootstrap run before its work run; each has its own prompt capability,
-and the work run resumes the bootstrap run's exact provider session. The current
-public ACPX runtime is local-only, so remote driver selection is not admitted.
+definitions do not execute or transport provider work. An instructed agent's
+first execution in an exact task, ownership-epoch, and target-agent lane queues
+a bootstrap run before its work run; each has its own prompt capability, and
+the work run resumes the bootstrap run's exact provider session. A different
+agent first contacted on an existing task has its own lane. Later execution in
+the same lane must resume exact carry or fail closed; it never bootstraps a
+replacement session. The current public ACPX runtime is local-only, so remote
+driver selection is not admitted.
 
 ### Creator routing and recovery
 

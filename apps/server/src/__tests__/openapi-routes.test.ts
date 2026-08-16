@@ -285,6 +285,10 @@ describe("openapi routes", () => {
     });
     expect(res.body.components.securitySchemes.AgentBearerAuth).toBeUndefined();
     expect(res.body.paths["/api/health"].get.security).toEqual([]);
+    expect(res.body.paths["/api/cli-auth/me"].get).toMatchObject({
+      security: [{ BoardSessionAuth: [] }, { BoardApiKeyAuth: [] }],
+      "x-paperclip-authorization": { actor: "board" },
+    });
     expect(res.body.paths["/api/companies"].post.responses["201"]).toBeDefined();
     expect(res.body.paths["/api/companies/{companyId}/users/{userId}/profile"].get.summary).toBe(
       "Get a user profile by exact stored user ID within a company",

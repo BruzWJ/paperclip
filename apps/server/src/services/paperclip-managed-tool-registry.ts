@@ -1,7 +1,4 @@
-import {
-  runtimeAgentConfigureActionSchemaForTargets,
-  runtimeAgentHireConfigurationSchema,
-} from "@paperclipai/shared";
+import { runtimeAgentConfigureActionSchema, runtimeAgentHireConfigurationSchema } from "@paperclipai/shared";
 import { z } from "zod";
 import {
   isPaperclipContextToolName,
@@ -96,15 +93,11 @@ export function projectRuntimeAgentHire(
 export function projectRuntimeAgentConfigure(
   input: PaperclipManagedToolRuntimeProjectionInput,
 ): RuntimeProjection<"agent_configure"> | null {
-  if (input.actionGrants.agent_configure !== true || input.configureTargets.length === 0) {
-    return null;
-  }
-  const schema = runtimeAgentConfigureActionSchemaForTargets(
-    input.configureTargets.map((target) => target.id),
-  );
+  if (input.actionGrants.agent_configure !== true) return null;
   const result = projection({
-    schema,
-    details: "Update authorized runtime-agent identity, context cells, and grants only.",
+    schema: runtimeAgentConfigureActionSchema,
+    details:
+      "Update runtime-agent identity, context cells, and grants only. agentId accepts any canonical UUID; same-company target resolution and configure authority are enforced by the operation.",
     normalize(parsed, scope) {
       const { agentId, ...configuration } = parsed;
       return {

@@ -93,46 +93,20 @@ export const runtimeAgentUpdateConfigurationSchema = nonemptyPatch(
   "runtime-agent configuration",
 );
 
-function runtimeAgentConfigureActionSchemaForTarget(
-  targetAgentIdSchema: z.ZodType<string>,
-) {
-  return runtimeAgentConfigurationFieldsSchema
-    .partial()
-    .extend({ agentId: targetAgentIdSchema })
-    .strict()
-    .refine(
-      (value) => Object.keys(value).some((key) => key !== "agentId"),
-      "At least one runtime-agent configuration field is required",
-    );
-}
-
 /**
- * The static runtime action envelope. It is used at the execution boundary
- * after the compiled descriptor has already constrained the target catalog.
+ * The runtime action envelope accepts any canonical agent id. Same-company
+ * target resolution and configure authority are operation-level concerns,
+ * so the provider descriptor must not narrow this field to a compiled org
+ * catalog.
  */
-export const runtimeAgentConfigureActionSchema =
-  runtimeAgentConfigureActionSchemaForTarget(canonicalUuidSchema);
-
-/**
- * Builds the dynamic provider descriptor contract for the exact target
- * catalog compiled for one run. The enum intentionally contains ids only:
- * configuring an agent is a control-plane operation, not an identity surface.
- */
-export function runtimeAgentConfigureActionSchemaForTargets(
-  targetAgentIds: readonly string[],
-) {
-  const ids = Array.from(
-    new Set(targetAgentIds.filter((id) => id.length > 0)),
+export const runtimeAgentConfigureActionSchema = runtimeAgentConfigurationFieldsSchema
+  .partial()
+  .extend({ agentId: canonicalUuidSchema })
+  .strict()
+  .refine(
+    (value) => Object.keys(value).some((key) => key !== "agentId"),
+    "At least one runtime-agent configuration field is required",
   );
-  if (ids.length === 0) {
-    throw new Error(
-      "A runtime-agent configure descriptor requires at least one target id",
-    );
-  }
-  return runtimeAgentConfigureActionSchemaForTarget(
-    z.enum(ids as [string, ...string[]]),
-  );
-}
 
 /**
  * The separately owned, immutable adapter/provider execution revision input.

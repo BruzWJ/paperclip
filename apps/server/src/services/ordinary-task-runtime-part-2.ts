@@ -289,6 +289,7 @@ export function createOrdinaryTaskRuntimePart2(db: Db, options: OrdinaryTaskRunt
               comment: {
                 author: { kind: "user", userId: actorUserId },
                 producingRun: null,
+                body: task.request,
               },
               idempotencyKey: sourceKey,
             },

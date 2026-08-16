@@ -4,13 +4,9 @@ import {
   allocateCanonicalTaskIdentityInTx,
   persistCanonicalTaskAggregateInTx,
 } from "./canonical-task-aggregate.js";
-import {
-  renderPaperclipManagedToolPrompt,
-  type PaperclipManagedToolPrompt,
-} from "./paperclip-agent-message.js";
+import { type PaperclipManagedAgentMessage } from "./paperclip-agent-message.js";
 import { promptCapabilityGenerationIdentity } from "./prompt-capability-gateway.js";
 import * as taskAction from "./runtime-task-action-port-shared.js";
-import { admitTaskExecutionInTransaction } from "./task-execution-initial-start-admission.js";
 import { createTaskSessionAdmissionService } from "./task-session/admission.js";
 import type {
   PostgresRuntimeTaskActionServiceOptions,
@@ -179,55 +175,47 @@ export function createPostgresRuntimeTaskActionServicePart1(
         if (!edge) {
           throw new taskAction.RuntimeTaskActionConflict("task_create did not persist its creator edge");
         }
-        const assignmentPrompt = {
+        const recipient = taskAction.messageAgent(authorized.companyAgents, targetAgentId);
+        const assignmentDelivery = {
           toolName: "task_create",
-          arguments: {
-            request: input.request,
-            ...(input.title === undefined ? {} : { title: input.title }),
-            ...(input.priority === undefined ? {} : { priority: input.priority }),
-            owner: input.owner,
-          },
+          body: input.request,
           context: {
             task: created,
             from: taskAction.messageAgent(authorized.companyAgents, input.capability.targetAgentId),
-            owner: taskAction.messageAgent(authorized.companyAgents, targetAgentId),
             status: "open",
           },
-        } satisfies PaperclipManagedToolPrompt<"task_create">;
-        const admission = await admitTaskExecutionInTransaction({
-          sessionAdmission,
-          transaction: tx,
-          work: {
-            companyId: created.companyId,
-            taskId: created.id,
-            sessionId,
-            ownershipEpoch: 1,
-            targetAgentId,
-            taskExecutionAuthorityId: authorityId,
-            consultExecutionId: null,
-            adapterConfigRevisionId: targetRevisionId,
-            contextEpoch: sessionRoot.contextEpoch.generation,
-            mode: "owner",
-            counterpartTaskId: input.capability.taskId,
-            counterpartAuthorityId: input.capability.taskExecutionAuthorityId,
-            counterpartOwnershipEpoch: input.capability.ownershipEpoch,
-            sourceKind: "task_request",
-            actor: taskAction.executionActorForCapability(input.capability),
-            immutableSourceKey: key,
-            sourceRecordId: created.id,
-            exactText: renderPaperclipManagedToolPrompt(assignmentPrompt),
-            comment: {
-              author: {
-                kind: "agent",
-                agentId: input.capability.targetAgentId,
-              },
-              producingRun: {
-                runId: input.capability.runId,
-                adapterConfigRevisionId: input.capability.adapterConfigIdentity,
-              },
+        } satisfies PaperclipManagedAgentMessage<"task_create">;
+        const admission = await taskAction.admitManagedAgentMessageInTransaction(sessionAdmission, tx, {
+          companyId: created.companyId,
+          taskId: created.id,
+          sessionId,
+          ownershipEpoch: 1,
+          targetAgentId,
+          taskExecutionAuthorityId: authorityId,
+          consultExecutionId: null,
+          adapterConfigRevisionId: targetRevisionId,
+          contextEpoch: sessionRoot.contextEpoch.generation,
+          mode: "owner",
+          counterpartTaskId: input.capability.taskId,
+          counterpartAuthorityId: input.capability.taskExecutionAuthorityId,
+          counterpartOwnershipEpoch: input.capability.ownershipEpoch,
+          sourceKind: "task_request",
+          actor: taskAction.executionActorForCapability(input.capability),
+          immutableSourceKey: key,
+          sourceRecordId: created.id,
+          delivery: assignmentDelivery,
+          recipient,
+          comment: {
+            author: {
+              kind: "agent",
+              agentId: input.capability.targetAgentId,
             },
-            idempotencyKey: key,
+            producingRun: {
+              runId: input.capability.runId,
+              adapterConfigRevisionId: input.capability.adapterConfigIdentity,
+            },
           },
+          idempotencyKey: key,
         });
         if (!admission.ref) {
           throw new taskAction.RuntimeTaskActionConflict(

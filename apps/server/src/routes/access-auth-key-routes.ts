@@ -153,6 +153,23 @@ export function registerAccessAuthAndKeyRoutes(context: AccessAuthKeyRoutesConte
     },
   );
 
+  router.get("/cli-auth/me", async (req, res) => {
+    if (req.actor.type !== "board") {
+      throw unauthorized("Board authentication required");
+    }
+    const userId = req.actor.userId;
+    const accessSnapshot = await boardAuth.resolveBoardAccess(userId);
+    res.json({
+      user: accessSnapshot.user,
+      userId,
+      isInstanceAdmin: accessSnapshot.isInstanceAdmin,
+      companyIds: accessSnapshot.companyIds,
+      memberships: accessSnapshot.memberships,
+      source: req.actor.source,
+      keyId: req.actor.source === "board_key" ? req.actor.keyId : null,
+    });
+  });
+
   router.get("/cli-auth/users/:userId", async (req, res) => {
     const userId = req.params.userId as string;
     assertCurrentBoardUser(req, userId);

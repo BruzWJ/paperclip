@@ -113,6 +113,7 @@ export async function appendEscalationNudge(
             comment: {
               author: escalationCore.sourceAuthor(input.systemSource),
               producingRun: null,
+              body: exactText,
             },
             idempotencyKey: sourceKey,
           },
@@ -135,6 +136,7 @@ export async function appendEscalationNudge(
       comment: {
         author: escalationCore.sourceAuthor(input.systemSource),
         producingRun: null,
+        body: exactText,
       },
       allowTerminal: true,
     },

@@ -32,7 +32,8 @@ For each prompt segment, Paperclip's worker:
 4. applies every persisted generic session configuration option through ACPX;
 5. attaches the complete request-scoped Paperclip MCP server set;
 6. sends the exact queued text and projects structured ACP updates (an
-   instructed new task queues bootstrap and work as separate runs); and
+   instructed target's first execution in a task ownership scope queues
+   bootstrap and work as separate runs); and
 7. settles accounting, revokes request capability, closes the ACPX runtime,
    and deletes its temporary state store.
 

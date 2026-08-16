@@ -5,6 +5,7 @@ import {
   createTaskSchema,
   createTaskUserCommentSchema,
   boardTaskCommentGroupPageSchema,
+  boardTaskRunSegmentEntrySchema,
   commitTaskCreatorFormSchema,
   commitTaskOwnerFormSchema,
   taskBlockedInboxAttentionSchema,
@@ -397,6 +398,30 @@ describe("task validators", () => {
         entriesNextCursor: null,
       }],
       nextCursor: null,
+    }).success).toBe(false);
+  });
+
+  it("keeps comment reply presentation out of grouped run segments", () => {
+    const segment = {
+      kind: "run_segment" as const,
+      id: `segment_${"a".repeat(32)}`,
+      author: {
+        type: "agent" as const,
+        label: "Agent",
+        agentId: ownerAgentId,
+        userId: null,
+        pluginKey: null,
+      },
+      parts: [{ type: "text" as const, text: "Working" }],
+      status: "complete" as const,
+      canonicalSequence: 5,
+      createdAt: "2026-07-31T12:00:00.000Z",
+      updatedAt: "2026-07-31T12:00:00.000Z",
+    };
+    expect(boardTaskRunSegmentEntrySchema.safeParse(segment).success).toBe(true);
+    expect(boardTaskRunSegmentEntrySchema.safeParse({
+      ...segment,
+      immediateParentDisplayReference: { authorLabel: "Agent", excerpt: "Run" },
     }).success).toBe(false);
   });
 

@@ -1,6 +1,6 @@
 import { taskCreatorEdgeReceivability, taskUpdates, tasks } from "@paperclipai/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { type PaperclipManagedToolPrompt } from "./paperclip-agent-message.js";
+import { type PaperclipManagedAgentMessage } from "./paperclip-agent-message.js";
 import {
   RuntimeTaskActionConflict,
   RuntimeTaskActionDenied,
@@ -225,13 +225,10 @@ export async function commitOwnerFormUpdateImplementation(
         ? ownerAuthority.capability.sessionId
         : humanSessionState!.session.id;
     const target = await lockOwnerUpdateRecipient(tx, companyId, task, edge);
-    const updatePrompt = {
+    const updateDelivery = {
       toolName: "task_update",
-      arguments: {
-        ...(input.status === undefined ? {} : { status: input.status }),
-        message: input.message,
-        ...(Object.hasOwn(input, "structuredResult") ? { structuredResult: input.structuredResult } : {}),
-      },
+      body: input.message,
+      ...(input.status === undefined ? {} : { requestedStatus: input.status }),
       context: {
         task,
         from: taskUpdateMessageActor(ownerAuthority, authorizedRuntime),
@@ -240,7 +237,7 @@ export async function commitOwnerFormUpdateImplementation(
         effectiveStatus: input.status === undefined || gated ? previousStatus : input.status,
         ...(gated ? { pendingReview: true } : {}),
       },
-    } satisfies PaperclipManagedToolPrompt<"task_update">;
+    } satisfies PaperclipManagedAgentMessage<"task_update">;
     const admission = await admitCounterpartTaskUpdate(sessionAdmission, tx, {
       companyId,
       sourceKind: "task_update",
@@ -257,7 +254,7 @@ export async function commitOwnerFormUpdateImplementation(
           : null,
       immutableSourceKey: gatewayInvocationId,
       sourceRecordId: updateId,
-      prompt: updatePrompt,
+      message: { kind: "managed", delivery: updateDelivery },
     });
     if (!admission.comment) {
       throw new RuntimeTaskActionConflict("Owner update projector did not create its comment-of-record");

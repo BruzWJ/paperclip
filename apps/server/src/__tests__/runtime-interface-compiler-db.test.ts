@@ -180,9 +180,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
     ]);
     expect(compiled.creatorUpdateTargets).toEqual([{ taskId: "eligible-child" }]);
     expect(compiled.mentionTargets.map((agent) => agent.id)).toEqual(["ancestor", "child", "grandchild"]);
-    expect(compiled.configureTargets.map((agent) => agent.id)).toEqual(["owner", "peer"]);
-    expect(compiled.configureTargets[0]).not.toHaveProperty("title");
-    expect(compiled.configureTargets[0]).not.toHaveProperty("reportsTo");
+    expect(compiled).not.toHaveProperty("configureTargets");
   });
 
   it("does not inherit creator lifecycle catalogs through a consult", () => {
@@ -202,21 +200,6 @@ describe("Postgres runtime-interface compile snapshot", () => {
     );
     expect(compiled.taskAssignTargets).toEqual([]);
     expect(compiled.creatorUpdateTargets).toEqual([]);
-  });
-
-  it("describes an exact suggestion-grant target without widening authority", () => {
-    const compiled = buildRuntimeInterfaceCompileInput(
-      snapshot({
-        configureGrants: [
-          {
-            permissionKey: "agents:suggest-changes",
-            scope: { targetAgentId: "peer" },
-          },
-        ],
-      }),
-    );
-    expect(compiled.configureTargets.map((agent) => agent.id)).toEqual(["owner", "peer"]);
-    expect(compiled.configureTargets.map((agent) => agent.id)).not.toContain("ancestor");
   });
 
   it("includes direct children without implicit parent reach", () => {

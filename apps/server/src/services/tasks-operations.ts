@@ -265,13 +265,7 @@ export function createTaskServiceThreadPageOperations(
         .limit(limit + 1),
       messageConditions
         ? db
-            .select({
-              message: d.taskSessionMessages,
-              steeringParentCommentId: d.sql<string | null>`(
-                  select source.comment_id from task_comment_projection_sources source where source.company_id = ${root.companyId} and source.task_id = ${root.taskId} and source.session_id = ${root.sessionId}
-                    and source.run_id = ${root.runId} and source.segment_ordinal is not null and source.projected_event_seq <= ${d.taskSessionMessages.seq} order by source.projected_event_seq desc, source.comment_id desc
-                  limit 1 )`,
-            })
+            .select()
             .from(d.taskSessionMessages)
             .where(d.and(...messageConditions))
             .orderBy(d.asc(d.taskSessionMessages.seq), d.asc(d.taskSessionMessages.id))
@@ -309,10 +303,9 @@ export function createTaskServiceThreadPageOperations(
     ]);
     const parentIds = [
       ...new Set(
-        [
-          ...descendantRows.map((comment) => comment.replyToCommentId),
-          ...assistantRows.map((row) => row.steeringParentCommentId ?? root.id),
-        ].filter((value): value is string => Boolean(value)),
+        descendantRows
+          .map((comment) => comment.replyToCommentId)
+          .filter((value): value is string => Boolean(value)),
       ),
     ];
     const parentRows =
@@ -331,7 +324,7 @@ export function createTaskServiceThreadPageOperations(
     const parents = new Map(parentRows.map((comment) => [comment.id, comment]));
     const labels = await loadBoardAuthorLabels(
       [...descendantRows, ...parentRows],
-      assistantRows.map((row) => row.message.agentId),
+      assistantRows.map((message) => message.agentId),
     );
     const runStatuses = await loadRunStatuses([
       root.runId,
@@ -348,21 +341,11 @@ export function createTaskServiceThreadPageOperations(
           labels,
           censorUsernameInLogs,
           runStatus: comment.runId ? runStatuses.get(comment.runId) : null,
-          parentRunStatus: comment.replyToCommentId
-            ? runStatuses.get(parents.get(comment.replyToCommentId)?.runId ?? "")
-            : null,
         }),
       })),
-      ...assistantRows.map((row) => {
-        const parent = parents.get(row.steeringParentCommentId ?? root.id) ?? root;
-        return projectBoardRunSegment({
-          message: row.message,
-          parent,
-          labels,
-          censorUsernameInLogs,
-          parentRunStatus: parent.runId ? runStatuses.get(parent.runId) : null,
-        });
-      }),
+      ...assistantRows.map((message) =>
+        projectBoardRunSegment({ message, labels, censorUsernameInLogs }),
+      ),
     ]
       .filter((entry) => taskShared.isAfterBoardCommentCursor(entry, cursor))
       .sort(taskShared.compareCanonicalEntry);

@@ -1,6 +1,6 @@
 import { routineRuns, routines, taskCreatorEdgeReceivability, taskUpdates, tasks } from "@paperclipai/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { type PaperclipManagedToolPrompt } from "./paperclip-agent-message.js";
+import { type PaperclipManagedAgentMessage } from "./paperclip-agent-message.js";
 import { resolvePluginPermittedTaskOwnerCatalogInTransaction } from "./plugin-task-authorization.js";
 import {
   RuntimeTaskActionConflict,
@@ -288,13 +288,10 @@ export async function commitCreatorFormUpdateImplementation(
 
     const target = await lockTaskMentionRecipient(tx, companyId, task.id);
     const updateId = deterministicUuid("task-update", gatewayInvocationId);
-    const updatePrompt = {
+    const updateDelivery = {
       toolName: "task_update",
-      arguments: {
-        taskId,
-        ...(updateInput.status === undefined ? {} : { status: updateInput.status }),
-        message,
-      },
+      body: message,
+      ...(updateInput.status === undefined ? {} : { requestedStatus: updateInput.status }),
       context: {
         task,
         from: taskUpdateMessageActor(creatorAuthority, authorizedRuntime),
@@ -302,7 +299,7 @@ export async function commitCreatorFormUpdateImplementation(
         previousStatus,
         effectiveStatus: updateInput.status ?? previousStatus,
       },
-    } satisfies PaperclipManagedToolPrompt<"task_update">;
+    } satisfies PaperclipManagedAgentMessage<"task_update">;
     const admission = await admitCounterpartTaskUpdate(sessionAdmission, tx, {
       companyId,
       sourceKind: "task_update",
@@ -319,7 +316,7 @@ export async function commitCreatorFormUpdateImplementation(
           : null,
       immutableSourceKey: gatewayInvocationId,
       sourceRecordId: updateId,
-      prompt: updatePrompt,
+      message: { kind: "managed", delivery: updateDelivery },
     });
     if (!admission.comment) {
       throw new RuntimeTaskActionConflict("Creator update did not persist its canonical comment");

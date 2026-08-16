@@ -247,7 +247,8 @@ export function createPostgresRuntimeTaskActionServicePart2(
           createdAt: now,
         });
         const edge = await taskAction.insertCreatorEdge(tx, reassigned, now);
-        const admission = await taskAction.mentionAgentInTransaction(sessionAdmission, tx, {
+        const recipient = taskAction.messageAgent(authorized.companyAgents, targetAgentId);
+        const admission = await taskAction.admitManagedAgentMessageInTransaction(sessionAdmission, tx, {
           companyId: reassigned.companyId,
           taskId: reassigned.id,
           sessionId: targetSession.id,
@@ -266,18 +267,14 @@ export function createPostgresRuntimeTaskActionServicePart2(
           previousOwnershipEpoch: targetTask.ownershipEpoch,
           immutableSourceKey: key,
           sourceRecordId: reassigned.id,
-          prompt: {
+          recipient,
+          delivery: {
             toolName: "task_assign",
-            arguments: {
-              taskId: input.taskId,
-              owner: input.owner,
-            },
+            body: reassigned.request!,
             context: {
               task: reassigned,
               from: taskAction.messageAgent(authorized.companyAgents, input.capability.targetAgentId),
-              owner: taskAction.messageAgent(authorized.companyAgents, targetAgentId),
               status: targetTask.lifecycleStatus,
-              request: reassigned.request!,
             },
           },
           comment: {

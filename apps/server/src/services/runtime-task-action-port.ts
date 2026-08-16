@@ -224,7 +224,7 @@ export {
   lockAgentCounterpartTarget,
   lockTaskMentionRecipient,
   lockTaskUpdateTarget,
-  mentionAgentInTransaction,
+  admitManagedAgentMessageInTransaction,
   mentionBoardInTransaction,
   revokeOutgoingOwnershipEpoch,
   RuntimeTaskActionConflict,

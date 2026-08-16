@@ -4,6 +4,8 @@ const { normalizeRuntimeCommand, RuntimeToolArgumentsInvalid } = t;
 const { PAPERCLIP_MANAGED_TOOL_METADATA, AGENT_CONTEXT_GRANT_KEYS } = t;
 const { PAPERCLIP_ACTION_KEYS, AGENT_MENTION_REACH_GRANT_KEYS, CANONICAL_UUID_RE } = t;
 
+const otherConfigureTargetId = "00000000-0000-4000-8000-000000000002";
+
 describe("runtime interface compiler", () => {
   it("compiles mention_agent as a canonical non-terminal comment", () => {
     const descriptor = compileRuntimeInterface(
@@ -83,7 +85,6 @@ describe("runtime interface compiler", () => {
     const result = compileRuntimeInterface(
       compileInput({
         actionGrants: { agent_hire: true, agent_configure: true },
-        configureTargets: [{ id: "agent-1" }],
       }),
     );
     const hire = result.byName.get("agent_hire")!;
@@ -114,10 +115,7 @@ describe("runtime interface compiler", () => {
       mentionReachGrants: Object.fromEntries(AGENT_MENTION_REACH_GRANT_KEYS.map((key) => [key, false])),
     };
     expect(() => normalizeRuntimeCommand(hire, completeHire)).not.toThrow();
-    expect(configure.inputSchema.properties?.agentId).toEqual({
-      type: "string",
-      enum: ["agent-1"],
-    });
+    expect(configure.inputSchema.properties?.agentId).not.toHaveProperty("enum");
     expect(configure.inputSchema.minProperties).toBe(2);
     expect(configure.inputSchema.properties?.title).toEqual({
       anyOf: [{ type: "string", maxLength: 240 }, { type: "null" }],
@@ -135,11 +133,10 @@ describe("runtime interface compiler", () => {
     expect(configure.inputSchema.properties).not.toHaveProperty("role");
   });
 
-  it("validates a configure call against its current id-only catalog", () => {
+  it("accepts any canonical configure target and leaves authority to the operation", () => {
     const configure = compileRuntimeInterface(
       compileInput({
         actionGrants: { agent_configure: true },
-        configureTargets: [{ id: "agent-1" }],
       }),
     ).byName.get("agent_configure")!;
 
@@ -148,22 +145,22 @@ describe("runtime interface compiler", () => {
         agentId: "agent-2",
         title: null,
       }),
-    ).toThrow(/Invalid enum value/);
+    ).toThrow(/exact lowercase canonical UUID/);
     expect(() =>
       normalizeRuntimeCommand(configure, {
-        agentId: "agent-1",
+        agentId: otherConfigureTargetId,
       }),
     ).toThrow(/At least one runtime-agent configuration field/);
     expect(
       normalizeRuntimeCommand(configure, {
-        agentId: "agent-1",
+        agentId: otherConfigureTargetId,
         title: null,
       }),
     ).toMatchObject({
       command: {
         name: "agent_configure",
         companyId: "company-1",
-        agentId: "agent-1",
+        agentId: otherConfigureTargetId,
         configuration: { title: null },
       },
     });

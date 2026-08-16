@@ -5,11 +5,10 @@ import {
   agentMentionReachGrants,
   agents,
   plugins,
-  principalPermissionGrants,
   tasks,
   type Db,
 } from "@paperclipai/db";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { MentionReachTask } from "./mention-reach-resolver.js";
 import type { PromptCapabilityCompileScope } from "./prompt-capability-gateway.js";
 import { readyPluginTools, resolveRuntimeToolTurn } from "./runtime-interface-compiler-load-helpers.js";
@@ -28,7 +27,6 @@ export async function loadRuntimeInterfaceCompilerSnapshot(
     contextRows,
     actionRows,
     mentionRows,
-    configureRows,
     childRows,
     taskTreeRows,
     readyPlugins,
@@ -103,20 +101,6 @@ export async function loadRuntimeInterfaceCompilerSnapshot(
       ),
     db
       .select({
-        permissionKey: principalPermissionGrants.permissionKey,
-        scope: principalPermissionGrants.scope,
-      })
-      .from(principalPermissionGrants)
-      .where(
-        and(
-          eq(principalPermissionGrants.companyId, capability.companyId),
-          eq(principalPermissionGrants.principalType, "agent"),
-          eq(principalPermissionGrants.principalAgentId, capability.targetAgentId),
-          inArray(principalPermissionGrants.permissionKey, ["agents:configure", "agents:suggest-changes"]),
-        ),
-      ),
-    db
-      .select({
         id: tasks.id,
         identifier: tasks.identifier,
         lifecycleStatus: tasks.lifecycleStatus,
@@ -182,7 +166,6 @@ export async function loadRuntimeInterfaceCompilerSnapshot(
     contextGrantKeys: contextRows.map((row) => row.key),
     actionGrantKeys: actionRows.map((row) => row.key),
     mentionReachGrantKeys: mentionRows.map((row) => row.key),
-    configureGrants: configureRows,
     childTasks: childRows,
     taskTree: (Array.isArray(taskTreeRows)
       ? taskTreeRows

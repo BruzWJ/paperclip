@@ -6,6 +6,7 @@ import type {
   DispatchingExecutionSourceInput,
   SteeringComment,
   TaskSessionExecutionActor,
+  TaskSessionProjectedCommentAttribution,
   TaskSessionProjectedCommentSource,
 } from "./admission-part-1.js";
 import * as admissionProjection from "./admission-part-2.js";
@@ -215,7 +216,7 @@ export type ProjectedCommentProducerScope = {
 export async function isExactTaskUpdateCrossTaskProducer(
   transaction: TaskSessionDbTransaction,
   scope: ProjectedCommentProducerScope,
-  comment: Exclude<TaskSessionProjectedCommentSource, { producingRun: null }>,
+  comment: Exclude<TaskSessionProjectedCommentAttribution, { producingRun: null }>,
 ): Promise<boolean> {
   const counterpartTaskId = scope.counterpartTaskId ?? null;
   const counterpartAuthorityId = scope.counterpartAuthorityId ?? null;

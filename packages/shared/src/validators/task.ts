@@ -522,8 +522,6 @@ export const boardTaskRunSegmentEntrySchema = z.object({
   parts: z.array(boardTaskRunSegmentPartSchema),
   status: z.enum(["working", "complete", "error"]),
   canonicalSequence: z.number().int().nonnegative(),
-  immediateParentDisplayReference:
-    boardTaskCommentParentReferenceSchema.nullable(),
   createdAt: boardTaskCommentTimestampSchema,
   updatedAt: boardTaskCommentTimestampSchema,
 }).strict();

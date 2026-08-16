@@ -130,10 +130,10 @@ export async function selectSessionOperation(
   if (eligible.length === 1) {
     return "resume";
   }
-  if (initialCycle.kind === "singleton" && initialCycle.instructionless) {
+  if (initialCycle.kind === "singleton" && initialCycle.freshSessionAllowed) {
     return "new";
   }
-  reject("instructed work lost its exact carry or ordered session start");
+  reject("work lost its exact carry or ordered session start");
 }
 
 export async function assertRefDispatchable(

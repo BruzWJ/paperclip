@@ -1,6 +1,7 @@
 import {
   agentContextGrants,
   agents,
+  taskExecutionLanes,
   taskExecutionSessions,
   taskExecutionWorkspaceBindings,
   tasks,
@@ -22,10 +23,10 @@ const work = {
   actor: { kind: "user/board", userId: "user" }, previousOwnershipEpoch: 1,
   immutableSourceKey: "assign", sourceRecordId: "task",
   exactText: "Do the work", idempotencyKey: "assign",
-  comment: { author: { kind: "user", userId: "user" }, producingRun: null },
+  comment: { author: { kind: "user", userId: "user" }, producingRun: null, body: "Do the work" },
 } as const satisfies Input["work"];
 
-function transaction(instruction: string | null, carry = false) {
+function transaction(instruction: string | null, carry = false, nextLaneOrdinal = 0) {
   const rows = new Map<unknown, readonly unknown[]>([
     [agents, [{ instruction }]],
     [tasks, [{ companyId: "company", ownerKind: "agent", ownerAgentId: "agent",
@@ -33,6 +34,7 @@ function transaction(instruction: string | null, carry = false) {
     [taskExecutionWorkspaceBindings, [{ id: "workspace" }]],
     [agentContextGrants, []],
     [taskExecutionSessions, carry ? [{ id: "carry" }] : []],
+    [taskExecutionLanes, [{ nextOrdinal: nextLaneOrdinal }]],
   ]);
   return {
     select() {
@@ -47,7 +49,7 @@ function transaction(instruction: string | null, carry = false) {
   } as unknown as Input["transaction"];
 }
 
-async function admit(instruction: string | null, carry = false) {
+async function admit(instruction: string | null, carry = false, nextLaneOrdinal = 0) {
   const workResult = { ref: { id: "work" } };
   const single = vi.fn(async () => workResult);
   const batch = vi.fn(async () => [{ ref: { id: "bootstrap" } }, workResult]);
@@ -56,7 +58,7 @@ async function admit(instruction: string | null, carry = false) {
     admitExecutionSourceBatch: batch,
   } as unknown as Input["sessionAdmission"];
   const result = await admitTaskExecutionInTransaction({
-    sessionAdmission, transaction: transaction(instruction, carry), work,
+    sessionAdmission, transaction: transaction(instruction, carry, nextLaneOrdinal), work,
   });
   return { batch, result, single, workResult };
 }
@@ -64,11 +66,11 @@ async function admit(instruction: string | null, carry = false) {
 describe("canonical task execution target admission", () => {
   it("preserves the exact board instruction before bootstrap guidance", () => {
     expect(renderAgentInstructionBootstrap("You are the CTO.")).toBe(
-      "You are the CTO.\n\nThis is your role bootstrap turn, not task work. Do not inspect the filesystem, workspace, repository, home directory, environment, global configuration, or provider configuration, and do not use provider-local tools. If you need organizational or company context, use only the Paperclip-managed tools available in this turn. Briefly acknowledge the role and end the turn; the task request will arrive as a separate queued turn.",
+      "You are the CTO.\n\nThis is your role bootstrap turn, not task work. Do not inspect the filesystem, workspace, repository, home directory, environment, global configuration, or provider configuration, and do not use provider-local tools. If you need organizational or company context, use only the Paperclip-managed tools available in this turn. Briefly acknowledge the role and end the turn; the work message will arrive as a separate queued turn.",
     );
   });
 
-  it("admits an instructed missing target as one ordered pair", async () => {
+  it("admits an instructed target's first execution as one ordered pair", async () => {
     const { batch, result, single, workResult } = await admit("Lead delivery.");
     expect(result).toBe(workResult);
     expect(single).not.toHaveBeenCalled();
@@ -80,6 +82,13 @@ describe("canonical task execution target admission", () => {
         immutableSourceKey: "assign:bootstrap",
       }), work],
     }, expect.anything());
+  });
+
+  it("does not bootstrap later work for the same task ownership and agent lane", async () => {
+    const { batch, result, single, workResult } = await admit("Lead delivery.", false, 2);
+    expect(result).toBe(workResult);
+    expect(single).toHaveBeenCalledOnce();
+    expect(batch).not.toHaveBeenCalled();
   });
 
   it.each([[null, false], ["Lead delivery.", true]] as const)(

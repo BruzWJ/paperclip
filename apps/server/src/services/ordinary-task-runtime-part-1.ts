@@ -269,7 +269,10 @@ export function createOrdinaryTaskRuntimePart1(db: Db, options: OrdinaryTaskRunt
           immutableSourceKey: key,
           sourceRecordId: created.id,
           exactText: input.request,
-          comment: runtime.projectedCommentSource(input.creator),
+          comment: {
+            ...runtime.projectedCommentAttribution(input.creator),
+            body: input.request,
+          },
           idempotencyKey: key,
         };
         const admission = await admitTaskExecutionInTransaction({

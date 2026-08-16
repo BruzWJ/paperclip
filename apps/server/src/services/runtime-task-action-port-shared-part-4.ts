@@ -18,7 +18,7 @@ import {
   deterministicUuid,
   runtimeInvocationKey,
 } from "./runtime-task-action-port-shared-part-2.js";
-import { type TaskSessionProjectedCommentSource } from "./task-session/admission.js";
+import { type TaskSessionProjectedCommentAttribution } from "./task-session/admission.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
 export function creatorEndpoint(task: TaskRow): {
@@ -328,7 +328,7 @@ export function ownerSourceIdentity(authority: CanonicalOwnerFormAuthority): {
   sourceAuthorityId: string | null;
   sourceIdentity: Record<string, unknown>;
   runId: string | null;
-  comment: TaskSessionProjectedCommentSource;
+  comment: TaskSessionProjectedCommentAttribution;
 } {
   if (authority.kind === "agent-execution") {
     return {

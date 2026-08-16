@@ -954,7 +954,6 @@ export {
   runtimeAgentHireConfigurationSchema,
   runtimeAgentUpdateConfigurationSchema,
   runtimeAgentConfigureActionSchema,
-  runtimeAgentConfigureActionSchemaForTargets,
   agentAdapterRevisionConfigurationSchema,
   AGENT_ADAPTER_CONFIGURATION_TEST_FAILURE_REASONS,
   agentAdapterConfigurationTestInputSchema,

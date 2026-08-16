@@ -135,24 +135,15 @@ export function createTaskServiceProjectionOperations(context: ReturnType<typeof
     parent: TaskCommentRow | null,
     labels: BoardAuthorLabels,
     censorUsernameInLogs: boolean,
-    parentRunState: d.BoardTaskCommentRunState | null = null,
   ): d.BoardTaskCommentParentReference | null {
     if (!parent) return null;
     const author = boardCommentAuthor(parent, labels);
     const body = d.redactCurrentUserText(parent.body, {
       enabled: censorUsernameInLogs,
     });
-    const derivedBody =
-      parent.presentation?.kind === "run_progress" && body.length === 0
-        ? parentRunState === "queued"
-          ? "Queued…"
-          : parentRunState === "working"
-            ? "Working…"
-            : "Run finished"
-        : body;
     return {
       authorLabel: author.label,
-      excerpt: boardCommentExcerpt(derivedBody),
+      excerpt: boardCommentExcerpt(body),
     };
   }
 
@@ -162,7 +153,6 @@ export function createTaskServiceProjectionOperations(context: ReturnType<typeof
     labels: BoardAuthorLabels;
     censorUsernameInLogs: boolean;
     runStatus?: d.TaskExecutionRunStatus | null;
-    parentRunStatus?: d.TaskExecutionRunStatus | null;
   }): d.BoardTaskComment {
     const redacted = redactTaskComment(input.comment, input.censorUsernameInLogs);
     return {
@@ -178,7 +168,6 @@ export function createTaskServiceProjectionOperations(context: ReturnType<typeof
         input.parent,
         input.labels,
         input.censorUsernameInLogs,
-        boardRunState(input.parentRunStatus),
       ),
       createdAt: redacted.createdAt,
       updatedAt: redacted.updatedAt,
@@ -187,10 +176,8 @@ export function createTaskServiceProjectionOperations(context: ReturnType<typeof
 
   function projectBoardRunSegment(input: {
     message: typeof d.taskSessionMessages.$inferSelect;
-    parent: TaskCommentRow;
     labels: BoardAuthorLabels;
     censorUsernameInLogs: boolean;
-    parentRunStatus?: d.TaskExecutionRunStatus | null;
   }): d.BoardTaskRunSegmentEntry {
     const data =
       input.message.data && typeof input.message.data === "object"
@@ -241,12 +228,6 @@ export function createTaskServiceProjectionOperations(context: ReturnType<typeof
       parts,
       status: hasError ? "error" : complete ? "complete" : "working",
       canonicalSequence: input.message.seq,
-      immediateParentDisplayReference: boardCommentParentReference(
-        input.parent,
-        input.labels,
-        input.censorUsernameInLogs,
-        boardRunState(input.parentRunStatus),
-      ),
       createdAt: input.message.timeCreated,
       updatedAt: input.message.timeUpdated,
     };

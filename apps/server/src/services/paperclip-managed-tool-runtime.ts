@@ -20,10 +20,6 @@ export interface AgentCatalogEntry {
   capabilities: string | null;
 }
 
-export interface RuntimeAgentConfigureTarget {
-  id: string;
-}
-
 export interface TaskCreateOwnerCatalogEntry extends AgentCatalogEntry {
   kind: "agent";
 }
@@ -48,7 +44,6 @@ export interface PaperclipManagedToolRuntimeProjectionInput {
   taskAssignTargets: readonly TaskAssignOwnerCatalog[];
   creatorUpdateTargets: readonly CreatorUpdateTargetCatalogEntry[];
   mentionTargets: readonly AgentCatalogEntry[];
-  configureTargets: readonly RuntimeAgentConfigureTarget[];
 }
 
 export interface PaperclipRuntimeCommandScope {

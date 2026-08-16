@@ -110,6 +110,7 @@ const work = {
   comment: {
     author: { kind: "user", userId: userActor.userId },
     producingRun: null,
+    body: "Do the work",
   },
   idempotencyKey: "initial:work",
 } as const;
@@ -153,6 +154,7 @@ describe("Task Session canonical source authorship", () => {
       comment: {
         author: { kind: "system", source: "recovery" },
         producingRun: null,
+        body: "Do the work",
       },
     } as const;
 

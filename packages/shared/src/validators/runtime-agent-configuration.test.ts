@@ -15,7 +15,6 @@ import {
   agentOperationalConfigurationUpdateSchema,
   paperclipActionGrantMapSchema,
   runtimeAgentConfigureActionSchema,
-  runtimeAgentConfigureActionSchemaForTargets,
   runtimeAgentCreateConfigurationSchema,
   runtimeAgentHireConfigurationSchema,
   runtimeAgentUpdateConfigurationSchema,
@@ -142,8 +141,7 @@ describe("runtime-agent control-plane validators", () => {
     ).toBe(false);
   });
 
-  it("builds a nonempty id-only configure action contract", () => {
-    const schema = runtimeAgentConfigureActionSchemaForTargets([AGENT_ID]);
+  it("accepts any canonical target in the nonempty configure action contract", () => {
     const contextGrants = falseMap(AGENT_CONTEXT_GRANT_KEYS);
     contextGrants.read_task_comments = true;
     const input = {
@@ -152,19 +150,19 @@ describe("runtime-agent control-plane validators", () => {
       reportsTo: null,
       contextGrants,
     };
-    expect(schema.parse(input)).toEqual(input);
-    expect(runtimeAgentConfigureActionSchema.safeParse(input).success).toBe(
-      true,
-    );
-    expect(schema.safeParse({ agentId: AGENT_ID }).success).toBe(false);
+    expect(runtimeAgentConfigureActionSchema.parse(input)).toEqual(input);
+    expect(runtimeAgentConfigureActionSchema.safeParse({ agentId: AGENT_ID }).success).toBe(false);
     expect(
-      schema.safeParse({
+      runtimeAgentConfigureActionSchema.safeParse({
         agentId: AGENT_ID,
         contextGrants: { carry_context: true },
       }).success,
     ).toBe(false);
     expect(
-      schema.safeParse({ ...input, agentId: OTHER_AGENT_ID }).success,
+      runtimeAgentConfigureActionSchema.safeParse({ ...input, agentId: OTHER_AGENT_ID }).success,
+    ).toBe(true);
+    expect(
+      runtimeAgentConfigureActionSchema.safeParse({ ...input, agentId: "agent-2" }).success,
     ).toBe(false);
   });
 

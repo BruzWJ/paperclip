@@ -174,7 +174,7 @@ export async function admitOwnedTaskTerminationRecoveryInTransaction(
       sourceKind: "task_update",
       immutableSourceKey: recoveryKey,
       sourceRecordId: updateId,
-      message: exactText,
+      message: { kind: "system", body: exactText },
     });
     if (!admission.comment) {
       throw new Error(`Owned task ${task.id} termination recovery has no canonical comment`);

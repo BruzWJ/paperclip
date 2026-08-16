@@ -98,7 +98,7 @@ function setup() {
 }
 
 describe("runtime task action port", () => {
-  it("dedupes only an exact same-task agent update to one comment", async () => {
+  it("projects an @target comment without rendering an agent notification for a self update", async () => {
     const appendNonDispatchControlNotice = vi.fn(async () => ({
       comment: { id: "comment" },
       ref: null,
@@ -117,6 +117,7 @@ describe("runtime task action port", () => {
           sessionId: "session",
           ownershipEpoch: 2,
           agentId: "agent",
+          agentName: "Agent",
           authorityId: "authority",
           adapterConfigRevisionId: "revision",
           contextGeneration: 1,
@@ -137,29 +138,28 @@ describe("runtime task action port", () => {
       sourceAgentTarget: { taskId: "task", agentId: "agent" },
       immutableSourceKey: "update",
       sourceRecordId: "update",
-      prompt: {
-        toolName: "task_update",
-        arguments: { message: "Progress" },
-        context: {
-          task: { id: "task", identifier: "PAP-1" },
-          from: { id: "agent", name: "Agent" },
-          sourceRole: "task owner",
-          previousStatus: "open",
-          effectiveStatus: "open",
+      message: {
+        kind: "managed",
+        delivery: {
+          toolName: "task_update",
+          body: "Progress",
+          context: {
+            task: { id: "task", identifier: "PAP-1" },
+            from: { id: "agent", name: "Agent" },
+            sourceRole: "task owner",
+            previousStatus: "open",
+            effectiveStatus: "open",
+          },
         },
       },
     });
 
     expect(appendNonDispatchControlNotice).toHaveBeenCalledWith(
       expect.objectContaining({
-        exactText: [
-          "[Paperclip task update]",
-          "Task: PAP-1 (task)",
-          "From: task owner, Agent (agent)",
-          "Status: open",
-          "",
-          "Progress",
-        ].join("\n"),
+        exactText: "@Agent Progress",
+        comment: expect.objectContaining({
+          body: "@Agent Progress",
+        }),
       }),
       expect.anything(),
     );

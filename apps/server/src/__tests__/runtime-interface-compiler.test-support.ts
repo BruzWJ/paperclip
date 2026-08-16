@@ -90,7 +90,6 @@ export function compileInput(
     taskAssignTargets: [],
     creatorUpdateTargets: [],
     mentionTargets: [],
-    configureTargets: [],
     pluginTools: [],
     ...overrides,
   };

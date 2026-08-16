@@ -175,7 +175,6 @@ describe("runtime tool gateway", () => {
       taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [],
-      configureTargets: [],
       pluginTools: [
         {
           installationId: "plugin-installation",
@@ -222,7 +221,6 @@ describe("runtime tool gateway", () => {
       taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [{ id: "mentioned-agent", name: "Mentioned", capabilities: null }],
-      configureTargets: [],
       pluginTools: [],
     }).byName.get("mention_agent")!;
 
@@ -282,7 +280,6 @@ describe("runtime tool gateway", () => {
       taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [],
-      configureTargets: [],
       pluginTools: [],
     }).byName.get("mention_board")!;
 
@@ -346,8 +343,9 @@ describe("runtime tool gateway", () => {
     expect(registerTerminalInvalid).toHaveBeenCalledOnce();
   });
 
-  it("enforces the dynamically compiled configure catalog before dispatch", async () => {
+  it("accepts any canonical configure target for domain authorization after dispatch", async () => {
     const { executor, agentConfigure } = setup();
+    const requestedTargetId = "00000000-0000-4000-8000-000000000002";
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       turn: "work",
@@ -358,7 +356,6 @@ describe("runtime tool gateway", () => {
       taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [],
-      configureTargets: [{ id: "agent" }],
       pluginTools: [],
     }).byName.get("agent_configure")!;
 
@@ -378,7 +375,7 @@ describe("runtime tool gateway", () => {
       executor.execute({
         capability,
         descriptor,
-        arguments: { agentId: "agent", title: null },
+        arguments: { agentId: requestedTargetId, title: null },
         callIdentity: { source: "provider", id: "configure-valid" },
         ingressOrdinal: 1,
         mintPluginRunContext,
@@ -392,7 +389,7 @@ describe("runtime tool gateway", () => {
         command: {
           name: "agent_configure",
           companyId: "company",
-          agentId: "agent",
+          agentId: requestedTargetId,
           configuration: { title: null },
         },
       }),

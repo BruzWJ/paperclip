@@ -255,6 +255,7 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
               comment: {
                 author: { kind: "user", userId: actorUserId },
                 producingRun: null,
+                body: message,
               },
               idempotencyKey: sourceKey,
             },
@@ -281,6 +282,7 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
                 author: { kind: "user", userId: actorUserId },
                 producingRun: null,
                 replyToCommentId,
+                body: message,
               },
             },
             tx,
@@ -321,6 +323,7 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
                 author: { kind: "user", userId: actorUserId },
                 producingRun: null,
                 replyToCommentId,
+                body: message,
               },
             },
             tx,

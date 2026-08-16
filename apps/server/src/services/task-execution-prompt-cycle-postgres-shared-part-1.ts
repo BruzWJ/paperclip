@@ -51,7 +51,7 @@ export type RefRow = typeof taskExecutionRefs.$inferSelect;
 export type CorrelationRow = typeof taskExecutionSessions.$inferSelect;
 
 export type InitialPromptCycleResolution =
-  | { readonly kind: "singleton"; readonly instructionless: boolean }
+  | { readonly kind: "singleton"; readonly freshSessionAllowed: boolean }
   | { readonly kind: "new" }
   | { readonly kind: "bootstrap_unavailable" }
   | { readonly kind: "invalid" }

@@ -66,7 +66,9 @@ export async function resolveInitialPromptCycleInTransaction(
     return target.length === 1
       ? {
           kind: "singleton",
-          instructionless: renderAgentInstructionBootstrap(target[0]!.instruction) === null,
+          freshSessionAllowed:
+            current.laneOrdinal === 0 &&
+            renderAgentInstructionBootstrap(target[0]!.instruction) === null,
         }
       : { kind: "invalid" };
   }

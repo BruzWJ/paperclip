@@ -61,7 +61,6 @@ export function paperclipDescriptor(
     taskAssignTargets: [],
     creatorUpdateTargets: [],
     mentionTargets: [],
-    configureTargets: [],
     pluginTools: [],
     ...overrides,
   }).byName.get(name);

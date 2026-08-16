@@ -428,6 +428,14 @@ export function registerOpenApiPaths06(): void {
 
   registry.registerPath({
     method: "get",
+    path: "/api/cli-auth/me",
+    tags: ["access"],
+    summary: "Get the current CLI auth principal",
+    responses: { 200: r.ok(), 401: r.unauthorized },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/cli-auth/users/{userId}",
     tags: ["access"],
     summary: "Get current CLI auth session",

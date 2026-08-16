@@ -1,8 +1,10 @@
 import { taskBoardMentions } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
 import {
-  renderPaperclipManagedToolPrompt,
-  type PaperclipManagedToolPrompt,
+  renderPaperclipCommentMention,
+  renderPaperclipManagedAgentMessage,
+  type PaperclipMessageAgent,
+  type PaperclipManagedAgentMessage,
 } from "./paperclip-agent-message.js";
 import {
   RuntimeTaskActionConflict,
@@ -22,7 +24,7 @@ import {
   type DispatchingExecutionSourceInput,
   type TaskSessionAdmissionService,
   type TaskSessionExecutionActor,
-  type TaskSessionProjectedCommentSource,
+  type TaskSessionProjectedCommentAttribution,
 } from "./task-session/admission.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
@@ -31,7 +33,7 @@ export function creatorSourceIdentity(authority: CanonicalCreatorFormAuthority):
   sourceAuthorityId: string | null;
   sourceIdentity: Record<string, unknown>;
   runId: string | null;
-  comment: TaskSessionProjectedCommentSource;
+  comment: TaskSessionProjectedCommentAttribution;
 } {
   switch (authority.kind) {
     case "agent-execution":
@@ -222,29 +224,43 @@ export async function admitAgentTextInTransaction(
   return admission;
 }
 
-export type PaperclipManagedToolAdmissionInput =
-  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "task_request" }>, "exactText"> & {
-      prompt: PaperclipManagedToolPrompt<"task_create">;
+export type PaperclipManagedToolAdmissionInput = (
+  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "task_request" }>, "exactText" | "comment"> & {
+      delivery: PaperclipManagedAgentMessage<"task_create">;
     })
-  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "task_reassignment" }>, "exactText"> & {
-      prompt: PaperclipManagedToolPrompt<"task_assign">;
+  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "task_reassignment" }>, "exactText" | "comment"> & {
+      delivery: PaperclipManagedAgentMessage<"task_assign">;
     })
-  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "task_update" }>, "exactText"> & {
-      prompt: PaperclipManagedToolPrompt<"task_update">;
+  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "task_update" }>, "exactText" | "comment"> & {
+      delivery: PaperclipManagedAgentMessage<"task_update">;
     })
-  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "consult_mention" }>, "exactText"> & {
-      prompt: PaperclipManagedToolPrompt<"mention_agent">;
-    });
+  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "consult_mention" }>, "exactText" | "comment"> & {
+      delivery: PaperclipManagedAgentMessage<"mention_agent">;
+    })
+) & {
+  comment: TaskSessionProjectedCommentAttribution;
+  recipient: PaperclipMessageAgent;
+};
 
-export async function mentionAgentInTransaction(
+export async function admitManagedAgentMessageInTransaction(
   sessionAdmission: TaskSessionAdmissionService,
   tx: TaskSessionDbTransaction,
   input: PaperclipManagedToolAdmissionInput,
 ) {
-  const { prompt, ...source } = input;
+  const { delivery, recipient, ...source } = input;
+  if (recipient.id !== source.targetAgentId) {
+    throw new RuntimeTaskActionConflict(
+      "Canonical managed-tool recipient does not match its agent delivery target",
+    );
+  }
+  const rendered = renderPaperclipManagedAgentMessage(delivery, recipient);
   return admitAgentTextInTransaction(sessionAdmission, tx, {
     ...source,
-    exactText: renderPaperclipManagedToolPrompt(prompt),
+    exactText: rendered.agentText,
+    comment: {
+      ...source.comment,
+      body: rendered.commentBody,
+    },
   });
 }
 
@@ -255,7 +271,7 @@ export async function mentionBoardInTransaction(
     companyId: string;
     target: TaskUpdateTarget;
     actor: TaskSessionExecutionActor;
-    comment: TaskSessionProjectedCommentSource;
+    comment: TaskSessionProjectedCommentAttribution;
     counterpart?: {
       counterpartTaskId: string;
       counterpartAuthorityId: string;
@@ -271,6 +287,7 @@ export async function mentionBoardInTransaction(
     throw new RuntimeTaskActionConflict("Canonical Board mention requires an agent producing run");
   }
   const counterpart = input.counterpart ?? {};
+  const commentBody = renderPaperclipCommentMention({ kind: "board" }, input.message);
   const admission = await sessionAdmission.appendNonDispatchSyntheticComment(
     {
       companyId: input.companyId,
@@ -280,14 +297,17 @@ export async function mentionBoardInTransaction(
       projectionKind: "task_update",
       immutableSourceKey: input.immutableSourceKey,
       sourceRecordId: input.sourceRecordId,
-      exactText: input.message,
+      exactText: commentBody,
       ownershipEpoch: input.target.ownershipEpoch,
       agentId: input.comment.author.agentId,
       adapterConfigRevisionId: input.comment.producingRun.adapterConfigRevisionId,
       runId: input.comment.producingRun.runId,
       actor: input.actor,
       ...counterpart,
-      comment: input.comment,
+      comment: {
+        ...input.comment,
+        body: commentBody,
+      },
     },
     tx,
   );

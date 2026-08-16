@@ -128,14 +128,17 @@ server process cwd, or a prior task's working directory.
 
 ### 3.5 Board-owned agent instruction
 
-`agents.instruction` is optional canonical board-owned role text. For a new
-task, Paperclip admits it as a bootstrap run immediately before the unchanged
-work run. Both follow the ordinary task queue and have independent authority,
-events, and settlement; the work run resumes the bootstrap run's exact provider
-session. It grants no authority and is not a provider system prompt or
-work-message prefix. A null instruction has no bootstrap run. If that frozen
-resume cannot be set up, the work run fails terminal instead of starting a new
-provider session.
+`agents.instruction` is optional canonical board-owned role text. On the
+agent's first execution in an exact `(task, ownership epoch, target agent)`
+lane, Paperclip admits it as a bootstrap run immediately before the unchanged
+work run. A different agent first contacted on an existing task has its own
+lane and may therefore bootstrap; another execution for the same agent in the
+same lane does not. Both runs follow the ordinary task queue and have
+independent authority, events, and settlement; the work run resumes the
+bootstrap run's exact provider session. It grants no authority and is not a
+provider system prompt or work-message prefix. A null instruction has no
+bootstrap run. If that frozen resume cannot be set up, the work run fails
+terminal instead of starting a new provider session.
 
 Agent-reaching managed actions do have canonical source-message contracts.
 Each producer supplies its tool name, immutable tool arguments, and locked
@@ -148,19 +151,20 @@ task/source context; admission then selects that tool's renderer exactly once:
 | `task_assign` | `[Paperclip task assignment]`, action `Reassigned`, task, sender, owner, and status | immutable task `request` |
 | `task_update` | `[Paperclip task update]` with updated task, sender role/identity, and effective status | `message` |
 
-That rendered text is simultaneously the canonical Session comment and
-execution-ref message. The ACPX path consumes it as the same canonical source;
-a separately governed before-prompt prelude may compose around that source but
-does not rebuild or switch on tool prompts. `mention_board` invokes no agent
-and therefore has no ACPX prompt contract.
+The renderer emits two explicit artifacts at admission. The execution-ref text
+contains the Paperclip notification envelope plus the exact body and is the
+only artifact delivered through ACPX. The Session comment contains only
+`@target` plus that body: it never persists the notification envelope, and its
+presentation mention is never delivered to the agent. `mention_board` invokes
+no agent and therefore has no ACPX prompt contract.
 
 ## 4. Task-session continuity
 
-Paperclip records one canonical Session log per task. Exactly one genuine
-initial task start may use `session/new`: the instruction bootstrap when the
-owner has a nonblank Instruction, or the task work itself when it does not.
-An instructed task's immediately following work turn resumes the bootstrap's
-exact provider session.
+Paperclip records one canonical Session log per task. Each exact
+`(task, ownership epoch, target agent)` lane permits one genuine initial
+`session/new`: the instruction bootstrap when that agent has a nonblank
+Instruction, or its first work run when it does not. An instructed lane's
+immediately following work turn resumes the bootstrap's exact provider session.
 
 Every later base turn must resume one eligible exact-scope correlation with
 effective `carry_context`; otherwise it fails closed before ACPX launch.
@@ -245,9 +249,10 @@ result, not delivery of Paperclip's local `AbortController` signal.
 ## 7. Task output and lifecycle
 
 The chronological task comment stream is the durable human-facing output.
-Each active run has one stable progress-comment root, which may become its final
-output comment or settle as a folded progress card. Replies are grouped under
-that root in canonical sequence.
+Bootstrap and task-message executions are separate runs, each with its own
+top-level stable progress comment. A non-empty terminal assistant response
+becomes that same run's comment even when it also committed tool updates.
+Neither run is represented as a reply to the other.
 
 No tool-free final closes a task or invokes another agent. The current owner
 must call `task_update` with `done` or `cancelled` and a final message to close
@@ -307,11 +312,11 @@ protocol framing failure, or a stop result without the required terminal
 occupancy.
 
 Paperclip never retains or reconstructs ACPX runtime state. Each run uses a
-bounded ACPX runtime and sends exactly one queued prompt. An instructed new
-task has a bootstrap run followed by a work run on the same provider session.
-Setup and resume failures remain ordinary pre-transmission errors. Only fresh
-`new` setup may receive a bounded transport retry; frozen `resume` and
-`steer_resume` failures are terminal and never switch to a new session.
+bounded ACPX runtime and sends exactly one queued prompt. An instructed target
+lane begins with a bootstrap run followed by a work run on the same provider
+session. Setup and resume failures remain ordinary pre-transmission errors.
+Only fresh `new` setup may receive a bounded transport retry; frozen `resume`
+and `steer_resume` failures are terminal and never switch to a new session.
 
 ## 10. Minimal setup checklist
 

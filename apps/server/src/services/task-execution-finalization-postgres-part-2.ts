@@ -186,20 +186,17 @@ export function createPostgresTaskExecutionFinalizationWriter(options: {
       .limit(1)
       .then((rows) => rows[0] ?? null);
     const hadMentionComment = mentionToolCallRows !== null;
-    const sameTaskUpdates = updates.filter((u) => u.updateTargetTaskId === input.taskId);
+    const hasSameTaskUpdate = updates.some((update) => update.updateTargetTaskId === input.taskId);
+    const hasFinalResponse = finalText.length > 0;
     const action =
-      hadMentionComment || sameTaskUpdates.length > 0
+      hadMentionComment || hasSameTaskUpdate
         ? ("updates_committed" as const)
-        : updates.length > 0
-          ? finalText.length > 0
-            ? ("comment_only" as const)
-            : ("no_conversational_output" as const)
-          : finalText.length > 0
-            ? ("comment_only" as const)
-            : ("no_conversational_output" as const);
+        : hasFinalResponse
+          ? ("comment_only" as const)
+          : ("no_conversational_output" as const);
     if (
       (action !== "no_conversational_output" && !terminalEvent) ||
-      (action === "comment_only" && !terminalMessage)
+      (hasFinalResponse && !terminalMessage)
     ) {
       throw new finalizationCore.PostgresTaskExecutionFinalizationRejected(
         "Conversational finalization is missing its terminal Session dependency",
@@ -267,7 +264,7 @@ export function createPostgresTaskExecutionFinalizationWriter(options: {
         : null,
       updates,
     });
-    if (action === "comment_only") {
+    if (hasFinalResponse) {
       const folded = await publishTaskSessionFinalCommentInTx(transaction, {
         eventId: terminalEvent!.id,
         progressCommentId: progress.comment.id,

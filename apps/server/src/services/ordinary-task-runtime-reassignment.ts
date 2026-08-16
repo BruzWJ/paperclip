@@ -8,7 +8,7 @@ import { admitTaskExecutionInTransaction } from "./task-execution-initial-start-
 import {
   createTaskSessionAdmissionService,
   type TaskSessionExecutionActor,
-  type TaskSessionProjectedCommentSource,
+  type TaskSessionProjectedCommentAttribution,
 } from "./task-session/admission.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
@@ -26,7 +26,7 @@ export function createOrdinaryTaskReassignmentCommitter(context: {
       idempotencyKey: string;
       sourceAuthorityId: string;
       cancellationActor: TaskExecutionCancellationActor;
-      comment: TaskSessionProjectedCommentSource;
+      comment: TaskSessionProjectedCommentAttribution;
       sourceActor: Extract<TaskSessionExecutionActor, { kind: "user/board" | "agent-execution" | "plugin" }>;
       provenanceUserId: string | null;
       ownerResolution: Awaited<ReturnType<typeof runtime.resolveOrdinaryTaskOwner>>;
@@ -166,7 +166,7 @@ export function createOrdinaryTaskReassignmentCommitter(context: {
         immutableSourceKey: input.idempotencyKey,
         sourceRecordId: task.id,
         exactText: task.request,
-        comment: input.comment,
+        comment: { ...input.comment, body: task.request },
         idempotencyKey: input.idempotencyKey,
       },
     });

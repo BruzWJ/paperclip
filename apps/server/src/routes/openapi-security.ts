@@ -76,6 +76,7 @@ export const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/companies",
   "POST /api/companies",
   "GET /api/companies/stats",
+  "GET /api/cli-auth/me",
   "GET /api/cli-auth/users/{userId}",
   "POST /api/companies/{companyId}/invites",
   "GET /api/companies/{companyId}/invites",

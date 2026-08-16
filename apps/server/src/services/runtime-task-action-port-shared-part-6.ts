@@ -1,8 +1,8 @@
 import { companies, type Db } from "@paperclipai/db";
 import { eq } from "drizzle-orm";
 import {
-  renderPaperclipManagedToolPrompt,
-  type PaperclipManagedToolPrompt,
+  renderPaperclipCommentMention,
+  type PaperclipManagedAgentMessage,
 } from "./paperclip-agent-message.js";
 import {
   RuntimeTaskActionConflict,
@@ -12,8 +12,8 @@ import type { TaskMentionRecipient } from "./runtime-task-action-port-shared-par
 import type { TaskFormCommitRuntimeOptions } from "./runtime-task-action-port-shared-part-4.js";
 import {
   admitAgentTextInTransaction,
+  admitManagedAgentMessageInTransaction,
   canDispatchAgentCounterpartTarget,
-  mentionAgentInTransaction,
   mentionBoardInTransaction,
   sameTaskAgentTarget,
 } from "./runtime-task-action-port-shared-part-5.js";
@@ -21,9 +21,19 @@ import {
   createTaskSessionAdmissionService,
   type TaskSessionAdmissionService,
   type TaskSessionExecutionActor,
-  type TaskSessionProjectedCommentSource,
+  type TaskSessionProjectedCommentAttribution,
 } from "./task-session/admission.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
+
+type CanonicalTaskUpdateMessage =
+  | {
+      kind: "managed";
+      delivery: PaperclipManagedAgentMessage<"task_update">;
+    }
+  | {
+      kind: "system";
+      body: string;
+    };
 
 export async function admitCounterpartTaskUpdate(
   sessionAdmission: TaskSessionAdmissionService,
@@ -32,7 +42,7 @@ export async function admitCounterpartTaskUpdate(
     companyId: string;
     target: TaskMentionRecipient;
     actor: TaskSessionExecutionActor;
-    comment: TaskSessionProjectedCommentSource;
+    comment: TaskSessionProjectedCommentAttribution;
     counterpart?: {
       counterpartTaskId: string;
       counterpartAuthorityId: string;
@@ -41,23 +51,18 @@ export async function admitCounterpartTaskUpdate(
     sourceAgentTarget?: { taskId: string; agentId: string } | null;
     immutableSourceKey: string;
     sourceRecordId: string;
-  } & (
-    | {
-        sourceKind: "task_update";
-        prompt: PaperclipManagedToolPrompt<"task_update">;
-        message?: never;
-      }
-    | {
-        sourceKind: "task_update";
-        prompt?: never;
-        message: string;
-      }
-  ),
+    sourceKind: "task_update";
+    message: CanonicalTaskUpdateMessage;
+  },
 ) {
   const counterpart = input.counterpart ?? {};
   const sourceKind = "task_update" as const;
-  const exactMessage =
-    input.message === undefined ? renderPaperclipManagedToolPrompt(input.prompt) : input.message;
+  const rawMessage = input.message.kind === "managed" ? input.message.delivery.body : input.message.body;
+  if ((input.message.kind === "system") !== (input.actor.kind === "system")) {
+    throw new RuntimeTaskActionConflict(
+      "System recovery text requires a system actor and managed task updates require a non-system actor",
+    );
+  }
   const selfTarget =
     input.target.kind === "agent" && sameTaskAgentTarget(input.sourceAgentTarget, input.target.target);
   const dispatchTarget =
@@ -83,22 +88,30 @@ export async function admitCounterpartTaskUpdate(
       comment: input.comment,
       idempotencyKey: input.immutableSourceKey,
     };
-    if (input.message !== undefined) {
-      if (input.actor.kind !== "system") {
-        throw new RuntimeTaskActionConflict("System recovery task updates require a system actor");
-      }
+    if (input.message.kind === "system") {
       return admitAgentTextInTransaction(sessionAdmission, tx, {
         ...dispatchScope,
         sourceKind: "task_update",
         actor: input.actor,
-        exactText: input.message,
+        exactText: input.message.body,
+        comment: {
+          ...input.comment,
+          body: renderPaperclipCommentMention(
+            {
+              kind: "agent",
+              agent: { id: target.agentId, name: target.agentName },
+            },
+            input.message.body,
+          ),
+        },
       });
     }
-    return mentionAgentInTransaction(sessionAdmission, tx, {
+    return admitManagedAgentMessageInTransaction(sessionAdmission, tx, {
       ...dispatchScope,
       sourceKind: "task_update",
       actor: input.actor,
-      prompt: input.prompt,
+      delivery: input.message.delivery,
+      recipient: { id: target.agentId, name: target.agentName },
     });
   }
   if (input.actor.kind === "agent-execution" && (input.target.kind === "board" || !selfTarget)) {
@@ -111,10 +124,22 @@ export async function admitCounterpartTaskUpdate(
       sourceKind,
       immutableSourceKey: input.immutableSourceKey,
       sourceRecordId: input.sourceRecordId,
-      message: `@board ${exactMessage}`,
+      message: rawMessage,
     });
   }
   const target = input.target.target;
+  const commentBody = renderPaperclipCommentMention(
+    input.target.kind === "agent"
+      ? {
+          kind: "agent",
+          agent: {
+            id: input.target.target.agentId,
+            name: input.target.target.agentName,
+          },
+        }
+      : { kind: "board" },
+    rawMessage,
+  );
   return sessionAdmission.appendNonDispatchControlNotice(
     {
       companyId: input.companyId,
@@ -125,8 +150,11 @@ export async function admitCounterpartTaskUpdate(
       ...counterpart,
       immutableSourceKey: input.immutableSourceKey,
       sourceRecordId: input.sourceRecordId,
-      exactText: exactMessage,
-      comment: input.comment,
+      exactText: commentBody,
+      comment: {
+        ...input.comment,
+        body: commentBody,
+      },
       allowTerminal: false,
     },
     tx,

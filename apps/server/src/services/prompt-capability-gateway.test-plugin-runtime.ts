@@ -20,7 +20,6 @@ export function compileInput(): RuntimeInterfaceCompileInput {
     taskAssignTargets: [],
     creatorUpdateTargets: [],
     mentionTargets: [],
-    configureTargets: [],
     pluginTools: [],
   };
 }

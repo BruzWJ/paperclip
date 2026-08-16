@@ -16,51 +16,33 @@ export interface PaperclipMessageTask {
   identifier: string;
 }
 
-export type PaperclipPromptOwnerArgument = { kind: "self" } | { kind: "agent"; agentId: string };
-
-interface PaperclipManagedToolPromptDefinitions {
+interface PaperclipManagedAgentMessageDefinitions {
   mention_agent: {
-    arguments: { agentId: string; message: string };
+    body: string;
     context: {
       task: PaperclipMessageTask;
       from: PaperclipMessageAgent;
-      to: PaperclipMessageAgent;
     };
   };
   task_create: {
-    arguments: {
-      request: string;
-      title?: string | null;
-      priority?: "critical" | "high" | "medium" | "low";
-      owner: PaperclipPromptOwnerArgument;
-    };
+    body: string;
     context: {
       task: PaperclipMessageTask;
       from: PaperclipMessageActor;
-      owner: PaperclipMessageAgent;
       status: AgentVisibleTaskStatus;
     };
   };
   task_assign: {
-    arguments: {
-      taskId: string;
-      owner: PaperclipPromptOwnerArgument;
-    };
+    body: string;
     context: {
       task: PaperclipMessageTask;
       from: PaperclipMessageActor;
-      owner: PaperclipMessageAgent;
       status: AgentVisibleTaskStatus;
-      request: string;
     };
   };
   task_update: {
-    arguments: {
-      taskId?: string;
-      status?: AgentVisibleTaskStatus;
-      message: string;
-      structuredResult?: unknown;
-    };
+    body: string;
+    requestedStatus?: AgentVisibleTaskStatus;
     context: {
       task: PaperclipMessageTask;
       from: PaperclipMessageActor;
@@ -77,26 +59,29 @@ interface PaperclipManagedToolPromptDefinitions {
  * is intentionally a subset of the canonical managed-tool vocabulary, not a
  * second competing tool-name registry.
  */
-export type PaperclipDeliveryPromptToolName = Extract<
+export type PaperclipAgentMessageToolName = Extract<
   PaperclipManagedToolName,
-  keyof PaperclipManagedToolPromptDefinitions
+  keyof PaperclipManagedAgentMessageDefinitions
 >;
 
 /**
- * A managed tool contributes its immutable arguments and locked, resolved
- * context. The admission boundary owns rendering this contract into the one
- * canonical comment/ref/ACPX source message.
+ * A managed tool contributes one exact body plus locked, resolved context.
+ * Only the agent-admission boundary may render it into delivery and comment
+ * artifacts.
  */
-export type PaperclipManagedToolPromptContract = {
-  [ToolName in PaperclipDeliveryPromptToolName]: {
+export type PaperclipManagedAgentMessageContract = {
+  [ToolName in PaperclipAgentMessageToolName]: {
     toolName: ToolName;
-  } & PaperclipManagedToolPromptDefinitions[ToolName];
-}[PaperclipDeliveryPromptToolName];
+  } & PaperclipManagedAgentMessageDefinitions[ToolName];
+}[PaperclipAgentMessageToolName];
 
-export type PaperclipManagedToolPrompt<ToolName extends PaperclipDeliveryPromptToolName> = Extract<
-  PaperclipManagedToolPromptContract,
+export type PaperclipManagedAgentMessage<ToolName extends PaperclipAgentMessageToolName> = Extract<
+  PaperclipManagedAgentMessageContract,
   { toolName: ToolName }
 >;
+
+export type PaperclipCommentMentionTarget =
+  { kind: "agent"; agent: PaperclipMessageAgent } | { kind: "board" };
 
 function oneLine(value: string, label: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -137,74 +122,65 @@ export function paperclipEnvelopeHasBody(
   return rendered.startsWith(`${heading}\n`) && separator >= 0 && rendered.slice(separator + 2) === exactBody;
 }
 
-function renderMentionAgentPrompt(input: PaperclipManagedToolPrompt<"mention_agent">): string {
-  return envelope(
-    [
-      "[Paperclip agent message]",
-      `To: ${actor(input.context.to)}`,
-      ...taskLines(input.context.task),
-      `From: ${actor(input.context.from)}`,
-    ],
-    `@${input.context.to.name} ${input.arguments.message}`,
-  );
+/**
+ * Board-visible mention syntax is presentation only. It never becomes part
+ * of the exact text delivered to an agent.
+ */
+export function renderPaperclipCommentMention(
+  target: PaperclipCommentMentionTarget,
+  exactBody: string,
+): string {
+  const mention =
+    target.kind === "board" ? "@board" : `@${oneLine(target.agent.name, "Paperclip comment target name")}`;
+  return `${mention} ${body(exactBody)}`;
 }
 
-function renderTaskCreatePrompt(input: PaperclipManagedToolPrompt<"task_create">): string {
-  return envelope(
-    [
-      "[Paperclip task assignment]",
-      "Action: Created and assigned",
-      ...taskLines(input.context.task),
-      `From: ${actor(input.context.from)}`,
-      `Owner: ${actor(input.context.owner)}`,
-      `Status: ${input.context.status}`,
-    ],
-    input.arguments.request,
-  );
-}
-
-function renderTaskAssignPrompt(input: PaperclipManagedToolPrompt<"task_assign">): string {
-  return envelope(
-    [
-      "[Paperclip task assignment]",
-      "Action: Reassigned",
-      ...taskLines(input.context.task),
-      `From: ${actor(input.context.from)}`,
-      `Owner: ${actor(input.context.owner)}`,
-      `Status: ${input.context.status}`,
-    ],
-    input.context.request,
-  );
-}
-
-function renderTaskUpdatePrompt(input: PaperclipManagedToolPrompt<"task_update">): string {
-  const requestedStatus = input.arguments.status;
-  const status =
-    requestedStatus === undefined
-      ? input.context.effectiveStatus
-      : input.context.pendingReview
-        ? `${input.context.effectiveStatus} (${requestedStatus} requested; pending execution-policy review)`
-        : `${input.context.previousStatus} -> ${input.context.effectiveStatus}`;
-  return envelope(
-    [
-      "[Paperclip task update]",
-      ...taskLines(input.context.task),
-      `From: ${input.context.sourceRole}, ${actor(input.context.from)}`,
-      `Status: ${status}`,
-    ],
-    input.arguments.message,
-  );
-}
-
-export function renderPaperclipManagedToolPrompt(input: PaperclipManagedToolPromptContract): string {
+export function renderPaperclipManagedAgentMessage(
+  input: PaperclipManagedAgentMessageContract,
+  recipient: PaperclipMessageAgent,
+): { agentText: string; commentBody: string } {
+  const exactBody = body(input.body);
+  let lines: string[];
   switch (input.toolName) {
-    case "mention_agent":
-      return renderMentionAgentPrompt(input);
+    case "mention_agent": {
+      lines = [
+        "[Paperclip agent message]",
+        `To: ${actor(recipient)}`,
+        ...taskLines(input.context.task),
+        `From: ${actor(input.context.from)}`,
+      ];
+      break;
+    }
     case "task_create":
-      return renderTaskCreatePrompt(input);
-    case "task_assign":
-      return renderTaskAssignPrompt(input);
-    case "task_update":
-      return renderTaskUpdatePrompt(input);
+    case "task_assign": {
+      lines = [
+        "[Paperclip task assignment]",
+        `Action: ${input.toolName === "task_create" ? "Created and assigned" : "Reassigned"}`,
+        ...taskLines(input.context.task),
+        `From: ${actor(input.context.from)}`,
+        `Owner: ${actor(recipient)}`,
+        `Status: ${input.context.status}`,
+      ];
+      break;
+    }
+    case "task_update": {
+      const status =
+        input.requestedStatus === undefined
+          ? input.context.effectiveStatus
+          : input.context.pendingReview
+            ? `${input.context.effectiveStatus} (${input.requestedStatus} requested; pending execution-policy review)`
+            : `${input.context.previousStatus} -> ${input.context.effectiveStatus}`;
+      lines = [
+        "[Paperclip task update]",
+        ...taskLines(input.context.task),
+        `From: ${input.context.sourceRole}, ${actor(input.context.from)}`,
+        `Status: ${status}`,
+      ];
+      break;
+    }
   }
+  return {
+    agentText: envelope(lines, exactBody),
+    commentBody: renderPaperclipCommentMention({ kind: "agent", agent: recipient }, exactBody),
+  };
 }

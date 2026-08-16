@@ -319,7 +319,12 @@ describe("base prompt ACPX session operation", () => {
     [
       "instructed work without carry",
       { kind: "ordinary", instruction: "Lead delivery.", ref: { laneOrdinal: 2 } },
-      "instructed work lost its exact carry or ordered session start",
+      "work lost its exact carry or ordered session start",
+    ],
+    [
+      "later instructionless work without carry",
+      { kind: "ordinary", ref: { laneOrdinal: 2 } },
+      "work lost its exact carry or ordered session start",
     ],
     [
       "instructed reassignment singleton",
@@ -329,7 +334,7 @@ describe("base prompt ACPX session operation", () => {
         instruction: "Lead delivery.",
         ref: { ownershipEpoch: 2, previousOwnershipEpoch: 1, sourceKind: "task_reassignment" },
       },
-      "instructed work lost its exact carry or ordered session start",
+      "work lost its exact carry or ordered session start",
     ],
   ] as const)("rejects %s", async (_name, input, error) => {
     await expect(operationScenario(input)).rejects.toThrow(error);

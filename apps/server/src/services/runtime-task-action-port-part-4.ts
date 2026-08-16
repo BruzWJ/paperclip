@@ -180,7 +180,8 @@ export function createPostgresRuntimeTaskActionServicePart4(
         if (!consult) {
           throw new taskAction.RuntimeTaskActionConflict("Mention execution binding was not persisted");
         }
-        const admission = await taskAction.mentionAgentInTransaction(sessionAdmission, tx, {
+        const recipient = taskAction.messageAgent(authorized.companyAgents, input.targetAgentId);
+        const admission = await taskAction.admitManagedAgentMessageInTransaction(sessionAdmission, tx, {
           companyId: input.capability.companyId,
           taskId: input.capability.taskId,
           sessionId: input.capability.sessionId,
@@ -198,16 +199,13 @@ export function createPostgresRuntimeTaskActionServicePart4(
           actor: taskAction.executionActorForCapability(input.capability),
           immutableSourceKey: key,
           sourceRecordId: consult.id,
-          prompt: {
+          recipient,
+          delivery: {
             toolName: "mention_agent",
-            arguments: {
-              agentId: input.targetAgentId,
-              message: `@board ${input.message}`,
-            },
+            body: input.message,
             context: {
               task: authorized.task,
               from: taskAction.messageAgent(authorized.companyAgents, input.capability.targetAgentId),
-              to: taskAction.messageAgent(authorized.companyAgents, input.targetAgentId),
             },
           },
           comment: {

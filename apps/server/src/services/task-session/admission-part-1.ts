@@ -132,7 +132,19 @@ export type TaskSessionNonAgentCommentAuthor = Exclude<TaskSessionCommentAuthor,
  * deliberately separate from DispatchExecutionScope: a parent/creator run
  * may author a comment whose new execution ref targets a different agent.
  */
-export type TaskSessionProjectedCommentSource = (
+interface TaskSessionProjectedCommentThreading {
+  /** The only reply field accepted from an admission caller. */
+  replyToCommentId?: string | null;
+  /** Internal attribution for a response produced by positive steering. */
+  steeringSegment?: {
+    steeringTargetRunId: string;
+    refId: string;
+    refOrdinal: number;
+    segmentOrdinal: number;
+  } | null;
+}
+
+export type TaskSessionProjectedCommentAttribution = (
   | {
       author: TaskSessionAgentCommentAuthor;
       producingRun: {
@@ -144,17 +156,18 @@ export type TaskSessionProjectedCommentSource = (
       author: TaskSessionNonAgentCommentAuthor;
       producingRun: null;
     }
-) & {
-  /** The only reply field accepted from an admission caller. */
-  replyToCommentId?: string | null;
-  /** Internal attribution for a response produced by positive steering. */
-  steeringSegment?: {
-    steeringTargetRunId: string;
-    refId: string;
-    refOrdinal: number;
-    segmentOrdinal: number;
-  } | null;
+) & TaskSessionProjectedCommentThreading;
+
+/** Exact Board-visible text plus its canonical author attribution. */
+export type TaskSessionProjectedCommentSource = TaskSessionProjectedCommentAttribution & {
+  body: string;
 };
+
+export type TaskSessionUserProjectedCommentSource = {
+  author: Extract<TaskSessionNonAgentCommentAuthor, { kind: "user" }>;
+  producingRun: null;
+  body: string;
+} & TaskSessionProjectedCommentThreading;
 
 export type DispatchingExecutionSourceBase = DispatchExecutionScope &
   TaskSessionSourceIdentity & {
@@ -197,12 +210,7 @@ export interface NonDispatchUserComment extends TaskSessionSourceIdentity {
   sessionId: string;
   sourceKind: string;
   delivery?: "queue";
-  comment: {
-    author: Extract<TaskSessionCommentAuthor, { kind: "user" }>;
-    producingRun: null;
-    replyToCommentId?: string | null;
-    steeringSegment?: null;
-  };
+  comment: TaskSessionUserProjectedCommentSource;
 }
 
 /**
@@ -217,12 +225,7 @@ export type SteeringComment = TaskSessionSourceIdentity & {
   sessionId: string;
 } & Extract<TaskSessionExecutionSource, { sourceKind: "human_comment" }> & {
     sourceKind: "human_comment";
-    comment: {
-      author: Extract<TaskSessionCommentAuthor, { kind: "user" }>;
-      producingRun: null;
-      replyToCommentId?: string | null;
-      steeringSegment?: null;
-    };
+    comment: TaskSessionUserProjectedCommentSource;
   };
 
 export interface NonDispatchControlNotice extends TaskSessionSourceIdentity {

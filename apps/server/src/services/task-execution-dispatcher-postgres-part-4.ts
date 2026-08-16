@@ -426,6 +426,7 @@ export async function createRunForRef(
         },
         replyToCommentId: null,
         steeringSegment: null,
+        body: "",
       },
     },
     transaction,

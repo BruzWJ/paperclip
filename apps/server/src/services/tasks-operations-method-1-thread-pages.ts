@@ -45,9 +45,6 @@ export function createTaskServiceThreadPagesOperations(
       sourceId: string;
       totalCount: number | string;
     };
-    type RankedSegmentIdentity = RankedCommentIdentity & {
-      steeringParentCommentId: string | null;
-    };
     const [commentIdentityResult, segmentIdentityResult] = await Promise.all([
       db.execute(d.sql<RankedCommentIdentity>`
         select ranked.root_comment_id as "rootCommentId", ranked.source_id as "sourceId", ranked.total_count as "totalCount" from ( select comment_entry.thread_root_comment_id as root_comment_id,
@@ -55,11 +52,9 @@ export function createTaskServiceThreadPagesOperations(
               order by comment_entry.projected_event_seq asc, comment_entry.id asc ) as entry_rank from ${d.taskComments} comment_entry where comment_entry.company_id = ${roots[0]!.companyId}
             and comment_entry.task_id = ${roots[0]!.taskId} and comment_entry.thread_root_comment_id in (${rootIdSql}) ) ranked where ranked.entry_rank <= ${limit + 1}
         order by ranked.root_comment_id asc, ranked.entry_rank asc `),
-      db.execute(d.sql<RankedSegmentIdentity>` select ranked.root_comment_id as "rootCommentId", ranked.source_id as "sourceId",
-          ranked.steering_parent_comment_id as "steeringParentCommentId", ranked.total_count as "totalCount" from ( select root_comment.id as root_comment_id, message_entry.id as source_id, ( select source.comment_id
-              from ${d.taskCommentProjectionSources} source where source.company_id = root_comment.company_id and source.task_id = root_comment.task_id and source.session_id = root_comment.session_id
-                and source.run_id = root_comment.run_id and source.segment_ordinal is not null and source.projected_event_seq <= message_entry.seq order by source.projected_event_seq desc, source.comment_id desc limit 1
-            ) as steering_parent_comment_id, count(*) over (partition by root_comment.id) as total_count, row_number() over ( partition by root_comment.id order by message_entry.seq asc, message_entry.id asc
+      db.execute(d.sql<RankedCommentIdentity>` select ranked.root_comment_id as "rootCommentId", ranked.source_id as "sourceId",
+          ranked.total_count as "totalCount" from ( select root_comment.id as root_comment_id, message_entry.id as source_id,
+            count(*) over (partition by root_comment.id) as total_count, row_number() over ( partition by root_comment.id order by message_entry.seq asc, message_entry.id asc
             ) as entry_rank from ${d.taskComments} root_comment inner join ${d.taskCommentProjectionSources} root_source on root_source.comment_id = root_comment.id and root_source.company_id = root_comment.company_id
            and root_source.task_id = root_comment.task_id inner join ${d.taskSessionMessages} message_entry on message_entry.company_id = root_comment.company_id and message_entry.task_id = root_comment.task_id
            and message_entry.session_id = root_comment.session_id and message_entry.run_id = root_comment.run_id and message_entry.type = 'assistant'
@@ -71,7 +66,7 @@ export function createTaskServiceThreadPagesOperations(
             and root_comment.id in (${rootIdSql}) and root_comment.run_id is not null ) ranked where ranked.entry_rank <= ${limit + 1} order by ranked.root_comment_id asc, ranked.entry_rank asc `),
     ]);
     const commentIdentities = Array.from(commentIdentityResult) as RankedCommentIdentity[];
-    const segmentIdentities = Array.from(segmentIdentityResult) as RankedSegmentIdentity[];
+    const segmentIdentities = Array.from(segmentIdentityResult) as RankedCommentIdentity[];
     const commentIds = commentIdentities.map((row) => row.sourceId);
     const messageIds = segmentIdentities.map((row) => row.sourceId);
     const [descendantRows, assistantMessages] = await Promise.all([
@@ -103,13 +98,11 @@ export function createTaskServiceThreadPagesOperations(
     const descendantsById = new Map(descendantRows.map((row) => [row.id, row]));
     const messagesById = new Map(assistantMessages.map((row) => [row.id, row]));
     const rootsById = new Map(roots.map((root) => [root.id, root]));
-    const segmentIdentityByMessageId = new Map(segmentIdentities.map((row) => [row.sourceId, row]));
     const parentIds = [
       ...new Set(
-        [
-          ...descendantRows.map((comment) => comment.replyToCommentId),
-          ...segmentIdentities.map((row) => row.steeringParentCommentId ?? row.rootCommentId),
-        ].filter((value): value is string => Boolean(value)),
+        descendantRows
+          .map((comment) => comment.replyToCommentId)
+          .filter((value): value is string => Boolean(value)),
       ),
     ];
     const missingParentIds = parentIds.filter((id) => !rootsById.has(id));
@@ -171,22 +164,15 @@ export function createTaskServiceThreadPagesOperations(
           labels,
           censorUsernameInLogs: general.censorUsernameInLogs,
           runStatus: comment.runId ? runStatuses.get(comment.runId) : null,
-          parentRunStatus: comment.replyToCommentId
-            ? runStatuses.get(parents.get(comment.replyToCommentId)?.runId ?? "")
-            : null,
         }),
       }));
-      const segmentEntries = (messagesByRoot.get(root.id) ?? []).map((message) => {
-        const identity = segmentIdentityByMessageId.get(message.id);
-        const parent = parents.get(identity?.steeringParentCommentId ?? root.id) ?? root;
-        return projectBoardRunSegment({
+      const segmentEntries = (messagesByRoot.get(root.id) ?? []).map((message) =>
+        projectBoardRunSegment({
           message,
-          parent,
           labels,
           censorUsernameInLogs: general.censorUsernameInLogs,
-          parentRunStatus: parent.runId ? runStatuses.get(parent.runId) : null,
-        });
-      });
+        }),
+      );
       const merged = [...commentEntries, ...segmentEntries].sort(compareCanonicalEntry);
       const entries = merged.slice(0, limit);
       const finalEntry = entries.at(-1);
@@ -251,7 +237,7 @@ export function createTaskServiceThreadPagesOperations(
       : null;
     const [labels, runStatuses, general] = await Promise.all([
       loadBoardAuthorLabels(parent ? [comment, parent] : [comment]),
-      loadRunStatuses([comment.runId, parent?.runId ?? null]),
+      loadRunStatuses([comment.runId]),
       instanceSettings.getGeneral(),
     ]);
     return projectBoardTaskComment({
@@ -260,7 +246,6 @@ export function createTaskServiceThreadPagesOperations(
       labels,
       censorUsernameInLogs: general.censorUsernameInLogs,
       runStatus: comment.runId ? runStatuses.get(comment.runId) : null,
-      parentRunStatus: parent?.runId ? runStatuses.get(parent.runId) : null,
     });
   }
   return { loadBoardCommentThreadPages, getBoardCommentProjection };

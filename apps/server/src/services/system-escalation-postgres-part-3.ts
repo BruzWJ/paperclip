@@ -251,6 +251,7 @@ export async function ensureSystemEscalationInTransaction(
         comment: {
           author: sourceAuthor(input.systemSource),
           producingRun: null,
+          body: escalationTask.request!,
         },
         idempotencyKey: identity.id,
       },
@@ -275,6 +276,7 @@ export async function ensureSystemEscalationInTransaction(
         comment: {
           author: sourceAuthor(input.systemSource),
           producingRun: null,
+          body: escalationTask.request!,
         },
         allowTerminal: false,
       },

@@ -3,7 +3,7 @@ import {
   taskSessionContextEpochs,
   taskSessions,
   tasks,
-  type agents,
+  agents,
   type companies,
   type taskExecutionRefs,
 } from "@paperclipai/db";
@@ -243,12 +243,53 @@ export type AgentCounterpartTarget = {
   sessionId: string;
   ownershipEpoch: number;
   agentId: string;
+  agentName: string;
   authorityId: string;
   adapterConfigRevisionId: string;
   contextGeneration: number;
 };
 
 export type TaskUpdateTarget = Pick<AgentCounterpartTarget, "taskId" | "sessionId" | "ownershipEpoch">;
+
+export async function lockCurrentAgentAuthority(
+  tx: TaskSessionDbTransaction,
+  companyId: string,
+  target:
+    | { authorityId: string }
+    | { taskId: string; ownershipEpoch: number; agentId: string },
+) {
+  const targetCondition =
+    "authorityId" in target
+      ? eq(taskExecutionAuthorities.id, target.authorityId)
+      : and(
+          eq(taskExecutionAuthorities.taskId, target.taskId),
+          eq(taskExecutionAuthorities.ownershipEpoch, target.ownershipEpoch),
+          eq(taskExecutionAuthorities.agentId, target.agentId),
+        );
+  return tx
+    .select({
+      authority: taskExecutionAuthorities,
+      agentName: agents.name,
+    })
+    .from(taskExecutionAuthorities)
+    .innerJoin(
+      agents,
+      and(
+        eq(agents.companyId, taskExecutionAuthorities.companyId),
+        eq(agents.id, taskExecutionAuthorities.agentId),
+      ),
+    )
+    .where(
+      and(
+        eq(taskExecutionAuthorities.companyId, companyId),
+        eq(taskExecutionAuthorities.state, "current"),
+        targetCondition,
+      ),
+    )
+    .limit(1)
+    .for("update")
+    .then((rows) => rows[0] ?? null);
+}
 
 export async function lockTaskUpdateTarget(
   tx: TaskSessionDbTransaction,
@@ -271,21 +312,11 @@ export async function lockAgentCounterpartTarget(
   companyId: string,
   authorityId: string,
 ): Promise<AgentCounterpartTarget> {
-  const authority = await tx
-    .select()
-    .from(taskExecutionAuthorities)
-    .where(
-      and(
-        eq(taskExecutionAuthorities.companyId, companyId),
-        eq(taskExecutionAuthorities.id, authorityId),
-        eq(taskExecutionAuthorities.state, "current"),
-      ),
-    )
-    .for("update")
-    .then((rows) => rows[0] ?? null);
-  if (!authority) {
+  const target = await lockCurrentAgentAuthority(tx, companyId, { authorityId });
+  if (!target) {
     throw new RuntimeTaskActionConflict("Task-update counterpart has no current execution authority");
   }
+  const authority = target.authority;
   const sessionState = await lockTaskSessionState(tx, companyId, authority.taskId);
   if (
     !sessionState ||
@@ -299,6 +330,7 @@ export async function lockAgentCounterpartTarget(
     sessionId: authority.sessionId,
     ownershipEpoch: authority.ownershipEpoch,
     agentId: authority.agentId,
+    agentName: target.agentName,
     authorityId: authority.id,
     adapterConfigRevisionId: authority.auditAdapterConfigRevisionId,
     contextGeneration: sessionState.contextGeneration,

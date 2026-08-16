@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import {
   type NonDispatchControlNotice,
   type NonDispatchUserComment,
-  type TaskSessionProjectedCommentSource,
+  type TaskSessionProjectedCommentAttribution,
   createTaskSessionAdmissionService,
   type TaskSessionAdmissionResult,
 } from "./task-session/admission.js";
@@ -31,7 +31,7 @@ export interface CanonicalControlNoticeInput {
   immutableSourceKey: string;
   sourceRecordId: string;
   exactText: string;
-  comment?: TaskSessionProjectedCommentSource;
+  comment?: TaskSessionProjectedCommentAttribution;
   allowTerminal?: boolean;
   occurredAt?: Date | string | null;
 }
@@ -76,7 +76,7 @@ export async function appendCanonicalControlNotice(
     immutableSourceKey: input.immutableSourceKey,
     sourceRecordId: input.sourceRecordId,
     exactText: input.exactText,
-    comment: input.comment ?? null,
+    comment: input.comment ? { ...input.comment, body: input.exactText } : null,
     allowTerminal: input.allowTerminal,
   };
   return createTaskSessionAdmissionService(db, {
@@ -108,6 +108,7 @@ export async function appendCanonicalUserComment(
     comment: {
       author: { kind: "user", userId: input.userId },
       producingRun: null,
+      body: input.exactText,
     },
   };
   return createTaskSessionAdmissionService(db, {

@@ -66,7 +66,7 @@ export async function admitSteeringEvent(
         sourceId: options.ids.sourceId,
         messageId: options.ids.messageId,
         commentId: options.ids.commentId,
-        body: input.exactText,
+        body: input.comment.body,
         author: input.comment.author,
         reply,
       }),

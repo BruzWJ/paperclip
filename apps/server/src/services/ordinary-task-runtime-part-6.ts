@@ -248,6 +248,7 @@ export function createOrdinaryTaskRuntimePart6(db: Db, options: OrdinaryTaskRunt
                   pluginKey: input.pluginKey,
                 },
                 producingRun: null,
+                body: operation.message,
               },
               allowTerminal: true,
             },

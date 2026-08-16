@@ -12,7 +12,7 @@ import type { TaskExecutionRunTerminalClassification } from "@paperclipai/shared
 import { and, asc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { resolveMentionReach } from "./mention-reach-resolver.js";
-import { mentionAgentInTransaction } from "./runtime-task-action-port.js";
+import { admitManagedAgentMessageInTransaction } from "./runtime-task-action-port.js";
 import type { createPostgresTaskExecutionFinalizationWriter } from "./task-execution-finalization-postgres-part-2.js";
 import {
   type FinalizePostgresTaskExecutionRunInput,
@@ -207,7 +207,7 @@ export function createPostgresTaskExecutionFinalizationMentionHelpers(
       createdAt: input.finishedAt,
     });
     const sessionAdmission = createTaskSessionAdmissionService(transaction as unknown as Db);
-    const admission = await mentionAgentInTransaction(sessionAdmission, transaction, {
+    const admission = await admitManagedAgentMessageInTransaction(sessionAdmission, transaction, {
       companyId: input.companyId,
       taskId: input.taskId,
       sessionId: run.sessionId,
@@ -230,12 +230,13 @@ export function createPostgresTaskExecutionFinalizationMentionHelpers(
       immutableSourceKey: `auto-capture:${input.runId}`,
       sourceRecordId: consultId,
       idempotencyKey: `auto-capture:${input.runId}`,
-      prompt: {
+      recipient: {
+        id: sourceAgent.id,
+        name: sourceAgent.name,
+      },
+      delivery: {
         toolName: "mention_agent",
-        arguments: {
-          agentId: sourceAgent.id,
-          message: finalText,
-        },
+        body: finalText,
         context: {
           task: {
             id: sourceTask.id,
@@ -244,10 +245,6 @@ export function createPostgresTaskExecutionFinalizationMentionHelpers(
           from: {
             id: run.targetAgentId,
             name: finishingAgent?.name ?? "Agent",
-          },
-          to: {
-            id: sourceAgent.id,
-            name: sourceAgent.name,
           },
         },
       },

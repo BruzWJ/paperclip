@@ -18,7 +18,6 @@ import { resolveExecutionModeContextMask } from "./execution-mode-context-mask.j
 import { resolveMentionReach, type MentionReachTask } from "./mention-reach-resolver.js";
 import type {
   AgentCatalogEntry,
-  RuntimeAgentConfigureTarget,
   TaskAssignOwnerCatalog,
   TaskCreateOwnerCatalogEntry,
 } from "./paperclip-managed-tool-registry.js";
@@ -39,11 +38,6 @@ type AgentRow = AgentOrgRow & {
   currentAdapterConfigRevisionId: string | null;
 };
 
-type ConfigureGrant = {
-  permissionKey: string;
-  scope: Record<string, unknown> | null;
-};
-
 export interface RuntimeInterfaceCompilerSnapshot {
   capability: PromptCapabilityCompileScope;
   /** Exact provider turn derived from the current execution ref. */
@@ -60,7 +54,6 @@ export interface RuntimeInterfaceCompilerSnapshot {
   contextGrantKeys: readonly AgentContextGrantKey[];
   actionGrantKeys: readonly PaperclipActionKey[];
   mentionReachGrantKeys: readonly AgentMentionReachGrantKey[];
-  configureGrants: readonly ConfigureGrant[];
   childTasks: readonly {
     id: string;
     identifier: string;
@@ -110,48 +103,6 @@ function agentCatalogEntry(agent: AgentRow): AgentCatalogEntry {
     name: agent.name,
     capabilities: agent.capabilities,
   };
-}
-
-function scopeValueList(value: unknown): string[] {
-  if (typeof value === "string" && value.length > 0) return [value];
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
-}
-
-function prefixedScopeValues(scope: Record<string, unknown>, prefix: string): string[] {
-  return Object.entries(scope)
-    .filter(([key, value]) => key.startsWith(prefix) && value === true && key.length > prefix.length)
-    .map(([key]) => key.slice(prefix.length));
-}
-
-function explicitConfigureTargets(
-  sourceAgent: AgentRow,
-  companyAgents: readonly AgentRow[],
-  grants: readonly ConfigureGrant[],
-): Set<string> {
-  const targets = new Set<string>([sourceAgent.id]);
-  for (const grant of grants) {
-    if (grant.permissionKey !== "agents:configure" && grant.permissionKey !== "agents:suggest-changes") {
-      continue;
-    }
-    const scope = grant.scope;
-    if (!scope || Object.keys(scope).length === 0) {
-      for (const agent of companyAgents) targets.add(agent.id);
-      continue;
-    }
-
-    const exactIds = [
-      ...scopeValueList(scope.agentId),
-      ...scopeValueList(scope.agentIds),
-      ...scopeValueList(scope.assigneeAgentId),
-      ...scopeValueList(scope.assigneeAgentIds),
-      ...scopeValueList(scope.targetAgentId),
-      ...scopeValueList(scope.targetAgentIds),
-      ...prefixedScopeValues(scope, "agent:"),
-    ];
-    for (const id of exactIds) targets.add(id);
-  }
-  return targets;
 }
 
 export function buildRuntimeInterfaceCompileInput(
@@ -225,21 +176,6 @@ export function buildRuntimeInterfaceCompileInput(
     .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
     .map(agentCatalogEntry);
 
-  const configureTargets: RuntimeAgentConfigureTarget[] =
-    actionGrants.agent_configure === true
-      ? (() => {
-          const configureTargetIds = explicitConfigureTargets(
-            sourceAgent,
-            companyAgents,
-            snapshot.configureGrants,
-          );
-          return companyAgents
-            .filter((candidate) => configureTargetIds.has(candidate.id) && candidate.status !== "terminated")
-            .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
-            .map((agent) => ({ id: agent.id }));
-        })()
-      : [];
-
   return {
     mode: capability.executionMode,
     turn: snapshot.turn,
@@ -251,7 +187,6 @@ export function buildRuntimeInterfaceCompileInput(
     taskAssignTargets,
     creatorUpdateTargets,
     mentionTargets,
-    configureTargets,
     pluginTools: snapshot.pluginTools,
   };
 }

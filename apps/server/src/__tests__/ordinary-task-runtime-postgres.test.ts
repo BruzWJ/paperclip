@@ -120,6 +120,7 @@ function freshCreateDb(instruction: string | null = null) {
         executionPolicy: null }],
       [{ id: "00000000-0000-4000-8000-000000000209" }],
       [],
+      [{ nextOrdinal: 0 }],
       [],
     ],
     update: [[{ taskNumber: 5, taskPrefix: "ORD" }]],
@@ -237,6 +238,7 @@ describe("ordinary task runtime ingress", () => {
         comment: {
           author: { kind: "user", userId: "board-user" },
           producingRun: null,
+          body: "Preserve these exact bytes.\n",
         },
       }),
       harness.db,
@@ -283,7 +285,7 @@ describe("ordinary task runtime ingress", () => {
             },
             sourceRecordId: taskId,
             exactText:
-              "You are the engineering lead.\n\nThis is your role bootstrap turn, not task work. Do not inspect the filesystem, workspace, repository, home directory, environment, global configuration, or provider configuration, and do not use provider-local tools. If you need organizational or company context, use only the Paperclip-managed tools available in this turn. Briefly acknowledge the role and end the turn; the task request will arrive as a separate queued turn.",
+              "You are the engineering lead.\n\nThis is your role bootstrap turn, not task work. Do not inspect the filesystem, workspace, repository, home directory, environment, global configuration, or provider configuration, and do not use provider-local tools. If you need organizational or company context, use only the Paperclip-managed tools available in this turn. Briefly acknowledge the role and end the turn; the work message will arrive as a separate queued turn.",
           }),
           expect.objectContaining({
             sourceKind: "task_request",

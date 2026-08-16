@@ -117,7 +117,6 @@ describe("buildTaskChatMessages", () => {
                 parts,
                 status: "error",
                 canonicalSequence: 2,
-                immediateParentDisplayReference: null,
                 createdAt: new Date("2026-07-31T12:01:00.000Z"),
                 updatedAt: new Date("2026-07-31T12:01:00.000Z"),
               },
@@ -245,7 +244,7 @@ describe("buildTaskChatMessages", () => {
     });
 
     expect(textOf(queued[0]!)).toBe("Queued…");
-    expect(textOf(terminal[0]!)).toBe("Run finished");
+    expect(textOf(terminal[0]!)).toBe("");
   });
 
   it("drops duplicate message ids so the runtime never sees the same id twice", () => {

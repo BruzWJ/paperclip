@@ -45,7 +45,6 @@ describe("Paperclip managed-tool registry", () => {
       taskAssignTargets: [],
       creatorUpdateTargets: [],
       mentionTargets: [],
-      configureTargets: [],
     });
 
     expect(descriptors.map((descriptor) => descriptor.name)).toEqual(
@@ -82,7 +81,6 @@ describe("Paperclip managed-tool registry", () => {
       }],
       creatorUpdateTargets: [],
       mentionTargets: [{ id: agentId, name: "Agent", capabilities: null }],
-      configureTargets: [{ id: agentId }],
       pluginTools: [],
     });
 

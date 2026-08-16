@@ -9,7 +9,8 @@ summary: Canonical agent identity, explicit grants, provider configuration, and 
 - No role, first-agent, root-agent, title, or manager default grants permissions.
 - Paperclip has no generic prompt template, provider home, generic API key, or
   agent-wide session. Its optional board-owned Instruction is delivered once
-  as the first queued run for a new task.
+  as the first queued run for that agent's first execution in a task ownership
+  scope.
 - Context grants, five configurable action grants, and mention reach are
   selected explicitly.
   Task updates are relationship-derived: the owner receives its active-task
@@ -31,7 +32,7 @@ The creation dialog contains:
 | Title | no | Display-only; grants no authority |
 | Reports to | no | Same-company org edge; roots are ordinary |
 | Capabilities | no | Verbatim description used only in eligible target catalogs |
-| Instruction | no | Canonical board-owned role text; queued before a new task's work run |
+| Instruction | no | Canonical board-owned role text; queued before the agent's first work run in a task ownership scope |
 
 ### Provider adapter
 
@@ -77,8 +78,8 @@ relationship and automatically mentions its counterpart.
 
 Explain prospective behavior: narrowing a dial changes gateway acceptance immediately, but content already inside one live provider-native conversation remains provider-owned. Later work must have an exact eligible correlation under the new grant or fail closed; Paperclip exposes no reset path that silently creates a replacement session.
 
-Changing Instruction affects only a later new task; it is not
-prepended to work messages or replayed into an existing session.
+Changing Instruction affects only a later first execution in a new target
+scope; it is not prepended to work messages or replayed into an existing lane.
 
 ### Runs
 
