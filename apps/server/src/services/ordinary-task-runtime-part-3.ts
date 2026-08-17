@@ -247,7 +247,7 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
               adapterConfigRevisionId: revisionId,
               contextEpoch: contextGeneration,
               mode: "owner",
-              sourceKind: "human_comment_mention",
+              sourceKind: "mention_agent",
               actor: { kind: "user/board", userId: actorUserId },
               immutableSourceKey: sourceKey,
               sourceRecordId: commandId,

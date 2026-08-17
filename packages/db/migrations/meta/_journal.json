@@ -22,6 +22,13 @@
       "when": 1786548260293,
       "tag": "0002_unknown_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786918699061,
+      "tag": "0003_big_scorpion",
+      "breakpoints": true
     }
   ]
 }

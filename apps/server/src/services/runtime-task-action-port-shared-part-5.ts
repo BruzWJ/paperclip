@@ -21,6 +21,7 @@ import { assertTargetAdapterRevision } from "./runtime-task-action-port-shared-p
 import { deterministicUuid } from "./runtime-task-action-port-shared-part-2.js";
 import { admitTaskExecutionInTransaction } from "./task-execution-initial-start-admission.js";
 import {
+  type AgentExecutionActor,
   type DispatchingExecutionSourceInput,
   type TaskSessionAdmissionService,
   type TaskSessionExecutionActor,
@@ -234,7 +235,12 @@ export type PaperclipManagedToolAdmissionInput = (
   | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "task_update" }>, "exactText" | "comment"> & {
       delivery: PaperclipManagedAgentMessage<"task_update">;
     })
-  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "consult_mention" }>, "exactText" | "comment"> & {
+  | (Omit<
+      Extract<DispatchingExecutionSourceInput, { sourceKind: "mention_agent" }>,
+      "exactText" | "comment" | "actor" | "mode"
+    > & {
+      actor: AgentExecutionActor;
+      mode: "consult";
       delivery: PaperclipManagedAgentMessage<"mention_agent">;
     })
 ) & {

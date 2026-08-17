@@ -359,10 +359,9 @@ export const taskExecutionRefs = pgTable(
         'task_request',
         'task_reassignment',
         'task_reopen',
-        'human_comment_mention',
+        'mention_agent',
         'routine_dispatch',
         'task_update',
-        'consult_mention',
         'system_nudge'
       )`,
     ),

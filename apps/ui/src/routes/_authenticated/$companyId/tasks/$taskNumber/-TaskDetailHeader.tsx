@@ -1,9 +1,10 @@
-import { useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 
 import { InlineEditor } from "@/routes/_authenticated/$companyId/-markdown/-InlineEditor";
 import { MarkdownBody } from "@/routes/_authenticated/$companyId/-markdown/-MarkdownBody";
 import { TaskMonitorBanner } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-TaskMonitorBanner";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
+import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -12,6 +13,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
@@ -20,7 +22,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { hasAssignedBacklogBlocker, taskStatusAccessibleLabel, taskValueLabel } from "@/lib/task-blockers";
 import { workModeMetaFor } from "@/lib/work-mode-meta";
-import type { TaskTreeControlMode } from "@paperclipai/shared";
+import type { Task, TaskTreeControlMode } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
 import {
   Archive,
@@ -76,7 +78,12 @@ interface TaskControlMenuProps {
   canShowSubtreeControls: boolean;
   canResumeSubtree: boolean;
   canRestoreSubtree: boolean;
+  humanLifecycleMode: "system" | "creator" | "withdrawal" | null;
+  humanLifecyclePending: boolean;
+  taskLifecycleStatus: Task["lifecycleStatus"];
   onAction: (mode: TaskTreeControlMode) => void;
+  onHumanLifecycleAction: (status: "open" | "blocked" | "done") => void;
+  onRequestTaskCancellation: () => void;
 }
 
 function TaskControlMenu({
@@ -88,9 +95,15 @@ function TaskControlMenu({
   canShowSubtreeControls,
   canResumeSubtree,
   canRestoreSubtree,
+  humanLifecycleMode,
+  humanLifecyclePending,
+  taskLifecycleStatus,
   onAction,
+  onHumanLifecycleAction,
+  onRequestTaskCancellation,
 }: TaskControlMenuProps) {
-  const hasControls = canPauseLeafWork || canResumeLeafWork || canShowSubtreeControls;
+  const hasWorkControls = canPauseLeafWork || canResumeLeafWork || canShowSubtreeControls;
+  const hasControls = hasWorkControls || humanLifecycleMode !== null;
   if (!hasControls) return null;
 
   return (
@@ -100,8 +113,8 @@ function TaskControlMenu({
           type="button"
           variant="ghost"
           size={buttonSize}
-          aria-label="More task actions"
-          title="More task actions"
+          aria-label="Work controls"
+          title="Work controls"
         >
           <MoreHorizontal data-icon="inline-start" />
         </Button>
@@ -144,6 +157,43 @@ function TaskControlMenu({
             ) : null}
           </>
         ) : null}
+        {humanLifecycleMode ? (
+          <>
+            {hasWorkControls ? <DropdownMenuSeparator /> : null}
+            {humanLifecycleMode === "system" ? (
+              <>
+                <DropdownMenuItem
+                  disabled={humanLifecyclePending}
+                  onSelect={() =>
+                    onHumanLifecycleAction(taskLifecycleStatus === "blocked" ? "open" : "blocked")
+                  }
+                >
+                  {taskLifecycleStatus === "blocked" ? (
+                    <PlayCircle data-icon="inline-end" />
+                  ) : (
+                    <PauseCircle data-icon="inline-end" />
+                  )}
+                  {taskLifecycleStatus === "blocked" ? "Mark as open" : "Mark as blocked"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={humanLifecyclePending}
+                  onSelect={() => onHumanLifecycleAction("done")}
+                >
+                  <Check data-icon="inline-end" />
+                  Mark as resolved
+                </DropdownMenuItem>
+              </>
+            ) : null}
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={humanLifecyclePending}
+              onSelect={onRequestTaskCancellation}
+            >
+              <XCircle data-icon="inline-end" />
+              Cancel task…
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -151,6 +201,9 @@ function TaskControlMenu({
 
 export function TaskDetailHeader() {
   const [requestOpen, setRequestOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [cancelTaskDialogOpen, setCancelTaskDialogOpen] = useState(false);
+  const cancelDialogTimerRef = useRef<number | null>(null);
   const {
     agentMap,
     archiveFromInbox,
@@ -163,14 +216,14 @@ export function TaskDetailHeader() {
     canShowSubtreeControls,
     companyId,
     copied,
+    commitHumanOwnerStatus,
     copyTaskToClipboard,
     hasLiveRuns,
+    humanLifecycleMode,
     isFromInbox,
     isMobile,
-    moreOpen,
     panelVisible,
     setMobileInspectorOpen,
-    setMoreOpen,
     setPanelVisible,
     setReopenDialogOpen,
     setTreeControlCancelConfirmed,
@@ -180,15 +233,51 @@ export function TaskDetailHeader() {
     updateTaskTitle,
     userLabelMap,
     userProfileMap,
+    withdrawAndCancelTask,
   } = useTaskDetailPage();
 
   const actionButtonSize = isMobile ? "icon" : "icon-sm";
   const showLocalUtilities = !(isMobile && isFromInbox);
+  const humanLifecyclePending =
+    humanLifecycleMode === "system" ? commitHumanOwnerStatus.isPending : withdrawAndCancelTask.isPending;
+  useEffect(() => {
+    setMoreOpen(false);
+    setCancelTaskDialogOpen(false);
+    return () => {
+      if (cancelDialogTimerRef.current !== null) {
+        window.clearTimeout(cancelDialogTimerRef.current);
+        cancelDialogTimerRef.current = null;
+      }
+    };
+  }, [task.id]);
+
   const openTreeControl = (mode: TaskTreeControlMode) => {
     setTreeControlMode(mode);
     setTreeControlCancelConfirmed(false);
     setTreeControlOpen(true);
     setMoreOpen(false);
+  };
+  const commitHumanLifecycle = (status: "open" | "blocked" | "done") => {
+    const update =
+      status === "open"
+        ? { status, message: "Reopened by the human escalation owner." }
+        : status === "blocked"
+          ? { status, message: "Blocked by the human escalation owner." }
+          : { status, message: "Resolved by the human escalation owner." };
+    setMoreOpen(false);
+    commitHumanOwnerStatus.mutate(update);
+  };
+  const cancelTask = async () => {
+    if (humanLifecycleMode === "system") {
+      await commitHumanOwnerStatus.mutateAsync({
+        status: "cancelled",
+        message: "Cancelled by the human escalation owner.",
+      });
+      return;
+    }
+    if (humanLifecycleMode === "creator" || humanLifecycleMode === "withdrawal") {
+      await withdrawAndCancelTask.mutateAsync();
+    }
   };
 
   return (
@@ -271,7 +360,21 @@ export function TaskDetailHeader() {
               canShowSubtreeControls={canShowSubtreeControls}
               canResumeSubtree={canResumeSubtree}
               canRestoreSubtree={canRestoreSubtree}
+              humanLifecycleMode={humanLifecycleMode}
+              humanLifecyclePending={humanLifecyclePending}
+              taskLifecycleStatus={task.lifecycleStatus}
               onAction={openTreeControl}
+              onHumanLifecycleAction={commitHumanLifecycle}
+              onRequestTaskCancellation={() => {
+                setMoreOpen(false);
+                if (cancelDialogTimerRef.current !== null) {
+                  window.clearTimeout(cancelDialogTimerRef.current);
+                }
+                cancelDialogTimerRef.current = window.setTimeout(() => {
+                  cancelDialogTimerRef.current = null;
+                  setCancelTaskDialogOpen(true);
+                }, 0);
+              }}
             />
           </div>
         </div>
@@ -360,6 +463,20 @@ export function TaskDetailHeader() {
           </div>
         ) : null}
       </header>
+
+      <ConfirmActionDialog
+        open={cancelTaskDialogOpen}
+        onOpenChange={setCancelTaskDialogOpen}
+        title="Cancel this task?"
+        description="This marks the task cancelled and stops any active or queued work. Comments and history remain available."
+        confirmLabel="Cancel task"
+        pendingLabel="Cancelling task…"
+        cancelLabel="Keep task"
+        variant="destructive"
+        disabled={humanLifecycleMode === null}
+        pending={humanLifecyclePending}
+        onConfirm={cancelTask}
+      />
 
       <TaskMonitorBanner task={task} />
 

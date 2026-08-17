@@ -56,7 +56,7 @@ export function createPostgresTaskExecutionFinalizationMentionHelpers(
     const incomingRef = incomingRows[0]!.ref;
     if (
       incomingRef.mode !== "consult" ||
-      incomingRef.sourceKind !== "consult_mention" ||
+      incomingRef.sourceKind !== "mention_agent" ||
       incomingRef.targetAgentId !== input.targetAgentId ||
       incomingRef.consultChainToken === null
     ) {
@@ -221,7 +221,7 @@ export function createPostgresTaskExecutionFinalizationMentionHelpers(
       executionLineageId: finishingRef.executionLineageId,
       consultCallerRefId: finishingRef.id,
       consultChainToken: `consult_chain:auto_capture:${input.runId}`,
-      sourceKind: "consult_mention",
+      sourceKind: "mention_agent",
       actor: {
         kind: "agent-execution",
         agentId: run.targetAgentId,

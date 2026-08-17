@@ -36,7 +36,6 @@ function taskForScenario(mobile: boolean): Task {
 
 function TaskDetailHeaderScenario({ mobile = false }: { mobile?: boolean }) {
   const [task, setTask] = useState<Task>(() => taskForScenario(mobile));
-  const [moreOpen, setMoreOpen] = useState(false);
   const [panelVisible, setPanelVisible] = useState(false);
   const agentMap = new Map(storybookAgents.map((agent) => [agent.id, agent]));
   const userLabelMap = new Map([[BOARD_USER_ID, "Board Operator"]]);
@@ -57,8 +56,6 @@ function TaskDetailHeaderScenario({ mobile = false }: { mobile?: boolean }) {
     panelVisible,
     setPanelVisible,
     setMobileInspectorOpen: () => undefined,
-    moreOpen,
-    setMoreOpen,
     canArchiveFromInbox: false,
     archivePending: false,
     archiveFromInbox: { mutate: () => undefined },
@@ -71,6 +68,9 @@ function TaskDetailHeaderScenario({ mobile = false }: { mobile?: boolean }) {
     setTreeControlMode: () => undefined,
     setTreeControlCancelConfirmed: () => undefined,
     setTreeControlOpen: () => undefined,
+    humanLifecycleMode: mobile ? null : "creator",
+    commitHumanOwnerStatus: { isPending: false, mutate: () => undefined, mutateAsync: async () => undefined },
+    withdrawAndCancelTask: { isPending: false, mutateAsync: async () => undefined },
     updateTaskTitle: {
       mutateAsync: async (title: string | null) => {
         setTask((current) => ({ ...current, title }));

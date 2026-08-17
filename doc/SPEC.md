@@ -188,6 +188,10 @@ dispatch begins after the action transaction commits. The recipient's final
 provider response is not automatically relayed; any further communication must
 use `mention_agent`, `mention_board`, or `task_update`.
 
+Explicit typed Board and agent-to-agent mentions share the canonical
+`mention_agent` execution source and authority contract defined in
+`execution-semantics.md`.
+
 An agent with the explicit `mention_board` action grant may publish a canonical
 comment to collective Board Attention. It atomically commits its non-terminal
 acknowledgement with that request. It does not change task lifecycle or create

@@ -1,4 +1,4 @@
-import type { TaskChatComposerHandle } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatThread";
+import type { TaskChatComposerHandle } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-task-chat/-TaskChatShared";
 import type { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import type { usePanel } from "@/context/PanelContext";
 import {
@@ -28,7 +28,7 @@ import { TaskInspector, type TaskInspectorProps, type TaskInspectorTab } from ".
 import type { useTaskDetailActionMutations } from "./-useTaskDetailActionMutations";
 import type { useTaskDetailCoreMutations } from "./-useTaskDetailCoreMutations";
 
-export interface TaskDetailEffectsOptions {
+interface TaskDetailEffectsOptions {
   companyId: string;
   taskId: string;
   task: Task | undefined;
@@ -400,7 +400,6 @@ export function useTaskDetailEffects({
 
 /** Owns the route-local UI state shared by the task-detail feature hooks. */
 export function useTaskDetailState() {
-  const [moreOpen, setMoreOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<TaskInspectorTab>("details");
@@ -415,8 +414,6 @@ export function useTaskDetailState() {
   const openDocumentsWorkspace = useCallback(() => setDocumentsWorkspaceOpen(true), []);
 
   return {
-    moreOpen,
-    setMoreOpen,
     copied,
     setCopied,
     mobileInspectorOpen,

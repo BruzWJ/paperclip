@@ -16,14 +16,14 @@ import {
 import { createOptimisticTaskComment, type OptimisticTaskComment } from "@/lib/optimistic-task-comments";
 import { fileBaseName, slugifyDocumentKey, titleizeFilename } from "@/lib/document-file-names";
 import { queryKeys } from "@/lib/queryKeys";
-import type { Task, TaskTreeControlMode } from "@paperclipai/shared";
+import type { CreateTaskUserComment, Task, TaskTreeControlMode } from "@paperclipai/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type Dispatch, type SetStateAction } from "react";
 
 import { readTaskRunStateFromCache, taskTreeControlLabel } from "./-task-detail-model";
 import type { useTaskDetailCacheActions } from "./-useTaskDetailEffects";
 
-export interface TaskDetailActionMutationsOptions {
+interface TaskDetailActionMutationsOptions {
   companyId: string;
   taskId: string;
   task: Task | undefined;
@@ -90,12 +90,7 @@ export function useTaskDetailActionMutations({
   });
 
   const addComment = useMutation({
-    mutationFn: (input: {
-      message: string;
-      idempotencyKey: string;
-      mention?: { targetAgentId: string; ownershipEpoch: number } | null;
-      replyToCommentId?: string | null;
-    }) => tasksApi.addComment(taskId, input),
+    mutationFn: (input: CreateTaskUserComment) => tasksApi.addComment(taskId, input),
     onMutate: async ({ message, mention }) => {
       await queryClient.cancelQueries({
         queryKey: queryKeys.tasks.comments(taskId),
@@ -135,7 +130,7 @@ export function useTaskDetailActionMutations({
         queryKey: queryKeys.tasks.comments(taskId),
       });
     },
-    onError: (error, _variables, context) => {
+    onError: (error, variables, context) => {
       if (context?.optimisticCommentId) {
         setOptimisticComments((current) =>
           current.filter((entry) => entry.clientId !== context.optimisticCommentId),
@@ -144,6 +139,7 @@ export function useTaskDetailActionMutations({
       toast.error("Comment failed", {
         description: error instanceof Error ? error.message : "Unable to post comment",
       });
+      if (variables.mention) invalidateTaskDetail();
     },
     onSettled: (_result, _error, variables) => {
       invalidateTaskThreadLazily();
@@ -256,7 +252,7 @@ export function useTaskDetailActionMutations({
   };
 }
 
-export interface TaskDetailTreeMutationOptions {
+interface TaskDetailTreeMutationOptions {
   companyId: string;
   taskId: string;
   task: Task | undefined;

@@ -291,7 +291,7 @@ describe("base prompt ACPX session operation", () => {
       "later exact carry",
       {
         kind: "ordinary",
-        ref: { sourceKind: "human_comment_mention", laneOrdinal: 2 },
+        ref: { sourceKind: "mention_agent", laneOrdinal: 2 },
         instruction: "Lead delivery.",
         correlation: true,
       },

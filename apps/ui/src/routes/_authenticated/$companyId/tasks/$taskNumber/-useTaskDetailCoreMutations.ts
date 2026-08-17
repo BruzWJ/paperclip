@@ -7,7 +7,7 @@ import { useCallback, useState } from "react";
 
 import type { useTaskDetailCacheActions } from "./-useTaskDetailEffects";
 
-export interface TaskDetailCoreMutationsOptions {
+interface TaskDetailCoreMutationsOptions {
   companyId: string;
   taskId: string;
   task: Task | undefined;
@@ -163,7 +163,7 @@ export function useTaskDetailCoreMutations({
         withdrawalTask.ownerUserId !== currentUserId ||
         withdrawalTask.ownerAssignmentSource !== "user_creator_withdrawal"
       ) {
-        throw new Error("Only the named creator can withdraw an agent-owned task");
+        throw new Error("Only the named creator can cancel an agent-owned task");
       }
       return tasksApi.commitOwnerFormUpdate({
         taskId: task.id,
@@ -176,12 +176,12 @@ export function useTaskDetailCoreMutations({
       invalidateTaskDetail();
       invalidateTaskRunState();
       invalidateTaskCollections();
-      toast.success("Task withdrawn and cancelled");
+      toast.success("Task cancelled");
     },
     onError: (error) => {
       invalidateTaskDetail();
-      toast.error("Withdrawal failed", {
-        description: error instanceof Error ? error.message : "Unable to withdraw this task",
+      toast.error("Cancellation failed", {
+        description: error instanceof Error ? error.message : "Unable to cancel this task",
       });
     },
   });

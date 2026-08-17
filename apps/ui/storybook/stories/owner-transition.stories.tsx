@@ -1,20 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import {
-  ComposerMentionCoach,
-  ComposerOwnerPreviewRow,
   InterruptOwnerChangeConfirm,
   OwnerChip,
   OwnerRunningBanner,
-  OwnerDispatchRow,
   PauseAffectsSummaryView,
-  RunStatusBadge,
   type OwnerChipResolvers,
 } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-owner-transition/-OwnerTransitionViews";
-import {
-  computeComposerOwnerPreview,
-  computePauseAffectsSummary,
-  describeOwnerChangeInterrupt,
-} from "@/lib/owner-transition";
+import { computePauseAffectsSummary, describeOwnerChangeInterrupt } from "@/lib/owner-transition";
 
 const resolvers: OwnerChipResolvers = {
   agentMap: new Map([
@@ -34,21 +26,23 @@ type Story = StoryObj;
 export const CanonicalStates: Story = {
   render: () => {
     const copy = describeOwnerChangeInterrupt({ runningAgentName: "ClaudeCoder" });
-    const preview = computeComposerOwnerPreview({
-      ownerTarget: "agent:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
-      currentOwnerValue: "agent:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6",
-      hasActiveRun: true,
-      bodyHasAgentMention: false,
-    });
     return (
       <div className="flex max-w-xl flex-col gap-4 p-4">
         <div className="flex items-center gap-2">
           <OwnerChip
-            owner={{ ownerKind: "agent", ownerAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6", ownerUserId: null }}
+            owner={{
+              ownerKind: "agent",
+              ownerAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6",
+              ownerUserId: null,
+            }}
             resolvers={resolvers}
           />
           <OwnerChip
-            owner={{ ownerKind: "user", ownerAgentId: null, ownerUserId: "a7000000-0000-4000-8000-000000000002" }}
+            owner={{
+              ownerKind: "user",
+              ownerAgentId: null,
+              ownerUserId: "a7000000-0000-4000-8000-000000000002",
+            }}
             resolvers={resolvers}
           />
           <OwnerChip
@@ -56,13 +50,6 @@ export const CanonicalStates: Story = {
             resolvers={resolvers}
           />
         </div>
-        <RunStatusBadge status="cancelled" operatorInterrupted />
-        <OwnerDispatchRow
-          to={{ ownerKind: "agent", ownerAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", ownerUserId: null }}
-          resolvers={resolvers}
-          interruptedRunAttached
-        />
-        <ComposerOwnerPreviewRow preview={preview} resolvers={resolvers} />
         <OwnerRunningBanner copy={copy} />
         <InterruptOwnerChangeConfirm
           copy={copy}
@@ -70,12 +57,6 @@ export const CanonicalStates: Story = {
           resolvers={resolvers}
           onConfirm={() => {}}
           onCancel={() => {}}
-        />
-        <ComposerMentionCoach
-          candidate={{ agentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", matchedText: "QA" }}
-          agentDisplayName="QA"
-          onInsert={() => {}}
-          onDismiss={() => {}}
         />
         <PauseAffectsSummaryView
           summary={computePauseAffectsSummary([

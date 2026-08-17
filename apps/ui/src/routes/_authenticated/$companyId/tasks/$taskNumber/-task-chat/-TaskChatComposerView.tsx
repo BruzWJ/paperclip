@@ -7,16 +7,10 @@ import {
 } from "@/components/ai-elements/attachments";
 import {
   PromptInput,
-  PromptInputActionAddAttachments,
-  PromptInputActionMenu,
-  PromptInputActionMenuContent,
-  PromptInputActionMenuTrigger,
   PromptInputBody,
   PromptInputButton,
   PromptInputCommand,
-  PromptInputCommandEmpty,
   PromptInputCommandGroup,
-  PromptInputCommandInput,
   PromptInputCommandItem,
   PromptInputCommandList,
   PromptInputFooter,
@@ -31,27 +25,23 @@ import {
   PromptInputTools,
   usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
-import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
-import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
-import {
-  BotIcon,
-  FolderKanbanIcon,
-  ListTodoIcon,
-  PaperclipIcon,
-  ReplyIcon,
-  UserIcon,
-  XIcon,
-} from "lucide-react";
-import { forwardRef, useState } from "react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { AtSignIcon, PaperclipIcon, ReplyIcon, XIcon } from "lucide-react";
+import { forwardRef, useCallback, useState, type KeyboardEvent } from "react";
 
-import type { MentionOption } from "../../../-markdown/-MarkdownEditor";
+import { AgentIcon } from "../../../-AgentIconPicker";
 import {
-  shouldRenderComposerOwnerPreview,
   type TaskChatComposerHandle,
   type TaskChatComposerProps,
   type TaskChatReplyTarget,
 } from "./-TaskChatShared";
-import { useTaskChatComposerController } from "./-useTaskChatComposerController";
+import {
+  findTaskChatMentionQuery,
+  taskChatMentionMatchesQuery,
+  type TaskChatMentionQuery,
+  useTaskChatComposerController,
+} from "./-useTaskChatComposerController";
 
 function ComposerHeader({
   replyTarget,
@@ -93,7 +83,7 @@ function ComposerHeader({
             <Attachment key={file.id} data={file} onRemove={() => attachments.remove(file.id)}>
               <AttachmentPreview />
               <AttachmentInfo />
-              <AttachmentRemove />
+              <AttachmentRemove disabled={isSubmitting} />
             </Attachment>
           ))}
         </Attachments>
@@ -120,134 +110,228 @@ function ComposerSubmit({
   );
 }
 
-function mentionIcon(kind: MentionOption["kind"]) {
-  if (kind === "agent") return BotIcon;
-  if (kind === "project") return FolderKanbanIcon;
-  if (kind === "task") return ListTodoIcon;
-  return UserIcon;
-}
-
-function mentionLabel(mention: MentionOption) {
-  return mention.kind === "task" ? mention.taskIdentifier : `@${mention.name}`;
+function ComposerAttachmentButton() {
+  const attachments = usePromptInputAttachments();
+  return (
+    <PromptInputButton aria-label="Attach files" tooltip="Attach files" onClick={attachments.openFileDialog}>
+      <PaperclipIcon className="size-4" aria-hidden="true" />
+    </PromptInputButton>
+  );
 }
 
 function TaskChatComposerView(props: ReturnType<typeof useTaskChatComposerController>) {
   const {
-    attachmentError,
     body,
     canAcceptFiles,
-    coachAgentName,
-    coachVisible,
+    canChangeOwner,
+    canMention,
     composerContainerRef,
     composerDisabledReason,
+    composerError,
     composerHint,
-    enableOwnerChange,
     handleSubmit,
-    insertCoachMention,
     insertMention,
     isSubmitting,
-    mentions,
+    mentionTarget,
     onClearReply,
     ownerOptions,
-    ownerPreview,
     ownerTarget,
     ownerTriggerRef,
-    plainNameCandidate,
     replyTarget,
-    resolvedTaskWorkMode,
-    setAttachmentError,
     setBody,
-    setDismissedCoachToken,
+    setComposerError,
     setOwnerTarget,
     textareaRef,
   } = props;
-  const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<TaskChatMentionQuery | null>(null);
+  const [mentionListId, setMentionListId] = useState<string>();
+  const [mentionOptionId, setMentionOptionId] = useState<string>();
+  const mentionMatches = Boolean(
+    mentionTarget && mentionQuery && taskChatMentionMatchesQuery(mentionTarget, mentionQuery.query),
+  );
+  const mentionPopupOpen = canMention && mentionMatches;
+
+  const captureMentionList = useCallback((node: HTMLDivElement | null) => {
+    if (!node?.id) return;
+    setMentionListId((current) => (current === node.id ? current : node.id));
+  }, []);
+
+  const captureMentionOption = useCallback((node: HTMLDivElement | null) => {
+    if (!node?.id) return;
+    setMentionOptionId((current) => (current === node.id ? current : node.id));
+  }, []);
+
+  function closeMentionMenu() {
+    setMentionQuery(null);
+  }
+
+  function syncMentionMenu(value: string, cursor: number | null) {
+    const nextQuery = canMention ? findTaskChatMentionQuery(value, cursor ?? value.length) : null;
+    setMentionQuery(nextQuery);
+  }
+
+  function chooseMention() {
+    if (!mentionQuery || !mentionMatches) return;
+    insertMention(mentionQuery);
+    closeMentionMenu();
+  }
+
+  function handleMentionKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (!mentionPopupOpen || event.nativeEvent.isComposing) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMentionMenu();
+      return;
+    }
+    if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
+      event.preventDefault();
+      chooseMention();
+    }
+  }
+
+  function beginMention() {
+    const textarea = textareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? body.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+    const before = body.slice(0, selectionStart);
+    const needsBoundary = before.length > 0 && !/[\s(\[{]$/.test(before);
+    const insertion = `${needsBoundary ? " " : ""}@`;
+    const nextBody = `${before}${insertion}${body.slice(selectionEnd)}`;
+    const cursor = before.length + insertion.length;
+    setBody(nextBody);
+    setMentionQuery({ start: cursor - 1, end: cursor, query: "" });
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(cursor, cursor);
+    });
+  }
 
   return (
-    <div ref={composerContainerRef} data-testid="task-chat-composer" aria-busy={isSubmitting || undefined}>
+    <div
+      ref={composerContainerRef}
+      data-testid="task-chat-composer"
+      aria-busy={isSubmitting || undefined}
+    >
       {isSubmitting ? (
         <p role="status" className="sr-only">
           Sending message…
         </p>
       ) : null}
-      {coachVisible && plainNameCandidate ? (
-        <Suggestions className="mb-2" aria-live="polite">
-          <Suggestion
-            suggestion={`Insert @${coachAgentName}`}
-            onClick={insertCoachMention}
-            aria-label={`Insert mention for ${coachAgentName} into your comment`}
-          />
-          <Suggestion
-            suggestion="Keep as plain text"
-            variant="ghost"
-            onClick={() => setDismissedCoachToken(plainNameCandidate.matchedText)}
-          />
-        </Suggestions>
-      ) : null}
-
       <PromptInput
         accept="*/*"
         multiple
         maxFiles={20}
-        onError={(error) => setAttachmentError(error.message)}
+        onError={(error) => setComposerError(error.message)}
         onSubmit={handleSubmit}
-        data-pending-work-mode={resolvedTaskWorkMode}
       >
         <ComposerHeader replyTarget={replyTarget} isSubmitting={isSubmitting} onClearReply={onClearReply} />
 
         <PromptInputBody>
-          <PromptInputTextarea
-            ref={textareaRef}
-            value={body}
-            onChange={(event) => setBody(event.currentTarget.value)}
-            placeholder={composerDisabledReason ?? "Message this task…"}
-            disabled={Boolean(composerDisabledReason) || isSubmitting}
-            aria-label="Task message"
-          />
+          <Popover
+            open={mentionPopupOpen}
+            onOpenChange={(open) => {
+              if (!open) closeMentionMenu();
+            }}
+          >
+            <PopoverAnchor asChild>
+              <PromptInputTextarea
+                ref={textareaRef}
+                value={body}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setBody(value);
+                  syncMentionMenu(value, event.currentTarget.selectionStart);
+                }}
+                onKeyDown={handleMentionKeyDown}
+                onKeyUp={(event) => {
+                  if (event.key === "Enter" || event.key === "Tab" || event.key === "Escape") return;
+                  syncMentionMenu(event.currentTarget.value, event.currentTarget.selectionStart);
+                }}
+                onSelect={(event) =>
+                  syncMentionMenu(event.currentTarget.value, event.currentTarget.selectionStart)
+                }
+                placeholder={
+                  composerDisabledReason ??
+                  (replyTarget
+                    ? "Write a reply…"
+                    : mentionTarget
+                      ? `Message this task or @${mentionTarget.name}…`
+                      : "Message this task…")
+                }
+                disabled={Boolean(composerDisabledReason) || isSubmitting}
+                aria-label="Task message"
+                aria-autocomplete={canMention ? "list" : undefined}
+                aria-activedescendant={mentionPopupOpen && mentionMatches ? mentionOptionId : undefined}
+                aria-controls={mentionPopupOpen ? mentionListId : undefined}
+                aria-expanded={canMention ? mentionPopupOpen : undefined}
+                aria-haspopup={canMention ? "listbox" : undefined}
+                role={canMention ? "combobox" : undefined}
+              />
+            </PopoverAnchor>
+            <PopoverContent
+              role="presentation"
+              side="top"
+              align="start"
+              className="w-72 p-0 shadow-none"
+              onOpenAutoFocus={(event) => event.preventDefault()}
+              onCloseAutoFocus={(event) => event.preventDefault()}
+              onInteractOutside={(event) => {
+                if (event.target === textareaRef.current) event.preventDefault();
+              }}
+            >
+              <PromptInputCommand
+                aria-label="Agent mention suggestions"
+                shouldFilter={false}
+                value={mentionMatches ? mentionTarget?.targetAgentId : undefined}
+              >
+                <PromptInputCommandList ref={captureMentionList}>
+                  <PromptInputCommandGroup>
+                    {mentionMatches && mentionTarget ? (
+                      <PromptInputCommandItem
+                        ref={captureMentionOption}
+                        value={mentionTarget.targetAgentId}
+                        aria-label={`Mention ${mentionTarget.name}`}
+                        onPointerDown={(event) => event.preventDefault()}
+                        onSelect={chooseMention}
+                      >
+                        <Avatar size="sm">
+                          <AvatarFallback>
+                            <AgentIcon icon={mentionTarget.icon} className="size-3" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">@{mentionTarget.name}</span>
+                          <span className="block text-xs text-muted-foreground">Current task owner</span>
+                        </span>
+                      </PromptInputCommandItem>
+                    ) : null}
+                  </PromptInputCommandGroup>
+                </PromptInputCommandList>
+              </PromptInputCommand>
+            </PopoverContent>
+          </Popover>
         </PromptInputBody>
 
         <PromptInputFooter>
           <PromptInputTools>
-            {canAcceptFiles || mentions.length > 0 ? (
-              <PromptInputActionMenu open={mentionMenuOpen} onOpenChange={setMentionMenuOpen}>
-                <PromptInputActionMenuTrigger tooltip="Add context">
-                  <PaperclipIcon className="size-4" data-icon="inline-start" />
-                </PromptInputActionMenuTrigger>
-                <PromptInputActionMenuContent>
-                  {canAcceptFiles ? <PromptInputActionAddAttachments label="Attach files" /> : null}
-                  {mentions.length > 0 ? (
-                    <PromptInputCommand>
-                      <PromptInputCommandInput placeholder="Find people, agents, projects, or tasks…" />
-                      <PromptInputCommandList>
-                        <PromptInputCommandEmpty>No matching mention.</PromptInputCommandEmpty>
-                        <PromptInputCommandGroup heading="Mention">
-                          {mentions.map((mention) => {
-                            const Icon = mentionIcon(mention.kind);
-                            return (
-                              <PromptInputCommandItem
-                                key={mention.id}
-                                value={`${mentionLabel(mention)} ${mention.name} ${mention.kind}`}
-                                onSelect={() => {
-                                  insertMention(mention);
-                                  setMentionMenuOpen(false);
-                                }}
-                              >
-                                <Icon className="size-4" aria-hidden="true" />
-                                <span>{mentionLabel(mention)}</span>
-                                <span className="ml-auto text-xs text-muted-foreground">{mention.kind}</span>
-                              </PromptInputCommandItem>
-                            );
-                          })}
-                        </PromptInputCommandGroup>
-                      </PromptInputCommandList>
-                    </PromptInputCommand>
-                  ) : null}
-                </PromptInputActionMenuContent>
-              </PromptInputActionMenu>
+            {canAcceptFiles ? <ComposerAttachmentButton /> : null}
+
+            {canMention ? (
+              <PromptInputButton
+                aria-label="Mention task owner"
+                tooltip="Mention task owner"
+                onClick={beginMention}
+              >
+                <AtSignIcon className="size-4" aria-hidden="true" />
+              </PromptInputButton>
             ) : null}
 
-            {enableOwnerChange && ownerOptions.length > 0 ? (
-              <PromptInputSelect value={ownerTarget} onValueChange={setOwnerTarget}>
+            {!replyTarget && ownerOptions.length > 0 ? (
+              <PromptInputSelect
+                value={ownerTarget}
+                onValueChange={setOwnerTarget}
+                disabled={!canChangeOwner}
+              >
                 <PromptInputSelectTrigger ref={ownerTriggerRef} aria-label="Owner">
                   <PromptInputSelectValue placeholder="Owner" />
                 </PromptInputSelectTrigger>
@@ -270,25 +354,9 @@ function TaskChatComposerView(props: ReturnType<typeof useTaskChatComposerContro
         </PromptInputFooter>
       </PromptInput>
 
-      {shouldRenderComposerOwnerPreview(body, ownerPreview) ? (
-        <Task defaultOpen className="mt-2">
-          <TaskTrigger title="Delivery" />
-          <TaskContent>
-            <TaskItem role="status" aria-live="polite">
-              {ownerPreview.text}
-              {ownerPreview.chip
-                ? ` ${ownerOptions.find((option) => option.id === `agent:${ownerPreview.chip?.id}`)?.label ?? "the selected agent"}`
-                : ownerPreview.suffix
-                  ? ` ${ownerPreview.suffix}`
-                  : ""}
-            </TaskItem>
-          </TaskContent>
-        </Task>
-      ) : null}
-
-      {attachmentError ? (
+      {composerError ? (
         <p className="mt-2 text-sm text-destructive" role="alert">
-          {attachmentError}
+          {composerError}
         </p>
       ) : composerHint ? (
         <p className="mt-2 text-sm text-muted-foreground">{composerHint}</p>

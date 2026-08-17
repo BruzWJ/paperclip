@@ -90,6 +90,8 @@ requires byte-equivalent source, Session, prompt, and event arguments.
 - `ordinary-task-runtime.ts` owns board/user/plugin/routine/system task
   creation, reassignment, comments, typed mentions, and the checked
   `agent_execution | board_only` reopen transaction.
+- Explicit typed Board and agent-to-agent mentions share the canonical
+  `mention_agent` execution source defined in `execution-semantics.md`.
 - `task-execution-dispatcher.ts` leases only persisted active references.
 - `task-execution-postgres.ts` assembles the PostgreSQL
   lease/resolution/finalization repositories.

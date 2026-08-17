@@ -20,6 +20,10 @@ each own their message shape; the request or message bytes remain unchanged as
 the body after the envelope header. Other source kinds retain their own exact
 request or follow-up text.
 
+Explicit typed Board and agent-to-agent mentions share the canonical
+`mention_agent` source and authority contract defined in
+`../execution-semantics.md`.
+
 A fresh execution may prepend only the deterministic task-session composition
 authorized by the current-task comment/run dial cells. With both false, no
 prefix exists. Paperclip supplies no ambient caller profile, company context,

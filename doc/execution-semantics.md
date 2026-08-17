@@ -64,8 +64,8 @@ An invocation-capable operation must atomically persist:
 4. the canonical counterpart Session comment/ref generated through the same
    mention path by a task update
 
-Every agent-reaching managed tool enters that path with one discriminated
-prompt contract containing its tool name, immutable arguments, and resolved
+Every agent-reaching canonical action enters that path with one discriminated
+prompt contract containing its operation, immutable arguments, and resolved
 locked context. `task_create`, `task_assign`, `task_update`, and
 `mention_agent` each render their own source shape at admission. The rendered
 text is not a second delivery: the Session comment and execution ref share
@@ -73,6 +73,19 @@ those exact bytes, and the ACPX path later consumes the ref's canonical source
 without a tool-specific executor branch. A separately governed before-prompt
 prelude may compose around that source without rewriting it. `mention_board`
 creates no provider execution and therefore has no ACPX prompt.
+
+Every explicit typed Board mention and agent-to-agent mention persists the
+single canonical execution source kind `mention_agent`. Immutable actor
+provenance and dispatch scope distinguish its two valid forms:
+
+- a named Board user uses a `user/board` actor, `owner` mode, and the exact
+  current owner execution authority
+- an agent execution uses an `agent-execution` actor, `consult` mode, and an
+  active consult binding back to the caller reference
+
+The Board form lowers to a user Session message; the agent form lowers to a
+synthetic Session message. The active source taxonomy has no human/consult
+aliases, and the two authority modes are not interchangeable.
 
 Only after commit may the internal dispatcher lease the ref. Immediately before launch it validates:
 

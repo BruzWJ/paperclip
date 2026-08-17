@@ -113,7 +113,8 @@ export async function lockAndValidateTaskConsultChain(
       consult.targetAgentId !== cursor.targetAgentId ||
       consult.adapterConfigRevisionId !== cursor.adapterConfigRevisionId ||
       consult.chainToken !== cursor.consultChainToken ||
-      (cursor.sourceKind === "consult_mention" && cursor.sourceRecordId !== consult.id) ||
+      cursor.sourceKind !== "mention_agent" ||
+      cursor.sourceRecordId !== consult.id ||
       (cursor.id === first.id &&
         (input.leafState === "active"
           ? consult.state !== "active"

@@ -42,7 +42,7 @@ import type {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
-export interface TaskDetailQueriesOptions {
+interface TaskDetailQueriesOptions {
   companyId: string;
   taskId: string;
   task: Task | undefined;
@@ -267,7 +267,7 @@ export function useTaskDetailQueries({
   };
 }
 
-export interface TaskDetailDerivedDataOptions {
+interface TaskDetailDerivedDataOptions {
   task: Task | undefined;
   agents?: Agent[];
   companyMembers?: Awaited<ReturnType<typeof accessApi.listUserDirectory>>;
@@ -391,7 +391,6 @@ export function useTaskDetailDerivedData({
     isUserCreatorWithdrawalOwner,
     commentOwnerOptions,
     currentOwnerValue,
-    suggestedOwnerValue: currentOwnerValue,
     threadComments,
   };
 }

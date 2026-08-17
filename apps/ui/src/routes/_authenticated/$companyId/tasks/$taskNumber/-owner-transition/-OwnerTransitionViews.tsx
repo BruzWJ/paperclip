@@ -1,5 +1,5 @@
-import { AlertTriangle, Info, PauseCircle, User } from "lucide-react";
-import { Banner, BannerAction, BannerClose, BannerIcon, BannerTitle } from "@/components/kibo-ui/banner";
+import { AlertTriangle, PauseCircle, User } from "lucide-react";
+import { Banner, BannerAction, BannerIcon, BannerTitle } from "@/components/kibo-ui/banner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
@@ -7,11 +7,7 @@ import { cn } from "@/lib/utils";
 import type { NamedAgentSummary } from "@/lib/presentation-contracts";
 import { AgentIcon } from "../../../-AgentIconPicker";
 import {
-  classifyOwnerTransition,
-  resolveRunStatusPresentation,
-  type ComposerOwnerPreview,
   type PauseAffectsSummary,
-  type PlainAgentNameCandidate,
   type OwnerChangeInterruptCopy,
   type TimelineOwnerLike,
 } from "@/lib/owner-transition";
@@ -69,7 +65,7 @@ export function OwnerChip({
     return (
       <Badge variant="secondary" className={className} data-testid="owner-chip" data-kind="user">
         <span className="sr-only">User </span>
-        <User className="h-3 w-3 shrink-0 text-muted-foreground"  data-icon="inline-start"/>
+        <User className="h-3 w-3 shrink-0 text-muted-foreground" data-icon="inline-start" />
         <span className="max-w-(--sz-12rem) truncate">{userLabel(owner.ownerUserId, resolvers)}</span>
       </Badge>
     );
@@ -78,133 +74,6 @@ export function OwnerChip({
     <Badge variant="outline" className={className} data-testid="owner-chip" data-kind="board">
       Board escalation
     </Badge>
-  );
-}
-
-/** The "Dispatch" sub-row that makes each owner state self-describing. */
-export function OwnerDispatchRow({
-  to,
-  resolvers,
-  interruptedRunAttached = false,
-}: {
-  to: TimelineOwnerLike;
-  resolvers: OwnerChipResolvers;
-  interruptedRunAttached?: boolean;
-}) {
-  const info = classifyOwnerTransition(to, {
-    agentName: to.ownerAgentId ? agentName(to.ownerAgentId, resolvers) : null,
-    interruptedRunAttached,
-  });
-  return (
-    <div
-      className="flex flex-wrap items-center gap-1.5 text-xs"
-      data-testid="owner-dispatch-row"
-      data-kind={info.kind}
-    >
-      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Dispatch</span>
-      <span className={cn(info.kind === "agent_dispatch" ? "text-foreground" : "text-muted-foreground")}>
-        {info.dispatchText}
-      </span>
-    </div>
-  );
-}
-
-/** Run status text that distinguishes an intentional operator interrupt
- * (amber "interrupted") from a generic muted "cancelled". */
-export function RunStatusBadge({
-  status,
-  operatorInterrupted = false,
-  className,
-}: {
-  status: string;
-  operatorInterrupted?: boolean;
-  className?: string;
-}) {
-  const p = resolveRunStatusPresentation(status, { operatorInterrupted });
-  return (
-    <DomainStatus
-      status={operatorInterrupted ? "warning" : status}
-      className={className}
-      data-testid="run-status-badge"
-      data-interrupted={operatorInterrupted ? "true" : "false"}
-    >
-      {p.label}
-      {p.srHint ? <span className="sr-only"> — {p.srHint}</span> : null}
-    </DomainStatus>
-  );
-}
-
-function PreviewChip({
-  chip,
-  resolvers,
-}: {
-  chip: NonNullable<ComposerOwnerPreview["chip"]>;
-  resolvers: OwnerChipResolvers;
-}) {
-  return (
-    <OwnerChip
-      owner={{ ownerKind: "agent", ownerAgentId: chip.id, ownerUserId: null }}
-      resolvers={resolvers}
-    />
-  );
-}
-
-/** One-line interpretation of what submitting the comment will durably do. */
-export function ComposerOwnerPreviewRow({
-  preview,
-  resolvers,
-}: {
-  preview: ComposerOwnerPreview;
-  resolvers: OwnerChipResolvers;
-}) {
-  if (preview.kind === "none") return null;
-  return (
-    <div
-      className={cn(
-        "flex flex-wrap items-center justify-end gap-1.5 text-xs",
-        preview.tone === "warn" ? "text-destructive" : "text-muted-foreground",
-      )}
-      data-testid="composer-owner-preview"
-      data-kind={preview.kind}
-      role="status"
-      aria-live="polite"
-    >
-      <span>{preview.text}</span>
-      {preview.chip ? <PreviewChip chip={preview.chip} resolvers={resolvers} /> : null}
-      {preview.suffix ? <span>{preview.suffix}</span> : null}
-    </div>
-  );
-}
-
-/** Inline coach shown when the body contains a plain agent name without a chip,
- * offering a one-click upgrade to a real mention. */
-export function ComposerMentionCoach({
-  candidate,
-  agentDisplayName,
-  onInsert,
-  onDismiss,
-}: {
-  candidate: PlainAgentNameCandidate;
-  agentDisplayName: string;
-  onInsert: () => void;
-  onDismiss: () => void;
-}) {
-  return (
-    <Banner data-testid="composer-mention-coach" aria-live="polite" visible inset onClose={onDismiss}>
-      <BannerIcon icon={Info} />
-      <BannerTitle>
-        Did you mean <strong>@{candidate.matchedText}</strong>? Plain text won't notify an agent or make it
-        the owner.
-      </BannerTitle>
-      <BannerAction
-        type="button"
-        onClick={onInsert}
-        aria-label={`Insert mention for ${agentDisplayName} into your comment`}
-      >
-        Insert mention
-      </BannerAction>
-      <BannerClose type="button" aria-label="Dismiss suggestion" />
-    </Banner>
   );
 }
 
@@ -314,7 +183,7 @@ export function PauseAffectsSummaryView({
   const visibleBuckets = summary.buckets.filter((bucket) => bucket.count > 0);
   return (
     <Alert data-testid="pause-affects-summary" className={className}>
-      <PauseCircle aria-hidden  data-icon="inline-start"/>
+      <PauseCircle aria-hidden data-icon="inline-start" />
       <AlertTitle>What this affects</AlertTitle>
       <AlertDescription>
         {summary.nothingLive ? (

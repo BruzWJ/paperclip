@@ -177,6 +177,19 @@ export function assertDispatchingExecutionSource(
   messageKind = admissionProjection.v2MessageKindForExecutionSource(input),
 ): "user" | "synthetic" {
   admissionProjection.assertSourceIdentity(input);
+  if (
+    input.sourceKind === "mention_agent" &&
+    ((input.actor.kind === "user/board" && input.mode !== "owner") ||
+      (input.actor.kind === "agent-execution" && input.mode !== "consult"))
+  ) {
+    throw new TaskSessionLifecycleConflict(
+      "Mention execution mode does not match its immutable actor provenance",
+      {
+        actorKind: input.actor.kind,
+        mode: input.mode,
+      },
+    );
+  }
   assertExecutionSourceCommentProvenance(input, messageKind);
   admissionProjection.previousOwnershipEpochForDispatchSource(input);
   return messageKind;

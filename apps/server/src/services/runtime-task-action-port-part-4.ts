@@ -71,7 +71,7 @@ export function createPostgresRuntimeTaskActionServicePart4(
               eq(taskSessionEvents.taskId, input.capability.taskId),
               eq(taskSessionEvents.sessionId, input.capability.sessionId),
               eq(taskSessionEvents.ownershipEpoch, input.capability.ownershipEpoch),
-              eq(taskSessionEvents.sourceKind, "consult_mention"),
+              eq(taskSessionEvents.sourceKind, "mention_agent"),
               eq(taskSessionEvents.immutableSourceKey, key),
             ),
           )
@@ -105,7 +105,7 @@ export function createPostgresRuntimeTaskActionServicePart4(
           if (
             !priorRef ||
             priorRef.mode !== "consult" ||
-            priorRef.sourceKind !== "consult_mention" ||
+            priorRef.sourceKind !== "mention_agent" ||
             priorRef.consultCallerRefId !== input.capability.refId ||
             priorRef.targetAgentId !== input.targetAgentId ||
             !paperclipEnvelopeHasBody(priorRef.exactMessage, "[Paperclip agent message]", input.message) ||
@@ -195,7 +195,7 @@ export function createPostgresRuntimeTaskActionServicePart4(
           executionLineageId: authorized.ref.executionLineageId,
           consultCallerRefId: authorized.ref.id,
           consultChainToken: chain.chainToken,
-          sourceKind: "consult_mention",
+          sourceKind: "mention_agent",
           actor: taskAction.executionActorForCapability(input.capability),
           immutableSourceKey: key,
           sourceRecordId: consult.id,

@@ -8,7 +8,6 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import type { TaskChatMessage } from "@/lib/task-chat-messages";
 
 type TaskChatErrorBoundaryProps = {
-  resetKey: string;
   messages: readonly TaskChatMessage[];
   emptyMessage: string;
   children: ReactNode;
@@ -31,7 +30,7 @@ export class TaskChatErrorBoundary extends Component<TaskChatErrorBoundaryProps,
   }
 
   override componentDidUpdate(previous: TaskChatErrorBoundaryProps): void {
-    if (this.state.hasError && previous.resetKey !== this.props.resetKey) {
+    if (this.state.hasError && previous.messages !== this.props.messages) {
       this.setState({ hasError: false });
     }
   }

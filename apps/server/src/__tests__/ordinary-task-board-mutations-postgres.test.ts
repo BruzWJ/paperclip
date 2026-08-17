@@ -50,7 +50,7 @@ describe("ordinary task board mutations without a database", () => {
         ownershipEpoch: task.ownershipEpoch,
         taskExecutionAuthorityId: authority.id,
         adapterConfigRevisionId: "revision-owner",
-        sourceKind: "human_comment_mention",
+        sourceKind: "mention_agent",
         exactText: "  Continue with this exact context.  ",
       }),
       harness.db,

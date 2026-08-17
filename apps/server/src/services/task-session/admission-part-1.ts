@@ -5,7 +5,7 @@ import {
   taskSessionEvents,
   taskSessionInputs,
 } from "@paperclipai/db";
-import type { TaskExecutionRefMode, TaskExecutionRefSourceKind } from "@paperclipai/shared";
+import type { TaskExecutionRefMode } from "@paperclipai/shared";
 import { createHash } from "node:crypto";
 import { type TaskSessionDbTransaction } from "./event-store.js";
 import {
@@ -35,7 +35,7 @@ export interface DispatchExecutionScope {
 }
 
 export interface TaskSessionSourceIdentity {
-  sourceKind: TaskExecutionRefSourceKind | string;
+  sourceKind: string;
   immutableSourceKey: string;
   sourceRecordId: string;
   exactText: string;
@@ -99,7 +99,7 @@ export type TaskSessionExecutionSource =
       actor: UserOrBoardExecutionActor | AgentExecutionActor | PluginExecutionActor;
     }
   | {
-      sourceKind: "task_reopen" | "human_comment_mention";
+      sourceKind: "task_reopen";
       actor: UserOrBoardExecutionActor;
     }
   | {
@@ -111,8 +111,8 @@ export type TaskSessionExecutionSource =
       actor: TaskSessionExecutionActor;
     }
   | {
-      sourceKind: "consult_mention";
-      actor: AgentExecutionActor;
+      sourceKind: "mention_agent";
+      actor: UserOrBoardExecutionActor | AgentExecutionActor;
     }
   | {
       sourceKind: "system_nudge";
@@ -183,7 +183,6 @@ export type DispatchingExecutionSourceBase = DispatchExecutionScope &
 export type DispatchingExecutionSourceInput =
   | (DispatchingExecutionSourceBase &
       Extract<TaskSessionExecutionSource, { sourceKind: "task_reassignment" }> & {
-        sourceKind: "task_reassignment";
         previousOwnershipEpoch: number;
       })
   | (DispatchingExecutionSourceBase &
@@ -208,7 +207,6 @@ export interface NonDispatchUserComment extends TaskSessionSourceIdentity {
   companyId: string;
   taskId: string;
   sessionId: string;
-  sourceKind: string;
   delivery?: "queue";
   comment: TaskSessionUserProjectedCommentSource;
 }
@@ -224,7 +222,6 @@ export type SteeringComment = TaskSessionSourceIdentity & {
   taskId: string;
   sessionId: string;
 } & Extract<TaskSessionExecutionSource, { sourceKind: "human_comment" }> & {
-    sourceKind: "human_comment";
     comment: TaskSessionUserProjectedCommentSource;
   };
 
@@ -232,7 +229,6 @@ export interface NonDispatchControlNotice extends TaskSessionSourceIdentity {
   companyId: string;
   taskId: string;
   sessionId: string;
-  sourceKind: string;
   actor?: TaskSessionExecutionActor;
   counterpartTaskId?: string | null;
   counterpartAuthorityId?: string | null;
@@ -245,7 +241,6 @@ export interface NonDispatchSyntheticComment extends TaskSessionSourceIdentity {
   companyId: string;
   taskId: string;
   sessionId: string;
-  sourceKind: string;
   projectionKind?: "task_update" | "harness_delivery" | "run_progress";
   ownershipEpoch: number;
   agentId: string;

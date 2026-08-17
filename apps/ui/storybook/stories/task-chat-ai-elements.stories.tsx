@@ -198,19 +198,14 @@ export const FullConversation: Story = {
         composerAccessory={
           <TaskChatConfirmation approval={approval} requesterAgent={agent} onDecision={() => undefined} />
         }
-        hasActiveRun
-        enableOwnerChange
         ownerOptions={[{ id: `agent:${AGENT_ID}`, label: agent.name }]}
         currentOwnerValue={`agent:${AGENT_ID}`}
-        mentions={[
-          {
-            id: `agent:${AGENT_ID}`,
-            kind: "agent",
-            agentId: AGENT_ID,
-            name: agent.name,
-            agentIcon: null,
-          },
-        ]}
+        mentionTarget={{
+          targetAgentId: AGENT_ID,
+          ownershipEpoch: 1,
+          name: agent.name,
+          icon: agent.icon ?? null,
+        }}
         onAdd={async () => undefined}
       />
     </div>

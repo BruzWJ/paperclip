@@ -1,23 +1,18 @@
 import type { FileUIPart } from "ai";
 import {
   buildAgentMentionHref,
-  buildProjectMentionHref,
-  buildTaskReferenceHref,
-  buildUserMentionHref,
-  type TaskWorkMode,
-} from "@paperclipai/shared";
-import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ForwardedRef } from "react";
-
-import { restoreSubmittedCommentDraft } from "@/lib/comment-submit-draft";
-import {
-  computeComposerOwnerPreview,
   extractAgentMentionIds,
-  findPlainAgentNameCandidate,
-  type OwnerAgentMention,
-} from "@/lib/owner-transition";
+  parseAgentMentionHref,
+} from "@paperclipai/shared";
+import { useEffect, useImperativeHandle, useRef, useState, type ForwardedRef } from "react";
+
 import { captureComposerViewportSnapshot, restoreComposerViewportSnapshot } from "@/lib/task-chat-scroll";
-import type { MentionOption } from "../../../-markdown/-MarkdownEditor";
-import type { TaskChatComposerHandle, TaskChatComposerProps } from "./-TaskChatShared";
+import type {
+  TaskChatAgentMention,
+  TaskChatComposerHandle,
+  TaskChatComposerProps,
+  TaskChatMentionTarget,
+} from "./-TaskChatShared";
 import {
   COMPOSER_FOCUS_SCROLL_PADDING_PX,
   DRAFT_DEBOUNCE_MS,
@@ -27,22 +22,133 @@ import {
   saveDraft,
 } from "./-TaskChatMessageUtils";
 
-function mentionMarkdown(mention: MentionOption) {
-  if (mention.kind === "task") {
-    return `[${mention.taskIdentifier}](${buildTaskReferenceHref(mention.taskId)}) `;
-  }
-  if (mention.kind === "project") {
-    return `[@${mention.name}](${buildProjectMentionHref(mention.projectId, mention.projectColor ?? null)}) `;
-  }
-  if (mention.kind === "user") {
-    return `[@${mention.name}](${buildUserMentionHref(mention.userId)}) `;
-  }
-  return `[@${mention.name}](${buildAgentMentionHref(mention.agentId, mention.agentIcon ?? null)}) `;
+const AGENT_LINK_RE = /\[([^\]]*)\]\(([^)]*)\)/g;
+const EMPTY_OWNER_OPTIONS: NonNullable<TaskChatComposerProps["ownerOptions"]> = [];
+
+export interface TaskChatMentionQuery {
+  start: number;
+  end: number;
+  query: string;
 }
 
-function appendMarkdown(current: string, markdown: string) {
-  if (!current) return markdown;
-  return `${current}${current.endsWith(" ") || current.endsWith("\n") ? "" : " "}${markdown}`;
+interface TaskChatSelectedMention {
+  target: TaskChatMentionTarget;
+  start: number;
+  end: number;
+}
+
+export function findTaskChatMentionQuery(value: string, cursor: number): TaskChatMentionQuery | null {
+  if (cursor < 0 || cursor > value.length) return null;
+  const match = value.slice(0, cursor).match(/(?:^|[\s(\[{])@([^@\n]{0,64})$/);
+  const query = match?.[1];
+  if (query === undefined) return null;
+  return {
+    start: cursor - query.length - 1,
+    end: cursor,
+    query,
+  };
+}
+
+export function taskChatMentionMatchesQuery(target: TaskChatMentionTarget, query: string): boolean {
+  const normalized = query.trim().toLocaleLowerCase();
+  return !normalized || target.name.toLocaleLowerCase().includes(normalized);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function mentionToken(target: TaskChatMentionTarget) {
+  return `@${target.name}`;
+}
+
+function mentionTokenExpression(target: TaskChatMentionTarget) {
+  return new RegExp(`(^|[\\s(\\[{])${escapeRegExp(mentionToken(target))}(?=$|[\\s)\\]},.!?:;])`);
+}
+
+function bodyHasMentionToken(body: string, target: TaskChatMentionTarget) {
+  return mentionTokenExpression(target).test(body);
+}
+
+function selectedMentionIsIntact(body: string, selection: TaskChatSelectedMention) {
+  const { start, end, target } = selection;
+  if (start < 0 || end > body.length || body.slice(start, end) !== mentionToken(target)) return false;
+  const before = body[start - 1];
+  const after = body[end];
+  return (
+    (before === undefined || /[\s(\[{]/.test(before)) && (after === undefined || /[\s)\]},.!?:;]/.test(after))
+  );
+}
+
+export function reconcileTaskChatMentionSelection(
+  previousBody: string,
+  nextBody: string,
+  selection: TaskChatSelectedMention | null,
+): TaskChatSelectedMention | null {
+  if (!selection || !selectedMentionIsIntact(previousBody, selection)) return null;
+  if (previousBody === nextBody) return selection;
+
+  let prefixLength = 0;
+  while (
+    prefixLength < previousBody.length &&
+    prefixLength < nextBody.length &&
+    previousBody[prefixLength] === nextBody[prefixLength]
+  ) {
+    prefixLength += 1;
+  }
+
+  let previousSuffixStart = previousBody.length;
+  let nextSuffixStart = nextBody.length;
+  while (
+    previousSuffixStart > prefixLength &&
+    nextSuffixStart > prefixLength &&
+    previousBody[previousSuffixStart - 1] === nextBody[nextSuffixStart - 1]
+  ) {
+    previousSuffixStart -= 1;
+    nextSuffixStart -= 1;
+  }
+
+  let nextSelection = selection;
+  if (previousSuffixStart <= selection.start) {
+    const shift = nextBody.length - previousBody.length;
+    nextSelection = { ...selection, start: selection.start + shift, end: selection.end + shift };
+  } else if (prefixLength < selection.end) {
+    return null;
+  }
+  return selectedMentionIsIntact(nextBody, nextSelection) ? nextSelection : null;
+}
+
+function mentionMarkdown(target: TaskChatMentionTarget) {
+  return `[@${escapeMarkdownLabel(target.name)}](${buildAgentMentionHref(target.targetAgentId, target.icon ?? null)})`;
+}
+
+export function replaceTaskChatMentionQuery(
+  body: string,
+  query: TaskChatMentionQuery,
+  target: TaskChatMentionTarget,
+) {
+  const before = body.slice(0, query.start);
+  const after = body.slice(query.end);
+  const token = mentionToken(target);
+  const separator = after.length === 0 ? " " : /^\s/.test(after) ? "" : " ";
+  const mentionStart = before.length;
+  return {
+    body: `${before}${token}${separator}${after}`,
+    cursor: before.length + token.length + separator.length,
+    mentionStart,
+    mentionEnd: mentionStart + token.length,
+  };
+}
+
+export function serializeTaskChatMention(body: string, selection: TaskChatSelectedMention): string | null {
+  if (!selectedMentionIsIntact(body, selection)) return null;
+  return `${body.slice(0, selection.start)}${mentionMarkdown(selection.target)}${body.slice(selection.end)}`;
+}
+
+function renderPersistedAgentMentions(body: string) {
+  return body.replace(AGENT_LINK_RE, (match, label: string, href: string) =>
+    parseAgentMentionHref(href) ? label : match,
+  );
 }
 
 async function filePartToFile(part: FileUIPart) {
@@ -64,40 +170,40 @@ export function useTaskChatComposerController(
 ) {
   const {
     onSubmit,
-    onImageUpload,
-    onAttachImage,
+    onAttachFile,
     draftKey,
-    enableOwnerChange = false,
-    ownerOptions = [],
+    ownerOptions = EMPTY_OWNER_OPTIONS,
     currentOwnerValue = "",
-    suggestedOwnerValue,
-    mentions = [],
-    agentMap,
-    hasActiveRun = false,
+    mentionTarget = null,
     composerDisabledReason = null,
     composerHint = null,
-    taskWorkMode,
     replyTarget = null,
     onClearReply,
     onReplySubmitted,
     onReplyPendingChange,
-    pending = false,
-    disabled = false,
   } = props;
 
-  const [body, setBody] = useState("");
+  const [body, setBodyState] = useState("");
+  const [selectedMention, setSelectedMention] = useState<TaskChatSelectedMention | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const submitting = isSubmitting || pending || disabled;
-  const [attachmentError, setAttachmentError] = useState<string | null>(null);
-  const effectiveSuggestedOwnerValue = suggestedOwnerValue ?? currentOwnerValue;
-  const [ownerTarget, setOwnerTarget] = useState(effectiveSuggestedOwnerValue);
-  const [dismissedCoachToken, setDismissedCoachToken] = useState<string | null>(null);
-  const resolvedTaskWorkMode: TaskWorkMode = taskWorkMode ?? "standard";
+  const [composerError, setComposerError] = useState<string | null>(null);
+  const [ownerTarget, setOwnerTarget] = useState(currentOwnerValue);
   const ownerTriggerRef = useRef<HTMLButtonElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerContainerRef = useRef<HTMLDivElement | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const canAcceptFiles = Boolean(onImageUpload || onAttachImage);
+  const toolsDisabled = isSubmitting || Boolean(composerDisabledReason);
+  const canAcceptFiles = Boolean(onAttachFile && !toolsDisabled);
+  const canChangeOwner = !selectedMention && !toolsDisabled;
+  const canMention = Boolean(
+    mentionTarget && !replyTarget && !selectedMention && ownerTarget === currentOwnerValue && !toolsDisabled,
+  );
+
+  function setBody(nextBody: string) {
+    setBodyState(nextBody);
+    setSelectedMention((current) => reconcileTaskChatMentionSelection(body, nextBody, current));
+    setComposerError(null);
+  }
 
   function queueViewportRestore(snapshot: ReturnType<typeof captureComposerViewportSnapshot>) {
     if (!snapshot) return;
@@ -118,13 +224,17 @@ export function useTaskChatComposerController(
 
   useEffect(() => {
     if (!draftKey) return;
-    setBody(loadDraft(draftKey));
+    setBodyState(renderPersistedAgentMentions(loadDraft(draftKey)));
+    setSelectedMention(null);
+    setComposerError(null);
   }, [draftKey]);
 
   useEffect(() => {
     if (!draftKey) return;
     if (draftTimer.current) clearTimeout(draftTimer.current);
-    draftTimer.current = setTimeout(() => saveDraft(draftKey, body), DRAFT_DEBOUNCE_MS);
+    draftTimer.current = setTimeout(() => {
+      saveDraft(draftKey, body);
+    }, DRAFT_DEBOUNCE_MS);
   }, [body, draftKey]);
 
   useEffect(
@@ -134,139 +244,131 @@ export function useTaskChatComposerController(
     [],
   );
 
-  useEffect(() => setOwnerTarget(effectiveSuggestedOwnerValue), [effectiveSuggestedOwnerValue]);
+  useEffect(() => setOwnerTarget(currentOwnerValue), [currentOwnerValue]);
 
-  useImperativeHandle(
-    forwardedRef,
-    () => ({
-      focus: focusComposer,
-      restoreDraft: (submittedBody: string) => {
-        setBody((current) => restoreSubmittedCommentDraft({ currentBody: current, submittedBody }));
-        focusComposer();
-      },
-      setDraft: (nextBody: string) => {
-        setBody(nextBody);
-        focusComposer();
-      },
-    }),
-    [],
-  );
+  useEffect(() => {
+    if (!replyTarget || !selectedMention) return;
+    setBodyState((current) => {
+      if (!selectedMentionIsIntact(current, selectedMention)) return current;
+      const afterStart = current[selectedMention.end] === " " ? selectedMention.end + 1 : selectedMention.end;
+      return `${current.slice(0, selectedMention.start)}${current.slice(afterStart)}`;
+    });
+    setSelectedMention(null);
+    setComposerError("Agent mentions aren't available in replies, so the mention was removed.");
+  }, [replyTarget, selectedMention]);
 
-  const agentMentionOptions = useMemo<OwnerAgentMention[]>(
-    () =>
-      mentions
-        .filter((mention): mention is Extract<MentionOption, { kind: "agent" }> => mention.kind === "agent")
-        .map((mention) => ({ agentId: mention.agentId, name: mention.name })),
-    [mentions],
-  );
-  const mentionedAgentIds = useMemo(() => extractAgentMentionIds(body), [body]);
-  const plainNameCandidate = useMemo(
-    () => (mentionedAgentIds.length > 0 ? null : findPlainAgentNameCandidate(body, agentMentionOptions)),
-    [body, mentionedAgentIds, agentMentionOptions],
-  );
-  const ownerPreview = useMemo(
-    () =>
-      computeComposerOwnerPreview({
-        ownerTarget,
-        currentOwnerValue,
-        hasActiveRun,
-        bodyHasAgentMention: mentionedAgentIds.length > 0,
-        mentionedAgentId: mentionedAgentIds[0] ?? null,
-        plainNameCandidate,
-      }),
-    [ownerTarget, currentOwnerValue, hasActiveRun, mentionedAgentIds, plainNameCandidate],
-  );
-  const coachVisible = Boolean(plainNameCandidate && plainNameCandidate.matchedText !== dismissedCoachToken);
-  const coachAgentName = plainNameCandidate
-    ? (agentMap?.get(plainNameCandidate.agentId)?.name ?? plainNameCandidate.matchedText)
-    : "";
+  useImperativeHandle(forwardedRef, () => ({
+    focus: focusComposer,
+  }));
 
-  function insertMention(mention: MentionOption) {
-    setBody((current) => appendMarkdown(current, mentionMarkdown(mention)));
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  }
-
-  function insertCoachMention() {
-    if (!plainNameCandidate) return;
-    const option = mentions.find(
-      (mention): mention is Extract<MentionOption, { kind: "agent" }> =>
-        mention.kind === "agent" && mention.agentId === plainNameCandidate.agentId,
-    );
-    const name = option?.name ?? plainNameCandidate.matchedText;
-    const markdown = `[@${name}](${buildAgentMentionHref(
-      plainNameCandidate.agentId,
-      option?.agentIcon ?? null,
-    )})`;
-    const tokenRe = new RegExp(
-      `(?<![\\w@/])${plainNameCandidate.matchedText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w/])`,
-      "i",
-    );
-    setBody((current) =>
-      tokenRe.test(current) ? current.replace(tokenRe, markdown) : appendMarkdown(current, `${markdown} `),
-    );
-    setDismissedCoachToken(plainNameCandidate.matchedText);
-    requestAnimationFrame(() => textareaRef.current?.focus());
+  function insertMention(query: TaskChatMentionQuery) {
+    if (!canMention || !mentionTarget) return;
+    const next = replaceTaskChatMentionQuery(body, query, mentionTarget);
+    setBodyState(next.body);
+    setSelectedMention({ target: mentionTarget, start: next.mentionStart, end: next.mentionEnd });
+    setComposerError(null);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(next.cursor, next.cursor);
+    });
   }
 
   async function uploadFiles(files: FileUIPart[]) {
     const markdown: string[] = [];
     for (const part of files) {
       const file = await filePartToFile(part);
-      const label = escapeMarkdownLabel(file.name);
-      if (file.type.startsWith("image/") && onImageUpload) {
-        markdown.push(`![${label}](${await onImageUpload(file)})`);
-        continue;
-      }
-      if (onAttachImage) {
-        const attachment = await onAttachImage(file);
-        if (!attachment) throw new Error(`Unable to attach ${file.name}`);
-        markdown.push(
-          `[${escapeMarkdownLabel(attachment.originalFilename ?? file.name)}](${attachment.contentPath})`,
-        );
-        continue;
-      }
-      throw new Error(`This file type cannot be attached: ${file.name}`);
+      if (!onAttachFile) throw new Error(`This file type cannot be attached: ${file.name}`);
+      const attachment = await onAttachFile(file);
+      if (!attachment) throw new Error(`Unable to attach ${file.name}`);
+      const attachmentLabel = escapeMarkdownLabel(attachment.originalFilename ?? file.name);
+      markdown.push(
+        file.type.startsWith("image/")
+          ? `![${attachmentLabel}](${attachment.contentPath})`
+          : `[${attachmentLabel}](${attachment.contentPath})`,
+      );
     }
     return markdown;
   }
 
   async function handleSubmit(message: { text: string; files: FileUIPart[] }) {
     if ((!body.trim() && message.files.length === 0) || isSubmitting) return;
-    if (enableOwnerChange && ownerOptions.length > 0 && !parseOwnerChange(ownerTarget)) {
+    if (!replyTarget && ownerOptions.length > 0 && !parseOwnerChange(ownerTarget)) {
       ownerTriggerRef.current?.focus();
-      throw new Error("Choose an owner before sending");
+      const errorMessage = "Choose an owner before sending.";
+      setComposerError(errorMessage);
+      throw new Error(errorMessage);
     }
     await submitComment(message.files);
   }
 
+  function rejectSubmission(message: string): never {
+    setComposerError(message);
+    throw new Error(message);
+  }
+
+  function prepareMentionSubmission(hasOwnerChange: boolean): {
+    outgoingBody: string;
+    mention: TaskChatAgentMention | undefined;
+  } {
+    if (extractAgentMentionIds(body).length > 0) {
+      rejectSubmission("Use the @ suggestions to mention the current task owner.");
+    }
+    if (!selectedMention) {
+      if (!replyTarget && mentionTarget && bodyHasMentionToken(body, mentionTarget)) {
+        rejectSubmission(`Select @${mentionTarget.name} from the suggestions to notify them.`);
+      }
+      return { outgoingBody: body, mention: undefined };
+    }
+    if (replyTarget) {
+      rejectSubmission("Agent mentions aren't available in replies.");
+    }
+    if (hasOwnerChange) {
+      rejectSubmission("A comment cannot change the owner and mention an agent at the same time.");
+    }
+    const selectedTarget = selectedMention.target;
+    if (
+      !mentionTarget ||
+      mentionTarget.targetAgentId !== selectedTarget.targetAgentId ||
+      mentionTarget.ownershipEpoch !== selectedTarget.ownershipEpoch ||
+      currentOwnerValue !== `agent:${selectedTarget.targetAgentId}`
+    ) {
+      rejectSubmission("The task owner changed. Remove the old @mention and select the current owner again.");
+    }
+    const outgoingBody = serializeTaskChatMention(body, selectedMention);
+    if (!outgoingBody) {
+      rejectSubmission("The selected @mention was edited. Select the task owner again.");
+    }
+    return {
+      outgoingBody,
+      mention: {
+        targetAgentId: selectedTarget.targetAgentId,
+        ownershipEpoch: selectedTarget.ownershipEpoch,
+      },
+    };
+  }
+
   async function submitComment(files: FileUIPart[]) {
-    if ((!body.trim() && files.length === 0) || isSubmitting) return;
-    const hasOwnerChange = enableOwnerChange && ownerTarget !== currentOwnerValue;
+    const hasOwnerChange = !replyTarget && ownerOptions.length > 0 && ownerTarget !== currentOwnerValue;
     const ownerChange = hasOwnerChange ? (parseOwnerChange(ownerTarget) ?? undefined) : undefined;
-    const mentionAgentId = replyTarget
-      ? undefined
-      : mentionedAgentIds.length === 1
-        ? mentionedAgentIds[0]
-        : undefined;
-    const submittedBody = body;
+    const { outgoingBody, mention } = prepareMentionSubmission(hasOwnerChange);
     const viewportSnapshot = captureComposerViewportSnapshot(composerContainerRef.current);
 
     setIsSubmitting(true);
-    setAttachmentError(null);
+    setComposerError(null);
     onReplyPendingChange?.(true);
     try {
       const attachmentMarkdown = await uploadFiles(files);
       const finalBody = attachmentMarkdown.length
-        ? [submittedBody, ...attachmentMarkdown].filter((value) => value.trim()).join("\n\n")
-        : submittedBody;
-      await onSubmit(finalBody, ownerChange, mentionAgentId, replyTarget?.commentId);
-      setBody("");
+        ? [outgoingBody, ...attachmentMarkdown].filter((value) => value.trim()).join("\n\n")
+        : outgoingBody;
+      await onSubmit(finalBody, ownerChange, mention, replyTarget?.commentId);
+      setBodyState("");
+      setSelectedMention(null);
       if (draftKey) clearDraft(draftKey);
-      setOwnerTarget(effectiveSuggestedOwnerValue);
+      setOwnerTarget(currentOwnerValue);
       onReplySubmitted?.();
     } catch (error) {
-      setBody((current) => restoreSubmittedCommentDraft({ currentBody: current, submittedBody }));
-      setAttachmentError(error instanceof Error ? error.message : "Unable to send this message");
+      setComposerError(error instanceof Error ? error.message : "Unable to send this message");
       throw error;
     } finally {
       setIsSubmitting(false);
@@ -276,31 +378,25 @@ export function useTaskChatComposerController(
   }
 
   return {
-    attachmentError,
     body,
     canAcceptFiles,
-    coachAgentName,
-    coachVisible,
+    canChangeOwner,
+    canMention,
     composerContainerRef,
     composerDisabledReason,
+    composerError,
     composerHint,
-    enableOwnerChange,
     handleSubmit,
-    insertCoachMention,
     insertMention,
-    isSubmitting: submitting,
-    mentions,
+    isSubmitting,
+    mentionTarget,
     onClearReply,
     ownerOptions,
-    ownerPreview,
     ownerTarget,
     ownerTriggerRef,
-    plainNameCandidate,
     replyTarget,
-    resolvedTaskWorkMode,
-    setAttachmentError,
     setBody,
-    setDismissedCoachToken,
+    setComposerError,
     setOwnerTarget,
     textareaRef,
   };

@@ -25,11 +25,12 @@ import { Archive, ArrowLeft, Copy, MoreVertical, SlidersHorizontal } from "lucid
 import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from "react";
 
 import type { CommentOwnerChange } from "./-task-detail-model";
+import type { TaskChatAgentMention } from "./-task-chat/-TaskChatShared";
 import type { useTaskDetailActionMutations } from "./-useTaskDetailActionMutations";
 import type { useTaskDetailCacheActions } from "./-useTaskDetailEffects";
 import type { useTaskDetailCoreMutations } from "./-useTaskDetailCoreMutations";
 
-export interface TaskDetailInteractionsOptions {
+interface TaskDetailInteractionsOptions {
   companyId: string;
   taskId: string;
   task: Task | undefined;
@@ -51,6 +52,32 @@ export interface TaskDetailInteractionsOptions {
   setMobileInspectorOpen: Dispatch<SetStateAction<boolean>>;
   setGalleryOpen: Dispatch<SetStateAction<boolean>>;
   setGalleryIndex: Dispatch<SetStateAction<number>>;
+}
+
+export function validateTaskChatAgentMentionSubmission(input: {
+  task: Pick<Task, "lifecycleStatus" | "ownerAgentId" | "ownershipEpoch"> | undefined;
+  ownerChange?: CommentOwnerChange;
+  mention?: TaskChatAgentMention;
+  replyToCommentId?: string;
+}): TaskChatAgentMention | undefined {
+  const { task, ownerChange, mention, replyToCommentId } = input;
+  if (replyToCommentId && ownerChange) {
+    throw new Error("A reply cannot change the task owner.");
+  }
+  if (!mention) return undefined;
+  if (replyToCommentId) {
+    throw new Error("A reply cannot also mention an agent.");
+  }
+  if (ownerChange) {
+    throw new Error("A comment cannot change the owner and mention an agent at the same time.");
+  }
+  if (task?.lifecycleStatus !== "open" && task?.lifecycleStatus !== "blocked") {
+    throw new Error("Only an open or blocked task can notify its agent owner.");
+  }
+  if (task?.ownerAgentId !== mention.targetAgentId || task.ownershipEpoch !== mention.ownershipEpoch) {
+    throw new Error("The task owner changed. Select the current owner again before sending.");
+  }
+  return mention;
 }
 
 /** Owns gallery, clipboard, mobile-toolbar, and chat interaction handlers. */
@@ -266,13 +293,26 @@ export function useTaskDetailInteractions({
     async (
       body: string,
       ownerChange?: CommentOwnerChange,
-      mentionAgentId?: string,
+      mention?: TaskChatAgentMention,
       replyToCommentId?: string,
     ) => {
-      let commentTarget = task;
+      const validatedMention = validateTaskChatAgentMentionSubmission({
+        task,
+        ownerChange,
+        mention,
+        replyToCommentId,
+      });
+      if (validatedMention) {
+        await addComment.mutateAsync({
+          message: body,
+          idempotencyKey: crypto.randomUUID(),
+          mention: validatedMention,
+          replyToCommentId: null,
+        });
+        return;
+      }
       if (ownerChange) {
-        const result = await reassignTask.mutateAsync(ownerChange.ownerAgentId);
-        commentTarget = result.task;
+        await reassignTask.mutateAsync(ownerChange.ownerAgentId);
       }
       if (isUserCreatorWithdrawalOwner) {
         throw new Error("A withdrawn task accepts only the creator's cancellation");
@@ -298,21 +338,10 @@ export function useTaskDetailInteractions({
         invalidateTaskCollections();
         return;
       }
-      const mention =
-        mentionAgentId &&
-        commentTarget?.ownerAgentId === mentionAgentId &&
-        typeof commentTarget.ownershipEpoch === "number" &&
-        Number.isInteger(commentTarget.ownershipEpoch) &&
-        commentTarget.ownershipEpoch > 0
-          ? {
-              targetAgentId: mentionAgentId,
-              ownershipEpoch: commentTarget.ownershipEpoch,
-            }
-          : null;
       await addComment.mutateAsync({
         message: body,
         idempotencyKey: crypto.randomUUID(),
-        mention: replyToCommentId ? null : mention,
+        mention: null,
         replyToCommentId: replyToCommentId ?? null,
       });
     },
@@ -337,7 +366,7 @@ export function useTaskDetailInteractions({
     },
     [uploadAttachment],
   );
-  const handleCommentAttachImage = useCallback(
+  const handleCommentAttachFile = useCallback(
     (file: File) => uploadAttachment.mutateAsync(file),
     [uploadAttachment],
   );
@@ -354,6 +383,6 @@ export function useTaskDetailInteractions({
     attachmentsInitialLoading: attachmentsLoading && attachments === undefined,
     handleChatAdd,
     handleCommentImageUpload,
-    handleCommentAttachImage,
+    handleCommentAttachFile,
   };
 }

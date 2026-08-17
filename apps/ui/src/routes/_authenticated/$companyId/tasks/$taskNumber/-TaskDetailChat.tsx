@@ -17,7 +17,7 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
   const {
     agentMap,
     approvalDecision,
-    activeTaskRuns: activeRuns,
+    activeTaskRuns,
     commentComposerRef,
     commentOwnerOptions,
     commentsLoadingOlder,
@@ -26,23 +26,20 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
     currentUserId,
     handleChatAdd,
     handleChatImageClick,
-    handleCommentAttachImage,
-    handleCommentImageUpload,
+    handleCommentAttachFile,
     hasOlderComments,
-    humanLifecycleFormControls,
     isUserCreatorWithdrawalOwner,
     liveTaskIds,
     loadMoreCommentGroup,
     loadOlderComments,
     locallyQueuedCommentRunIds,
     location,
-    mentionOptions,
     pendingApprovalAction,
     refetchLatestComments,
     resolvedTaskDetailState,
     siblingNavigation,
-    suggestedOwnerValue,
     task,
+    taskOwnerCatalog,
     threadComments: comments,
     userProfileMap,
   } = useTaskDetailPage();
@@ -53,12 +50,32 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
     placeholderData:
       keepPreviousDataForSameQueryTail<Awaited<ReturnType<typeof tasksApi.listApprovals>>>(taskId),
   });
-  const data = linkedApprovals ?? [];
-  const unresolvedApprovals = data.filter(
+  const unresolvedApprovals = (linkedApprovals ?? []).filter(
     (approval) => approval.status === "pending" || approval.status === "revision_requested",
   );
-  const interruptibleTaskRun = resolveInterruptibleTaskRun(activeRuns);
-  const activeRunIds = useMemo(() => new Set(activeRuns.map((run) => run.id)), [activeRuns]);
+  const interruptibleTaskRun = resolveInterruptibleTaskRun(activeTaskRuns);
+  const activeRunIds = useMemo(
+    () => new Set(activeTaskRuns.map((run) => run.id)),
+    [activeTaskRuns],
+  );
+  const mentionTarget = useMemo(() => {
+    if (
+      (task.lifecycleStatus !== "open" && task.lifecycleStatus !== "blocked") ||
+      !task.ownerAgentId ||
+      !Number.isInteger(task.ownershipEpoch) ||
+      task.ownershipEpoch < 1
+    ) {
+      return null;
+    }
+    const owner = taskOwnerCatalog?.find((candidate) => candidate.id === task.ownerAgentId);
+    if (!owner) return null;
+    return {
+      targetAgentId: owner.id,
+      ownershipEpoch: task.ownershipEpoch,
+      name: owner.name,
+      icon: owner.icon ?? null,
+    };
+  }, [task.lifecycleStatus, task.ownerAgentId, task.ownershipEpoch, taskOwnerCatalog]);
   const commentsWithQueueState = useMemo(() => {
     return comments.map((comment) => {
       const queuedTargetRunId = locallyQueuedCommentRunIds.get(comment.id) ?? null;
@@ -74,40 +91,26 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
     <TaskChatThread
       composerRef={commentComposerRef}
       composerAccessory={
-        linkedApprovals === undefined ? (
-          humanLifecycleFormControls ? (
-            <div className="space-y-3">{humanLifecycleFormControls}</div>
-          ) : null
-        ) : (
+        unresolvedApprovals.length > 0 ? (
           <div className="space-y-3">
-            {unresolvedApprovals.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {data.length === 0
-                  ? "No linked approval requests."
-                  : "All linked approval requests are resolved."}
-              </p>
-            ) : (
-              unresolvedApprovals.map((approval) => (
-                <TaskChatConfirmation
-                  key={approval.id}
-                  approval={approval}
-                  requesterAgent={
-                    approval.requestedByAgentId ? (agentMap.get(approval.requestedByAgentId) ?? null) : null
-                  }
-                  onDecision={approvalDecision.mutate}
-                  isPending={pendingApprovalAction?.approvalId === approval.id}
-                  pendingAction={
-                    pendingApprovalAction?.approvalId === approval.id ? pendingApprovalAction.action : null
-                  }
-                />
-              ))
-            )}
-            {humanLifecycleFormControls}
+            {unresolvedApprovals.map((approval) => (
+              <TaskChatConfirmation
+                key={approval.id}
+                approval={approval}
+                requesterAgent={
+                  approval.requestedByAgentId ? (agentMap.get(approval.requestedByAgentId) ?? null) : null
+                }
+                onDecision={approvalDecision.mutate}
+                isPending={pendingApprovalAction?.approvalId === approval.id}
+                pendingAction={
+                  pendingApprovalAction?.approvalId === approval.id ? pendingApprovalAction.action : null
+                }
+              />
+            ))}
           </div>
-        )
+        ) : null
       }
       comments={commentsWithQueueState}
-      hasActiveRun={activeRuns.length > 0}
       hasOlderComments={hasOlderComments}
       commentsLoadingOlder={commentsLoadingOlder}
       onLoadOlderComments={loadOlderComments}
@@ -119,20 +122,18 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
       currentUserId={currentUserId}
       userProfileMap={userProfileMap}
       draftKey={`paperclip:task-comment-draft:${task.id}`}
-      enableOwnerChange
       ownerOptions={commentOwnerOptions}
       currentOwnerValue={currentOwnerValue}
-      suggestedOwnerValue={suggestedOwnerValue}
-      mentions={mentionOptions}
+      mentionTarget={mentionTarget}
       composerDisabledReason={
-        isUserCreatorWithdrawalOwner ? "This task is withdrawn; finish its cancellation above." : null
+        isUserCreatorWithdrawalOwner
+          ? "Cancellation is incomplete. Finish it from Work controls before commenting."
+          : null
       }
       composerHint={composerHint}
       onAdd={handleChatAdd}
       onLoadMoreCommentGroup={loadMoreCommentGroup}
-      imageUploadHandler={handleCommentImageUpload}
-      onAttachImage={handleCommentAttachImage}
-      taskWorkMode={task.workMode ?? "standard"}
+      onAttachFile={handleCommentAttachFile}
       onImageClick={handleChatImageClick}
       onRefreshLatestComments={refetchLatestComments}
       ownerUserId={task.ownerUserId ?? null}

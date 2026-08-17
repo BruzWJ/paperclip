@@ -1,14 +1,16 @@
 import { tasksApi } from "@/api/tasks";
-import { Button } from "@/components/ui/button";
 import { computePauseAffectsSummary } from "@/lib/owner-transition";
 import type { Agent, Task, TaskTreeControlMode } from "@paperclipai/shared";
 import { useCallback, useMemo } from "react";
 
 import { isMarkdownFile } from "./-task-detail-model";
 import type { useTaskDetailActionMutations } from "./-useTaskDetailActionMutations";
-import type { useTaskDetailCoreMutations } from "./-useTaskDetailCoreMutations";
 
-export interface TaskDetailTreeDerivedOptions {
+const EMPTY_TASK_TREE_HOLDS: Awaited<ReturnType<typeof tasksApi.listTreeHolds>> = [];
+const EMPTY_TASK_ID_SET: ReadonlySet<string> = new Set();
+const EMPTY_CHILD_PAUSE_BADGES: ReadonlyMap<string, string> = new Map();
+
+interface TaskDetailTreeDerivedOptions {
   task: Task | undefined;
   childTasks: Task[];
   agentMap: Map<string, Agent>;
@@ -22,8 +24,6 @@ export interface TaskDetailTreeDerivedOptions {
   treeControlCancelConfirmed: boolean;
   uploadAttachment: ReturnType<typeof useTaskDetailActionMutations>["uploadAttachment"];
   importMarkdownDocument: ReturnType<typeof useTaskDetailActionMutations>["importMarkdownDocument"];
-  commitHumanOwnerStatus: ReturnType<typeof useTaskDetailCoreMutations>["commitHumanOwnerStatus"];
-  withdrawAndCancelTask: ReturnType<typeof useTaskDetailCoreMutations>["withdrawAndCancelTask"];
   isNamedUserCreator: boolean;
   isSystemEscalationHumanOwner: boolean;
   isUserCreatorWithdrawalOwner: boolean;
@@ -44,8 +44,6 @@ export function useTaskDetailTreeDerived({
   treeControlCancelConfirmed,
   uploadAttachment,
   importMarkdownDocument,
-  commitHumanOwnerStatus,
-  withdrawAndCancelTask,
   isNamedUserCreator,
   isSystemEscalationHumanOwner,
   isUserCreatorWithdrawalOwner,
@@ -69,10 +67,14 @@ export function useTaskDetailTreeDerived({
   }, [treeControlMode, treeControlPreview]);
   const activePauseHold = treeControlState?.activePauseHold ?? null;
   const activeRootPauseHoldsForDisplay = useMemo(
-    () => (activePauseHold?.isRoot === true ? activeRootPauseHolds : []),
+    () =>
+      activePauseHold?.isRoot === true && activeRootPauseHolds.length > 0
+        ? activeRootPauseHolds
+        : EMPTY_TASK_TREE_HOLDS,
     [activePauseHold?.isRoot, activeRootPauseHolds],
   );
   const heldTaskIds = useMemo(() => {
+    if (activeRootPauseHoldsForDisplay.length === 0) return EMPTY_TASK_ID_SET;
     const ids = new Set<string>();
     for (const hold of activeRootPauseHoldsForDisplay) {
       for (const member of hold.members ?? []) {
@@ -82,6 +84,7 @@ export function useTaskDetailTreeDerived({
     return ids;
   }, [activeRootPauseHoldsForDisplay]);
   const mutedChildTaskIds = useMemo(() => {
+    if (heldTaskIds.size === 0 || childTasks.length === 0) return EMPTY_TASK_ID_SET;
     const ids = new Set<string>();
     for (const child of childTasks) {
       if (heldTaskIds.has(child.id)) ids.add(child.id);
@@ -89,6 +92,7 @@ export function useTaskDetailTreeDerived({
     return ids;
   }, [childTasks, heldTaskIds]);
   const childPauseBadgeById = useMemo(() => {
+    if (heldTaskIds.size === 0 || childTasks.length === 0) return EMPTY_CHILD_PAUSE_BADGES;
     const badges = new Map<string, string>();
     for (const child of childTasks) {
       if (heldTaskIds.has(child.id)) badges.set(child.id, "Paused");
@@ -147,7 +151,7 @@ export function useTaskDetailTreeDerived({
   const pausedComposerHint = activePauseHold
     ? task?.ownerAgentId
       ? `Use @ to mention ${agentMap.get(task.ownerAgentId)?.name ?? "the owner"} if you want to queue triage while the subtree remains paused. Ordinary comments do not dispatch.`
-      : "Choose an agent owner or use @ to mention an eligible agent. Ordinary comments do not dispatch."
+      : "Assign an agent owner before mentioning one. Ordinary comments do not dispatch."
     : null;
   const humanLifecycleMode =
     !task || isTerminalTask
@@ -159,79 +163,6 @@ export function useTaskDetailTreeDerived({
             ? ("withdrawal" as const)
             : ("creator" as const)
           : null;
-  const humanLifecyclePending =
-    humanLifecycleMode === "system" ? commitHumanOwnerStatus.isPending : withdrawAndCancelTask.isPending;
-  const humanLifecycleFormControls =
-    task && humanLifecycleMode ? (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-auto text-xs text-muted-foreground">
-          {humanLifecycleMode === "system"
-            ? "Human escalation owner controls"
-            : humanLifecycleMode === "withdrawal"
-              ? "Creator withdrawal is awaiting cancellation"
-              : "Named creator withdrawal control"}
-        </span>
-        {humanLifecycleMode === "system" ? (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={humanLifecyclePending}
-              onClick={() =>
-                commitHumanOwnerStatus.mutate(
-                  task.lifecycleStatus === "blocked"
-                    ? {
-                        status: "open",
-                        message: "Reopened by the human escalation owner.",
-                      }
-                    : {
-                        status: "blocked",
-                        message: "Blocked by the human escalation owner.",
-                      },
-                )
-              }
-            >
-              {task.lifecycleStatus === "blocked" ? "Reopen" : "Block"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={humanLifecyclePending}
-              onClick={() =>
-                commitHumanOwnerStatus.mutate({
-                  status: "done",
-                  message: "Resolved by the human escalation owner.",
-                })
-              }
-            >
-              Resolve
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={humanLifecyclePending}
-              onClick={() =>
-                commitHumanOwnerStatus.mutate({
-                  status: "cancelled",
-                  message: "Cancelled by the human escalation owner.",
-                })
-              }
-            >
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={humanLifecyclePending}
-            onClick={() => withdrawAndCancelTask.mutate()}
-          >
-            {humanLifecycleMode === "withdrawal" ? "Finish cancellation" : "Withdraw and cancel"}
-          </Button>
-        )}
-      </div>
-    ) : null;
   const canApplyTreeControl =
     Boolean(treeControlPreview) &&
     !treeControlPreviewLoading &&
@@ -258,7 +189,7 @@ export function useTaskDetailTreeDerived({
     previewAffectedTaskCount,
     treeControlPrimaryButtonLabel,
     composerHint: pausedComposerHint,
-    humanLifecycleFormControls,
+    humanLifecycleMode,
     canApplyTreeControl,
     attachmentUploadPending,
   };

@@ -6,6 +6,7 @@ const migrationsDirectory = fileURLToPath(
   new URL("../migrations/", import.meta.url),
 );
 const canonicalRewriteMigration = "0002_unknown_big_bertha.sql";
+const canonicalMentionMigration = "0003_big_scorpion.sql";
 
 function migrationFiles(): string[] {
   return readdirSync(migrationsDirectory)
@@ -104,6 +105,7 @@ describe("generated PostgreSQL migration contract", () => {
       "0000_extensions.sql",
       "0001_melodic_lila_cheney.sql",
       canonicalRewriteMigration,
+      canonicalMentionMigration,
     ]);
 
     const extensionSql = migrationSql(files[0]!);
@@ -133,6 +135,43 @@ describe("generated PostgreSQL migration contract", () => {
       .map(migrationSql)
       .join("\n--> statement-breakpoint\n");
     expect(referencedKeysUnavailableAtForeignKeyCreation(source)).toEqual([]);
+  });
+
+  it("canonicalizes persisted mention sources without rewriting their stable identity", () => {
+    const source = migrationSql(canonicalMentionMigration);
+    const constraintDroppedAt = source.indexOf(
+      'DROP CONSTRAINT "task_execution_refs_source_kind_check"',
+    );
+    const eventsUpdatedAt = source.indexOf(
+      'UPDATE "task_session_events"\nSET "source_kind" = \'mention_agent\'',
+    );
+    const refsUpdatedAt = source.indexOf(
+      'UPDATE "task_execution_refs"\nSET "source_kind" = \'mention_agent\'',
+    );
+    const constraintAddedAt = source.indexOf(
+      'ADD CONSTRAINT "task_execution_refs_source_kind_check"',
+    );
+
+    expect(constraintDroppedAt).toBeGreaterThanOrEqual(0);
+    expect(eventsUpdatedAt).toBeGreaterThan(constraintDroppedAt);
+    expect(refsUpdatedAt).toBeGreaterThan(eventsUpdatedAt);
+    expect(constraintAddedAt).toBeGreaterThan(refsUpdatedAt);
+    expect(
+      source.match(
+        /WHERE "source_kind" IN \('human_comment_mention', 'consult_mention'\)/g,
+      ),
+    ).toHaveLength(2);
+    expect(source).not.toMatch(
+      /SET\s+"(?:source_identity_digest|source_id|id|immutable_source_key|source_record_id|history_view_id|execution_scope_id|execution_lineage_id|comment_id|disposition_id|message_id|reservation_key)"/,
+    );
+    expect(source).not.toMatch(
+      /UPDATE "(?:task_session_message_id_reservations|task_execution_history_views|task_comments|task_session_input_dispositions)"/,
+    );
+    expect(source.slice(constraintAddedAt)).toContain("'mention_agent'");
+    expect(source.slice(constraintAddedAt)).not.toContain(
+      "'human_comment_mention'",
+    );
+    expect(source.slice(constraintAddedAt)).not.toContain("'consult_mention'");
   });
 
   it("deletes retired skill-test tasks instead of preserving them as ordinary work", () => {

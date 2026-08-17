@@ -1,4 +1,8 @@
 import * as t from "./admission.test-support.js";
+import {
+  assertDispatchingExecutionSource,
+  dispatchingExecutionSourceIdentityDigests,
+} from "./admission.js";
 const { describe, it, expect, v2MessageKindForExecutionSource } = t;
 const { resolveDispatchingExecutionBatchMessageKinds } = t;
 const { previousOwnershipEpochForDispatchSource } = t;
@@ -41,8 +45,8 @@ const sourceCases = {
     source: { sourceKind: "task_reopen", actor: userActor },
     expected: "user",
   },
-  human_comment_mention: {
-    source: { sourceKind: "human_comment_mention", actor: userActor },
+  mention_agent: {
+    source: { sourceKind: "mention_agent", actor: userActor },
     expected: "user",
   },
   routine_dispatch: {
@@ -51,10 +55,6 @@ const sourceCases = {
   },
   task_update: {
     source: { sourceKind: "task_update", actor: agentActor },
-    expected: "synthetic",
-  },
-  consult_mention: {
-    source: { sourceKind: "consult_mention", actor: agentActor },
     expected: "synthetic",
   },
   system_nudge: {
@@ -114,6 +114,19 @@ const work = {
   },
   idempotencyKey: "initial:work",
 } as const;
+const boardMention = {
+  ...work,
+  sourceKind: "mention_agent",
+} as const;
+const agentMention = {
+  ...work,
+  sourceKind: "mention_agent",
+  actor: agentActor,
+  taskExecutionAuthorityId: null,
+  consultExecutionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  mode: "consult",
+  comment: null,
+} as const;
 export {
   agentActor,
   initialBatchScope,
@@ -130,6 +143,42 @@ describe("Task Session canonical source authorship", () => {
     for (const { source, expected } of Object.values(sourceCases)) {
       expect(v2MessageKindForExecutionSource(source)).toBe(expected);
     }
+  });
+
+  it("accepts only the canonical mention actor and execution-mode pairings", () => {
+    expect(assertDispatchingExecutionSource(boardMention)).toBe("user");
+    expect(assertDispatchingExecutionSource(agentMention)).toBe("synthetic");
+
+    expect(() =>
+      assertDispatchingExecutionSource({
+        ...boardMention,
+        mode: "consult",
+      }),
+    ).toThrow("Mention execution mode does not match its immutable actor provenance");
+    expect(() =>
+      assertDispatchingExecutionSource({
+        ...agentMention,
+        mode: "owner",
+      }),
+    ).toThrow("Mention execution mode does not match its immutable actor provenance");
+  });
+
+  it("derives only the matching immutable legacy digest for migrated mention retries", () => {
+    const boardDigests = dispatchingExecutionSourceIdentityDigests(boardMention, "user");
+    const agentDigests = dispatchingExecutionSourceIdentityDigests(agentMention, "synthetic");
+    const changedBoardDigests = dispatchingExecutionSourceIdentityDigests(
+      { ...boardMention, exactText: "Changed bytes" },
+      "user",
+    );
+
+    expect(boardDigests.compatibleIdentityDigests).toHaveLength(1);
+    expect(agentDigests.compatibleIdentityDigests).toHaveLength(1);
+    expect(boardDigests.compatibleIdentityDigests[0]).not.toBe(boardDigests.identityDigest);
+    expect(agentDigests.compatibleIdentityDigests[0]).not.toBe(agentDigests.identityDigest);
+    expect(changedBoardDigests.identityDigest).not.toBe(boardDigests.identityDigest);
+    expect(changedBoardDigests.compatibleIdentityDigests).not.toContain(
+      boardDigests.compatibleIdentityDigests[0],
+    );
   });
 
   it("keeps every standalone task request user-authored", () => {
@@ -210,6 +259,14 @@ describe("Task Session canonical source authorship", () => {
         actor: userActor,
       } as unknown as t.TaskSessionExecutionSource),
     ).toThrow("does not match its immutable source kind");
+    for (const actor of [routineActor, systemActor]) {
+      expect(() =>
+        v2MessageKindForExecutionSource({
+          sourceKind: "mention_agent",
+          actor,
+        } as unknown as t.TaskSessionExecutionSource),
+      ).toThrow("does not match its immutable source kind");
+    }
   });
 
   it("requires the exact outgoing epoch only for reassignment refs", () => {

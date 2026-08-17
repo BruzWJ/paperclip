@@ -28,6 +28,49 @@ import {
 import { type TaskSessionDbTransaction } from "./event-store.js";
 import { TaskSessionLifecycleConflict } from "./store.js";
 
+function dispatchingExecutionSourceIdentityDigest(
+  input: admissionCore.DispatchingExecutionSourceInput,
+  messageKind: "user" | "synthetic",
+  identitySourceKind: string,
+) {
+  return admissionCore.digest({
+    contract: "dispatching-execution-source/v1",
+    sourceKind: identitySourceKind,
+    actor: input.actor,
+    immutableSourceKey: input.immutableSourceKey,
+    sourceRecordId: input.sourceRecordId,
+    ...scopeDigest(input),
+    messageKind,
+    exactText: input.exactText,
+    delivery: messageKind === "user" ? "queue" : null,
+    idempotencyKey: input.idempotencyKey,
+    comment: input.comment,
+  });
+}
+
+export function dispatchingExecutionSourceIdentityDigests(
+  input: admissionCore.DispatchingExecutionSourceInput,
+  messageKind: "user" | "synthetic",
+): { identityDigest: string; compatibleIdentityDigests: readonly string[] } {
+  const identityDigest = dispatchingExecutionSourceIdentityDigest(input, messageKind, input.sourceKind);
+  if (input.sourceKind !== "mention_agent") {
+    return { identityDigest, compatibleIdentityDigests: [] };
+  }
+  // The migration renames sourceKind but intentionally preserves accepted digests and stable IDs.
+  const legacySourceKind =
+    input.actor.kind === "user/board" && input.mode === "owner"
+      ? "human_comment_mention"
+      : input.actor.kind === "agent-execution" && input.mode === "consult"
+        ? "consult_mention"
+        : null;
+  return {
+    identityDigest,
+    compatibleIdentityDigests: legacySourceKind
+      ? [dispatchingExecutionSourceIdentityDigest(input, messageKind, legacySourceKind)]
+      : [],
+  };
+}
+
 /** Owns physical Task Session source admission and projection. */
 export function createTaskSessionAdmissionService(
   db: Db,
@@ -45,27 +88,19 @@ export function createTaskSessionAdmissionService(
     messageKind: "user" | "synthetic",
   ): Promise<admissionCore.TaskSessionAdmissionResult> {
     await assertProjectedCommentProducer(transaction, input, input.comment);
-    const stableIds = stableIdentityForSource(input);
-    const identityDigest = admissionCore.digest({
-      contract: "dispatching-execution-source/v1",
-      sourceKind: input.sourceKind,
-      actor: input.actor,
-      immutableSourceKey: input.immutableSourceKey,
-      sourceRecordId: input.sourceRecordId,
-      ...scopeDigest(input),
+    const { identityDigest, compatibleIdentityDigests } = dispatchingExecutionSourceIdentityDigests(
+      input,
       messageKind,
-      exactText: input.exactText,
-      delivery: messageKind === "user" ? "queue" : null,
-      idempotencyKey: input.idempotencyKey,
-      comment: input.comment,
-    });
+    );
     const retry = await findRetry(
       transaction,
       input,
       identityDigest,
       messageKind === "user" ? TaskSession.Event.PromptAdmitted.type : TaskSession.Event.Synthetic.type,
+      compatibleIdentityDigests,
     );
     if (retry) return retry;
+    const stableIds = stableIdentityForSource(input);
     const ids = await reserveStableMessageIdentity(transaction, input, stableIds);
     const validated = await assertDispatchScope(transaction, input);
     await hooks.assertImmutableSource?.(transaction, input);

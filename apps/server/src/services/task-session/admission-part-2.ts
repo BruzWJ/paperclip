@@ -156,15 +156,14 @@ export function assertExecutionSourceActorPair(source: admissionCore.TaskSession
       }
       break;
     case "task_reopen":
-    case "human_comment_mention":
     case "human_comment":
       if (source.actor.kind === "user/board") return;
       break;
     case "routine_dispatch":
       if (source.actor.kind === "routine") return;
       break;
-    case "consult_mention":
-      if (source.actor.kind === "agent-execution") return;
+    case "mention_agent":
+      if (source.actor.kind === "user/board" || source.actor.kind === "agent-execution") return;
       break;
     case "system_nudge":
       if (source.actor.kind === "system") return;
@@ -189,15 +188,14 @@ export function v2MessageKindForExecutionSource(
   switch (source.sourceKind) {
     case "task_reassignment":
     case "task_reopen":
-    case "human_comment_mention":
     case "routine_dispatch":
     case "human_comment":
       return "user";
     case "task_request":
       return "user";
+    case "mention_agent":
     case "task_update":
       return source.actor.kind === "user/board" ? "user" : "synthetic";
-    case "consult_mention":
     case "system_nudge":
       return "synthetic";
     default:
@@ -304,9 +302,7 @@ export function commentInsert(author: TaskSessionCommentAuthor, body: string) {
 }
 
 export function userProjectionKind(sourceKind: string): TaskSessionCommentProjectionInput["sourceKind"] {
-  return sourceKind === "human_comment_mention" || sourceKind === "task_update"
-    ? "human_comment"
-    : "task_request";
+  return sourceKind === "mention_agent" || sourceKind === "task_update" ? "human_comment" : "task_request";
 }
 
 export function directProjectionKind(sourceKind: string): TaskSessionCommentProjectionInput["sourceKind"] {

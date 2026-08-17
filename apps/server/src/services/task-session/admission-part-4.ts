@@ -130,6 +130,7 @@ export async function findRetry(
   },
   identityDigest: string,
   expectedType: TaskSessionEventType,
+  compatibleIdentityDigests: readonly string[] = [],
 ): Promise<admissionCore.TaskSessionAdmissionResult | null> {
   const rows = await transaction
     .select()
@@ -144,8 +145,11 @@ export async function findRetry(
     .limit(1);
   const event = rows[0];
   if (!event) return null;
+  const identityMatches =
+    event.sourceIdentityDigest === identityDigest ||
+    compatibleIdentityDigests.includes(event.sourceIdentityDigest ?? "");
   if (
-    event.sourceIdentityDigest !== identityDigest ||
+    !identityMatches ||
     event.sourceRecordId !== input.sourceRecordId ||
     decodeStoredTaskSessionEvent(event).event.type !== expectedType
   ) {

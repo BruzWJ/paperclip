@@ -5,21 +5,13 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  ComposerMentionCoach,
-  ComposerOwnerPreviewRow,
   InterruptOwnerChangeConfirm,
   OwnerChip,
   OwnerRunningBanner,
-  OwnerDispatchRow,
   PauseAffectsSummaryView,
-  RunStatusBadge,
   type OwnerChipResolvers,
 } from "./-OwnerTransitionViews";
-import {
-  computeComposerOwnerPreview,
-  computePauseAffectsSummary,
-  describeOwnerChangeInterrupt,
-} from "@/lib/owner-transition";
+import { computePauseAffectsSummary, describeOwnerChangeInterrupt } from "@/lib/owner-transition";
 
 const resolvers: OwnerChipResolvers = {
   agentMap: new Map([
@@ -81,34 +73,7 @@ describe("owner transition views", () => {
     expect(view.textContent).toContain("Board escalation");
   });
 
-  it("renders the agent dispatch and interrupt preview", () => {
-    const preview = computeComposerOwnerPreview({
-      ownerTarget: "agent:agent-qa",
-      currentOwnerValue: "agent:agent-coder",
-      hasActiveRun: true,
-      bodyHasAgentMention: false,
-    });
-    const view = mount(
-      <>
-        <OwnerDispatchRow
-          to={{
-            ownerKind: "agent",
-            ownerAgentId: "agent-qa",
-            ownerUserId: null,
-          }}
-          resolvers={resolvers}
-          interruptedRunAttached
-        />
-        <ComposerOwnerPreviewRow preview={preview} resolvers={resolvers} />
-      </>,
-    );
-    expect(view.textContent).toContain("queued for QA");
-    expect(view.textContent).toContain("Interrupt current run and change owner to");
-  });
-
-  it("wires mention coaching and owner-change confirmation", () => {
-    const onInsert = vi.fn();
-    const onDismiss = vi.fn();
+  it("wires owner-change confirmation", () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
     const copy = describeOwnerChangeInterrupt({
@@ -116,12 +81,6 @@ describe("owner transition views", () => {
     });
     const view = mount(
       <>
-        <ComposerMentionCoach
-          candidate={{ agentId: "agent-qa", matchedText: "QA" }}
-          agentDisplayName="QA"
-          onInsert={onInsert}
-          onDismiss={onDismiss}
-        />
         <OwnerRunningBanner copy={copy} />
         <InterruptOwnerChangeConfirm
           copy={copy}
@@ -136,11 +95,7 @@ describe("owner transition views", () => {
         />
       </>,
     );
-    view.querySelector<HTMLButtonElement>("[aria-label^='Insert mention for QA']")!.click();
-    view.querySelector<HTMLButtonElement>("[aria-label='Dismiss suggestion']")!.click();
     view.querySelector<HTMLButtonElement>("[data-testid='interrupt-owner-change-confirm-action']")!.click();
-    expect(onInsert).toHaveBeenCalledOnce();
-    expect(onDismiss).toHaveBeenCalledOnce();
     expect(onConfirm).toHaveBeenCalledOnce();
     expect(view.textContent).toContain("Run active");
   });
@@ -174,14 +129,8 @@ describe("owner transition views", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("shows run and pause status without legacy singleton state", () => {
-    const view = mount(
-      <>
-        <RunStatusBadge status="cancelled" operatorInterrupted />
-        <PauseAffectsSummaryView summary={computePauseAffectsSummary([{ activeRun: null }])} />
-      </>,
-    );
-    expect(view.textContent).toContain("interrupted");
+  it("shows the empty pause state", () => {
+    const view = mount(<PauseAffectsSummaryView summary={computePauseAffectsSummary([{ activeRun: null }])} />);
     expect(view.textContent).toContain("Nothing live to pause");
   });
 });

@@ -223,7 +223,7 @@ export const TaskChatMessageRow = memo(function TaskChatMessageRow({
   const sourceTrust = isSourceTrustMetadata(custom.sourceTrust) ? custom.sourceTrust : null;
   const senderLabelId = `task-chat-sender-${message.id}`;
 
-  const queued = custom.clientStatus === "queued";
+  const queued = clientStatus === "queued";
   return (
     <article id={anchorId ?? message.id} aria-labelledby={senderLabelId} data-message-role={message.role}>
       <Message from={senderIsCurrentUser ? "user" : "assistant"} className="max-w-full gap-1.5">
