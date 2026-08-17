@@ -3,7 +3,6 @@ import { isCanonicalUuid } from "@paperclipai/shared";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   InternalActor,
-  PROTECTED_SELF_IDENTITY_KEYS,
   ParsedUpdateConfiguration,
   RuntimeAgentConfigurationConflict,
   RuntimeAgentConfigurationInvalid,
@@ -12,16 +11,15 @@ import {
 import {
   actorAuditColumns,
   loadSnapshot,
-  runtimeAgentConfigurationDisplayedDiff,
   sha256,
   snapshotsChangedKeys,
 } from "./runtime-agent-configuration-part-2.js";
 import * as agentConfigOps from "./runtime-agent-configuration-part-3.js";
+import * as taskAction from "./runtime-task-action-port-shared-part-3.js";
 import {
   type createRuntimeAgentConfigurationServiceContext,
   findIdempotentResult,
   replaceMentionReachGrants,
-  updateChangedIdentityKeys,
 } from "./runtime-agent-configuration-part-4.js";
 
 export function createRuntimeAgentConfigurationServiceOperationsSection1Update(
@@ -49,19 +47,17 @@ export function createRuntimeAgentConfigurationServiceOperationsSection1Update(
     });
     return db.transaction(async (tx) => {
       const now = clock();
-      const locked = await agentConfigOps.lockCompanyAndAgents(tx, input.companyId);
-      let responsibleUserId: string | null = null;
+      let locked: Awaited<ReturnType<typeof agentConfigOps.lockCompanyAndAgents>>;
       if (input.actor.kind === "agent") {
-        responsibleUserId = (
-          await agentConfigOps.assertRunActionAuthority(
-            tx,
-            input.actor,
-            "agent_configure",
-            now,
-            locked.company,
-            locked.agents,
-          )
-        ).responsibleUserId;
+        const authorized = await taskAction.lockRuntimeToolAuthority(
+          tx,
+          input.actor.capability,
+          "agent_configure",
+          now,
+        );
+        locked = { company: authorized.company, agents: authorized.companyAgents };
+      } else {
+        locked = await agentConfigOps.lockCompanyAndAgents(tx, input.companyId);
       }
       const retry = await findIdempotentResult(tx, input.companyId, input.idempotencyKey, requestDigest);
       if (retry) return retry;
@@ -94,13 +90,6 @@ export function createRuntimeAgentConfigurationServiceOperationsSection1Update(
         );
       }
       const before = await loadSnapshot(tx, input.companyId, input.targetAgentId);
-      const changedIdentityKeys = updateChangedIdentityKeys(before, input.configuration);
-      const requestedKeys = Object.keys(input.configuration).sort();
-      const displayedDiff = runtimeAgentConfigurationDisplayedDiff(
-        input.targetAgentId,
-        before,
-        input.configuration,
-      );
       if (input.actor.kind === "board") {
         await agentConfigOps.assertBoardAuthority(
           tx,
@@ -115,21 +104,7 @@ export function createRuntimeAgentConfigurationServiceOperationsSection1Update(
           input.actor,
           "update",
           input.targetAgentId,
-          requestedKeys,
-          options,
-        );
-      } else {
-        const isSelf = input.targetAgentId === input.actor.actorId;
-        const requiresProtectedGrant =
-          !isSelf || changedIdentityKeys.some((key) => PROTECTED_SELF_IDENTITY_KEYS.has(key));
-        await agentConfigOps.assertAgentConfigureAuthority(
-          tx,
-          input.actor,
-          responsibleUserId,
-          input.targetAgentId,
-          requestedKeys,
-          requiresProtectedGrant,
-          displayedDiff,
+          Object.keys(input.configuration).sort(),
           options,
         );
       }

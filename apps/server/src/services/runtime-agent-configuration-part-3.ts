@@ -4,7 +4,6 @@ import {
   companyMemberships,
   plugins,
   principalPermissionGrants,
-  tasks,
   type Db,
 } from "@paperclipai/db";
 import {
@@ -15,10 +14,8 @@ import {
   type PaperclipActionKey,
 } from "@paperclipai/shared";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { evaluateAgentInvokability } from "./agent-invokability.js";
 import { lockCompanyAgentGraph } from "./agent-org-graph-lock.js";
-import { authorizationService, type AuthorizationActor } from "./authorization.js";
-import { lockActivePromptCapabilityBinding } from "./prompt-capability-gateway-postgres.js";
+import { authorizationService } from "./authorization.js";
 import * as agentConfig from "./runtime-agent-configuration-part-1.js";
 import { grantActorColumns } from "./runtime-agent-configuration-part-2.js";
 
@@ -75,147 +72,38 @@ export async function lockCompanyAndAgents(
   return { company, agents: locked.agents };
 }
 
-export async function assertRunActionAuthority(
+async function lockBoardAuthorizationRows(
   tx: agentConfig.RuntimeAgentConfigurationTransaction,
-  actor: agentConfig.InternalAgentActor,
-  action: "agent_hire" | "agent_configure",
-  now: Date,
-  company: agentConfig.CompanyRow,
-  companyAgents: readonly agentConfig.AgentRow[],
-): Promise<{ responsibleUserId: string | null }> {
-  const { capability } = actor;
-  if (capability.companyId !== company.id) {
-    throw new agentConfig.RuntimeAgentConfigurationDenied(
-      "Prompt capability is bound to a different company",
-      "binding_mismatch",
-    );
-  }
-
-  try {
-    await lockActivePromptCapabilityBinding(tx, capability, now);
-  } catch {
-    throw new agentConfig.RuntimeAgentConfigurationDenied(
-      "Prompt capability is inactive, expired, or no longer exact",
-      "prompt_capability_invalid",
-    );
-  }
-
-  const task = await tx
-    .select({
-      companyId: tasks.companyId,
-      ownerKind: tasks.ownerKind,
-      ownerAgentId: tasks.ownerAgentId,
-      ownershipEpoch: tasks.ownershipEpoch,
-      responsibleUserId: tasks.responsibleUserId,
-    })
-    .from(tasks)
-    .where(eq(tasks.id, capability.taskId))
-    .limit(1)
-    .for("update")
-    .then((rows) => rows[0] ?? null);
-  if (!task || task.companyId !== capability.companyId || task.ownershipEpoch !== capability.ownershipEpoch) {
-    throw new agentConfig.RuntimeAgentConfigurationDenied(
-      "Task ownership epoch has changed",
-      "ownership_epoch_changed",
-    );
-  }
-  if (
-    capability.executionMode === "owner" &&
-    (task.ownerKind !== "agent" || task.ownerAgentId !== capability.targetAgentId)
-  ) {
-    throw new agentConfig.RuntimeAgentConfigurationDenied("Run no longer owns the task", "owner_changed");
-  }
-
-  const caller = companyAgents.find((candidate) => candidate.id === capability.targetAgentId);
-  if (!caller) {
-    throw new agentConfig.RuntimeAgentConfigurationDenied("Agent no longer exists", "agent_not_found");
-  }
-  const invokability = evaluateAgentInvokability(caller, [...companyAgents]);
-  if (!invokability.invokable) {
-    throw new agentConfig.RuntimeAgentConfigurationDenied(
-      invokability.message,
-      `agent_not_invokable:${invokability.reason}`,
-    );
-  }
-
-  const actionRows = await tx
-    .select({ id: agentActionGrants.id })
-    .from(agentActionGrants)
+  companyId: string,
+  actor: agentConfig.RuntimeAgentConfigurationBoardActor["authorization"],
+): Promise<void> {
+  await tx
+    .select({ id: principalPermissionGrants.id })
+    .from(principalPermissionGrants)
     .where(
       and(
-        eq(agentActionGrants.companyId, capability.companyId),
-        eq(agentActionGrants.agentId, capability.targetAgentId),
-        eq(agentActionGrants.key, action),
+        eq(principalPermissionGrants.companyId, companyId),
+        eq(principalPermissionGrants.principalType, "user"),
+        eq(principalPermissionGrants.principalUserId, actor.userId),
+        inArray(principalPermissionGrants.permissionKey, [
+          "agents:create",
+          "agents:configure",
+          "agents:suggest-changes",
+        ]),
       ),
     )
     .for("update");
-  if (actionRows.length !== 1) {
-    throw new agentConfig.RuntimeAgentConfigurationDenied(
-      `Current run no longer has ${action}`,
-      "action_grant_missing",
-    );
-  }
-  return { responsibleUserId: task.responsibleUserId };
-}
-
-export async function lockAuthorizationRows(
-  tx: agentConfig.RuntimeAgentConfigurationTransaction,
-  companyId: string,
-  actor: AuthorizationActor,
-): Promise<void> {
-  if (actor.type === "agent" && actor.agentId) {
-    await tx
-      .select({ id: principalPermissionGrants.id })
-      .from(principalPermissionGrants)
-      .where(
-        and(
-          eq(principalPermissionGrants.companyId, companyId),
-          eq(principalPermissionGrants.principalType, "agent"),
-          eq(principalPermissionGrants.principalAgentId, actor.agentId),
-          inArray(principalPermissionGrants.permissionKey, ["agents:configure", "agents:suggest-changes"]),
-        ),
-      )
-      .for("update");
-    await tx
-      .select({ id: companyMemberships.id })
-      .from(companyMemberships)
-      .where(
-        and(
-          eq(companyMemberships.companyId, companyId),
-          eq(companyMemberships.principalType, "agent"),
-          eq(companyMemberships.principalAgentId, actor.agentId),
-        ),
-      )
-      .for("update");
-  } else if (actor.type === "board" && actor.userId) {
-    await tx
-      .select({ id: principalPermissionGrants.id })
-      .from(principalPermissionGrants)
-      .where(
-        and(
-          eq(principalPermissionGrants.companyId, companyId),
-          eq(principalPermissionGrants.principalType, "user"),
-          eq(principalPermissionGrants.principalUserId, actor.userId),
-          inArray(principalPermissionGrants.permissionKey, [
-            "agents:create",
-            "agents:configure",
-            "agents:suggest-changes",
-          ]),
-        ),
-      )
-      .for("update");
-    await tx
-      .select({ id: companyMemberships.id })
-      .from(companyMemberships)
-      .where(
-        and(
-          eq(companyMemberships.companyId, companyId),
-          eq(companyMemberships.principalType, "user"),
-          eq(companyMemberships.principalUserId, actor.userId),
-        ),
-      )
-      .for("update");
-  }
+  await tx
+    .select({ id: companyMemberships.id })
+    .from(companyMemberships)
+    .where(
+      and(
+        eq(companyMemberships.companyId, companyId),
+        eq(companyMemberships.principalType, "user"),
+        eq(companyMemberships.principalUserId, actor.userId),
+      ),
+    )
+    .for("update");
 }
 
 export async function assertBoardAuthority(
@@ -225,7 +113,7 @@ export async function assertBoardAuthority(
   operation: "create" | "update",
   targetAgentId: string | null,
 ): Promise<void> {
-  await lockAuthorizationRows(tx, companyId, actor.authorization);
+  await lockBoardAuthorizationRows(tx, companyId, actor.authorization);
   const decision = await authorizationService(tx as unknown as Db).decide({
     actor: actor.authorization,
     action: operation === "create" ? "agents:create" : "agent_config:update",
@@ -281,77 +169,6 @@ export async function assertPluginAuthority(
     targetAgentId,
     changedKeys,
   });
-}
-
-export async function assertAgentConfigureAuthority(
-  tx: agentConfig.RuntimeAgentConfigurationTransaction,
-  actor: agentConfig.InternalAgentActor,
-  responsibleUserId: string | null,
-  targetAgentId: string,
-  changedKeys: readonly string[],
-  requiresProtectedGrant: boolean,
-  displayedDiff: string,
-  options: agentConfig.RuntimeAgentConfigurationServiceOptions,
-): Promise<void> {
-  const authorizationActor: AuthorizationActor = {
-    type: "agent",
-    agentId: actor.actorId,
-    companyId: actor.capability.companyId,
-    runId: actor.capability.runId,
-    source: "internal",
-    onBehalfOfUserId: responsibleUserId,
-  };
-  await lockAuthorizationRows(tx, actor.capability.companyId, authorizationActor);
-  const authz = authorizationService(tx as unknown as Db);
-  const input = {
-    actor: authorizationActor,
-    action: "agent_config:update" as const,
-    resource: {
-      type: "agent" as const,
-      companyId: actor.capability.companyId,
-      agentId: targetAgentId,
-    },
-  };
-  let decision = await authz.decide({
-    ...input,
-    scope: {
-      requiresChangeGrant: requiresProtectedGrant,
-      targetAgentId,
-    },
-  });
-  if (!decision.allowed && decision.reason === "deny_missing_consent" && requiresProtectedGrant) {
-    if (!options.assertConsentedChange) {
-      throw new agentConfig.RuntimeAgentConfigurationDenied(decision.explanation, decision.reason);
-    }
-    try {
-      await options.assertConsentedChange(tx, {
-        capability: actor.capability,
-        targetAgentId,
-        changedKeys,
-        displayedDiff,
-      });
-    } catch (error) {
-      if (error instanceof agentConfig.RuntimeAgentConfigurationDenied) {
-        throw error;
-      }
-      throw new agentConfig.RuntimeAgentConfigurationConsentRequired(
-        error instanceof Error ? error.message : "Accepted change consent is unavailable",
-        targetAgentId,
-        displayedDiff,
-      );
-    }
-    decision = await authz.decide({
-      ...input,
-      scope: {
-        requiresChangeGrant: true,
-        consentedChange: true,
-        targetAgentId,
-      },
-    });
-  }
-  if (!decision.allowed) {
-    throw new agentConfig.RuntimeAgentConfigurationDenied(decision.explanation, decision.reason);
-  }
 }
 
 export async function replaceContextGrants(

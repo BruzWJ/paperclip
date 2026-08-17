@@ -189,7 +189,7 @@ export function createPostgresTaskExecutionFinalizationWriter(options: {
     const hasSameTaskUpdate = updates.some((update) => update.updateTargetTaskId === input.taskId);
     const hasFinalResponse = finalText.length > 0;
     const action =
-      hadMentionComment || hasSameTaskUpdate
+      hadMentionComment || updates.length > 0
         ? ("updates_committed" as const)
         : hasFinalResponse
           ? ("comment_only" as const)
@@ -264,7 +264,7 @@ export function createPostgresTaskExecutionFinalizationWriter(options: {
         : null,
       updates,
     });
-    if (hasFinalResponse) {
+    if (hasFinalResponse && !hasSameTaskUpdate) {
       const folded = await publishTaskSessionFinalCommentInTx(transaction, {
         eventId: terminalEvent!.id,
         progressCommentId: progress.comment.id,

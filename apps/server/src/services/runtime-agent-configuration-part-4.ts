@@ -43,29 +43,6 @@ export async function replaceMentionReachGrants(
   }
 }
 
-export function updateChangedIdentityKeys(
-  before: RuntimeAgentConfigurationSnapshot,
-  configuration: agentConfig.ParsedUpdateConfiguration,
-): string[] {
-  const keys: string[] = [];
-  if (configuration.name !== undefined && configuration.name !== before.identity.name) {
-    keys.push("name");
-  }
-  if (configuration.title !== undefined && configuration.title !== before.identity.title) {
-    keys.push("title");
-  }
-  if (
-    configuration.capabilities !== undefined &&
-    configuration.capabilities !== before.identity.capabilities
-  ) {
-    keys.push("capabilities");
-  }
-  if (configuration.reportsTo !== undefined && configuration.reportsTo !== before.identity.reportsTo) {
-    keys.push("reportsTo");
-  }
-  return keys;
-}
-
 export async function findIdempotentResult(
   tx: agentConfig.RuntimeAgentConfigurationTransaction,
   companyId: string,

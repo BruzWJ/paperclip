@@ -2,11 +2,11 @@ import { createHash, randomBytes } from "node:crypto";
 import type { TaskExecutionRefMode } from "@paperclipai/shared";
 import {
   compileRuntimeInterface,
+  resolveRuntimeToolDescriptor,
   type CompiledRunToolDescriptor,
   type RuntimeInterfaceCompileInput,
   type RuntimeToolSource,
 } from "./runtime-interface-compiler.js";
-import type { ContextRetrievalScope } from "./context-retrieval.js";
 import { RuntimeToolUnavailable } from "./runtime-tool-errors.js";
 
 const PROMPT_CAPABILITY_BEARER_PREFIX = "pc_run_v1_";
@@ -124,7 +124,6 @@ export interface PromptCapabilityToolExecutor {
   execute(input: {
     capability: PromptCapabilityBinding;
     descriptor: CompiledRunToolDescriptor;
-    runtimeScope: ContextRetrievalScope;
     arguments: unknown;
     callIdentity: PromptCapabilityCallIdentity;
     ingressOrdinal: number;
@@ -285,8 +284,7 @@ export function createPromptCapabilityGateway(options: {
       const capability = activeCapability(await authenticate(input.bearer));
       const compileInput = await options.repository.resolveCompileInput(capability);
       const current = await requireStillAuthoritative(capability);
-      const compiled = compileRuntimeInterface(compileInput);
-      const descriptor = compiled.byName.get(input.toolName);
+      const descriptor = resolveRuntimeToolDescriptor(compileInput, input.toolName);
       if (!descriptor) {
         const unavailable = new RuntimeToolUnavailable(input.toolName);
         await options.executor.registerTerminalInvalid({
@@ -302,11 +300,6 @@ export function createPromptCapabilityGateway(options: {
       const result = await options.executor.execute({
         capability: current,
         descriptor,
-        runtimeScope: {
-          companyId: current.companyId,
-          activeTaskId: current.taskId,
-          dial: compileInput.contextDial,
-        },
         arguments: input.arguments,
         callIdentity: input.callIdentity,
         ingressOrdinal: input.ingressOrdinal,

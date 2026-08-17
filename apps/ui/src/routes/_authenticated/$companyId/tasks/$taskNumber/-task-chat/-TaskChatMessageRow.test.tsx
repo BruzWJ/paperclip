@@ -67,6 +67,17 @@ afterEach(() => {
 describe("TaskChatMessageRow sender layout", () => {
   it("distinguishes the current user, another member, an agent, and a plugin", () => {
     const agent = { id: "agent-1", name: "Research agent", icon: "search" } as unknown as Agent;
+    const agentMessage = message("agent", "assistant", {
+      kind: "run",
+      authorType: "agent",
+      authorName: agent.name,
+      authorAgentId: agent.id,
+      runSegmentPartCount: 1,
+    });
+    agentMessage.content = [
+      { type: "reasoning", text: "Inspect the current configuration." },
+      { type: "text", text: "The configuration is updated." },
+    ];
     renderRows(
       [
         message("self", "user", { authorType: "user", authorName: "You", authorUserId: "user-1" }),
@@ -75,11 +86,7 @@ describe("TaskChatMessageRow sender layout", () => {
           authorName: "Maya Chen",
           authorUserId: "user-2",
         }),
-        message("agent", "assistant", {
-          authorType: "agent",
-          authorName: agent.name,
-          authorAgentId: agent.id,
-        }),
+        agentMessage,
         message("plugin", "assistant", {
           authorType: "plugin",
           authorName: "Deployment automation",
@@ -105,6 +112,9 @@ describe("TaskChatMessageRow sender layout", () => {
     expect(member.textContent).toContain("Member");
     expect(agentRow.textContent).toContain("Research agent");
     expect(agentRow.textContent).toContain("Agent");
+    expect(agentRow.textContent).toContain("Work log");
+    expect(agentRow.textContent).toContain("Inspect the current configuration.");
+    expect(agentRow.textContent).toContain("The configuration is updated.");
     expect(agentRow.querySelector(".lucide-search")).not.toBeNull();
     expect(plugin.textContent).toContain("Deployment automation");
     expect(plugin.textContent).toContain("Plugin");

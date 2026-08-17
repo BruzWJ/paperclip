@@ -54,11 +54,11 @@ import {
   assertBoardAuthority,
   assertPluginAuthority,
   assertReportsTo,
-  assertRunActionAuthority,
   lockCompanyAndAgents,
   replaceActionGrants,
   replaceContextGrants,
 } from "./runtime-agent-configuration-part-3.js";
+import { lockRuntimeToolAuthority } from "./runtime-task-action-port-shared-part-3.js";
 
 export function createRuntimeAgentConfigurationServiceOperationsSection1Create(
   context: ReturnType<typeof createRuntimeAgentConfigurationServiceContext>,
@@ -82,21 +82,22 @@ export function createRuntimeAgentConfigurationServiceOperationsSection1Create(
       configuration: input.configuration,
     });
     const now = clock();
-    const locked = await lockCompanyAndAgents(tx, input.companyId);
-    let responsibleUserId: string | null = null;
+    let locked: Awaited<ReturnType<typeof lockCompanyAndAgents>>;
     if (input.actor.kind === "agent") {
-      responsibleUserId = (
-        await assertRunActionAuthority(tx, input.actor, "agent_hire", now, locked.company, locked.agents)
-      ).responsibleUserId;
+      const authorized = await lockRuntimeToolAuthority(
+        tx,
+        input.actor.capability,
+        "agent_hire",
+        now,
+      );
+      locked = { company: authorized.company, agents: authorized.companyAgents };
+    } else {
+      locked = await lockCompanyAndAgents(tx, input.companyId);
     }
     if (input.actor.kind === "board") {
       await assertBoardAuthority(tx, input.actor, input.companyId, "create", null);
     } else if (input.actor.kind === "plugin") {
       await assertPluginAuthority(tx, input.actor, "create", null, CONFIGURATION_KEYS, options);
-    } else if (responsibleUserId) {
-      // The run-bound hire action itself is the creation authority. The
-      // responsible-user intersection is applied to protected configure
-      // operations, not used to invent a second agents:create requirement.
     }
     const retry = await findIdempotentResult(tx, input.companyId, input.idempotencyKey, requestDigest);
     if (retry) return retry;

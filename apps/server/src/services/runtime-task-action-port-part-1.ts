@@ -29,12 +29,11 @@ export function createPostgresRuntimeTaskActionServicePart1(
     async create(input) {
       const committed = await db.transaction(async (tx) => {
         const now = clock();
-        const authorized = await taskAction.lockRuntimeActionAuthority(
+        const authorized = await taskAction.lockRuntimeToolAuthority(
           tx,
           input.capability,
           "task_create",
           now,
-          { requireOwner: true },
         );
         const key = taskAction.runtimeInvocationKey(
           "create",

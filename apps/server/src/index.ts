@@ -31,12 +31,6 @@ import {
   type CausalRuntimeStartupAssembly,
   type StartedServer,
 } from "./server-startup-support.js";
-import {
-  agentProfileChangeTargetKey,
-  CHANGE_CONSENT_DEFAULT_TTL_MS,
-  changeConsentGateService,
-  consumeAcceptedChangeConsentInTransaction,
-} from "./services/change-consent-gate.js";
 import type { ContextRetrievalService } from "./services/context-retrieval.js";
 import { createDevServerRestartCoordinator } from "./services/dev-server-restart-coordinator.js";
 import {
@@ -169,31 +163,8 @@ export async function startServer(): Promise<StartedServer> {
       },
     }),
   );
-  const changeConsents = changeConsentGateService(db);
   const agentActions = createRuntimeAgentActionPort(
-    createRuntimeAgentConfigurationService(db as any, {
-      async assertConsentedChange(transaction, { capability, targetAgentId, displayedDiff }) {
-        await consumeAcceptedChangeConsentInTransaction(transaction, {
-          companyId: capability.companyId,
-          actorAgentId: capability.targetAgentId,
-          actorRunId: capability.runId,
-          targetKeys: [agentProfileChangeTargetKey(targetAgentId)],
-          displayedDiff,
-        });
-      },
-    }),
-    {
-      async requestChangeConsent({ capability, targetAgentId, displayedDiff }) {
-        await changeConsents.request({
-          companyId: capability.companyId,
-          requestedByAgentId: capability.targetAgentId,
-          sourceRunId: capability.runId,
-          targetKey: agentProfileChangeTargetKey(targetAgentId),
-          displayedDiff,
-          expiresAt: new Date(Date.now() + CHANGE_CONSENT_DEFAULT_TTL_MS),
-        });
-      },
-    },
+    createRuntimeAgentConfigurationService(db as any),
   );
   const agentRunActions = composeAgentRunManagedActionPort(taskActions, agentActions);
   // One canonical managed-tool router serves two explicit authorities:

@@ -14,7 +14,7 @@ import {
   RuntimeTaskActionDenied,
   createTaskFormCommitRuntime,
   grantMap,
-  lockRuntimeActionAuthority,
+  lockRuntimeToolAuthority,
 } from "./runtime-task-action-port-shared.js";
 
 import { and, asc, eq, or } from "drizzle-orm";
@@ -36,48 +36,34 @@ export function createPostgresRuntimeTaskActionServicePart3(
     async listAgents(input) {
       return db.transaction(async (tx) => {
         const now = clock();
-        await lockRuntimeActionAuthority(tx, input.capability, "list_agents", now, { requireOwner: false });
-        const [allRows, grantRows] = await Promise.all([
-          tx
-            .select({
-              id: agents.id,
-              name: agents.name,
-              title: agents.title,
-              capabilities: agents.capabilities,
-              status: agents.status,
-              reportsTo: agents.reportsTo,
-            })
-            .from(agents)
-            .where(
-              and(
-                eq(agents.companyId, input.capability.companyId),
-                or(
-                  eq(agents.status, "idle"),
-                  eq(agents.status, "paused"),
-                  eq(agents.status, "pending_approval"),
-                ),
-              ),
-            )
-            .orderBy(asc(agents.name)),
-          tx
-            .select({ key: agentActionGrants.key })
-            .from(agentActionGrants)
-            .where(
-              and(
-                eq(agentActionGrants.companyId, input.capability.companyId),
-                eq(agentActionGrants.agentId, input.capability.targetAgentId),
+        const authorized = await lockRuntimeToolAuthority(
+          tx,
+          input.capability,
+          "list_agents",
+          now,
+        );
+        const allRows = await tx
+          .select({
+            id: agents.id,
+            name: agents.name,
+            title: agents.title,
+            capabilities: agents.capabilities,
+            status: agents.status,
+            reportsTo: agents.reportsTo,
+          })
+          .from(agents)
+          .where(
+            and(
+              eq(agents.companyId, input.capability.companyId),
+              or(
+                eq(agents.status, "idle"),
+                eq(agents.status, "paused"),
+                eq(agents.status, "pending_approval"),
               ),
             ),
-        ]);
-        const grantKeys = new Set(grantRows.map((r) => r.key));
-        const hasListAll = grantKeys.has("list_all_agents");
-        const hasListParent = grantKeys.has("list_parent_agents");
-        if (!hasListAll && !hasListParent) {
-          throw new RuntimeTaskActionDenied(
-            "Agent lacks list_all_agents and list_parent_agents grants",
-            "grant_required",
-          );
-        }
+          )
+          .orderBy(asc(agents.name));
+        const hasListAll = authorized.catalog.actionGrants.list_all_agents === true;
 
         const mapped = allRows.map((row) => ({
           id: row.id,
@@ -154,7 +140,7 @@ export function createPostgresRuntimeTaskActionServicePart3(
     async agentRead(input) {
       return db.transaction(async (tx) => {
         const now = clock();
-        await lockRuntimeActionAuthority(tx, input.capability, "agent_read", now, { requireOwner: false });
+        await lockRuntimeToolAuthority(tx, input.capability, "agent_read", now);
         const [agentRow] = await tx
           .select({
             id: agents.id,
@@ -168,7 +154,7 @@ export function createPostgresRuntimeTaskActionServicePart3(
           .from(agents)
           .where(and(eq(agents.companyId, input.capability.companyId), eq(agents.id, input.agentId)))
           .limit(1);
-        if (!agentRow) {
+        if (!agentRow || agentRow.status === "terminated") {
           throw new RuntimeTaskActionDenied("Agent not found in this company", "agent_not_found");
         }
         const [contextRows, actionRows, mentionRows] = await Promise.all([

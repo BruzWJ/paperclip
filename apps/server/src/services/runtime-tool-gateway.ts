@@ -144,7 +144,6 @@ export function createRuntimeToolGateway(options: {
     async execute({
       capability,
       descriptor,
-      runtimeScope,
       arguments: args,
       callIdentity,
       ingressOrdinal,
@@ -278,10 +277,7 @@ export function createRuntimeToolGateway(options: {
               return result;
             },
           });
-          result = await options.managedTools.routeExecution(normalized.call.command, {
-            authority,
-            resolveRuntimeScope: async () => runtimeScope,
-          });
+          result = await options.managedTools.routeExecution(normalized.call.command, { authority });
         }
 
         if (ledgerMetadata.kind === "mention") {

@@ -93,8 +93,8 @@ run-interface checks.
 
 The chronological task thread is the durable human-facing output. A successful
 `task_update` writes its exact message once in the counterpart Session; it does
-not add a source-side duplicate. The run's trailing non-empty final response
-becomes its existing run comment independently of any committed tool update.
+not add a source-side duplicate. A same-task update suppresses the run's trailing
+response comment; after a cross-task update, that response remains on the current task.
 
 There is no missing-comment retry wake. Transactional run finalization and the
 task-session projector guarantee the comment-of-record invariant or record the

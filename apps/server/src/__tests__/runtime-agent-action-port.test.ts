@@ -4,15 +4,11 @@ import {
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
 } from "@paperclipai/shared";
-import {
-  RuntimeAgentConfigurationConsentRequired,
-  type RuntimeAgentConfigurationService,
-} from "../services/runtime-agent-configuration.js";
+import { type RuntimeAgentConfigurationService } from "../services/runtime-agent-configuration.js";
 import { createRuntimeAgentActionPort } from "../services/runtime-agent-action-port.js";
 import { createRuntimeToolGateway } from "../services/runtime-tool-gateway.js";
 import {
   agentRunManagedActionInvocation,
-  type AgentRunToolAuthority,
 } from "../services/paperclip-managed-tool-router.js";
 import type {
   PaperclipManagedToolRouteContext,
@@ -24,12 +20,7 @@ import { compileRuntimeInterface } from "../services/runtime-interface-compiler.
 import { resolveContextDial } from "../services/context-dial-resolver.js";
 
 const TARGET_AGENT_ID = "20000000-0000-4000-8000-000000000002";
-const DISPLAYED_DIFF = [
-  `--- agent:${TARGET_AGENT_ID}:configuration`,
-  `+++ agent:${TARGET_AGENT_ID}:configuration`,
-  '-{"title":"Before"}',
-  '+{"title":"After"}',
-].join("\n");
+const NEW_MANAGER_ID = "30000000-0000-4000-8000-000000000003";
 
 const capability = {
   capabilityConnectionId: "prompt-capability-1",
@@ -38,33 +29,6 @@ const capability = {
   targetAgentId: "10000000-0000-4000-8000-000000000001",
   runId: "run-1",
 } as PromptCapabilityBinding;
-
-function actionAuthority(invocationId: string): AgentRunToolAuthority {
-  return {
-    kind: "agent_run",
-    capability,
-    invocation: {
-      id: invocationId,
-      runInterfaceToolCallId: `ledger-${invocationId}`,
-      ingressOrdinal: 0,
-      async commitMentionAction(_transaction, result) {
-        return result;
-      },
-    },
-  };
-}
-
-function deniedService() {
-  return {
-    configureFromRun: vi.fn().mockRejectedValue(
-      new RuntimeAgentConfigurationConsentRequired(
-        "Board consent is required",
-        TARGET_AGENT_ID,
-        DISPLAYED_DIFF,
-      ),
-    ),
-  } as unknown as RuntimeAgentConfigurationService;
-}
 
 const sensitiveConfigurationResult = {
   companyId: "company-1",
@@ -148,11 +112,6 @@ function replayingExecutor(
     return gateway.execute({
       capability,
       descriptor,
-      runtimeScope: {
-        companyId: capability.companyId,
-        activeTaskId: capability.taskId,
-        dial: compileInput.contextDial,
-      },
       arguments: arguments_,
       callIdentity: { source: "jsonrpc", id: "provider-call-1" },
       ingressOrdinal: 0,
@@ -217,19 +176,25 @@ describe("runtime agent action provider receipts", () => {
 
       await expect(call("agent_configure", {
         agentId,
-        title: "Updated",
+        reportsTo: NEW_MANAGER_ID,
       })).resolves.toEqual({
         source: "paperclip",
         value: { status: "configured" },
       });
       await expect(call("agent_configure", {
         agentId,
-        title: "Updated",
+        reportsTo: NEW_MANAGER_ID,
       })).resolves.toEqual({
         source: "paperclip",
         value: { status: "configured" },
       });
       expect(configureFromRun).toHaveBeenCalledTimes(1);
+      expect(configureFromRun).toHaveBeenCalledWith({
+        capability,
+        invocationId: expect.any(String),
+        targetAgentId: agentId,
+        configuration: { reportsTo: NEW_MANAGER_ID },
+      });
       expect(callLedger.complete).toHaveBeenCalledTimes(1);
       expect(callLedger.complete).toHaveBeenCalledWith(
         expect.objectContaining({ result: { status: "configured" } }),
@@ -237,66 +202,4 @@ describe("runtime agent action provider receipts", () => {
     },
   );
 
-  it("persists and replays only the closed pending-consent receipt", async () => {
-    const requestChangeConsent = vi.fn(async () => undefined);
-    const actions = createRuntimeAgentActionPort(deniedService(), {
-      requestChangeConsent,
-    });
-    const { call, callLedger } = replayingExecutor(actions);
-
-    await expect(call("agent_configure", {
-      agentId: TARGET_AGENT_ID,
-      title: "After",
-    })).resolves.toEqual({
-      source: "paperclip",
-      value: { status: "change_consent_requested" },
-    });
-    await expect(call("agent_configure", {
-      agentId: TARGET_AGENT_ID,
-      title: "After",
-    })).resolves.toEqual({
-      source: "paperclip",
-      value: { status: "change_consent_requested" },
-    });
-    expect(requestChangeConsent).toHaveBeenCalledTimes(1);
-    expect(callLedger.complete).toHaveBeenCalledTimes(1);
-    expect(callLedger.complete).toHaveBeenCalledWith(expect.objectContaining({
-      result: { status: "change_consent_requested" },
-    }));
-  });
-});
-
-describe("runtime agent action change-consent ownership", () => {
-  it("creates the pending consent through agent_configure instead of generic REST", async () => {
-    const requestChangeConsent = vi.fn(async () => undefined);
-    const actions = createRuntimeAgentActionPort(deniedService(), {
-      requestChangeConsent,
-    });
-
-    await expect(actions.agentConfigure(agentRunManagedActionInvocation({
-      name: "agent_configure",
-      companyId: capability.companyId,
-      agentId: TARGET_AGENT_ID,
-      configuration: { title: "After" },
-    }, actionAuthority("configure-call-1")))).resolves.toEqual({
-      status: "change_consent_requested",
-    });
-    expect(requestChangeConsent).toHaveBeenCalledWith({
-      capability,
-      targetAgentId: TARGET_AGENT_ID,
-      displayedDiff: DISPLAYED_DIFF,
-    });
-  });
-
-  it("fails closed when the compiled action has no consent-request owner", async () => {
-    const actions = createRuntimeAgentActionPort(deniedService());
-    await expect(actions.agentConfigure(agentRunManagedActionInvocation({
-      name: "agent_configure",
-      companyId: capability.companyId,
-      agentId: TARGET_AGENT_ID,
-      configuration: { title: "After" },
-    }, actionAuthority("configure-call-2")))).rejects.toBeInstanceOf(
-      RuntimeAgentConfigurationConsentRequired,
-    );
-  });
 });

@@ -2,10 +2,11 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
-  type RuntimeAgentConfigurationSnapshot,
 } from "@paperclipai/shared";
 import { describe, expect, it, vi } from "vitest";
 import { createRuntimeAgentActionPort } from "../services/runtime-agent-action-port.js";
+import * as agentConfigOps from "../services/runtime-agent-configuration-part-3.js";
+import * as taskAction from "../services/runtime-task-action-port-shared-part-3.js";
 import {
   agentRunManagedActionInvocation,
   type AgentRunToolAuthority,
@@ -14,18 +15,18 @@ import {
   createRuntimeAgentConfigurationService,
   parseRuntimeAgentCreateConfiguration,
   parseRuntimeAgentUpdateConfiguration,
-  RuntimeAgentConfigurationConsentRequired,
-  RuntimeAgentConfigurationDenied,
   RuntimeAgentConfigurationInvalid,
-  runtimeAgentConfigurationDisplayedDiff,
   type RuntimeAgentConfigurationService,
 } from "../services/runtime-agent-configuration.js";
+import { RuntimeTaskActionDenied } from "../services/runtime-task-action-port.js";
 import { RuntimeToolArgumentsInvalid } from "../services/runtime-tool-errors.js";
 import { createMockDb } from "./helpers/mock-db.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const companyId = "00000000-0000-4000-8000-000000000001";
 const agentId = "00000000-0000-4000-8000-000000000002";
+const otherAgentId = "00000000-0000-4000-8000-000000000003";
+const newManagerId = "00000000-0000-4000-8000-000000000004";
 
 function completeBooleanMap<Key extends string>(
   keys: readonly Key[],
@@ -69,21 +70,6 @@ function boardActor() {
       userId: "board-user",
       companyIds: [companyId],
     }),
-  };
-}
-
-function snapshot(): RuntimeAgentConfigurationSnapshot {
-  return {
-    identity: {
-      name: "Research Agent",
-      title: "Researcher",
-      capabilities: "Find primary sources",
-      reportsTo: null,
-      instruction: null,
-    },
-    contextGrants: { read_task_comments: true },
-    actionGrants: { task_create: true },
-    mentionReachGrants: { mention_any_ancestor: true },
   };
 }
 
@@ -164,24 +150,6 @@ describe("runtime-agent configuration canonical contracts", () => {
     });
   });
 
-  it("renders a deterministic consent diff containing only requested fields", () => {
-    const diff = runtimeAgentConfigurationDisplayedDiff(
-      agentId,
-      snapshot(),
-      {
-        title: "Board consented",
-        contextGrants: { carry_context: true },
-      },
-    );
-
-    expect(diff).toBe([
-      `--- agent:${agentId}:configuration`,
-      `+++ agent:${agentId}:configuration`,
-      "-{\"contextGrants\":{\"read_task_comments\":true},\"title\":\"Researcher\"}",
-      "+{\"contextGrants\":{\"carry_context\":true},\"title\":\"Board consented\"}",
-    ].join("\n"));
-    expect(diff).not.toContain("capabilities");
-  });
 });
 
 describe("runtime-agent action boundary", () => {
@@ -254,50 +222,15 @@ describe("runtime-agent action boundary", () => {
     );
   });
 
-  it("turns explicit consent-required configuration into one consent request", async () => {
-    const displayedDiff = runtimeAgentConfigurationDisplayedDiff(
-      agentId,
-      snapshot(),
-      { title: "Board consented" },
-    );
-    const configureFromRun = vi.fn(async () => {
-      throw new RuntimeAgentConfigurationConsentRequired(
-        "Consent required",
-        agentId,
-        displayedDiff,
-      );
-    });
-    const requestChangeConsent = vi.fn(async () => undefined);
-    const actions = createRuntimeAgentActionPort(fakeService({
-      configureFromRun: configureFromRun as never,
-    }), { requestChangeConsent });
-
-    await expect(actions.agentConfigure(agentRunManagedActionInvocation({
-      name: "agent_configure",
-      companyId,
-      agentId,
-      configuration: { title: "Board consented" },
-    } as never, actionAuthority("configure-consent")))).resolves.toEqual({
-      status: "change_consent_requested",
-    });
-    expect(requestChangeConsent).toHaveBeenCalledExactlyOnceWith({
-      capability: capability(),
-      targetAgentId: agentId,
-      displayedDiff,
-    });
-  });
-
-  it("does not swallow an ordinary configure denial", async () => {
+  it("does not swallow the canonical runtime-tool denial", async () => {
     const actions = createRuntimeAgentActionPort(fakeService({
       configureFromRun: vi.fn(async () => {
-        throw new RuntimeAgentConfigurationDenied(
-          "Action grant missing",
-          "action_grant_missing",
+        throw new RuntimeTaskActionDenied(
+          "Current runtime catalog no longer exposes agent_configure",
+          "runtime_tool_unavailable",
         );
       }) as never,
-    }), {
-      requestChangeConsent: vi.fn(async () => undefined),
-    });
+    }));
 
     await expect(actions.agentConfigure(agentRunManagedActionInvocation({
       name: "agent_configure",
@@ -305,8 +238,87 @@ describe("runtime-agent action boundary", () => {
       agentId,
       configuration: { title: "Denied" },
     } as never, actionAuthority("configure-denied")))).rejects.toMatchObject({
-      reason: "action_grant_missing",
+      reason: "runtime_tool_unavailable",
     });
+  });
+
+  it("uses only the canonical runtime gate to reparent an unrelated same-company agent", async () => {
+    const caller = {
+      id: agentId,
+      companyId,
+      name: "Caller",
+      reportsTo: null,
+      status: "idle",
+    } as never;
+    const target = {
+      id: otherAgentId,
+      companyId,
+      name: "Target",
+      reportsTo: null,
+      status: "idle",
+    } as never;
+    const newManager = {
+      id: newManagerId,
+      companyId,
+      name: "New manager",
+      reportsTo: null,
+      status: "idle",
+    } as never;
+    const beforeIdentity = {
+      name: "Target",
+      title: null,
+      capabilities: null,
+      reportsTo: null,
+      instruction: null,
+    };
+    const afterIdentity = { ...beforeIdentity, reportsTo: newManagerId };
+    const harness = createMockDb({
+      select: [
+        [],
+        [beforeIdentity],
+        [],
+        [],
+        [],
+        [afterIdentity],
+        [],
+        [],
+        [],
+      ],
+      update: [[]],
+      insert: [[]],
+    });
+    const lockRuntimeToolAuthority = vi
+      .spyOn(taskAction, "lockRuntimeToolAuthority")
+      .mockResolvedValue({
+        company: { id: companyId, status: "active" },
+        companyAgents: [caller, target, newManager],
+      } as never);
+    const lockCompanyAndAgents = vi.spyOn(agentConfigOps, "lockCompanyAndAgents");
+
+    try {
+      const service = createRuntimeAgentConfigurationService(harness.db, {
+        idFactory: () => "00000000-0000-4000-8000-000000000099",
+      });
+      const result = await service.configureFromRun({
+        capability: capability(),
+        invocationId: "configure-reporting",
+        targetAgentId: otherAgentId,
+        configuration: { reportsTo: newManagerId },
+      });
+
+      expect(result.configuration.identity.reportsTo).toBe(newManagerId);
+      expect(lockRuntimeToolAuthority).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        capability(),
+        "agent_configure",
+        expect.any(Date),
+      );
+      expect(lockCompanyAndAgents).not.toHaveBeenCalled();
+      expect(harness.remaining("select")).toBe(0);
+    } finally {
+      lockCompanyAndAgents.mockRestore();
+      lockRuntimeToolAuthority.mockRestore();
+    }
   });
 
   it("rejects invalid board/plugin source pairing before opening a transaction", async () => {

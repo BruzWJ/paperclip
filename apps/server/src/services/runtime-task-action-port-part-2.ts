@@ -34,12 +34,11 @@ export function createPostgresRuntimeTaskActionServicePart2(
     async assign(input) {
       const committed = await db.transaction(async (tx) => {
         const now = clock();
-        const authorized = await taskAction.lockRuntimeActionAuthority(
+        const authorized = await taskAction.lockRuntimeToolAuthority(
           tx,
           input.capability,
           "task_assign",
           now,
-          { requireOwner: true },
         );
         if (!input.capability.taskExecutionAuthorityId) {
           throw new taskAction.RuntimeTaskActionDenied(
@@ -343,9 +342,7 @@ export function createPostgresRuntimeTaskActionServicePart2(
       );
       const committed = await db.transaction(async (tx) => {
         const now = clock();
-        await taskAction.lockRuntimeActionAuthority(tx, input.capability, "mention_board", now, {
-          requireOwner: false,
-        });
+        await taskAction.lockRuntimeToolAuthority(tx, input.capability, "mention_board", now);
         const admission = await taskAction.mentionBoardInTransaction(sessionAdmission, tx, {
           companyId: input.capability.companyId,
           target: {

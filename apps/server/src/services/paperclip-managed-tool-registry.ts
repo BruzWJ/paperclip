@@ -97,7 +97,7 @@ export function projectRuntimeAgentConfigure(
   const result = projection({
     schema: runtimeAgentConfigureActionSchema,
     details:
-      "Update runtime-agent identity, context cells, and grants only. agentId accepts any canonical UUID; same-company target resolution and configure authority are enforced by the operation.",
+      "Update runtime-agent identity, reporting, context cells, and grants. A live agent_configure grant authorizes any non-terminated agent in the same company; reporting changes must remain acyclic.",
     normalize(parsed, scope) {
       const { agentId, ...configuration } = parsed;
       return {

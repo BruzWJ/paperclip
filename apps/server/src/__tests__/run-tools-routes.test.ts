@@ -223,7 +223,7 @@ describe("run-tools routes", () => {
     );
   });
 
-  it.each([["created"], ["configured"], ["change_consent_requested"]] as const)(
+  it.each([["created"], ["configured"]] as const)(
     "serializes the closed %s action receipt identically as text and structured content",
     async (status) => {
       const runtime = service();

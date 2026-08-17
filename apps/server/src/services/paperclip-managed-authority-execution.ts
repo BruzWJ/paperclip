@@ -5,7 +5,6 @@ import { RuntimeToolUnavailable } from "./runtime-tool-errors.js";
 import {
   PaperclipManagedToolError,
   agentRunManagedActionInvocation,
-  assertCompanyScope,
   toolInvocationKey,
 } from "./paperclip-managed-tool-routing-contracts.js";
 import type {
@@ -65,7 +64,6 @@ export function buildPaperclipManagedToolRouterPaperclipManagedAuthorityExecutio
     command: PaperclipManagedToolCommand,
     authority: BoardUserToolAuthority,
   ): Promise<unknown> {
-    assertCompanyScope(authority, command.companyId);
     switch (command.name) {
       case "task_create": {
         const result = await dependencies.ordinaryTasks().create({

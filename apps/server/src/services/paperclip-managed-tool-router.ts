@@ -18,6 +18,7 @@ import {
 
 import { agentService } from "./agents.js";
 import { createRuntimeAgentConfigurationService } from "./runtime-agent-configuration.js";
+import { lockRuntimeToolAuthority } from "./runtime-task-action-port-shared-part-3.js";
 import { taskService } from "./tasks.js";
 
 export function createPaperclipManagedToolRouterContext(
@@ -50,9 +51,22 @@ export function buildPaperclipManagedToolRouterPaperclipManagedRouteExecution(
     } else {
       assertCompanyScope(context.authority, command.companyId);
     }
+    const agentAuthority = context.authority.kind === "agent_run" ? context.authority : null;
     const runtimeScope =
-      context.authority.kind === "agent_run" && isPaperclipContextToolName(command.name)
-        ? ((await context.resolveRuntimeScope?.()) ?? null)
+      agentAuthority && isPaperclipContextToolName(command.name)
+        ? await dependencies.db.transaction(async (tx) => {
+            const authorized = await lockRuntimeToolAuthority(
+              tx,
+              agentAuthority.capability,
+              command.name,
+              new Date(),
+            );
+            return {
+              companyId: agentAuthority.capability.companyId,
+              activeTaskId: agentAuthority.capability.taskId,
+              dial: authorized.catalog.contextDial,
+            };
+          })
         : null;
 
     if (command.name === "list_company_tasks") {

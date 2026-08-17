@@ -38,7 +38,7 @@ import {
   taskUpdateActor,
   updateCounterpart,
 } from "./runtime-task-action-port-shared-part-5.js";
-import { lockRuntimeActionAuthority } from "./runtime-task-action-port-shared-part-3.js";
+import { lockRuntimeToolAuthority } from "./runtime-task-action-port-shared-part-3.js";
 import {
   applyTaskExecutionPolicyTransition,
   normalizeTaskExecutionPolicy,
@@ -82,12 +82,11 @@ export async function commitCreatorFormUpdateImplementation(
     const now = clock();
     let authorizedRuntime: AuthorizedRuntimeAction | null = null;
     if (creatorAuthority.kind === "agent-execution") {
-      authorizedRuntime = await lockRuntimeActionAuthority(
+      authorizedRuntime = await lockRuntimeToolAuthority(
         tx,
         creatorAuthority.capability,
         "task_update",
         now,
-        { requireOwner: true },
       );
       if (!creatorAuthority.capability.taskExecutionAuthorityId) {
         throw new RuntimeTaskActionDenied(

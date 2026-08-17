@@ -24,6 +24,10 @@ import {
 } from "./runtime-agent-configuration.js";
 import type { RuntimeToolCallTransaction } from "./runtime-tool-call-ledger.js";
 import { RuntimeInterfaceConflict } from "./runtime-tool-errors.js";
+import {
+  RuntimeTaskActionConflict,
+  RuntimeTaskActionDenied,
+} from "./runtime-task-action-port-shared-part-1.js";
 import { canonicalTaskSessionJson } from "./task-session/store.js";
 
 export interface AgentRunToolAuthority {
@@ -143,7 +147,6 @@ export function agentRunManagedActionInvocation<Name extends AgentRunManagedActi
 
 export interface PaperclipManagedToolRouteContext {
   authority: PaperclipToolAuthority;
-  resolveRuntimeScope?: () => Promise<ContextRetrievalScope>;
 }
 
 export interface PaperclipManagedToolRouter {
@@ -178,7 +181,9 @@ export function paperclipManagedToolPublicError(error: unknown) {
     error instanceof ContextRetrievalInvalidCursor ||
     error instanceof RuntimeAgentConfigurationInvalid ||
     error instanceof RuntimeAgentConfigurationDenied ||
-    error instanceof RuntimeAgentConfigurationConflict
+    error instanceof RuntimeAgentConfigurationConflict ||
+    error instanceof RuntimeTaskActionDenied ||
+    error instanceof RuntimeTaskActionConflict
   ) {
     return { code: error.code, message: error.message };
   }

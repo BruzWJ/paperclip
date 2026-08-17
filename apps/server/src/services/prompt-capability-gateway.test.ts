@@ -136,7 +136,7 @@ describe("prompt-capability gateway", () => {
     );
   });
 
-  it("uses one compiled snapshot for descriptor and context scope", async () => {
+  it("uses one compiled snapshot to select the requested descriptor", async () => {
     const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(9));
     const compiledDial = resolveContextDial({
       agent: { read_task_comments: true },
@@ -165,15 +165,9 @@ describe("prompt-capability gateway", () => {
       createPluginRunContext: vi.fn(async () => undefined),
       resolvePluginRunContextHash: vi.fn(async () => null),
     };
-    const observedScopes: unknown[] = [];
+    const routeExecution = vi.fn(async () => ({ items: [] }));
     const managedTools = {
-      async routeExecution(
-        _command: t.PaperclipManagedToolCommand,
-        context: t.PaperclipManagedToolRouteContext,
-      ) {
-        observedScopes.push(await context.resolveRuntimeScope!());
-        return { items: [] };
-      },
+      routeExecution,
     };
     const runtimeToolGateway = createRuntimeToolGateway({
       managedTools,
@@ -204,16 +198,10 @@ describe("prompt-capability gateway", () => {
     ).resolves.toEqual({ source: "paperclip", value: { items: [] } });
 
     expect(resolveCompileInput).toHaveBeenCalledOnce();
-    expect(observedScopes).toEqual([
-      {
-        companyId: capability.companyId,
-        activeTaskId: capability.taskId,
-        dial: compiledDial,
-      },
-    ]);
-    expect(observedScopes).not.toContainEqual(
+    expect(routeExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "read_task_comments" }),
       expect.objectContaining({
-        dial: driftedDial,
+        authority: expect.objectContaining({ capability }),
       }),
     );
   });

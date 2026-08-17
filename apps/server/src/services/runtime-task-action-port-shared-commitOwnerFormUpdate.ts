@@ -33,7 +33,7 @@ import {
   lockOwnerUpdateRecipient,
   terminalStatus,
 } from "./runtime-task-action-port-shared-part-2.js";
-import { lockRuntimeActionAuthority } from "./runtime-task-action-port-shared-part-3.js";
+import { lockRuntimeToolAuthority } from "./runtime-task-action-port-shared-part-3.js";
 import { taskUpdateActor, updateCounterpart } from "./runtime-task-action-port-shared-part-5.js";
 import {
   applyTaskExecutionPolicyTransition,
@@ -94,12 +94,11 @@ export async function commitOwnerFormUpdateImplementation(
     let task: TaskRow;
     let authorizedRuntime: AuthorizedRuntimeAction | null = null;
     if (ownerAuthority.kind === "agent-execution") {
-      authorizedRuntime = await lockRuntimeActionAuthority(
+      authorizedRuntime = await lockRuntimeToolAuthority(
         tx,
         ownerAuthority.capability,
         "task_update",
         now,
-        { requireOwner: true },
       );
       if (
         taskId !== ownerAuthority.capability.taskId ||

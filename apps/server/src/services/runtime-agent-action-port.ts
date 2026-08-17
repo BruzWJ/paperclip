@@ -1,12 +1,8 @@
 import {
-  RuntimeAgentConfigurationConsentRequired,
   RuntimeAgentConfigurationInvalid,
   type RuntimeAgentConfigurationService,
 } from "./runtime-agent-configuration.js";
-import {
-  type AgentRunManagedActionInvocation,
-  type AgentRunManagedActionPort,
-} from "./paperclip-managed-tool-router.js";
+import { type AgentRunManagedActionPort } from "./paperclip-managed-tool-router.js";
 import { RuntimeToolArgumentsInvalid } from "./runtime-tool-errors.js";
 
 export type AgentRunAgentActionPort = Pick<AgentRunManagedActionPort, "agentHire" | "agentConfigure">;
@@ -32,13 +28,6 @@ async function mapInvalidArguments<T>(action: () => Promise<T>): Promise<T> {
  */
 export function createRuntimeAgentActionPort(
   service: RuntimeAgentConfigurationService,
-  options: {
-    requestChangeConsent?: (input: {
-      capability: AgentRunManagedActionInvocation["authority"]["capability"];
-      targetAgentId: string;
-      displayedDiff: string;
-    }) => Promise<void>;
-  } = {},
 ): AgentRunAgentActionPort {
   return {
     async agentHire(input) {
@@ -56,25 +45,13 @@ export function createRuntimeAgentActionPort(
     async agentConfigure(input) {
       const { agentId: targetAgentId, configuration } = input.command;
       return mapInvalidArguments(async () => {
-        try {
-          await service.configureFromRun({
-            capability: input.authority.capability,
-            invocationId: input.authority.invocation.id,
-            targetAgentId,
-            configuration,
-          });
-          return { status: "configured" as const };
-        } catch (error) {
-          if (!(error instanceof RuntimeAgentConfigurationConsentRequired) || !options.requestChangeConsent) {
-            throw error;
-          }
-          await options.requestChangeConsent({
-            capability: input.authority.capability,
-            targetAgentId: error.targetAgentId,
-            displayedDiff: error.displayedDiff,
-          });
-          return { status: "change_consent_requested" as const };
-        }
+        await service.configureFromRun({
+          capability: input.authority.capability,
+          invocationId: input.authority.invocation.id,
+          targetAgentId,
+          configuration,
+        });
+        return { status: "configured" as const };
       });
     },
   };

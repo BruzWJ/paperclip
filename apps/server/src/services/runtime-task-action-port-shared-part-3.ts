@@ -1,5 +1,4 @@
 import {
-  agentActionGrants,
   agents,
   companies,
   taskConsultExecutions,
@@ -10,7 +9,6 @@ import {
   tasks,
   type Db,
 } from "@paperclipai/db";
-import { type PaperclipActionKey, type PaperclipRuntimeActionKey } from "@paperclipai/shared";
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
   InvokableTaskOwnerRejected,
@@ -18,8 +16,12 @@ import {
   resolveInvokableTaskOwnerInTransaction,
 } from "./agent-invokability.js";
 import { lockActivePromptCapabilityBinding } from "./prompt-capability-gateway-postgres.js";
+import { type PaperclipManagedToolName } from "./paperclip-managed-tool-registry.js";
 import { createPostgresRuntimeInterfaceCompiler } from "./runtime-interface-compiler-db.js";
-import { type RuntimeInterfaceCompileInput } from "./runtime-interface-compiler.js";
+import {
+  resolveRuntimeToolDescriptor,
+  type RuntimeInterfaceCompileInput,
+} from "./runtime-interface-compiler.js";
 import {
   type AgentRunCapability,
   type AuthorizedRuntimeAction,
@@ -32,60 +34,13 @@ import {
 } from "./runtime-task-action-port-shared-part-2.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
-export const PERSISTENT_GRANT_BY_RUNTIME_ACTION = {
-  task_create: "task_create",
-  task_assign: "task_create",
-  task_update: null,
-  mention_agent: null,
-  mention_board: "mention_board",
-  agent_hire: "agent_hire",
-  agent_configure: "agent_configure",
-  list_agents: null,
-  agent_read: "agent_configure",
-} as const satisfies Record<PaperclipRuntimeActionKey, PaperclipActionKey | null>;
-
-export function actionRemainsAvailableInCatalog(
-  catalog: RuntimeInterfaceCompileInput,
-  action: PaperclipRuntimeActionKey,
-  persistentGrant: PaperclipActionKey | null,
-): boolean {
-  if (persistentGrant) {
-    return catalog.actionGrants[persistentGrant] === true;
-  }
-  // task_update is emitted from relationship-derived authority, never a
-  // stored action grant. Form-specific target validation happens at the
-  // owner/creator commit boundary below.
-  if (action === "task_update") {
-    return catalog.isCurrentOwner || catalog.creatorUpdateTargets.length > 0;
-  }
-  // mention_agent is dynamically compiled from reachable targets, not a
-  // persisted action grant. The tool is only compiled when targets exist.
-  if (action === "mention_agent") {
-    return catalog.mentionTargets.length > 0;
-  }
-  // list_agents and any future null-grant actions pass through the
-  // catalog check. Each handler performs its own secondary grant recheck
-  // when needed.
-  return true;
-}
-
-export async function lockRuntimeActionAuthority(
+export async function lockRuntimeToolAuthority(
   tx: TaskSessionDbTransaction,
   capability: AgentRunCapability,
-  action: PaperclipRuntimeActionKey,
+  toolName: PaperclipManagedToolName,
   now: Date,
-  options: {
-    requireOwner: boolean;
-    additionalLaneTargetAgentId?: string;
-  },
+  options: { additionalLaneTargetAgentId?: string } = {},
 ): Promise<AuthorizedRuntimeAction> {
-  if (options.requireOwner && capability.executionMode !== "owner") {
-    throw new RuntimeTaskActionDenied(
-      "This action requires an active owner execution",
-      "owner_execution_required",
-    );
-  }
-
   await lockRuntimeActionHierarchy(tx, capability, now, {
     additionalLaneTargetAgentId: options.additionalLaneTargetAgentId,
   });
@@ -243,42 +198,21 @@ export async function lockRuntimeActionAuthority(
     throw new RuntimeTaskActionDenied(invokability.message, `agent_not_invokable:${invokability.reason}`);
   }
 
-  const persistentGrant = PERSISTENT_GRANT_BY_RUNTIME_ACTION[action];
-  if (persistentGrant) {
-    const grantRows = await tx
-      .select({ id: agentActionGrants.id })
-      .from(agentActionGrants)
-      .where(
-        and(
-          eq(agentActionGrants.companyId, capability.companyId),
-          eq(agentActionGrants.agentId, capability.targetAgentId),
-          eq(agentActionGrants.key, persistentGrant),
-        ),
-      )
-      .for("update");
-    if (grantRows.length !== 1) {
-      throw new RuntimeTaskActionDenied(
-        `Current run no longer has ${persistentGrant} required for ${action}`,
-        "action_grant_missing",
-      );
-    }
-  }
-
   let catalog: RuntimeInterfaceCompileInput;
+  let toolAvailable: boolean;
   try {
     catalog = await createPostgresRuntimeInterfaceCompiler(tx as unknown as Db).resolve(capability);
+    toolAvailable = resolveRuntimeToolDescriptor(catalog, toolName)?.source === "paperclip";
   } catch (error) {
     throw new RuntimeTaskActionDenied(
       error instanceof Error ? error.message : "Runtime interface could not be recompiled",
       "catalog_revalidation_failed",
     );
   }
-  if (!actionRemainsAvailableInCatalog(catalog, action, persistentGrant)) {
+  if (!toolAvailable) {
     throw new RuntimeTaskActionDenied(
-      persistentGrant
-        ? `Current runtime catalog no longer grants ${persistentGrant} required for ${action}`
-        : `Current runtime catalog no longer exposes ${action}`,
-      persistentGrant ? "action_grant_missing" : "runtime_action_unavailable",
+      `Current runtime catalog no longer exposes ${toolName}`,
+      "runtime_tool_unavailable",
     );
   }
   return {

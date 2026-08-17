@@ -102,15 +102,16 @@ function authorNameForComment(comment: TaskChatComment) {
 
 function createCommentMessage(comment: TaskChatComment): TaskChatMessage {
   const isSystemNotice = comment.authorType === "system";
-  const isRunProgress = comment.presentation?.kind === "run_progress";
+  const runContent = createRunSegmentContent(comment);
+  const isRun =
+    Boolean(comment.authorAgentId) &&
+    (comment.presentation?.kind === "run_progress" || comment.runState != null || runContent !== null);
   const custom = {
     kind: isSystemNotice
       ? "system_notice"
-      : isRunProgress
-        ? "run-progress"
-        : comment.boardEntryKind === "run_segment"
-          ? "run-segment"
-          : "comment",
+      : isRun
+        ? "run"
+        : "comment",
     commentId: comment.id,
     anchorId: `comment-${comment.id}`,
     authorName: authorNameForComment(comment),
@@ -127,15 +128,8 @@ function createCommentMessage(comment: TaskChatComment): TaskChatMessage {
     boardGroupContinuationError: comment.boardGroupContinuationError ?? null,
     immediateParentDisplayReference: comment.immediateParentDisplayReference ?? null,
     canReply: comment.boardEntryKind === "comment" && !comment.clientStatus,
+    runSegmentPartCount: runContent?.length ?? 0,
   };
-  const contentText =
-    isRunProgress && comment.body.length === 0
-      ? comment.runState === "queued"
-        ? "Queued…"
-        : comment.runState === "working"
-          ? "Working…"
-          : comment.body
-      : comment.body;
   const createdAt = toDate(comment.createdAt);
 
   if (isSystemNotice) {
@@ -143,18 +137,18 @@ function createCommentMessage(comment: TaskChatComment): TaskChatMessage {
       id: comment.id,
       role: "system",
       createdAt,
-      content: [{ type: "text", text: contentText }],
+      content: [{ type: "text", text: comment.body }],
       metadata: { custom },
     };
     return message;
   }
   if (comment.authorAgentId || comment.authorType === "plugin") {
-    const runSegmentContent = createRunSegmentContent(comment);
+    const responseContent = comment.body.length > 0 ? [{ type: "text" as const, text: comment.body }] : [];
     const message: TaskChatMessage = {
       id: comment.id,
       role: "assistant",
       createdAt,
-      content: runSegmentContent ?? [{ type: "text", text: contentText }],
+      content: runContent ? [...runContent, ...responseContent] : responseContent,
       status:
         comment.authorAgentId && (comment.runState === "queued" || comment.runState === "working")
           ? { type: "running" }
@@ -167,7 +161,7 @@ function createCommentMessage(comment: TaskChatComment): TaskChatMessage {
     id: comment.id,
     role: "user",
     createdAt,
-    content: [{ type: "text", text: contentText }],
+    content: [{ type: "text", text: comment.body }],
     metadata: { custom },
   };
   return message;

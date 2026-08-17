@@ -155,15 +155,21 @@ compiled from reachable mention targets (direct children and granted ancestor/
 descendant reach) and does not require a persisted grant. A creator
 path may send a message or set nonterminal `open`/`blocked`; terminal
 `done`/`cancelled` and `structuredResult` are current-owner-only. Dynamic
-catalogs contain only eligible direct children, valid mention targets, and permitted
-configuration targets. There is no implicit response route; explicit upward
-mentions require the ancestor grant. A missing configurable grant means false.
+catalogs contain only eligible direct children and valid mention targets. There
+is no implicit response route; explicit upward mentions require the ancestor
+grant. A live `agent_configure` grant authorizes updates to any non-terminated
+agent in the company; reporting changes still reject missing managers and
+cycles. A missing configurable grant means false.
 
 The provider receives a `paperclip.run-tools/v1` endpoint/bearer bound to the
 run, task, epoch, agent, adapter revision, reference, and lease. It is accepted
 only by the compiled endpoint and becomes invalid on lease loss or authority
-change. General task, comment, activity, agent-profile, company, and
-tool-selector REST routes reject provider credentials.
+change. Every built-in provider tool passes the same transactional runtime gate,
+which recompiles the current interface and uses that compiled catalog as the
+sole tool-availability decision. Handlers may enforce target and state
+invariants, but must not query grants or generic principal permissions as a
+second runtime authority path. General task, comment, activity, agent-profile,
+company, and tool-selector REST routes reject provider credentials.
 
 ## Communication, admission, and recovery
 

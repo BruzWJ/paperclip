@@ -70,7 +70,7 @@ describe("buildTaskChatMessages", () => {
     });
   });
 
-  it("preserves ordered board run-segment text, reasoning, and tool parts", () => {
+  it("renders ordered work and the final response as one run message", () => {
     const parts = [
       { type: "text", text: "Starting the investigation." },
       { type: "reasoning", text: "I should inspect the failing check first." },
@@ -85,17 +85,17 @@ describe("buildTaskChatMessages", () => {
             root: {
               id: "root",
               author: {
-                type: "user",
-                label: "Board user",
-                agentId: null,
-                userId: "user-1",
+                type: "agent",
+                label: "Agent",
+                agentId: "agent-1",
+                userId: null,
                 pluginKey: null,
               },
-              body: "Please investigate",
-              presentation: null,
+              body: "Investigation complete.",
+              presentation: { kind: "message", tone: "neutral", detailsDefaultOpen: false },
               metadata: null,
               sourceTrust: null,
-              runState: null,
+              runState: "terminal",
               canonicalSequence: 1,
               immediateParentDisplayReference: null,
               createdAt: new Date("2026-07-31T12:00:00.000Z"),
@@ -129,13 +129,18 @@ describe("buildTaskChatMessages", () => {
     ] satisfies BoardTaskCommentGroupPage[];
     const comments = flattenBoardTaskCommentGroupPages(pages);
 
-    expect(comments[1]).toMatchObject({
-      boardEntryKind: "run_segment",
+    expect(comments).toHaveLength(1);
+    expect(comments[0]).toMatchObject({
       boardRunSegmentParts: parts,
     });
 
     const messages = buildTaskChatMessages({ comments });
-    expect(messages[1]?.content).toEqual([
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: "root",
+      metadata: { custom: { kind: "run", runSegmentPartCount: 5 } },
+    });
+    expect(messages[0]?.content).toEqual([
       { type: "text", text: "Starting the investigation." },
       { type: "reasoning", text: "I should inspect the failing check first." },
       {
@@ -149,10 +154,11 @@ describe("buildTaskChatMessages", () => {
         toolName: "run_tests",
         status: "error",
       },
+      { type: "text", text: "Investigation complete." },
     ]);
   });
 
-  it("uses the canonical board projection order for grouped reply and run-progress rows", () => {
+  it("keeps canonical board order without inventing progress copy", () => {
     const messages = buildTaskChatMessages({
       comments: [
         comment({
@@ -174,7 +180,7 @@ describe("buildTaskChatMessages", () => {
             detailsDefaultOpen: false,
           },
           runState: "working",
-          boardEntryKind: "run_segment",
+          boardEntryKind: "comment",
           boardGroupRootId: "root",
           boardOrder: 2,
         }),
@@ -196,23 +202,24 @@ describe("buildTaskChatMessages", () => {
     });
 
     expect(messages.map((message) => message.id)).toEqual(["root", "progress", "reply-1", "reply-2"]);
-    expect(textOf(messages[1]!)).toBe("Working…");
+    expect(textOf(messages[1]!)).toBe("");
+    expect(messages[1]?.status).toEqual({ type: "running" });
     expect(messages[1]).toMatchObject({
       role: "assistant",
-      status: { type: "running" },
       metadata: {
         custom: {
-          kind: "run-progress",
+          kind: "run",
           boardGroupRootId: "root",
         },
       },
     });
   });
 
-  it("derives the queued and terminal labels from persisted run progress", () => {
-    const queued = buildTaskChatMessages({
+  it("does not derive queued or working placeholder labels", () => {
+    const messages = buildTaskChatMessages({
       comments: [
         comment({
+          id: "queued-progress",
           authorType: "agent",
           authorAgentId: "agent-1",
           authorUserId: null,
@@ -224,11 +231,8 @@ describe("buildTaskChatMessages", () => {
           },
           runState: "queued",
         }),
-      ],
-    });
-    const terminal = buildTaskChatMessages({
-      comments: [
         comment({
+          id: "working-progress",
           authorType: "agent",
           authorAgentId: "agent-1",
           authorUserId: null,
@@ -238,13 +242,17 @@ describe("buildTaskChatMessages", () => {
             tone: "neutral",
             detailsDefaultOpen: false,
           },
-          runState: "terminal",
+          runState: "working",
         }),
       ],
     });
 
-    expect(textOf(queued[0]!)).toBe("Queued…");
-    expect(textOf(terminal[0]!)).toBe("");
+    expect(messages.map(textOf)).toEqual(["", ""]);
+    expect(messages.map((message) => message.status)).toEqual([
+      { type: "running" },
+      { type: "running" },
+    ]);
+    expect(messages.map((message) => message.metadata.custom.kind)).toEqual(["run", "run"]);
   });
 
   it("drops duplicate message ids so the runtime never sees the same id twice", () => {

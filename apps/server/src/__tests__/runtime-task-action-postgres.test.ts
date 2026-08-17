@@ -219,41 +219,6 @@ describe("runtime task action contracts", () => {
     });
   });
 
-  it("rejects consult lifecycle mutations before the service boundary", async () => {
-    const consultCapability = {
-      ...capability,
-      executionMode: "consult" as const,
-      laneKind: "consult" as const,
-      taskExecutionAuthorityId: null,
-      consultExecutionId: "00000000-0000-4000-8000-000000000710",
-    };
-    const port = createRuntimeTaskActionPort(service);
-
-    await expect(port.taskCreate(runtimeInvocation({
-      name: "task_create",
-      companyId: consultCapability.companyId,
-      parentId: consultCapability.taskId,
-      request: "No",
-      ownerAgentId: consultCapability.targetAgentId,
-    }, consultCapability))).rejects.toBeInstanceOf(RuntimeTaskActionDenied);
-    await expect(port.taskAssign(runtimeInvocation({
-      name: "task_assign",
-      companyId: consultCapability.companyId,
-      taskId: capability.taskId,
-      ownerAgentId: consultCapability.targetAgentId,
-    }, consultCapability))).rejects.toBeInstanceOf(RuntimeTaskActionDenied);
-    await expect(port.taskUpdate(runtimeInvocation({
-      name: "task_update",
-      companyId: consultCapability.companyId,
-      taskId: consultCapability.taskId,
-      taskTarget: "active",
-      message: "No",
-    }, consultCapability))).rejects.toBeInstanceOf(RuntimeTaskActionDenied);
-    expect(service.create).not.toHaveBeenCalled();
-    expect(service.assign).not.toHaveBeenCalled();
-    expect(service.update).not.toHaveBeenCalled();
-  });
-
   it("fails closed when a forged command has lost canonical target intent", async () => {
     const port = createRuntimeTaskActionPort(service);
     const forged = {

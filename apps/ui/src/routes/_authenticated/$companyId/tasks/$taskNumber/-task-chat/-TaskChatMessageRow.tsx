@@ -2,6 +2,7 @@ import {
   ChainOfThought,
   ChainOfThoughtContent,
   ChainOfThoughtHeader,
+  ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import {
@@ -16,15 +17,13 @@ import {
   QueueSectionLabel,
   QueueSectionTrigger,
 } from "@/components/ai-elements/queue";
-import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
-import { Tool, ToolContent, ToolHeader, type ToolPart } from "@/components/ai-elements/tool";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AgentIcon } from "@/routes/_authenticated/$companyId/-AgentIconPicker";
 import { deriveInitials } from "@/lib/identity";
-import type { TaskChatMessage, TaskChatMessagePart } from "@/lib/task-chat-messages";
+import type { TaskChatMessage } from "@/lib/task-chat-messages";
 import { cn, formatDateTime } from "@/lib/utils";
-import { PlugIcon } from "lucide-react";
+import { BrainIcon, MessageSquareTextIcon, PlugIcon, WrenchIcon } from "lucide-react";
 import { memo, useContext } from "react";
 
 import { SystemNoticeCommentRow } from "./-SystemNoticeCommentRow";
@@ -37,13 +36,6 @@ import {
   taskChatMessageCustom,
   taskChatMessageKind,
 } from "./-TaskChatMessageUtils";
-
-function toolState(status: Extract<TaskChatMessagePart, { type: "tool-call" }>["status"]): ToolPart["state"] {
-  if (status === "pending") return "input-streaming";
-  if (status === "running") return "input-available";
-  if (status === "error") return "output-error";
-  return "output-available";
-}
 
 function ImmediateParent({ custom }: { custom: Record<string, unknown> }) {
   const value = custom.immediateParentDisplayReference;
@@ -60,56 +52,47 @@ function ImmediateParent({ custom }: { custom: Record<string, unknown> }) {
   );
 }
 
-function RunSegment({ message }: { message: TaskChatMessage }) {
+function RunMessage({ message }: { message: TaskChatMessage }) {
   const parts = message.content;
-  const traceParts = parts.filter((part) => part.type !== "text");
-  const textParts = parts.filter(
-    (part): part is Extract<TaskChatMessagePart, { type: "text" }> => part.type === "text",
-  );
+  const custom = taskChatMessageCustom(message);
+  const workPartCount =
+    typeof custom.runSegmentPartCount === "number"
+      ? Math.min(custom.runSegmentPartCount, parts.length)
+      : parts.length;
+  const workParts = parts.slice(0, workPartCount);
+  const responseParts = parts.slice(workPartCount).filter((part) => part.type === "text");
   const working = message.status?.type === "running";
 
   return (
     <>
-      {traceParts.length > 0 ? (
+      {working || workParts.length > 0 ? (
         <ChainOfThought defaultOpen={working}>
           <ChainOfThoughtHeader>{working ? "Working" : "Work log"}</ChainOfThoughtHeader>
           <ChainOfThoughtContent>
-            {traceParts.map((part, index) =>
-              part.type === "reasoning" ? (
-                <Reasoning
-                  key={`reasoning:${index}`}
-                  isStreaming={working && index === traceParts.length - 1}
-                  defaultOpen={working}
-                >
-                  <ReasoningTrigger getThinkingMessage={() => "Reasoning"} />
-                  <ReasoningContent>{part.text}</ReasoningContent>
-                </Reasoning>
-              ) : (
-                <Tool
-                  key={`tool:${index}:${part.toolName}`}
-                  defaultOpen={part.status === "running" || part.status === "error"}
-                >
-                  <ToolHeader type="dynamic-tool" toolName={part.toolName} state={toolState(part.status)} />
-                  <ToolContent>
-                    <p className="text-sm text-muted-foreground">
-                      The board transcript exposes this tool&apos;s name and status only.
-                    </p>
-                  </ToolContent>
-                </Tool>
-              ),
-            )}
+            {workParts.map((part, index) => {
+              const active = working && index === workParts.length - 1;
+              return (
+                <ChainOfThoughtStep
+                  key={`${part.type}:${index}`}
+                  icon={
+                    part.type === "tool-call"
+                      ? WrenchIcon
+                      : part.type === "reasoning"
+                        ? BrainIcon
+                        : MessageSquareTextIcon
+                  }
+                  label={part.type === "tool-call" ? part.toolName : part.type === "reasoning" ? "Reasoning" : part.text}
+                  description={part.type === "tool-call" ? part.status : part.type === "reasoning" ? part.text : undefined}
+                  status={active ? "active" : part.type === "tool-call" && part.status === "pending" ? "pending" : "complete"}
+                />
+              );
+            })}
           </ChainOfThoughtContent>
         </ChainOfThought>
       ) : null}
-      {textParts.length > 0 ? (
-        textParts.map((part, index) => (
-          <MessageResponse key={`text:${index}`} isAnimating={working}>
-            {part.text}
-          </MessageResponse>
-        ))
-      ) : traceParts.length === 0 ? (
-        <MessageResponse isAnimating={working}>{getThreadMessageCopyText(message)}</MessageResponse>
-      ) : null}
+      {responseParts.map((part, index) => (
+        <MessageResponse key={`response:${index}`}>{part.text}</MessageResponse>
+      ))}
     </>
   );
 }
@@ -304,8 +287,8 @@ export const TaskChatMessageRow = memo(function TaskChatMessageRow({
             <ImmediateParent custom={custom} />
             {queued ? (
               <QueuedMessage message={message} />
-            ) : kind === "run-segment" ? (
-              <RunSegment message={message} />
+            ) : kind === "run" ? (
+              <RunMessage message={message} />
             ) : (
               <MessageResponse
                 isAnimating={message.role === "assistant" && message.status?.type === "running"}

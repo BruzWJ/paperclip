@@ -20,7 +20,6 @@ import { type AgentRunNonAgentActionPort } from "./runtime-agent-action-port.js"
 import type { AgentRunManagedActionInvocation } from "./paperclip-managed-tool-router.js";
 import {
   RuntimeTaskActionConflict,
-  RuntimeTaskActionDenied,
   type AgentRunCapability,
   type RuntimeTaskActionService,
   type RuntimeTaskOwnerChoice,
@@ -194,15 +193,6 @@ function ownerChoiceFromCanonical(
     : { kind: "agent", agentId: ownerAgentId };
 }
 
-function assertOwnerExecution(input: Pick<AgentRunManagedActionInvocation, "authority">): void {
-  if (input.authority.capability.executionMode !== "owner") {
-    throw new RuntimeTaskActionDenied(
-      "Consult executions cannot mutate task ownership or lifecycle",
-      "owner_execution_required",
-    );
-  }
-}
-
 function requireRuntimeMessage(command: { message?: string }): string {
   if (command.message === undefined) {
     throw new RuntimeTaskActionConflict("Normalized runtime action is missing its required message");
@@ -220,15 +210,10 @@ function runtimeTaskUpdateTarget(command: AgentRunManagedActionInvocation<"task_
   );
 }
 
-/**
- * Closed adapter for the four task action descriptors. It accepts exactly
- * one normalized managed-tool command and leaves catalog/authority/epoch
- * revalidation to the canonical transactional service.
- */
+/** Closed adapter from normalized managed-tool commands to the transactional service. */
 export function createRuntimeTaskActionPort(service: RuntimeTaskActionService): AgentRunNonAgentActionPort {
   return {
     async taskCreate(input) {
-      assertOwnerExecution(input);
       const { command, authority } = input;
       return service.create({
         capability: authority.capability,
@@ -241,7 +226,6 @@ export function createRuntimeTaskActionPort(service: RuntimeTaskActionService): 
     },
 
     async taskAssign(input) {
-      assertOwnerExecution(input);
       const { command, authority } = input;
       return service.assign({
         capability: authority.capability,
@@ -252,7 +236,6 @@ export function createRuntimeTaskActionPort(service: RuntimeTaskActionService): 
     },
 
     async taskUpdate(input) {
-      assertOwnerExecution(input);
       const { command, authority } = input;
       const target = runtimeTaskUpdateTarget(command);
       const message = requireRuntimeMessage(command);

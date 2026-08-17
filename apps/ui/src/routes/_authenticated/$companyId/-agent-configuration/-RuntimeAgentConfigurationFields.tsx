@@ -36,7 +36,8 @@ const ACTION_LABELS: Record<PaperclipActionKey, ConfigurationOptionCopy> = {
   },
   agent_configure: {
     label: "Configure agents",
-    description: "Edit an explicitly authorized target's identity, dials, and grants.",
+    description:
+      "Edit any non-terminated agent in this company, including identity, reporting, dials, and grants.",
   },
   list_all_agents: {
     label: "List all agents",

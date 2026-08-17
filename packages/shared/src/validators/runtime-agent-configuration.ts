@@ -94,10 +94,10 @@ export const runtimeAgentUpdateConfigurationSchema = nonemptyPatch(
 );
 
 /**
- * The runtime action envelope accepts any canonical agent id. Same-company
- * target resolution and configure authority are operation-level concerns,
- * so the provider descriptor must not narrow this field to a compiled org
- * catalog.
+ * The runtime action envelope accepts any canonical agent id. The live action
+ * grant supplies configure authority; the operation resolves a non-terminated
+ * same-company target and validates reporting changes. The provider descriptor
+ * must not narrow this field to a compiled org catalog.
  */
 export const runtimeAgentConfigureActionSchema = runtimeAgentConfigurationFieldsSchema
   .partial()

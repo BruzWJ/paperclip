@@ -105,4 +105,4 @@ These are distinct operations. Editing agent configuration does not perform any 
 
 ## API surface
 
-Board/operator APIs provide agent CRUD, lifecycle control, immutable config revisions, explicit grant administration, and run inspection/cancellation. Provider executions cannot call those general routes; `agent_configure` is available only through a compiled run interface with a live grant and dynamic target authority.
+Board/operator APIs provide agent CRUD, lifecycle control, immutable config revisions, explicit grant administration, and run inspection/cancellation. Provider executions cannot call those general routes; `agent_configure` is available only through a compiled run interface with a live grant. That grant authorizes updates to any non-terminated agent in the same company, while reporting changes remain subject to manager-existence and cycle validation.

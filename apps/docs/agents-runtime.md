@@ -251,7 +251,8 @@ result, not delivery of Paperclip's local `AbortController` signal.
 The chronological task comment stream is the durable human-facing output.
 Bootstrap and task-message executions are separate runs, each with its own
 top-level stable progress comment. A non-empty terminal assistant response
-becomes that same run's comment even when it also committed tool updates.
+becomes that same run's comment unless a same-task `task_update` already wrote
+the run's canonical message. Cross-task updates leave the response on the current task.
 Neither run is represented as a reply to the other.
 
 No tool-free final closes a task or invokes another agent. The current owner

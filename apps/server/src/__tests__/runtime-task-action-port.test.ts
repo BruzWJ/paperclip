@@ -3,7 +3,6 @@ import {
   admitCounterpartTaskUpdate,
   createRuntimeTaskActionPort,
   RuntimeTaskActionConflict,
-  RuntimeTaskActionDenied,
   type RuntimeTaskActionService,
 } from "../services/runtime-task-action-port.js";
 import {
@@ -289,46 +288,6 @@ describe("runtime task action port", () => {
     await expect(
       port.taskUpdate(runtimeInvocation(forged)),
     ).rejects.toBeInstanceOf(RuntimeTaskActionConflict);
-  });
-
-  it("denies owner and lifecycle commands to a consult authority", async () => {
-    const { service, port } = setup();
-    const consultCapability = {
-      ...ownerCapability,
-      executionMode: "consult" as const,
-      laneKind: "consult" as const,
-      taskExecutionAuthorityId: null,
-      consultExecutionId: "consult-authority",
-    };
-    await expect(
-      port.taskAssign(
-        runtimeInvocation(
-          {
-            name: "task_assign",
-            companyId: consultCapability.companyId,
-            taskId: "child",
-            ownerAgentId: consultCapability.targetAgentId,
-          },
-          consultCapability,
-        ),
-      ),
-    ).rejects.toBeInstanceOf(RuntimeTaskActionDenied);
-    await expect(
-      port.taskUpdate(
-        runtimeInvocation(
-          {
-            name: "task_update",
-            companyId: consultCapability.companyId,
-            taskId: consultCapability.taskId,
-            taskTarget: "active",
-            message: "Forged progress",
-          },
-          consultCapability,
-        ),
-      ),
-    ).rejects.toBeInstanceOf(RuntimeTaskActionDenied);
-    expect(service.assign).not.toHaveBeenCalled();
-    expect(service.update).not.toHaveBeenCalled();
   });
 
   it("passes canonical agent and Board mentions with their immutable invocation identity", async () => {

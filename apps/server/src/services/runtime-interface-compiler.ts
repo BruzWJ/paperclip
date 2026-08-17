@@ -216,6 +216,13 @@ export function compileRuntimeInterface(
   };
 }
 
+export function resolveRuntimeToolDescriptor(
+  input: RuntimeInterfaceCompileInput,
+  toolName: string,
+): CompiledRunToolDescriptor | null {
+  return compileRuntimeInterface(input).byName.get(toolName) ?? null;
+}
+
 function canonicalDescriptorJson(value: unknown): string {
   if (value === null) return "null";
   if (typeof value === "string" || typeof value === "boolean") {

@@ -103,35 +103,6 @@ export function parseRuntimeAgentConfigureConfiguration(
   return parseRuntimeAgentUpdateConfiguration(parsed.data);
 }
 
-export function runtimeAgentConfigurationDisplayedDiff(
-  targetAgentId: string,
-  before: RuntimeAgentConfigurationSnapshot,
-  configuration: agentConfig.RuntimeAgentUpdateConfiguration,
-): string {
-  const requested = configuration as Record<string, unknown>;
-  const beforeValues: Record<string, unknown> = {};
-  const afterValues: Record<string, unknown> = {};
-  for (const key of agentConfig.CONFIGURATION_KEYS) {
-    if (!Object.prototype.hasOwnProperty.call(requested, key)) continue;
-    beforeValues[key] =
-      key === "name" ||
-      key === "title" ||
-      key === "capabilities" ||
-      key === "reportsTo" ||
-      key === "instruction"
-        ? before.identity[key]
-        : before[key];
-    afterValues[key] = requested[key];
-  }
-  const target = `agent:${targetAgentId}:configuration`;
-  return [
-    `--- ${target}`,
-    `+++ ${target}`,
-    `-${canonicalJson(beforeValues)}`,
-    `+${canonicalJson(afterValues)}`,
-  ].join("\n");
-}
-
 export function sha256(value: unknown): string {
   return createHash("sha256").update(canonicalJson(value)).digest("hex");
 }

@@ -14,9 +14,15 @@ const agentServiceMocks = vi.hoisted(() => ({
   list: vi.fn(),
   getById: vi.fn(),
 }));
+const runtimeAuthorityMocks = vi.hoisted(() => ({
+  lockRuntimeToolAuthority: vi.fn(),
+}));
 
 vi.mock("../services/agents.js", () => ({
   agentService: () => agentServiceMocks,
+}));
+vi.mock("../services/runtime-task-action-port-shared-part-3.js", () => ({
+  lockRuntimeToolAuthority: runtimeAuthorityMocks.lockRuntimeToolAuthority,
 }));
 
 const companyId = "00000000-0000-4000-8000-000000000001";
@@ -36,7 +42,7 @@ const boardAuthority: BoardUserToolAuthority = {
 function authority(): AgentRunToolAuthority {
   return {
     kind: "agent_run",
-    capability: { companyId } as AgentRunToolAuthority["capability"],
+    capability: { companyId, taskId } as AgentRunToolAuthority["capability"],
     invocation: {
       id: "call-1",
       runInterfaceToolCallId: "ledger-call-1",
@@ -49,6 +55,14 @@ function authority(): AgentRunToolAuthority {
 }
 
 function setup() {
+  runtimeAuthorityMocks.lockRuntimeToolAuthority.mockReset();
+  runtimeAuthorityMocks.lockRuntimeToolAuthority.mockResolvedValue({
+    catalog: { contextDial: {} },
+  });
+  const db = {
+    transaction: vi.fn(async (callback: (transaction: unknown) => Promise<unknown>) =>
+      callback({})),
+  };
   const taskAssign = vi.fn(async () => ({ status: "assigned" }));
   const agentRunActions = {
     taskAssign,
@@ -56,6 +70,7 @@ function setup() {
   const listCompanyTasks = vi.fn(async () => ({ tasks: [] }));
   const retrieval = { listCompanyTasks };
   const router = createPaperclipManagedToolRouter({
+    db: db as never,
     agentRunActions,
     retrieval: () => retrieval as never,
   });
@@ -109,12 +124,15 @@ describe("ACPX managed-tool router", () => {
 
     await router.routeExecution(
       { name: "list_company_tasks", companyId, limit: 25 },
-      {
-        authority: authority(),
-        resolveRuntimeScope: async () => runtimeScope as never,
-      },
+      { authority: authority() },
     );
 
+    expect(runtimeAuthorityMocks.lockRuntimeToolAuthority).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      authority().capability,
+      "list_company_tasks",
+      expect.any(Date),
+    );
     expect(listCompanyTasks).toHaveBeenCalledWith(runtimeScope, {
       filters: undefined,
       cursor: undefined,

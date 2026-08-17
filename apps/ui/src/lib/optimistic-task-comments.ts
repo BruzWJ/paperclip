@@ -196,12 +196,11 @@ export function flattenBoardTaskCommentGroupPages(
   let order = 0;
   for (const group of orderedGroups) {
     const groupComments: ClientTaskComment[] = [];
-    groupComments.push(
-      boardCommentToClient(group.root, {
-        rootId: group.root.id,
-        order: order++,
-      }),
-    );
+    const rootComment = boardCommentToClient(group.root, {
+      rootId: group.root.id,
+      order: order++,
+    });
+    groupComments.push(rootComment);
     const continuation = continuations?.get(group.root.id);
     const entriesByIdentity = new Map<string, BoardTaskThreadEntry>();
     for (const entry of [...group.entries, ...(continuation?.entries ?? [])]) {
@@ -215,6 +214,14 @@ export function flattenBoardTaskCommentGroupPages(
       (left, right) => left.canonicalSequence - right.canonicalSequence || left.id.localeCompare(right.id),
     );
     for (const entry of entries) {
+      if (
+        entry.kind === "run_segment" &&
+        rootComment.authorAgentId &&
+        entry.author.agentId === rootComment.authorAgentId
+      ) {
+        rootComment.boardRunSegmentParts = [...(rootComment.boardRunSegmentParts ?? []), ...entry.parts];
+        continue;
+      }
       groupComments.push(
         entry.kind === "comment"
           ? boardCommentToClient(entry, {

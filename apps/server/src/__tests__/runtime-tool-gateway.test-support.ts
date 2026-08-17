@@ -159,7 +159,7 @@ export function setup(
   const managedTools = {
     async routeExecution(command: PaperclipManagedToolCommand, context: PaperclipManagedToolRouteContext) {
       if (context.authority.kind !== "agent_run") throw new Error("expected agent authority");
-      const scope = context.resolveRuntimeScope ? await context.resolveRuntimeScope() : null;
+      const scope = runtimeScope;
       switch (command.name) {
         case "read_task_comments":
           return retrieval.readTaskComments(scope!, {
@@ -211,8 +211,8 @@ export function setup(
     },
   });
   const executor = {
-    execute(input: Omit<Parameters<typeof runtimeGateway.execute>[0], "runtimeScope">) {
-      return runtimeGateway.execute({ ...input, runtimeScope });
+    execute(input: Parameters<typeof runtimeGateway.execute>[0]) {
+      return runtimeGateway.execute(input);
     },
   };
   return {

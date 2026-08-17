@@ -24,8 +24,6 @@ export const CONFIGURATION_KEYS = [
   "mentionReachGrants",
 ] as const;
 
-export const PROTECTED_SELF_IDENTITY_KEYS = new Set(["name", "title", "capabilities", "instruction"]);
-
 export type SparseGrantMap<Key extends string> = Partial<Record<Key, boolean>>;
 
 export interface RuntimeAgentCreateConfiguration {
@@ -97,20 +95,6 @@ export interface RuntimeAgentConfigurationServiceOptions {
       changedKeys: readonly string[];
     },
   ) => Promise<void>;
-  /**
-   * Existing suggestion/consent remains the only alternative to a direct
-   * agents:configure grant. The hook must verify the accepted, target-bound
-   * consent in the same transaction; omission closes that path.
-   */
-  assertConsentedChange?: (
-    transaction: RuntimeAgentConfigurationTransaction,
-    input: {
-      capability: PromptCapabilityBinding;
-      targetAgentId: string;
-      changedKeys: readonly string[];
-      displayedDiff: string;
-    },
-  ) => Promise<void>;
 }
 
 export interface InternalAgentActor {
@@ -179,17 +163,6 @@ export class RuntimeAgentConfigurationDenied extends Error {
   ) {
     super(message);
     this.name = "RuntimeAgentConfigurationDenied";
-  }
-}
-
-export class RuntimeAgentConfigurationConsentRequired extends RuntimeAgentConfigurationDenied {
-  constructor(
-    message: string,
-    readonly targetAgentId: string,
-    readonly displayedDiff: string,
-  ) {
-    super(message, "change_consent_required");
-    this.name = "RuntimeAgentConfigurationConsentRequired";
   }
 }
 

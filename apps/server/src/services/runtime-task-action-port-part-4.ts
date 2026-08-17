@@ -46,13 +46,12 @@ export function createPostgresRuntimeTaskActionServicePart4(
       )}:tool-call:${input.runInterfaceToolCallId}:ingress:${input.ingressOrdinal}`;
       const committed = await db.transaction(async (tx) => {
         const now = clock();
-        const authorized = await taskAction.lockRuntimeActionAuthority(
+        const authorized = await taskAction.lockRuntimeToolAuthority(
           tx,
           input.capability,
           "mention_agent",
           now,
           {
-            requireOwner: false,
             additionalLaneTargetAgentId: input.targetAgentId,
           },
         );

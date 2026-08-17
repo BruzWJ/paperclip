@@ -30,7 +30,8 @@ owner edge. It is not a metadata editor:
 - each accepted update is the one counterpart-facing comment and automatically
   mentions that counterpart in its task context; there is no separate agent
   comment path for the same update;
-- a tool-free final after an update adds no duplicate comment.
+- a tool-free final after a same-task update adds no duplicate comment; after a
+  child update, the final remains on the current task.
 
 ## Direct-child boundaries
 
