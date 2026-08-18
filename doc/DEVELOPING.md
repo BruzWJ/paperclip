@@ -80,14 +80,20 @@ number is the exact positive per-company counter. Do not add name,
 URL-key, task-identifier, task-UUID board URLs, aliases, or resolver routes.
 Markdown task references have one format: `task://<task-uuid>`.
 
-TanStack Query owns the browser's REST snapshots. The Express API remains the
-source of record for reads and mutations. The same Node HTTP server also hosts
-the authenticated, company-scoped Socket.IO endpoint at
-`/api/live/socket.io`. Its typed `live:event:v1` messages are cache-invalidation
-hints; consumers refresh the affected REST-backed queries instead of treating
-the message payload as canonical data. There is no parallel domain polling,
-cross-tab leader election, or BroadcastChannel cache transport. The UI has no
-server-rendering runtime.
+TanStack Query owns the browser's initial REST snapshots. The Express API
+remains the read and mutation boundary. The same Node HTTP server also hosts the
+authenticated, company-scoped Socket.IO endpoint at `/api/live/socket.io`.
+Provider text and tool updates emit an ordered `run.stream` full-part upsert
+only after the Session projection commits. The UI applies those messages
+directly to a loaded run-detail cache and does not invalidate or refetch REST per
+token. Prompt settlement emits a full message snapshot and run settlement emits
+the canonical `run.state` envelope, so streaming and lifecycle UI also settle
+without REST. Full-part replacement plus `modelStateSeq` makes delivery
+idempotent. Socket.IO connection-state recovery covers short disconnects; every
+reconnect also requests changed assistant-message snapshots through the typed
+`live:run-stream-sync:v1` Socket.IO event. There is no connection-time REST
+reconciliation, transcript polling, cross-tab leader election, or
+BroadcastChannel cache transport. The UI has no server-rendering runtime.
 
 ## Start Dev
 

@@ -1,14 +1,23 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
-import { and, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, or } from "drizzle-orm";
 import { Server, type Socket } from "socket.io";
-import { type Db, authSessions, companyMemberships, instanceUserRoles } from "@paperclipai/db";
+import {
+  type Db,
+  authSessions,
+  companyMemberships,
+  instanceUserRoles,
+  taskExecutionRuns,
+  taskSessionMessages,
+} from "@paperclipai/db";
 import {
   LIVE_EVENT_SOCKET_EVENT,
   LIVE_EVENT_SOCKET_PATH,
+  LIVE_RUN_STREAM_SYNC_EVENT,
   isCanonicalUuid,
-  type LiveEvent,
   type LiveEventClientToServerEvents,
   type LiveEventServerToClientEvents,
+  type RunStreamSyncRequest,
+  type RunStreamSyncResponse,
 } from "@paperclipai/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import {
@@ -19,6 +28,9 @@ import {
 import { isNonEmptyActorId } from "../http/request-actor.js";
 import { logger } from "../middleware/logger.js";
 import { subscribeLiveEvents } from "../services/live-events.js";
+import { runStreamAssistantMessageFromRow } from "../services/task-execution-run-stream.js";
+import { projectRunEnvelope } from "../services/task-execution-run-service-part-2-section-1.js";
+import { serializeTaskExecutionRunEnvelope } from "../services/task-execution-run-wire.js";
 
 type LiveEventsInterServerEvents = Record<never, never>;
 
@@ -60,6 +72,11 @@ function companyRoomName(companyId: string) {
   return `company:${companyId}`;
 }
 
+/** Bounded re-authorization cadence that replaces per-event DB re-checks. */
+const SESSION_RECHECK_INTERVAL_MS = 60_000;
+const CONNECTION_RECOVERY_WINDOW_MS = 2 * 60_000;
+const RUN_STREAM_SYNC_PAGE_SIZE = 50;
+
 function hasCredentialQuery(url: URL) {
   for (const key of url.searchParams.keys()) {
     if (CREDENTIAL_QUERY_KEYS.has(key.toLowerCase())) return true;
@@ -98,11 +115,11 @@ async function authorizeSocket(
   req: LiveEventsIncomingMessage,
   auth: unknown,
   opts: {
-    resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
+    resolveSessionFromHeaders: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
     requestAuthorityBoundary: RequestAuthorityBoundary;
   },
 ): Promise<LiveEventsSocketData | null> {
-  if (!req.paperclipLiveEventsAuthority || !opts.resolveSessionFromHeaders) {
+  if (!req.paperclipLiveEventsAuthority) {
     return null;
   }
   const companyId = parseCompanyIdFromAuth(auth);
@@ -171,44 +188,102 @@ async function loadSocketAuthorization(
 
 const MAX_TIMER_DELAY_MS = 2_147_000_000;
 
-function disconnectAtSessionExpiry(socket: LiveEventsSocket): void {
-  let timer: NodeJS.Timeout | null = null;
-  const schedule = () => {
+function enforceSocketValidity(socket: LiveEventsSocket, db: Db, recheckIntervalMs: number): void {
+  let timer: NodeJS.Timeout | undefined;
+  let active = true;
+  const schedule = (delayMs: number) => {
+    if (!active) return;
+    timer = setTimeout(check, Math.min(Math.max(delayMs, 1), MAX_TIMER_DELAY_MS));
+    timer.unref();
+  };
+  const check = async () => {
+    if (!active) return;
     const remaining = socket.data.sessionExpiresAt.getTime() - Date.now();
     if (remaining <= 0) {
       socket.disconnect(true);
       return;
     }
-    timer = setTimeout(schedule, Math.min(remaining, MAX_TIMER_DELAY_MS));
-    timer.unref();
+    try {
+      const authorization = await loadSocketAuthorization(db, socket.data);
+      if (!authorization) {
+        socket.disconnect(true);
+        return;
+      }
+      socket.data.sessionExpiresAt = authorization.sessionExpiresAt;
+    } catch (error) {
+      // Transient storage failure must not disconnect a healthy board socket;
+      // the next tick re-checks.
+      logger.warn({ err: error, socketId: socket.id }, "live Socket.IO validity recheck failed");
+    }
+    if (!active) return;
+    schedule(Math.min(remaining, recheckIntervalMs));
   };
   socket.once("disconnect", () => {
+    active = false;
     if (timer) clearTimeout(timer);
   });
-  schedule();
+  schedule(Math.min(Math.max(socket.data.sessionExpiresAt.getTime() - Date.now(), 1), recheckIntervalMs));
 }
 
-async function deliverAuthorizedEvent(io: LiveEventsSocketServer, db: Db, event: LiveEvent): Promise<void> {
-  const sockets = await io.in(companyRoomName(event.companyId)).fetchSockets();
-  await Promise.all(
-    sockets.map(async (socket) => {
-      try {
-        const authorization = await loadSocketAuthorization(db, socket.data);
-        if (!authorization) {
-          socket.disconnect(true);
-          return;
-        }
-        socket.data.companyId = authorization.companyId;
-        socket.data.sessionExpiresAt = authorization.sessionExpiresAt;
-        socket.data.sessionId = authorization.sessionId;
-        socket.data.userId = authorization.userId;
-        socket.emit(LIVE_EVENT_SOCKET_EVENT, event);
-      } catch (error) {
-        socket.disconnect(true);
-        throw error;
-      }
-    }),
+function isRunStreamSyncRequest(value: unknown): value is RunStreamSyncRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length !== 3) return false;
+  const request = value as Record<string, unknown>;
+  return (
+    typeof request.runId === "string" &&
+    isCanonicalUuid(request.runId) &&
+    Number.isSafeInteger(request.afterSeq) &&
+    (request.afterSeq as number) >= 0 &&
+    typeof request.afterId === "string"
   );
+}
+
+async function synchronizeRunStream(
+  socket: LiveEventsSocket,
+  db: Db,
+  request: RunStreamSyncRequest,
+): Promise<RunStreamSyncResponse> {
+  const [rows, runRow] = await Promise.all([
+    db
+      .select()
+      .from(taskSessionMessages)
+      .where(
+        and(
+          eq(taskSessionMessages.companyId, socket.data.companyId),
+          eq(taskSessionMessages.runId, request.runId),
+          eq(taskSessionMessages.type, "assistant"),
+          or(
+            gt(taskSessionMessages.modelStateSeq, request.afterSeq),
+            and(
+              eq(taskSessionMessages.modelStateSeq, request.afterSeq),
+              gt(taskSessionMessages.id, request.afterId),
+            ),
+          ),
+        ),
+      )
+      .orderBy(asc(taskSessionMessages.modelStateSeq), asc(taskSessionMessages.id))
+      .limit(RUN_STREAM_SYNC_PAGE_SIZE + 1),
+    db
+      .select()
+      .from(taskExecutionRuns)
+      .where(
+        and(eq(taskExecutionRuns.companyId, socket.data.companyId), eq(taskExecutionRuns.id, request.runId)),
+      )
+      .limit(1)
+      .then((runRows) => runRows[0] ?? null),
+  ]);
+  const page = rows.slice(0, RUN_STREAM_SYNC_PAGE_SIZE);
+  const last = page.at(-1);
+  return {
+    runId: request.runId,
+    run: runRow ? serializeTaskExecutionRunEnvelope(projectRunEnvelope(runRow)) : null,
+    messages: page.map(runStreamAssistantMessageFromRow),
+    nextCursor:
+      rows.length > RUN_STREAM_SYNC_PAGE_SIZE && last
+        ? { afterSeq: last.modelStateSeq, afterId: last.id }
+        : null,
+  };
 }
 
 interface LiveEventsSocketServerHandle {
@@ -219,8 +294,10 @@ export function setupLiveEventsSocketServer(
   server: HttpServer,
   db: Db,
   opts: {
-    resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
+    resolveSessionFromHeaders: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
     requestAuthorityBoundary: RequestAuthorityBoundary;
+    /** Test seam: overrides the bounded session re-check cadence. */
+    sessionRecheckIntervalMs?: number;
   },
 ): LiveEventsSocketServerHandle {
   const io: LiveEventsSocketServer = new Server(server, {
@@ -229,6 +306,10 @@ export function setupLiveEventsSocketServer(
     perMessageDeflate: false,
     serveClient: false,
     transports: ["websocket"],
+    connectionStateRecovery: {
+      maxDisconnectionDuration: CONNECTION_RECOVERY_WINDOW_MS,
+      skipMiddlewares: false,
+    },
     allowRequest(req, done) {
       try {
         done(null, admitHandshakeRequest(req, opts.requestAuthorityBoundary));
@@ -257,7 +338,7 @@ export function setupLiveEventsSocketServer(
       socket.data.sessionId = authorization.sessionId;
       socket.data.userId = authorization.userId;
       await socket.join(companyRoomName(authorization.companyId));
-      disconnectAtSessionExpiry(socket);
+      enforceSocketValidity(socket, db, opts.sessionRecheckIntervalMs ?? SESSION_RECHECK_INTERVAL_MS);
       next();
     } catch (error) {
       logger.error({ err: error }, "live Socket.IO authorization failed");
@@ -265,23 +346,25 @@ export function setupLiveEventsSocketServer(
     }
   });
 
-  const deliveryTailByCompany = new Map<string, Promise<void>>();
+  io.on("connection", (socket) => {
+    socket.on(LIVE_RUN_STREAM_SYNC_EVENT, (request, acknowledge) => {
+      if (!isRunStreamSyncRequest(request)) {
+        socket.disconnect(true);
+        return;
+      }
+      void synchronizeRunStream(socket, db, request)
+        .then(acknowledge)
+        .catch((error) => {
+          logger.warn(
+            { err: error, socketId: socket.id, runId: request.runId },
+            "live run-stream synchronization failed",
+          );
+        });
+    });
+  });
+
   const unsubscribe = subscribeLiveEvents((event) => {
-    const previous = deliveryTailByCompany.get(event.companyId) ?? Promise.resolve();
-    const delivery = previous.catch(() => undefined).then(() => deliverAuthorizedEvent(io, db, event));
-    deliveryTailByCompany.set(event.companyId, delivery);
-    void delivery
-      .catch((error) => {
-        logger.error(
-          { err: error, companyId: event.companyId, eventType: event.type },
-          "live Socket.IO delivery authorization failed",
-        );
-      })
-      .finally(() => {
-        if (deliveryTailByCompany.get(event.companyId) === delivery) {
-          deliveryTailByCompany.delete(event.companyId);
-        }
-      });
+    io.to(companyRoomName(event.companyId)).emit(LIVE_EVENT_SOCKET_EVENT, event);
   });
 
   let closePromise: Promise<void> | null = null;
@@ -289,7 +372,6 @@ export function setupLiveEventsSocketServer(
     close() {
       closePromise ??= (async () => {
         unsubscribe();
-        await Promise.allSettled([...deliveryTailByCompany.values()]);
         await io.close();
       })();
       return closePromise;

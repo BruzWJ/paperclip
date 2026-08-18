@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { RunStreamLiveEventPayload } from "@paperclipai/shared";
 import { settleAcpPromptInTransaction } from "./acp-prompt-settlement.js";
 import type { BudgetEnforcementScope } from "./budgets.js";
 import { preserveCorrelationAfterNonProtocolClosure } from "./task-execution-correlation-retention.js";
@@ -28,6 +29,8 @@ import type {
   CreatePostgresTaskExecutionPromptCycleRepositoryResult,
   PostgresTaskExecutionPromptCycleOptions,
 } from "./task-execution-prompt-cycle-postgres.js";
+import { readRunStreamMessageSnapshot } from "./task-execution-run-stream.js";
+import { publishLiveEvent } from "./live-events.js";
 
 export function createPostgresTaskExecutionPromptCycleRepositoryPart4(
   options: PostgresTaskExecutionPromptCycleOptions,
@@ -50,6 +53,7 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart4(
   return {
     async closePrompt({ prompt, capability, outcome }) {
       let budgetScopes: readonly BudgetEnforcementScope[] = Object.freeze([]);
+      let liveProjection: RunStreamLiveEventPayload | null = null;
       const result = await options.database.transaction(async (transaction) => {
         // Closure may publish the assistant boundary. Lock its FK parents and
         // Session checkpoint before revalidating the run and capability.
@@ -150,6 +154,11 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart4(
             },
             settledAt: timestamp,
           });
+          liveProjection = await readRunStreamMessageSnapshot(
+            transaction,
+            prompt.identity,
+            assistantMessageId,
+          );
           budgetScopes = settled.budgetSuspensionScopes;
           if (nativeCancellation) {
             const recordedCancellation = await recordNativeCancellationSettlement(
@@ -296,6 +305,13 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart4(
           },
         };
       });
+      if (liveProjection) {
+        publishLiveEvent({
+          companyId: prompt.identity.companyId,
+          type: "run.stream",
+          payload: liveProjection,
+        });
+      }
       if (budgetScopes.length > 0) {
         await options.suspendBudgetScopes?.(budgetScopes);
       }

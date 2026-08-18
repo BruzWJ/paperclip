@@ -45,6 +45,7 @@ import {
   taskExecutionRefDeliveryEligibilitySql,
 } from "./task-execution-ref-delivery.js";
 import { readOccupiedTaskExecutionRefIds } from "./task-execution-run-service-part-3-section-1.js";
+import { publishTaskExecutionRunState } from "./task-execution-run-wire.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
 export function createPostgresTaskExecutionDispatcherRepositoryGroup2(
@@ -203,6 +204,10 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup2(
     readonly at: Date;
   }): Promise<LeaseForLaneResult> {
     let recoveredTerminalEvent: AgentRunTerminalPluginEventInput | null = null;
+    const changedRuns = new Map<
+      string,
+      { readonly companyId: string; readonly taskId: string; readonly runId: string }
+    >();
     const result: LeaseForLaneResult = await options.database.transaction(async (transaction) => {
       await transaction
         .select({ id: companies.id })
@@ -225,6 +230,12 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup2(
         const expiredRun = existing;
         const recovered = await recoverExpiredRunInTransaction(transaction, expiredRun, input.at);
         recoveredTerminalEvent = terminalEventForExpiredRun(expiredRun, recovered, input.at);
+        if (recovered.kind !== "current") {
+          changedRuns.set(expiredRun.runId, expiredRun);
+          if (recovered.kind === "released_run" && recovered.retryRun) {
+            changedRuns.set(recovered.retryRun.runId, recovered.retryRun);
+          }
+        }
         if (recovered.kind === "released_run") {
           existing = recovered.retryRun;
         } else {
@@ -315,6 +326,14 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup2(
       }
       return { kind: "leased", lease, run: leasedRun };
     });
+    if (result.kind === "leased") {
+      changedRuns.set(result.run.runId, result.run);
+    }
+    for (const identity of changedRuns.values()) {
+      const run = await options.runService.readRun(identity);
+      if (!run) reject("leased or recovered run lost its canonical envelope");
+      publishTaskExecutionRunState(run);
+    }
     if (recoveredTerminalEvent) {
       await publishAgentRunTerminalEvent(options.pluginDomainEvents, recoveredTerminalEvent);
     }

@@ -31,6 +31,7 @@ import {
   releaseAttempt,
 } from "./task-execution-dispatcher-postgres-part-5.js";
 import { readTaskExecutionLeaseBinding } from "./task-execution-run-service-part-4-section-1.js";
+import { publishTaskExecutionRunState } from "./task-execution-run-wire.js";
 
 export function createTaskExecutionDispatcherSettlementMethods(
   options: dispatcherCore.PostgresTaskExecutionDispatcherRepositoryOptions,
@@ -45,6 +46,12 @@ export function createTaskExecutionDispatcherSettlementMethods(
     terminalizeDetachedCancelledRunInTransaction,
     fenceRevokedExecutionAuthorityInTransaction,
   } = context;
+  async function publishCurrentRunState(input: { companyId: string; taskId: string; runId: string }) {
+    const run = await options.runService.readRun(input);
+    if (!run) dispatcherCore.reject("settled run lost its canonical envelope");
+    publishTaskExecutionRunState(run);
+    return run;
+  }
   return {
     async assertLeaseCurrent(lease: LeasedTaskExecutionRef) {
       const [row, laneRows] = await Promise.all([
@@ -118,6 +125,7 @@ export function createTaskExecutionDispatcherSettlementMethods(
           at,
         });
       });
+      await publishCurrentRunState(input.lease);
     },
     async markTerminal(input: {
       lease: LeasedTaskExecutionRef;
@@ -177,6 +185,7 @@ export function createTaskExecutionDispatcherSettlementMethods(
         }
         return completed;
       });
+      await publishCurrentRunState(input.lease);
       if (settlement.finalization) {
         await publishAgentRunTerminalEvent(options.pluginDomainEvents, {
           companyId: settlement.finalization.companyId,
@@ -206,10 +215,7 @@ export function createTaskExecutionDispatcherSettlementMethods(
         terminalizeDetachedCancelledRunInTransaction(transaction, input),
       );
       if (!terminalized) return;
-      const run = await options.runService.readRun(input);
-      if (!run) {
-        dispatcherCore.reject("terminalized cancellation lost its canonical run");
-      }
+      const run = await publishCurrentRunState(input);
       await publishAgentRunTerminalEvent(options.pluginDomainEvents, {
         companyId: input.companyId,
         taskId: input.taskId,

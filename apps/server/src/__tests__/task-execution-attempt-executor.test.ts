@@ -3,6 +3,8 @@ import * as t from "./task-execution-attempt-executor.test-support.js";
 const { describe, it, createHarness, executeAttempt, expect, vi, deferred } = t;
 const { TaskExecutionPromptAuthorityLost, lease } = t;
 import { storedCorrelation, resolvedPrompt } from "./task-execution-attempt-executor.test-fixtures.js";
+import { subscribeLiveEvents } from "../services/live-events.js";
+import type { LiveEvent } from "@paperclipai/shared";
 
 describe("canonical productive/consult ACP attempt executor", () => {
   it("preserves ACPX setup and durable closure failures after fencing closure first", async () => {
@@ -24,6 +26,39 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect((failure as AggregateError).errors[0]).toEqual(expect.objectContaining({ message: setupFailure }));
     expect((failure as AggregateError).errors[1]).toBe(closureFailure);
     expect(harness.order).toEqual(["mint:1", "close:error:1", "release:true"]);
+  });
+
+  it("publishes the committed run-stream projection after the durable ACP projection", async () => {
+    const prompt = resolvedPrompt({ carryContext: false });
+    const harness = createHarness({ prompt });
+    const liveEvents: LiveEvent[] = [];
+    const unsubscribe = subscribeLiveEvents((event) => liveEvents.push(event));
+    try {
+      await executeAttempt(harness, prompt);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(liveEvents).toEqual([
+      {
+        companyId: "company-1",
+        type: "run.stream",
+        payload: {
+          kind: "part.upsert",
+          runId: "run-1",
+          message: {
+            id: "assistant-attempt-1",
+            seq: 10,
+            modelStateSeq: 12,
+            type: "assistant",
+            data: { id: "assistant-attempt-1", type: "assistant", content: [] },
+            timeCreated: "2026-01-01T00:00:00.000Z",
+            timeUpdated: "2026-01-01T00:00:01.000Z",
+          },
+          part: { id: "text-1", type: "text", text: "done" },
+        },
+      },
+    ]);
   });
 
   it("fences an already-aborted request before an ACPX provider turn", async () => {

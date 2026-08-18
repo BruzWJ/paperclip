@@ -98,7 +98,12 @@ describe("AuthPage", () => {
   it("uses the Kibo theme switcher for system, light, and dark preferences", async () => {
     const { root } = await mount();
 
-    expect(container.querySelector('button[aria-label="System theme"]')).toBeTruthy();
+    // The switcher mounts behind a hydration gate and React Query settles the
+    // session asynchronously; poll until the buttons exist instead of betting
+    // on a fixed number of effect flushes.
+    await vi.waitFor(() =>
+      expect(container.querySelector('button[aria-label="System theme"]')).toBeTruthy(),
+    );
     expect(container.querySelector('button[aria-label="Light theme"]')).toBeTruthy();
     expect(container.querySelector('button[aria-label="Dark theme"]')).toBeTruthy();
 

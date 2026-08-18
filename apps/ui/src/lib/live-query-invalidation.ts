@@ -259,7 +259,6 @@ export function invalidateActivityQueries(
   const { action, actorType, details, entityType, runId, taskId } = payload;
   if (runId) {
     queryClient.invalidateQueries({ queryKey: ["runs", companyId] });
-    queryClient.invalidateQueries({ queryKey: queryKeys.runDetail(runId) });
     if (taskId) {
       queryClient.invalidateQueries({
         queryKey: ["tasks", "cost-summary", taskId],

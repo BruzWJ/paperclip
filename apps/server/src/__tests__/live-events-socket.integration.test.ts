@@ -37,7 +37,9 @@ function authorizationDb() {
             );
           }
           if (table === instanceUserRoles) {
-            return Promise.resolve(state.instanceAdmin ? [{ id: "role-1" }] : []);
+            return Promise.resolve(
+              state.instanceAdmin ? [{ id: "role-1" }] : [],
+            );
           }
           if (table === companyMemberships) {
             return Promise.resolve(
@@ -69,7 +71,7 @@ describe("live Socket.IO native transport", () => {
     await Promise.all(servers.splice(0).map(closeHttpServer));
   });
 
-  it("authenticates a real WebSocket client and stops delivery after access revocation", async () => {
+  it("authenticates a real WebSocket client and stops delivery after the bounded recheck revokes access", async () => {
     const db = authorizationDb();
     const httpServer = createServer();
     servers.push(httpServer);
@@ -83,10 +85,13 @@ describe("live Socket.IO native transport", () => {
     });
     const handle = setupLiveEventsSocketServer(httpServer, db as never, {
       resolveSessionFromHeaders,
+      sessionRecheckIntervalMs: 50,
       requestAuthorityBoundary: {
         admit: vi.fn(() => ({ origin })),
-        headers: vi.fn((request: { headers: Record<string, unknown> }) =>
-          new Headers(request.headers as HeadersInit)),
+        headers: vi.fn(
+          (request: { headers: Record<string, unknown> }) =>
+            new Headers(request.headers as HeadersInit),
+        ),
       } as never,
     });
     handles.push(handle);
@@ -118,7 +123,9 @@ describe("live Socket.IO native transport", () => {
     expect(socket.io.engine.transport.name).toBe("websocket");
     expect(resolveSessionFromHeaders).toHaveBeenCalledOnce();
 
-    const delivered = once(socket, LIVE_EVENT_SOCKET_EVENT) as Promise<[LiveEvent]>;
+    const delivered = once(socket, LIVE_EVENT_SOCKET_EVENT) as Promise<
+      [LiveEvent]
+    >;
     const event = publishLiveEvent({
       companyId: COMPANY_ID,
       type: "activity.logged",
@@ -135,12 +142,18 @@ describe("live Socket.IO native transport", () => {
         details: null,
       },
     });
-    await expect(delivered).resolves.toEqual([event]);
+    await expect(delivered).resolves.toEqual([event, expect.any(String)]);
 
-    const leakedEvents: LiveEvent[] = [];
-    socket.on(LIVE_EVENT_SOCKET_EVENT, (nextEvent) => leakedEvents.push(nextEvent));
+    // Revocation is no longer re-checked per event; the bounded validity
+    // recheck disconnects the socket within its cadence.
     const disconnected = once(socket, "disconnect");
     db.state.membershipActive = false;
+    await disconnected;
+
+    const leakedEvents: LiveEvent[] = [];
+    socket.on(LIVE_EVENT_SOCKET_EVENT, (nextEvent) =>
+      leakedEvents.push(nextEvent),
+    );
     publishLiveEvent({
       companyId: COMPANY_ID,
       type: "activity.logged",
@@ -157,8 +170,11 @@ describe("live Socket.IO native transport", () => {
         details: null,
       },
     });
-
-    await disconnected;
+    // The socket is already disconnected, so room delivery must not reach it.
+    // One macrotask flush covers the synchronous emit path; no wall-clock wait.
+    const { promise: flushed, resolve } = Promise.withResolvers<void>();
+    setImmediate(resolve);
+    await flushed;
     expect(leakedEvents).toEqual([]);
   }, 10_000);
 });

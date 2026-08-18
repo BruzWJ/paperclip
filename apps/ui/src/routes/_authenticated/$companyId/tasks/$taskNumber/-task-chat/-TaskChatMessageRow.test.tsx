@@ -19,14 +19,14 @@ vi.mock("@/hooks/useCompanyRouteId", () => ({ useCompanyRouteId: () => "company-
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
-function message(id: string, role: TaskChatMessage["role"], custom: Record<string, unknown>) {
+function message(id: string, role: TaskChatMessage["role"], custom: Record<string, unknown>): TaskChatMessage {
   return {
     id,
     role,
     createdAt: new Date("2026-08-15T16:00:00.000Z"),
     content: [{ type: "text", text: `${id} body` }],
     metadata: { custom: { kind: "comment", anchorId: `comment-${id}`, commentId: id, ...custom } },
-  } satisfies TaskChatMessage;
+  };
 }
 
 function renderRows(messages: TaskChatMessage[], context: TaskChatMessageContext) {
@@ -65,7 +65,7 @@ afterEach(() => {
 });
 
 describe("TaskChatMessageRow sender layout", () => {
-  it("distinguishes the current user, another member, an agent, and a plugin", () => {
+  it("distinguishes the current user, another member, an agent, and a plugin", async () => {
     const agent = { id: "agent-1", name: "Research agent", icon: "search" } as unknown as Agent;
     const agentMessage = message("agent", "assistant", {
       kind: "run",
@@ -113,6 +113,15 @@ describe("TaskChatMessageRow sender layout", () => {
     expect(agentRow.textContent).toContain("Research agent");
     expect(agentRow.textContent).toContain("Agent");
     expect(agentRow.textContent).toContain("Work log");
+    // A settled run's work log starts collapsed and Radix unmounts closed
+    // collapsible content, so expand it before asserting the reasoning text.
+    const workLogTrigger = [...agentRow.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Work log"),
+    )!;
+    await act(async () => {
+      workLogTrigger.click();
+      await Promise.resolve();
+    });
     expect(agentRow.textContent).toContain("Inspect the current configuration.");
     expect(agentRow.textContent).toContain("The configuration is updated.");
     expect(agentRow.querySelector(".lucide-search")).not.toBeNull();

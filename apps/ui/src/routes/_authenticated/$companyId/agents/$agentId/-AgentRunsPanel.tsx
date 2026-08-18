@@ -88,7 +88,9 @@ export function AgentRunsPanel({
     ? queryClient.getQueryData<TaskExecutionRunJoinedDetail>(queryKeys.runDetail(selectedRunId))
     : undefined;
   const merged = new Map(runs.map((run) => [run.id, run]));
-  if (cachedSelected) merged.set(cachedSelected.run.id, cachedSelected.run);
+  if (cachedSelected && !merged.has(cachedSelected.run.id)) {
+    merged.set(cachedSelected.run.id, cachedSelected.run);
+  }
   const sorted = orderedRuns([...merged.values()]);
   const effectiveRunId = isMobile ? selectedRunId : (selectedRunId ?? sorted[0]?.id ?? null);
   const selectedRun = sorted.find((run) => run.id === effectiveRunId);

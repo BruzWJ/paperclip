@@ -16,6 +16,8 @@ import type {
 
 import type { PluginBeforePromptDispatcher } from "./plugin-before-prompt-dispatcher.js";
 
+import { publishLiveEvent } from "./live-events.js";
+
 import { logger } from "../middleware/logger.js";
 import * as executorCore from "./task-execution-attempt-executor-part-1.js";
 import * as executorRun from "./task-execution-attempt-executor-part-2.js";
@@ -143,11 +145,16 @@ export function createTaskExecutionAttemptExecutor(options: {
             }),
         async onSessionEvent(event) {
           try {
-            await options.events.publish({
+            const projection = await options.events.publish({
               prompt: input.prompt.identity,
               capability: capabilityIdentity,
               redactor: input.target.redactor,
               event,
+            });
+            publishLiveEvent({
+              companyId: input.prompt.identity.companyId,
+              type: "run.stream",
+              payload: projection,
             });
           } catch (error) {
             logger.error(

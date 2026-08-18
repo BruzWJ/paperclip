@@ -645,10 +645,9 @@ export const RUN_LIVENESS_STATES = [
 ] as const;
 export type RunLivenessState = (typeof RUN_LIVENESS_STATES)[number];
 
-export type LiveEventType = "activity.logged";
-
 export const LIVE_EVENT_SOCKET_PATH = "/api/live/socket.io";
 export const LIVE_EVENT_SOCKET_EVENT = "live:event:v1";
+export const LIVE_RUN_STREAM_SYNC_EVENT = "live:run-stream-sync:v1";
 
 export const PRINCIPAL_TYPES = ["user", "agent"] as const;
 export type PrincipalType = (typeof PRINCIPAL_TYPES)[number];

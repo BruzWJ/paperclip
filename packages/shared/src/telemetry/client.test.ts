@@ -161,6 +161,20 @@ describe("resolveTelemetryConfig caps + backoff surface", () => {
   });
 
   it("rejects a non-exact telemetry endpoint environment value", () => {
+    // The CI/do-not-track/disable paths short-circuit before endpoint
+    // validation; neutralize them so the exact-value contract is exercised
+    // regardless of the host environment.
+    for (const key of [
+      "CI",
+      "CONTINUOUS_INTEGRATION",
+      "BUILD_NUMBER",
+      "GITHUB_ACTIONS",
+      "GITLAB_CI",
+      "DO_NOT_TRACK",
+      "PAPERCLIP_TELEMETRY_DISABLED",
+    ]) {
+      vi.stubEnv(key, undefined);
+    }
     vi.stubEnv("PAPERCLIP_TELEMETRY_ENDPOINT", " https://telemetry.example/ingest");
     try {
       expect(() => resolveTelemetryConfig()).toThrow(

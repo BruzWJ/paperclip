@@ -6,6 +6,7 @@ import {
   type AcpxOneShotPromptInput,
   type AcpxOneShotPromptResult,
 } from "@paperclipai/adapter-utils/acpx-runtime";
+import type { RunStreamLiveEventPayload } from "@paperclipai/shared";
 import {
   createTaskExecutionAttemptExecutor as createTaskExecutionAttemptExecutorImport,
   TaskExecutionPromptAuthorityLost as TaskExecutionPromptAuthorityLostImport,
@@ -257,6 +258,20 @@ export function createHarness(input: {
       async publish({ prompt, capability, event }) {
         eventBoundaries.push({ prompt, capability });
         order.push(`event:${event.kind}`);
+        return {
+          kind: "part.upsert",
+          runId: prompt.runId,
+          message: {
+            id: `assistant-${prompt.attemptId}`,
+            seq: 10,
+            modelStateSeq: 12,
+            type: "assistant",
+            data: { id: `assistant-${prompt.attemptId}`, type: "assistant", content: [] },
+            timeCreated: "2026-01-01T00:00:00.000Z",
+            timeUpdated: "2026-01-01T00:00:01.000Z",
+          },
+          part: { id: "text-1", type: "text", text: "done" },
+        } satisfies RunStreamLiveEventPayload;
       },
     },
     targetAcquirer: {

@@ -1,4 +1,3 @@
-// Empty collections render dedicated UI when data.length === 0.
 import {
   runsApi,
   type BoundedRunRecords,
@@ -27,7 +26,6 @@ const FAILURE_STATUSES = new Set(["failed", "interrupted", "timed_out", "cancell
 
 interface MessagePageState {
   runId: string;
-  detailUpdatedAt: number;
   pages: BoundedRunRecords<TaskExecutionSessionMessageRecord>[];
 }
 
@@ -42,10 +40,8 @@ export function AgentRunDetail({
   agent: Agent;
   companyId: string;
 }) {
-  // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const [messagePageState, setMessagePageState] = useState<MessagePageState>({
     runId: "",
-    detailUpdatedAt: 0,
     pages: [],
   });
   const detailQuery = useQuery<TaskExecutionRunJoinedDetail>({
@@ -59,31 +55,28 @@ export function AgentRunDetail({
     enabled: Boolean(run?.taskId),
   });
   const messagePageMutation = useMutation({
-    mutationFn: ({ targetRunId, cursor }: { targetRunId: string; cursor: string; detailUpdatedAt: number }) =>
+    mutationFn: ({ targetRunId, cursor }: { targetRunId: string; cursor: string }) =>
       runsApi.get(targetRunId, 200, undefined, { messageCursor: cursor }),
     onSuccess: (page, variables) => {
       if (variables.targetRunId !== runId) return;
       setMessagePageState((current) => ({
         runId: variables.targetRunId,
-        detailUpdatedAt: variables.detailUpdatedAt,
         pages:
-          current.runId === variables.targetRunId && current.detailUpdatedAt === variables.detailUpdatedAt
+          current.runId === variables.targetRunId
             ? [...current.pages, page.sessionMessages]
             : [page.sessionMessages],
       }));
     },
   });
-  const detailUpdatedAt = detailQuery.dataUpdatedAt;
-  const messagePages =
-    messagePageState.runId === runId && messagePageState.detailUpdatedAt === detailUpdatedAt
-      ? messagePageState.pages
-      : [];
+  const messagePages = messagePageState.runId === runId ? messagePageState.pages : [];
   const messages = useMemo(() => {
     const records = new Map<string, TaskExecutionSessionMessageRecord>();
-    for (const record of detailQuery.data?.sessionMessages.items ?? []) records.set(record.id, record);
     for (const page of messagePages) {
       for (const record of page.items) records.set(record.id, record);
     }
+    // The base query receives Socket.IO projections, so it wins over older
+    // paginated snapshots for a message with the same id.
+    for (const record of detailQuery.data?.sessionMessages.items ?? []) records.set(record.id, record);
     return [...records.values()].sort((left, right) => left.seq - right.seq);
   }, [detailQuery.data?.sessionMessages.items, messagePages]);
 
@@ -107,7 +100,7 @@ export function AgentRunDetail({
   if (!detailQuery.data) {
     return (
       <Alert variant="destructive">
-        <AlertTriangleIcon  data-icon="inline-start"/>
+        <AlertTriangleIcon data-icon="inline-start" />
         <AlertTitle>Could not load this run</AlertTitle>
         <AlertDescription>
           <p>
@@ -130,9 +123,7 @@ export function AgentRunDetail({
   const transcriptTruncated = latestMessagePage
     ? latestMessagePage.truncated
     : detail.sessionMessages.truncated;
-  const isCurrentPageMutation =
-    messagePageMutation.variables?.targetRunId === runId &&
-    messagePageMutation.variables.detailUpdatedAt === detailUpdatedAt;
+  const isCurrentPageMutation = messagePageMutation.variables?.targetRunId === runId;
   const outputs = collectRunOutputs(messages);
   return (
     <div className="min-w-0 space-y-5">
@@ -146,7 +137,7 @@ export function AgentRunDetail({
 
       {detailQuery.error ? (
         <Alert variant="destructive">
-          <AlertTriangleIcon  data-icon="inline-start"/>
+          <AlertTriangleIcon data-icon="inline-start" />
           <AlertTitle>Could not refresh this run</AlertTitle>
           <AlertDescription>Showing the most recently loaded execution record.</AlertDescription>
         </Alert>
@@ -154,7 +145,7 @@ export function AgentRunDetail({
 
       {detail.run.terminalReasonCode ? (
         <Alert variant={FAILURE_STATUSES.has(detail.run.status) ? "destructive" : "default"}>
-          <AlertTriangleIcon  data-icon="inline-start"/>
+          <AlertTriangleIcon data-icon="inline-start" />
           <AlertTitle className="capitalize">
             {humanizeRunValue(detail.run.terminalClassification ?? detail.run.status)}
           </AlertTitle>
@@ -178,7 +169,6 @@ export function AgentRunDetail({
                 messagePageMutation.mutate({
                   targetRunId: runId,
                   cursor: messageCursor,
-                  detailUpdatedAt,
                 })
             : undefined
         }

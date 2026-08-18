@@ -1,4 +1,3 @@
-// Empty collections render dedicated UI when data.length === 0.
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useMatch } from "@tanstack/react-router";
@@ -25,15 +24,13 @@ import {
   shouldSuppressActivityToastForVisibleTask,
   type VisibleTaskRoute,
 } from "../lib/live-query-invalidation";
-import { createLiveUpdatesSocket, reconcileActiveCompanyQueries } from "../lib/live-updates-transport";
+import { readString } from "../lib/live-query-entity-invalidation";
+import { createLiveUpdatesSocket, createRunStreamSynchronizer } from "../lib/live-updates-transport";
+import { applyRunStateEventToCache, applyRunStreamEventToCache } from "../lib/run-stream-cache";
 
 const TOAST_COOLDOWN_WINDOW_MS = 10_000;
 const TOAST_COOLDOWN_MAX = 3;
 const RECONNECT_SUPPRESS_MS = 2000;
-
-function readString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
 
 function shortId(value: string) {
   return value.slice(0, 8);
@@ -289,6 +286,14 @@ function handleLiveEvent(
   currentActor: { userId: string | null },
 ) {
   if (event.companyId !== expectedCompanyId) return;
+  if (event.type === "run.stream") {
+    applyRunStreamEventToCache(queryClient, event.payload);
+    return;
+  }
+  if (event.type === "run.state") {
+    applyRunStateEventToCache(queryClient, event.payload);
+    return;
+  }
 
   const payload = event.payload;
 
@@ -355,9 +360,6 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   const canConnectSocket = sessionStatus === "success" && session !== null && liveCompanyId !== null;
   const currentUserIdRef = useRef(currentUserId);
 
-  // Coalesce the per-event invalidation storm. Optimistic setQueryData writes
-  // still pass straight through (immediate); only invalidateQueries is batched
-  // and flushed at most a few times per second.
   const invalidationBatcher = useMemo(() => createInvalidationBatcher(queryClient), [queryClient]);
   const coalescingClient = useMemo(
     () => createCoalescingQueryClient(queryClient, invalidationBatcher),
@@ -377,6 +379,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
     if (!canConnectSocket || !liveCompanyId) return;
 
     const socket = createLiveUpdatesSocket(liveCompanyId);
+    const runStreamSynchronizer = createRunStreamSynchronizer(socket, queryClient);
     let connectedOnce = false;
 
     const onConnect = () => {
@@ -384,7 +387,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
         gateRef.current.suppressUntil = Date.now() + RECONNECT_SUPPRESS_MS;
       }
       connectedOnce = true;
-      void reconcileActiveCompanyQueries(queryClient);
+      runStreamSynchronizer.onSocketConnect();
     };
 
     const onLiveEvent = (event: LiveEvent) => {
@@ -404,18 +407,17 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
 
     socket.on("connect", onConnect);
     socket.on(LIVE_EVENT_SOCKET_EVENT, onLiveEvent);
-
-    // Defer the first handshake so StrictMode's probe cleanup can cancel it.
     const connectTimer = window.setTimeout(() => socket.connect(), 0);
 
     return () => {
       window.clearTimeout(connectTimer);
       socket.off("connect", onConnect);
       socket.off(LIVE_EVENT_SOCKET_EVENT, onLiveEvent);
+      runStreamSynchronizer.dispose();
       socket.removeAllListeners();
       socket.disconnect();
     };
-  }, [coalescingClient, liveCompanyId, navigateToBoardTarget, canConnectSocket, socketAuthKey]);
+  }, [coalescingClient, liveCompanyId, navigateToBoardTarget, canConnectSocket, socketAuthKey, queryClient]);
 
   return children;
 }

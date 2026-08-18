@@ -44,9 +44,7 @@ export type {
   AttentionSubjectKind,
   AttentionWorkspaceRef,
 } from "./attention.js";
-export type {
-  InstanceGeneralSettings,
-} from "./instance.js";
+export type { InstanceGeneralSettings } from "./instance.js";
 export type {
   ServerGitInfo,
   ServerGitLocalChanges,
@@ -153,9 +151,7 @@ export {
   COMPANY_SEARCH_SORTS,
   COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS,
 } from "./search.js";
-export type {
-  ExecutionWorkspace,
-} from "./workspace-runtime.js";
+export type { ExecutionWorkspace } from "./workspace-runtime.js";
 export type {
   TaskWorkProduct,
   TaskWorkProductType,
@@ -351,12 +347,19 @@ export type {
 } from "./workspace-recovery.js";
 export type {
   ActivityLoggedLiveEventPayload,
+  LiveEventType,
   LiveEvent,
   LiveEventOf,
   LiveEventPayloadMap,
   LiveEventSocketAuth,
   LiveEventServerToClientEvents,
   LiveEventClientToServerEvents,
+  RunStreamAssistantMessage,
+  RunStreamAssistantPart,
+  RunStreamLiveEventPayload,
+  RunStreamSyncRequest,
+  RunStreamSyncResponse,
+  RunStateLiveEventPayload,
 } from "./live.js";
 export type { DashboardRunActivityDay, DashboardSummary } from "./dashboard.js";
 export type {

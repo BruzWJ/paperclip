@@ -3,9 +3,16 @@ import {
   type NormalizedAcpSessionEvent,
 } from "@paperclipai/adapter-utils/acpx-runtime";
 
-import { agentAdapterConfigRevisions, taskSessionEvents, taskSessionMessages } from "@paperclipai/db";
+import {
+  agentAdapterConfigRevisions,
+  taskSessionEvents,
+  taskSessionMessages,
+} from "@paperclipai/db";
 
-import { agentAdapterAcpConfigurationSchema, TaskSession } from "@paperclipai/shared";
+import {
+  agentAdapterAcpConfigurationSchema,
+  TaskSession,
+} from "@paperclipai/shared";
 
 import { and, eq, sql } from "drizzle-orm";
 
@@ -80,7 +87,12 @@ export async function beginPromptPublication(
     async publish(type, data, companions) {
       const sourceOrdinal = publication.nextSourceOrdinal;
       publication.nextSourceOrdinal += 1;
-      const immutableSourceKey = ["acp_prompt_update", input.prompt.attemptId, sourceOrdinal, type].join(":");
+      const immutableSourceKey = [
+        "acp_prompt_update",
+        input.prompt.attemptId,
+        sourceOrdinal,
+        type,
+      ].join(":");
       const eventId = `evt_${sha256(immutableSourceKey).slice(0, 40)}`;
       const { seq } = await reserveTaskSessionEventSequence(transaction, scope);
       await publishTaskSessionEventInTx(transaction, {
@@ -158,7 +170,10 @@ export async function beginPromptPublication(
     .from(agentAdapterConfigRevisions)
     .where(
       and(
-        eq(agentAdapterConfigRevisions.id, input.prompt.adapterConfigRevisionId),
+        eq(
+          agentAdapterConfigRevisions.id,
+          input.prompt.adapterConfigRevisionId,
+        ),
         eq(agentAdapterConfigRevisions.companyId, input.prompt.companyId),
         eq(agentAdapterConfigRevisions.agentId, input.prompt.targetAgentId),
       ),
@@ -166,7 +181,9 @@ export async function beginPromptPublication(
     .limit(1)
     .then((rows) => rows[0] ?? null);
   if (!revision) reject("ACP prompt immutable adapter revision is missing");
-  const configuration = agentAdapterAcpConfigurationSchema.parse(revision.acpConfiguration);
+  const configuration = agentAdapterAcpConfigurationSchema.parse(
+    revision.acpConfiguration,
+  );
   await publication.publish(TaskSession.Event.Step.Started.type, {
     timestamp: input.timestamp.getTime(),
     sessionID: input.prompt.sessionId,
@@ -184,7 +201,7 @@ export async function beginPromptPublication(
   return publication;
 }
 
-export async function currentAssistant(
+async function currentAssistant(
   transaction: TaskSessionDbTransaction,
   prompt: TaskExecutionPromptIdentity,
   assistantMessageId: string,
@@ -211,42 +228,69 @@ export async function currentAssistant(
   return message;
 }
 
-export function toolContent(sourceOutputText: string) {
-  return sourceOutputText.length === 0 ? [] : [{ type: "text" as const, text: sourceOutputText }];
-}
-
-export function outputPaths(
-  event: Extract<NormalizedAcpSessionEvent, { kind: "tool_call" | "tool_call_update" }>,
+function outputPaths(
+  event: Extract<
+    NormalizedAcpSessionEvent,
+    { kind: "tool_call" | "tool_call_update" }
+  >,
 ): string[] | undefined {
   const values = event.locations?.map((location) => location.path) ?? [];
   return values.length === 0 ? undefined : values;
 }
 
-export function toolInput(value: unknown): Record<string, unknown> {
-  return isPlainRecord(value) ? value : {};
-}
-
-export function isAssistantTool(
+function isAssistantTool(
   part: TaskSession.Message.AssistantContent,
 ): part is TaskSession.Message.AssistantTool {
   return part.type === "tool";
+}
+
+async function reloadProjectedTool(
+  transaction: TaskSessionDbTransaction,
+  prompt: TaskExecutionPromptIdentity,
+  assistantMessageId: string,
+  callId: string,
+  failure: string,
+): Promise<TaskSession.Message.AssistantTool> {
+  const assistant = await currentAssistant(
+    transaction,
+    prompt,
+    assistantMessageId,
+  );
+  const tool = assistant.content.findLast(
+    (part): part is TaskSession.Message.AssistantTool =>
+      isAssistantTool(part) && part.id === callId,
+  );
+  if (!tool) reject(failure);
+  return tool;
 }
 
 export async function publishToolEvent(
   transaction: TaskSessionDbTransaction,
   publication: PromptPublication,
   prompt: TaskExecutionPromptIdentity,
-  event: Extract<NormalizedAcpSessionEvent, { kind: "tool_call" | "tool_call_update" }>,
+  event: Extract<
+    NormalizedAcpSessionEvent,
+    { kind: "tool_call" | "tool_call_update" }
+  >,
   redactText: (value: string) => string,
 ): Promise<void> {
-  const redactedRawInput = event.rawInput === undefined ? undefined : redactValue(event.rawInput, redactText);
+  const redactedRawInput =
+    event.rawInput === undefined
+      ? undefined
+      : redactValue(event.rawInput, redactText);
   const redactedRawOutput =
-    event.rawOutput === undefined ? undefined : redactValue(event.rawOutput, redactText);
+    event.rawOutput === undefined
+      ? undefined
+      : redactValue(event.rawOutput, redactText);
   const redactedContent =
     event.content === undefined || event.content === null
       ? event.content
       : redactValue(event.content, redactText);
-  let assistant = await currentAssistant(transaction, prompt, publication.assistantMessageId);
+  const assistant = await currentAssistant(
+    transaction,
+    prompt,
+    publication.assistantMessageId,
+  );
   let tool = assistant.content.findLast(
     (part): part is TaskSession.Message.AssistantTool =>
       isAssistantTool(part) && part.id === event.toolCallId,
@@ -255,7 +299,9 @@ export async function publishToolEvent(
     if (event.kind !== "tool_call") {
       reject("ACP tool update arrived before its tool-call creation");
     }
-    const name = redactSensitiveText(redactText(projectedAcpToolName(event.rawInput, event.title)));
+    const name = redactSensitiveText(
+      redactText(projectedAcpToolName(event.rawInput, event.title)),
+    );
     await publication.publish(TaskSession.Event.Tool.Input.Started.type, {
       timestamp: publication.timestamp.getTime(),
       sessionID: prompt.sessionId,
@@ -264,7 +310,9 @@ export async function publishToolEvent(
       name,
     });
     const inputText =
-      redactedRawInput === undefined ? "{}" : normalizeAcpToolOutput({ rawOutput: redactedRawInput });
+      redactedRawInput === undefined
+        ? "{}"
+        : normalizeAcpToolOutput({ rawOutput: redactedRawInput });
     await publication.publish(TaskSession.Event.Tool.Input.Ended.type, {
       timestamp: publication.timestamp.getTime(),
       sessionID: prompt.sessionId,
@@ -272,12 +320,17 @@ export async function publishToolEvent(
       callID: event.toolCallId,
       text: inputText,
     });
-    assistant = await currentAssistant(transaction, prompt, publication.assistantMessageId);
-    tool = assistant.content.findLast(
-      (part): part is TaskSession.Message.AssistantTool =>
-        isAssistantTool(part) && part.id === event.toolCallId,
+    tool = await reloadProjectedTool(
+      transaction,
+      prompt,
+      publication.assistantMessageId,
+      event.toolCallId,
+      "ACP tool-call creation did not project its tool",
     );
-  } else if (tool.state.status === "pending" && redactedRawInput !== undefined) {
+  } else if (
+    tool.state.status === "pending" &&
+    redactedRawInput !== undefined
+  ) {
     await publication.publish(TaskSession.Event.Tool.Input.Ended.type, {
       timestamp: publication.timestamp.getTime(),
       sessionID: prompt.sessionId,
@@ -286,7 +339,6 @@ export async function publishToolEvent(
       text: normalizeAcpToolOutput({ rawOutput: redactedRawInput }),
     });
   }
-  if (!tool) reject("ACP tool-call creation did not project its tool");
 
   const status = event.status ?? null;
   if (
@@ -299,18 +351,21 @@ export async function publishToolEvent(
       assistantMessageID: publication.assistantMessageId,
       callID: event.toolCallId,
       tool: tool.name,
-      input: toolInput(redactedRawInput),
+      input: isPlainRecord(redactedRawInput) ? redactedRawInput : {},
       provider: { executed: true },
     });
-    assistant = await currentAssistant(transaction, prompt, publication.assistantMessageId);
-    tool = assistant.content.findLast(
-      (part): part is TaskSession.Message.AssistantTool =>
-        isAssistantTool(part) && part.id === event.toolCallId,
+    tool = await reloadProjectedTool(
+      transaction,
+      prompt,
+      publication.assistantMessageId,
+      event.toolCallId,
+      "ACP tool-call transition lost its tool projection",
     );
   }
-  if (!tool) reject("ACP tool-call transition lost its tool projection");
   const sourceOutputText = normalizeAcpToolOutput({
-    ...(redactedRawOutput === undefined ? {} : { rawOutput: redactedRawOutput }),
+    ...(redactedRawOutput === undefined
+      ? {}
+      : { rawOutput: redactedRawOutput }),
     ...(redactedContent === undefined ? {} : { content: redactedContent }),
   });
   const structured = isPlainRecord(redactedRawOutput) ? redactedRawOutput : {};
@@ -324,8 +379,13 @@ export async function publishToolEvent(
       assistantMessageID: publication.assistantMessageId,
       callID: event.toolCallId,
       structured,
-      content: toolContent(sourceOutputText),
-      ...(outputPaths(event) === undefined ? {} : { outputPaths: outputPaths(event) }),
+      content:
+        sourceOutputText.length === 0
+          ? []
+          : [{ type: "text" as const, text: sourceOutputText }],
+      ...(outputPaths(event) === undefined
+        ? {}
+        : { outputPaths: outputPaths(event) }),
       ...(redactedRawOutput === undefined ? {} : { result: redactedRawOutput }),
       provider: { executed: true },
     });
@@ -342,21 +402,29 @@ export async function publishToolEvent(
       callID: event.toolCallId,
       error: {
         type: "unknown",
-        message: redactSensitiveText(redactText(event.title ?? "ACP tool call failed")),
+        message: redactSensitiveText(
+          redactText(event.title ?? "ACP tool call failed"),
+        ),
       },
       ...(redactedRawOutput === undefined ? {} : { result: redactedRawOutput }),
       provider: { executed: true },
     });
     return;
   }
-  if (tool.state.status === "running" && (event.content !== undefined || event.rawOutput !== undefined)) {
+  if (
+    tool.state.status === "running" &&
+    (event.content !== undefined || event.rawOutput !== undefined)
+  ) {
     await publication.publish(TaskSession.Event.Tool.Progress.type, {
       timestamp: publication.timestamp.getTime(),
       sessionID: prompt.sessionId,
       assistantMessageID: publication.assistantMessageId,
       callID: event.toolCallId,
       structured,
-      content: toolContent(sourceOutputText),
+      content:
+        sourceOutputText.length === 0
+          ? []
+          : [{ type: "text" as const, text: sourceOutputText }],
     });
   }
 }

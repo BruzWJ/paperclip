@@ -68,7 +68,7 @@ describe("LiveUpdatesProvider canonical invalidation", () => {
     });
   });
 
-  it("refreshes run detail and task runs from typed non-task run context", () => {
+  it("refreshes run lists without refetching the websocket-backed open transcript", () => {
     const invalidateQueries = vi.fn();
     const queryClient = {
       invalidateQueries,
@@ -90,7 +90,7 @@ describe("LiveUpdatesProvider canonical invalidation", () => {
       { taskId: null, foregrounded: false },
     );
 
-    expect(invalidateQueries).toHaveBeenCalledWith({
+    expect(invalidateQueries).not.toHaveBeenCalledWith({
       queryKey: ["runs", "detail", RUN_ID],
     });
     expect(invalidateQueries).toHaveBeenCalledWith({
@@ -229,5 +229,4 @@ describe("LiveUpdatesProvider canonical invalidation", () => {
       queryKey: ["routines", COMPANY_ID],
     });
   });
-
 });

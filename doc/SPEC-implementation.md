@@ -245,15 +245,23 @@ or at the closest common route ancestor when several route branches share it,
 in a file or directory whose basename starts with `-` so the Router plugin
 ignores it. There is no parallel `src/features/` ownership layer.
 
-REST remains the canonical board data and mutation boundary. TanStack Query
-owns client snapshots and cache reconciliation. Socket.IO attaches to the same
-Node HTTP server at `/api/live/socket.io`, authenticates the same-origin Better
-Auth browser session, requires instance-admin access or an active membership
-for the selected company, and emits typed `live:event:v1` notifications only
-to that company's room. The UI treats those notifications as invalidation
-hints and refreshes the relevant REST-backed queries; a socket payload is never
-an independent source of record. Domain freshness has no polling or cross-tab
-cache-broadcast path alongside Socket.IO.
+REST remains the initial board-read and mutation boundary. TanStack Query owns
+the hydrated client snapshot. Socket.IO attaches to the same Node HTTP server
+at `/api/live/socket.io`, authenticates the same-origin Better Auth browser
+session, requires instance-admin access or an active membership for the
+selected company, and emits typed `live:event:v1` messages only to that
+company's room. Each provider text or tool update is first durably projected,
+then emitted as an ordered `run.stream` full-part upsert. Prompt settlement
+emits one full assistant-message snapshot, and run settlement emits the closed
+run envelope as `run.state`. The UI applies those committed projections directly
+to the loaded run-detail cache; it never refetches REST for a token or lifecycle
+update. Duplicate or old transcript packets are ignored by durable Session
+sequence, tool states replace by part id, and a first packet can create its
+assistant message envelope. Socket.IO connection-state recovery replays short
+gaps, and every reconnect performs an idempotent changed-message catch-up
+through the typed Socket.IO sync event, not through REST. There is no polling,
+connection-time REST reconciliation, or cross-tab cache-broadcast path alongside
+the live run stream.
 
 ## UI and CLI
 
@@ -262,8 +270,8 @@ The UI and CLI are board/operator clients. They:
 - use Better Auth signup/sign-in/profile/sign-out for every human
 - use native client-side TanStack Router navigation and validated file-route
   search state in the board UI
-- reconcile company-scoped Socket.IO notifications through TanStack Query
-  against canonical REST resources
+- apply committed company-scoped run-stream projections from Socket.IO directly
+  to loaded TanStack Query transcript snapshots
 - create tasks with immutable request, explicit eligible owner, and
   idempotency key
 - show owner/creator/lifecycle terminology

@@ -3,7 +3,6 @@ import type { Db } from "@paperclipai/db";
 import {
   TASK_EXECUTION_RUN_STATUSES,
   isCanonicalUuid,
-  type TaskExecutionRunEnvelopeRecord,
   type TaskExecutionRunListPageRecord,
   type TaskExecutionRunStatus,
 } from "@paperclipai/shared";
@@ -12,10 +11,10 @@ import {
   listTaskExecutionRunsForAgent,
   listTaskExecutionRunsForTask,
   resolveTaskExecutionRunIdentityById,
-  type TaskExecutionRunEnvelope,
   type TaskExecutionRunListCursor,
   type TaskExecutionRunService,
 } from "../services/task-execution-run-service.js";
+import { serializeTaskExecutionRunEnvelope } from "../services/task-execution-run-wire.js";
 import { accessService, taskService } from "../services/index.js";
 import type { AdapterConfigurationPreflightService } from "../services/adapter-configuration-preflight.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
@@ -87,36 +86,6 @@ function runStatuses(value: unknown): readonly TaskExecutionRunStatus[] | null {
     return null;
   }
   return statuses as TaskExecutionRunStatus[];
-}
-
-function serializeRunEnvelope(run: TaskExecutionRunEnvelope): TaskExecutionRunEnvelopeRecord {
-  return {
-    id: run.runId,
-    companyId: run.companyId,
-    taskId: run.taskId,
-    sessionId: run.sessionId,
-    executionScopeId: run.executionScopeId,
-    kind: run.kind,
-    status: run.status,
-    ownershipEpoch: run.ownershipEpoch,
-    targetAgentId: run.targetAgentId,
-    adapterConfigRevisionId: run.adapterConfigRevisionId,
-    executionMode: run.executionMode,
-    taskExecutionAuthorityId: run.taskExecutionAuthorityId,
-    consultExecutionId: run.consultExecutionId,
-    parentRunId: run.parentRunId,
-    retryOfRunId: run.retryOfRunId,
-    currentAttemptId: run.currentAttemptId,
-    currentLeaseId: run.currentLeaseId,
-    cancellationIntentId: run.cancellationIntentId,
-    terminalFinalizationId: run.terminalFinalizationId,
-    startedAt: run.startedAt?.toISOString() ?? null,
-    finishedAt: run.finishedAt?.toISOString() ?? null,
-    terminalClassification: run.terminalClassification,
-    terminalReasonCode: run.terminalReasonCode,
-    createdAt: run.createdAt.toISOString(),
-    updatedAt: run.updatedAt.toISOString(),
-  };
 }
 
 function runDetailLimit(value: unknown): number {
@@ -195,7 +164,7 @@ export function runRoutes(
           statuses: statuses ?? undefined,
         });
     const response: TaskExecutionRunListPageRecord = {
-      items: page.items.map(serializeRunEnvelope),
+      items: page.items.map(serializeTaskExecutionRunEnvelope),
       nextCursor: encodeRunListCursor(page.nextCursor),
     };
     res.json(response);
@@ -235,7 +204,7 @@ export function runRoutes(
       statuses: statuses ?? undefined,
     });
     const response: TaskExecutionRunListPageRecord = {
-      items: page.items.map(serializeRunEnvelope),
+      items: page.items.map(serializeTaskExecutionRunEnvelope),
       nextCursor: encodeRunListCursor(page.nextCursor),
     };
     res.json(response);
@@ -272,7 +241,7 @@ export function runRoutes(
     }
     res.json({
       ...detail,
-      run: serializeRunEnvelope(detail.run),
+      run: serializeTaskExecutionRunEnvelope(detail.run),
     });
   });
 

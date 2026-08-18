@@ -38,6 +38,16 @@ describe("canonical Socket.IO live refresh boundary", () => {
     expect(filesContaining(/useSharedPolling|cross-tab-poll|BroadcastChannel/)).toEqual([]);
   });
 
+  it("projects run-stream packets directly without a REST refresh fallback", () => {
+    const provider = readFileSync(resolve(sourceRoot, "context/LiveUpdatesProvider.tsx"), "utf8");
+    const transport = readFileSync(resolve(sourceRoot, "lib/live-updates-transport.ts"), "utf8");
+    const activityInvalidation = readFileSync(resolve(sourceRoot, "lib/live-query-invalidation.ts"), "utf8");
+    expect(provider).toMatch(/applyRunStreamEventToCache/);
+    expect(provider).not.toMatch(/invalidateRunStream|reconcileActiveCompanyQueries/);
+    expect(transport).not.toMatch(/invalidateQueries|reconcileActiveCompanyQueries/);
+    expect(activityInvalidation).not.toMatch(/runDetail/);
+  });
+
   it("limits query intervals to explicit operational diagnostics", () => {
     expect(filesContaining(/\brefetchInterval\s*:/)).toEqual([
       "adapters/use-adapter-catalog.ts",

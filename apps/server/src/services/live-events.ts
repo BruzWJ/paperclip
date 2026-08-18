@@ -11,24 +11,16 @@ type LiveEventListener = (event: LiveEvent) => void;
 const emitter = new EventEmitter();
 const allLiveEvents = Symbol("allLiveEvents");
 
-function toLiveEvent<Type extends LiveEventType>(input: {
-  companyId: string;
-  type: Type;
-  payload: LiveEventPayloadMap[Type];
-}): LiveEventOf<Type> {
-  return {
-    companyId: input.companyId,
-    type: input.type,
-    payload: input.payload,
-  } as LiveEventOf<Type>;
-}
-
 export function publishLiveEvent<Type extends LiveEventType>(input: {
   companyId: string;
   type: Type;
   payload: LiveEventPayloadMap[Type];
 }): LiveEventOf<Type> {
-  const event = toLiveEvent(input);
+  const event = {
+    companyId: input.companyId,
+    type: input.type,
+    payload: input.payload,
+  } as LiveEventOf<Type>;
   emitter.emit(allLiveEvents, event);
   return event;
 }

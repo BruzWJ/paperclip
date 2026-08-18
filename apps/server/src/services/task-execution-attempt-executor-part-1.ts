@@ -6,6 +6,7 @@ import {
 import {
   agentAdapterAcpConfigurationSchema,
   type AgentAdapterAcpConfiguration,
+  type RunStreamLiveEventPayload,
   type TaskExecutionSessionOperation,
 } from "@paperclipai/shared";
 
@@ -184,13 +185,13 @@ export interface TaskExecutionPromptCycleRepository {
 }
 
 export interface TaskExecutionAcpEventSink {
-  /** Validate and publication-redact before any durable or live projection. */
+  /** Validate, redact, and durably project before returning the live projection. */
   publish(input: {
     readonly prompt: TaskExecutionPromptIdentity;
     readonly capability: TaskExecutionPromptCapabilityIdentity;
     readonly redactor: TaskExecutionRuntimeRedactor;
     readonly event: NormalizedAcpSessionEvent;
-  }): Promise<void>;
+  }): Promise<RunStreamLiveEventPayload>;
 }
 
 export interface TaskExecutionAttemptExecutor {

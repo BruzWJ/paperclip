@@ -12,7 +12,7 @@ Paperclip is a TypeScript monorepo built around a PostgreSQL control plane.
 │ React + Vite board UI and CLI                      │
 │ TanStack Router file routes + TanStack Query       │
 ├────────────────────────────────────────────────────┤
-│ Express REST API + Socket.IO live invalidation     │
+│ Express REST API + Socket.IO live projections      │
 │ Auth, task authority, dispatcher, run interface    │
 ├────────────────────────────────────────────────────┤
 │ PostgreSQL + Drizzle                               │
@@ -56,11 +56,13 @@ runtime. The tenant root is the canonical company UUID. Agent, project,
 routine, and approval routes use entity UUIDs; task detail uses the exact
 positive per-company counter at `/<company-uuid>/tasks/<task-number>`.
 
-TanStack Query reads and mutates canonical REST resources. Socket.IO shares the
+TanStack Query uses REST for initial reads and mutations. Socket.IO shares the
 same Node HTTP server and uses the signed-in Better Auth browser session to join
-only an authorized selected company's room. Typed live notifications tell the
-UI which query state may be stale, after which the UI reconciles through REST.
-The live transport does not replace the REST source of record.
+only an authorized selected company's room. Committed run transcript and
+lifecycle projections update loaded run-detail caches directly, with
+Socket.IO-based replay and catch-up when a connection drops; token updates do
+not trigger REST refetches. Other domain activity notifications still
+invalidate the affected REST-backed aggregate queries.
 
 ## Canonical Task-Execution Flow
 

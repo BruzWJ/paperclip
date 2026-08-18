@@ -25,8 +25,8 @@ const queryClient = new QueryClient({
       staleTime: 30_000,
       // Keep inactive REST snapshots bounded in long-lived operator sessions.
       gcTime: 5 * 60_000,
-      // Socket.IO owns domain freshness and reconciles active REST projections
-      // after reconnects; browser focus/network listeners are not a second path.
+      // Socket.IO owns live delivery and run-stream recovery; browser
+      // focus/network listeners are not a second refresh path.
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
     },
