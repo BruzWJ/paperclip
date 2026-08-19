@@ -138,7 +138,7 @@ describe("buildTaskChatMessages", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({
       id: "root",
-      metadata: { custom: { kind: "run", runSegmentPartCount: 5 } },
+      metadata: { custom: { kind: "run" } },
     });
     expect(messages[0]?.content).toEqual([
       { type: "text", text: "Starting the investigation." },

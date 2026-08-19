@@ -1,10 +1,10 @@
-import {
-  ChainOfThought,
-  ChainOfThoughtContent,
-  ChainOfThoughtHeader,
-  ChainOfThoughtStep,
-} from "@/components/ai-elements/chain-of-thought";
+import { ChainOfThoughtStep } from "@/components/ai-elements/chain-of-thought";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@/components/ai-elements/reasoning";
 import {
   Queue,
   QueueItem,
@@ -23,7 +23,7 @@ import { AgentIcon } from "@/routes/_authenticated/$companyId/-AgentIconPicker";
 import { deriveInitials } from "@/lib/identity";
 import type { TaskChatMessage } from "@/lib/task-chat-messages";
 import { cn, formatDateTime } from "@/lib/utils";
-import { BrainIcon, MessageSquareTextIcon, PlugIcon, WrenchIcon } from "lucide-react";
+import { PlugIcon, WrenchIcon } from "lucide-react";
 import { memo, useContext } from "react";
 
 import { SystemNoticeCommentRow } from "./-SystemNoticeCommentRow";
@@ -54,45 +54,38 @@ function ImmediateParent({ custom }: { custom: Record<string, unknown> }) {
 
 function RunMessage({ message }: { message: TaskChatMessage }) {
   const parts = message.content;
-  const custom = taskChatMessageCustom(message);
-  const workPartCount =
-    typeof custom.runSegmentPartCount === "number"
-      ? Math.min(custom.runSegmentPartCount, parts.length)
-      : parts.length;
-  const workParts = parts.slice(0, workPartCount);
-  const responseParts = parts.slice(workPartCount).filter((part) => part.type === "text");
   const working = message.status?.type === "running";
+  const reasoning = parts
+    .filter((part) => part.type === "reasoning")
+    .map((part) => part.text)
+    .join("\n\n");
+  const tools = parts.filter((part) => part.type === "tool-call");
+  const response = getThreadMessageCopyText(message);
 
   return (
     <>
-      {working || workParts.length > 0 ? (
-        <ChainOfThought defaultOpen={working}>
-          <ChainOfThoughtHeader>{working ? "Working" : "Work log"}</ChainOfThoughtHeader>
-          <ChainOfThoughtContent>
-            {workParts.map((part, index) => {
-              const active = working && index === workParts.length - 1;
-              return (
-                <ChainOfThoughtStep
-                  key={`${part.type}:${index}`}
-                  icon={
-                    part.type === "tool-call"
-                      ? WrenchIcon
-                      : part.type === "reasoning"
-                        ? BrainIcon
-                        : MessageSquareTextIcon
-                  }
-                  label={part.type === "tool-call" ? part.toolName : part.type === "reasoning" ? "Reasoning" : part.text}
-                  description={part.type === "tool-call" ? part.status : part.type === "reasoning" ? part.text : undefined}
-                  status={active ? "active" : part.type === "tool-call" && part.status === "pending" ? "pending" : "complete"}
-                />
-              );
-            })}
-          </ChainOfThoughtContent>
-        </ChainOfThought>
+      {reasoning ? (
+        <Reasoning className="mb-0" isStreaming={working}>
+          <ReasoningTrigger />
+          <ReasoningContent>{reasoning}</ReasoningContent>
+        </Reasoning>
       ) : null}
-      {responseParts.map((part, index) => (
-        <MessageResponse key={`response:${index}`}>{part.text}</MessageResponse>
-      ))}
+      {tools.length > 0 ? (
+        <div className="not-prose space-y-2">
+          {tools.map((part, index) => (
+            <ChainOfThoughtStep
+              key={`${part.toolName}:${index}`}
+              icon={WrenchIcon}
+              label={part.toolName}
+              description={part.status}
+              status={
+                part.status === "pending" ? "pending" : part.status === "running" ? "active" : "complete"
+              }
+            />
+          ))}
+        </div>
+      ) : null}
+      {response ? <MessageResponse isAnimating={working}>{response}</MessageResponse> : null}
     </>
   );
 }

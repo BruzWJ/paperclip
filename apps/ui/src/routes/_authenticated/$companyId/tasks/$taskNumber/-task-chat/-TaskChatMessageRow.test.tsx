@@ -72,7 +72,6 @@ describe("TaskChatMessageRow sender layout", () => {
       authorType: "agent",
       authorName: agent.name,
       authorAgentId: agent.id,
-      runSegmentPartCount: 1,
     });
     agentMessage.content = [
       { type: "reasoning", text: "Inspect the current configuration." },
@@ -112,14 +111,13 @@ describe("TaskChatMessageRow sender layout", () => {
     expect(member.textContent).toContain("Member");
     expect(agentRow.textContent).toContain("Research agent");
     expect(agentRow.textContent).toContain("Agent");
-    expect(agentRow.textContent).toContain("Work log");
-    // A settled run's work log starts collapsed and Radix unmounts closed
-    // collapsible content, so expand it before asserting the reasoning text.
-    const workLogTrigger = [...agentRow.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Work log"),
+    expect(agentRow.textContent).not.toContain("Work log");
+    // Settled reasoning remains available as compact message detail.
+    const reasoningTrigger = [...agentRow.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Thought for a few seconds"),
     )!;
     await act(async () => {
-      workLogTrigger.click();
+      reasoningTrigger.click();
       await Promise.resolve();
     });
     expect(agentRow.textContent).toContain("Inspect the current configuration.");

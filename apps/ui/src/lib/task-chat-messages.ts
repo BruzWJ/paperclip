@@ -128,7 +128,6 @@ function createCommentMessage(comment: TaskChatComment): TaskChatMessage {
     boardGroupContinuationError: comment.boardGroupContinuationError ?? null,
     immediateParentDisplayReference: comment.immediateParentDisplayReference ?? null,
     canReply: comment.boardEntryKind === "comment" && !comment.clientStatus,
-    runSegmentPartCount: runContent?.length ?? 0,
   };
   const createdAt = toDate(comment.createdAt);
 
