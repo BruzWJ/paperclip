@@ -45,14 +45,13 @@ describe("task subresource commands", () => {
     vi.restoreAllMocks();
   });
 
-  it("wraps canonical task get, title, reassignment, reopen, and comment endpoints", async () => {
+  it("wraps canonical task get, title, reassignment, and comment endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
 
     await run(["task", "get", TASK_ID]);
     await run(["task", "title", TASK_ID, "--title", "New title"]);
     await run(["task", "reassign", TASK_ID, "--owner-agent-id", COMPANY_ID]);
-    await run(["task", "reopen", TASK_ID, "--reason", "New evidence"]);
     await run([
       "task", "comment", TASK_ID,
       "--message", "Please review",
@@ -64,7 +63,6 @@ describe("task subresource commands", () => {
       ["GET", `http://localhost:3100/api/tasks/${TASK_ID}`],
       ["PATCH", `http://localhost:3100/api/tasks/${TASK_ID}`],
       ["POST", `http://localhost:3100/api/tasks/${TASK_ID}/reassign`],
-      ["POST", `http://localhost:3100/api/tasks/${TASK_ID}/reopen`],
       ["POST", `http://localhost:3100/api/tasks/${TASK_ID}/comments`],
     ]);
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
@@ -75,10 +73,6 @@ describe("task subresource commands", () => {
       idempotencyKey: expect.any(String),
     });
     expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body))).toMatchObject({
-      reason: "New evidence",
-      idempotencyKey: expect.any(String),
-    });
-    expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body))).toMatchObject({
       message: "Please review",
       idempotencyKey: expect.any(String),
       mention: {

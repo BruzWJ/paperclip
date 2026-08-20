@@ -16,7 +16,6 @@ import {
   releaseTaskTreeHoldSchema,
   restoreTaskDocumentRevisionSchema,
   reassignTaskSchema,
-  reopenTaskSchema,
   updateTaskTitleSchema,
   updateTaskWorkProductSchema,
   type Task,
@@ -57,11 +56,6 @@ interface TaskTitleOptions extends BaseClientOptions {
 
 interface TaskReassignOptions extends BaseClientOptions {
   ownerAgentId: string;
-  idempotencyKey?: string;
-}
-
-interface TaskReopenOptions extends BaseClientOptions {
-  reason: string;
   idempotencyKey?: string;
 }
 
@@ -270,31 +264,6 @@ export function registerTaskCommands(program: Command): void {
 
   addCommonClientOptions(
     task
-      .command("reopen")
-      .description("Reopen a terminal task through the audited board command")
-      .argument("<taskId>", "Task ID")
-      .requiredOption("--reason <text>", "Audited reopen reason")
-      .option("--idempotency-key <key>", "Retry key (generated when omitted)")
-      .action(async (taskId: string, opts: TaskReopenOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const payload = reopenTaskSchema.parse({
-            reason: opts.reason,
-            idempotencyKey: opts.idempotencyKey ?? randomUUID(),
-          });
-          const result = await ctx.api.post(
-            apiPath`/api/tasks/${taskId}/reopen`,
-            payload,
-          );
-          printOutput(result, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    task
       .command("comment")
       .description("Add a typed user comment to a task")
       .argument("<taskId>", "Task ID")
@@ -302,7 +271,7 @@ export function registerTaskCommands(program: Command): void {
       .option("--idempotency-key <key>", "Retry key (generated when omitted)")
       .option("--mention-target-agent-id <id>", "Explicit current owner agent mention")
       .option("--mention-ownership-epoch <n>", "Exact current ownership epoch")
-      .option("--reply-to-comment-id <id>", "Persisted comment to reply to or steer")
+      .option("--reply-to-comment-id <id>", "Persisted comment to reply to")
       .action(async (taskId: string, opts: TaskCommentOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
