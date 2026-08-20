@@ -7,7 +7,6 @@ import type {
   TaskExecutionSessionOperation,
   TaskExecutionRunStatus,
   TaskExecutionRunTerminalClassification,
-  TaskExecutionSteeringState,
   RunLivenessState,
 } from "@paperclipai/shared";
 import { sql } from "drizzle-orm";
@@ -34,10 +33,7 @@ import { authUsers } from "./auth.js";
 import { costEvents } from "./cost_events.js";
 import { taskUpdates } from "./task_creator_edge.js";
 import { taskComments } from "./task_comments.js";
-import {
-  taskExecutionPromptCapabilities,
-  taskExecutionSessions,
-} from "./task_execution_capabilities.js";
+import { taskExecutionPromptCapabilities } from "./task_execution_capabilities.js";
 import {
   taskConsultExecutions,
   taskExecutionAuthorities,
@@ -604,297 +600,7 @@ export const taskExecutionRunRefs = pgTable(
   ],
 );
 
-/** Positive-only steering prompts; base segment zero is the run-ref row. */
-export const taskExecutionPromptSegments = pgTable(
-  "task_execution_prompt_segments",
-  {
-    companyId: uuid("company_id").notNull(),
-    taskId: uuid("task_id").notNull(),
-    sessionId: text("session_id").notNull(),
-    runId: uuid("run_id").notNull(),
-    refId: uuid("ref_id").notNull(),
-    refOrdinal: integer("ref_ordinal").notNull(),
-    segmentOrdinal: integer("segment_ordinal").notNull(),
-    sourceCommentId: uuid("source_comment_id")
-      .notNull()
-      .references(() => taskComments.id, { onDelete: "restrict" }),
-    sourceRefId: uuid("source_ref_id"),
-    /** Exact canonical user or synthetic Session message delivered by P14. */
-    sourceMessageId: text("source_message_id").notNull(),
-    /** Present only while that canonical source is a promoted human input. */
-    sourceInputId: text("source_input_id"),
-    /**
-     * Immutable worker correlation selected by the interrupted prompt. P14
-     * persists this before revoking the old capability so the replacement
-     * attempt never re-selects continuity from mutable agent configuration.
-     */
-    resumeSourceCorrelationId: uuid("resume_source_correlation_id").notNull(),
-    /** Generation installed for this segment after its new/resume setup. */
-    targetSessionGeneration: integer("target_session_generation"),
-    attemptId: uuid("attempt_id").references(
-      (): AnyPgColumn => taskExecutionAttempts.id,
-      { onDelete: "restrict" },
-    ),
-    capabilityConnectionId: uuid("capability_connection_id"),
-    capabilityGeneration: integer("capability_generation"),
-    cancellationIntentId: uuid("cancellation_intent_id").references(
-      (): AnyPgColumn => taskExecutionCancellationIntents.id,
-      { onDelete: "restrict" },
-    ),
-    steeringState: text("steering_state")
-      .$type<TaskExecutionSteeringState>()
-      .notNull()
-      .default("requested"),
-    promptTransmissionPhase: text("prompt_transmission_phase")
-      .$type<TaskExecutionPromptTransmissionPhase>()
-      .notNull()
-      .default("not_transmitted"),
-    outcome: text("outcome").$type<TaskExecutionPromptOutcome>(),
-    outcomeReferenceId: uuid("outcome_reference_id"),
-    protocolSettlementState: text("protocol_settlement_state").$type<
-      TaskExecutionProtocolSettlementState
-    >(),
-    accountingId: uuid("accounting_id"),
-    costEventId: uuid("cost_event_id"),
-    settlementVersion: integer("settlement_version").notNull().default(0),
-    settledAt: timestamp("settled_at", { withTimezone: true }),
-    /** Canonical settled assistant used to replay an idempotent synchronous result. */
-    terminalSessionMessageId: text("terminal_session_message_id"),
-    /** Set once when this steering continuation reaches native resume. */
-    resumedAt: timestamp("resumed_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    check(
-      "task_execution_prompt_segments_positive_ordinal_check",
-      sql`${table.refOrdinal} >= 0 and ${table.segmentOrdinal} > 0`,
-    ),
-    check(
-      "task_execution_prompt_segments_generation_check",
-      sql`(${table.targetSessionGeneration} is null
-          or ${table.targetSessionGeneration} > 0)
-        and (${table.capabilityGeneration} is null
-          or ${table.capabilityGeneration} > 0)`,
-    ),
-    check(
-      "task_execution_prompt_segments_source_input_check",
-      sql`${table.sourceInputId} is null
-        or ${table.sourceInputId} = ${table.sourceMessageId}`,
-    ),
-    check(
-      "task_execution_prompt_segments_attempt_capability_check",
-      sql`(
-        ${table.attemptId} is null
-        and ${table.capabilityConnectionId} is null
-        and ${table.capabilityGeneration} is null
-      ) or (
-        ${table.attemptId} is not null
-        and ${table.capabilityConnectionId} is not null
-        and ${table.capabilityGeneration} is not null
-      )`,
-    ),
-    check(
-      "task_execution_prompt_segments_steering_state_check",
-      sql`${table.steeringState} in (
-        'requested',
-        'sent',
-        'protocol_settled',
-        'rebound',
-        'resumed'
-      )`,
-    ),
-    check(
-      "task_execution_prompt_segments_resumed_at_check",
-      sql`${table.resumedAt} is null or (
-        ${table.resumedAt} > ${table.createdAt}
-        and (
-          ${table.steeringState} = 'resumed'
-          or (
-            ${table.steeringState} = 'protocol_settled'
-            and ${table.protocolSettlementState} is not null
-          )
-        )
-      )`,
-    ),
-    check(
-      "task_execution_prompt_segments_transmission_check",
-      sql`${table.promptTransmissionPhase} in ('not_transmitted', 'transmitted')`,
-    ),
-    check(
-      "task_execution_prompt_segments_outcome_check",
-      sql`${table.outcome} is null
-        or ${table.outcome} in (
-          'released_unsent',
-          'succeeded',
-          'refused',
-          'failed',
-          'ambiguous',
-          'cancelled'
-        )`,
-    ),
-    check(
-      "task_execution_prompt_segments_protocol_settlement_state_check",
-      sql`${table.protocolSettlementState} is null
-        or ${table.protocolSettlementState} in ('not_sent', 'settled', 'incomplete')`,
-    ),
-    check(
-      "task_execution_prompt_segments_terminal_message_check",
-      sql`(
-        ${table.protocolSettlementState} = 'settled'
-        and ${table.terminalSessionMessageId} is not null
-      ) or (
-        ${table.protocolSettlementState} is distinct from 'settled'
-        and ${table.terminalSessionMessageId} is null
-      )`,
-    ),
-    check(
-      "task_execution_prompt_segments_settlement_matrix_check",
-      sql`(
-        ${table.protocolSettlementState} is null
-        and ${table.outcome} is null
-        and ${table.outcomeReferenceId} is null
-        and ${table.accountingId} is null
-        and ${table.costEventId} is null
-        and ${table.settlementVersion} = 0
-        and ${table.settledAt} is null
-      ) or (
-        ${table.protocolSettlementState} = 'not_sent'
-        and ${table.promptTransmissionPhase} = 'not_transmitted'
-        and ${table.outcome} = 'released_unsent'
-        and ${table.outcomeReferenceId} is not null
-        and ${table.accountingId} is null
-        and ${table.costEventId} is null
-        and ${table.settlementVersion} > 0
-        and ${table.settledAt} is not null
-      ) or (
-        ${table.protocolSettlementState} = 'incomplete'
-        and ${table.promptTransmissionPhase} = 'transmitted'
-        and ${table.outcome} in ('failed', 'ambiguous', 'cancelled')
-        and ${table.outcomeReferenceId} is not null
-        and ${table.accountingId} is null
-        and ${table.costEventId} is null
-        and ${table.settlementVersion} > 0
-        and ${table.settledAt} is not null
-      ) or (
-        ${table.protocolSettlementState} = 'settled'
-        and ${table.promptTransmissionPhase} = 'transmitted'
-        and ${table.outcome} in ('succeeded', 'refused', 'failed', 'cancelled')
-        and ${table.outcomeReferenceId} is not null
-        and ${table.accountingId} is not null
-        and ${table.costEventId} is not null
-        and ${table.settlementVersion} > 0
-        and ${table.settledAt} is not null
-      )`,
-    ),
-    foreignKey({
-      columns: [table.runId, table.refOrdinal, table.refId],
-      foreignColumns: [
-        taskExecutionRunRefs.runId,
-        taskExecutionRunRefs.refOrdinal,
-        taskExecutionRunRefs.refId,
-      ],
-      name: "task_execution_prompt_segments_run_ref_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.companyId, table.resumeSourceCorrelationId],
-      foreignColumns: [
-        taskExecutionSessions.companyId,
-        taskExecutionSessions.id,
-      ],
-      name: "task_execution_prompt_segments_resume_source_correlation_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.taskId,
-        table.sessionId,
-        table.sourceMessageId,
-      ],
-      foreignColumns: [
-        taskSessionMessages.companyId,
-        taskSessionMessages.taskId,
-        taskSessionMessages.sessionId,
-        taskSessionMessages.id,
-      ],
-      name: "task_execution_prompt_segments_source_message_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.taskId,
-        table.sessionId,
-        table.sourceInputId,
-      ],
-      foreignColumns: [
-        taskSessionInputs.companyId,
-        taskSessionInputs.taskId,
-        taskSessionInputs.sessionId,
-        taskSessionInputs.id,
-      ],
-      name: "task_execution_prompt_segments_source_input_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.taskId,
-        table.sessionId,
-        table.terminalSessionMessageId,
-      ],
-      foreignColumns: [
-        taskSessionMessages.companyId,
-        taskSessionMessages.taskId,
-        taskSessionMessages.sessionId,
-        taskSessionMessages.id,
-      ],
-      name: "task_execution_prompt_segments_terminal_message_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.taskId,
-        table.sessionId,
-        table.sourceRefId,
-      ],
-      foreignColumns: [
-        taskExecutionRefs.companyId,
-        taskExecutionRefs.taskId,
-        taskExecutionRefs.sessionId,
-        taskExecutionRefs.id,
-      ],
-      name: "task_execution_prompt_segments_source_ref_fk",
-    }).onDelete("restrict"),
-    unique(
-      "task_execution_prompt_segments_run_ordinal_ref_segment_uq",
-    ).on(
-      table.runId,
-      table.refOrdinal,
-      table.refId,
-      table.segmentOrdinal,
-    ),
-    unique("task_execution_prompt_segments_run_ref_segment_uq").on(
-      table.runId,
-      table.refId,
-      table.segmentOrdinal,
-    ),
-    unique("task_execution_prompt_segments_scope_prompt_uq").on(
-      table.companyId,
-      table.taskId,
-      table.sessionId,
-      table.runId,
-      table.refOrdinal,
-      table.refId,
-      table.segmentOrdinal,
-    ),
-    index("task_execution_prompt_segments_source_comment_idx").on(
-      table.companyId,
-      table.sourceCommentId,
-    ),
-  ],
-);
-
-/** Sole current-prompt pointer. Its four-column shape is intentionally closed. */
+/** Sole current-prompt pointer. Its three-column shape is intentionally closed. */
 export const taskExecutionRunControls = pgTable(
   "task_execution_run_controls",
   {
@@ -903,7 +609,6 @@ export const taskExecutionRunControls = pgTable(
       .references(() => taskExecutionRuns.id, { onDelete: "cascade" }),
     currentRefId: uuid("current_ref_id"),
     currentOrdinal: integer("current_ordinal"),
-    currentSegmentOrdinal: integer("current_segment_ordinal"),
   },
   (table) => [
     check(
@@ -911,13 +616,10 @@ export const taskExecutionRunControls = pgTable(
       sql`(
         ${table.currentRefId} is null
         and ${table.currentOrdinal} is null
-        and ${table.currentSegmentOrdinal} is null
       ) or (
         ${table.currentRefId} is not null
         and ${table.currentOrdinal} is not null
         and ${table.currentOrdinal} >= 0
-        and ${table.currentSegmentOrdinal} is not null
-        and ${table.currentSegmentOrdinal} >= 0
       )`,
     ),
     foreignKey({
@@ -937,8 +639,7 @@ export const taskExecutionRunControls = pgTable(
 );
 
 /**
- * One worker attempt owns exactly one canonical prompt identity. Segment zero
- * is the run-ref base branch; positive ordinals are exact steering rows.
+ * One worker attempt owns exactly one canonical run-ref prompt identity.
  */
 export const taskExecutionAttempts = pgTable(
   "task_execution_attempts",
@@ -949,21 +650,11 @@ export const taskExecutionAttempts = pgTable(
     sessionId: text("session_id").notNull(),
     runId: uuid("run_id").notNull(),
     runKind: text("run_kind").$type<TaskExecutionRunKind>().notNull(),
-    promptKind: text("prompt_kind")
-      .$type<"base" | "steering">()
-      .notNull(),
     sessionOperation: text("session_operation")
       .$type<TaskExecutionSessionOperation>()
       .notNull(),
     refId: uuid("ref_id"),
     refOrdinal: integer("ref_ordinal"),
-    segmentOrdinal: integer("segment_ordinal"),
-    /**
-     * Nullable discriminator for the steering-only segment FK. Base prompts
-     * retain their canonical segmentOrdinal=0 identity but must not be forced
-     * through the positive steering-segment relation.
-     */
-    steeringSegmentOrdinal: integer("steering_segment_ordinal"),
     attemptGeneration: integer("attempt_generation").notNull(),
     state: text("state")
       .$type<
@@ -979,20 +670,8 @@ export const taskExecutionAttempts = pgTable(
   },
   (table) => [
     check(
-      "task_execution_attempts_prompt_kind_check",
-      sql`${table.promptKind} in ('base', 'steering')`,
-    ),
-    check(
       "task_execution_attempts_session_operation_check",
-      sql`${table.sessionOperation} in (
-        'new',
-        'resume',
-        'steer_resume'
-      )
-      and (
-        ${table.promptKind} <> 'base'
-        or ${table.sessionOperation} <> 'steer_resume'
-      )`,
+      sql`${table.sessionOperation} in ('new', 'resume')`,
     ),
     check(
       "task_execution_attempts_state_check",
@@ -1011,25 +690,10 @@ export const taskExecutionAttempts = pgTable(
     ),
     check(
       "task_execution_attempts_prompt_identity_check",
-      sql`(
-        ${table.promptKind} = 'base'
-        and ${table.runKind} in ('productive', 'consult')
+      sql`${table.runKind} in ('productive', 'consult')
         and ${table.refId} is not null
         and ${table.refOrdinal} is not null
-        and ${table.refOrdinal} >= 0
-        and ${table.segmentOrdinal} is not null
-        and ${table.segmentOrdinal} = 0
-        and ${table.steeringSegmentOrdinal} is null
-      ) or (
-        ${table.promptKind} = 'steering'
-        and ${table.runKind} in ('productive', 'consult')
-        and ${table.refId} is not null
-        and ${table.refOrdinal} is not null
-        and ${table.refOrdinal} >= 0
-        and ${table.segmentOrdinal} is not null
-        and ${table.segmentOrdinal} > 0
-        and ${table.steeringSegmentOrdinal} = ${table.segmentOrdinal}
-      )`,
+        and ${table.refOrdinal} >= 0`,
     ),
     check(
       "task_execution_attempts_time_check",
@@ -1098,28 +762,7 @@ export const taskExecutionAttempts = pgTable(
         taskExecutionRunRefs.refOrdinal,
         taskExecutionRunRefs.refId,
       ],
-      name: "task_execution_attempts_base_member_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.taskId,
-        table.sessionId,
-        table.runId,
-        table.refOrdinal,
-        table.refId,
-        table.steeringSegmentOrdinal,
-      ],
-      foreignColumns: [
-        taskExecutionPromptSegments.companyId,
-        taskExecutionPromptSegments.taskId,
-        taskExecutionPromptSegments.sessionId,
-        taskExecutionPromptSegments.runId,
-        taskExecutionPromptSegments.refOrdinal,
-        taskExecutionPromptSegments.refId,
-        taskExecutionPromptSegments.segmentOrdinal,
-      ],
-      name: "task_execution_attempts_steering_segment_fk",
+      name: "task_execution_attempts_run_ref_fk",
     }).onDelete("cascade"),
     unique("task_execution_attempts_scope_id_uq").on(
       table.companyId,
@@ -1133,28 +776,16 @@ export const taskExecutionAttempts = pgTable(
       table.runId,
       table.id,
       table.runKind,
-      table.promptKind,
       table.refOrdinal,
       table.refId,
-      table.segmentOrdinal,
     ),
-    uniqueIndex("task_execution_attempts_base_prompt_uq")
+    uniqueIndex("task_execution_attempts_prompt_uq")
       .on(
         table.runId,
         table.refOrdinal,
         table.refId,
         table.attemptGeneration,
-      )
-      .where(sql`${table.promptKind} = 'base'`),
-    uniqueIndex("task_execution_attempts_steering_prompt_uq")
-      .on(
-        table.runId,
-        table.refOrdinal,
-        table.refId,
-        table.segmentOrdinal,
-        table.attemptGeneration,
-      )
-      .where(sql`${table.promptKind} = 'steering'`),
+      ),
     uniqueIndex("task_execution_attempts_live_run_uq")
       .on(table.runId)
       .where(sql`${table.state} in ('pending', 'leased', 'running')`),
@@ -1389,13 +1020,7 @@ export const taskExecutionCancellationIntents = pgTable(
     attemptId: uuid("attempt_id").notNull(),
     leaseId: uuid("lease_id"),
     reasonKind: text("reason_kind")
-      .$type<
-        | "lifecycle"
-        | "authority"
-        | "timeout"
-        | "lease_expired"
-        | "steering"
-      >()
+      .$type<"lifecycle" | "authority" | "timeout" | "lease_expired">()
       .notNull(),
     actorKind: text("actor_kind")
       .$type<"system" | "user" | "agent">()
@@ -1429,8 +1054,7 @@ export const taskExecutionCancellationIntents = pgTable(
         'lifecycle',
         'authority',
         'timeout',
-        'lease_expired',
-        'steering'
+        'lease_expired'
       )`,
     ),
     check(
@@ -1731,12 +1355,8 @@ export const taskExecutionFinalizationPromptDependencies = pgTable(
     runId: uuid("run_id").notNull(),
     finalizationId: uuid("finalization_id").notNull(),
     dependencyOrdinal: integer("dependency_ordinal").notNull(),
-    promptKind: text("prompt_kind")
-      .$type<"base" | "steering">()
-      .notNull(),
     refId: uuid("ref_id"),
     refOrdinal: integer("ref_ordinal"),
-    segmentOrdinal: integer("segment_ordinal"),
     protocolSettlementState: text("protocol_settlement_state")
       .$type<TaskExecutionProtocolSettlementState>()
       .notNull(),
@@ -1756,20 +1376,9 @@ export const taskExecutionFinalizationPromptDependencies = pgTable(
     ),
     check(
       "task_execution_finalization_prompt_dependencies_identity_check",
-      sql`(
-        ${table.promptKind} = 'base'
-        and ${table.refId} is not null
+      sql`${table.refId} is not null
         and ${table.refOrdinal} is not null
-        and ${table.refOrdinal} >= 0
-        and ${table.segmentOrdinal} = 0
-      ) or (
-        ${table.promptKind} = 'steering'
-        and ${table.refId} is not null
-        and ${table.refOrdinal} is not null
-        and ${table.refOrdinal} >= 0
-        and ${table.segmentOrdinal} is not null
-        and ${table.segmentOrdinal} > 0
-      )`,
+        and ${table.refOrdinal} >= 0`,
     ),
     check(
       "task_execution_finalization_prompt_dependencies_settlement_check",
@@ -1829,12 +1438,10 @@ export const taskExecutionFinalizationPromptDependencies = pgTable(
       foreignColumns: [costEvents.id],
       name: "task_execution_finalization_prompt_dependencies_cost_fk",
     }).onDelete("restrict"),
-    uniqueIndex("task_execution_finalization_prompt_dependencies_base_uq")
-      .on(table.finalizationId, table.refId)
-      .where(sql`${table.promptKind} = 'base'`),
-    uniqueIndex("task_execution_finalization_prompt_dependencies_steering_uq")
-      .on(table.finalizationId, table.refId, table.segmentOrdinal)
-      .where(sql`${table.promptKind} = 'steering'`),
+    unique("task_execution_finalization_prompt_dependencies_prompt_uq").on(
+      table.finalizationId,
+      table.refId,
+    ),
     index("task_execution_finalization_prompt_dependencies_run_idx").on(
       table.companyId,
       table.runId,
@@ -1892,10 +1499,6 @@ export type TaskExecutionRun = typeof taskExecutionRuns.$inferSelect;
 export type NewTaskExecutionRun = typeof taskExecutionRuns.$inferInsert;
 export type TaskExecutionRunRef = typeof taskExecutionRunRefs.$inferSelect;
 export type NewTaskExecutionRunRef = typeof taskExecutionRunRefs.$inferInsert;
-export type TaskExecutionPromptSegment =
-  typeof taskExecutionPromptSegments.$inferSelect;
-export type NewTaskExecutionPromptSegment =
-  typeof taskExecutionPromptSegments.$inferInsert;
 export type TaskExecutionRunControl =
   typeof taskExecutionRunControls.$inferSelect;
 export type TaskExecutionAttempt = typeof taskExecutionAttempts.$inferSelect;

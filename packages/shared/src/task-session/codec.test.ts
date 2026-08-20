@@ -196,7 +196,6 @@ describe("task-session shared contracts", () => {
         sessionID: "ses_contract",
         messageID: "msg_contract",
         prompt: { text: "request" },
-        delivery: "queue",
       },
     };
 

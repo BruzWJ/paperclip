@@ -81,23 +81,16 @@ export {
   pluginWithdrawalOperations,
   systemEscalationIdentities,
 } from "./task_creator_edge.js";
-export {
-  taskBoardReopenCommands,
-  taskBoardUserComments,
-} from "./task_board_reopen_commands.js";
+export { taskBoardUserComments } from "./task_board_user_comments.js";
 export { taskBoardMentions } from "./task_board_mentions.js";
 export {
-  taskCreatorWithdrawalCommands,
   taskBoardLifecycleCommands,
-  type TaskCreatorWithdrawalCommand,
-  type NewTaskCreatorWithdrawalCommand,
   type TaskBoardLifecycleCommand,
   type NewTaskBoardLifecycleCommand,
 } from "./task_lifecycle_commands.js";
 export {
   taskExecutionRuns,
   taskExecutionRunRefs,
-  taskExecutionPromptSegments,
   taskExecutionRunControls,
   taskExecutionAttempts,
   taskExecutionAttemptRetrySchedules,
@@ -112,8 +105,6 @@ export {
   type NewTaskExecutionRun,
   type TaskExecutionRunRef,
   type NewTaskExecutionRunRef,
-  type TaskExecutionPromptSegment,
-  type NewTaskExecutionPromptSegment,
   type TaskExecutionRunControl,
   type TaskExecutionAttempt,
   type NewTaskExecutionAttempt,
@@ -152,7 +143,6 @@ export { documentAnnotationComments } from "./document_annotation_comments.js";
 export { documentAnnotationAnchorSnapshots } from "./document_annotation_anchor_snapshots.js";
 export {
   acpPromptAccounting,
-  type AcpPromptAccountingKind,
   type AcpPromptAccounting,
   type NewAcpPromptAccounting,
 } from "./acp_prompt_accounting.js";

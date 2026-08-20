@@ -194,6 +194,26 @@ export const AGENT_VISIBLE_TASK_STATUSES = [
 export type AgentVisibleTaskStatus =
   (typeof AGENT_VISIBLE_TASK_STATUSES)[number];
 
+const TASK_LIFECYCLE_STATUS_TARGETS = {
+  open: ["blocked", "done", "cancelled"],
+  blocked: ["open", "done", "cancelled"],
+  done: ["open"],
+  cancelled: ["open"],
+} as const satisfies Record<AgentVisibleTaskStatus, readonly AgentVisibleTaskStatus[]>;
+
+export function taskLifecycleStatusTargets(
+  status: AgentVisibleTaskStatus,
+): readonly AgentVisibleTaskStatus[] {
+  return TASK_LIFECYCLE_STATUS_TARGETS[status];
+}
+
+export function isTaskLifecycleStatusTransition(
+  current: AgentVisibleTaskStatus,
+  requested: AgentVisibleTaskStatus,
+): boolean {
+  return (taskLifecycleStatusTargets(current) as readonly AgentVisibleTaskStatus[]).includes(requested);
+}
+
 export const TASK_OWNER_KINDS = ["agent", "user", "board"] as const;
 export type TaskOwnerKind = (typeof TASK_OWNER_KINDS)[number];
 
@@ -270,7 +290,6 @@ export interface ProviderSafeTaskProjection {
 export const TASK_EXECUTION_REF_SOURCE_KINDS = [
   "task_request",
   "task_reassignment",
-  "task_reopen",
   "mention_agent",
   "routine_dispatch",
   "task_update",
@@ -279,19 +298,6 @@ export const TASK_EXECUTION_REF_SOURCE_KINDS = [
 
 export type TaskExecutionRefSourceKind =
   (typeof TASK_EXECUTION_REF_SOURCE_KINDS)[number];
-
-/**
- * Immutable actor branch for the canonical creator-withdrawal command. Agent
- * creators use relationship-derived task runtime actions and therefore never
- * enter this board/plugin control-plane ledger.
- */
-export const TASK_CREATOR_WITHDRAWAL_ACTOR_KINDS = [
-  "user",
-  "plugin",
-] as const;
-
-export type TaskCreatorWithdrawalActorKind =
-  (typeof TASK_CREATOR_WITHDRAWAL_ACTOR_KINDS)[number];
 
 /**
  * Closed board lifecycle mutations that can advance an existing task without
@@ -371,24 +377,6 @@ export interface TaskExecutionRef {
   consultChainToken: string | null;
   disposition: TaskExecutionRefDisposition;
 }
-
-export const TASK_BOARD_REOPEN_DISPATCH_KINDS = [
-  "agent_execution",
-  "board_only",
-] as const;
-
-export type TaskBoardReopenDispatchKind =
-  (typeof TASK_BOARD_REOPEN_DISPATCH_KINDS)[number];
-
-/** Exact public result of the sole audited terminal-to-open command. */
-export type TaskBoardReopenDispatch =
-  | {
-      kind: "agent_execution";
-      executionRef: TaskExecutionRef;
-    }
-  | {
-      kind: "board_only";
-    };
 
 export const PAPERCLIP_RUN_TOOLS_KIND = "paperclip.run-tools/v1" as const;
 

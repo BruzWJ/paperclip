@@ -1,7 +1,6 @@
 import type {
   AcpCostCursorState,
   TaskExecutionLaneKind,
-  TaskExecutionNativeCorrelationPurpose,
   TaskExecutionNativeCorrelationState,
   TaskExecutionPromptCapabilityState,
 } from "@paperclipai/shared";
@@ -50,23 +49,16 @@ export const taskExecutionSessions = pgTable(
     companyId: uuid("company_id").notNull(),
     taskId: uuid("task_id").notNull(),
     ownershipEpoch: integer("ownership_epoch").notNull(),
-    purpose: text("purpose")
-      .$type<TaskExecutionNativeCorrelationPurpose>()
-      .notNull(),
     state: text("state")
       .$type<TaskExecutionNativeCorrelationState>()
       .notNull(),
     targetAgentId: uuid("target_agent_id").notNull(),
     adapterConfigIdentity: uuid("adapter_config_identity").notNull(),
     workspaceIdentity: uuid("workspace_identity").notNull(),
-    laneKind: text("lane_kind").$type<TaskExecutionLaneKind>(),
-    runId: uuid("run_id"),
-    currentRefId: uuid("current_ref_id"),
-    currentRefOrdinal: integer("current_ref_ordinal"),
-    currentSegmentOrdinal: integer("current_segment_ordinal"),
+    laneKind: text("lane_kind").$type<TaskExecutionLaneKind>().notNull(),
     authorizedContextExposureDigest: text(
       "authorized_context_exposure_digest",
-    ),
+    ).notNull(),
     envelopeVersion: text("envelope_version")
       .$type<"task-execution-native/v1">()
       .notNull()
@@ -89,9 +81,6 @@ export const taskExecutionSessions = pgTable(
     lastProtocolSettledRefOrdinal: integer(
       "last_protocol_settled_ref_ordinal",
     ),
-    lastProtocolSettledSegmentOrdinal: integer(
-      "last_protocol_settled_segment_ordinal",
-    ),
     costCursorState: text("cost_cursor_state")
       .$type<AcpCostCursorState>()
       .notNull()
@@ -111,34 +100,14 @@ export const taskExecutionSessions = pgTable(
         and ${table.correlationGeneration} > 0`,
     ),
     check(
-      "task_execution_sessions_purpose_shape_check",
-      sql`(
-        ${table.purpose} = 'carry'
-        and ${table.state} in ('eligible', 'superseded')
-        and ${table.laneKind} is not null
-        and ${table.laneKind} in ('owner', 'consult')
-        and ${table.runId} is null
-        and ${table.currentRefId} is null
-        and ${table.currentRefOrdinal} is null
-        and ${table.currentSegmentOrdinal} is null
-        and ${table.authorizedContextExposureDigest} is not null
-      ) or (
-        ${table.purpose} = 'active_run_steering'
-        and ${table.state} in ('current', 'superseded')
-        and ${table.laneKind} is null
-        and ${table.runId} is not null
-        and ${table.currentRefId} is not null
-        and ${table.currentRefOrdinal} is not null
-        and ${table.currentRefOrdinal} >= 0
-        and ${table.currentSegmentOrdinal} is not null
-        and ${table.currentSegmentOrdinal} >= 0
-        and ${table.authorizedContextExposureDigest} is null
-      )`,
+      "task_execution_sessions_shape_check",
+      sql`${table.state} in ('eligible', 'superseded')
+        and ${table.laneKind} in ('owner', 'consult')`,
     ),
     check(
       "task_execution_sessions_supersession_check",
       sql`(
-        ${table.state} in ('eligible', 'current')
+        ${table.state} = 'eligible'
         and ${table.supersessionReason} is null
         and ${table.supersededAt} is null
       ) or (
@@ -161,10 +130,7 @@ export const taskExecutionSessions = pgTable(
       "task_execution_sessions_digest_check",
       sql`${table.protectedTargetSessionDigest} ~ '^[0-9a-f]{64}$'
         and ${table.targetFingerprint} ~ '^[0-9a-f]{64}$'
-        and (
-          ${table.authorizedContextExposureDigest} is null
-          or ${table.authorizedContextExposureDigest} ~ '^[0-9a-f]{64}$'
-        )`,
+        and ${table.authorizedContextExposureDigest} ~ '^[0-9a-f]{64}$'`,
     ),
     check(
       "task_execution_sessions_last_settled_prompt_check",
@@ -172,14 +138,11 @@ export const taskExecutionSessions = pgTable(
         ${table.lastProtocolSettledRunId} is null
         and ${table.lastProtocolSettledRefId} is null
         and ${table.lastProtocolSettledRefOrdinal} is null
-        and ${table.lastProtocolSettledSegmentOrdinal} is null
       ) or (
         ${table.lastProtocolSettledRunId} is not null
         and ${table.lastProtocolSettledRefId} is not null
         and ${table.lastProtocolSettledRefOrdinal} is not null
         and ${table.lastProtocolSettledRefOrdinal} >= 0
-        and ${table.lastProtocolSettledSegmentOrdinal} is not null
-        and ${table.lastProtocolSettledSegmentOrdinal} >= 0
       )`,
     ),
     check(
@@ -247,40 +210,6 @@ export const taskExecutionSessions = pgTable(
     }).onDelete("restrict"),
     foreignKey({
       columns: [
-        table.companyId,
-        table.taskId,
-        table.ownershipEpoch,
-        table.runId,
-        table.targetAgentId,
-        table.adapterConfigIdentity,
-        table.workspaceIdentity,
-      ],
-      foreignColumns: [
-        taskExecutionRuns.companyId,
-        taskExecutionRuns.taskId,
-        taskExecutionRuns.ownershipEpoch,
-        taskExecutionRuns.id,
-        taskExecutionRuns.targetAgentId,
-        taskExecutionRuns.adapterConfigRevisionId,
-        taskExecutionRuns.executionWorkspaceBindingId,
-      ],
-      name: "task_execution_sessions_steering_target_scope_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [
-        table.runId,
-        table.currentRefOrdinal,
-        table.currentRefId,
-      ],
-      foreignColumns: [
-        taskExecutionRunRefs.runId,
-        taskExecutionRunRefs.refOrdinal,
-        taskExecutionRunRefs.refId,
-      ],
-      name: "task_execution_sessions_current_run_ref_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [
         table.lastProtocolSettledRunId,
         table.lastProtocolSettledRefOrdinal,
         table.lastProtocolSettledRefId,
@@ -296,7 +225,7 @@ export const taskExecutionSessions = pgTable(
       table.companyId,
       table.id,
     ),
-    uniqueIndex("task_execution_sessions_current_carry_uq")
+    uniqueIndex("task_execution_sessions_eligible_uq")
       .on(
         table.companyId,
         table.taskId,
@@ -306,23 +235,8 @@ export const taskExecutionSessions = pgTable(
         table.workspaceIdentity,
         table.laneKind,
       )
-      .where(
-        sql`${table.purpose} = 'carry' and ${table.state} = 'eligible'`,
-      ),
-    uniqueIndex("task_execution_sessions_current_steering_uq")
-      .on(
-        table.companyId,
-        table.taskId,
-        table.ownershipEpoch,
-        table.runId,
-        table.targetAgentId,
-        table.adapterConfigIdentity,
-        table.workspaceIdentity,
-      )
-      .where(
-        sql`${table.purpose} = 'active_run_steering' and ${table.state} = 'current'`,
-      ),
-    uniqueIndex("task_execution_sessions_carry_generation_uq")
+      .where(sql`${table.state} = 'eligible'`),
+    uniqueIndex("task_execution_sessions_generation_uq")
       .on(
         table.companyId,
         table.taskId,
@@ -332,20 +246,7 @@ export const taskExecutionSessions = pgTable(
         table.workspaceIdentity,
         table.laneKind,
         table.correlationGeneration,
-      )
-      .where(sql`${table.purpose} = 'carry'`),
-    uniqueIndex("task_execution_sessions_steering_generation_uq")
-      .on(
-        table.companyId,
-        table.taskId,
-        table.ownershipEpoch,
-        table.runId,
-        table.targetAgentId,
-        table.adapterConfigIdentity,
-        table.workspaceIdentity,
-        table.correlationGeneration,
-      )
-      .where(sql`${table.purpose} = 'active_run_steering'`),
+      ),
     index("task_execution_sessions_digest_idx").on(
       table.companyId,
       table.protectedTargetSessionDigest,
@@ -372,7 +273,6 @@ export const taskExecutionPromptCapabilities = pgTable(
     runBatchDigest: text("run_batch_digest").notNull(),
     refId: uuid("ref_id").notNull(),
     refOrdinal: integer("ref_ordinal").notNull(),
-    segmentOrdinal: integer("segment_ordinal").notNull(),
     attemptId: uuid("attempt_id").notNull(),
     leaseId: uuid("lease_id").notNull(),
     leaseGeneration: integer("lease_generation").notNull(),
@@ -424,7 +324,6 @@ export const taskExecutionPromptCapabilities = pgTable(
       sql`${table.capabilityGeneration} > 0
         and ${table.ownershipEpoch} > 0
         and ${table.refOrdinal} >= 0
-        and ${table.segmentOrdinal} >= 0
         and ${table.leaseGeneration} > 0
         and ${table.runBatchDigest} ~ '^[0-9a-f]{64}$'
         and ${table.effectiveContextExposureDigest} ~ '^[0-9a-f]{64}$'

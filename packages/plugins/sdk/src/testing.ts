@@ -1492,7 +1492,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           ownerKind: "agent",
           ownerAgentId: input.ownerAgentId,
           ownerUserId: null,
-          ownerAssignmentSource: null,
           ownershipEpoch: 1,
           creatorKind: "plugin",
           creatorAuthorityId: null,
@@ -1540,7 +1539,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           ownerKind: "agent" as const,
           ownerAgentId: input.ownerAgentId,
           ownerUserId: null,
-          ownerAssignmentSource: null,
           ownershipEpoch: record.ownershipEpoch + 1,
           updatedAt: new Date(),
         };

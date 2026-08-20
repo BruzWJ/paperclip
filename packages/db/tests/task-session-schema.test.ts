@@ -122,7 +122,6 @@ describe("task-session schema", () => {
       "task_id",
       "session_id",
       "prompt",
-      "delivery",
       "admitted_seq",
       "promoted_seq",
       "time_created",
@@ -217,8 +216,11 @@ describe("task-session schema", () => {
     expect(inputState).toContain("= 'active'");
     expect(inputState).toContain("= 'invalidated'");
     expect(inputState).toContain('"invalidation_reason" is not null');
-    expect(checkSql(taskSessionInputs, "task_session_inputs_delivery_check"))
-      .toContain("in ('steer', 'queue')");
+    expect(
+      getTableConfig(taskSessionInputs).indexes.map(
+        (index) => index.config.name,
+      ),
+    ).toContain("task_session_inputs_pending_idx");
   });
 
   it("renders the same tables and constraints into the generated migration", () => {

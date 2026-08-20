@@ -6,7 +6,6 @@ import type { AcpCostUnavailableReason } from "../acp-cost.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export type AcpPromptCostKind = "known" | "unavailable";
-export type AcpPromptAccountingKind = "base" | "steering";
 
 /** Canonical cost fact for exactly one protocol-settled ACP prompt. */
 export interface CostEvent {
@@ -17,10 +16,8 @@ export interface CostEvent {
   agentId: string;
   runId: string;
   runKind: TaskExecutionRunKind;
-  promptKind: AcpPromptAccountingKind;
   refId: string | null;
   runOrdinal: number | null;
-  segmentOrdinal: number | null;
   budgetCurrency: BudgetCurrency;
   kind: AcpPromptCostKind;
   unavailableReason: AcpCostUnavailableReason | null;

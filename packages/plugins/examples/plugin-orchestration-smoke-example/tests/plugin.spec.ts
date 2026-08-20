@@ -37,7 +37,6 @@ function task(input: Partial<Task> & Pick<Task, "id" | "companyId" | "title">): 
     ownerKind: "agent",
     ownerAgentId: rest.ownerAgentId ?? "00000000-0000-4000-8000-000000000001",
     ownerUserId: null,
-    ownerAssignmentSource: null,
     ownershipEpoch: 1,
     creatorKind: "user/board",
     creatorAuthorityId: null,

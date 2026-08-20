@@ -51,11 +51,9 @@ const beforePromptInput = {
   agentId: AGENT_ID,
   projectId: null,
   sourceText: "Continue the task",
-  promptKind: "base",
   sessionOperation: "new",
   refId: REF_ID,
   refOrdinal: 0,
-  segmentOrdinal: 0,
   sourceMessageId: "msg_source",
   sourceMessageSeq: 12,
   contextAccess: {

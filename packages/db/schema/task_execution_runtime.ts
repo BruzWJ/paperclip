@@ -358,7 +358,6 @@ export const taskExecutionRefs = pgTable(
       sql`${table.sourceKind} in (
         'task_request',
         'task_reassignment',
-        'task_reopen',
         'mention_agent',
         'routine_dispatch',
         'task_update',

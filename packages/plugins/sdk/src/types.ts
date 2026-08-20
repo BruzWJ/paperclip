@@ -205,11 +205,9 @@ export interface PluginBeforePromptInput {
   readonly agentId: string;
   readonly projectId: string | null;
   readonly sourceText: string;
-  readonly promptKind: "base" | "steering";
   readonly sessionOperation: TaskExecutionSessionOperation;
   readonly refId: string;
   readonly refOrdinal: number;
-  readonly segmentOrdinal: number;
   /** Exact canonical source message admitted for this prompt. */
   readonly sourceMessageId: string;
   /** Non-negative safe-integer global Session sequence of `sourceMessageId`. */
@@ -217,7 +215,7 @@ export interface PluginBeforePromptInput {
   readonly contextAccess: PluginContextAccess;
   /**
    * Stable inclusive boundary for canonical Session reads during this hook.
-   * This equals `sourceMessageSeq`, so later queued or steering facts cannot
+   * This equals `sourceMessageSeq`, so later queued facts cannot
    * leak into the prompt being observed.
    */
   readonly snapshotHighWaterSeq: number;

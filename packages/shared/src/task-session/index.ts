@@ -6,7 +6,6 @@ export * as Project from "./project.js";
 export * as Prompt from "./prompt.js";
 export * as Provider from "./provider.js";
 export * as Revert from "./revert.js";
-export * as Delivery from "./session-delivery.js";
 export * as Event from "./session-event.js";
 export * as Input from "./session-input.js";
 export * as Message from "./session-message.js";

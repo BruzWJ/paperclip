@@ -62,17 +62,13 @@ describe("canonical task comment projection schema", () => {
     expect(sourceKinds).not.toContain(["normalized", "final"].join("_"));
   });
 
-  it("keeps one run-progress origin with terminal and positive steering dependencies", () => {
+  it("keeps one run-progress origin with its terminal dependency", () => {
     expect(columns(taskCommentProjectionSources)).toEqual(
       expect.arrayContaining([
         "reply_to_comment_id",
         "reply_to_projected_event_seq",
         "thread_root_comment_id",
         "thread_root_projected_event_seq",
-        "steering_target_run_id",
-        "ref_id",
-        "ref_ordinal",
-        "segment_ordinal",
         "terminal_session_message_id",
       ]),
     );
@@ -83,26 +79,9 @@ describe("canonical task comment projection schema", () => {
         "task_comment_projection_sources_run_fk",
         "task_comment_projection_sources_reply_parent_fk",
         "task_comment_projection_sources_thread_root_fk",
-        "task_comment_projection_sources_steering_segment_fk",
         "task_comment_projection_sources_terminal_message_fk",
       ]),
     );
-    const steeringTarget = config.foreignKeys.find(
-      (key) =>
-        key.getName() ===
-        "task_comment_projection_sources_steering_segment_fk",
-    );
-    expect(
-      steeringTarget?.reference().columns.map((column) => column.name),
-    ).toEqual([
-      "company_id",
-      "task_id",
-      "session_id",
-      "steering_target_run_id",
-      "ref_ordinal",
-      "ref_id",
-      "segment_ordinal",
-    ]);
     const runProgress = config.indexes.find(
       (index) => index.config.name ===
         "task_comment_projection_sources_run_progress_uq",
@@ -111,20 +90,6 @@ describe("canonical task comment projection schema", () => {
     expect(
       dialect.sqlToQuery(runProgress!.config.where!).sql,
     ).toContain("source_kind\" = 'run_progress'");
-    expect(
-      checkSql(
-        taskCommentProjectionSources,
-        "task_comment_projection_sources_steering_segment_shape_check",
-      ),
-    ).toContain(
-      '"task_comment_projection_sources"."steering_target_run_id" is not null',
-    );
-    expect(
-      checkSql(
-        taskCommentProjectionSources,
-        "task_comment_projection_sources_steering_segment_shape_check",
-      ),
-    ).toContain('"task_comment_projection_sources"."segment_ordinal" > 0');
     expect(
       checkSql(
         taskCommentProjectionSources,

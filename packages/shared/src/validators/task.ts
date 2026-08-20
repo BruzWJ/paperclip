@@ -24,7 +24,7 @@ import {
   trustAuthorizationPolicySchema,
 } from "./trust-policy.js";
 import { multilineTextSchema } from "./text.js";
-import { decodeTaskDisposition } from "../task-runtime.js";
+import { AGENT_VISIBLE_TASK_STATUSES, decodeTaskDisposition } from "../task-runtime.js";
 import { isCanonicalUuid } from "../canonical-uuid.js";
 import { parseTaskIdentifier } from "../task-identifier.js";
 import { MAX_TASK_NUMBER } from "../task-number.js";
@@ -306,70 +306,21 @@ export type ReassignTask = z.infer<typeof reassignTaskSchema>;
 
 const opaqueTaskMessageSchema = z.string().max(200_000);
 
-const taskFormMessageSchema = opaqueTaskMessageSchema
+const taskStatusMessageSchema = opaqueTaskMessageSchema
   .refine((value) => value.trim().length > 0, {
     message: "Task form message must contain non-whitespace text",
   });
 
-/** Exact named-user creator route body. */
-export const commitTaskCreatorFormSchema = z
+export const updateTaskStatusSchema = z
   .object({
-    taskId: canonicalUuidSchema,
-    message: taskFormMessageSchema,
-  })
-  .strict();
-
-export type CommitTaskCreatorForm = z.infer<
-  typeof commitTaskCreatorFormSchema
->;
-
-export const commitTaskOwnerFormSchema = z
-  .object({
-    taskId: canonicalUuidSchema,
-    message: taskFormMessageSchema,
-    status: z
-      .enum(["open", "blocked", "done", "cancelled"])
-      .optional(),
-    structuredResult: z.unknown().optional(),
-  })
-  .strict()
-  .superRefine((value, ctx) => {
-    const terminal =
-      value.status === "done" || value.status === "cancelled";
-    if (Object.hasOwn(value, "structuredResult") && !terminal) {
-      addValidationDetail(ctx, {
-        message:
-          "structuredResult is accepted only for done or cancelled",
-        path: ["structuredResult"],
-      });
-    }
-  });
-
-export type CommitTaskOwnerForm = z.infer<
-  typeof commitTaskOwnerFormSchema
->;
-
-export const selfAssignTaskWithdrawalSchema = z
-  .object({
+    status: z.enum(AGENT_VISIBLE_TASK_STATUSES),
+    message: taskStatusMessageSchema,
+    recipient: z.enum(["owner", "creator"]),
     idempotencyKey: taskMutationIdempotencyKeySchema,
   })
   .strict();
 
-export type SelfAssignTaskWithdrawal = z.infer<
-  typeof selfAssignTaskWithdrawalSchema
->;
-
-export const reopenTaskSchema = z.object({
-  reason: multilineTextSchema
-    .pipe(z.string().max(20_000))
-    .refine((value) => value.trim().length > 0, {
-      message: "Reopen reason must contain non-whitespace text",
-    }),
-  idempotencyKey: taskMutationIdempotencyKeySchema,
-}).strict();
-
-export type ReopenTask = z.infer<typeof reopenTaskSchema>;
-
+export type UpdateTaskStatus = z.infer<typeof updateTaskStatusSchema>;
 
 const commentMetadataLabelSchema = z.string().trim().min(1).max(120);
 const commentMetadataTextSchema = z.string().trim().min(1).max(2000);
@@ -564,14 +515,7 @@ export const createTaskUserCommentSchema = z.object({
     ownershipEpoch: z.number().int().positive(),
   }).strict().nullable().optional(),
   replyToCommentId: canonicalUuidSchema.nullable().optional(),
-}).strict().superRefine((value, ctx) => {
-  if (value.mention != null && value.replyToCommentId != null) {
-    addValidationDetail(ctx, {
-      message: "A comment cannot mention an agent and reply to a comment at the same time",
-      path: ["replyToCommentId"],
-    });
-  }
-});
+}).strict();
 
 export type CreateTaskUserComment = z.infer<typeof createTaskUserCommentSchema>;
 

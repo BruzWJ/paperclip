@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  TASK_BOARD_REOPEN_DISPATCH_KINDS,
   TASK_EXECUTION_REF_SOURCE_KINDS,
   PAPERCLIP_ACTION_KEYS,
   PAPERCLIP_RUNTIME_ACTION_KEYS,
-  type TaskBoardReopenDispatch,
+  taskLifecycleStatusTargets,
 } from "./task-runtime.js";
 
 describe("task execution source taxonomy", () => {
@@ -12,7 +11,6 @@ describe("task execution source taxonomy", () => {
     expect(TASK_EXECUTION_REF_SOURCE_KINDS).toEqual([
       "task_request",
       "task_reassignment",
-      "task_reopen",
       "mention_agent",
       "routine_dispatch",
       "task_update",
@@ -21,30 +19,12 @@ describe("task execution source taxonomy", () => {
   });
 });
 
-describe("canonical board reopen dispatch contract", () => {
-  it("contains only the exact provider and provider-free branches", () => {
-    expect(TASK_BOARD_REOPEN_DISPATCH_KINDS).toEqual([
-      "agent_execution",
-      "board_only",
-    ]);
-
-    const branches = [
-      {
-        kind: "agent_execution",
-        executionRef: { id: "ref-1" },
-      },
-      { kind: "board_only" },
-    ] as const satisfies readonly (
-      | Pick<
-          Extract<TaskBoardReopenDispatch, { kind: "agent_execution" }>,
-          "kind"
-        > & { executionRef: { id: string } }
-      | Extract<TaskBoardReopenDispatch, { kind: "board_only" }>
-    )[];
-
-    expect(branches.map((branch) => branch.kind)).toEqual(
-      TASK_BOARD_REOPEN_DISPATCH_KINDS,
-    );
+describe("task lifecycle transitions", () => {
+  it("defines one legal target map", () => {
+    expect(taskLifecycleStatusTargets("open")).toEqual(["blocked", "done", "cancelled"]);
+    expect(taskLifecycleStatusTargets("blocked")).toEqual(["open", "done", "cancelled"]);
+    expect(taskLifecycleStatusTargets("done")).toEqual(["open"]);
+    expect(taskLifecycleStatusTargets("cancelled")).toEqual(["open"]);
   });
 });
 

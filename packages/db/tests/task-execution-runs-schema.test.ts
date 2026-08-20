@@ -6,9 +6,9 @@ import {
   taskExecutionAttempts,
   taskExecutionAttemptRetrySchedules,
   taskExecutionCancellationIntents,
+  taskExecutionFinalizationPromptDependencies,
   taskExecutionFinalizations,
   taskExecutionLeases,
-  taskExecutionPromptSegments,
   taskExecutionRunControls,
   taskExecutionRunLivenessFacts,
   taskExecutionRunRefs,
@@ -152,58 +152,7 @@ describe("canonical task execution run schema", () => {
     expect(matrix).toContain('"cost_event_id" is not null');
   });
 
-  it("reserves segment zero for the run-ref and exposes the trigger candidate key", () => {
-    const config = getTableConfig(taskExecutionPromptSegments);
-
-    expect(config.name).toBe("task_execution_prompt_segments");
-    expect(
-      checkSql(
-        taskExecutionPromptSegments,
-        "task_execution_prompt_segments_positive_ordinal_check",
-      ),
-    ).toContain('"task_execution_prompt_segments"."segment_ordinal" > 0');
-    expect(
-      config.uniqueConstraints.map((constraint) => constraint.getName()),
-    ).toContain(
-      "task_execution_prompt_segments_run_ordinal_ref_segment_uq",
-    );
-    expect(
-      checkSql(
-        taskExecutionPromptSegments,
-        "task_execution_prompt_segments_steering_state_check",
-      ),
-    ).toContain("'protocol_settled'");
-    expect(columnNames(taskExecutionPromptSegments)).toEqual(
-      expect.arrayContaining([
-        "source_message_id",
-        "source_input_id",
-        "terminal_session_message_id",
-        "resumed_at",
-      ]),
-    );
-    expect(columnNames(taskExecutionPromptSegments)).not.toContain("input_id");
-    expect(config.foreignKeys.map((key) => key.getName())).toEqual(
-      expect.arrayContaining([
-        "task_execution_prompt_segments_source_message_fk",
-        "task_execution_prompt_segments_source_input_fk",
-        "task_execution_prompt_segments_terminal_message_fk",
-      ]),
-    );
-    expect(
-      checkSql(
-        taskExecutionPromptSegments,
-        "task_execution_prompt_segments_source_input_check",
-      ),
-    ).toContain('"source_input_id" = "task_execution_prompt_segments"."source_message_id"');
-    expect(
-      checkSql(
-        taskExecutionPromptSegments,
-        "task_execution_prompt_segments_terminal_message_check",
-      ),
-    ).toContain('"terminal_session_message_id" is not null');
-  });
-
-  it("keeps the current-prompt control row to exactly four structural columns", () => {
+  it("keeps the current-prompt control row to one run-ref pointer", () => {
     const config = getTableConfig(taskExecutionRunControls);
 
     expect(config.name).toBe("task_execution_run_controls");
@@ -211,7 +160,6 @@ describe("canonical task execution run schema", () => {
       "run_id",
       "current_ref_id",
       "current_ordinal",
-      "current_segment_ordinal",
     ]);
     expect(config.foreignKeys.map((foreignKey) => foreignKey.getName())).toContain(
       "task_execution_run_controls_current_member_fk",
@@ -289,7 +237,6 @@ describe("canonical task execution run schema", () => {
     ).toEqual([
       "task_request",
       "task_reassignment",
-      "task_reopen",
       "mention_agent",
       "routine_dispatch",
       "task_update",
@@ -357,7 +304,7 @@ describe("canonical task execution run schema", () => {
     expect(membership).not.toContain("retained-tail");
   });
 
-  it("binds one typed attempt to a base or steering prompt", () => {
+  it("binds one typed attempt to one run-ref prompt", () => {
     const config = getTableConfig(taskExecutionAttempts);
     const names = config.foreignKeys.map((key) => key.getName());
 
@@ -369,12 +316,9 @@ describe("canonical task execution run schema", () => {
       "session_id",
       "run_id",
       "run_kind",
-      "prompt_kind",
       "session_operation",
       "ref_id",
       "ref_ordinal",
-      "segment_ordinal",
-      "steering_segment_ordinal",
       "attempt_generation",
       "state",
       "started_at",
@@ -386,16 +330,8 @@ describe("canonical task execution run schema", () => {
       "task_execution_attempts_prompt_identity_check",
     );
     expect(identity).not.toContain("= 'compaction'");
-    expect(identity).toContain('"segment_ordinal" = 0');
-    expect(identity).toContain('"segment_ordinal" > 0');
-    expect(identity).toContain(
-      '"steering_segment_ordinal" = "task_execution_attempts"."segment_ordinal"',
-    );
-    expect(
-      columnNames(taskExecutionAttempts).filter(
-        (name) => name === "steering_segment_ordinal",
-      ),
-    ).toHaveLength(1);
+    expect(identity).toContain("in ('productive', 'consult')");
+    expect(identity).toContain('"ref_ordinal" >= 0');
     expect(
       checkSql(
         taskExecutionAttempts,
@@ -406,26 +342,20 @@ describe("canonical task execution run schema", () => {
       expect.arrayContaining([
         "task_execution_attempts_run_fk",
         "task_execution_attempts_run_kind_fk",
-        "task_execution_attempts_base_member_fk",
-        "task_execution_attempts_steering_segment_fk",
+        "task_execution_attempts_run_ref_fk",
       ]),
     );
     expect(config.indexes.filter((index) => index.config.unique)).toHaveLength(
-      3,
+      2,
     );
-    for (const name of [
-      "task_execution_attempts_base_prompt_uq",
-      "task_execution_attempts_steering_prompt_uq",
-    ]) {
-      const attemptIdentity = config.indexes.find(
-        (index) => index.config.name === name,
-      );
-      expect(
-        attemptIdentity?.config.columns.map(
-          (column) => (column as { name: string }).name,
-        ),
-      ).toContain("attempt_generation");
-    }
+    const promptIdentity = config.indexes.find(
+      (index) => index.config.name === "task_execution_attempts_prompt_uq",
+    );
+    expect(
+      promptIdentity?.config.columns.map(
+        (column) => (column as { name: string }).name,
+      ),
+    ).toContain("attempt_generation");
   });
 
   it("owns delayed pre-send retries outside the closed run envelope", () => {
@@ -533,6 +463,12 @@ describe("canonical task execution run schema", () => {
     expect(config.uniqueConstraints.map((key) => key.getName())).toContain(
       "task_execution_cancellation_intents_attempt_uq",
     );
+    const reasons = checkSql(
+      taskExecutionCancellationIntents,
+      "task_execution_cancellation_intents_reason_check",
+    );
+    expect(reasons).toContain("'lifecycle'");
+    expect(reasons).not.toContain("steering");
   });
 
   it("keeps liveness to the exact identity and five-field immutable fact", () => {
@@ -585,6 +521,28 @@ describe("canonical task execution run schema", () => {
         "context",
         "usage",
       ]),
+    );
+  });
+
+  it("records one settled run-ref prompt per finalization dependency", () => {
+    expect(columnNames(taskExecutionFinalizationPromptDependencies)).toEqual([
+      "company_id",
+      "task_id",
+      "run_id",
+      "finalization_id",
+      "dependency_ordinal",
+      "ref_id",
+      "ref_ordinal",
+      "protocol_settlement_state",
+      "settlement_version",
+      "accounting_id",
+      "cost_event_id",
+    ]);
+    expect(
+      getTableConfig(taskExecutionFinalizationPromptDependencies)
+        .uniqueConstraints.map((constraint) => constraint.getName()),
+    ).toContain(
+      "task_execution_finalization_prompt_dependencies_prompt_uq",
     );
   });
 });

@@ -15,10 +15,7 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
-import {
-  acpPromptAccounting,
-  type AcpPromptAccountingKind,
-} from "./acp_prompt_accounting.js";
+import { acpPromptAccounting } from "./acp_prompt_accounting.js";
 import { companies } from "./companies.js";
 import {
   budgetCurrencyColumn,
@@ -41,10 +38,8 @@ export const costEvents = pgTable(
     agentId: uuid("agent_id").notNull(),
     runId: uuid("run_id").notNull(),
     runKind: text("run_kind").$type<TaskExecutionRunKind>().notNull(),
-    promptKind: text("prompt_kind").$type<AcpPromptAccountingKind>().notNull(),
     refId: uuid("ref_id"),
     runOrdinal: integer("run_ordinal"),
-    segmentOrdinal: integer("segment_ordinal"),
     budgetCurrency: budgetCurrencyColumn("budget_currency").notNull(),
     kind: text("kind").$type<AcpPromptCostKind>().notNull(),
     unavailableReason: text("unavailable_reason").$type<
@@ -73,23 +68,10 @@ export const costEvents = pgTable(
   (table) => [
     check(
       "cost_events_prompt_identity_check",
-      sql`(
-        ${table.promptKind} = 'base'
-        and ${table.runKind} in ('productive', 'consult')
+      sql`${table.runKind} in ('productive', 'consult')
         and ${table.refId} is not null
         and ${table.runOrdinal} is not null
-        and ${table.runOrdinal} >= 0
-        and ${table.segmentOrdinal} is not null
-        and ${table.segmentOrdinal} = 0
-      ) or (
-        ${table.promptKind} = 'steering'
-        and ${table.runKind} in ('productive', 'consult')
-        and ${table.refId} is not null
-        and ${table.runOrdinal} is not null
-        and ${table.runOrdinal} >= 0
-        and ${table.segmentOrdinal} is not null
-        and ${table.segmentOrdinal} > 0
-      )`,
+        and ${table.runOrdinal} >= 0`,
     ),
     check(
       "cost_events_amounts_check",
@@ -220,7 +202,6 @@ export const costEvents = pgTable(
         table.runKind,
         table.refId,
         table.runOrdinal,
-        table.segmentOrdinal,
         table.accountingId,
       ],
       foreignColumns: [
@@ -231,10 +212,9 @@ export const costEvents = pgTable(
         acpPromptAccounting.runKind,
         acpPromptAccounting.refId,
         acpPromptAccounting.runOrdinal,
-        acpPromptAccounting.segmentOrdinal,
         acpPromptAccounting.id,
       ],
-      name: "cost_events_productive_accounting_fk",
+      name: "cost_events_accounting_scope_fk",
     }).onDelete("restrict"),
     unique("cost_events_accounting_uq").on(table.accountingId),
     index("cost_events_company_occurred_idx").on(

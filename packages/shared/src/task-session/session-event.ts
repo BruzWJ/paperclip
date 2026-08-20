@@ -2,7 +2,6 @@ import { Schema } from "effect"
 import { optional } from "./schema.js"
 import * as EventDefinition from "./event.js"
 import { ProviderMetadata, ToolContent } from "./llm.js"
-import { Delivery } from "./session-delivery.js"
 import * as Model from "./model.js"
 import { DateTimeUtcFromMillis, NonNegativeInt, RelativePath } from "./schema.js"
 import { FileAttachment, Prompt } from "./prompt.js"
@@ -30,7 +29,6 @@ const PromptFields = {
   ...Base,
   messageID: SessionMessage.ID,
   prompt: Prompt,
-  delivery: Delivery,
 }
 
 const options = {

@@ -7,6 +7,7 @@ const migrationsDirectory = fileURLToPath(
 );
 const canonicalRewriteMigration = "0002_unknown_big_bertha.sql";
 const canonicalMentionMigration = "0003_big_scorpion.sql";
+const taskLifecycleSimplificationMigration = "0004_fresh_grey_gargoyle.sql";
 
 function migrationFiles(): string[] {
   return readdirSync(migrationsDirectory)
@@ -106,6 +107,7 @@ describe("generated PostgreSQL migration contract", () => {
       "0001_melodic_lila_cheney.sql",
       canonicalRewriteMigration,
       canonicalMentionMigration,
+      taskLifecycleSimplificationMigration,
     ]);
 
     const extensionSql = migrationSql(files[0]!);
@@ -172,6 +174,101 @@ describe("generated PostgreSQL migration contract", () => {
       "'human_comment_mention'",
     );
     expect(source.slice(constraintAddedAt)).not.toContain("'consult_mention'");
+  });
+
+  it("retires reopen and withdrawal persistence after canonicalizing historical rows", () => {
+    const source = migrationSql(taskLifecycleSimplificationMigration);
+    const eventsUpdatedAt = source.indexOf(
+      'UPDATE "task_session_events"\nSET "source_kind" = \'task_update\'',
+    );
+    const refsUpdatedAt = source.indexOf(
+      'UPDATE "task_execution_refs"\nSET "source_kind" = \'task_update\'',
+    );
+    const ownersUpdatedAt = source.indexOf('UPDATE "tasks"\nSET\n  "owner_kind" = \'board\'');
+    const ownerColumnDroppedAt = source.indexOf('DROP COLUMN "owner_assignment_source"');
+
+    expect(eventsUpdatedAt).toBeGreaterThanOrEqual(0);
+    expect(refsUpdatedAt).toBeGreaterThan(eventsUpdatedAt);
+    expect(source).toContain('UPDATE "task_execution_history_views"');
+    expect(source).toContain('UPDATE "task_session_input_dispositions"');
+    expect(source).toContain('UPDATE "task_execution_refs" AS "ref"');
+    expect(source).toContain("AND \"run\".\"status\" IN ('queued', 'running', 'scheduled_retry')");
+    expect(ownersUpdatedAt).toBeGreaterThan(refsUpdatedAt);
+    expect(ownerColumnDroppedAt).toBeGreaterThan(ownersUpdatedAt);
+    expect(source).toContain('DROP TABLE "task_board_reopen_commands" CASCADE');
+    expect(source).toContain('DROP TABLE "task_creator_withdrawal_commands" CASCADE');
+    expect(source.slice(source.indexOf('ADD CONSTRAINT "task_execution_refs_source_kind_check"')))
+      .not.toContain("'task_reopen'");
+  });
+
+  it("fails closed on financial or live steering before DDL and purges only nonfinancial terminal artifacts", () => {
+    const source = migrationSql(taskLifecycleSimplificationMigration);
+    const financialCostGuardAt = source.indexOf(
+      'FROM "cost_events"\n    WHERE "prompt_kind" = \'steering\'',
+    );
+    const financialAccountingGuardAt = source.indexOf(
+      'FROM "acp_prompt_accounting"\n    WHERE "prompt_kind" = \'steering\'',
+    );
+    const financialFailClosedAt = source.indexOf(
+      "cannot retire active-run steering while historical steering cost/accounting rows exist",
+    );
+    const liveFailClosedAt = source.indexOf(
+      "cannot retire active-run steering while steering work is active",
+    );
+    const firstDdlAt = source.search(/\b(?:ALTER|DROP|CREATE) TABLE\b/);
+    const projectionDetachedAt = source.indexOf(
+      'UPDATE "task_comment_projection_sources"',
+    );
+    const segmentsPurgedAt = source.indexOf(
+      'DELETE FROM "task_execution_prompt_segments";',
+    );
+    const segmentsDroppedAt = source.indexOf(
+      'DROP TABLE "task_execution_prompt_segments";',
+    );
+
+    expect(financialCostGuardAt).toBeGreaterThanOrEqual(0);
+    expect(financialAccountingGuardAt).toBeGreaterThan(financialCostGuardAt);
+    expect(financialFailClosedAt).toBeGreaterThan(financialAccountingGuardAt);
+    expect(liveFailClosedAt).toBeGreaterThan(financialFailClosedAt);
+    expect(firstDdlAt).toBeGreaterThan(liveFailClosedAt);
+    expect(source.slice(0, projectionDetachedAt)).toContain(
+      '"run"."status" IN (\'queued\', \'scheduled_retry\', \'running\')',
+    );
+    expect(source.slice(0, projectionDetachedAt)).toContain(
+      '"state" IN (\'pending\', \'leased\', \'running\')',
+    );
+    expect(projectionDetachedAt).toBeGreaterThan(firstDdlAt);
+    expect(segmentsPurgedAt).toBeGreaterThan(projectionDetachedAt);
+    expect(segmentsDroppedAt).toBeGreaterThan(segmentsPurgedAt);
+    expect(source).toContain(
+      'DELETE FROM "task_execution_finalization_prompt_dependencies"\nWHERE "prompt_kind" = \'steering\'',
+    );
+    expect(source).toContain(
+      'DELETE FROM "task_execution_sessions"\nWHERE "purpose" = \'active_run_steering\'',
+    );
+    expect(source).not.toContain('DELETE FROM "task_comments"');
+    expect(source).not.toContain(
+      'DELETE FROM "task_comment_projection_sources"',
+    );
+    expect(source).not.toContain('DELETE FROM "cost_events"');
+    expect(source).not.toContain('DELETE FROM "acp_prompt_accounting"');
+
+    const snapshot = readFileSync(
+      new URL(
+        "../migrations/meta/0004_snapshot.json",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    for (const retiredToken of [
+      "active_run_steering",
+      "steer_resume",
+      "task_execution_prompt_segments",
+      "prompt_kind",
+      "segment_ordinal",
+    ]) {
+      expect(snapshot).not.toContain(retiredToken);
+    }
   });
 
   it("deletes retired skill-test tasks instead of preserving them as ordinary work", () => {

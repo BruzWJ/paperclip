@@ -6,15 +6,12 @@ import {
   createTaskUserCommentSchema,
   boardTaskCommentGroupPageSchema,
   boardTaskRunSegmentEntrySchema,
-  commitTaskCreatorFormSchema,
-  commitTaskOwnerFormSchema,
   taskBlockedInboxAttentionSchema,
   taskCommentMetadataRowSchema,
   decideTaskExecutionStageSchema,
   reassignTaskSchema,
-  reopenTaskSchema,
-  selfAssignTaskWithdrawalSchema,
   updateTaskExecutionPolicySchema,
+  updateTaskStatusSchema,
   taskExecutionPolicySchema,
   taskExecutionMonitorPolicySchema,
   taskExecutionMonitorStateSchema,
@@ -275,14 +272,6 @@ describe("task validators", () => {
       ownerAgentId,
       idempotencyKey: "task-byte-exact-1",
     }).request).toBe(message);
-    expect(commitTaskCreatorFormSchema.parse({
-      taskId: ownerAgentId,
-      message,
-    }).message).toBe(message);
-    expect(commitTaskOwnerFormSchema.parse({
-      taskId: ownerAgentId,
-      message,
-    }).message).toBe(message);
     expect(createTaskUserCommentSchema.parse({
       message,
       idempotencyKey: "comment-byte-exact-1",
@@ -308,7 +297,7 @@ describe("task validators", () => {
   it("accepts only the nullable canonical reply parent identity", () => {
     const replyToCommentId = "11111111-1111-4111-8111-111111111111";
     expect(createTaskUserCommentSchema.parse({
-      message: "Steer the run represented by this comment.",
+      message: "Reply to this comment.",
       idempotencyKey: "comment-reply-1",
       replyToCommentId,
     }).replyToCommentId).toBe(replyToCommentId);
@@ -328,15 +317,18 @@ describe("task validators", () => {
       idempotencyKey: "comment-reply-4",
       threadRootCommentId: replyToCommentId,
     }).success).toBe(false);
-    expect(createTaskUserCommentSchema.safeParse({
-      message: "Do not mix independent dispatch contracts.",
+    expect(createTaskUserCommentSchema.parse({
+      message: "Reply in-thread and notify the owner.",
       idempotencyKey: "comment-reply-5",
       mention: {
         targetAgentId: ownerAgentId,
         ownershipEpoch: 3,
       },
       replyToCommentId,
-    }).success).toBe(false);
+    })).toMatchObject({
+      mention: { targetAgentId: ownerAgentId, ownershipEpoch: 3 },
+      replyToCommentId,
+    });
   });
 
   it("keeps the grouped board comment projection closed and selector-free", () => {
@@ -466,7 +458,7 @@ describe("task validators", () => {
     expect(updateTaskTitleSchema.safeParse({ status: "done" }).success).toBe(false);
   });
 
-  it("validates canonical reassignment and audited reopen commands", () => {
+  it("validates the canonical reassignment command", () => {
     expect(reassignTaskSchema.parse({
       ownerAgentId,
       idempotencyKey: "reassign-1",
@@ -479,63 +471,21 @@ describe("task validators", () => {
       idempotencyKey: "reassign-1",
       assigneeAgentId: ownerAgentId,
     }).success).toBe(false);
-
-    expect(reopenTaskSchema.parse({
-      reason: "  Re-open with the stored request.  ",
-      idempotencyKey: "reopen-1",
-    }).reason).toBe("  Re-open with the stored request.  ");
-    expect(reopenTaskSchema.safeParse({
-      reason: "   ",
-      idempotencyKey: "reopen-2",
-    }).success).toBe(false);
   });
 
-  it("keeps human creator, owner, and withdrawal forms exact", () => {
-    expect(
-      commitTaskCreatorFormSchema.parse({
-        taskId: ownerAgentId,
-        message: "  Preserve these message bytes.  ",
-      }),
-    ).toEqual({
-      taskId: ownerAgentId,
-      message: "  Preserve these message bytes.  ",
-    });
-    expect(
-      commitTaskCreatorFormSchema.safeParse({
-        taskId: ownerAgentId,
-        message: "follow up",
-        idempotencyKey: "not-part-of-this-form",
-      }).success,
-    ).toBe(false);
+  it("accepts only the exact status-update command", () => {
+    const command = {
+      status: "blocked" as const,
+      message: "  Waiting on the customer response.  ",
+      recipient: "owner" as const,
+      idempotencyKey: "status-update-1",
+    };
 
-    expect(
-      commitTaskOwnerFormSchema.parse({
-        taskId: ownerAgentId,
-        message: "Resolved with a structured result.",
-        status: "done",
-        structuredResult: { outcome: "accepted" },
-      }),
-    ).toMatchObject({ status: "done" });
-    expect(
-      commitTaskOwnerFormSchema.safeParse({
-        taskId: ownerAgentId,
-        message: "Still working.",
-        status: "open",
-        structuredResult: { outcome: "premature" },
-      }).success,
-    ).toBe(false);
-
-    expect(
-      selfAssignTaskWithdrawalSchema.parse({
-        idempotencyKey: "withdrawal-1",
-      }),
-    ).toEqual({ idempotencyKey: "withdrawal-1" });
-    expect(
-      selfAssignTaskWithdrawalSchema.safeParse({
-        idempotencyKey: "withdrawal-1",
-        ownerUserId: "caller-controlled",
-      }).success,
-    ).toBe(false);
+    expect(updateTaskStatusSchema.parse(command)).toEqual(command);
+    expect(updateTaskStatusSchema.safeParse({ ...command, message: "   " }).success).toBe(false);
+    expect(updateTaskStatusSchema.safeParse({ ...command, recipient: "agent-id" }).success).toBe(false);
+    expect(updateTaskStatusSchema.safeParse({ ...command, status: "in_progress" }).success).toBe(false);
+    expect(updateTaskStatusSchema.safeParse({ ...command, reopen: true }).success).toBe(false);
   });
 
   it("validates blocked inbox attention payloads and requires redacted secret fields", () => {

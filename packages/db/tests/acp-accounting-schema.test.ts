@@ -78,10 +78,8 @@ describe("canonical ACP prompt accounting schema", () => {
       "agent_id",
       "run_id",
       "run_kind",
-      "prompt_kind",
       "ref_id",
       "run_ordinal",
-      "segment_ordinal",
       "attempt_id",
       "adapter_config_revision_id",
       "selected_model_id",
@@ -111,12 +109,9 @@ describe("canonical ACP prompt accounting schema", () => {
       acpPromptAccounting,
       "acp_prompt_accounting_prompt_identity_check",
     );
-    expect(identity).toContain("= 'base'");
-    expect(identity).toContain("= 'steering'");
     expect(identity).not.toContain("= 'compaction'");
-    expect(identity).toContain('"segment_ordinal" is not null');
-    expect(identity).toContain('"segment_ordinal" = 0');
-    expect(identity).toContain('"segment_ordinal" > 0');
+    expect(identity).toContain("in ('productive', 'consult')");
+    expect(identity).toContain('"run_ordinal" >= 0');
 
     const occupancy = checkSql(
       acpPromptAccounting,
@@ -141,26 +136,26 @@ describe("canonical ACP prompt accounting schema", () => {
         "acp_prompt_accounting_session_fk",
         "acp_prompt_accounting_run_revision_fk",
         "acp_prompt_accounting_adapter_revision_fk",
-        "acp_prompt_accounting_productive_attempt_fk",
+        "acp_prompt_accounting_attempt_fk",
         "acp_prompt_accounting_run_ref_fk",
       ]),
     );
     expect(
       foreignKeyColumns(
         acpPromptAccounting,
-        "acp_prompt_accounting_productive_attempt_fk",
+        "acp_prompt_accounting_attempt_fk",
       ),
     ).toMatchObject({
-      columns: expect.arrayContaining(["segment_ordinal"]),
-      foreignColumns: expect.arrayContaining(["segment_ordinal"]),
+      columns: expect.arrayContaining(["attempt_id", "ref_id"]),
+      foreignColumns: expect.arrayContaining(["id", "ref_id"]),
     });
     expect(
-      getTableConfig(acpPromptAccounting).indexes
-        .filter((index) => index.config.unique)
-        .map((index) => index.config.name),
+      getTableConfig(acpPromptAccounting).uniqueConstraints.map(
+        (constraint) => constraint.getName(),
+      ),
     ).toEqual(
       expect.arrayContaining([
-        "acp_prompt_accounting_productive_prompt_uq",
+        "acp_prompt_accounting_prompt_uq",
       ]),
     );
   });
@@ -191,10 +186,8 @@ describe("canonical ACP cost transition schema", () => {
       "agent_id",
       "run_id",
       "run_kind",
-      "prompt_kind",
       "ref_id",
       "run_ordinal",
-      "segment_ordinal",
       "budget_currency",
       "kind",
       "unavailable_reason",
@@ -233,7 +226,7 @@ describe("canonical ACP cost transition schema", () => {
       expect.arrayContaining([
         "cost_events_accounting_id_acp_prompt_accounting_id_fk",
         "cost_events_company_budget_currency_fk",
-        "cost_events_productive_accounting_fk",
+        "cost_events_accounting_scope_fk",
       ]),
     );
   });

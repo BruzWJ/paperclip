@@ -29,6 +29,13 @@
       "when": 1786918699061,
       "tag": "0003_big_scorpion",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787204605140,
+      "tag": "0004_fresh_grey_gargoyle",
+      "breakpoints": true
     }
   ]
 }

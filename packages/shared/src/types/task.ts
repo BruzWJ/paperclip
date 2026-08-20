@@ -486,19 +486,16 @@ type CanonicalTaskOwner =
       ownerKind: "agent";
       ownerAgentId: string;
       ownerUserId: null;
-      ownerAssignmentSource: null;
     }
   | {
       ownerKind: "user";
       ownerAgentId: null;
       ownerUserId: string;
-      ownerAssignmentSource: "user_creator_withdrawal" | null;
     }
   | {
       ownerKind: "board";
       ownerAgentId: null;
       ownerUserId: null;
-      ownerAssignmentSource: null;
     };
 
 type CanonicalTaskCreator =
@@ -593,7 +590,6 @@ export type CompactTask = Pick<
   | "ownerKind"
   | "ownerAgentId"
   | "ownerUserId"
-  | "ownerAssignmentSource"
   | "ownershipEpoch"
   | "creatorKind"
   | "creatorAuthorityId"

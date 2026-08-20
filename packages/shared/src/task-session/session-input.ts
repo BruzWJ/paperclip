@@ -2,12 +2,8 @@ import { Schema } from "effect"
 import { optional } from "./schema.js"
 import { Prompt } from "./prompt.js"
 import { DateTimeUtcFromMillis, NonNegativeInt } from "./schema.js"
-import * as SessionDelivery from "./session-delivery.js"
 import { SessionID } from "./session-id.js"
 import * as SessionMessage from "./session-message.js"
-
-export const Delivery = SessionDelivery.Delivery
-export type Delivery = SessionDelivery.Delivery
 
 export interface Admitted extends Schema.Schema.Type<typeof Admitted> {}
 export const Admitted = Schema.Struct({
@@ -15,7 +11,6 @@ export const Admitted = Schema.Struct({
   id: SessionMessage.ID,
   sessionID: SessionID,
   prompt: Prompt,
-  delivery: Delivery,
   timeCreated: DateTimeUtcFromMillis,
   promotedSeq: NonNegativeInt.pipe(optional),
 }).annotate({ identifier: "SessionInput.Admitted" })

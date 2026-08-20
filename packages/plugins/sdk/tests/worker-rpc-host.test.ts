@@ -1124,11 +1124,9 @@ describe("worker invocation scope propagation", () => {
       agentId: "agent-a",
       projectId: "project-a",
       sourceText: "Canonical source",
-      promptKind: "base",
       sessionOperation: "new",
       refId: "ref-a",
       refOrdinal: 0,
-      segmentOrdinal: 0,
       sourceMessageId: "message-a",
       sourceMessageSeq: 37,
       contextAccess: {

@@ -5,7 +5,6 @@ import {
   ACP_COST_CURSOR_STATES,
   TASK_EXECUTION_FINALIZATION_ACTIONS,
   TASK_EXECUTION_LANE_KINDS,
-  TASK_EXECUTION_NATIVE_CORRELATION_PURPOSES,
   TASK_EXECUTION_NATIVE_CORRELATION_STATES,
   TASK_EXECUTION_PROMPT_OUTCOMES,
   TASK_EXECUTION_PROMPT_CAPABILITY_STATES,
@@ -14,7 +13,6 @@ import {
   TASK_EXECUTION_RUN_KINDS,
   TASK_EXECUTION_RUN_STATUSES,
   TASK_EXECUTION_RUN_TERMINAL_CLASSIFICATIONS,
-  TASK_EXECUTION_STEERING_STATES,
 } from "../types/task-execution-run.js";
 
 const uuidSchema = canonicalUuidSchema;
@@ -41,14 +39,6 @@ export const taskExecutionProtocolSettlementStateSchema = z.enum(
 
 export const taskExecutionPromptOutcomeSchema = z.enum(
   TASK_EXECUTION_PROMPT_OUTCOMES,
-);
-
-export const taskExecutionSteeringStateSchema = z.enum(
-  TASK_EXECUTION_STEERING_STATES,
-);
-
-export const taskExecutionNativeCorrelationPurposeSchema = z.enum(
-  TASK_EXECUTION_NATIVE_CORRELATION_PURPOSES,
 );
 
 export const taskExecutionNativeCorrelationStateSchema = z.enum(

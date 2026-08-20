@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   acpCostCursorStateSchema,
   taskExecutionLaneKindSchema,
-  taskExecutionNativeCorrelationPurposeSchema,
   taskExecutionNativeCorrelationStateSchema,
   taskExecutionPromptCapabilityStateSchema,
   taskExecutionPromptSettlementSchema,
@@ -27,27 +26,15 @@ describe("task execution run and session-operation enums", () => {
     expect(TASK_EXECUTION_SESSION_OPERATIONS).toEqual([
       "new",
       "resume",
-      "steer_resume",
     ]);
     expect(TASK_EXECUTION_SESSION_OPERATIONS).not.toContain("recovery_new");
   });
 });
 
-describe("ACP correlation and prompt capability enums", () => {
+describe("ACP carry correlation and prompt capability enums", () => {
   it("accepts only the closed canonical values", () => {
-    expect(taskExecutionNativeCorrelationPurposeSchema.parse("carry")).toBe(
-      "carry",
-    );
-    expect(
-      taskExecutionNativeCorrelationPurposeSchema.parse(
-        "active_run_steering",
-      ),
-    ).toBe("active_run_steering");
     expect(taskExecutionNativeCorrelationStateSchema.parse("eligible")).toBe(
       "eligible",
-    );
-    expect(taskExecutionNativeCorrelationStateSchema.parse("current")).toBe(
-      "current",
     );
     expect(taskExecutionNativeCorrelationStateSchema.parse("superseded")).toBe(
       "superseded",
@@ -74,9 +61,6 @@ describe("ACP correlation and prompt capability enums", () => {
       "mention_session",
       "reusable",
     ]) {
-      expect(taskExecutionNativeCorrelationPurposeSchema.safeParse(value).success).toBe(
-        false,
-      );
       expect(taskExecutionPromptCapabilityStateSchema.safeParse(value).success).toBe(
         false,
       );

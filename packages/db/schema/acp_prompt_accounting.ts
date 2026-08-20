@@ -10,7 +10,6 @@ import {
   text,
   timestamp,
   unique,
-  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { agentAdapterConfigRevisions } from "./agent_adapter_config_revisions.js";
@@ -21,8 +20,6 @@ import {
   taskExecutionRuns,
 } from "./task_execution_runs.js";
 import { taskSessions } from "./task_sessions.js";
-
-export type AcpPromptAccountingKind = "base" | "steering";
 
 /**
  * The only stable ACP usage observation. Detailed provider token breakdowns
@@ -38,10 +35,8 @@ export const acpPromptAccounting = pgTable(
     agentId: uuid("agent_id").notNull(),
     runId: uuid("run_id").notNull(),
     runKind: text("run_kind").$type<TaskExecutionRunKind>().notNull(),
-    promptKind: text("prompt_kind").$type<AcpPromptAccountingKind>().notNull(),
     refId: uuid("ref_id"),
     runOrdinal: integer("run_ordinal"),
-    segmentOrdinal: integer("segment_ordinal"),
     attemptId: uuid("attempt_id").notNull(),
     adapterConfigRevisionId: uuid("adapter_config_revision_id").notNull(),
     selectedModelId: text("selected_model_id"),
@@ -63,23 +58,10 @@ export const acpPromptAccounting = pgTable(
   (table) => [
     check(
       "acp_prompt_accounting_prompt_identity_check",
-      sql`(
-        ${table.promptKind} = 'base'
-        and ${table.runKind} in ('productive', 'consult')
+      sql`${table.runKind} in ('productive', 'consult')
         and ${table.refId} is not null
         and ${table.runOrdinal} is not null
-        and ${table.runOrdinal} >= 0
-        and ${table.segmentOrdinal} is not null
-        and ${table.segmentOrdinal} = 0
-      ) or (
-        ${table.promptKind} = 'steering'
-        and ${table.runKind} in ('productive', 'consult')
-        and ${table.refId} is not null
-        and ${table.runOrdinal} is not null
-        and ${table.runOrdinal} >= 0
-        and ${table.segmentOrdinal} is not null
-        and ${table.segmentOrdinal} > 0
-      )`,
+        and ${table.runOrdinal} >= 0`,
     ),
     check(
       "acp_prompt_accounting_context_occupancy_check",
@@ -149,10 +131,8 @@ export const acpPromptAccounting = pgTable(
         table.runId,
         table.attemptId,
         table.runKind,
-        table.promptKind,
         table.runOrdinal,
         table.refId,
-        table.segmentOrdinal,
       ],
       foreignColumns: [
         taskExecutionAttempts.companyId,
@@ -160,12 +140,10 @@ export const acpPromptAccounting = pgTable(
         taskExecutionAttempts.runId,
         taskExecutionAttempts.id,
         taskExecutionAttempts.runKind,
-        taskExecutionAttempts.promptKind,
         taskExecutionAttempts.refOrdinal,
         taskExecutionAttempts.refId,
-        taskExecutionAttempts.segmentOrdinal,
       ],
-      name: "acp_prompt_accounting_productive_attempt_fk",
+      name: "acp_prompt_accounting_attempt_fk",
     }).onDelete("cascade"),
     foreignKey({
       columns: [
@@ -200,9 +178,7 @@ export const acpPromptAccounting = pgTable(
       table.runKind,
       table.id,
     ),
-    unique(
-      "acp_prompt_accounting_productive_cost_attribution_uq",
-    ).on(
+    unique("acp_prompt_accounting_cost_attribution_uq").on(
       table.companyId,
       table.taskId,
       table.agentId,
@@ -210,17 +186,13 @@ export const acpPromptAccounting = pgTable(
       table.runKind,
       table.refId,
       table.runOrdinal,
-      table.segmentOrdinal,
       table.id,
     ),
-    uniqueIndex("acp_prompt_accounting_productive_prompt_uq")
-      .on(
-        table.runId,
-        table.refId,
-        table.runOrdinal,
-        table.segmentOrdinal,
-      )
-      .where(sql`${table.promptKind} in ('base', 'steering')`),
+    unique("acp_prompt_accounting_prompt_uq").on(
+      table.runId,
+      table.refId,
+      table.runOrdinal,
+    ),
     index("acp_prompt_accounting_agent_settled_idx").on(
       table.companyId,
       table.agentId,

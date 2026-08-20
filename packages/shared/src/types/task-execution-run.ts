@@ -9,7 +9,6 @@ export type TaskExecutionRunKind =
 export const TASK_EXECUTION_SESSION_OPERATIONS = [
   "new",
   "resume",
-  "steer_resume",
 ] as const;
 
 export type TaskExecutionSessionOperation =
@@ -117,33 +116,9 @@ export const TASK_EXECUTION_PROMPT_OUTCOMES = [
 export type TaskExecutionPromptOutcome =
   (typeof TASK_EXECUTION_PROMPT_OUTCOMES)[number];
 
-export const TASK_EXECUTION_STEERING_STATES = [
-  "requested",
-  "sent",
-  "protocol_settled",
-  "rebound",
-  "resumed",
-] as const;
-
-export type TaskExecutionSteeringState =
-  (typeof TASK_EXECUTION_STEERING_STATES)[number];
-
-/** Closed purpose of Paperclip's encrypted ACP target correlation. */
-export const TASK_EXECUTION_NATIVE_CORRELATION_PURPOSES = [
-  "carry",
-  "active_run_steering",
-] as const;
-
-export type TaskExecutionNativeCorrelationPurpose =
-  (typeof TASK_EXECUTION_NATIVE_CORRELATION_PURPOSES)[number];
-
-/**
- * Purpose-checked state: carry rows may be eligible, steering rows may be
- * current, and either purpose may be permanently superseded.
- */
+/** Carry correlations are either resumable or permanently superseded. */
 export const TASK_EXECUTION_NATIVE_CORRELATION_STATES = [
   "eligible",
-  "current",
   "superseded",
 ] as const;
 
@@ -224,9 +199,8 @@ export interface TaskExecutionIncompletePromptSettlement {
 }
 
 /**
- * Closed settlement matrix shared by base run-ref prompts and positive
- * steering segments. A protocol-settled prompt is the only branch allowed to
- * reference accounting and cost.
+ * Closed settlement matrix for a run-ref prompt. A protocol-settled prompt is
+ * the only branch allowed to reference accounting and cost.
  */
 export type TaskExecutionPromptSettlement =
   | TaskExecutionActivePromptSettlement

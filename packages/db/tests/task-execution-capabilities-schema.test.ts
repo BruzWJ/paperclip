@@ -37,8 +37,8 @@ function index(
   return candidate!;
 }
 
-describe("canonical ACP correlation schema", () => {
-  it("stores only the purpose-checked encrypted opaque correlation", () => {
+describe("canonical ACP carry correlation schema", () => {
+  it("stores only the encrypted opaque carry correlation", () => {
     expect(getTableConfig(taskExecutionSessions).name).toBe(
       "task_execution_sessions",
     );
@@ -47,16 +47,11 @@ describe("canonical ACP correlation schema", () => {
       "company_id",
       "task_id",
       "ownership_epoch",
-      "purpose",
       "state",
       "target_agent_id",
       "adapter_config_identity",
       "workspace_identity",
       "lane_kind",
-      "run_id",
-      "current_ref_id",
-      "current_ref_ordinal",
-      "current_segment_ordinal",
       "authorized_context_exposure_digest",
       "envelope_version",
       "codec_kind",
@@ -68,7 +63,6 @@ describe("canonical ACP correlation schema", () => {
       "last_protocol_settled_run_id",
       "last_protocol_settled_ref_id",
       "last_protocol_settled_ref_ordinal",
-      "last_protocol_settled_segment_ordinal",
       "cost_cursor_state",
       "cost_cursor_amount",
       "cost_cursor_currency",
@@ -93,16 +87,12 @@ describe("canonical ACP correlation schema", () => {
       ]),
     );
 
-    const purpose = checkSql(
+    const shape = checkSql(
       taskExecutionSessions,
-      "task_execution_sessions_purpose_shape_check",
+      "task_execution_sessions_shape_check",
     );
-    expect(purpose).toContain("= 'carry'");
-    expect(purpose).toContain("= 'active_run_steering'");
-    expect(purpose).toContain("in ('eligible', 'superseded')");
-    expect(purpose).toContain("in ('current', 'superseded')");
-    expect(purpose).toContain('"authorized_context_exposure_digest" is not null');
-    expect(purpose).toContain('"authorized_context_exposure_digest" is null');
+    expect(shape).toContain("in ('eligible', 'superseded')");
+    expect(shape).toContain("in ('owner', 'consult')");
 
     const envelope = checkSql(
       taskExecutionSessions,
@@ -113,19 +103,15 @@ describe("canonical ACP correlation schema", () => {
     expect(envelope).toContain('"acp_wire_protocol_version" = 1');
   });
 
-  it("uses only the exact seven-field logical keys for current rows", () => {
-    const carry = index(
+  it("uses one exact seven-field key for the eligible row", () => {
+    const eligible = index(
       taskExecutionSessions,
-      "task_execution_sessions_current_carry_uq",
-    );
-    const steering = index(
-      taskExecutionSessions,
-      "task_execution_sessions_current_steering_uq",
+      "task_execution_sessions_eligible_uq",
     );
 
-    expect(carry.config.unique).toBe(true);
+    expect(eligible.config.unique).toBe(true);
     expect(
-      carry.config.columns.map((column) => (column as { name: string }).name),
+      eligible.config.columns.map((column) => (column as { name: string }).name),
     ).toEqual([
       "company_id",
       "task_id",
@@ -136,49 +122,15 @@ describe("canonical ACP correlation schema", () => {
       "lane_kind",
     ]);
     expect(
-      carry.config.where
-        ? dialect.sqlToQuery(carry.config.where).sql
+      eligible.config.where
+        ? dialect.sqlToQuery(eligible.config.where).sql
         : null,
-    ).toBe(
-      '"task_execution_sessions"."purpose" = \'carry\' and "task_execution_sessions"."state" = \'eligible\'',
-    );
-
-    expect(steering.config.unique).toBe(true);
+    ).toBe('"task_execution_sessions"."state" = \'eligible\'');
     expect(
-      steering.config.columns.map(
+      eligible.config.columns.map(
         (column) => (column as { name: string }).name,
       ),
-    ).toEqual([
-      "company_id",
-      "task_id",
-      "ownership_epoch",
-      "run_id",
-      "target_agent_id",
-      "adapter_config_identity",
-      "workspace_identity",
-    ]);
-    expect(
-      steering.config.where
-        ? dialect.sqlToQuery(steering.config.where).sql
-        : null,
-    ).toBe(
-      '"task_execution_sessions"."purpose" = \'active_run_steering\' and "task_execution_sessions"."state" = \'current\'',
-    );
-
-    for (const key of [carry, steering]) {
-      const keyColumns = key.config.columns.map(
-        (column) => (column as { name: string }).name,
-      );
-      expect(keyColumns).not.toEqual(
-        expect.arrayContaining([
-          "authorized_context_exposure_digest",
-          "current_ref_id",
-          "current_ref_ordinal",
-          "current_segment_ordinal",
-          "correlation_generation",
-        ]),
-      );
-    }
+    ).not.toContain("correlation_generation");
   });
 
   it("keeps supersession permanent and the settlement cursor typed", () => {
@@ -214,7 +166,6 @@ describe("prompt capability generations", () => {
       "run_batch_digest",
       "ref_id",
       "ref_ordinal",
-      "segment_ordinal",
       "attempt_id",
       "lease_id",
       "lease_generation",

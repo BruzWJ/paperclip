@@ -544,16 +544,11 @@ export const taskSessionInputs = pgTable(
     taskId: uuid("task_id").notNull(),
     sessionId: text("session_id").notNull(),
     prompt: jsonb("prompt").$type<TaskSessionPrompt>().notNull(),
-    delivery: text("delivery").$type<"steer" | "queue">().notNull(),
     admittedSeq: bigint("admitted_seq", { mode: "number" }).notNull(),
     promotedSeq: bigint("promoted_seq", { mode: "number" }),
     timeCreated: timestamp("time_created", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    check(
-      "task_session_inputs_delivery_check",
-      sql`${table.delivery} in ('steer', 'queue')`,
-    ),
     check(
       "task_session_inputs_promotion_check",
       sql`${table.admittedSeq} >= 0
@@ -581,9 +576,8 @@ export const taskSessionInputs = pgTable(
     uniqueIndex("task_session_inputs_session_promoted_seq_uq")
       .on(table.sessionId, table.promotedSeq)
       .where(sql`${table.promotedSeq} is not null`),
-    index("task_session_inputs_pending_delivery_idx").on(
+    index("task_session_inputs_pending_idx").on(
       table.sessionId,
-      table.delivery,
       table.promotedSeq,
       table.admittedSeq,
     ),

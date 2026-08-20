@@ -100,11 +100,9 @@ describe("before-prompt lifecycle negotiation", () => {
     agentId: "agent-a",
     projectId: null,
     sourceText: "Canonical source",
-    promptKind: "base",
     sessionOperation: "new",
     refId: "ref-a",
     refOrdinal: 0,
-    segmentOrdinal: 0,
     sourceMessageId: "msg_source",
     sourceMessageSeq: 9,
     contextAccess: {

@@ -1,18 +1,10 @@
-import {
-  TASK_BOARD_LIFECYCLE_COMMAND_SUBTYPES,
-  TASK_CREATOR_WITHDRAWAL_ACTOR_KINDS,
-} from "@paperclipai/shared";
+import { TASK_BOARD_LIFECYCLE_COMMAND_SUBTYPES } from "@paperclipai/shared";
 import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
-import {
-  taskBoardReopenCommands,
-  taskBoardUserComments,
-} from "../schema/task_board_reopen_commands.js";
-import { taskExecutionPromptSegments } from "../schema/task_execution_runs.js";
+import { taskBoardUserComments } from "../schema/task_board_user_comments.js";
 import { taskExecutionRefs } from "../schema/task_execution_runtime.js";
 import {
   taskBoardLifecycleCommands,
-  taskCreatorWithdrawalCommands,
 } from "../schema/task_lifecycle_commands.js";
 import { tasks } from "../schema/tasks.js";
 
@@ -129,91 +121,6 @@ describe("P15-P17 canonical action-source provenance", () => {
     expect(shape).toContain('"previous_ownership_epoch" is null');
   });
 
-  it("retains the write-once native-resume acceptance time", () => {
-    const resumedAt = getTableConfig(taskExecutionPromptSegments).columns.find(
-      (column) => column.name === "resumed_at",
-    );
-    expect(resumedAt?.notNull).toBe(false);
-    expect(resumedAt?.hasDefault).toBe(false);
-    const shape = checkSql(
-      taskExecutionPromptSegments,
-      "task_execution_prompt_segments_resumed_at_check",
-    );
-    expect(shape).toContain('"resumed_at" is null');
-    expect(shape).toContain('"resumed_at" >');
-    expect(shape).toContain("'resumed'");
-    expect(shape).toContain('"protocol_settlement_state" is not null');
-  });
-
-  it("owns one checked user-or-plugin withdrawal command per outgoing epoch", () => {
-    expect(TASK_CREATOR_WITHDRAWAL_ACTOR_KINDS).toEqual([
-      "user",
-      "plugin",
-    ]);
-    expect(columnNames(taskCreatorWithdrawalCommands)).toEqual([
-      "id",
-      "company_id",
-      "task_id",
-      "outgoing_ownership_epoch",
-      "resulting_ownership_epoch",
-      "resulting_creator_edge_id",
-      "actor_kind",
-      "actor_user_id",
-      "actor_plugin_installation_id",
-      "actor_plugin_key",
-      "plugin_withdrawal_operation_id",
-      "task_update_id",
-      "accepted_at",
-    ]);
-    const epoch = checkSql(
-      taskCreatorWithdrawalCommands,
-      "task_creator_withdrawal_commands_epoch_check",
-    );
-    expect(epoch).toContain('"outgoing_ownership_epoch" > 0');
-    expect(epoch).toContain('"outgoing_ownership_epoch" + 1');
-    const actor = checkSql(
-      taskCreatorWithdrawalCommands,
-      "task_creator_withdrawal_commands_actor_check",
-    );
-    expect(actor).toContain("'user'");
-    expect(actor).toContain("'plugin'");
-    expect(actor).toContain('"resulting_creator_edge_id" is not null');
-    expect(actor).toContain('"resulting_creator_edge_id" is null');
-    expect(actor).toContain('"plugin_withdrawal_operation_id" is not null');
-    expect(actor).toContain('"task_update_id" is not null');
-    expect(
-      getTableConfig(taskCreatorWithdrawalCommands).foreignKeys.map((key) =>
-        key.getName()
-      ),
-    ).toEqual(
-      expect.arrayContaining([
-        "task_creator_withdrawal_commands_resulting_edge_fk",
-        "task_creator_withdrawal_commands_outgoing_edge_fk",
-        "task_creator_withdrawal_commands_update_fk",
-        "task_creator_withdrawal_commands_plugin_operation_fk",
-      ]),
-    );
-    expect(
-      foreignKeyColumns(
-        taskCreatorWithdrawalCommands,
-        "task_creator_withdrawal_commands_resulting_edge_fk",
-      ),
-    ).toEqual({
-      local: [
-        "company_id",
-        "task_id",
-        "resulting_ownership_epoch",
-        "resulting_creator_edge_id",
-      ],
-      foreign: ["company_id", "task_id", "ownership_epoch", "id"],
-    });
-    expect(
-      getTableConfig(taskCreatorWithdrawalCommands).uniqueConstraints.map(
-        (value) => value.getName(),
-      ),
-    ).toContain("task_creator_withdrawal_commands_epoch_uq");
-  });
-
   it("owns only the seven named-board lifecycle mutation subtypes", () => {
     expect(TASK_BOARD_LIFECYCLE_COMMAND_SUBTYPES).toEqual([
       "execution_policy_configure",
@@ -278,63 +185,4 @@ describe("P15-P17 canonical action-source provenance", () => {
     );
   });
 
-  it("keeps board reopen separately typed from the lifecycle-command ledger", () => {
-    const config = getTableConfig(taskBoardReopenCommands);
-    expect(config.name).toBe(
-      "task_board_reopen_commands",
-    );
-    expect(TASK_BOARD_LIFECYCLE_COMMAND_SUBTYPES).not.toContain(
-      "board_reopen" as never,
-    );
-    expect(columnNames(taskBoardReopenCommands)).toEqual([
-      "id",
-      "company_id",
-      "task_id",
-      "actor_user_id",
-      "reason",
-      "idempotency_key",
-      "identity_digest",
-      "prior_status",
-      "prior_disposition",
-      "ownership_epoch",
-      "branch",
-      "preserved_owner_kind",
-      "continuity_fence_generation",
-      "creator_edge_id",
-      "execution_ref_id",
-      "system_escalation_identity_id",
-      "created_at",
-    ]);
-    const branch = checkSql(
-      taskBoardReopenCommands,
-      "task_board_reopen_commands_branch_check",
-    );
-    expect(branch).toContain("'agent_execution'");
-    expect(branch).toContain("'board_only'");
-    expect(branch).toContain('"execution_ref_id" is not null');
-    expect(branch).toContain('"execution_ref_id" is null');
-    expect(branch).toContain(
-      '"system_escalation_identity_id" is not null',
-    );
-    expect(branch).toContain('"system_escalation_identity_id" is null');
-    expect(
-      checkSql(
-        taskBoardReopenCommands,
-        "task_board_reopen_commands_epoch_check",
-      ),
-    ).toContain('"continuity_fence_generation" > 0');
-    expect(
-      foreignKeyColumns(
-        taskBoardReopenCommands,
-        "task_board_reopen_commands_system_escalation_fk",
-      ),
-    ).toEqual({
-      local: [
-        "company_id",
-        "task_id",
-        "system_escalation_identity_id",
-      ],
-      foreign: ["company_id", "escalation_task_id", "id"],
-    });
-  });
 });

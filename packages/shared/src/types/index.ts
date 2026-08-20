@@ -10,7 +10,6 @@ export {
   TASK_EXECUTION_SESSION_OPERATIONS,
   TASK_EXECUTION_RUN_STATUSES,
   TASK_EXECUTION_RUN_TERMINAL_CLASSIFICATIONS,
-  TASK_EXECUTION_STEERING_STATES,
   type TaskExecutionActivePromptSettlement,
   type TaskExecutionFinalizationAction,
   type TaskExecutionIncompletePromptSettlement,
@@ -28,7 +27,6 @@ export {
   type TaskExecutionRunStatus,
   type TaskExecutionRunTerminalClassification,
   type TaskExecutionSettledPromptSettlement,
-  type TaskExecutionSteeringState,
 } from "./task-execution-run.js";
 export type {
   AttentionDecisionVerb,
@@ -325,7 +323,6 @@ export type {
   RoutineListItem,
 } from "./routine.js";
 export type {
-  AcpPromptAccountingKind,
   AcpPromptCostKind,
   CostEvent,
   CostSummary,

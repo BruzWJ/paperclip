@@ -62,7 +62,6 @@ export const tasks = pgTable(
     ownerUserId: text("owner_user_id").references(() => authUsers.id, {
       onDelete: "restrict",
     }),
-    ownerAssignmentSource: text("owner_assignment_source"),
     ownershipEpoch: integer("ownership_epoch").notNull(),
     creatorKind: text("creator_kind").$type<TaskCreatorKind>().notNull(),
     creatorAuthorityId: uuid("creator_authority_id"),
@@ -226,31 +225,20 @@ export const tasks = pgTable(
         ${table.ownerKind} = 'agent'
         and ${table.ownerAgentId} is not null
         and ${table.ownerUserId} is null
-        and ${table.ownerAssignmentSource} is null
         and ${table.ownershipEpoch} > 0
       ) or (
         ${table.ownerKind} = 'user'
         and ${table.ownerAgentId} is null
         and ${table.ownerUserId} is not null
-        and (
-          (
-            ${table.ownerAssignmentSource} = 'user_creator_withdrawal'
-            and ${table.ownerUserId} = ${table.creatorUserId}
-          )
-          or (
-            ${table.ownerAssignmentSource} is null
-            and ${table.creatorKind} = 'system'
-            and ${table.escalatedFromAffectedTaskId} is not null
-          )
-        )
+        and ${table.creatorKind} = 'system'
+        and ${table.escalatedFromAffectedTaskId} is not null
         and ${table.ownershipEpoch} > 0
       ) or (
         ${table.ownerKind} = 'board'
         and ${table.ownerAgentId} is null
         and ${table.ownerUserId} is null
-        and ${table.ownerAssignmentSource} is null
         and ${table.ownershipEpoch} > 0
-        and ${table.creatorKind} = 'system'
+        and ${table.creatorKind} in ('system', 'user/board')
       )`,
     ),
     creatorShapeCheck: check(

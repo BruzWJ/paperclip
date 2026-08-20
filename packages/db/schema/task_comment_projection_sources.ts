@@ -4,7 +4,6 @@ import {
   check,
   foreignKey,
   index,
-  integer,
   pgTable,
   text,
   timestamp,
@@ -17,10 +16,7 @@ import {
   taskSessionMessages,
   taskSessions,
 } from "./task_sessions.js";
-import {
-  taskExecutionPromptSegments,
-  taskExecutionRuns,
-} from "./task_execution_runs.js";
+import { taskExecutionRuns } from "./task_execution_runs.js";
 
 export const taskCommentProjectionSources = pgTable(
   "task_comment_projection_sources",
@@ -44,7 +40,6 @@ export const taskCommentProjectionSources = pgTable(
     sourceId: text("source_id").notNull(),
     messageId: text("message_id").notNull(),
     runId: uuid("run_id"),
-    steeringTargetRunId: uuid("steering_target_run_id"),
     replyToCommentId: uuid("reply_to_comment_id"),
     replyToProjectedEventSeq: bigint("reply_to_projected_event_seq", {
       mode: "number",
@@ -53,9 +48,6 @@ export const taskCommentProjectionSources = pgTable(
     threadRootProjectedEventSeq: bigint("thread_root_projected_event_seq", {
       mode: "number",
     }),
-    refId: uuid("ref_id"),
-    refOrdinal: integer("ref_ordinal"),
-    segmentOrdinal: integer("segment_ordinal"),
     terminalSessionMessageId: text("terminal_session_message_id"),
     admittedEventSeq: bigint("admitted_event_seq", { mode: "number" }),
     promotedEventSeq: bigint("promoted_event_seq", { mode: "number" }),
@@ -103,22 +95,6 @@ export const taskCommentProjectionSources = pgTable(
       "task_comment_projection_sources_reply_order_check",
       sql`${table.replyToProjectedEventSeq} is null
         or ${table.replyToProjectedEventSeq} < ${table.projectedEventSeq}`,
-    ),
-    check(
-      "task_comment_projection_sources_steering_segment_shape_check",
-      sql`(
-        ${table.steeringTargetRunId} is null
-        and ${table.refId} is null
-        and ${table.refOrdinal} is null
-        and ${table.segmentOrdinal} is null
-      ) or (
-        ${table.steeringTargetRunId} is not null
-        and ${table.refId} is not null
-        and ${table.refOrdinal} is not null
-        and ${table.refOrdinal} >= 0
-        and ${table.segmentOrdinal} is not null
-        and ${table.segmentOrdinal} > 0
-      )`,
     ),
     check(
       "task_comment_projection_sources_terminal_dependency_check",
@@ -194,27 +170,6 @@ export const taskCommentProjectionSources = pgTable(
         taskComments.projectedEventSeq,
       ],
       name: "task_comment_projection_sources_thread_root_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.taskId,
-        table.sessionId,
-        table.steeringTargetRunId,
-        table.refOrdinal,
-        table.refId,
-        table.segmentOrdinal,
-      ],
-      foreignColumns: [
-        taskExecutionPromptSegments.companyId,
-        taskExecutionPromptSegments.taskId,
-        taskExecutionPromptSegments.sessionId,
-        taskExecutionPromptSegments.runId,
-        taskExecutionPromptSegments.refOrdinal,
-        taskExecutionPromptSegments.refId,
-        taskExecutionPromptSegments.segmentOrdinal,
-      ],
-      name: "task_comment_projection_sources_steering_segment_fk",
     }).onDelete("restrict"),
     foreignKey({
       columns: [
