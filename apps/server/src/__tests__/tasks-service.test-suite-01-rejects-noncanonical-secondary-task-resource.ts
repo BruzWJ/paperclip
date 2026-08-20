@@ -1,20 +1,16 @@
 import * as t from "./tasks-service.test-support.js";
 import { createMockDb } from "./helpers/mock-db.js";
-import { InvokableTaskOwnerRejected } from "../services/agent-invokability.js";
 import { deriveTaskUserContext, parseStatusFilter, taskService } from "../services/tasks.js";
-import { MAX_TASK_REQUEST_DEPTH } from "@paperclipai/shared";
 const {
   describe,
   it,
   expect,
-  ownerAgentId,
   taskId,
   taskRow,
   dependencies,
   now,
   setValues,
   companyId,
-  goalId,
 } = t;
 
 describe("task service pure contracts", () => {
@@ -67,153 +63,7 @@ describe("task service pure contracts", () => {
   });
 });
 
-describe("task ownership and lifecycle mutation", () => {
-  it.each([
-    ["ownerAgentId", ownerAgentId],
-    ["ownerKind", "agent"],
-    ["ownershipEpoch", 2],
-    ["parentId", "00000000-0000-4000-8000-000000000099"],
-    ["parentOwnershipEpoch", 2],
-    ["request", "replacement request"],
-    ["creatorUserId", "user-2"],
-    ["lifecycleStatus", "cancelled"],
-    ["disposition", { message: "replacement disposition" }],
-    ["completedAt", new Date("2026-07-30T12:00:00.000Z")],
-    ["cancelledAt", new Date("2026-07-30T12:00:00.000Z")],
-  ])("rejects direct mutation of canonical %s", async (field, value) => {
-    const harness = createMockDb();
-    const service = taskService(harness.db);
-    await expect(
-      service.updateControlState(taskId, {
-        [field]: value,
-      } as never),
-    ).rejects.toThrow(`Task ${field} is immutable or has a dedicated canonical command`);
-    expect(harness.calls).toEqual([]);
-  });
-
-  it("rejects direct mutation of the execution-workspace binding", async () => {
-    const harness = createMockDb();
-    const service = taskService(harness.db);
-    await expect(
-      service.updateControlState(taskId, {
-        executionWorkspaceId: "00000000-0000-4000-8000-000000000012",
-      } as never),
-    ).rejects.toThrow("executionWorkspaceId is managed by the current task execution workspace binding");
-    expect(harness.calls).toEqual([]);
-  });
-
-  it("requires an owner before entering in-progress lifecycle", async () => {
-    const existing = taskRow({
-      ownerKind: "board",
-      ownerUserId: null,
-      ownerAssignmentSource: null,
-    });
-    const harness = createMockDb({ select: [[existing]] });
-    const service = taskService(harness.db);
-
-    await expect(
-      service.updateControlState(taskId, {
-        boardPresentationStatus: "in_progress",
-      }),
-    ).rejects.toMatchObject({
-      status: 422,
-      message: "in_progress tasks require an owner",
-    });
-    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
-  });
-
-  it("requires an assigned agent to remain invokable before entering in-progress", async () => {
-    const existing = taskRow({
-      ownerKind: "agent",
-      ownerAgentId,
-      ownerUserId: null,
-      ownerAssignmentSource: "mention",
-    });
-    dependencies.invokableOwner.mockRejectedValue(
-      new InvokableTaskOwnerRejected("Agent is paused", "owner_not_invokable:paused", {
-        agentStatus: "paused",
-      }),
-    );
-    const harness = createMockDb({ select: [[existing], []] });
-    const service = taskService(harness.db);
-
-    await expect(
-      service.updateControlState(taskId, {
-        boardPresentationStatus: "in_progress",
-      }),
-    ).rejects.toMatchObject({
-      status: 409,
-      details: {
-        code: "task_owner_not_invokable",
-        reason: "owner_not_invokable:paused",
-        ownerAgentId,
-      },
-    });
-    expect(dependencies.invokableOwner).toHaveBeenCalledWith(harness.db, {
-      companyId,
-      ownerAgentId,
-    });
-    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
-  });
-
-  it("does not enter in-progress while explicit blockers remain unresolved", async () => {
-    const blockerId = "00000000-0000-4000-8000-000000000013";
-    const existing = taskRow();
-    const harness = createMockDb({
-      select: [[existing], [{ id: blockerId }]],
-    });
-    const service = taskService(harness.db);
-
-    await expect(
-      service.updateControlState(taskId, {
-        boardPresentationStatus: "in_progress",
-        blockedByTaskIds: [blockerId],
-      }),
-    ).rejects.toMatchObject({
-      status: 422,
-      details: { unresolvedBlockerTaskIds: [blockerId] },
-    });
-    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
-  });
-
-  it("applies terminal lifecycle timestamps and clamps request depth", async () => {
-    const existing = taskRow();
-    const updated = taskRow({
-      boardPresentationStatus: "done",
-      lifecycleStatus: "done",
-      requestDepth: MAX_TASK_REQUEST_DEPTH,
-      completedAt: now,
-      updatedAt: now,
-    });
-    const harness = createMockDb({
-      select: [[existing], [], []],
-      update: [[updated]],
-    });
-    const service = taskService(harness.db);
-
-    await expect(
-      service.updateControlState(taskId, {
-        boardPresentationStatus: "done",
-        requestDepth: MAX_TASK_REQUEST_DEPTH + 20,
-      }),
-    ).resolves.toMatchObject({
-      id: taskId,
-      boardPresentationStatus: "done",
-      labels: [],
-      executionWorkspaceId: null,
-    });
-
-    expect(setValues(harness.calls)[0]).toMatchObject({
-      boardPresentationStatus: "done",
-      requestDepth: MAX_TASK_REQUEST_DEPTH,
-      cancelledAt: null,
-      goalId,
-    });
-    expect(setValues(harness.calls)[0]?.completedAt).toBeInstanceOf(Date);
-    expect(harness.remaining("select")).toBe(0);
-    expect(harness.remaining("update")).toBe(0);
-  });
-
+describe("task title mutation", () => {
   it("updates title only through its dedicated command and synchronizes the task ref", async () => {
     const updated = taskRow({ title: "Renamed task" });
     const harness = createMockDb({

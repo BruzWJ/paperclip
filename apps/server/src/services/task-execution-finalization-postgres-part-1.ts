@@ -4,7 +4,6 @@ import {
   runInterfaceToolCalls,
   taskDocuments,
   taskExecutionPromptCapabilities,
-  taskExecutionPromptSegments,
   taskExecutionRunLivenessFacts,
   taskExecutionRunRefs,
   taskSessionMessages,
@@ -118,24 +117,6 @@ export async function lockPromptFrontier(
   if (refs.some((ref, ordinal) => ref.refOrdinal !== ordinal)) {
     throw new PostgresTaskExecutionFinalizationRejected("Run-ref finalization frontier is not contiguous");
   }
-  const segments = await transaction
-    .select()
-    .from(taskExecutionPromptSegments)
-    .where(
-      and(
-        eq(taskExecutionPromptSegments.companyId, input.companyId),
-        eq(taskExecutionPromptSegments.taskId, input.taskId),
-        eq(taskExecutionPromptSegments.runId, input.runId),
-      ),
-    )
-    .orderBy(asc(taskExecutionPromptSegments.refOrdinal), asc(taskExecutionPromptSegments.segmentOrdinal))
-    .for("update");
-  const segmentsByRef = new Map<string, typeof segments>();
-  for (const segment of segments) {
-    const current = segmentsByRef.get(segment.refId) ?? [];
-    current.push(segment);
-    segmentsByRef.set(segment.refId, current);
-  }
   const expected: TaskExecutionFinalizationPromptIdentity[] = [];
   const dependencies: TaskExecutionFinalizationPromptDependency[] = [];
   for (const ref of refs) {
@@ -144,53 +125,18 @@ export async function lockPromptFrontier(
         "Run finalization encountered an unsettled base prompt",
       );
     }
-    const base = {
-      kind: "base" as const,
+    const identity = {
       refId: ref.refId,
       refOrdinal: ref.refOrdinal,
-      segmentOrdinal: 0 as const,
     };
-    expected.push(base);
+    expected.push(identity);
     dependencies.push({
-      ...base,
+      ...identity,
       protocolSettlementState: ref.protocolSettlementState,
       settlementVersion: ref.settlementVersion,
       accountingId: ref.accountingId,
       costEventId: ref.costEventId,
     });
-    const refSegments = segmentsByRef.get(ref.refId) ?? [];
-    for (const [index, segment] of refSegments.entries()) {
-      if (
-        segment.refOrdinal !== ref.refOrdinal ||
-        segment.segmentOrdinal !== index + 1 ||
-        segment.protocolSettlementState === null ||
-        segment.settlementVersion < 1
-      ) {
-        throw new PostgresTaskExecutionFinalizationRejected(
-          "Run finalization encountered a noncontiguous or unsettled steering segment",
-        );
-      }
-      const steering = {
-        kind: "steering" as const,
-        refId: segment.refId,
-        refOrdinal: segment.refOrdinal,
-        segmentOrdinal: segment.segmentOrdinal,
-      };
-      expected.push(steering);
-      dependencies.push({
-        ...steering,
-        protocolSettlementState: segment.protocolSettlementState,
-        settlementVersion: segment.settlementVersion,
-        accountingId: segment.accountingId,
-        costEventId: segment.costEventId,
-      });
-    }
-    segmentsByRef.delete(ref.refId);
-  }
-  if (segmentsByRef.size !== 0) {
-    throw new PostgresTaskExecutionFinalizationRejected(
-      "Steering finalization frontier contains a segment outside its run refs",
-    );
   }
   return { expected, dependencies };
 }

@@ -19,7 +19,7 @@ export const ACTIVE_ATTEMPT_STATES = ["pending", "leased", "running"] as const;
 
 export const LIVE_CAPABILITY_STATES = ["pending_setup", "active"] as const;
 
-export const LIVE_NATIVE_SESSION_STATES = ["eligible", "current"] as const;
+export const LIVE_NATIVE_SESSION_STATES = ["eligible"] as const;
 
 export const LIFECYCLE_SNAPSHOT_VERSION = "company-session-lifecycle/v1" as const;
 

@@ -6,11 +6,12 @@ import {
   tasks,
   type Db,
 } from "@paperclipai/db";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type {
   TaskExecutionDispatcher,
   PersistedRefNotificationOutcome,
 } from "./task-execution-dispatcher.js";
+import { terminalExecutionRefSql } from "./task-execution-terminal-eligibility.js";
 import { createTaskSessionInputService } from "./task-session/input.js";
 import {
   classifyTaskExecutionRefDelivery,
@@ -164,7 +165,10 @@ export function createPostgresTaskSessionCompositionRuntime(
               isNull(taskSessions.purgeFencedAt),
               eq(companies.status, "active"),
               eq(companies.sessionIntegrityState, "ready"),
-              inArray(tasks.lifecycleStatus, ["open", "blocked"]),
+              or(
+                inArray(tasks.lifecycleStatus, ["open", "blocked"]),
+                terminalExecutionRefSql(),
+              ),
               cursor === null
                 ? undefined
                 : sql`(${taskExecutionRefs.createdAt}, ${taskExecutionRefs.id}) > (${cursor.exactCreatedAt}::timestamptz, ${cursor.id}::uuid)`,

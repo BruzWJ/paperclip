@@ -1,7 +1,6 @@
 import {
   taskExecutionAttempts,
   taskExecutionAttemptRetrySchedules,
-  taskExecutionPromptSegments,
   taskExecutionRunRefs,
   type Db,
   type TaskExecutionAttempt,
@@ -143,81 +142,36 @@ async function assertPromptRemainedUnsent(
   transaction: TaskExecutionDbTransaction,
   attempt: TaskExecutionAttempt,
 ): Promise<void> {
-  if (attempt.promptKind === "base") {
-    const owner = exactlyOne(
-      await transaction
-        .select({
-          attemptId: taskExecutionRunRefs.attemptId,
-          phase: taskExecutionRunRefs.promptTransmissionPhase,
-          settlement: taskExecutionRunRefs.protocolSettlementState,
-        })
-        .from(taskExecutionRunRefs)
-        .where(
-          and(
-            eq(taskExecutionRunRefs.companyId, attempt.companyId),
-            eq(taskExecutionRunRefs.taskId, attempt.taskId),
-            eq(taskExecutionRunRefs.runId, attempt.runId),
-            eq(taskExecutionRunRefs.refId, attempt.refId!),
-            eq(taskExecutionRunRefs.refOrdinal, attempt.refOrdinal!),
-          ),
-        )
-        .limit(2)
-        .for("update"),
-      "retry predecessor lost its exact base prompt owner",
-    );
-    if (
-      owner.phase !== "not_transmitted" ||
-      owner.settlement !== null ||
-      (owner.attemptId !== null && owner.attemptId !== attempt.id)
-    ) {
-      throw new TaskExecutionAttemptRetryScheduleRejected(
-        "retry predecessor base prompt was transmitted, settled, or rebound",
-      );
-    }
-    return;
-  }
-
-  if (attempt.promptKind === "steering") {
-    const owner = exactlyOne(
-      await transaction
-        .select({
-          attemptId: taskExecutionPromptSegments.attemptId,
-          phase: taskExecutionPromptSegments.promptTransmissionPhase,
-          settlement: taskExecutionPromptSegments.protocolSettlementState,
-        })
-        .from(taskExecutionPromptSegments)
-        .where(
-          and(
-            eq(taskExecutionPromptSegments.companyId, attempt.companyId),
-            eq(taskExecutionPromptSegments.taskId, attempt.taskId),
-            eq(taskExecutionPromptSegments.runId, attempt.runId),
-            eq(taskExecutionPromptSegments.refId, attempt.refId!),
-            eq(taskExecutionPromptSegments.refOrdinal, attempt.refOrdinal!),
-            eq(
-              taskExecutionPromptSegments.segmentOrdinal,
-              attempt.segmentOrdinal!,
-            ),
-          ),
-        )
-        .limit(2)
-        .for("update"),
-      "retry predecessor lost its exact steering prompt owner",
-    );
-    if (
-      owner.phase !== "not_transmitted" ||
-      owner.settlement !== null ||
-      (owner.attemptId !== null && owner.attemptId !== attempt.id)
-    ) {
-      throw new TaskExecutionAttemptRetryScheduleRejected(
-        "retry predecessor steering prompt was transmitted, settled, or rebound",
-      );
-    }
-    return;
-  }
-
-  throw new TaskExecutionAttemptRetryScheduleRejected(
-    "retry predecessor has an unsupported prompt kind",
+  const owner = exactlyOne(
+    await transaction
+      .select({
+        attemptId: taskExecutionRunRefs.attemptId,
+        phase: taskExecutionRunRefs.promptTransmissionPhase,
+        settlement: taskExecutionRunRefs.protocolSettlementState,
+      })
+      .from(taskExecutionRunRefs)
+      .where(
+        and(
+          eq(taskExecutionRunRefs.companyId, attempt.companyId),
+          eq(taskExecutionRunRefs.taskId, attempt.taskId),
+          eq(taskExecutionRunRefs.runId, attempt.runId),
+          eq(taskExecutionRunRefs.refId, attempt.refId!),
+          eq(taskExecutionRunRefs.refOrdinal, attempt.refOrdinal!),
+        ),
+      )
+      .limit(2)
+      .for("update"),
+    "retry predecessor lost its exact prompt owner",
   );
+  if (
+    owner.phase !== "not_transmitted" ||
+    owner.settlement !== null ||
+    (owner.attemptId !== null && owner.attemptId !== attempt.id)
+  ) {
+    throw new TaskExecutionAttemptRetryScheduleRejected(
+      "retry predecessor prompt was transmitted, settled, or rebound",
+    );
+  }
 }
 
 function assertTerminalRetryablePredecessor(input: {
@@ -379,12 +333,9 @@ export async function claimTaskExecutionAttemptRetryInTransaction(
         sessionId: predecessor.sessionId,
         runId: predecessor.runId,
         runKind: predecessor.runKind,
-        promptKind: predecessor.promptKind,
         sessionOperation: predecessor.sessionOperation,
         refId: predecessor.refId,
         refOrdinal: predecessor.refOrdinal,
-        segmentOrdinal: predecessor.segmentOrdinal,
-        steeringSegmentOrdinal: predecessor.steeringSegmentOrdinal,
         attemptGeneration: predecessor.attemptGeneration + 1,
         state: "pending",
         startedAt: null,

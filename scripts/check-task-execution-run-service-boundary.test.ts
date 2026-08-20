@@ -188,7 +188,6 @@ test("requires run traces to combine the canonical run and transmitted Session r
     "const messages = await db.select().from(taskSessionMessages);",
     "and member.prompt_transmission_phase = 'transmitted'",
     "and source_ref.source_message_id = taskSessionMessages.id",
-    "and segment.source_message_id = taskSessionMessages.id",
     "const turns = messages.map((row) =>",
     "  sanitizeCanonicalMessage(decodeStoredTaskSessionMessage(row), row.seq),",
     ");",

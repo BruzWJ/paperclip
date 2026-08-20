@@ -112,31 +112,6 @@ export const TASK_SUBTREE_DIAGNOSTICS_MAX_BLOCKERS_PER_NODE = 20;
 
 export const TASK_LIST_RELATED_QUERY_CHUNK_SIZE = 500;
 
-export function assertTransition(from: string, to: string) {
-  if (from === to) return;
-  if (!(ALL_TASK_STATUSES as readonly string[]).includes(to)) {
-    throw d.conflict(`Unknown task status: ${to}`);
-  }
-}
-
-export function applyStatusSideEffects(
-  status: string | undefined,
-  patch: Partial<typeof d.tasks.$inferInsert>,
-): Partial<typeof d.tasks.$inferInsert> {
-  if (!status) return patch;
-
-  if (status === "in_progress" && !patch.startedAt) {
-    patch.startedAt = new Date();
-  }
-  if (status === "done") {
-    patch.completedAt = new Date();
-  }
-  if (status === "cancelled") {
-    patch.cancelledAt = new Date();
-  }
-  return patch;
-}
-
 export function parseStatusFilter(input: unknown): d.TaskStatus[] {
   if (input === undefined) return [];
   const entries = Array.isArray(input) ? [...input] : [input];
@@ -181,45 +156,6 @@ export interface TaskFilters {
 }
 
 export type TaskRow = typeof d.tasks.$inferSelect;
-
-export type TaskControlStateUpdate = Partial<
-  Omit<
-    typeof d.tasks.$inferInsert,
-    | "id"
-    | "companyId"
-    | "parentId"
-    | "parentOwnershipEpoch"
-    | "request"
-    | "title"
-    | "ownerKind"
-    | "ownerAgentId"
-    | "ownerUserId"
-    | "ownerAssignmentSource"
-    | "ownershipEpoch"
-    | "creatorKind"
-    | "creatorAuthorityId"
-    | "creatorAdapterConfigRevisionId"
-    | "creatorUserId"
-    | "creatorPluginInstallationId"
-    | "creatorPluginKey"
-    | "creatorCallbackKey"
-    | "creatorCallbackVersion"
-    | "creatorRoutineId"
-    | "creatorRoutineDispatchId"
-    | "creatorSystemSourceKind"
-    | "creatorSystemSourceId"
-    | "lifecycleStatus"
-    | "disposition"
-    | "completedAt"
-    | "cancelledAt"
-    | "createdAt"
-  >
-> & {
-  labelIds?: string[];
-  blockedByTaskIds?: string[];
-  actorAgentId?: string | null;
-  actorUserId?: string | null;
-};
 
 export type TaskLabelRow = typeof d.labels.$inferSelect;
 

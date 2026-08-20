@@ -195,7 +195,6 @@ export async function createTaskExecutionRunInTransaction(
     runId: insertedRun.id,
     currentRefId: null,
     currentOrdinal: null,
-    currentSegmentOrdinal: null,
   });
   return {
     run: projectRunEnvelope(insertedRun),

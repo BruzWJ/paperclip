@@ -297,7 +297,6 @@ export async function compileCarryContext(
 ): Promise<{
   readonly carryContext: boolean;
   readonly exposureDigest: string;
-  readonly carrySourceExposureDigest: string;
 }> {
   const compiled = await compiler.resolve({
     companyId: run.companyId,
@@ -311,12 +310,5 @@ export async function compileCarryContext(
   return {
     carryContext: compiled.contextDial.carry_context,
     exposureDigest: contextDialDigest(compiled.contextDial),
-    // Explicit steering may cross only a carry_context toggle. The source
-    // carry row still has to match every history/tool exposure cell that was
-    // authorized when the interrupted prompt started.
-    carrySourceExposureDigest: contextDialDigest({
-      ...compiled.contextDial,
-      carry_context: true,
-    }),
   };
 }

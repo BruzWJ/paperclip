@@ -113,23 +113,6 @@ test("rejects direct, aliased, spread, and generic immutable updates", () => {
   ]);
 });
 
-test("allows the one statically closed control-state patch contract", () => {
-  const source = `
-    import { tasks } from "@paperclipai/db";
-    type TaskControlStateUpdate = Partial<Omit<typeof tasks.$inferInsert,
-      "request" | "creatorAuthorityId" | "creatorAdapterConfigRevisionId">>;
-    const service = {
-      updateControlState: async function updateControlState(data: TaskControlStateUpdate) {
-        return db.update(tasks).set(data);
-      },
-    };
-  `;
-  assert.deepEqual(
-    inspectSourceText("apps/server/src/services/tasks.ts", source),
-    [],
-  );
-});
-
 test("rejects a partial agent-execution creator pair at canonical creation", () => {
   const partial = inspectSourceText(
     "apps/server/src/services/runtime-task-action-port.ts",
@@ -191,11 +174,6 @@ function validOwnerGraph() {
       `,
     ],
     [
-      "apps/server/src/services/tasks.ts",
-      `type TaskControlStateUpdate = Omit<Row, | "request" | "creatorAuthorityId" | "creatorAdapterConfigRevisionId">;
-       function updateControlState(data: TaskControlStateUpdate) {}`,
-    ],
-    [
       "apps/server/src/services/paperclip-managed-tool-registry.ts",
       `export const PAPERCLIP_MANAGED_TOOL_NAMES = [];
        export const boardMcpInputSchemas = {};
@@ -223,7 +201,7 @@ function validOwnerGraph() {
   ]);
 }
 
-test("requires compiler, action-port, aggregate, schema, and closed update owners", () => {
+test("requires registry, action-port, aggregate, and schema owners", () => {
   assert.deepEqual(requiredOwnershipViolations(validOwnerGraph()), []);
 
   for (const [path, marker] of [
@@ -231,7 +209,6 @@ test("requires compiler, action-port, aggregate, schema, and closed update owner
       "apps/server/src/services/canonical-task-aggregate.ts",
       "await assertAgentExecutionCreator(tx, task);",
     ],
-    ["apps/server/src/services/tasks.ts", '| "request"'],
     [
       "apps/server/src/services/paperclip-managed-tool-registry.ts",
       "input.actionGrants.task_create !== true",

@@ -1,11 +1,8 @@
+import { agents, companies, taskExecutionLanes, taskSessions, tasks } from "@paperclipai/db";
 import {
-  agents,
-  companies,
-  taskExecutionLanes,
-  taskSessions,
-  tasks,
-} from "@paperclipai/db";
-import { type AgentVisibleTaskStatus } from "@paperclipai/shared";
+  isTaskLifecycleStatusTransition,
+  type AgentVisibleTaskStatus,
+} from "@paperclipai/shared";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 export { canonicalJson } from "./canonical-json.js";
@@ -26,6 +23,7 @@ import {
   lockTaskTreeExecutionGate,
 } from "./task-execution-lifecycle-gate.js";
 import { lockTaskExecutionRunIfPresentInTransaction } from "./task-execution-run-service-part-3-section-1.js";
+import { lifecycleAcceptsExecution } from "./task-execution-terminal-eligibility.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
 export type TaskMentionRecipient =
@@ -73,28 +71,22 @@ export async function lockTaskMentionRecipient(
 export async function lockOwnerUpdateRecipient(
   tx: TaskSessionDbTransaction,
   companyId: string,
-  task: TaskRow,
+  taskId: string,
   creatorEdge: {
     endpointKind: string;
     endpointId: string | null;
   },
 ): Promise<TaskMentionRecipient> {
-  if (task.parentId) {
-    return lockTaskMentionRecipient(tx, companyId, task.parentId);
-  }
-
-  const sameTask = await lockTaskUpdateTarget(tx, companyId, task.id);
-  if (creatorEdge.endpointKind === "agent-execution" && creatorEdge.endpointId) {
-    try {
-      return {
-        kind: "agent",
-        target: await lockAgentCounterpartTarget(tx, companyId, creatorEdge.endpointId),
-      };
-    } catch (error) {
-      if (!(error instanceof RuntimeTaskActionConflict)) throw error;
+  if (creatorEdge.endpointKind === "agent-execution") {
+    if (!creatorEdge.endpointId) {
+      throw new RuntimeTaskActionConflict("Agent creator endpoint is incomplete");
     }
+    return {
+      kind: "agent",
+      target: await lockAgentCounterpartTarget(tx, companyId, creatorEdge.endpointId),
+    };
   }
-  return { kind: "board", target: sameTask };
+  return { kind: "board", target: await lockTaskUpdateTarget(tx, companyId, taskId) };
 }
 
 export { deterministicUuid } from "./deterministic-uuid.js";
@@ -130,13 +122,7 @@ export function assertLifecycleTransition(
   current: AgentVisibleTaskStatus | null,
   requested: AgentVisibleTaskStatus,
 ): asserts current is AgentVisibleTaskStatus {
-  if (current === "done" || current === "cancelled") {
-    throw new RuntimeTaskActionConflict("A terminal task rejects later owner updates");
-  }
-  const legal =
-    (current === "open" && (requested === "blocked" || requested === "done" || requested === "cancelled")) ||
-    (current === "blocked" && (requested === "open" || requested === "done" || requested === "cancelled"));
-  if (!legal) {
+  if (current === null || !isTaskLifecycleStatusTransition(current, requested)) {
     throw new RuntimeTaskActionConflict("Task lifecycle transition is invalid");
   }
 }
@@ -153,7 +139,10 @@ export async function lockRuntimeActionHierarchy(
   tx: TaskSessionDbTransaction,
   capability: AgentRunCapability,
   now: Date,
-  options: { readonly additionalLaneTargetAgentId?: string },
+  options: {
+    readonly additionalLaneTargetAgentId?: string;
+    readonly terminalEligible: boolean;
+  },
 ): Promise<void> {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${capability.companyId}, 0))`);
   const companyRows = await tx
@@ -180,7 +169,12 @@ export async function lockRuntimeActionHierarchy(
     throw new RuntimeTaskActionDenied("Task ownership epoch has changed", "ownership_epoch_changed");
   }
   const task = taskRows[0]!;
-  if (!["open", "blocked"].includes(task.lifecycleStatus)) {
+  if (
+    !lifecycleAcceptsExecution({
+      lifecycleStatus: task.lifecycleStatus,
+      terminalEligible: options.terminalEligible,
+    })
+  ) {
     throw new RuntimeTaskActionDenied("Task lifecycle is terminal", "task_lifecycle_terminal");
   }
   if (task.executionPaused) {

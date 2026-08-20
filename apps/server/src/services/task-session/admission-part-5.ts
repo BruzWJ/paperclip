@@ -9,6 +9,7 @@ import {
 import { type TaskSessionEventType } from "@paperclipai/shared/task-session";
 import { and, eq, lt, sql } from "drizzle-orm";
 import { evaluateAgentInvokability } from "../agent-invokability.js";
+import { terminalExecutionRef } from "../task-execution-terminal-eligibility.js";
 import type * as admissionCore from "./admission-part-1.js";
 import { assertCanonicalScope, assertCounterpart, assertWorkspaceBinding } from "./admission-part-4.js";
 import { previousOwnershipEpochForDispatchSource } from "./admission-part-2.js";
@@ -18,11 +19,16 @@ import { TaskSessionInvariantError, TaskSessionLifecycleConflict } from "./store
 
 export async function assertDispatchScope(
   transaction: TaskSessionDbTransaction,
-  input: admissionCore.DispatchExecutionScope,
+  input: admissionCore.DispatchingExecutionSourceInput,
+  messageKind: "user" | "synthetic",
 ): Promise<admissionCore.ValidatedDispatchScope> {
+  const terminalEligible = terminalExecutionRef({
+    sourceKind: input.sourceKind,
+    messageKind,
+    mode: input.mode,
+  });
   const { task } = await assertCanonicalScope(transaction, input, {
-    allowTerminal: false,
-    dispatching: true,
+    allowTerminal: terminalEligible,
   });
   if (
     !Number.isInteger(input.ownershipEpoch) ||

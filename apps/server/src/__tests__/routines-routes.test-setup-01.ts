@@ -46,8 +46,8 @@ export function registerSuiteSetup() {
       status: "task_created",
     });
     mockAccessService.decide.mockResolvedValue({
-      allowed: false,
-      explanation: "Board membership is viewer-only",
+      allowed: true,
+      explanation: "Active Board membership",
     });
     mockLogActivity.mockResolvedValue(undefined);
     mockRoutineService.getDescriptionDocument.mockResolvedValue({

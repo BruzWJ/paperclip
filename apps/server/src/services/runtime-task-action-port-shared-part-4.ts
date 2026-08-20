@@ -234,27 +234,12 @@ export type CanonicalOwnerFormAuthority =
       invocationId: string;
     }
   | {
-      kind: "system-escalation-human";
-      companyId: string;
-      actorUserId: string;
-      gatewayInvocationId: string;
-    }
-  | {
-      /**
-       * A directly authenticated Board control-plane action. This is full
-       * task-owner lifecycle authority, distinct from the narrow documented
-       * human escalation and creator-withdrawal forms below.
-       */
+      /** A directly authenticated Board lifecycle action. */
       kind: "board";
       companyId: string;
       actorUserId: string;
       gatewayInvocationId: string;
-    }
-  | {
-      kind: "user-creator-withdrawal";
-      companyId: string;
-      actorUserId: string;
-      gatewayInvocationId: string;
+      recipient: "owner" | "creator";
     };
 
 export type CanonicalCreatorFormAuthority =
@@ -262,12 +247,6 @@ export type CanonicalCreatorFormAuthority =
       kind: "agent-execution";
       capability: AgentRunCapability;
       invocationId: string;
-    }
-  | {
-      kind: "user/board";
-      companyId: string;
-      userId: string;
-      gatewayInvocationId: string;
     }
   | {
       kind: "plugin";
@@ -361,7 +340,8 @@ export function ownerSourceIdentity(authority: CanonicalOwnerFormAuthority): {
     sourceAuthorityId: null,
     sourceIdentity: {
       userId: authority.actorUserId,
-      authorityKind: authority.kind,
+      authorityKind: "board",
+      recipient: authority.recipient,
     },
     runId: null,
     comment: {

@@ -187,12 +187,8 @@ export function taskUpdateMessageActor(
         throw new RuntimeTaskActionConflict("Canonical task update lost its agent identity");
       }
       return messageAgent(authorizedRuntime.companyAgents, authority.capability.targetAgentId);
-    case "system-escalation-human":
-    case "user-creator-withdrawal":
     case "board":
       return { id: authority.actorUserId, name: "Paperclip Board user" };
-    case "user/board":
-      return { id: authority.userId, name: "Paperclip Board user" };
     case "plugin":
       return {
         id: authority.pluginInstallationId,

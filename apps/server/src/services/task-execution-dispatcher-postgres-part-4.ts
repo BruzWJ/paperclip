@@ -56,12 +56,10 @@ export async function createRunningLease(
   );
   if (
     control.currentRefId !== first.id ||
-    control.currentOrdinal === null ||
-    control.currentSegmentOrdinal === null
+    control.currentOrdinal === null
   ) {
     dispatcherCore.reject("run control does not select the leased prompt");
   }
-  const promptKind = control.currentSegmentOrdinal === 0 ? "base" : "steering";
   const currentMember = dispatcherCore.exactlyOne(
     await transaction
       .select({ admissionOrder: taskExecutionRunRefs.admissionOrder })
@@ -87,10 +85,7 @@ export async function createRunningLease(
     input.pendingAttempt?.sessionOperation ??
     (await selectSessionOperation(transaction, options.compiler, {
       run: input.run,
-      promptKind,
       ref: first,
-      refOrdinal: control.currentOrdinal,
-      segmentOrdinal: control.currentSegmentOrdinal,
     }));
   const generationRows = await transaction
     .select({ generation: taskExecutionAttempts.attemptGeneration })
@@ -100,7 +95,6 @@ export async function createRunningLease(
         eq(taskExecutionAttempts.runId, input.run.runId),
         eq(taskExecutionAttempts.refId, first.id),
         eq(taskExecutionAttempts.refOrdinal, control.currentOrdinal),
-        eq(taskExecutionAttempts.segmentOrdinal, control.currentSegmentOrdinal),
       ),
     )
     .orderBy(desc(taskExecutionAttempts.attemptGeneration))
@@ -130,12 +124,9 @@ export async function createRunningLease(
             sessionId: input.run.sessionId,
             runId: input.run.runId,
             runKind: input.run.kind,
-            promptKind,
             sessionOperation: operation,
             refId: first.id,
             refOrdinal: control.currentOrdinal,
-            segmentOrdinal: control.currentSegmentOrdinal,
-            steeringSegmentOrdinal: promptKind === "steering" ? control.currentSegmentOrdinal : null,
             attemptGeneration: (generationRows[0]?.generation ?? 0) + 1,
             state: "running",
             startedAt: input.at,
@@ -148,8 +139,7 @@ export async function createRunningLease(
   if (
     attempt.sessionOperation !== operation ||
     attempt.refId !== first.id ||
-    attempt.refOrdinal !== control.currentOrdinal ||
-    attempt.segmentOrdinal !== control.currentSegmentOrdinal
+    attempt.refOrdinal !== control.currentOrdinal
   ) {
     dispatcherCore.reject("attempt crossed its frozen prompt identity");
   }
@@ -363,14 +353,12 @@ export async function createRunForRef(
       .set({
         currentRefId: refs[0]!.id,
         currentOrdinal: 0,
-        currentSegmentOrdinal: 0,
       })
       .where(
         and(
           eq(taskExecutionRunControls.runId, created.run.runId),
           isNull(taskExecutionRunControls.currentRefId),
           isNull(taskExecutionRunControls.currentOrdinal),
-          isNull(taskExecutionRunControls.currentSegmentOrdinal),
         ),
       )
       .returning({ runId: taskExecutionRunControls.runId }),
@@ -387,12 +375,9 @@ export async function createRunForRef(
           sessionId: created.run.sessionId,
           runId: created.run.runId,
           runKind: created.run.kind,
-          promptKind: "base",
           sessionOperation: exactRetry.sessionOperation,
           refId: ref.id,
           refOrdinal: 0,
-          segmentOrdinal: 0,
-          steeringSegmentOrdinal: null,
           attemptGeneration: 1,
           state: "pending",
           startedAt: null,
@@ -425,7 +410,6 @@ export async function createRunForRef(
           adapterConfigRevisionId: ref.adapterConfigRevisionId,
         },
         replyToCommentId: null,
-        steeringSegment: null,
         body: "",
       },
     },

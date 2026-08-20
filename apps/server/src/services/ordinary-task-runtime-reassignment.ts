@@ -3,7 +3,10 @@ import { and, eq } from "drizzle-orm";
 import { reserveTaskExecutionWorkspaceBinding } from "./execution-workspaces.js";
 import * as runtime from "./ordinary-task-runtime-shared.js";
 import { revokeOutgoingOwnershipEpoch } from "./runtime-task-action-port.js";
-import type { TaskExecutionCancellationActor } from "./task-execution-cancellation.js";
+import type {
+  RequestedScopedRunCancellations,
+  TaskExecutionCancellationActor,
+} from "./task-execution-cancellation.js";
 import { admitTaskExecutionInTransaction } from "./task-execution-initial-start-admission.js";
 import {
   createTaskSessionAdmissionService,
@@ -18,7 +21,7 @@ export function createOrdinaryTaskReassignmentCommitter(context: {
   sessions: ReturnType<typeof createTaskSessionAdmissionService>;
 }) {
   const { options, clock, sessions } = context;
-  async function commitAgentOwnerReassignmentInTransaction(
+  async function commitOwnerReassignmentInTransaction(
     tx: TaskSessionDbTransaction,
     input: {
       task: runtime.TaskRow;
@@ -33,16 +36,16 @@ export function createOrdinaryTaskReassignmentCommitter(context: {
     },
   ) {
     const task = input.task;
+    const outgoingOwnerAgentId = task.ownerKind === "agent" ? task.ownerAgentId : null;
     if (
       !task.ownershipEpoch ||
-      task.ownerKind !== "agent" ||
-      !task.ownerAgentId ||
       !task.request ||
       !task.lifecycleStatus ||
-      !runtime.NONTERMINAL.has(task.lifecycleStatus)
+      (task.ownerKind === "agent" && !outgoingOwnerAgentId) ||
+      (task.ownerKind === "user" && !task.ownerUserId)
     ) {
       throw new runtime.OrdinaryTaskRuntimeRejected(
-        "Reassignment requires a nonterminal agent-owned task",
+        "Reassignment target has no canonical owner epoch",
         "reassignment_target_invalid",
       );
     }
@@ -60,37 +63,43 @@ export function createOrdinaryTaskReassignmentCommitter(context: {
       );
     }
     const { session } = sessionState;
-    const outgoingAuthority = await tx
-      .select()
-      .from(taskExecutionAuthorities)
-      .where(
-        and(
-          eq(taskExecutionAuthorities.companyId, task.companyId),
-          eq(taskExecutionAuthorities.taskId, task.id),
-          eq(taskExecutionAuthorities.ownershipEpoch, task.ownershipEpoch),
-          eq(taskExecutionAuthorities.agentId, task.ownerAgentId),
-          eq(taskExecutionAuthorities.state, "current"),
-        ),
-      )
-      .for("update")
-      .then((rows) => rows[0] ?? null);
-    if (!outgoingAuthority) {
-      throw new runtime.OrdinaryTaskRuntimeRejected(
-        "Outgoing owner authority is missing",
-        "reassignment_authority_missing",
-      );
-    }
     const now = clock();
-    const revocation = await revokeOutgoingOwnershipEpoch(tx, sessions, options.taskExecutionCancellation, {
-      companyId: task.companyId,
-      taskId: task.id,
-      sessionId: session.id,
-      ownershipEpoch: task.ownershipEpoch,
-      authorityId: outgoingAuthority.id,
-      sourceAuthorityId: input.sourceAuthorityId,
-      cancellationActor: input.cancellationActor,
-      now,
-    });
+    let revocation: {
+      escalationDispatchRefIds: readonly string[];
+      cancellations: RequestedScopedRunCancellations | null;
+    } = { escalationDispatchRefIds: [], cancellations: null };
+    if (outgoingOwnerAgentId) {
+      const outgoingAuthority = await tx
+        .select()
+        .from(taskExecutionAuthorities)
+        .where(
+          and(
+            eq(taskExecutionAuthorities.companyId, task.companyId),
+            eq(taskExecutionAuthorities.taskId, task.id),
+            eq(taskExecutionAuthorities.ownershipEpoch, task.ownershipEpoch),
+            eq(taskExecutionAuthorities.agentId, outgoingOwnerAgentId),
+            eq(taskExecutionAuthorities.state, "current"),
+          ),
+        )
+        .for("update")
+        .then((rows) => rows[0] ?? null);
+      if (!outgoingAuthority) {
+        throw new runtime.OrdinaryTaskRuntimeRejected(
+          "Outgoing owner authority is missing",
+          "reassignment_authority_missing",
+        );
+      }
+      revocation = await revokeOutgoingOwnershipEpoch(tx, sessions, options.taskExecutionCancellation, {
+        companyId: task.companyId,
+        taskId: task.id,
+        sessionId: session.id,
+        ownershipEpoch: task.ownershipEpoch,
+        authorityId: outgoingAuthority.id,
+        sourceAuthorityId: input.sourceAuthorityId,
+        cancellationActor: input.cancellationActor,
+        now,
+      });
+    }
     const ownershipEpoch = task.ownershipEpoch + 1;
     const authorityId = runtime.deterministicUuid(
       "task-execution-authority",
@@ -102,7 +111,6 @@ export function createOrdinaryTaskReassignmentCommitter(context: {
         ownerKind: "agent",
         ownerAgentId: input.ownerAgentId,
         ownerUserId: null,
-        ownerAssignmentSource: null,
         ownershipEpoch,
         updatedAt: now,
       })
@@ -146,31 +154,33 @@ export function createOrdinaryTaskReassignmentCommitter(context: {
       createdAt: now,
     });
     await runtime.insertCreatorEdge(tx, reassigned, session.id, now);
-    const admission = await admitTaskExecutionInTransaction({
-      sessionAdmission: sessions,
-      transaction: tx,
-      work: {
-        companyId: task.companyId,
-        taskId: task.id,
-        sessionId: session.id,
-        ownershipEpoch,
-        targetAgentId: input.ownerAgentId,
-        taskExecutionAuthorityId: authorityId,
-        consultExecutionId: null,
-        adapterConfigRevisionId: input.ownerResolution.revisionId,
-        contextEpoch: workspaceReservation.contextEpochGeneration,
-        mode: "owner",
-        sourceKind: "task_reassignment",
-        actor: input.sourceActor,
-        previousOwnershipEpoch: task.ownershipEpoch,
-        immutableSourceKey: input.idempotencyKey,
-        sourceRecordId: task.id,
-        exactText: task.request,
-        comment: { ...input.comment, body: task.request },
-        idempotencyKey: input.idempotencyKey,
-      },
-    });
-    if (!admission.ref) {
+    const admission = runtime.NONTERMINAL.has(task.lifecycleStatus)
+      ? await admitTaskExecutionInTransaction({
+          sessionAdmission: sessions,
+          transaction: tx,
+          work: {
+            companyId: task.companyId,
+            taskId: task.id,
+            sessionId: session.id,
+            ownershipEpoch,
+            targetAgentId: input.ownerAgentId,
+            taskExecutionAuthorityId: authorityId,
+            consultExecutionId: null,
+            adapterConfigRevisionId: input.ownerResolution.revisionId,
+            contextEpoch: workspaceReservation.contextEpochGeneration,
+            mode: "owner",
+            sourceKind: "task_reassignment",
+            actor: input.sourceActor,
+            previousOwnershipEpoch: task.ownershipEpoch,
+            immutableSourceKey: input.idempotencyKey,
+            sourceRecordId: task.id,
+            exactText: task.request,
+            comment: { ...input.comment, body: task.request },
+            idempotencyKey: input.idempotencyKey,
+          },
+        })
+      : null;
+    if (admission && !admission.ref) {
       throw new runtime.OrdinaryTaskRuntimeRejected(
         "Reassignment did not persist an owner execution ref",
         "reassignment_ref_missing",
@@ -178,11 +188,11 @@ export function createOrdinaryTaskReassignmentCommitter(context: {
     }
     return {
       task: reassigned,
-      ref: admission.ref,
+      ref: admission?.ref ?? null,
       escalationDispatchRefIds: revocation.escalationDispatchRefIds,
       cancellations: revocation.cancellations,
       retried: false as const,
     };
   }
-  return commitAgentOwnerReassignmentInTransaction;
+  return commitOwnerReassignmentInTransaction;
 }

@@ -14,7 +14,6 @@ import {
   type PostgresTaskExecutionDispatcherRepositoryOptions,
   type PromptOwnerRow,
   type RunRow,
-  type SteeringPromptOwnerRow,
   exactlyOne,
   reject,
 } from "./task-execution-dispatcher-postgres-part-1.js";
@@ -119,7 +118,6 @@ export async function loadRecoveredProtocolSettlement(
   input: {
     readonly run: RunRow;
     readonly owner: PromptOwnerRow;
-    readonly segment: SteeringPromptOwnerRow | null;
   },
 ): Promise<{ readonly reason: string; readonly finalText: string }> {
   if (
@@ -166,8 +164,7 @@ export async function loadRecoveredProtocolSettlement(
       ? input.owner.outcome !== "refused"
       : finish === "cancelled"
         ? input.owner.outcome !== "cancelled"
-        : input.owner.outcome !== "succeeded") ||
-    (input.segment !== null && input.segment.terminalSessionMessageId !== assistantMessageId)
+        : input.owner.outcome !== "succeeded")
   ) {
     reject("protocol settlement recovery event crossed its durable owner");
   }
@@ -224,8 +221,7 @@ export async function completeTerminalPromptInTransaction(
 }> {
   if (
     input.attempt.refId !== input.lease.ref.id ||
-    input.attempt.refOrdinal !== input.lease.refOrdinal ||
-    input.attempt.segmentOrdinal !== input.lease.segmentOrdinal
+    input.attempt.refOrdinal !== input.lease.refOrdinal
   ) {
     reject("terminal progression crossed its exact prompt identity");
   }
@@ -274,14 +270,12 @@ export async function completeTerminalPromptInTransaction(
           .set({
             currentRefId: next[0].refId,
             currentOrdinal: next[0].refOrdinal,
-            currentSegmentOrdinal: 0,
           })
           .where(
             and(
               eq(taskExecutionRunControls.runId, input.lease.runId),
               eq(taskExecutionRunControls.currentRefId, input.lease.ref.id),
               eq(taskExecutionRunControls.currentOrdinal, input.lease.refOrdinal),
-              eq(taskExecutionRunControls.currentSegmentOrdinal, input.lease.segmentOrdinal),
             ),
           )
           .returning({ runId: taskExecutionRunControls.runId }),
@@ -311,14 +305,12 @@ export async function completeTerminalPromptInTransaction(
       .set({
         currentRefId: null,
         currentOrdinal: null,
-        currentSegmentOrdinal: null,
       })
       .where(
         and(
           eq(taskExecutionRunControls.runId, input.lease.runId),
           eq(taskExecutionRunControls.currentRefId, input.lease.ref.id),
           eq(taskExecutionRunControls.currentOrdinal, input.lease.refOrdinal),
-          eq(taskExecutionRunControls.currentSegmentOrdinal, input.lease.segmentOrdinal),
         ),
       )
       .returning({ runId: taskExecutionRunControls.runId }),

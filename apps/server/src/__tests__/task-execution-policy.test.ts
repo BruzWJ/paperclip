@@ -2,6 +2,7 @@ import "./task-execution-policy.test-suite-03-happy-path-executor-review-approva
 import "./task-execution-policy.test-suite-04-review-only-policy-no-approval.js";
 import "./task-execution-policy.test-suite-05-no-op-transitions.js";
 import "./task-execution-policy.test-suite-06-final-stage-completion-terminates-the.js";
+import "./task-execution-policy.test-suite-07-final-approval-fences-execution.js";
 import * as t from "./task-execution-policy.test-support.js";
 const { describe, it, expect, normalizeTaskExecutionPolicy, qaAgentId } = t;
 const { parseTaskExecutionState, coderAgentId, applyTaskExecutionPolicyTransition } = t;

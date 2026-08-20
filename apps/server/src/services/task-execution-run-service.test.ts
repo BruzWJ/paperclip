@@ -3,7 +3,6 @@ const { describe, it, createMockDb, persistedRunRow } = t;
 const { transitionTaskExecutionRunStatusInTransaction, runTime, PgDialect, expect } = t;
 const { computeTaskExecutionRunBatchDigest, TaskExecutionRunInvariantViolation } = t;
 const { fixture, runSelectionTransaction, createTaskExecutionRunInTransaction } = t;
-import "./task-execution-run-service.test-suite-02-commits-only-the-exact-run.js";
 
 describe("canonical task-execution run transitions", () => {
   it("encodes a same-time start predicate through the timestamp column", async () => {

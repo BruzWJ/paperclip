@@ -262,16 +262,16 @@ describe("attention service", () => {
       kind: "generic",
       summaryExcerpt: "Which rollout should I use?",
     });
-    const reopenFence = harness.calls.find(
+    const statusUpdateFence = harness.calls.find(
       (call) =>
         call.method === "where" &&
         new PgDialect()
           .sqlToQuery(call.args[0] as never)
-          .sql.includes("task_board_reopen_commands"),
+          .sql.includes("task_updates"),
     );
-    expect(reopenFence).toBeDefined();
+    expect(statusUpdateFence).toBeDefined();
     expect(
-      new PgDialect().sqlToQuery(reopenFence!.args[0] as never).sql,
+      new PgDialect().sqlToQuery(statusUpdateFence!.args[0] as never).sql,
     ).toContain(">=");
     expect(harness.remaining("select")).toBe(0);
   });

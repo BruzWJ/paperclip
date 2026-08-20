@@ -137,7 +137,6 @@ const RUN_CONTROL_COLUMNS = [
   "runId",
   "currentRefId",
   "currentOrdinal",
-  "currentSegmentOrdinal",
 ] as const;
 
 export interface CanonicalRunBoundaryFile {
@@ -529,7 +528,6 @@ export function assertCanonicalContextRunTraceReader(
     ".from(taskSessionMessages)",
     "prompt_transmission_phase = 'transmitted'",
     "source_ref.source_message_id",
-    "segment.source_message_id",
     "sanitizeCanonicalMessage(decodeStoredTaskSessionMessage(row), row.seq)",
     "turns,",
   ]) {

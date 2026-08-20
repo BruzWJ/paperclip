@@ -130,7 +130,6 @@ export async function findRetry(
   },
   identityDigest: string,
   expectedType: TaskSessionEventType,
-  compatibleIdentityDigests: readonly string[] = [],
 ): Promise<admissionCore.TaskSessionAdmissionResult | null> {
   const rows = await transaction
     .select()
@@ -145,11 +144,8 @@ export async function findRetry(
     .limit(1);
   const event = rows[0];
   if (!event) return null;
-  const identityMatches =
-    event.sourceIdentityDigest === identityDigest ||
-    compatibleIdentityDigests.includes(event.sourceIdentityDigest ?? "");
   if (
-    !identityMatches ||
+    event.sourceIdentityDigest !== identityDigest ||
     event.sourceRecordId !== input.sourceRecordId ||
     decodeStoredTaskSessionEvent(event).event.type !== expectedType
   ) {
@@ -213,10 +209,7 @@ export async function assertCanonicalScope(
     taskId: string;
     sessionId: string;
   },
-  options: {
-    allowTerminal: boolean;
-    dispatching: boolean;
-  },
+  options: { allowTerminal: boolean },
 ): Promise<{
   task: typeof tasks.$inferSelect;
   session: typeof taskSessions.$inferSelect;
@@ -259,11 +252,9 @@ export async function assertCanonicalScope(
       ...input,
     });
   }
-  const terminal = task.lifecycleStatus === "done" || task.lifecycleStatus === "cancelled";
   if (
     task.lifecycleStatus === null ||
-    (!options.allowTerminal && !inArrayValue(task.lifecycleStatus, ["open", "blocked"])) ||
-    (options.dispatching && terminal)
+    (!options.allowTerminal && !inArrayValue(task.lifecycleStatus, ["open", "blocked"]))
   ) {
     throw new TaskSessionLifecycleConflict("Task lifecycle does not accept this Session source", {
       taskId: input.taskId,

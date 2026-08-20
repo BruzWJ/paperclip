@@ -4,7 +4,6 @@ import {
   taskExecutionAttempts,
   taskExecutionLeases,
   taskExecutionPromptCapabilities,
-  taskExecutionPromptSegments,
   taskExecutionRunControls,
   taskExecutionRunRefs,
 } from "@paperclipai/db";
@@ -143,7 +142,6 @@ export function exactCapability(
     row.runBatchDigest !== prompt.runBatchDigest ||
     row.refId !== prompt.refId ||
     row.refOrdinal !== prompt.refOrdinal ||
-    row.segmentOrdinal !== prompt.segmentOrdinal ||
     row.attemptId !== prompt.attemptId ||
     row.leaseId !== prompt.leaseId ||
     row.leaseGeneration !== prompt.leaseGeneration ||
@@ -200,8 +198,7 @@ export async function lockCurrentPrompt(
   if (
     !control ||
     control.currentRefId !== prompt.refId ||
-    control.currentOrdinal !== prompt.refOrdinal ||
-    control.currentSegmentOrdinal !== prompt.segmentOrdinal
+    control.currentOrdinal !== prompt.refOrdinal
   ) {
     reject("ACP update crossed the run's current prompt pointer");
   }
@@ -219,10 +216,8 @@ export async function lockCurrentPrompt(
     attempt.sessionId !== prompt.sessionId ||
     attempt.runId !== prompt.runId ||
     attempt.runKind !== prompt.runKind ||
-    attempt.promptKind !== prompt.promptKind ||
     attempt.refId !== prompt.refId ||
     attempt.refOrdinal !== prompt.refOrdinal ||
-    attempt.segmentOrdinal !== prompt.segmentOrdinal ||
     attempt.attemptGeneration !== prompt.attemptGeneration ||
     attempt.state !== "running"
   ) {
@@ -269,45 +264,24 @@ export async function lockCurrentPrompt(
   }
   exactCapability(capabilityRow, prompt, capability);
 
-  const owner =
-    prompt.promptKind === "base"
-      ? await transaction
-          .select({
-            attemptId: taskExecutionRunRefs.attemptId,
-            capabilityConnectionId: taskExecutionRunRefs.capabilityConnectionId,
-            capabilityGeneration: taskExecutionRunRefs.capabilityGeneration,
-            protocolSettlementState: taskExecutionRunRefs.protocolSettlementState,
-          })
-          .from(taskExecutionRunRefs)
-          .where(
-            and(
-              eq(taskExecutionRunRefs.runId, prompt.runId),
-              eq(taskExecutionRunRefs.refId, prompt.refId),
-              eq(taskExecutionRunRefs.refOrdinal, prompt.refOrdinal),
-            ),
-          )
-          .limit(1)
-          .for("update")
-          .then((rows) => rows[0] ?? null)
-      : await transaction
-          .select({
-            attemptId: taskExecutionPromptSegments.attemptId,
-            capabilityConnectionId: taskExecutionPromptSegments.capabilityConnectionId,
-            capabilityGeneration: taskExecutionPromptSegments.capabilityGeneration,
-            protocolSettlementState: taskExecutionPromptSegments.protocolSettlementState,
-          })
-          .from(taskExecutionPromptSegments)
-          .where(
-            and(
-              eq(taskExecutionPromptSegments.runId, prompt.runId),
-              eq(taskExecutionPromptSegments.refId, prompt.refId),
-              eq(taskExecutionPromptSegments.refOrdinal, prompt.refOrdinal),
-              eq(taskExecutionPromptSegments.segmentOrdinal, prompt.segmentOrdinal),
-            ),
-          )
-          .limit(1)
-          .for("update")
-          .then((rows) => rows[0] ?? null);
+  const owner = await transaction
+    .select({
+      attemptId: taskExecutionRunRefs.attemptId,
+      capabilityConnectionId: taskExecutionRunRefs.capabilityConnectionId,
+      capabilityGeneration: taskExecutionRunRefs.capabilityGeneration,
+      protocolSettlementState: taskExecutionRunRefs.protocolSettlementState,
+    })
+    .from(taskExecutionRunRefs)
+    .where(
+      and(
+        eq(taskExecutionRunRefs.runId, prompt.runId),
+        eq(taskExecutionRunRefs.refId, prompt.refId),
+        eq(taskExecutionRunRefs.refOrdinal, prompt.refOrdinal),
+      ),
+    )
+    .limit(1)
+    .for("update")
+    .then((rows) => rows[0] ?? null);
   if (
     !owner ||
     owner.attemptId !== prompt.attemptId ||
@@ -315,7 +289,7 @@ export async function lockCurrentPrompt(
     owner.capabilityGeneration !== capability.capabilityGeneration ||
     owner.protocolSettlementState !== null
   ) {
-    reject("ACP update crossed its current ref or steering-segment owner");
+    reject("ACP update crossed its current ref owner");
   }
   return capabilityRow;
 }

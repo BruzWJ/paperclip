@@ -45,7 +45,6 @@ function task(overrides: Record<string, unknown> = {}) {
     ownerKind: "agent",
     ownerAgentId,
     ownerUserId: null,
-    ownerAssignmentSource: "explicit",
     ownershipEpoch: 1,
     creatorKind: "user/board",
     creatorAuthorityId: null,

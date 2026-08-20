@@ -63,7 +63,6 @@ export async function appendNonDispatchSyntheticComment(
         body: input.comment.body,
         author: input.comment.author,
         reply,
-        steeringSegment: input.comment.steeringSegment,
       }),
     },
   });
@@ -104,7 +103,6 @@ export async function admitQueuedUserExecutionSource(
         messageID: options.ids.messageId,
         timestamp: options.now.getTime(),
         prompt: { text: input.exactText },
-        delivery: "queue",
       },
     },
     envelope: eventEnvelope,
@@ -122,7 +120,6 @@ export async function admitQueuedUserExecutionSource(
         body: comment.body,
         author: comment.author,
         reply,
-        steeringSegment: comment.steeringSegment,
       }),
     },
   });
@@ -202,7 +199,6 @@ export async function admitSyntheticExecutionSource(
         body: input.comment.body,
         author: input.comment.author,
         reply,
-        steeringSegment: input.comment.steeringSegment,
       })
     : undefined;
   const event = await appendAdmissionEvent(transaction, {
@@ -269,7 +265,6 @@ export async function appendNonDispatchEvent(
         messageID: options.ids.messageId,
         timestamp: now.getTime(),
         prompt: { text: input.exactText },
-        delivery: "queue" as const,
       }
     : {
         sessionID: input.sessionId,
@@ -294,7 +289,6 @@ export async function appendNonDispatchEvent(
         body: comment.body,
         author: comment.author,
         reply,
-        steeringSegment: comment.steeringSegment,
       })
     : undefined;
   const envelope = sourceEnvelope(input, options.ids, options.identityDigest, now, undefined, comment);

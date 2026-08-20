@@ -32,7 +32,7 @@ export interface CanonicalControlNoticeInput {
   sourceRecordId: string;
   exactText: string;
   comment?: TaskSessionProjectedCommentAttribution;
-  allowTerminal?: boolean;
+  allowTerminal: boolean;
   occurredAt?: Date | string | null;
 }
 

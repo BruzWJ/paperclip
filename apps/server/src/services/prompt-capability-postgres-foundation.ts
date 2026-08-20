@@ -59,7 +59,6 @@ export function sameBinding(left: PromptCapabilityBinding, right: PromptCapabili
     left.runBatchDigest === right.runBatchDigest &&
     left.refId === right.refId &&
     left.refOrdinal === right.refOrdinal &&
-    left.segmentOrdinal === right.segmentOrdinal &&
     left.attemptId === right.attemptId &&
     left.leaseId === right.leaseId &&
     left.leaseGeneration === right.leaseGeneration &&
@@ -112,7 +111,6 @@ export function rowMatchesBinding(row: PromptCapabilityRow, capability: PromptCa
     row.runBatchDigest === capability.runBatchDigest &&
     row.refId === capability.refId &&
     row.refOrdinal === capability.refOrdinal &&
-    row.segmentOrdinal === capability.segmentOrdinal &&
     row.attemptId === capability.attemptId &&
     row.leaseId === capability.leaseId &&
     row.leaseGeneration === capability.leaseGeneration &&
@@ -185,7 +183,6 @@ export function projectIngressBinding(row: PromptCapabilityRow, sessionId: strin
     runBatchDigest: row.runBatchDigest,
     refId: row.refId,
     refOrdinal: row.refOrdinal,
-    segmentOrdinal: row.segmentOrdinal,
     attemptId: row.attemptId,
     leaseId: row.leaseId,
     leaseGeneration: row.leaseGeneration,

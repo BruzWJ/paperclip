@@ -106,13 +106,17 @@ export async function admitCounterpartTaskUpdate(
         },
       });
     }
-    return admitManagedAgentMessageInTransaction(sessionAdmission, tx, {
-      ...dispatchScope,
-      sourceKind: "task_update",
-      actor: input.actor,
-      delivery: input.message.delivery,
-      recipient: { id: target.agentId, name: target.agentName },
-    });
+    return admitManagedAgentMessageInTransaction(
+      sessionAdmission,
+      tx,
+      {
+        ...dispatchScope,
+        sourceKind: "task_update",
+        actor: input.actor,
+        delivery: input.message.delivery,
+        recipient: { id: target.agentId, name: target.agentName },
+      },
+    );
   }
   if (input.actor.kind === "agent-execution" && (input.target.kind === "board" || !selfTarget)) {
     return mentionBoardInTransaction(sessionAdmission, tx, {

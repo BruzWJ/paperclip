@@ -13,10 +13,9 @@ export function toPublicTask<T extends object>(task: T): Omit<T, keyof InternalT
 }
 
 export function toCompactTask(
-  task: Omit<CompactTask, "workMode" | "priority" | "ownerAssignmentSource" | "originKind"> & {
+  task: Omit<CompactTask, "workMode" | "priority" | "originKind"> & {
     workMode: string;
     priority: string;
-    ownerAssignmentSource: string | null;
     originKind: string | null;
   } & InternalTaskRuntimeFields,
 ): CompactTask {
@@ -37,7 +36,6 @@ export function toCompactTask(
     ownerKind: task.ownerKind,
     ownerAgentId: task.ownerAgentId,
     ownerUserId: task.ownerUserId,
-    ownerAssignmentSource: task.ownerAssignmentSource as CompactTask["ownerAssignmentSource"],
     ownershipEpoch: task.ownershipEpoch,
     creatorKind: task.creatorKind,
     creatorAuthorityId: task.creatorAuthorityId,

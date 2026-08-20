@@ -42,7 +42,6 @@ export const taskListSelect = {
   ownerKind: d.tasks.ownerKind,
   ownerAgentId: d.tasks.ownerAgentId,
   ownerUserId: d.tasks.ownerUserId,
-  ownerAssignmentSource: d.tasks.ownerAssignmentSource,
   ownershipEpoch: d.tasks.ownershipEpoch,
   creatorKind: d.tasks.creatorKind,
   creatorAuthorityId: d.tasks.creatorAuthorityId,

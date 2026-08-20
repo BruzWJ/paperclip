@@ -75,6 +75,7 @@ export interface TaskExecutionCancelledRunSettlementPort {
           };
       readonly reason: string;
       readonly at: Date;
+      readonly nativeContinuity: "revoke" | "preserve_carry";
     },
   ): Promise<TaskExecutionAuthorityFenceResult>;
 }

@@ -12,25 +12,17 @@ import {
   type PostgresRuntimeTaskActionServiceOptions,
   type RuntimeTaskActionService,
   RuntimeTaskActionDenied,
-  createTaskFormCommitRuntime,
   grantMap,
   lockRuntimeToolAuthority,
 } from "./runtime-task-action-port-shared.js";
 
 import { and, asc, eq, or } from "drizzle-orm";
-import { createTaskSessionAdmissionService } from "./task-session/admission.js";
 
 export function createPostgresRuntimeTaskActionServicePart3(
   db: Db,
   options: PostgresRuntimeTaskActionServiceOptions,
 ) {
   const clock = options.clock ?? (() => new Date());
-  const sessionAdmission = createTaskSessionAdmissionService(db, { clock });
-  const taskForms = createTaskFormCommitRuntime(db, {
-    clock,
-    dispatchPersistedRef: options.dispatchPersistedRef,
-    taskExecutionCancellation: options.taskExecutionCancellation,
-  });
 
   return {
     async listAgents(input) {

@@ -29,7 +29,7 @@ import {
 /**
  * Sole same-transaction writer for a protocol-settled ACP prompt's stable
  * accounting, cost transition, cursor/runtime aggregates, Step.Ended.3, and
- * productive/steering settlement owner. Incomplete and not-sent
+ * productive settlement owner. Incomplete and not-sent
  * paths are intentionally outside this API and must never call it.
  */
 export async function settleAcpPromptInTransaction(
@@ -81,11 +81,9 @@ export async function settleAcpPromptInTransaction(
         eq(taskExecutionAttempts.sessionId, identity.sessionId),
         eq(taskExecutionAttempts.runId, identity.runId),
         eq(taskExecutionAttempts.runKind, identity.runKind),
-        eq(taskExecutionAttempts.promptKind, identity.promptKind),
         eq(taskExecutionAttempts.state, "running"),
         eq(taskExecutionAttempts.refId, identity.refId),
         eq(taskExecutionAttempts.refOrdinal, identity.runOrdinal),
-        eq(taskExecutionAttempts.segmentOrdinal, identity.segmentOrdinal),
       ),
     )
     .limit(1)
@@ -137,10 +135,8 @@ export async function settleAcpPromptInTransaction(
       agentId: identity.agentId,
       runId: identity.runId,
       runKind: identity.runKind,
-      promptKind: identity.promptKind,
       refId: identity.refId,
       runOrdinal: identity.runOrdinal,
-      segmentOrdinal: identity.segmentOrdinal,
       attemptId: identity.attemptId,
       adapterConfigRevisionId: identity.adapterConfigRevisionId,
       selectedModelId,
@@ -165,10 +161,8 @@ export async function settleAcpPromptInTransaction(
       agentId: identity.agentId,
       runId: identity.runId,
       runKind: identity.runKind,
-      promptKind: identity.promptKind,
       refId: identity.refId,
       runOrdinal: identity.runOrdinal,
-      segmentOrdinal: identity.segmentOrdinal,
       budgetCurrency,
       kind: cost.kind,
       unavailableReason: cost.unavailableReason,
@@ -197,7 +191,6 @@ export async function settleAcpPromptInTransaction(
       lastProtocolSettledRunId: identity.runId,
       lastProtocolSettledRefId: identity.refId,
       lastProtocolSettledRefOrdinal: identity.runOrdinal,
-      lastProtocolSettledSegmentOrdinal: identity.segmentOrdinal,
       ...settlementModule.costCursorColumns(cost.cursorAfter),
     })
     .where(
@@ -222,8 +215,7 @@ export async function settleAcpPromptInTransaction(
   const immutableSourceKey = [
     "acp_prompt_settlement",
     identity.runId,
-    identity.promptKind,
-    `${identity.refId}:${identity.runOrdinal}:${identity.segmentOrdinal}`,
+    `${identity.refId}:${identity.runOrdinal}`,
     input.promptSettlementReferenceId,
   ].join(":");
   const projectedCost = settlementModule.donorStepCost(cost);
@@ -272,7 +264,6 @@ export async function settleAcpPromptInTransaction(
     promptSettlementReferenceId: input.promptSettlementReferenceId,
     accountingId: accounting.id,
     costEventId: costEvent.id,
-    terminalSessionMessageId: input.stepEnded.assistantMessageId,
     settledAt: input.settledAt,
   });
 

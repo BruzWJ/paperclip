@@ -335,6 +335,7 @@ export async function createApp(
       pluginWorkerManager: workerManager,
       ordinaryTasks,
       pluginDomainEvents: opts.pluginDomainEvents,
+      taskExecutionCancellation: opts.taskExecutionCancellation,
     }),
   );
   api.use(pluginRoutes(db, lifecycle, { scheduler, jobStore, workerManager }));

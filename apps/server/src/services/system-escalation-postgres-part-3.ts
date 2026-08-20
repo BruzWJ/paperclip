@@ -149,7 +149,6 @@ export async function ensureSystemEscalationInTransaction(
         ownerKind: owner.kind,
         ownerAgentId: owner.kind === "agent" ? owner.agentId : null,
         ownerUserId: owner.kind === "user" ? owner.userId : null,
-        ownerAssignmentSource: null,
         ownershipEpoch: 1,
         creatorKind: "system",
         creatorSystemSourceKind: input.systemSource,

@@ -1,8 +1,8 @@
 import * as t from "./routines-routes.test-support.js";
 const { describe, it, createBoardApp, companyId, projectId, request } = t;
 const { expect, mockRoutineService, routineId, revisionId, mockAnnotationService } = t;
-const { mockLogActivity, trigger, agentId, mockAccessService, otherAgentId } = t;
-const { pausedRoutine, mockTrackRoutineCreated } = t;
+const { mockLogActivity, trigger, agentId } = t;
+const { mockTrackRoutineCreated } = t;
 import { registerSuiteSetup } from "./routines-routes.test-setup-01.js";
 
 describe("routine routes", () => {
@@ -154,95 +154,8 @@ describe("routine routes", () => {
     expect(mockRoutineService.updateTrigger).not.toHaveBeenCalled();
   });
 
-  it("rejects viewer routine creation", async () => {
+  it("lets an active viewer run a routine as the Board user", async () => {
     const app = await createBoardApp("viewer");
-
-    const res = await request(app).post(`/api/companies/${companyId}/routines`).send({
-      projectId,
-      title: "Daily routine",
-      assigneeAgentId: agentId,
-    });
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Viewer access is read-only");
-    expect(mockAccessService.decide).not.toHaveBeenCalled();
-    expect(mockRoutineService.create).not.toHaveBeenCalled();
-  });
-
-  it("rejects a viewer retargeting a routine owner", async () => {
-    const app = await createBoardApp("viewer");
-
-    const res = await request(app).patch(`/api/routines/${routineId}`).send({
-      assigneeAgentId: otherAgentId,
-      baseRevisionId: revisionId,
-    });
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Viewer access is read-only");
-    expect(mockAccessService.decide).not.toHaveBeenCalled();
-    expect(mockRoutineService.update).not.toHaveBeenCalled();
-  });
-
-  it("rejects a viewer reactivating a routine", async () => {
-    mockRoutineService.get.mockResolvedValue(pausedRoutine);
-    const app = await createBoardApp("viewer");
-
-    const res = await request(app).patch(`/api/routines/${routineId}`).send({
-      status: "active",
-      baseRevisionId: revisionId,
-    });
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Viewer access is read-only");
-    expect(mockAccessService.decide).not.toHaveBeenCalled();
-    expect(mockRoutineService.update).not.toHaveBeenCalled();
-  });
-
-  it("rejects a viewer creating a trigger", async () => {
-    const app = await createBoardApp("viewer");
-
-    const res = await request(app).post(`/api/routines/${routineId}/triggers`).send({
-      kind: "schedule",
-      cronExpression: "0 10 * * *",
-      timezone: "UTC",
-    });
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Viewer access is read-only");
-    expect(mockAccessService.decide).not.toHaveBeenCalled();
-    expect(mockRoutineService.createTrigger).not.toHaveBeenCalled();
-  });
-
-  it("rejects a viewer updating a trigger", async () => {
-    const app = await createBoardApp("viewer");
-
-    const res = await request(app).patch(`/api/routine-triggers/${trigger.id}`).send({
-      enabled: true,
-    });
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Viewer access is read-only");
-    expect(mockAccessService.decide).not.toHaveBeenCalled();
-    expect(mockRoutineService.updateTrigger).not.toHaveBeenCalled();
-  });
-
-  it("rejects a viewer manually running a routine", async () => {
-    const app = await createBoardApp("viewer");
-
-    const res = await request(app).post(`/api/routines/${routineId}/run`).send({});
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Viewer access is read-only");
-    expect(mockAccessService.decide).not.toHaveBeenCalled();
-    expect(mockRoutineService.runRoutine).not.toHaveBeenCalled();
-  });
-
-  it("passes the board actor through when manually running a routine", async () => {
-    mockAccessService.decide.mockResolvedValue({
-      allowed: true,
-      explanation: "Active board membership",
-    });
-    const app = await createBoardApp("operator");
 
     const res = await request(app).post(`/api/routines/${routineId}/run`).send({});
 
@@ -259,12 +172,8 @@ describe("routine routes", () => {
     );
   });
 
-  it("allows routine creation with board task-mutation authority", async () => {
-    mockAccessService.decide.mockResolvedValue({
-      allowed: true,
-      explanation: "Active board membership",
-    });
-    const app = await createBoardApp("operator");
+  it("lets an active viewer create a routine with Board task-mutation authority", async () => {
+    const app = await createBoardApp("viewer");
 
     const res = await request(app).post(`/api/companies/${companyId}/routines`).send({
       projectId,

@@ -18,10 +18,8 @@ function validInput(): SettleAcpPromptInTransactionInput {
       agentId: "00000000-0000-4000-8000-000000000003",
       runId: "00000000-0000-4000-8000-000000000004",
       runKind: "productive",
-      promptKind: "base",
       refId: "00000000-0000-4000-8000-000000000005",
       runOrdinal: 0,
-      segmentOrdinal: 0,
       attemptId: "00000000-0000-4000-8000-000000000006",
       adapterConfigRevisionId:
         "00000000-0000-4000-8000-000000000007",
@@ -77,20 +75,6 @@ describe("canonical ACP prompt settlement boundary", () => {
         },
       }),
     ).rejects.toBeInstanceOf(AcpPromptSettlementRejected);
-  });
-
-  it("rejects a non-positive steering segment before reaching persistence", async () => {
-    const input = validInput();
-    await expect(
-      settleAcpPromptInTransaction(noDatabase, {
-        ...input,
-        identity: {
-          ...input.identity,
-          promptKind: "steering",
-          segmentOrdinal: 0,
-        } as SettleAcpPromptInTransactionInput["identity"],
-      }),
-    ).rejects.toThrow("positive safe segment ordinal");
   });
 
   it("rejects noncanonical terminal references before reaching persistence", async () => {

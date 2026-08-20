@@ -19,7 +19,7 @@ const SOURCE_ROOTS = [
 /** These owners prove that Paperclip has one server/worker execution path. */
 const REQUIRED_OWNERS = [
   "apps/server/src/services/local-execution-orchestrator.ts",
-  "apps/server/src/services/task-execution-attempt-executor.ts",
+  "apps/server/src/services/task-execution-attempt-executor-part-3.ts",
   "apps/server/src/services/task-execution-postgres.ts",
   "apps/server/src/services/task-execution-provider-configuration.ts",
   "apps/server/src/index.ts",
@@ -226,7 +226,7 @@ export function scanServerWorkerTopology(
   });
 
   const executorPath =
-    "apps/server/src/services/task-execution-attempt-executor.ts";
+    "apps/server/src/services/task-execution-attempt-executor-part-3.ts";
   const executor = required(executorPath);
   requireMarkers({
     path: executorPath,
@@ -236,7 +236,6 @@ export function scanServerWorkerTopology(
       "prepareAcpxRuntimeInvocation",
       "createPaperclipRunToolsMcpServer",
       "sessionCorrelations.resolveResume",
-      'promptKind: "base" | "steering"',
     ],
     add,
     contract: "canonical ACPX attempt executor",

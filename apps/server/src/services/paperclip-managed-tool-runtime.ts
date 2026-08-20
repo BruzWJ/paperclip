@@ -9,8 +9,8 @@ import { z } from "zod";
 import { type ContextDial, type ContextRetrievalReachPolicy } from "./context-dial-resolver.js";
 import { RuntimeToolArgumentsInvalid } from "./runtime-tool-errors.js";
 import {
-  type PaperclipManagedToolCommand,
-  type PaperclipManagedToolCommandFor,
+  type AgentManagedToolCommand,
+  type AgentManagedToolCommandFor,
   type PaperclipManagedToolName,
 } from "./paperclip-managed-tool-definitions.js";
 
@@ -37,6 +37,8 @@ export interface CreatorUpdateTargetCatalogEntry {
 /** Dynamic facts captured into one exact provider descriptor. */
 export interface PaperclipManagedToolRuntimeProjectionInput {
   mode: TaskExecutionRefMode;
+  /** Terminal task turns expose only server-declared read tools. */
+  readOnly: boolean;
   contextDial: ContextDial;
   actionGrants: Readonly<Partial<Record<PaperclipActionKey, boolean>>>;
   isCurrentOwner: boolean;
@@ -61,7 +63,7 @@ export type PaperclipManagedToolLedgerMetadata =
     };
 
 export interface RuntimePaperclipManagedToolCall {
-  command: PaperclipManagedToolCommand;
+  command: AgentManagedToolCommand;
   ledger: PaperclipManagedToolLedgerMetadata;
 }
 
@@ -81,7 +83,7 @@ export interface ProjectedPaperclipManagedToolDescriptor {
 export interface RuntimeProjection<Name extends PaperclipManagedToolName> {
   inputSchema: JsonSchema;
   details?: string;
-  normalize(payload: unknown, scope: PaperclipRuntimeCommandScope): PaperclipManagedToolCommandFor<Name>;
+  normalize(payload: unknown, scope: PaperclipRuntimeCommandScope): AgentManagedToolCommandFor<Name>;
 }
 
 export function runtimeJsonSchema(schema: z.ZodTypeAny): JsonSchema {
@@ -131,7 +133,7 @@ export function runtimeArguments<T>(schema: z.ZodType<T>, payload: unknown): T {
 export function projection<Name extends PaperclipManagedToolName, Payload>(input: {
   schema: z.ZodType<Payload>;
   details?: string;
-  normalize(payload: Payload, scope: PaperclipRuntimeCommandScope): PaperclipManagedToolCommandFor<Name>;
+  normalize(payload: Payload, scope: PaperclipRuntimeCommandScope): AgentManagedToolCommandFor<Name>;
 }): RuntimeProjection<Name> {
   return {
     inputSchema: runtimeJsonSchema(input.schema),

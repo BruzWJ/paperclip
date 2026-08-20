@@ -29,7 +29,6 @@ import {
   requireString,
   requireValidDate,
   SOURCE_USER_EXECUTION_KEYS,
-  STEERING_SEGMENT_KEYS,
 } from "./publication-part-1.js";
 import { TaskSessionLifecycleConflict } from "./store.js";
 
@@ -141,51 +140,11 @@ export function prepareProjection(
         "Session projected comment has an invalid immutable reply tuple",
       );
     }
-    let steeringSegment:
-      | {
-          steeringTargetRunId: string;
-          refId: string;
-          refOrdinal: number;
-          segmentOrdinal: number;
-        }
-      | null
-      | undefined;
-    if (projection.comment.steeringSegment !== undefined) {
-      if (projection.comment.steeringSegment === null) {
-        steeringSegment = null;
-      } else {
-        assertExactKeys(
-          projection.comment.steeringSegment,
-          STEERING_SEGMENT_KEYS,
-          "Session comment steering-segment companion",
-        );
-        const segment = projection.comment.steeringSegment;
-        if (
-          typeof segment.steeringTargetRunId !== "string" ||
-          segment.steeringTargetRunId.length === 0 ||
-          typeof segment.refId !== "string" ||
-          segment.refId.length === 0 ||
-          !Number.isSafeInteger(segment.refOrdinal) ||
-          Number(segment.refOrdinal) < 0 ||
-          !Number.isSafeInteger(segment.segmentOrdinal) ||
-          Number(segment.segmentOrdinal) < 1
-        ) {
-          throw new TaskSessionLifecycleConflict("Session comment steering-segment companion is invalid");
-        }
-        steeringSegment = {
-          steeringTargetRunId: segment.steeringTargetRunId,
-          refId: segment.refId,
-          refOrdinal: Number(segment.refOrdinal),
-          segmentOrdinal: Number(segment.segmentOrdinal),
-        };
-      }
-    }
     prepared.comment = {
       phase: projection.comment.phase,
       sourceKind: projection.comment.sourceKind,
       sourceId: requireNonEmptyString(projection.comment.sourceId, "Session projected comment source id"),
       messageId: requireNonEmptyString(projection.comment.messageId, "Session projected comment message id"),
-      ...(steeringSegment === undefined ? {} : { steeringSegment }),
       comment: {
         id: requireNonEmptyString(comment.id, "Session projected comment id"),
         body: redactTaskSessionPublicationValue(body, redactor),

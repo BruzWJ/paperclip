@@ -6,7 +6,6 @@ import {
   taskExecutionAuthorities,
   taskExecutionLeases,
   taskExecutionPromptCapabilities,
-  taskExecutionPromptSegments,
   taskExecutionRefs,
   taskExecutionRunControls,
   taskExecutionRunRefs,
@@ -152,32 +151,12 @@ function gatewayAuthorityRows(
         },
       ],
     ],
-    ...(row.segmentOrdinal === 0
-      ? []
-      : ([
-          [
-            taskExecutionPromptSegments,
-            [
-              {
-                companyId: row.companyId,
-                taskId: row.taskId,
-                sessionId: capability.sessionId,
-                attemptId: row.attemptId,
-                capabilityConnectionId: row.capabilityConnectionId,
-                capabilityGeneration: row.capabilityGeneration,
-                protocolSettlementState: null,
-                steeringState: "resumed",
-              },
-            ],
-          ],
-        ] as const)),
     [
       taskExecutionRunControls,
       [
         {
           currentRefId: row.refId,
           currentOrdinal: row.refOrdinal,
-          currentSegmentOrdinal: row.segmentOrdinal,
         },
       ],
     ],
@@ -190,10 +169,8 @@ function gatewayAuthorityRows(
           sessionId: capability.sessionId,
           runId: row.runId,
           runKind: "productive",
-          promptKind: row.segmentOrdinal === 0 ? "base" : "steering",
           refId: row.refId,
           refOrdinal: row.refOrdinal,
-          segmentOrdinal: row.segmentOrdinal,
           state: "running",
         },
       ],
@@ -216,17 +193,16 @@ function gatewayAuthorityRows(
       taskExecutionSessions,
       [
         {
+          id: row.targetSessionCorrelationId,
+          companyId: row.companyId,
           taskId: row.taskId,
           ownershipEpoch: row.ownershipEpoch,
           targetAgentId: row.targetAgentId,
           adapterConfigIdentity: row.adapterConfigIdentity,
           workspaceIdentity: row.workspaceIdentity,
-          purpose: "active_run_steering",
-          state: "current",
-          runId: row.runId,
-          currentRefId: row.refId,
-          currentRefOrdinal: row.refOrdinal,
-          currentSegmentOrdinal: row.segmentOrdinal,
+          state: "eligible",
+          laneKind: row.laneKind,
+          authorizedContextExposureDigest: row.effectiveContextExposureDigest,
         },
       ],
     ],

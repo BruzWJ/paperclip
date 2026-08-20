@@ -116,6 +116,7 @@ describe("budget-scope execution suspension", () => {
       },
       reason: "budget_hard_stop",
       at: now,
+      nativeContinuity: "revoke",
     });
     expect(
       value.lockActiveRunsForBudgetScopeInTransaction,
@@ -153,15 +154,20 @@ describe("scoped execution cancellation", () => {
         companyId: "company-1",
         taskId: "task-1",
         selector: { kind: "ownership_epoch", ownershipEpoch: 4 },
-        reason: "task_cancelled",
+        reason: "task_completed",
         actor: { kind: "system" },
         now,
+        nativeContinuity: "preserve_carry",
       });
 
     expect(value.events).toEqual(["run_locked", "refs_fenced"]);
     expect(requested.fence.refIds).toEqual([
       "ref-routed-after-finalization",
     ]);
+    expect(value.fenceRevokedExecutionAuthorityInTransaction).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({ nativeContinuity: "preserve_carry" }),
+    );
   });
 
   it("interrupts only running attempts without fencing queued refs", async () => {
@@ -211,6 +217,7 @@ describe("scoped execution cancellation", () => {
         reason: "task_cancelled",
         actor: { kind: "system" },
         now,
+        nativeContinuity: "revoke",
       },
     );
 

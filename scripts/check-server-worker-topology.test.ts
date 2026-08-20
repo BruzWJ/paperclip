@@ -13,14 +13,13 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
         return { acquireExecutionTargetForRun() {} };
       }
     `,
-    "apps/server/src/services/task-execution-attempt-executor.ts": `
+    "apps/server/src/services/task-execution-attempt-executor-part-3.ts": `
       import { executeAcpxOneShotPrompt } from "acpx";
       import { prepareAcpxRuntimeInvocation } from "acpx-invocation";
       const execute = executeAcpxOneShotPrompt;
       prepareAcpxRuntimeInvocation();
       createPaperclipRunToolsMcpServer();
       sessionCorrelations.resolveResume();
-      type Prompt = { promptKind: "base" | "steering" };
     `,
     "apps/server/src/services/task-execution-provider-configuration.ts": `
       interface TaskExecutionTargetAcquirer {}
@@ -105,7 +104,7 @@ describe("server/worker topology gate", () => {
 
   it("rejects bypassing the common ACPX lifecycle or request-scoped tools", () => {
     const files = canonicalFiles().map((file) =>
-      file.path === "apps/server/src/services/task-execution-attempt-executor.ts"
+      file.path === "apps/server/src/services/task-execution-attempt-executor-part-3.ts"
         ? {
             ...file,
             source: file.source

@@ -6,7 +6,6 @@ import {
   taskExecutionAuthorities,
   taskExecutionLeases,
   taskExecutionPromptCapabilities,
-  taskExecutionPromptSegments,
   taskExecutionRefs,
   taskExecutionRunControls,
   taskExecutionRunRefs,
@@ -17,6 +16,7 @@ import {
 import { and, eq, gt, sql } from "drizzle-orm";
 import { type PromptCapabilityAuthenticationResult } from "./prompt-capability-gateway.js";
 import { activeTaskTreePauseHoldExistsSql } from "./task-execution-lifecycle-gate.js";
+import { lifecycleAcceptsExecution, terminalExecutionRef } from "./task-execution-terminal-eligibility.js";
 import * as capabilityCore from "./prompt-capability-postgres-foundation.js";
 
 export function buildPromptCapabilityGatewayPostgresPromptCapabilityPostgresValidation(
@@ -56,7 +56,6 @@ export function buildPromptCapabilityGatewayPostgresPromptCapabilityPostgresVali
       agentRows,
       refRows,
       memberRows,
-      segmentRows,
       controlRows,
       attemptRows,
       leaseRows,
@@ -106,20 +105,6 @@ export function buildPromptCapabilityGatewayPostgresPromptCapabilityPostgresVali
           ),
         )
         .limit(1),
-      row.segmentOrdinal === 0
-        ? Promise.resolve([])
-        : db
-            .select()
-            .from(taskExecutionPromptSegments)
-            .where(
-              and(
-                eq(taskExecutionPromptSegments.runId, row.runId),
-                eq(taskExecutionPromptSegments.refId, row.refId),
-                eq(taskExecutionPromptSegments.refOrdinal, row.refOrdinal),
-                eq(taskExecutionPromptSegments.segmentOrdinal, row.segmentOrdinal),
-              ),
-            )
-            .limit(1),
       db
         .select()
         .from(taskExecutionRunControls)
@@ -172,6 +157,7 @@ export function buildPromptCapabilityGatewayPostgresPromptCapabilityPostgresVali
       return capabilityCore.invalid("company_inactive");
     }
     const task = taskRows[0];
+    const ref = refRows[0];
     if (
       !task ||
       task.companyId !== row.companyId ||
@@ -181,7 +167,14 @@ export function buildPromptCapabilityGatewayPostgresPromptCapabilityPostgresVali
     ) {
       return capabilityCore.invalid("ownership_epoch_changed");
     }
-    if (!["open", "blocked"].includes(task.lifecycleStatus)) {
+    const terminalEligible = ref
+      ? terminalExecutionRef({
+          sourceKind: ref.sourceKind,
+          messageKind: ref.messageKind,
+          mode: ref.mode,
+        })
+      : false;
+    if (!lifecycleAcceptsExecution({ lifecycleStatus: task.lifecycleStatus, terminalEligible })) {
       return capabilityCore.invalid("task_lifecycle_terminal");
     }
     if (task.executionPaused) {
@@ -196,7 +189,6 @@ export function buildPromptCapabilityGatewayPostgresPromptCapabilityPostgresVali
     ) {
       return capabilityCore.invalid("adapter_revision_changed");
     }
-    const ref = refRows[0];
     if (
       !ref ||
       ref.companyId !== row.companyId ||
@@ -221,33 +213,16 @@ export function buildPromptCapabilityGatewayPostgresPromptCapabilityPostgresVali
       member.batchDigest !== row.runBatchDigest ||
       member.attemptId !== row.attemptId ||
       member.protocolSettlementState !== null ||
-      (row.segmentOrdinal === 0 &&
-        (member.capabilityConnectionId !== row.capabilityConnectionId ||
-          member.capabilityGeneration !== row.capabilityGeneration))
+      member.capabilityConnectionId !== row.capabilityConnectionId ||
+      member.capabilityGeneration !== row.capabilityGeneration
     ) {
       return capabilityCore.invalid("run_ref_changed");
-    }
-    const segment = segmentRows[0];
-    if (
-      row.segmentOrdinal > 0 &&
-      (!segment ||
-        segment.companyId !== row.companyId ||
-        segment.taskId !== row.taskId ||
-        segment.sessionId !== run.sessionId ||
-        segment.attemptId !== row.attemptId ||
-        segment.capabilityConnectionId !== row.capabilityConnectionId ||
-        segment.capabilityGeneration !== row.capabilityGeneration ||
-        segment.protocolSettlementState !== null ||
-        segment.steeringState !== "resumed")
-    ) {
-      return capabilityCore.invalid("prompt_segment_changed");
     }
     const control = controlRows[0];
     if (
       !control ||
       control.currentRefId !== row.refId ||
-      control.currentOrdinal !== row.refOrdinal ||
-      control.currentSegmentOrdinal !== row.segmentOrdinal
+      control.currentOrdinal !== row.refOrdinal
     ) {
       return capabilityCore.invalid("current_prompt_changed");
     }
@@ -259,10 +234,8 @@ export function buildPromptCapabilityGatewayPostgresPromptCapabilityPostgresVali
       attempt.sessionId !== run.sessionId ||
       attempt.runId !== row.runId ||
       attempt.runKind !== run.kind ||
-      attempt.promptKind !== (row.segmentOrdinal === 0 ? "base" : "steering") ||
       attempt.refId !== row.refId ||
       attempt.refOrdinal !== row.refOrdinal ||
-      attempt.segmentOrdinal !== row.segmentOrdinal ||
       attempt.state !== "running"
     ) {
       return capabilityCore.invalid("attempt_changed");
@@ -326,22 +299,13 @@ export function buildPromptCapabilityGatewayPostgresPromptCapabilityPostgresVali
       correlation.adapterConfigIdentity === row.adapterConfigIdentity &&
       correlation.workspaceIdentity === row.workspaceIdentity,
     );
-    const currentCarry = Boolean(
+    const currentCorrelation = Boolean(
       sameCorrelationScope &&
-      correlation?.purpose === "carry" &&
       correlation.state === "eligible" &&
-      correlation.laneKind === row.laneKind,
+      correlation.laneKind === row.laneKind &&
+      correlation.authorizedContextExposureDigest === row.effectiveContextExposureDigest,
     );
-    const currentSteering = Boolean(
-      sameCorrelationScope &&
-      correlation?.purpose === "active_run_steering" &&
-      correlation.state === "current" &&
-      correlation.runId === row.runId &&
-      correlation.currentRefId === row.refId &&
-      correlation.currentRefOrdinal === row.refOrdinal &&
-      correlation.currentSegmentOrdinal === row.segmentOrdinal,
-    );
-    if (!currentCarry && !currentSteering) {
+    if (!currentCorrelation) {
       return capabilityCore.invalid("native_correlation_changed");
     }
 

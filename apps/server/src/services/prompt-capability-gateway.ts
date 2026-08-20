@@ -38,7 +38,6 @@ export interface PromptCapabilityCompileScope {
   readonly attemptId?: string;
   readonly refId?: string;
   readonly refOrdinal?: number;
-  readonly segmentOrdinal?: number;
 }
 
 /** One exact setup-or-active prompt capability generation. */
@@ -49,7 +48,6 @@ export interface PromptCapabilityIngressBinding extends PromptCapabilityCompileS
   readonly runBatchDigest: string;
   readonly refId: string;
   readonly refOrdinal: number;
-  readonly segmentOrdinal: number;
   readonly attemptId: string;
   readonly leaseId: string;
   readonly leaseGeneration: number;

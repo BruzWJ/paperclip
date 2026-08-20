@@ -155,10 +155,6 @@ export function assertExecutionSourceActorPair(source: admissionCore.TaskSession
         return;
       }
       break;
-    case "task_reopen":
-    case "human_comment":
-      if (source.actor.kind === "user/board") return;
-      break;
     case "routine_dispatch":
       if (source.actor.kind === "routine") return;
       break;
@@ -187,9 +183,7 @@ export function v2MessageKindForExecutionSource(
   assertExecutionSourceActorPair(source);
   switch (source.sourceKind) {
     case "task_reassignment":
-    case "task_reopen":
     case "routine_dispatch":
-    case "human_comment":
       return "user";
     case "task_request":
       return "user";

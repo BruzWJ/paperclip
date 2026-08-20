@@ -212,14 +212,7 @@ vi.mock("../services/index.js", () => ({
     })),
   })),
   createPostgresTaskExecutionProductionRuntime: vi.fn(() => ({
-    runService: {
-      reconcilePendingSteering: vi.fn(async () => ({
-        discovered: 0,
-        continued: 0,
-        pending: 0,
-        sourceCommentIds: [],
-      })),
-    },
+    runService: {},
     promptCapabilities: {
       gateway: {},
       pluginRunTaskContextReader: {},

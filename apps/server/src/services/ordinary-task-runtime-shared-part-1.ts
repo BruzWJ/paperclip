@@ -1,11 +1,5 @@
-import {
-  systemEscalationIdentities,
-  taskCreatorEdgeReceivability,
-  taskSessionContextEpochs,
-  taskSessions,
-  tasks,
-} from "@paperclipai/db";
-import type { TaskCreatorEdgeTerminalReason, TaskExecutionRefSourceKind } from "@paperclipai/shared";
+import { taskCreatorEdgeReceivability, taskSessionContextEpochs, taskSessions, tasks } from "@paperclipai/db";
+import type { TaskExecutionRefSourceKind } from "@paperclipai/shared";
 import { and, eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 export { canonicalJson } from "./canonical-json.js";
@@ -14,7 +8,6 @@ import type {
   RequestedScopedRunCancellations,
   TaskExecutionCancellationService,
 } from "./task-execution-cancellation.js";
-import { type TaskExecutionRunService } from "./task-execution-run-service.js";
 import { type TaskSessionAdmissionResult } from "./task-session/admission.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
@@ -23,13 +16,6 @@ export type TaskRow = typeof tasks.$inferSelect;
 export type CreatorEdgeRow = typeof taskCreatorEdgeReceivability.$inferSelect;
 
 export type TaskSessionRow = typeof taskSessions.$inferSelect;
-
-export type SystemEscalationIdentityRow = typeof systemEscalationIdentities.$inferSelect;
-
-export type ReopenCreatorEndpointState = {
-  terminalReason: TaskCreatorEdgeTerminalReason | null;
-  endpointTombstone: Record<string, unknown> | null;
-};
 
 export const NONTERMINAL = new Set(["open", "blocked"]);
 
@@ -199,14 +185,6 @@ export interface OrdinaryTaskCreateResult {
   retried: boolean;
 }
 
-export interface OrdinaryTaskBoardReopenInput {
-  companyId: string;
-  taskId: string;
-  actorUserId: string;
-  reason: string;
-  idempotencyKey: string;
-}
-
 export interface OrdinaryTaskUserCommentInput {
   companyId: string;
   taskId: string;
@@ -230,26 +208,17 @@ export interface OrdinaryTaskReassignInput {
   taskId: string;
   ownerAgentId: string;
   idempotencyKey: string;
-  creator:
-    | { kind: "user/board"; userId: string }
-    | {
-        kind: "plugin";
-        pluginInstallationId: string;
-        pluginKey: string;
-      };
+  creator: {
+    kind: "plugin";
+    pluginInstallationId: string;
+    pluginKey: string;
+  };
 }
 
 export interface OrdinaryTaskBoardReassignInput {
   companyId: string;
   taskId: string;
   ownerAgentId: string;
-  actorUserId: string;
-  idempotencyKey: string;
-}
-
-export interface OrdinaryTaskUserWithdrawalSelfAssignmentInput {
-  companyId: string;
-  taskId: string;
   actorUserId: string;
   idempotencyKey: string;
 }
@@ -272,10 +241,6 @@ export interface OrdinaryPluginWithdrawalInput {
 
 export interface OrdinaryTaskRuntimeOptions {
   clock?: () => Date;
-  taskExecutionRunService: Pick<
-    TaskExecutionRunService,
-    "requestSteeringInTransaction" | "continuePendingSteeringForSource"
-  >;
   taskExecutionCancellation: Pick<
     TaskExecutionCancellationService,
     "requestScopeCancellationsInTransaction" | "reconcileRequestedCancellations"

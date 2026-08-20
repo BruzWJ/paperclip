@@ -124,20 +124,6 @@ export async function materializeComment(
       commentId: input.comment.id,
     });
   }
-  if (
-    input.steeringSegment != null &&
-    (!input.steeringSegment.steeringTargetRunId ||
-      !input.steeringSegment.refId ||
-      !Number.isInteger(input.steeringSegment.refOrdinal) ||
-      input.steeringSegment.refOrdinal < 0 ||
-      !Number.isInteger(input.steeringSegment.segmentOrdinal) ||
-      input.steeringSegment.segmentOrdinal < 1)
-  ) {
-    throw new TaskSessionLifecycleConflict(
-      "Task Session comment projection has an invalid steering segment",
-      { eventId: event.id, commentId: input.comment.id },
-    );
-  }
   projectorCore.assertTaskSessionRunProgressProjection(event, input);
   const inbox = await transaction
     .select()
@@ -203,14 +189,10 @@ export async function materializeComment(
       sourceId: input.sourceId,
       messageId: input.messageId,
       runId: event.runId,
-      steeringTargetRunId: input.steeringSegment?.steeringTargetRunId ?? null,
       replyToCommentId: input.comment.replyToCommentId,
       replyToProjectedEventSeq: input.comment.replyToProjectedEventSeq,
       threadRootCommentId: input.comment.threadRootCommentId,
       threadRootProjectedEventSeq: input.comment.threadRootProjectedEventSeq,
-      refId: input.steeringSegment?.refId ?? null,
-      refOrdinal: input.steeringSegment?.refOrdinal ?? null,
-      segmentOrdinal: input.steeringSegment?.segmentOrdinal ?? null,
       terminalSessionMessageId: null,
       admittedEventSeq,
       promotedEventSeq,
@@ -239,14 +221,10 @@ export async function materializeComment(
       source.sourceId !== input.sourceId ||
       source.messageId !== input.messageId ||
       source.runId !== event.runId ||
-      source.steeringTargetRunId !== (input.steeringSegment?.steeringTargetRunId ?? null) ||
       source.replyToCommentId !== input.comment.replyToCommentId ||
       source.replyToProjectedEventSeq !== input.comment.replyToProjectedEventSeq ||
       source.threadRootCommentId !== input.comment.threadRootCommentId ||
-      source.threadRootProjectedEventSeq !== input.comment.threadRootProjectedEventSeq ||
-      source.refId !== (input.steeringSegment?.refId ?? null) ||
-      source.refOrdinal !== (input.steeringSegment?.refOrdinal ?? null) ||
-      source.segmentOrdinal !== (input.steeringSegment?.segmentOrdinal ?? null)
+      source.threadRootProjectedEventSeq !== input.comment.threadRootProjectedEventSeq
     ) {
       throw new TaskSessionLifecycleConflict("Task Session comment projection companion was reused", {
         commentId: comment.id,
@@ -386,7 +364,7 @@ export async function projectMoved(
       and(
         eq(taskExecutionSessions.companyId, eventRow.companyId),
         eq(taskExecutionSessions.taskId, eventRow.taskId),
-        inArray(taskExecutionSessions.state, ["eligible", "current"]),
+        eq(taskExecutionSessions.state, "eligible"),
       ),
     );
   await revokeTaskExecutionPromptCapabilitiesForSessionInTransaction(transaction, {

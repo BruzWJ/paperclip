@@ -2,7 +2,6 @@ import * as d from "./tasks-dependencies.js";
 
 import { taskServiceOperations } from "./tasks-operations.js";
 import * as taskShared from "./tasks-shared.js";
-import type { TaskControlStateUpdate } from "./tasks-shared-part-1.js";
 
 export function taskServicePart3(db: d.Db) {
   const context = taskShared.taskServiceContext(db);
@@ -15,155 +14,9 @@ export function taskServicePart3(db: d.Db) {
     loadBoardCommentThreadPage,
     loadBoardCommentThreadPages,
     getBoardCommentProjection,
-    syncTaskLabels,
-    syncBlockedByTaskIds,
   } = taskServiceOperations(context);
 
   return {
-    updateControlState: async (id: string, data: TaskControlStateUpdate, dbOrTx: any = db) => {
-      if (Object.prototype.hasOwnProperty.call(data, "executionWorkspaceId")) {
-        throw d.unprocessable(
-          "executionWorkspaceId is managed by the current task execution workspace binding",
-        );
-      }
-      for (const field of [
-        "request",
-        "title",
-        "parentId",
-        "parentOwnershipEpoch",
-        "ownerKind",
-        "ownerAgentId",
-        "ownerUserId",
-        "ownerAssignmentSource",
-        "ownershipEpoch",
-        "creatorKind",
-        "creatorAuthorityId",
-        "creatorAdapterConfigRevisionId",
-        "creatorUserId",
-        "creatorPluginInstallationId",
-        "creatorPluginKey",
-        "creatorCallbackKey",
-        "creatorCallbackVersion",
-        "creatorRoutineId",
-        "creatorRoutineDispatchId",
-        "creatorSystemSourceKind",
-        "creatorSystemSourceId",
-        "lifecycleStatus",
-        "disposition",
-        "completedAt",
-        "cancelledAt",
-      ] as const) {
-        if (Object.prototype.hasOwnProperty.call(data, field)) {
-          throw d.unprocessable(`Task ${field} is immutable or has a dedicated canonical command`);
-        }
-      }
-      const existing = await dbOrTx
-        .select()
-        .from(d.tasks)
-        .where(d.eq(d.tasks.id, id))
-        .then((rows: Array<typeof d.tasks.$inferSelect>) => rows[0] ?? null);
-      if (!existing) return null;
-
-      const { labelIds: nextLabelIds, blockedByTaskIds, actorAgentId, actorUserId, ...taskData } = data;
-      if (taskData.boardPresentationStatus) {
-        taskShared.assertTransition(existing.boardPresentationStatus, taskData.boardPresentationStatus);
-      }
-
-      const patch: Partial<typeof d.tasks.$inferInsert> = {
-        ...taskData,
-        updatedAt: new Date(),
-      };
-      if (taskData.requestDepth !== undefined) {
-        patch.requestDepth = d.clampTaskRequestDepth(taskData.requestDepth);
-      }
-
-      if (
-        patch.boardPresentationStatus === "in_progress" &&
-        !existing.ownerAgentId &&
-        !existing.ownerUserId
-      ) {
-        throw d.unprocessable("in_progress tasks require an owner");
-      }
-      if (patch.boardPresentationStatus === "in_progress") {
-        const unresolvedBlockerTaskIds =
-          blockedByTaskIds !== undefined
-            ? await taskShared.listUnresolvedBlockerTaskIds(dbOrTx, existing.companyId, blockedByTaskIds)
-            : ((await taskShared.listTaskDependencyReadinessMap(dbOrTx, existing.companyId, [id])).get(id)
-                ?.unresolvedBlockerTaskIds ?? []);
-        if (unresolvedBlockerTaskIds.length > 0) {
-          throw d.unprocessable("Task is blocked by unresolved blockers", {
-            unresolvedBlockerTaskIds,
-          });
-        }
-      }
-      if (
-        patch.boardPresentationStatus === "in_progress" &&
-        existing.ownerKind === "agent" &&
-        existing.ownerAgentId
-      ) {
-        try {
-          await d.resolveInvokableTaskOwnerFromDb(dbOrTx as d.Db, {
-            companyId: existing.companyId,
-            ownerAgentId: existing.ownerAgentId,
-          });
-        } catch (error) {
-          if (error instanceof d.InvokableTaskOwnerRejected) {
-            throw d.conflict("Task owner must be an invokable task owner", {
-              code: "task_owner_not_invokable",
-              reason: error.reason,
-              companyId: existing.companyId,
-              ownerAgentId: existing.ownerAgentId,
-              ...error.details,
-            });
-          }
-          throw error;
-        }
-      }
-      taskShared.applyStatusSideEffects(taskData.boardPresentationStatus, patch);
-      if (taskData.boardPresentationStatus && taskData.boardPresentationStatus !== "done") {
-        patch.completedAt = null;
-      }
-      if (taskData.boardPresentationStatus && taskData.boardPresentationStatus !== "cancelled") {
-        patch.cancelledAt = null;
-      }
-      const runUpdate = async (tx: any) => {
-        const defaultCompanyGoal = await d.getDefaultCompanyGoal(tx, existing.companyId);
-
-        patch.goalId = d.resolveNextTaskGoalId({
-          currentProjectId: existing.projectId,
-          currentGoalId: existing.goalId,
-          projectId: taskData.projectId,
-          goalId: taskData.goalId,
-          defaultGoalId: defaultCompanyGoal?.id ?? null,
-        });
-        const updated = await tx
-          .update(d.tasks)
-          .set(patch)
-          .where(d.eq(d.tasks.id, id))
-          .returning()
-          .then((rows: Array<typeof d.tasks.$inferSelect>) => rows[0] ?? null);
-        if (!updated) return null;
-        if (nextLabelIds !== undefined) {
-          await syncTaskLabels(updated.id, existing.companyId, nextLabelIds, tx);
-        }
-        if (blockedByTaskIds !== undefined) {
-          await syncBlockedByTaskIds(
-            updated.id,
-            existing.companyId,
-            blockedByTaskIds,
-            {
-              agentId: actorAgentId ?? null,
-              userId: actorUserId ?? null,
-            },
-            tx,
-          );
-        }
-        const [enriched] = await taskShared.withTaskLabels(tx, [updated]);
-        return enriched;
-      };
-
-      return dbOrTx === db ? db.transaction(runUpdate) : runUpdate(dbOrTx);
-    },
     listLabels: (companyId: string) =>
       db
         .select()

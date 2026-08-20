@@ -9,6 +9,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { conflict, unprocessable } from "../errors.js";
 
 import { recordNamedBoardLifecycleCommandInTransaction } from "./task-board-lifecycle-command.js";
+import type { TaskExecutionCancellationService } from "./task-execution-cancellation.js";
 import {
   type TaskExecutionPolicyActor,
   applyTaskExecutionPolicyTransition,
@@ -24,10 +25,22 @@ import {
 /**
  * The board execution-policy control plane is intentionally separate from
  * generic task metadata mutation. It can configure policy and append stage
- * decisions, but it never owns a task, advances its ownership epoch, writes
- * a provider message, or dispatches an execution.
+ * decisions. Final approval stops outstanding work while preserving native
+ * carry, but this service never owns a task, advances its ownership epoch,
+ * writes a provider message, or dispatches an execution.
  */
-export function taskExecutionPolicyControlService(db: Db, options: { clock?: () => Date } = {}) {
+type TaskExecutionPolicyCancellationPort = Pick<
+  TaskExecutionCancellationService,
+  "requestScopeCancellationsInTransaction" | "reconcileRequestedCancellations"
+>;
+
+export function taskExecutionPolicyControlService(
+  db: Db,
+  options: {
+    clock?: () => Date;
+    taskExecutionCancellation: TaskExecutionPolicyCancellationPort;
+  },
+) {
   const clock = options.clock ?? (() => new Date());
 
   return {
@@ -108,7 +121,7 @@ export function taskExecutionPolicyControlService(db: Db, options: { clock?: () 
         idempotencyKey,
       });
 
-      return db.transaction(async (tx) => {
+      const committed = await db.transaction(async (tx) => {
         const task = await policyControl.lockTaskForExecutionPolicy(tx, input.companyId, input.taskId);
         const existingDecision = await tx
           .select()
@@ -144,6 +157,7 @@ export function taskExecutionPolicyControlService(db: Db, options: { clock?: () 
           return {
             task,
             decision: existingDecision,
+            cancellations: null,
             retried: true,
           };
         }
@@ -256,6 +270,23 @@ export function taskExecutionPolicyControlService(db: Db, options: { clock?: () 
           throw conflict("Task lifecycle or ownership changed during its execution-policy decision");
         }
 
+        const cancellations = finalApproval
+          ? await options.taskExecutionCancellation.requestScopeCancellationsInTransaction(tx, {
+              companyId: input.companyId,
+              taskId: updated.id,
+              selector: {
+                kind: "ownership_epoch",
+                ownershipEpoch: updated.ownershipEpoch,
+              },
+              reason: "task_completed",
+              actor: input.actor.userId
+                ? { kind: "user", userId: input.actor.userId }
+                : { kind: "agent", agentId: input.actor.agentId! },
+              now,
+              nativeContinuity: "preserve_carry",
+            })
+          : null;
+
         if (input.actor.userId) {
           await recordNamedBoardLifecycleCommandInTransaction(tx, {
             companyId: input.companyId,
@@ -271,9 +302,19 @@ export function taskExecutionPolicyControlService(db: Db, options: { clock?: () 
         return {
           task: updated,
           decision: insertedDecision,
+          cancellations,
           retried: false,
         };
       });
+      if (committed.cancellations) {
+        void options.taskExecutionCancellation
+          .reconcileRequestedCancellations(committed.cancellations)
+          .catch(() => {
+            // The durable cancellation-intent reconciler retries this signal.
+          });
+      }
+      const { cancellations: _, ...result } = committed;
+      return result;
     },
   };
 }

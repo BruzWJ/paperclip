@@ -205,16 +205,6 @@ export function createContextRetrievalDbRepository(
                   and member.prompt_transmission_phase = 'transmitted'
                   and source_ref.source_message_id = ${taskSessionMessages.id}
               )`,
-              sql`exists (
-                select 1
-                from task_execution_prompt_segments segment
-                where segment.company_id = ${companyId}
-                  and segment.task_id = ${run.taskId}
-                  and segment.session_id = ${run.sessionId}
-                  and segment.run_id = ${runId}
-                  and segment.prompt_transmission_phase = 'transmitted'
-                  and segment.source_message_id = ${taskSessionMessages.id}
-              )`,
             ),
             after
               ? or(

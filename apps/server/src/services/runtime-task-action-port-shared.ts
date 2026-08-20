@@ -109,6 +109,7 @@ export async function revokeOutgoingOwnershipEpoch(
     reason: "ownership_epoch_advanced",
     actor: input.cancellationActor,
     now: input.now,
+    nativeContinuity: "revoke",
   });
 
   const directChildren = await tx
@@ -193,21 +194,10 @@ function ownerChoiceFromCanonical(
     : { kind: "agent", agentId: ownerAgentId };
 }
 
-function requireRuntimeMessage(command: { message?: string }): string {
-  if (command.message === undefined) {
-    throw new RuntimeTaskActionConflict("Normalized runtime action is missing its required message");
-  }
-  return command.message;
-}
-
 function runtimeTaskUpdateTarget(command: AgentRunManagedActionInvocation<"task_update">["command"]): {
   taskId?: string;
 } {
-  if (command.taskTarget === "active") return {};
-  if (command.taskTarget === "explicit") return { taskId: command.taskId };
-  throw new RuntimeTaskActionConflict(
-    "Runtime task_update lost its canonical active-versus-explicit target intent",
-  );
+  return command.taskTarget === "explicit" ? { taskId: command.taskId } : {};
 }
 
 /** Closed adapter from normalized managed-tool commands to the transactional service. */
@@ -238,13 +228,12 @@ export function createRuntimeTaskActionPort(service: RuntimeTaskActionService): 
     async taskUpdate(input) {
       const { command, authority } = input;
       const target = runtimeTaskUpdateTarget(command);
-      const message = requireRuntimeMessage(command);
       if (command.status === undefined) {
         return service.update({
           capability: authority.capability,
           invocationId: authority.invocation.id,
           ...target,
-          message,
+          message: command.message,
         });
       }
       if (command.status === "done" || command.status === "cancelled") {
@@ -257,7 +246,7 @@ export function createRuntimeTaskActionPort(service: RuntimeTaskActionService): 
           capability: authority.capability,
           invocationId: authority.invocation.id,
           status: command.status,
-          message,
+          message: command.message,
           ...(Object.hasOwn(command, "structuredResult")
             ? { structuredResult: command.structuredResult }
             : {}),
@@ -269,7 +258,7 @@ export function createRuntimeTaskActionPort(service: RuntimeTaskActionService): 
           invocationId: authority.invocation.id,
           ...target,
           status: command.status,
-          message,
+          message: command.message,
         });
       }
       throw new RuntimeTaskActionConflict("Runtime task_update has an unsupported canonical status");

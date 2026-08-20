@@ -1,7 +1,6 @@
 import {
   taskExecutionLeases,
   taskExecutionPromptCapabilities,
-  taskExecutionPromptSegments,
   taskExecutionRunRefs,
 } from "@paperclipai/db";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
@@ -51,7 +50,6 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart2(
               eq(taskExecutionPromptCapabilities.runId, prompt.identity.runId),
               eq(taskExecutionPromptCapabilities.refId, prompt.identity.refId),
               eq(taskExecutionPromptCapabilities.refOrdinal, prompt.identity.refOrdinal),
-              eq(taskExecutionPromptCapabilities.segmentOrdinal, prompt.identity.segmentOrdinal),
               eq(taskExecutionPromptCapabilities.attemptId, prompt.identity.attemptId),
               eq(taskExecutionPromptCapabilities.leaseId, prompt.identity.leaseId),
               eq(taskExecutionPromptCapabilities.leaseGeneration, prompt.identity.leaseGeneration),
@@ -168,42 +166,22 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart2(
           Math.min(lease.expiresAt.getTime(), timestamp.getTime() + capabilityTtlMs),
         );
         if (expiresAt <= timestamp) promptCycle.reject("prompt lease expired before capability mint");
-        const ownerRows =
-          prompt.identity.promptKind === "base"
-            ? await transaction
-                .update(taskExecutionRunRefs)
-                .set({
-                  attemptId: prompt.identity.attemptId,
-                  capabilityConnectionId,
-                  capabilityGeneration,
-                })
-                .where(
-                  and(
-                    eq(taskExecutionRunRefs.runId, prompt.identity.runId),
-                    eq(taskExecutionRunRefs.refId, prompt.identity.refId),
-                    eq(taskExecutionRunRefs.refOrdinal, prompt.identity.refOrdinal),
-                    sql`${taskExecutionRunRefs.protocolSettlementState} is null`,
-                  ),
-                )
-                .returning({ runId: taskExecutionRunRefs.runId })
-            : await transaction
-                .update(taskExecutionPromptSegments)
-                .set({
-                  attemptId: prompt.identity.attemptId,
-                  capabilityConnectionId,
-                  capabilityGeneration,
-                })
-                .where(
-                  and(
-                    eq(taskExecutionPromptSegments.runId, prompt.identity.runId),
-                    eq(taskExecutionPromptSegments.refId, prompt.identity.refId),
-                    eq(taskExecutionPromptSegments.refOrdinal, prompt.identity.refOrdinal),
-                    eq(taskExecutionPromptSegments.segmentOrdinal, prompt.identity.segmentOrdinal),
-                    eq(taskExecutionPromptSegments.steeringState, "resumed"),
-                    sql`${taskExecutionPromptSegments.protocolSettlementState} is null`,
-                  ),
-                )
-                .returning({ runId: taskExecutionPromptSegments.runId });
+        const ownerRows = await transaction
+          .update(taskExecutionRunRefs)
+          .set({
+            attemptId: prompt.identity.attemptId,
+            capabilityConnectionId,
+            capabilityGeneration,
+          })
+          .where(
+            and(
+              eq(taskExecutionRunRefs.runId, prompt.identity.runId),
+              eq(taskExecutionRunRefs.refId, prompt.identity.refId),
+              eq(taskExecutionRunRefs.refOrdinal, prompt.identity.refOrdinal),
+              sql`${taskExecutionRunRefs.protocolSettlementState} is null`,
+            ),
+          )
+          .returning({ runId: taskExecutionRunRefs.runId });
         if (ownerRows.length !== 1) promptCycle.reject("capability mint lost its prompt owner");
         await transaction.insert(taskExecutionPromptCapabilities).values({
           companyId: prompt.identity.companyId,
@@ -213,7 +191,6 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart2(
           runBatchDigest: prompt.identity.runBatchDigest,
           refId: prompt.identity.refId,
           refOrdinal: prompt.identity.refOrdinal,
-          segmentOrdinal: prompt.identity.segmentOrdinal,
           attemptId: prompt.identity.attemptId,
           leaseId: prompt.identity.leaseId,
           leaseGeneration: prompt.identity.leaseGeneration,

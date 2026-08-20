@@ -9,9 +9,7 @@ import { createPostgresTaskExecutionDispatcherRepository } from "./task-executio
 import { createPostgresTaskExecutionFinalizationWriter } from "./task-execution-finalization-postgres.js";
 import { createPostgresTaskExecutionPromptCycleRepository } from "./task-execution-prompt-cycle-postgres.js";
 import { createTaskExecutionTargetAcquirer } from "./task-execution-provider-configuration.js";
-import { createPostgresTaskExecutionSteeringRepository } from "./task-execution-run-postgres.js";
 import { createTaskExecutionRunService } from "./task-execution-run-service.js";
-import type { TaskExecutionSteeringResultBroker } from "./task-execution-steering-results.js";
 import type { TaskSessionStore } from "./task-session/store.js";
 import { createAuthenticatedNativeCorrelationProtector } from "./native-correlation-postgres.js";
 import { createNativeCorrelationService } from "./native-correlation.js";
@@ -37,7 +35,6 @@ export interface PostgresTaskExecutionProductionRuntimeOptions {
   readonly pluginDomainEvents: PluginDomainEventPublisher;
   /** Generic blocking plugin lifecycle run before every provider prompt. */
   readonly beforePrompt: PluginBeforePromptDispatcher;
-  readonly steeringResults: TaskExecutionSteeringResultBroker;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
   readonly leaseTtlMs?: number;
@@ -73,38 +70,9 @@ export function createPostgresTaskExecutionProductionRuntime(
   let dispatcher: TaskExecutionDispatcher | null = null;
   let cancellation: ReturnType<typeof createTaskExecutionCancellationService> | null = null;
 
-  const steeringRepository = createPostgresTaskExecutionSteeringRepository(database, { now, idFactory });
   const runService = createTaskExecutionRunService({
     database,
     taskSessionStore: options.taskSessionStore,
-    repository: steeringRepository,
-    cancellation: {
-      signalAttemptCancellation(input) {
-        return Boolean(dispatcher?.signalAttemptCancellation(input));
-      },
-    },
-    resume: {
-      async resumeSteering(input) {
-        const run = await runService.readRun({
-          companyId: input.companyId,
-          taskId: input.taskId,
-          runId: input.runId,
-        });
-        if (
-          !run ||
-          run.status !== "running" ||
-          run.ownershipEpoch !== input.ownershipEpoch ||
-          run.targetAgentId !== input.targetAgentId
-        ) {
-          throw new Error("Steering resume lost its canonical active run");
-        }
-        if (!dispatcher) {
-          throw new Error("Task-execution dispatcher is not initialized");
-        }
-        await dispatcher.notifyPersistedRef(input.refId);
-      },
-    },
-    steeringResults: options.steeringResults,
   });
   const promptCapabilities = createPostgresPromptCapabilityRuntime(database, {
     runService,
@@ -168,7 +136,6 @@ export function createPostgresTaskExecutionProductionRuntime(
   dispatcher = createTaskExecutionDispatcher({
     repository,
     executor: attemptExecutor,
-    steeringResults: options.steeringResults,
     workerId: options.workerId,
     now,
   });

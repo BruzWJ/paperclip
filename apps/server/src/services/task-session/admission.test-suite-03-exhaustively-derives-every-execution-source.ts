@@ -1,8 +1,6 @@
 import * as t from "./admission.test-support.js";
-import {
-  assertDispatchingExecutionSource,
-  dispatchingExecutionSourceIdentityDigests,
-} from "./admission.js";
+import { assertDispatchingExecutionSource } from "./admission.js";
+import { terminalExecutionRef } from "../task-execution-terminal-eligibility.js";
 const { describe, it, expect, v2MessageKindForExecutionSource } = t;
 const { resolveDispatchingExecutionBatchMessageKinds } = t;
 const { previousOwnershipEpochForDispatchSource } = t;
@@ -41,10 +39,6 @@ const sourceCases = {
     source: { sourceKind: "task_reassignment", actor: agentActor },
     expected: "user",
   },
-  task_reopen: {
-    source: { sourceKind: "task_reopen", actor: userActor },
-    expected: "user",
-  },
   mention_agent: {
     source: { sourceKind: "mention_agent", actor: userActor },
     expected: "user",
@@ -60,13 +54,6 @@ const sourceCases = {
   system_nudge: {
     source: { sourceKind: "system_nudge", actor: systemActor },
     expected: "synthetic",
-  },
-  human_comment: {
-    source: {
-      sourceKind: "human_comment",
-      actor: userActor,
-    },
-    expected: "user",
   },
 } satisfies Record<
   t.TaskSessionExecutionSource["sourceKind"],
@@ -163,22 +150,19 @@ describe("Task Session canonical source authorship", () => {
     ).toThrow("Mention execution mode does not match its immutable actor provenance");
   });
 
-  it("derives only the matching immutable legacy digest for migrated mention retries", () => {
-    const boardDigests = dispatchingExecutionSourceIdentityDigests(boardMention, "user");
-    const agentDigests = dispatchingExecutionSourceIdentityDigests(agentMention, "synthetic");
-    const changedBoardDigests = dispatchingExecutionSourceIdentityDigests(
-      { ...boardMention, exactText: "Changed bytes" },
-      "user",
-    );
-
-    expect(boardDigests.compatibleIdentityDigests).toHaveLength(1);
-    expect(agentDigests.compatibleIdentityDigests).toHaveLength(1);
-    expect(boardDigests.compatibleIdentityDigests[0]).not.toBe(boardDigests.identityDigest);
-    expect(agentDigests.compatibleIdentityDigests[0]).not.toBe(agentDigests.identityDigest);
-    expect(changedBoardDigests.identityDigest).not.toBe(boardDigests.identityDigest);
-    expect(changedBoardDigests.compatibleIdentityDigests).not.toContain(
-      boardDigests.compatibleIdentityDigests[0],
-    );
+  it("admits only Board conversations and their synthetic bootstrap on terminal tasks", () => {
+    const eligible = [
+      { sourceKind: "mention_agent", messageKind: "user", mode: "owner" },
+      { sourceKind: "task_update", messageKind: "user", mode: "owner" },
+      { sourceKind: "task_request", messageKind: "synthetic", mode: "owner" },
+    ] as const;
+    const ineligible = [
+      { sourceKind: "task_request", messageKind: "user", mode: "owner" },
+      { sourceKind: "task_update", messageKind: "synthetic", mode: "owner" },
+      { sourceKind: "mention_agent", messageKind: "user", mode: "consult" },
+    ] as const;
+    expect(eligible.every(terminalExecutionRef)).toBe(true);
+    expect(ineligible.every((input) => !terminalExecutionRef(input))).toBe(true);
   });
 
   it("keeps every standalone task request user-authored", () => {

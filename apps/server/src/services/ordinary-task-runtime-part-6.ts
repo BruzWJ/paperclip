@@ -1,6 +1,5 @@
 import {
   pluginWithdrawalOperations,
-  taskCreatorWithdrawalCommands,
   taskExecutionAuthorities,
   taskSessions,
   taskUpdates,
@@ -9,7 +8,6 @@ import {
 } from "@paperclipai/db";
 import { and, eq, sql } from "drizzle-orm";
 import { reserveTaskExecutionWorkspaceBinding } from "./execution-workspaces.js";
-import { createOrdinaryTaskReassignmentCommitter } from "./ordinary-task-runtime-reassignment.js";
 import {
   NONTERMINAL,
   OrdinaryTaskRuntimeRejected,
@@ -20,7 +18,7 @@ import {
   recordedPluginWithdrawalTask,
   withOrdinaryWorkspaceReservationErrors,
 } from "./ordinary-task-runtime-shared.js";
-import { createTaskFormCommitRuntime, revokeOutgoingOwnershipEpoch } from "./runtime-task-action-port.js";
+import { revokeOutgoingOwnershipEpoch } from "./runtime-task-action-port.js";
 import { createTaskSessionAdmissionService } from "./task-session/admission.js";
 import type {
   OrdinaryPluginWithdrawalInput,
@@ -30,19 +28,9 @@ import type {
 export function createOrdinaryTaskRuntimePart6(db: Db, options: OrdinaryTaskRuntimeOptions) {
   const clock = options.clock ?? (() => new Date());
   const sessions = createTaskSessionAdmissionService(db, { clock });
-  const taskForms = createTaskFormCommitRuntime(db, {
-    clock,
-    dispatchPersistedRef: options.dispatchRef,
-    taskExecutionCancellation: options.taskExecutionCancellation,
-  });
   async function dispatch(refId: string): Promise<void> {
     await options.dispatchRef(refId);
   }
-  const commitAgentOwnerReassignmentInTransaction = createOrdinaryTaskReassignmentCommitter({
-    options,
-    clock,
-    sessions,
-  });
 
   return {
     async withdrawPluginTask(input: OrdinaryPluginWithdrawalInput) {
@@ -73,32 +61,16 @@ export function createOrdinaryTaskRuntimePart6(db: Db, options: OrdinaryTaskRunt
               "plugin_withdrawal_not_prepared",
             );
           }
-          const withdrawalCommandId = deterministicUuid("plugin-creator-withdrawal-command", operation.id);
           if (operation.state === "accepted") {
             const task = recordedPluginWithdrawalTask(operation.result);
-            const command = await tx
-              .select()
-              .from(taskCreatorWithdrawalCommands)
-              .where(eq(taskCreatorWithdrawalCommands.id, withdrawalCommandId))
-              .limit(1)
-              .then((rows) => rows[0] ?? null);
             if (
               !task ||
-              !command ||
-              command.companyId !== input.companyId ||
-              command.taskId !== operation.taskId ||
-              command.actorKind !== "plugin" ||
-              command.actorUserId !== null ||
-              command.actorPluginInstallationId !== input.pluginInstallationId ||
-              command.actorPluginKey !== input.pluginKey ||
-              command.pluginWithdrawalOperationId !== operation.id ||
-              command.taskUpdateId !== operation.taskUpdateId ||
-              command.resultingCreatorEdgeId !== null ||
-              command.resultingOwnershipEpoch !== task.ownershipEpoch ||
-              command.outgoingOwnershipEpoch + 1 !== command.resultingOwnershipEpoch
+              task.id !== operation.taskId ||
+              operation.taskUpdateId === null ||
+              operation.mutationCommentId === null
             ) {
               throw new OrdinaryTaskRuntimeRejected(
-                "Accepted plugin withdrawal is missing its canonical command",
+                "Accepted plugin withdrawal is missing its canonical result",
                 "plugin_withdrawal_result_missing",
               );
             }
@@ -318,31 +290,6 @@ export function createOrdinaryTaskRuntimePart6(db: Db, options: OrdinaryTaskRunt
             throw new OrdinaryTaskRuntimeRejected(
               "Plugin withdrawal operation was not accepted",
               "plugin_withdrawal_operation_missing",
-            );
-          }
-          const command = await tx
-            .insert(taskCreatorWithdrawalCommands)
-            .values({
-              id: withdrawalCommandId,
-              companyId: input.companyId,
-              taskId: task.id,
-              outgoingOwnershipEpoch: task.ownershipEpoch,
-              resultingOwnershipEpoch: ownershipEpoch,
-              resultingCreatorEdgeId: null,
-              actorKind: "plugin",
-              actorUserId: null,
-              actorPluginInstallationId: input.pluginInstallationId,
-              actorPluginKey: input.pluginKey,
-              pluginWithdrawalOperationId: operation.id,
-              taskUpdateId: update.id,
-              acceptedAt: now,
-            })
-            .returning()
-            .then((rows) => rows[0] ?? null);
-          if (!command) {
-            throw new OrdinaryTaskRuntimeRejected(
-              "Plugin withdrawal command was not persisted",
-              "plugin_withdrawal_command_missing",
             );
           }
           return {

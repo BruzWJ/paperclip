@@ -24,6 +24,7 @@ import {
   exactlyOne,
   reject,
 } from "./task-execution-dispatcher-postgres-part-1.js";
+import { terminalExecutionRefSql } from "./task-execution-terminal-eligibility.js";
 import {
   assertRefDispatchable,
   consultSourceRunIsFinalized,
@@ -216,15 +217,17 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup2(
         .limit(1)
         .for("update");
       await lockTaskTreeExecutionGate(transaction, input.lane.companyId, input.lane.taskId);
-      const paused = await transaction
+      const taskState = await transaction
         .select({
           active: activeTaskTreePauseHoldExistsSql(input.lane.companyId, input.lane.taskId),
+          lifecycleStatus: tasks.lifecycleStatus,
         })
         .from(tasks)
         .where(and(eq(tasks.companyId, input.lane.companyId), eq(tasks.id, input.lane.taskId)))
         .limit(1)
-        .then((rows) => rows[0]?.active === true);
-      if (paused) return { kind: "queued" };
+        .then((rows) => rows[0] ?? null);
+      if (!taskState || taskState.active) return { kind: "queued" };
+      const terminal = taskState.lifecycleStatus === "done" || taskState.lifecycleStatus === "cancelled";
       let existing = await findExistingRunForLane(transaction, input.lane);
       if (existing) {
         const expiredRun = existing;
@@ -271,6 +274,7 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup2(
             eq(taskExecutionRefs.targetAgentId, input.lane.targetAgentId),
             eq(taskExecutionRefs.disposition, "active"),
             taskExecutionRefDeliveryEligibilitySql("dispatch"),
+            terminal ? terminalExecutionRefSql() : undefined,
             occupiedRefIds.length === 0 ? undefined : notInArray(taskExecutionRefs.id, [...occupiedRefIds]),
           ),
         )

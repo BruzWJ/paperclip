@@ -5,13 +5,12 @@ import {
   taskExecutionHistoryViews,
   taskExecutionRefs,
   taskSessionEvents,
-  taskSessionInputDispositions,
   taskSessionInputs,
 } from "@paperclipai/db";
 
 import * as TaskSession from "@paperclipai/shared/task-session";
 
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type { TaskSessionCommentProjectionInput } from "./projector.js";
 
@@ -25,55 +24,12 @@ import { publishTaskSessionEventInTx } from "./publication.js";
 
 import { TaskSessionInvariantError, TaskSessionLifecycleConflict } from "./store.js";
 
-import { readOccupiedTaskExecutionRefIds } from "../task-execution-run-service.js";
 import {
-  type ActiveExecution,
   type PendingCandidate,
   type TaskSessionInputRecord,
   deterministicUuid,
   digest,
 } from "./input-part-1.js";
-import { candidateMatchesScope } from "./input-part-2.js";
-
-export async function loadPendingCandidates(
-  transaction: TaskSessionDbTransaction,
-  active: ActiveExecution,
-): Promise<PendingCandidate[]> {
-  const rows = await transaction
-    .select({
-      inbox: taskSessionInputs,
-      disposition: taskSessionInputDispositions,
-      ref: taskExecutionRefs,
-      view: taskExecutionHistoryViews,
-    })
-    .from(taskSessionInputs)
-    .innerJoin(taskSessionInputDispositions, eq(taskSessionInputDispositions.inputId, taskSessionInputs.id))
-    .innerJoin(taskExecutionRefs, eq(taskExecutionRefs.id, taskSessionInputDispositions.sourceRefId))
-    .innerJoin(taskExecutionHistoryViews, eq(taskExecutionHistoryViews.id, taskExecutionRefs.historyViewId))
-    .where(
-      and(
-        eq(taskSessionInputs.companyId, active.ref.companyId),
-        eq(taskSessionInputs.taskId, active.ref.taskId),
-        eq(taskSessionInputs.sessionId, active.ref.sessionId),
-        isNull(taskSessionInputs.promotedSeq),
-        eq(taskSessionInputDispositions.state, "active"),
-      ),
-    )
-    .orderBy(asc(taskSessionInputs.admittedSeq))
-    .for("update");
-  const candidateRefIds = [...new Set(rows.map((row) => row.ref.id))];
-  const occupiedRefIds = new Set(
-    await readOccupiedTaskExecutionRefIds(transaction, {
-      companyId: active.ref.companyId,
-      taskId: active.ref.taskId,
-      sessionId: active.ref.sessionId,
-      refIds: candidateRefIds,
-    }),
-  );
-  return rows.filter((candidate) =>
-    candidateMatchesScope(active, candidate, occupiedRefIds.has(candidate.ref.id)),
-  );
-}
 
 export async function promoteCandidate(
   transaction: TaskSessionDbTransaction,
@@ -159,7 +115,6 @@ export async function promoteCandidate(
         messageID: inbox.id,
         timestamp: inbox.timeCreated.getTime(),
         prompt: inbox.prompt,
-        delivery: inbox.delivery,
       },
     },
     envelope: {
@@ -187,16 +142,6 @@ export async function promoteCandidate(
         sourceKind: comment.canonicalSourceKind as TaskSessionCommentProjectionInput["sourceKind"],
         sourceId: comment.canonicalSourceId,
         messageId: inbox.id,
-        ...(commentSource.refId === null
-          ? {}
-          : {
-              steeringSegment: {
-                steeringTargetRunId: commentSource.steeringTargetRunId!,
-                refId: commentSource.refId,
-                refOrdinal: commentSource.refOrdinal!,
-                segmentOrdinal: commentSource.segmentOrdinal!,
-              },
-            }),
         comment: {
           id: comment.id,
           body: comment.body,
@@ -303,20 +248,4 @@ export async function promoteCandidate(
     throw new TaskSessionInvariantError(`Task Session projector did not promote input ${inbox.id}`);
   }
   return promoted[0];
-}
-
-export function exactTextOnlyPrompt(value: unknown): value is {
-  readonly text: string;
-  readonly files?: readonly never[];
-  readonly agents?: readonly never[];
-} {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const prompt = value as Record<string, unknown>;
-  return (
-    typeof prompt.text === "string" &&
-    (prompt.files === undefined || (Array.isArray(prompt.files) && prompt.files.length === 0)) &&
-    (prompt.agents === undefined || (Array.isArray(prompt.agents) && prompt.agents.length === 0))
-  );
 }

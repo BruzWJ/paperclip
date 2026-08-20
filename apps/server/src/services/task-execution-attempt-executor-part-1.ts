@@ -63,11 +63,8 @@ export interface TaskExecutionPromptIdentity extends TaskExecutionAttemptLease {
   readonly executionScopeId: string;
   readonly runBatchDigest: string;
   readonly runKind: "productive" | "consult";
-  readonly promptKind: "base" | "steering";
   readonly refId: string;
   readonly refOrdinal: number;
-  /** Base prompts use zero; persisted positive segments are steering. */
-  readonly segmentOrdinal: number;
   readonly attemptGeneration: number;
   readonly targetAgentId: string;
   readonly laneKind: "owner" | "consult";
@@ -79,6 +76,8 @@ export interface TaskExecutionPromptIdentity extends TaskExecutionAttemptLease {
 
 export interface ResolvedTaskExecutionPrompt {
   readonly identity: TaskExecutionPromptIdentity;
+  /** Terminal task turns run with read-only ACPX and Paperclip tools. */
+  readonly readOnly: boolean;
   /** Compiler-owned structural role of this exact queued turn. */
   readonly turn: RuntimeToolTurn;
   /** Immutable operation frozen on this exact attempt generation. */
@@ -102,8 +101,6 @@ export interface ResolvedTaskExecutionPrompt {
   /** Exact next append-only generation installed at prompt activation. */
   readonly activationCorrelationScope: AcpCorrelationScope;
   readonly effectiveContextExposureDigest: string;
-  /** Current exposure with carry_context normalized true for source checks. */
-  readonly carrySourceExposureDigest: string;
   readonly effectiveToolsDigest: string;
   readonly acpConfiguration: AgentAdapterAcpConfiguration;
   readonly target: TaskExecutionTargetAcquisitionInput;
@@ -238,27 +235,15 @@ export function sameStringSequence(left: readonly string[], right: readonly stri
 }
 
 export function sameCorrelationLogicalKey(left: AcpCorrelationScope, right: AcpCorrelationScope): boolean {
-  if (
-    left.purpose !== right.purpose ||
-    left.companyId !== right.companyId ||
-    left.taskId !== right.taskId ||
-    left.ownershipEpoch !== right.ownershipEpoch ||
-    left.targetAgentId !== right.targetAgentId ||
-    left.adapterConfigIdentity !== right.adapterConfigIdentity ||
-    left.workspaceIdentity !== right.workspaceIdentity ||
-    left.targetFingerprint !== right.targetFingerprint
-  ) {
-    return false;
-  }
-  if (left.purpose === "carry" && right.purpose === "carry") {
-    return (
-      left.laneKind === right.laneKind &&
-      left.authorizedContextExposureDigest === right.authorizedContextExposureDigest
-    );
-  }
   return (
-    left.purpose === "active_run_steering" &&
-    right.purpose === "active_run_steering" &&
-    left.runId === right.runId
+    left.companyId === right.companyId &&
+    left.taskId === right.taskId &&
+    left.ownershipEpoch === right.ownershipEpoch &&
+    left.targetAgentId === right.targetAgentId &&
+    left.adapterConfigIdentity === right.adapterConfigIdentity &&
+    left.workspaceIdentity === right.workspaceIdentity &&
+    left.targetFingerprint === right.targetFingerprint &&
+    left.laneKind === right.laneKind &&
+    left.authorizedContextExposureDigest === right.authorizedContextExposureDigest
   );
 }

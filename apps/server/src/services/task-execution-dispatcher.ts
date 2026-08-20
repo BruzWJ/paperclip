@@ -1,6 +1,5 @@
 import type { TaskExecutionRef, TaskExecutionSessionOperation } from "@paperclipai/shared";
 import { createTargetLaneRunCoordinator } from "./agent-execution/session-runner/coordinator.js";
-import type { TaskExecutionSteeringResultBroker } from "./task-execution-steering-results.js";
 
 export interface LeasedTaskExecutionRef {
   ref: TaskExecutionRef;
@@ -14,11 +13,9 @@ export interface LeasedTaskExecutionRef {
   runId: string;
   /** Canonical task_execution_attempts identity; never the lease id. */
   attemptId: string;
-  promptKind: "base" | "steering";
   /** Immutable ACP session operation frozen by this attempt generation. */
   sessionOperation: TaskExecutionSessionOperation;
   refOrdinal: number;
-  segmentOrdinal: number;
   leaseId: string;
   leaseGeneration: number;
   attemptNumber: number;
@@ -195,7 +192,6 @@ function cancellationMatchesLease(
 export function createTaskExecutionDispatcher(options: {
   repository: TaskExecutionDispatcherRepository;
   executor: TaskExecutionAttemptExecutor;
-  steeringResults: Pick<TaskExecutionSteeringResultBroker, "publish">;
   workerId: string;
   now?: () => Date;
 }) {
@@ -257,19 +253,6 @@ export function createTaskExecutionDispatcher(options: {
               finishedAt: now(),
             });
           });
-          if (lease.promptKind === "steering" && result.kind === "terminal") {
-            options.steeringResults.publish({
-              companyId: lease.companyId,
-              taskId: lease.taskId,
-              runId: lease.runId,
-              refId: lease.ref.id,
-              refOrdinal: lease.refOrdinal,
-              segmentOrdinal: lease.segmentOrdinal,
-              outcome: result.outcome,
-              response: result.finalText ?? "",
-              reason: result.reason,
-            });
-          }
           if (result.kind === "retry") {
             return;
           }

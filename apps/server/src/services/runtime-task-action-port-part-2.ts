@@ -203,7 +203,6 @@ export function createPostgresRuntimeTaskActionServicePart2(
             ownerKind: "agent",
             ownerAgentId: targetAgentId,
             ownerUserId: null,
-            ownerAssignmentSource: null,
             ownershipEpoch,
             updatedAt: now,
           })

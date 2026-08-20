@@ -2,7 +2,6 @@ export { Buffer } from "node:buffer";
 export { createHash } from "node:crypto";
 export * from "@paperclipai/db";
 export {
-  clampTaskRequestDepth,
   extractAgentMentionIds,
   extractProjectMentionIds,
   isCanonicalTaskNumber,
@@ -32,11 +31,8 @@ export {
 export * from "drizzle-orm";
 export * from "../errors.js";
 export * from "../log-redaction.js";
-export * from "./agent-invokability.js";
-export * from "./goals.js";
 export * from "./instance-settings.js";
 export * from "./productive-run-linkage.js";
 export * from "./task-execution-run-service.js";
-export * from "./task-goal-fallback.js";
 export * from "./task-references.js";
 export * from "./task-visibility.js";

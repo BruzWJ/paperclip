@@ -22,7 +22,6 @@ describe("task execution dispatcher", () => {
     const dispatcher = createTaskExecutionDispatcher({
       repository,
       executor: { execute },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
     await dispatcher.runPersistedRef("ref");
@@ -103,7 +102,6 @@ describe("task execution dispatcher", () => {
     const dispatcher = createTaskExecutionDispatcher({
       repository: current.repository,
       executor: { execute },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
 
@@ -168,7 +166,6 @@ describe("task execution dispatcher", () => {
           });
         },
       },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
     const running = dispatcher.runPersistedRef(first.id);
@@ -216,10 +213,8 @@ describe("task execution dispatcher", () => {
       taskId: secondRef.taskId,
       runId: "run-2",
       attemptId: "attempt-2",
-      promptKind: "base",
       sessionOperation: "new",
       refOrdinal: 0,
-      segmentOrdinal: 0,
       leaseId: "lease-2",
       leaseGeneration: 2,
       attemptNumber: 1,
@@ -257,7 +252,6 @@ describe("task execution dispatcher", () => {
           });
         },
       },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
     const running = dispatcher.runPersistedRef(first.lease.ref.id);
@@ -307,7 +301,6 @@ describe("task execution dispatcher", () => {
     const dispatcher = createTaskExecutionDispatcher({
       repository: current.repository,
       executor: { execute },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
 
@@ -329,7 +322,6 @@ describe("task execution dispatcher", () => {
           });
         },
       },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
     await dispatcher.runPersistedRef("ref");
@@ -349,7 +341,6 @@ describe("task execution dispatcher", () => {
     const dispatcher = createTaskExecutionDispatcher({
       repository: owner.repository,
       executor: { execute: vi.fn() },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
     await expect(dispatcher.runPersistedRef("unknown")).rejects.toBeInstanceOf(TaskExecutionDispatchRejected);
@@ -378,7 +369,6 @@ describe("task execution dispatcher", () => {
     const consultDispatcher = createTaskExecutionDispatcher({
       repository: consult.repository,
       executor: { execute: executeConsult },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
     await consultDispatcher.runPersistedRef("ref");

@@ -106,13 +106,27 @@ describe("canonical productive/consult ACP attempt executor", () => {
   });
 
   it("rejects a stored correlation from a different immutable prompt scope", async () => {
-    const stored = storedCorrelation({ purpose: "carry" });
+    const stored = storedCorrelation();
     const prompt = resolvedPrompt({
       carryContext: true,
       stored: {
         ...stored,
         scope: { ...stored.scope, taskId: "task-2" },
       },
+    });
+    const harness = createHarness({ prompt });
+
+    await expect(executeAttempt(harness, prompt)).rejects.toThrow(
+      "stored ACP correlation crossed the canonical prompt or generation",
+    );
+    expect(harness.starts).toEqual([]);
+  });
+
+  it("rejects a non-successor generation for an otherwise matching correlation", async () => {
+    const prompt = resolvedPrompt({
+      carryContext: true,
+      stored: storedCorrelation({ generation: 1 }),
+      activationGeneration: 3,
     });
     const harness = createHarness({ prompt });
 

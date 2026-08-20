@@ -2,7 +2,6 @@ import {
   agents,
   projects,
   taskExecutionHistoryViews,
-  taskExecutionPromptSegments,
   taskExecutionRefs,
   taskExecutionRunControls,
   taskExecutionRunRefs,
@@ -73,25 +72,7 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup3(
       .orderBy(asc(taskExecutionRunRefs.refOrdinal))
       .for("update");
     const unsettled = members.filter((member) => member.protocolSettlementState === null);
-    const unsettledSegments = await transaction
-      .select({
-        refOrdinal: taskExecutionPromptSegments.refOrdinal,
-        segmentOrdinal: taskExecutionPromptSegments.segmentOrdinal,
-        promptTransmissionPhase: taskExecutionPromptSegments.promptTransmissionPhase,
-      })
-      .from(taskExecutionPromptSegments)
-      .where(
-        and(
-          eq(taskExecutionPromptSegments.runId, input.runId),
-          isNull(taskExecutionPromptSegments.protocolSettlementState),
-        ),
-      )
-      .orderBy(asc(taskExecutionPromptSegments.refOrdinal), asc(taskExecutionPromptSegments.segmentOrdinal))
-      .for("update");
-    if (
-      unsettled.some((member) => member.promptTransmissionPhase !== "not_transmitted") ||
-      unsettledSegments.some((segment) => segment.promptTransmissionPhase !== "not_transmitted")
-    ) {
+    if (unsettled.some((member) => member.promptTransmissionPhase !== "not_transmitted")) {
       reject("cancelled run cannot release an unsettled transmitted prompt");
     }
     for (const member of unsettled) {
@@ -117,31 +98,6 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup3(
         "cancelled run lost an unsettled prompt member",
       );
     }
-    for (const segment of unsettledSegments) {
-      exactlyOne(
-        await transaction
-          .update(taskExecutionPromptSegments)
-          .set({
-            steeringState: "protocol_settled",
-            outcome: "released_unsent",
-            outcomeReferenceId: idFactory(),
-            protocolSettlementState: "not_sent",
-            settlementVersion: 1,
-            settledAt: at,
-          })
-          .where(
-            and(
-              eq(taskExecutionPromptSegments.runId, input.runId),
-              eq(taskExecutionPromptSegments.refOrdinal, segment.refOrdinal),
-              eq(taskExecutionPromptSegments.segmentOrdinal, segment.segmentOrdinal),
-              eq(taskExecutionPromptSegments.promptTransmissionPhase, "not_transmitted"),
-              isNull(taskExecutionPromptSegments.protocolSettlementState),
-            ),
-          )
-          .returning({ runId: taskExecutionPromptSegments.runId }),
-        "cancelled run lost an unsettled steering segment",
-      );
-    }
     const refIds = [...new Set(members.map((member) => member.refId))];
     if (refIds.length > 0) {
       await transaction
@@ -163,7 +119,6 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup3(
       .set({
         currentRefId: null,
         currentOrdinal: null,
-        currentSegmentOrdinal: null,
       })
       .where(eq(taskExecutionRunControls.runId, input.runId));
     await options.finalizer.finalizeInTransaction(transaction, {
@@ -190,6 +145,7 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup3(
       readonly selector: TaskExecutionAuthorityFenceSelector;
       readonly reason: string;
       readonly at: Date;
+      readonly nativeContinuity: "revoke" | "preserve_carry";
     },
   ): Promise<FencedTaskExecutionAuthority> {
     exactIdentifier(input.companyId, "authority fence company id");
@@ -357,25 +313,25 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup3(
                 eq(taskExecutionSessions.taskId, selector.taskId),
                 eq(taskExecutionSessions.ownershipEpoch, selector.ownershipEpoch),
               )
-            : and(
-                eq(taskExecutionSessions.taskId, selector.taskId),
-                inArray(taskExecutionSessions.currentRefId, [...selector.refIds]),
-              );
-    const correlations = await transaction
-      .update(taskExecutionSessions)
-      .set({
-        state: "superseded",
-        supersessionReason: reason,
-        supersededAt: at,
-      })
-      .where(
-        and(
-          eq(taskExecutionSessions.companyId, input.companyId),
-          inArray(taskExecutionSessions.state, ["eligible", "current"]),
-          correlationPredicate,
-        ),
-      )
-      .returning({ id: taskExecutionSessions.id });
+            : undefined;
+    const correlations =
+      input.nativeContinuity === "preserve_carry" || selector.kind === "refs"
+        ? []
+        : await transaction
+            .update(taskExecutionSessions)
+            .set({
+              state: "superseded",
+              supersessionReason: reason,
+              supersededAt: at,
+            })
+            .where(
+              and(
+                eq(taskExecutionSessions.companyId, input.companyId),
+                eq(taskExecutionSessions.state, "eligible"),
+                correlationPredicate,
+              ),
+            )
+            .returning({ id: taskExecutionSessions.id });
 
     return Object.freeze({
       refIds: Object.freeze(refIds),

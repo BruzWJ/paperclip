@@ -12,9 +12,14 @@ import { buildPaperclipManagedToolRouterPaperclipManagedBoardTools } from "./pap
 import { buildPaperclipManagedToolRouterPaperclipManagedAuthorityExecution } from "./paperclip-managed-authority-execution.js";
 
 import {
+  type AgentManagedToolCommand,
+  type BoardManagedToolCommand,
   isPaperclipContextToolName,
-  type PaperclipManagedToolCommand,
 } from "./paperclip-managed-tool-registry.js";
+import type {
+  AgentRunManagedToolRouteContext,
+  BoardManagedToolRouteContext,
+} from "./paperclip-managed-tool-routing-contracts.js";
 
 import { agentService } from "./agents.js";
 import { createRuntimeAgentConfigurationService } from "./runtime-agent-configuration.js";
@@ -42,12 +47,20 @@ export function buildPaperclipManagedToolRouterPaperclipManagedRouteExecution(
 ) {
   const { dependencies, taskInBoardScope, executeAgentRun, executeBoardUser } = scope;
 
+  function routeExecution(
+    command: AgentManagedToolCommand,
+    context: AgentRunManagedToolRouteContext,
+  ): Promise<unknown>;
+  function routeExecution(
+    command: BoardManagedToolCommand,
+    context: BoardManagedToolRouteContext,
+  ): Promise<unknown>;
   async function routeExecution(
-    command: PaperclipManagedToolCommand,
+    command: AgentManagedToolCommand | BoardManagedToolCommand,
     context: PaperclipManagedToolRouteContext,
   ): Promise<unknown> {
     if (context.authority.kind === "agent_run") {
-      assertCommandScope(command, context.authority);
+      assertCommandScope(command as AgentManagedToolCommand, context.authority);
     } else {
       assertCompanyScope(context.authority, command.companyId);
     }
@@ -128,8 +141,8 @@ export function buildPaperclipManagedToolRouterPaperclipManagedRouteExecution(
         );
     }
     return context.authority.kind === "board_user"
-      ? executeBoardUser(command, context.authority)
-      : executeAgentRun(command, context.authority);
+      ? executeBoardUser(command as BoardManagedToolCommand, context.authority)
+      : executeAgentRun(command as AgentManagedToolCommand, context.authority);
   }
 
   return { routeExecution };

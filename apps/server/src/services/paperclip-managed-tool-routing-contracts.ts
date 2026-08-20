@@ -12,8 +12,9 @@ import {
 } from "./context-retrieval.js";
 import { OrdinaryTaskRuntimeRejected, type OrdinaryTaskRuntime } from "./ordinary-task-runtime.js";
 import {
-  type PaperclipManagedToolCommand,
-  type PaperclipManagedToolCommandFor,
+  type AgentManagedToolCommand,
+  type AgentManagedToolCommandFor,
+  type BoardManagedToolCommand,
 } from "./paperclip-managed-tool-registry.js";
 import type { PromptCapabilityBinding } from "./prompt-capability-gateway.js";
 import type { PluginDomainEventPublisher } from "./plugin-domain-event-publisher.js";
@@ -115,14 +116,14 @@ export function toolInvocationKey(input: {
 }
 
 export type AgentRunManagedActionName = Exclude<
-  PaperclipManagedToolCommand["name"],
+  AgentManagedToolCommand["name"],
   "list_company_tasks" | "list_sub_tasks" | "read_task_comments" | "read_task_agent_run"
 >;
 
 export interface AgentRunManagedActionInvocation<
   Name extends AgentRunManagedActionName = AgentRunManagedActionName,
 > {
-  command: PaperclipManagedToolCommandFor<Name>;
+  command: AgentManagedToolCommandFor<Name>;
   authority: AgentRunToolAuthority;
 }
 
@@ -139,20 +140,32 @@ export interface AgentRunManagedActionPort {
 }
 
 export function agentRunManagedActionInvocation<Name extends AgentRunManagedActionName>(
-  command: PaperclipManagedToolCommandFor<Name>,
+  command: AgentManagedToolCommandFor<Name>,
   authority: AgentRunToolAuthority,
 ): AgentRunManagedActionInvocation<Name> {
   return { command, authority };
 }
 
-export interface PaperclipManagedToolRouteContext {
-  authority: PaperclipToolAuthority;
+export interface AgentRunManagedToolRouteContext {
+  authority: AgentRunToolAuthority;
 }
+
+export interface BoardManagedToolRouteContext {
+  authority: BoardUserToolAuthority;
+}
+
+export type PaperclipManagedToolRouteContext =
+  | AgentRunManagedToolRouteContext
+  | BoardManagedToolRouteContext;
 
 export interface PaperclipManagedToolRouter {
   routeExecution(
-    command: PaperclipManagedToolCommand,
-    context: PaperclipManagedToolRouteContext,
+    command: AgentManagedToolCommand,
+    context: AgentRunManagedToolRouteContext,
+  ): Promise<unknown>;
+  routeExecution(
+    command: BoardManagedToolCommand,
+    context: BoardManagedToolRouteContext,
   ): Promise<unknown>;
 }
 
@@ -212,7 +225,7 @@ export function requireRuntimeScope(scope: ContextRetrievalScope | null) {
 }
 
 export function assertCommandScope(
-  command: PaperclipManagedToolCommand,
+  command: AgentManagedToolCommand,
   authority: AgentRunToolAuthority,
 ): void {
   if (command.companyId !== authority.capability.companyId) {

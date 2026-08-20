@@ -28,7 +28,6 @@ const TASK_INSERT_OWNER =
 const TASK_INSERT_FUNCTION = "persistCanonicalTaskAggregateInTx";
 const TASK_DELETE_OWNER = "apps/server/src/services/task-session-lifecycle.ts";
 const TASK_DELETE_FUNCTION = "purgeCompanySessionGraphInTx";
-const TASK_CONTROL_OWNER = "apps/server/src/services/tasks.ts";
 const MANAGED_TOOL_REGISTRY_OWNER =
   "apps/server/src/services/paperclip-managed-tool-registry.ts";
 const ACTION_PORT_OWNER =
@@ -179,15 +178,6 @@ function enclosingFunctionName(node) {
     current = current.parent;
   }
   return null;
-}
-
-function isInsideNamedFunction(node, expected) {
-  let current = node.parent;
-  while (current) {
-    if (functionLikeName(current) === expected) return true;
-    current = current.parent;
-  }
-  return false;
 }
 
 function scriptKind(relativePath) {
@@ -425,17 +415,6 @@ function canonicalCallTaskObject(call, initializers) {
   return ts.isObjectLiteralExpression(task) ? task : null;
 }
 
-function hasClosedControlPatchContract(sourceText) {
-  const required = [
-    "type TaskControlStateUpdate",
-    "data: TaskControlStateUpdate",
-    '"request"',
-    '"creatorAuthorityId"',
-    '"creatorAdapterConfigRevisionId"',
-  ];
-  return required.every((marker) => sourceText.includes(marker));
-}
-
 export function inspectSourceText(relativePath, sourceText) {
   const sourceFile = ts.createSourceFile(
     relativePath,
@@ -490,13 +469,9 @@ export function inspectSourceText(relativePath, sourceText) {
         const forbidden = [...fields.names].filter((name) =>
           IMMUTABLE_UPDATE_FIELDS.has(name),
         );
-        const closedDynamicPatch =
-          path === TASK_CONTROL_OWNER &&
-          isInsideNamedFunction(node, "updateControlState") &&
-          hasClosedControlPatchContract(sourceText);
         if (
           forbidden.length > 0 ||
-          (fields.dynamic && !fields.objectLiteral && !closedDynamicPatch)
+          (fields.dynamic && !fields.objectLiteral)
         ) {
           violations.push(
             makeViolation(
@@ -651,7 +626,6 @@ export function requiredOwnershipViolations(files) {
     return content;
   };
   const aggregate = requireFile(TASK_INSERT_OWNER);
-  const taskService = requireFile(TASK_CONTROL_OWNER);
   const registry = requireFile(MANAGED_TOOL_REGISTRY_OWNER);
   const actionPort = requireFile(ACTION_PORT_OWNER);
   const schema = requireFile(TASK_SCHEMA_OWNER);
@@ -693,18 +667,6 @@ export function requiredOwnershipViolations(files) {
       message: "Creator authority must be checked before the sole task insert.",
     });
   }
-  requireMarkers(
-    TASK_CONTROL_OWNER,
-    taskService,
-    [
-      "type TaskControlStateUpdate",
-      "data: TaskControlStateUpdate",
-      '| "request"',
-      '| "creatorAuthorityId"',
-      '| "creatorAdapterConfigRevisionId"',
-    ],
-    "closed-update-contract",
-  );
   requireMarkers(
     MANAGED_TOOL_REGISTRY_OWNER,
     registry,

@@ -127,6 +127,9 @@ function validateCompileInput(input: RuntimeInterfaceCompileInput): void {
   if (input.turn !== "bootstrap" && input.turn !== "work") {
     throw new RuntimeInterfaceConflict("Invalid runtime tool turn");
   }
+  if (typeof input.readOnly !== "boolean") {
+    throw new RuntimeInterfaceConflict("Invalid runtime read-only value");
+  }
   for (const key of PAPERCLIP_ACTION_KEYS) {
     if (
       input.actionGrants[key] !== undefined &&
@@ -161,7 +164,7 @@ function compileRuntimeInterfaceContract(
   validateCompileInput(input);
   const descriptors: CompiledRunToolDescriptor[] = [
     ...projectPaperclipManagedTools(input),
-    ...pluginDescriptors(input.pluginTools),
+    ...(input.readOnly ? [] : pluginDescriptors(input.pluginTools)),
   ];
   const names = new Set<string>();
   for (const descriptor of descriptors) {

@@ -14,51 +14,34 @@ export const toolsDigest = "b".repeat(64);
 export const targetFingerprint = localExecutionCorrelationFingerprint("revision-1");
 
 export function correlationScope(input: {
-  carryContext: boolean;
   generation?: number;
-  currentSegmentOrdinal?: number;
   laneKind?: "owner" | "consult";
 }): AcpCorrelationScope {
-  const common = {
+  return {
     companyId: "company-1",
     taskId: "task-1",
     ownershipEpoch: 1,
     targetAgentId: "agent-1",
     adapterConfigIdentity: "revision-1",
     workspaceIdentity: "workspace-1",
-    targetFingerprint,
+    targetFingerprint: localExecutionCorrelationFingerprint("revision-1"),
     correlationGeneration: input.generation ?? 2,
-  } as const;
-  return input.carryContext
-    ? {
-        ...common,
-        purpose: "carry",
-        laneKind: input.laneKind ?? "owner",
-        authorizedContextExposureDigest: digest,
-      }
-    : {
-        ...common,
-        purpose: "active_run_steering",
-        runId: "run-1",
-        currentRefId: "ref-1",
-        currentRefOrdinal: 0,
-        currentSegmentOrdinal: input.currentSegmentOrdinal ?? 0,
-      };
+    laneKind: input.laneKind ?? "owner",
+    authorizedContextExposureDigest: digest,
+  };
 }
 
 export function storedCorrelation(input: {
-  purpose: "carry" | "active_run_steering";
   generation?: number;
   laneKind?: "owner" | "consult";
-}): StoredAcpSessionCorrelation {
+} = {}): StoredAcpSessionCorrelation {
   const scope = correlationScope({
-    carryContext: input.purpose === "carry",
     generation: input.generation ?? 1,
     laneKind: input.laneKind,
   });
   return {
     id: "correlation-1",
-    state: input.purpose === "carry" ? "eligible" : "current",
+    state: "eligible",
     scope,
     envelopeVersion: ACP_SESSION_CORRELATION_ENVELOPE_VERSION,
     codecKind: ACP_SESSION_CORRELATION_KIND,
@@ -69,26 +52,20 @@ export function storedCorrelation(input: {
 
 export function resolvedPrompt(input: {
   carryContext: boolean;
+  readOnly?: boolean;
   turn?: ResolvedTaskExecutionPrompt["turn"];
-  promptKind?: "base" | "steering";
   stored?: StoredAcpSessionCorrelation | null;
   sessionOperation?: ResolvedTaskExecutionPrompt["sessionOperation"];
   bootstrapPredecessor?: ResolvedTaskExecutionPrompt["bootstrapPredecessor"];
+  activationGeneration?: number;
   laneKind?: "owner" | "consult";
   leaseRenewalIntervalMs?: number;
 }): ResolvedTaskExecutionPrompt {
-  const promptKind = input.promptKind ?? "base";
   const laneKind = input.laneKind ?? "owner";
   const stored = input.stored ?? null;
   const sessionOperation =
     input.sessionOperation ??
-    (promptKind === "steering" && stored
-      ? "steer_resume"
-      : input.carryContext
-        ? stored
-          ? "resume"
-          : "new"
-        : "new");
+    (input.carryContext && stored ? "resume" : "new");
   return {
     identity: {
       companyId: "company-1",
@@ -99,10 +76,8 @@ export function resolvedPrompt(input: {
       runId: "run-1",
       runBatchDigest: digest,
       runKind: laneKind === "owner" ? "productive" : "consult",
-      promptKind,
       refId: "ref-1",
       refOrdinal: 0,
-      segmentOrdinal: promptKind === "base" ? 0 : 1,
       attemptId: "attempt-1",
       attemptGeneration: 1,
       leaseId: "lease-1",
@@ -115,6 +90,7 @@ export function resolvedPrompt(input: {
       executionWorkspaceBindingId: "workspace-1",
     },
     turn: input.turn ?? "work",
+    readOnly: input.readOnly ?? false,
     sessionOperation,
     sourceMessageId: "source-message-1",
     sourceMessageSeq: 7,
@@ -134,8 +110,7 @@ export function resolvedPrompt(input: {
     storedCorrelation: stored,
     bootstrapPredecessor: input.bootstrapPredecessor ?? null,
     activationCorrelationScope: correlationScope({
-      carryContext: input.carryContext,
-      currentSegmentOrdinal: promptKind === "base" ? 0 : 1,
+      generation: input.activationGeneration,
       laneKind,
     }),
     effectiveContextExposureDigest: digest,

@@ -1,5 +1,4 @@
 import {
-  taskBoardReopenCommands,
   taskExecutionAttempts,
   taskExecutionLeases,
   taskExecutionPromptCapabilities,
@@ -43,10 +42,8 @@ export function promptIdentity(): TaskExecutionPromptIdentity {
     executionScopeId: "00000000-0000-4000-8000-000000000006",
     runBatchDigest: "a".repeat(64),
     runKind: "productive",
-    promptKind: "base",
     refId: "00000000-0000-4000-8000-000000000007",
     refOrdinal: 0,
-    segmentOrdinal: 0,
     attemptGeneration: 1,
     targetAgentId: "00000000-0000-4000-8000-000000000008",
     laneKind: "owner",
@@ -147,14 +144,9 @@ export async function resolveBootstrapCycle(outcome: "succeeded" | "failed") {
   const correlation =
     outcome === "succeeded"
       ? {
-          purpose: "active_run_steering",
-          state: "current",
-          laneKind: null,
-          runId,
-          currentRefId: predecessor.id,
-          currentRefOrdinal: 0,
-          currentSegmentOrdinal: 0,
-          authorizedContextExposureDigest: null,
+          state: "eligible",
+          laneKind: "owner",
+          authorizedContextExposureDigest: "a".repeat(64),
         }
       : null;
   const transaction = selectTransaction(
@@ -175,6 +167,7 @@ export async function resolveBootstrapCycle(outcome: "succeeded" | "failed") {
     ]),
   );
   return {
+    runId,
     predecessor,
     correlation,
     result: await resolveInitialPromptCycleInTransaction(transaction, {
@@ -281,12 +274,9 @@ export function attemptRow(identity: TaskExecutionPromptIdentity): TaskExecution
     sessionId: identity.sessionId,
     runId: identity.runId,
     runKind: identity.runKind,
-    promptKind: identity.promptKind,
     sessionOperation: "new",
     refId: identity.refId,
     refOrdinal: identity.refOrdinal,
-    segmentOrdinal: identity.segmentOrdinal,
-    steeringSegmentOrdinal: null,
     attemptGeneration: identity.attemptGeneration,
     state: "running",
     startedAt: timestamp,
@@ -318,7 +308,6 @@ export function controlRow(identity: TaskExecutionPromptIdentity): TaskExecution
     runId: identity.runId,
     currentRefId: identity.refId,
     currentOrdinal: identity.refOrdinal,
-    currentSegmentOrdinal: identity.segmentOrdinal,
   };
 }
 
@@ -333,7 +322,6 @@ export function liveCapabilityRow(
     runBatchDigest: identity.runBatchDigest,
     refId: identity.refId,
     refOrdinal: identity.refOrdinal,
-    segmentOrdinal: identity.segmentOrdinal,
     attemptId: identity.attemptId,
     leaseId: identity.leaseId,
     leaseGeneration: identity.leaseGeneration,
@@ -397,7 +385,7 @@ export function renewalRepository(input: {
   };
 }
 
-export { taskBoardReopenCommands, taskExecutionAttempts, taskExecutionLeases };
+export { taskExecutionAttempts, taskExecutionLeases };
 export { taskExecutionPromptCapabilities, taskExecutionRefs, taskExecutionRunControls };
 export { taskExecutionRunRefs, taskExecutionSessions, tasks, PgDialect, describe };
 export { expect, it, vi, TaskExecutionPromptAuthorityLost };

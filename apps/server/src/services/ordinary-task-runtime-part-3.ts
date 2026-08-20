@@ -1,6 +1,5 @@
 import {
   taskBoardUserComments,
-  taskCommentProjectionSources,
   taskComments,
   taskExecutionAuthorities,
   taskExecutionRefs,
@@ -9,8 +8,8 @@ import {
 } from "@paperclipai/db";
 import { and, eq, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import { createOrdinaryTaskReassignmentCommitter } from "./ordinary-task-runtime-reassignment.js";
 import * as runtime from "./ordinary-task-runtime-shared.js";
+import { admitTaskExecutionInTransaction } from "./task-execution-initial-start-admission.js";
 import {
   createTaskFormCommitRuntime,
   type CanonicalCreatorFormAuthority,
@@ -36,12 +35,6 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
   async function dispatch(refId: string): Promise<void> {
     await options.dispatchRef(refId);
   }
-  const commitAgentOwnerReassignmentInTransaction = createOrdinaryTaskReassignmentCommitter({
-    options,
-    clock,
-    sessions,
-  });
-
   return {
     async userComment(input: OrdinaryTaskUserCommentInput) {
       const actorUserId = runtime.exactNonBlank(input.actorUserId, "actorUserId");
@@ -58,12 +51,6 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
         input.replyToCommentId == null
           ? null
           : runtime.exactNonBlank(input.replyToCommentId, "replyToCommentId");
-      if (mention && replyToCommentId) {
-        throw new runtime.OrdinaryTaskRuntimeRejected(
-          "A board comment cannot mention an agent and reply to a comment at the same time",
-          "human_comment_target_conflict",
-        );
-      }
       if (mention && (!Number.isInteger(mention.ownershipEpoch) || mention.ownershipEpoch <= 0)) {
         throw new runtime.OrdinaryTaskRuntimeRejected(
           "Mention ownership epoch must be a positive integer",
@@ -114,7 +101,7 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
               "board_comment_idempotency_conflict",
             );
           }
-          const [task, comment, ref, commentSource] = await Promise.all([
+          const [task, comment, ref] = await Promise.all([
             tx
               .select()
               .from(tasks)
@@ -132,14 +119,8 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
                   .where(eq(taskExecutionRefs.id, priorCommand.executionRefId))
                   .then((rows) => rows[0] ?? null)
               : Promise.resolve(null),
-            tx
-              .select()
-              .from(taskCommentProjectionSources)
-              .where(eq(taskCommentProjectionSources.commentId, priorCommand.commentId))
-              .limit(1)
-              .then((rows) => rows[0] ?? null),
           ]);
-          if (!task || !comment || !commentSource || (priorCommand.executionRefId !== null && !ref)) {
+          if (!task || !comment || (priorCommand.executionRefId !== null && !ref)) {
             throw new runtime.OrdinaryTaskRuntimeRejected(
               "Accepted board comment is missing canonical records",
               "board_comment_incomplete",
@@ -150,7 +131,6 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
             comment,
             ref,
             command: priorCommand,
-            steeringSourceCommentId: commentSource.steeringTargetRunId === null ? null : comment.id,
             retried: true,
           };
         }
@@ -174,9 +154,9 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
           );
         }
         const { session, contextGeneration } = sessionState;
-        const replyParent = replyToCommentId
+        const replyParentExists = replyToCommentId
           ? await tx
-              .select()
+              .select({ id: taskComments.id })
               .from(taskComments)
               .where(
                 and(
@@ -188,7 +168,7 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
               .for("update")
               .then((rows) => rows[0] ?? null)
           : null;
-        if (replyToCommentId && !replyParent) {
+        if (replyToCommentId && !replyParentExists) {
           throw new runtime.OrdinaryTaskRuntimeRejected(
             "Reply target is not a persisted comment on this task",
             "human_reply_parent_missing",
@@ -196,10 +176,8 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
         }
         const sourceKey = `board-user-comment:${input.companyId}:${idempotencyKey}`;
         let admission: TaskSessionAdmissionResult;
-        let steeringRequested = false;
         if (mention) {
           if (
-            !runtime.NONTERMINAL.has(task.lifecycleStatus) ||
             task.ownerKind !== "agent" ||
             !task.ownerAgentId ||
             task.ownerAgentId !== mention.targetAgentId ||
@@ -235,8 +213,10 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
               "human_mention_authority_missing",
             );
           }
-          admission = await sessions.admitExecutionSource(
-            {
+          admission = await admitTaskExecutionInTransaction({
+            sessionAdmission: sessions,
+            transaction: tx,
+            work: {
               companyId: input.companyId,
               taskId: task.id,
               sessionId: session.id,
@@ -255,59 +235,12 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
               comment: {
                 author: { kind: "user", userId: actorUserId },
                 producingRun: null,
+                replyToCommentId,
                 body: message,
               },
               idempotencyKey: sourceKey,
             },
-            tx,
-          );
-        } else if (replyParent?.runId) {
-          if (!replyParent.authorAgentId) {
-            throw new runtime.OrdinaryTaskRuntimeRejected(
-              "A run-attributed reply target must have one canonical producing agent",
-              "human_reply_run_not_steerable",
-            );
-          }
-          admission = await sessions.admitSteeringComment(
-            {
-              companyId: input.companyId,
-              taskId: task.id,
-              sessionId: session.id,
-              sourceKind: "human_comment",
-              actor: { kind: "user/board", userId: actorUserId },
-              immutableSourceKey: sourceKey,
-              sourceRecordId: commandId,
-              exactText: message,
-              comment: {
-                author: { kind: "user", userId: actorUserId },
-                producingRun: null,
-                replyToCommentId,
-                body: message,
-              },
-            },
-            tx,
-          );
-          if (!admission.comment || !admission.input || admission.ref) {
-            throw new runtime.OrdinaryTaskRuntimeRejected(
-              "Run steering did not persist its canonical comment and Session input",
-              "board_comment_projection_missing",
-            );
-          }
-          await runtime.withOrdinaryHumanSteeringErrors(() =>
-            options.taskExecutionRunService.requestSteeringInTransaction(tx, {
-              companyId: input.companyId,
-              taskId: task.id,
-              ownershipEpoch: task.ownershipEpoch,
-              runId: replyParent.runId!,
-              targetAgentId: replyParent.authorAgentId!,
-              exactMessage: message,
-              sourceCommentId: admission.comment!.id,
-              sourceMessageId: admission.source.messageId,
-              sourceInputId: admission.input!.id,
-              actor: { kind: "user", userId: actorUserId },
-            }),
-          );
-          steeringRequested = true;
+          });
         } else {
           admission = await sessions.appendNonDispatchUserComment(
             {
@@ -318,7 +251,6 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
               immutableSourceKey: sourceKey,
               sourceRecordId: commandId,
               exactText: message,
-              delivery: "queue",
               comment: {
                 author: { kind: "user", userId: actorUserId },
                 producingRun: null,
@@ -329,11 +261,7 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
             tx,
           );
         }
-        if (
-          !admission.comment ||
-          (mention !== null && !admission.ref) ||
-          (steeringRequested && (!admission.input || admission.ref !== null))
-        ) {
+        if (!admission.comment || (mention !== null && !admission.ref)) {
           throw new runtime.OrdinaryTaskRuntimeRejected(
             "Board comment did not persist its canonical projection",
             "board_comment_projection_missing",
@@ -368,21 +296,11 @@ export function createOrdinaryTaskRuntimePart3(db: Db, options: OrdinaryTaskRunt
           comment: admission.comment,
           ref: admission.ref,
           command,
-          steeringSourceCommentId: steeringRequested ? admission.comment.id : null,
           retried: false,
         };
       });
       if (result.ref) {
         await dispatch(result.ref.id);
-      }
-      if (result.steeringSourceCommentId) {
-        await runtime.withOrdinaryHumanSteeringErrors(() =>
-          options.taskExecutionRunService.continuePendingSteeringForSource({
-            companyId: result.task.companyId,
-            taskId: result.task.id,
-            sourceCommentId: result.steeringSourceCommentId!,
-          }),
-        );
       }
       return result;
     },

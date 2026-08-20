@@ -62,11 +62,9 @@ export function promptInput(): PluginBeforePromptDispatchInput {
     runId: "run-1",
     agentId: "agent-1",
     sourceText: "Canonical request",
-    promptKind: "base",
     sessionOperation: "new",
     refId: "ref-1",
     refOrdinal: 0,
-    segmentOrdinal: 0,
     sourceMessageId: "msg_source_0000000000000000001",
     sourceMessageSeq: 7,
     contextAccess: {

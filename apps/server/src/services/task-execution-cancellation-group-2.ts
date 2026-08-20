@@ -60,6 +60,7 @@ export function createTaskExecutionCancellationServiceGroup2(
       },
       reason,
       at,
+      nativeContinuity: "revoke",
     });
     const runs = await options.runService.lockActiveRunsForBudgetScopeInTransaction(transaction, {
       companyId: input.companyId,
@@ -94,6 +95,7 @@ export function createTaskExecutionCancellationServiceGroup2(
       readonly reason: string;
       readonly actor: TaskExecutionCancellationActor;
       readonly now: Date;
+      readonly nativeContinuity: "revoke" | "preserve_carry";
     },
   ): Promise<RequestedScopedRunCancellations> {
     exactIdentifier(input.companyId, "company id");
@@ -150,6 +152,7 @@ export function createTaskExecutionCancellationServiceGroup2(
             },
             reason,
             at,
+            nativeContinuity: input.nativeContinuity,
           }
         : {
             companyId: input.companyId,
@@ -160,6 +163,7 @@ export function createTaskExecutionCancellationServiceGroup2(
             },
             reason,
             at,
+            nativeContinuity: input.nativeContinuity,
           },
     );
     const requests = await requestLockedRunCancellationsInTransaction(transaction, {

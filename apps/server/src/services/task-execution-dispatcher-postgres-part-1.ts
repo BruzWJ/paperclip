@@ -3,7 +3,6 @@ import {
   taskExecutionAttempts,
   taskExecutionCancellationIntents,
   taskExecutionPromptCapabilities,
-  taskExecutionPromptSegments,
   taskExecutionRefs,
   taskExecutionRunRefs,
 } from "@paperclipai/db";
@@ -33,11 +32,7 @@ export type CancellationIntentRow = typeof taskExecutionCancellationIntents.$inf
 
 export type PromptCapabilityRow = typeof taskExecutionPromptCapabilities.$inferSelect;
 
-export type BasePromptOwnerRow = typeof taskExecutionRunRefs.$inferSelect;
-
-export type SteeringPromptOwnerRow = typeof taskExecutionPromptSegments.$inferSelect;
-
-export type PromptOwnerRow = BasePromptOwnerRow | SteeringPromptOwnerRow;
+export type PromptOwnerRow = typeof taskExecutionRunRefs.$inferSelect;
 
 export type LaneRefIdentity = Pick<
   RefRow,
@@ -269,23 +264,6 @@ export function classifyExpiredPromptClosure(input: {
         reason: capability.revocationReason,
         protocolSettled: true,
       };
-    case "active_run_steering":
-      if (owner.protocolSettlementState === null) {
-        return { kind: "open" };
-      }
-      if (
-        owner.promptTransmissionPhase !== "transmitted" ||
-        owner.outcome !== "cancelled" ||
-        (owner.protocolSettlementState !== "settled" && owner.protocolSettlementState !== "incomplete")
-      ) {
-        reject("steering-revoked prompt has an invalid cancellation closure");
-      }
-      return {
-        kind: "terminal",
-        outcome: "cancelled",
-        reason: "active_run_steering",
-        protocolSettled: owner.protocolSettlementState === "settled",
-      };
     default:
       reject("revoked expired prompt has no canonical recovery decision");
   }
@@ -358,11 +336,7 @@ export function leaseProjection(
   leaseGeneration: number,
 ): LeasedTaskExecutionRef {
   const first = exactlyOne(refs.slice(0, 1), "attempt lost its first run ref");
-  if (
-    attempt.refOrdinal === null ||
-    attempt.segmentOrdinal === null ||
-    (attempt.promptKind !== "base" && attempt.promptKind !== "steering")
-  ) {
+  if (attempt.refOrdinal === null) {
     reject("productive lease lost its exact prompt identity");
   }
   const members = refs.map((row) => ({
@@ -376,10 +350,8 @@ export function leaseProjection(
     taskId: first.taskId,
     runId,
     attemptId: attempt.id,
-    promptKind: attempt.promptKind,
     sessionOperation: attempt.sessionOperation,
     refOrdinal: attempt.refOrdinal,
-    segmentOrdinal: attempt.segmentOrdinal,
     leaseId,
     leaseGeneration,
     attemptNumber: attempt.attemptGeneration,

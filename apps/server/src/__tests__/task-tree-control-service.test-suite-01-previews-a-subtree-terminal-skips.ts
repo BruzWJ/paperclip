@@ -330,6 +330,7 @@ describe("taskTreeControlService without a database process", () => {
         taskId: childTaskId,
         selector: { kind: "ownership_epoch", ownershipEpoch: 1 },
         reason: "task_tree_cancelled",
+        nativeContinuity: "preserve_carry",
       }),
     );
     expect(serviceMocks.reconcileRequestedCancellations).toHaveBeenCalledOnce();

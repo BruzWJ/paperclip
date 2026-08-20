@@ -1,17 +1,29 @@
 import { describe, expect, it, vi } from "vitest";
+
+const runtimeAuthorityMocks = vi.hoisted(() => ({
+  lockRuntimeToolAuthority: vi.fn(),
+}));
+
+vi.mock("../services/runtime-task-action-port-shared-part-3.js", async (importActual) => ({
+  ...(await importActual<typeof import("../services/runtime-task-action-port-shared-part-3.js")>()),
+  lockRuntimeToolAuthority: runtimeAuthorityMocks.lockRuntimeToolAuthority,
+}));
+
 import {
   admitCounterpartTaskUpdate,
   createRuntimeTaskActionPort,
-  RuntimeTaskActionConflict,
   type RuntimeTaskActionService,
 } from "../services/runtime-task-action-port.js";
+import { commitOwnerFormUpdateImplementation } from "../services/runtime-task-action-port-shared-commitOwnerFormUpdate.js";
+import { lockOwnerUpdateRecipient } from "../services/runtime-task-action-port-shared-part-2.js";
 import {
   agentRunManagedActionInvocation,
   type AgentRunToolAuthority,
 } from "../services/paperclip-managed-tool-router.js";
-import type { PaperclipManagedToolCommandFor } from "../services/paperclip-managed-tool-registry.js";
+import type { AgentManagedToolCommandFor } from "../services/paperclip-managed-tool-registry.js";
 import type { TaskSessionAdmissionService } from "../services/task-session/admission.js";
 import type { PromptCapabilityBinding } from "../services/prompt-capability-gateway.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
 const ownerCapability: PromptCapabilityBinding = {
   companyId: "company",
@@ -23,7 +35,6 @@ const ownerCapability: PromptCapabilityBinding = {
   runBatchDigest: "a".repeat(64),
   refId: "ref",
   refOrdinal: 0,
-  segmentOrdinal: 0,
   attemptId: "attempt",
   workerProcessIdentity: "worker",
   taskExecutionAuthorityId: "authority",
@@ -73,7 +84,7 @@ function actionAuthority(
 }
 
 function runtimeInvocation<Name extends RuntimeTaskCommandName>(
-  command: PaperclipManagedToolCommandFor<Name>,
+  command: AgentManagedToolCommandFor<Name>,
   capability: PromptCapabilityBinding = ownerCapability,
   invocationId = "invoke",
 ) {
@@ -97,6 +108,175 @@ function setup() {
 }
 
 describe("runtime task action port", () => {
+  it("routes a child owner update through its exact immutable agent creator authority", async () => {
+    const harness = createMockDb({
+      select: [
+        [{
+          authority: {
+            id: "creator-authority",
+            taskId: "creator-task",
+            sessionId: "creator-session",
+            ownershipEpoch: 7,
+            agentId: "creator-agent",
+            auditAdapterConfigRevisionId: "creator-revision",
+          },
+          agentName: "Creator agent",
+        }],
+        [{
+          task: { ownershipEpoch: 7 },
+          session: { id: "creator-session", integrityState: "ready" },
+          contextGeneration: 3,
+        }],
+      ],
+    });
+
+    await expect(lockOwnerUpdateRecipient(
+      harness.db as never,
+      "company",
+      "child-task",
+      { endpointKind: "agent-execution", endpointId: "creator-authority" },
+    )).resolves.toEqual({
+      kind: "agent",
+      target: {
+        taskId: "creator-task",
+        sessionId: "creator-session",
+        ownershipEpoch: 7,
+        agentId: "creator-agent",
+        agentName: "Creator agent",
+        authorityId: "creator-authority",
+        adapterConfigRevisionId: "creator-revision",
+        contextGeneration: 3,
+      },
+    });
+    expect(harness.remaining("select")).toBe(0);
+  });
+
+  it("rejects a Board creator recipient when the immutable creator edge is not agent execution", async () => {
+    const task = {
+      id: "child-task",
+      companyId: "company",
+      parentId: "parent-task",
+      lifecycleStatus: "open",
+      boardPresentationStatus: "in_progress",
+      ownerKind: "agent",
+      ownerAgentId: "child-owner",
+      ownerUserId: null,
+      ownershipEpoch: 2,
+      executionPolicy: null,
+      executionState: null,
+    };
+    const harness = createMockDb({
+      execute: [[]],
+      select: [
+        [{ status: "active", sessionIntegrityState: "ready", hardDeleteFencedAt: null }],
+        [task],
+        [],
+        [{ endpointKind: "user/board", endpointId: "board-creator" }],
+      ],
+    });
+
+    await expect(commitOwnerFormUpdateImplementation(
+      {
+        db: harness.db,
+        clock: () => new Date("2026-07-25T00:30:00.000Z"),
+        options: {
+          dispatchPersistedRef: vi.fn(async () => undefined),
+          taskExecutionCancellation: {
+            requestScopeCancellationsInTransaction: vi.fn(),
+            reconcileRequestedCancellations: vi.fn(),
+          },
+        },
+      } as never,
+      task.id,
+      { message: "Send this status request to the task creator" },
+      {
+        kind: "board",
+        companyId: task.companyId,
+        actorUserId: "board-user",
+        gatewayInvocationId: "board-creator-update",
+        recipient: "creator",
+      },
+    )).rejects.toMatchObject({ reason: "board_status_recipient_unavailable" });
+    expect(harness.remaining("select")).toBe(0);
+  });
+
+  it("admits a root agent completion to Board before persisting its terminal lifecycle", async () => {
+    const now = new Date("2026-07-25T00:30:00.000Z");
+    const task = {
+      id: ownerCapability.taskId, companyId: ownerCapability.companyId, identifier: "PAP-1", parentId: null,
+      lifecycleStatus: "open", boardPresentationStatus: "in_progress", disposition: null,
+      ownerKind: "agent", ownerAgentId: ownerCapability.targetAgentId, ownerUserId: null,
+      ownershipEpoch: ownerCapability.ownershipEpoch, executionPolicy: null, executionState: null,
+      monitorNextCheckAt: null, monitorLastTriggeredAt: null, monitorAttemptCount: 0,
+      monitorNotes: null, monitorScheduledBy: null,
+    };
+    const comment = { id: "comment", sessionId: ownerCapability.sessionId, canonicalSourceId: null };
+    const events: string[] = [];
+    let persistedStatus = task.lifecycleStatus;
+    const harness = createMockDb({
+      select: [
+        [],
+        [{ id: "edge", endpointKind: "user/board", endpointId: "board-user" }],
+        [{ sequence: 0 }],
+        [{
+          task,
+          session: {
+            id: ownerCapability.sessionId, companyId: ownerCapability.companyId,
+            taskId: ownerCapability.taskId, integrityState: "ready",
+          },
+          contextGeneration: 1,
+        }],
+      ],
+      update: [() => {
+        events.push("persist-lifecycle");
+        persistedStatus = "done";
+        return [{ ...task, lifecycleStatus: "done", boardPresentationStatus: "done" }];
+      }],
+      insert: [
+        [{ id: "board-mention", commentId: comment.id }],
+        () => {
+          events.push("persist-update-ledger");
+          return [{ id: "update", commentId: comment.id }];
+        },
+      ],
+    });
+    const requestScopeCancellationsInTransaction = vi.fn(async () => {
+      events.push("cancel");
+      return null;
+    });
+    const appendNonDispatchSyntheticComment = vi.fn(async () => {
+      events.push("admit");
+      if (persistedStatus !== "open") {
+        throw new Error("task_update reached terminal admission after lifecycle persistence");
+      }
+      return { comment, ref: null };
+    });
+    runtimeAuthorityMocks.lockRuntimeToolAuthority.mockReset();
+    runtimeAuthorityMocks.lockRuntimeToolAuthority.mockResolvedValue({
+      companyAgents: [{ id: ownerCapability.targetAgentId, name: "Owner agent" }], task,
+      catalog: { isCurrentOwner: true },
+    });
+
+    await commitOwnerFormUpdateImplementation(
+      {
+        db: harness.db, clock: () => now,
+        options: {
+          dispatchPersistedRef: vi.fn(async () => undefined),
+          taskExecutionCancellation: {
+            requestScopeCancellationsInTransaction,
+            reconcileRequestedCancellations: vi.fn(async () => undefined),
+          },
+        },
+        sessionAdmission: { appendNonDispatchSyntheticComment },
+      } as never,
+      ownerCapability.taskId,
+      { status: "done", message: "Finished" },
+      { kind: "agent-execution", capability: ownerCapability, invocationId: "root-completion" },
+    );
+
+    expect(events).toEqual(["cancel", "admit", "persist-lifecycle", "persist-update-ledger"]);
+  });
+
   it("projects an @target comment without rendering an agent notification for a self update", async () => {
     const appendNonDispatchControlNotice = vi.fn(async () => ({
       comment: { id: "comment" },
@@ -274,20 +454,6 @@ describe("runtime task action port", () => {
       status: "blocked",
       message: "Please adjust",
     });
-  });
-
-  it("fails closed if a forged command loses normalized update intent", async () => {
-    const { port } = setup();
-    const forged = {
-      name: "task_update",
-      companyId: ownerCapability.companyId,
-      taskId: ownerCapability.taskId,
-      message: "Forged",
-    } as unknown as PaperclipManagedToolCommandFor<"task_update">;
-
-    await expect(
-      port.taskUpdate(runtimeInvocation(forged)),
-    ).rejects.toBeInstanceOf(RuntimeTaskActionConflict);
   });
 
   it("passes canonical agent and Board mentions with their immutable invocation identity", async () => {

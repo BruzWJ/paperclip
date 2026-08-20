@@ -8,7 +8,6 @@ import {
   appendNonDispatchEvent,
   appendNonDispatchSyntheticComment,
 } from "./admission-part-6-section-1.js";
-import { admitSteeringEvent } from "./admission-part-7.js";
 import { assertCanonicalScope, findRetry, lockCompanyLifecycle } from "./admission-part-4.js";
 import {
   assertDispatchingExecutionSource,
@@ -31,44 +30,19 @@ import { TaskSessionLifecycleConflict } from "./store.js";
 function dispatchingExecutionSourceIdentityDigest(
   input: admissionCore.DispatchingExecutionSourceInput,
   messageKind: "user" | "synthetic",
-  identitySourceKind: string,
 ) {
   return admissionCore.digest({
     contract: "dispatching-execution-source/v1",
-    sourceKind: identitySourceKind,
+    sourceKind: input.sourceKind,
     actor: input.actor,
     immutableSourceKey: input.immutableSourceKey,
     sourceRecordId: input.sourceRecordId,
     ...scopeDigest(input),
     messageKind,
     exactText: input.exactText,
-    delivery: messageKind === "user" ? "queue" : null,
     idempotencyKey: input.idempotencyKey,
     comment: input.comment,
   });
-}
-
-export function dispatchingExecutionSourceIdentityDigests(
-  input: admissionCore.DispatchingExecutionSourceInput,
-  messageKind: "user" | "synthetic",
-): { identityDigest: string; compatibleIdentityDigests: readonly string[] } {
-  const identityDigest = dispatchingExecutionSourceIdentityDigest(input, messageKind, input.sourceKind);
-  if (input.sourceKind !== "mention_agent") {
-    return { identityDigest, compatibleIdentityDigests: [] };
-  }
-  // The migration renames sourceKind but intentionally preserves accepted digests and stable IDs.
-  const legacySourceKind =
-    input.actor.kind === "user/board" && input.mode === "owner"
-      ? "human_comment_mention"
-      : input.actor.kind === "agent-execution" && input.mode === "consult"
-        ? "consult_mention"
-        : null;
-  return {
-    identityDigest,
-    compatibleIdentityDigests: legacySourceKind
-      ? [dispatchingExecutionSourceIdentityDigest(input, messageKind, legacySourceKind)]
-      : [],
-  };
 }
 
 /** Owns physical Task Session source admission and projection. */
@@ -88,21 +62,17 @@ export function createTaskSessionAdmissionService(
     messageKind: "user" | "synthetic",
   ): Promise<admissionCore.TaskSessionAdmissionResult> {
     await assertProjectedCommentProducer(transaction, input, input.comment);
-    const { identityDigest, compatibleIdentityDigests } = dispatchingExecutionSourceIdentityDigests(
-      input,
-      messageKind,
-    );
+    const identityDigest = dispatchingExecutionSourceIdentityDigest(input, messageKind);
     const retry = await findRetry(
       transaction,
       input,
       identityDigest,
       messageKind === "user" ? TaskSession.Event.PromptAdmitted.type : TaskSession.Event.Synthetic.type,
-      compatibleIdentityDigests,
     );
     if (retry) return retry;
     const stableIds = stableIdentityForSource(input);
     const ids = await reserveStableMessageIdentity(transaction, input, stableIds);
-    const validated = await assertDispatchScope(transaction, input);
+    const validated = await assertDispatchScope(transaction, input, messageKind);
     await hooks.assertImmutableSource?.(transaction, input);
     return messageKind === "user"
       ? admitQueuedUserExecutionSource(transaction, input, {
@@ -238,7 +208,6 @@ export function createTaskSessionAdmissionService(
         immutableSourceKey: input.immutableSourceKey,
         sourceRecordId: input.sourceRecordId,
         exactText: input.exactText,
-        delivery: "queue",
         comment: input.comment,
       });
       const operation = async (transaction: TaskSessionDbTransaction) => {
@@ -248,55 +217,10 @@ export function createTaskSessionAdmissionService(
         const ids = await reserveStableMessageIdentity(transaction, input, stableIds);
         await assertCanonicalScope(transaction, input, {
           allowTerminal: true,
-          dispatching: false,
         });
         await hooks.assertImmutableSource?.(transaction, input);
         return appendNonDispatchEvent(transaction, input, {
           user: true,
-          identityDigest,
-          ids,
-          clock,
-        });
-      };
-      return dbTransaction ? operation(dbTransaction) : db.transaction(operation);
-    },
-
-    admitSteeringComment(input, dbTransaction) {
-      assertSourceIdentity(input);
-      assertExecutionSourceCommentProvenance(input);
-      const stableIds = stableIdentityForSource(input);
-      const messageKind = v2MessageKindForExecutionSource(input);
-      const identityDigest = admissionCore.digest({
-        contract: "active-run-steering/v2",
-        companyId: input.companyId,
-        taskId: input.taskId,
-        sessionId: input.sessionId,
-        sourceKind: input.sourceKind,
-        actor: input.actor,
-        immutableSourceKey: input.immutableSourceKey,
-        sourceRecordId: input.sourceRecordId,
-        exactText: input.exactText,
-        messageKind,
-        delivery: messageKind === "user" ? "steer" : null,
-        comment: input.comment,
-      });
-      const operation = async (transaction: TaskSessionDbTransaction) => {
-        await lockCompanyLifecycle(transaction, input.companyId);
-        const retry = await findRetry(
-          transaction,
-          input,
-          identityDigest,
-          messageKind === "user" ? TaskSession.Event.PromptAdmitted.type : TaskSession.Event.Synthetic.type,
-        );
-        if (retry) return retry;
-        const ids = await reserveStableMessageIdentity(transaction, input, stableIds);
-        await assertCanonicalScope(transaction, input, {
-          allowTerminal: false,
-          dispatching: false,
-        });
-        await assertProjectedCommentProducer(transaction, input, input.comment);
-        await hooks.assertImmutableSource?.(transaction, input);
-        return admitSteeringEvent(transaction, input, {
           identityDigest,
           ids,
           clock,
@@ -325,7 +249,7 @@ export function createTaskSessionAdmissionService(
         counterpartAuthorityId: input.counterpartAuthorityId ?? null,
         counterpartOwnershipEpoch: input.counterpartOwnershipEpoch ?? null,
         comment: input.comment,
-        allowTerminal: input.allowTerminal ?? true,
+        allowTerminal: input.allowTerminal,
       });
       const operation = async (transaction: TaskSessionDbTransaction) => {
         await lockCompanyLifecycle(transaction, input.companyId);
@@ -339,8 +263,7 @@ export function createTaskSessionAdmissionService(
         if (retry) return retry;
         const ids = await reserveStableMessageIdentity(transaction, input, stableIds);
         await assertCanonicalScope(transaction, input, {
-          allowTerminal: input.allowTerminal ?? true,
-          dispatching: false,
+          allowTerminal: input.allowTerminal,
         });
         await hooks.assertImmutableSource?.(transaction, input);
         return appendNonDispatchEvent(transaction, input, {
@@ -396,8 +319,7 @@ export function createTaskSessionAdmissionService(
         if (retry) return retry;
         const ids = await reserveStableMessageIdentity(transaction, input, stableIds);
         const { task } = await assertCanonicalScope(transaction, input, {
-          allowTerminal: false,
-          dispatching: false,
+          allowTerminal: input.projectionKind === "run_progress",
         });
         if (task.ownershipEpoch !== input.ownershipEpoch) {
           throw new TaskSessionLifecycleConflict("Non-dispatch synthetic source ownership epoch is stale", {

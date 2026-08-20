@@ -2,7 +2,6 @@ import {
   agentAdapterConfigRevisions,
   taskExecutionCancellationIntents,
   taskExecutionPromptCapabilities,
-  taskExecutionPromptSegments,
   taskExecutionRunRefs,
   taskExecutionSessions,
   taskSessionMessages,
@@ -45,7 +44,6 @@ export async function lockCapability(
         eq(taskExecutionPromptCapabilities.runId, prompt.runId),
         eq(taskExecutionPromptCapabilities.refId, prompt.refId),
         eq(taskExecutionPromptCapabilities.refOrdinal, prompt.refOrdinal),
-        eq(taskExecutionPromptCapabilities.segmentOrdinal, prompt.segmentOrdinal),
         eq(taskExecutionPromptCapabilities.attemptId, prompt.attemptId),
         eq(taskExecutionPromptCapabilities.leaseId, prompt.leaseId),
       ),
@@ -100,7 +98,7 @@ export async function supersedeCorrelation(
     .where(
       and(
         eq(taskExecutionSessions.id, correlationId),
-        inArray(taskExecutionSessions.state, ["eligible", "current"]),
+        eq(taskExecutionSessions.state, "eligible"),
       ),
     );
 }
@@ -133,10 +131,10 @@ export async function recordNativeCancellationSettlement(
 
 export type NonProtocolPromptOwner = Pick<
   TaskExecutionPromptIdentity,
-  "promptKind" | "runId" | "refId" | "refOrdinal" | "segmentOrdinal" | "attemptId"
+  "runId" | "refId" | "refOrdinal" | "attemptId"
 >;
 
-/** @internal Sole base/steering owner settlement for a non-protocol closure. */
+/** @internal Sole prompt-owner settlement for a non-protocol closure. */
 export async function settleNonProtocolPromptInTransaction(
   transaction: TaskSessionDbTransaction,
   prompt: NonProtocolPromptOwner,
@@ -154,43 +152,23 @@ export async function settleNonProtocolPromptInTransaction(
     settlementVersion: 1,
     settledAt: input.at,
   } as const;
-  const rows =
-    prompt.promptKind === "base"
-      ? await transaction
-          .update(taskExecutionRunRefs)
-          .set(values)
-          .where(
-            and(
-              eq(taskExecutionRunRefs.runId, prompt.runId),
-              eq(taskExecutionRunRefs.refId, prompt.refId),
-              eq(taskExecutionRunRefs.refOrdinal, prompt.refOrdinal),
-              eq(taskExecutionRunRefs.attemptId, prompt.attemptId),
-              eq(
-                taskExecutionRunRefs.promptTransmissionPhase,
-                input.state === "not_sent" ? "not_transmitted" : "transmitted",
-              ),
-              sql`${taskExecutionRunRefs.protocolSettlementState} is null`,
-            ),
-          )
-          .returning({ runId: taskExecutionRunRefs.runId })
-      : await transaction
-          .update(taskExecutionPromptSegments)
-          .set({ ...values, steeringState: "protocol_settled" })
-          .where(
-            and(
-              eq(taskExecutionPromptSegments.runId, prompt.runId),
-              eq(taskExecutionPromptSegments.refId, prompt.refId),
-              eq(taskExecutionPromptSegments.refOrdinal, prompt.refOrdinal),
-              eq(taskExecutionPromptSegments.segmentOrdinal, prompt.segmentOrdinal),
-              eq(taskExecutionPromptSegments.attemptId, prompt.attemptId),
-              eq(
-                taskExecutionPromptSegments.promptTransmissionPhase,
-                input.state === "not_sent" ? "not_transmitted" : "transmitted",
-              ),
-              sql`${taskExecutionPromptSegments.protocolSettlementState} is null`,
-            ),
-          )
-          .returning({ runId: taskExecutionPromptSegments.runId });
+  const rows = await transaction
+    .update(taskExecutionRunRefs)
+    .set(values)
+    .where(
+      and(
+        eq(taskExecutionRunRefs.runId, prompt.runId),
+        eq(taskExecutionRunRefs.refId, prompt.refId),
+        eq(taskExecutionRunRefs.refOrdinal, prompt.refOrdinal),
+        eq(taskExecutionRunRefs.attemptId, prompt.attemptId),
+        eq(
+          taskExecutionRunRefs.promptTransmissionPhase,
+          input.state === "not_sent" ? "not_transmitted" : "transmitted",
+        ),
+        sql`${taskExecutionRunRefs.protocolSettlementState} is null`,
+      ),
+    )
+    .returning({ runId: taskExecutionRunRefs.runId });
   if (rows.length !== 1) reject("non-protocol prompt settlement lost its exact owner");
 }
 

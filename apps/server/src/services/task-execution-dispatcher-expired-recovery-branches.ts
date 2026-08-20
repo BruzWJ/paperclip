@@ -1,10 +1,5 @@
-import {
-  taskExecutionAttempts,
-  taskExecutionPromptSegments,
-  taskExecutionSessions,
-  type Db,
-} from "@paperclipai/db";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { taskExecutionSessions, type Db } from "@paperclipai/db";
+import { and, eq, inArray } from "drizzle-orm";
 import { resolveRuntimeToolTurn } from "./runtime-interface-compiler-db.js";
 import { scheduleTaskExecutionAttemptRetryInTransaction } from "./task-execution-attempt-retry-schedule-postgres.js";
 import { preserveCorrelationAfterNonProtocolClosure } from "./task-execution-correlation-retention.js";
@@ -12,8 +7,9 @@ import { settleNonProtocolPromptInTransaction } from "./task-execution-prompt-cy
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
 import { releaseExpiredRunRecoveryAttempt } from "./task-execution-dispatcher-expired-recovery-release.js";
+import { compileCarryContext } from "./task-execution-dispatcher-postgres-part-2.js";
 import type { PostgresTaskExecutionDispatcherRepositoryContext } from "./task-execution-dispatcher-postgres-part-6.js";
-import { RunRow, exactlyOne, reject } from "./task-execution-dispatcher-postgres-part-1.js";
+import { RunRow, reject } from "./task-execution-dispatcher-postgres-part-1.js";
 import {
   completeTerminalPromptInTransaction,
   loadRecoveredProtocolSettlement,
@@ -34,23 +30,19 @@ export async function finalizeExpiredRunRecoveryBranches(
   const options = context;
   const { idFactory } = context;
   const {
-    nonSteeringCancellation,
+    cancellation,
     closureDecision,
     abandonedConsult,
     nonProtocolPromptOwner,
     revokeAbandonedConsult,
     recoveredLease,
     correlationIds,
-    capability,
     promptTransmitted,
     attempt,
-    segment,
     member,
-    pendingSteeringSegment,
     promptOwner,
-    promptOwnerIsUnbound,
   } = state;
-  if (nonSteeringCancellation === null && closureDecision.kind === "retry") {
+  if (cancellation === null && closureDecision.kind === "retry") {
     if (abandonedConsult) {
       await settleNonProtocolPromptInTransaction(transaction, nonProtocolPromptOwner, {
         state: "not_sent",
@@ -104,12 +96,11 @@ export async function finalizeExpiredRunRecoveryBranches(
     };
   }
 
-  if (nonSteeringCancellation === null && closureDecision.kind === "terminal") {
+  if (cancellation === null && closureDecision.kind === "terminal") {
     const protocol = closureDecision.protocolSettled
       ? await loadRecoveredProtocolSettlement(transaction, {
           run,
           owner: promptOwner,
-          segment,
         })
       : null;
     const terminal = {
@@ -154,7 +145,6 @@ export async function finalizeExpiredRunRecoveryBranches(
     const correlations = await transaction
       .select({
         id: taskExecutionSessions.id,
-        purpose: taskExecutionSessions.purpose,
         state: taskExecutionSessions.state,
       })
       .from(taskExecutionSessions)
@@ -162,7 +152,7 @@ export async function finalizeExpiredRunRecoveryBranches(
       .for("update");
     if (
       correlations.length !== correlationIds.length ||
-      correlations.some((correlation) => correlation.state !== "eligible" && correlation.state !== "current")
+      correlations.some((correlation) => correlation.state !== "eligible")
     ) {
       reject("expired attempt lost its exact activated correlation fence");
     }
@@ -176,9 +166,10 @@ export async function finalizeExpiredRunRecoveryBranches(
       consultExecutionId: run.consultExecutionId,
       refId: member.ref.id,
     });
+    const { carryContext } = await compileCarryContext(options.compiler, run);
     const preserveCorrelation = preserveCorrelationAfterNonProtocolClosure({
       turn,
-      carryContext: correlations.every((correlation) => correlation.purpose === "carry"),
+      carryContext,
     });
     if (!preserveCorrelation) {
       const superseded = await transaction
@@ -191,7 +182,7 @@ export async function finalizeExpiredRunRecoveryBranches(
         .where(
           and(
             inArray(taskExecutionSessions.id, correlationIds),
-            inArray(taskExecutionSessions.state, ["eligible", "current"]),
+            eq(taskExecutionSessions.state, "eligible"),
           ),
         )
         .returning({ id: taskExecutionSessions.id });
@@ -200,9 +191,9 @@ export async function finalizeExpiredRunRecoveryBranches(
       }
     }
   }
-  if (nonSteeringCancellation !== null) {
+  if (cancellation !== null) {
     await revokeAbandonedConsult();
-    const cancellationReason = `${nonSteeringCancellation.reasonKind}_cancellation`;
+    const cancellationReason = `${cancellation.reasonKind}_cancellation`;
     const completed = await completeTerminalPromptInTransaction(transaction, options, {
       lease: recoveredLease,
       attempt,
@@ -225,89 +216,6 @@ export async function finalizeExpiredRunRecoveryBranches(
           reason: cancellationReason,
           finalText: null,
         },
-      },
-    };
-  }
-  if (!promptTransmitted && attempt.promptKind === "steering" && segment !== null) {
-    exactlyOne(
-      await transaction
-        .update(taskExecutionPromptSegments)
-        .set({
-          attemptId: null,
-          capabilityConnectionId: null,
-          capabilityGeneration: null,
-        })
-        .where(
-          and(
-            eq(taskExecutionPromptSegments.runId, run.runId),
-            eq(taskExecutionPromptSegments.refId, member.ref.id),
-            eq(taskExecutionPromptSegments.refOrdinal, member.row.refOrdinal),
-            eq(taskExecutionPromptSegments.segmentOrdinal, segment.segmentOrdinal),
-            isNull(taskExecutionPromptSegments.protocolSettlementState),
-            promptOwnerIsUnbound
-              ? and(
-                  isNull(taskExecutionPromptSegments.attemptId),
-                  isNull(taskExecutionPromptSegments.capabilityConnectionId),
-                  isNull(taskExecutionPromptSegments.capabilityGeneration),
-                )
-              : and(
-                  eq(taskExecutionPromptSegments.attemptId, attempt.id),
-                  eq(taskExecutionPromptSegments.capabilityConnectionId, promptOwner.capabilityConnectionId!),
-                  eq(taskExecutionPromptSegments.capabilityGeneration, promptOwner.capabilityGeneration!),
-                ),
-          ),
-        )
-        .returning({ runId: taskExecutionPromptSegments.runId }),
-      "expired steering attempt could not clear its old prompt ownership",
-    );
-    const generationRows = await transaction
-      .select({ generation: taskExecutionAttempts.attemptGeneration })
-      .from(taskExecutionAttempts)
-      .where(
-        and(
-          eq(taskExecutionAttempts.runId, attempt.runId),
-          eq(taskExecutionAttempts.refId, attempt.refId!),
-          eq(taskExecutionAttempts.refOrdinal, attempt.refOrdinal!),
-          eq(taskExecutionAttempts.segmentOrdinal, attempt.segmentOrdinal!),
-        ),
-      )
-      .orderBy(desc(taskExecutionAttempts.attemptGeneration))
-      .limit(1)
-      .for("update");
-    exactlyOne(
-      await transaction
-        .insert(taskExecutionAttempts)
-        .values({
-          id: idFactory(),
-          companyId: attempt.companyId,
-          taskId: attempt.taskId,
-          sessionId: attempt.sessionId,
-          runId: attempt.runId,
-          runKind: attempt.runKind,
-          promptKind: attempt.promptKind,
-          sessionOperation: attempt.sessionOperation,
-          refId: attempt.refId,
-          refOrdinal: attempt.refOrdinal,
-          segmentOrdinal: attempt.segmentOrdinal,
-          steeringSegmentOrdinal: attempt.steeringSegmentOrdinal,
-          attemptGeneration: (generationRows[0]?.generation ?? 0) + 1,
-          state: "pending",
-          startedAt: null,
-          finishedAt: null,
-          createdAt: at,
-        })
-        .returning({ id: taskExecutionAttempts.id }),
-      "expired steering attempt could not create its successor generation",
-    );
-    return {
-      kind: "complete" as const,
-      result: {
-        kind: "retry_same_run",
-        run: await options.runService.lockRun(transaction, {
-          companyId: run.companyId,
-          taskId: run.taskId,
-          runId: run.runId,
-        }),
       },
     };
   }

@@ -4,8 +4,8 @@ import {
   taskApprovals,
   tasks,
   taskBoardMentions,
-  taskBoardReopenCommands,
   taskBoardUserComments,
+  taskUpdates,
 } from "@paperclipai/db";
 import type { AttentionFeed, AttentionItem } from "@paperclipai/shared";
 import { collectPendingApprovalAttention } from "./attention-pending-approval-attention.js";
@@ -93,14 +93,15 @@ export async function collectBoardMentionAttention(
         ),
         notExists(
           db
-            .select({ id: taskBoardReopenCommands.id })
-            .from(taskBoardReopenCommands)
+            .select({ id: taskUpdates.id })
+            .from(taskUpdates)
             .where(
               and(
-                eq(taskBoardReopenCommands.companyId, taskBoardMentions.companyId),
-                eq(taskBoardReopenCommands.taskId, taskBoardMentions.taskId),
-                eq(taskBoardReopenCommands.ownershipEpoch, taskBoardMentions.ownershipEpoch),
-                sql`${taskBoardReopenCommands.createdAt} >= ${taskBoardMentions.createdAt}`,
+                eq(taskUpdates.companyId, taskBoardMentions.companyId),
+                eq(taskUpdates.taskId, taskBoardMentions.taskId),
+                eq(taskUpdates.ownershipEpoch, taskBoardMentions.ownershipEpoch),
+                eq(taskUpdates.status, "open"),
+                sql`${taskUpdates.createdAt} >= ${taskBoardMentions.createdAt}`,
               ),
             ),
         ),
@@ -137,7 +138,7 @@ export async function collectBoardMentionAttention(
         inlineResolvable: false,
         entryRule: "An active agent Board mention exists for the current nonterminal task ownership epoch.",
         exitRule:
-          "A Board user resumes the exact owner/epoch, the task is reopened, or the ownership epoch leaves scope.",
+          "A Board status update returns the task to open, or the ownership epoch leaves scope.",
         dedupKey: `board-mention:${mention.id}`,
         severity: "medium",
         activityAt: toIso(mention.createdAt),

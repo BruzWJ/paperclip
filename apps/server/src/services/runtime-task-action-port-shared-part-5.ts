@@ -30,7 +30,7 @@ import {
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
 export function creatorSourceIdentity(authority: CanonicalCreatorFormAuthority): {
-  sourceKind: "agent-execution" | "user/board" | "plugin" | "routine" | "system";
+  sourceKind: "agent-execution" | "plugin" | "routine" | "system";
   sourceAuthorityId: string | null;
   sourceIdentity: Record<string, unknown>;
   runId: string | null;
@@ -60,17 +60,6 @@ export function creatorSourceIdentity(authority: CanonicalCreatorFormAuthority):
             runId: authority.capability.runId,
             adapterConfigRevisionId: authority.capability.adapterConfigIdentity,
           },
-        },
-      };
-    case "user/board":
-      return {
-        sourceKind: authority.kind,
-        sourceAuthorityId: null,
-        sourceIdentity: { userId: authority.userId },
-        runId: null,
-        comment: {
-          author: { kind: "user", userId: authority.userId },
-          producingRun: null,
         },
       };
     case "plugin":
@@ -142,12 +131,8 @@ export function taskUpdateActor(
   switch (authority.kind) {
     case "agent-execution":
       return executionActorForCapability(authority.capability);
-    case "system-escalation-human":
-    case "user-creator-withdrawal":
     case "board":
       return { kind: "user/board", userId: authority.actorUserId };
-    case "user/board":
-      return { kind: "user/board", userId: authority.userId };
     case "plugin":
       return {
         kind: "plugin",
@@ -226,13 +211,22 @@ export async function admitAgentTextInTransaction(
 }
 
 export type PaperclipManagedToolAdmissionInput = (
-  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "task_request" }>, "exactText" | "comment"> & {
+  | (Omit<
+      Extract<DispatchingExecutionSourceInput, { sourceKind: "task_request" }>,
+      "exactText" | "comment"
+    > & {
       delivery: PaperclipManagedAgentMessage<"task_create">;
     })
-  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "task_reassignment" }>, "exactText" | "comment"> & {
+  | (Omit<
+      Extract<DispatchingExecutionSourceInput, { sourceKind: "task_reassignment" }>,
+      "exactText" | "comment"
+    > & {
       delivery: PaperclipManagedAgentMessage<"task_assign">;
     })
-  | (Omit<Extract<DispatchingExecutionSourceInput, { sourceKind: "task_update" }>, "exactText" | "comment"> & {
+  | (Omit<
+      Extract<DispatchingExecutionSourceInput, { sourceKind: "task_update" }>,
+      "exactText" | "comment"
+    > & {
       delivery: PaperclipManagedAgentMessage<"task_update">;
     })
   | (Omit<

@@ -44,7 +44,6 @@ function task(
     ownerKind: "agent",
     ownerAgentId: null,
     ownerUserId: null,
-    ownerAssignmentSource: null,
     ownershipEpoch: 1,
     creatorKind: "user/board",
     creatorUserId: null,

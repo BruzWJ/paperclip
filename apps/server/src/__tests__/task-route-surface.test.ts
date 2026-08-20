@@ -62,11 +62,9 @@ describe("canonical generic task and activity route surface", () => {
 
     expect(source).toMatch(/router\.patch\(\s*"\/tasks\/:id",\s*validate\(updateTaskTitleSchema\)/);
     expect(source).toMatch(/router\.post\(\s*"\/tasks\/:id\/reassign",\s*validate\(reassignTaskSchema\)/);
-    expect(source).toContain('"/tasks/:id/creator-reassign",');
-    expect(source).toContain('"/tasks/:id/withdrawal-self-assignment",');
-    expect(source).toContain('"/task-creator-form-updates",');
-    expect(source).toContain('"/task-owner-form-updates",');
-    expect(source).toMatch(/router\.post\(\s*"\/tasks\/:id\/reopen",\s*validate\(reopenTaskSchema\)/);
+    expect(source).toMatch(
+      /router\.post\(\s*"\/tasks\/:id\/status-update",\s*validate\(updateTaskStatusSchema\)/,
+    );
     expect(source).toContain('"/tasks/:id/execution-policy",');
     expect(source).toContain('"/tasks/:id/execution-policy/decisions",');
     expect(source).toContain("const actorUserId = requireNamedBoardUser(req);");
@@ -75,11 +73,9 @@ describe("canonical generic task and activity route surface", () => {
     );
     expect(openApi).toContain("/api/tasks/{id}/execution-policy");
     expect(openApi).toContain("/api/tasks/{id}/execution-policy/decisions");
-    expect(openApi).toContain("/api/tasks/{id}/creator-reassign");
-    expect(openApi).toContain("/api/tasks/{id}/withdrawal-self-assignment");
-    expect(openApi).toContain("/api/task-creator-form-updates");
-    expect(openApi).toContain("/api/task-owner-form-updates");
+    expect(openApi).toContain("/api/tasks/{id}/status-update");
     expect(source).toContain("ordinaryTasks: OrdinaryTaskRuntime;");
+    expect(source).not.toContain("boardReopen");
     expect(source).not.toContain("createOrdinaryTaskRuntime(db)");
     expect(source).not.toContain("new Proxy({} as OrdinaryTaskRuntime");
 
@@ -88,6 +84,11 @@ describe("canonical generic task and activity route surface", () => {
       '"/tasks/:id/checkout"',
       '"/tasks/:id/release"',
       '"/tasks/:id/admin/force-release"',
+      '"/tasks/:id/reopen"',
+      '"/tasks/:id/creator-reassign"',
+      '"/tasks/:id/withdrawal-self-assignment"',
+      '"/task-creator-form-updates"',
+      '"/task-owner-form-updates"',
     ]) {
       expect(source).not.toContain(retired);
     }
@@ -95,6 +96,10 @@ describe("canonical generic task and activity route surface", () => {
       "/api/tasks/{id}/checkout",
       "/api/tasks/{id}/release",
       "/api/tasks/{id}/admin/force-release",
+      "/api/tasks/{id}/creator-reassign",
+      "/api/tasks/{id}/withdrawal-self-assignment",
+      "/api/task-creator-form-updates",
+      "/api/task-owner-form-updates",
     ]) {
       expect(openApi).not.toContain(retired);
     }

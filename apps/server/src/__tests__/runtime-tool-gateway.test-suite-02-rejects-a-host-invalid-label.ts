@@ -168,6 +168,7 @@ describe("runtime tool gateway", () => {
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       turn: "work",
+      readOnly: false,
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: {},
       isCurrentOwner: true,
@@ -214,6 +215,7 @@ describe("runtime tool gateway", () => {
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       turn: "work",
+      readOnly: false,
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: {},
       isCurrentOwner: true,
@@ -273,6 +275,7 @@ describe("runtime tool gateway", () => {
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       turn: "work",
+      readOnly: false,
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: { mention_board: true },
       isCurrentOwner: true,
@@ -349,6 +352,7 @@ describe("runtime tool gateway", () => {
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       turn: "work",
+      readOnly: false,
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: { agent_configure: true },
       isCurrentOwner: true,

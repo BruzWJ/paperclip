@@ -5,19 +5,10 @@ import type {
   TaskExecutionRunKind,
 } from "@paperclipai/shared";
 
-export type TaskExecutionFinalizationPromptIdentity =
-  | {
-      readonly kind: "base";
-      readonly refId: string;
-      readonly refOrdinal: number;
-      readonly segmentOrdinal: 0;
-    }
-  | {
-      readonly kind: "steering";
-      readonly refId: string;
-      readonly refOrdinal: number;
-      readonly segmentOrdinal: number;
-    };
+export interface TaskExecutionFinalizationPromptIdentity {
+  readonly refId: string;
+  readonly refOrdinal: number;
+}
 
 export type TaskExecutionFinalizationPromptDependency = TaskExecutionFinalizationPromptIdentity & {
   readonly protocolSettlementState: TaskExecutionProtocolSettlementState;
@@ -96,31 +87,14 @@ function positiveVersion(value: number, label: string): void {
 }
 
 function promptIdentityKey(value: TaskExecutionFinalizationPromptIdentity): string {
-  switch (value.kind) {
-    case "base":
-      if (!Number.isSafeInteger(value.refOrdinal) || value.refOrdinal < 0 || value.segmentOrdinal !== 0) {
-        throw new TaskExecutionFinalizationRejected(
-          "Base finalization dependency has an invalid identity",
-          "identity_invalid",
-        );
-      }
-      exactIdentity(value.refId, "base ref id");
-      return `base:${value.refOrdinal}:${value.refId}`;
-    case "steering":
-      if (
-        !Number.isSafeInteger(value.refOrdinal) ||
-        value.refOrdinal < 0 ||
-        !Number.isSafeInteger(value.segmentOrdinal) ||
-        value.segmentOrdinal <= 0
-      ) {
-        throw new TaskExecutionFinalizationRejected(
-          "Steering finalization dependency has an invalid identity",
-          "identity_invalid",
-        );
-      }
-      exactIdentity(value.refId, "steering ref id");
-      return `steering:${value.refOrdinal}:${value.refId}:${value.segmentOrdinal}`;
+  if (!Number.isSafeInteger(value.refOrdinal) || value.refOrdinal < 0) {
+    throw new TaskExecutionFinalizationRejected(
+      "Finalization dependency has an invalid identity",
+      "identity_invalid",
+    );
   }
+  exactIdentity(value.refId, "ref id");
+  return `${value.refOrdinal}:${value.refId}`;
 }
 
 function assertPromptSettlement(value: TaskExecutionFinalizationPromptDependency): void {
@@ -283,10 +257,8 @@ function digestRecord(input: BuildTaskExecutionFinalizationPlanInput) {
     gatewayRevocation: input.gatewayRevocation,
     prompts: input.promptDependencies.map((dependency, dependencyOrdinal) => ({
       dependencyOrdinal,
-      kind: dependency.kind,
       refId: dependency.refId,
       refOrdinal: dependency.refOrdinal,
-      segmentOrdinal: dependency.segmentOrdinal,
       protocolSettlementState: dependency.protocolSettlementState,
       settlementVersion: dependency.settlementVersion,
       accountingId: dependency.accountingId,

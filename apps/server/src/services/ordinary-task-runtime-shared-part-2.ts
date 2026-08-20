@@ -1,5 +1,4 @@
 import { taskCreatorEdgeReceivability } from "@paperclipai/db";
-import type { TaskCreatorEdgeTerminalReason } from "@paperclipai/shared";
 import {
   OrdinaryTaskRuntimeRejected,
   deterministicUuid,
@@ -9,10 +8,6 @@ import {
   type TaskRow,
 } from "./ordinary-task-runtime-shared-part-1.js";
 import { RuntimeTaskActionConflict, RuntimeTaskActionDenied } from "./runtime-task-action-port.js";
-import {
-  TaskExecutionRunInvariantViolation,
-  TaskExecutionSteeringRejected,
-} from "./task-execution-run-service.js";
 import {
   type TaskSessionExecutionActor,
   type TaskSessionExecutionSource,
@@ -29,25 +24,6 @@ export async function withOrdinaryTaskFormErrors<T>(operation: () => Promise<T>)
     }
     if (error instanceof RuntimeTaskActionConflict) {
       throw new OrdinaryTaskRuntimeRejected(error.message, "task_form_conflict");
-    }
-    throw error;
-  }
-}
-
-export async function withOrdinaryHumanSteeringErrors<T>(operation: () => Promise<T>): Promise<T> {
-  try {
-    return await operation();
-  } catch (error) {
-    if (
-      error instanceof TaskExecutionSteeringRejected ||
-      error instanceof TaskExecutionRunInvariantViolation
-    ) {
-      throw new OrdinaryTaskRuntimeRejected(
-        error.message,
-        error instanceof TaskExecutionSteeringRejected && error.reason !== "invalid_request"
-          ? "human_reply_steering_ambiguous"
-          : "human_reply_run_not_steerable",
-      );
     }
     throw error;
   }
@@ -240,17 +216,8 @@ export async function insertCreatorEdge(
   task: TaskRow,
   sessionId: string,
   now: Date,
-  options: {
-    terminalReason?: TaskCreatorEdgeTerminalReason | null;
-    terminalSourceKind?: string | null;
-    terminalSourceId?: string | null;
-    terminalAudit?: Record<string, unknown> | null;
-    endpointTombstone?: Record<string, unknown> | null;
-  } = {},
 ): Promise<CreatorEdgeRow> {
   const endpoint = creatorEndpoint(task);
-  const terminalReason = options.terminalReason ?? null;
-  const terminal = terminalReason !== null;
   const edge = await tx
     .insert(taskCreatorEdgeReceivability)
     .values({
@@ -261,13 +228,13 @@ export async function insertCreatorEdge(
       ownershipEpoch: task.ownershipEpoch!,
       creatorKind: task.creatorKind!,
       ...endpoint,
-      endpointTombstone: options.endpointTombstone ?? null,
-      state: terminal ? "terminal" : "receivable",
-      terminalReason,
-      terminalSourceKind: terminal ? (options.terminalSourceKind ?? "board_reopen") : null,
-      terminalSourceId: terminal ? (options.terminalSourceId ?? task.id) : null,
-      terminalAudit: terminal ? (options.terminalAudit ?? {}) : null,
-      terminalizedAt: terminal ? now : null,
+      endpointTombstone: null,
+      state: "receivable",
+      terminalReason: null,
+      terminalSourceKind: null,
+      terminalSourceId: null,
+      terminalAudit: null,
+      terminalizedAt: null,
       createdAt: now,
       updatedAt: now,
     })

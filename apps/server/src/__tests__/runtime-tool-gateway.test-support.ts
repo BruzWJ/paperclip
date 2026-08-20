@@ -24,7 +24,6 @@ export const capability: PromptCapabilityBinding = {
   runBatchDigest: "a".repeat(64),
   refId: "ref",
   refOrdinal: 0,
-  segmentOrdinal: 0,
   attemptId: "attempt",
   workerProcessIdentity: "worker",
   taskExecutionAuthorityId: "authority",
@@ -51,6 +50,7 @@ export function paperclipDescriptor(
 ): CompiledRunToolDescriptor {
   const descriptor = compileRuntimeInterface({
     mode: "owner",
+    readOnly: false,
     turn: "work",
     contextDial: resolveContextDial({
       agent: { read_task_comments: true },

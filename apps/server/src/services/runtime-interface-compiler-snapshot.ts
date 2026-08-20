@@ -34,6 +34,7 @@ export async function loadRuntimeInterfaceCompilerSnapshot(
     db
       .select({
         companyId: tasks.companyId,
+        lifecycleStatus: tasks.lifecycleStatus,
         ownerKind: tasks.ownerKind,
         ownerAgentId: tasks.ownerAgentId,
         ownershipEpoch: tasks.ownershipEpoch,

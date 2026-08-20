@@ -78,16 +78,10 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart4(
         ) {
           reject("prompt cancellation closure disagrees with ACPX result status");
         }
-        const steeringCancellationCapability =
-          currentCapability.state === "revoked" &&
-          currentCapability.revocationReason === "active_run_steering" &&
-          currentCapability.revokedAt !== null &&
-          nativeCancellation;
         if (
           lease.expiresAt <= timestamp ||
           (currentCapability.state !== "pending_setup" &&
-            currentCapability.state !== "active" &&
-            !steeringCancellationCapability) ||
+            currentCapability.state !== "active") ||
           currentCapability.expiresAt <= timestamp
         ) {
           reject("prompt closure requires one live capability generation");
@@ -99,7 +93,7 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart4(
               ? outcome.settlement
               : null;
         if (protocolSettlement !== null) {
-          if (currentCapability.state !== "active" && !steeringCancellationCapability) {
+          if (currentCapability.state !== "active") {
             reject("protocol settlement requires an active capability");
           }
           const assistantMessageId = await ensureAssistantStarted(transaction, prompt.identity, timestamp);
@@ -113,36 +107,18 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart4(
             `${prompt.identity.attemptId}:${capability.capabilityGeneration}`,
           );
           const settled = await settleAcpPromptInTransaction(transaction, {
-            identity:
-              prompt.identity.promptKind === "base"
-                ? {
-                    companyId: prompt.identity.companyId,
-                    taskId: prompt.identity.taskId,
-                    sessionId: prompt.identity.sessionId,
-                    agentId: prompt.identity.targetAgentId,
-                    runId: prompt.identity.runId,
-                    runKind: prompt.identity.runKind,
-                    promptKind: "base" as const,
-                    refId: prompt.identity.refId,
-                    runOrdinal: prompt.identity.refOrdinal,
-                    segmentOrdinal: 0 as const,
-                    attemptId: prompt.identity.attemptId,
-                    adapterConfigRevisionId: prompt.identity.adapterConfigRevisionId,
-                  }
-                : {
-                    companyId: prompt.identity.companyId,
-                    taskId: prompt.identity.taskId,
-                    sessionId: prompt.identity.sessionId,
-                    agentId: prompt.identity.targetAgentId,
-                    runId: prompt.identity.runId,
-                    runKind: prompt.identity.runKind,
-                    promptKind: "steering" as const,
-                    refId: prompt.identity.refId,
-                    runOrdinal: prompt.identity.refOrdinal,
-                    segmentOrdinal: prompt.identity.segmentOrdinal,
-                    attemptId: prompt.identity.attemptId,
-                    adapterConfigRevisionId: prompt.identity.adapterConfigRevisionId,
-                  },
+            identity: {
+              companyId: prompt.identity.companyId,
+              taskId: prompt.identity.taskId,
+              sessionId: prompt.identity.sessionId,
+              agentId: prompt.identity.targetAgentId,
+              runId: prompt.identity.runId,
+              runKind: prompt.identity.runKind,
+              refId: prompt.identity.refId,
+              runOrdinal: prompt.identity.refOrdinal,
+              attemptId: prompt.identity.attemptId,
+              adapterConfigRevisionId: prompt.identity.adapterConfigRevisionId,
+            },
             settlement: protocolSettlement,
             promptSettlementReferenceId: settlementReferenceId,
             terminalUsageReference: `acp-prompt:${prompt.identity.attemptId}:terminal-usage`,
@@ -166,13 +142,9 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart4(
               prompt.identity,
               timestamp,
             );
-            if (steeringCancellationCapability && !recordedCancellation) {
-              reject("steering cancellation lost its exact active intent");
-            }
+            void recordedCancellation;
           }
-          if (!steeringCancellationCapability) {
-            await revokeCapability(transaction, prompt.identity, capability, "protocol_settled", timestamp);
-          }
+          await revokeCapability(transaction, prompt.identity, capability, "protocol_settled", timestamp);
           const finalText = await terminalAssistantText(transaction, prompt.identity, assistantMessageId);
           return {
             kind: "dispatch" as const,
@@ -185,7 +157,7 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart4(
           };
         }
         if (outcome.kind === "cancelled") {
-          if (currentCapability.state !== "active" && !steeringCancellationCapability) {
+          if (currentCapability.state !== "active") {
             reject("native cancellation has no exact active capability");
           }
           await settleNonProtocolPromptInTransaction(transaction, prompt.identity, {
@@ -199,25 +171,21 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart4(
             prompt.identity,
             timestamp,
           );
-          if (steeringCancellationCapability && !recordedCancellation) {
-            reject("steering cancellation lost its exact active intent");
-          }
-          if (!steeringCancellationCapability) {
-            await revokeCapability(
+          void recordedCancellation;
+          await revokeCapability(
+            transaction,
+            prompt.identity,
+            capability,
+            "prompt_cancelled_incomplete",
+            timestamp,
+          );
+          if (!preserveCorrelation) {
+            await supersedeCorrelation(
               transaction,
-              prompt.identity,
-              capability,
+              currentCapability.targetSessionCorrelationId,
               "prompt_cancelled_incomplete",
               timestamp,
             );
-            if (!preserveCorrelation) {
-              await supersedeCorrelation(
-                transaction,
-                currentCapability.targetSessionCorrelationId,
-                "prompt_cancelled_incomplete",
-                timestamp,
-              );
-            }
           }
           return {
             kind: "dispatch" as const,

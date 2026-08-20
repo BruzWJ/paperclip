@@ -82,6 +82,7 @@ export function compileInput(
 ): Parameters<typeof compileRuntimeInterface>[0] {
   return {
     mode: "owner",
+    readOnly: false,
     turn: "work",
     contextDial: resolveContextDial({ agent: {} }).effective,
     actionGrants: {},

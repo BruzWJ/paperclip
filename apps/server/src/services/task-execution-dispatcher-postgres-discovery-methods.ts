@@ -23,6 +23,7 @@ import {
   targetLaneIdentity,
   validDate,
 } from "./task-execution-dispatcher-postgres-part-1.js";
+import { terminalExecutionRefSql } from "./task-execution-terminal-eligibility.js";
 import { consultSourceRunIsFinalized } from "./task-execution-dispatcher-postgres-part-3.js";
 import { findExistingRunForLane } from "./task-execution-dispatcher-postgres-part-4.js";
 import type { TaskExecutionTargetLaneIdentity } from "./task-execution-dispatcher.js";
@@ -128,7 +129,10 @@ export function createTaskExecutionDispatcherDiscoveryMethods(
             isNull(taskSessions.purgeFencedAt),
             eq(companies.status, "active"),
             eq(companies.sessionIntegrityState, "ready"),
-            inArray(tasks.lifecycleStatus, ["open", "blocked"]),
+            or(
+              inArray(tasks.lifecycleStatus, ["open", "blocked"]),
+              terminalExecutionRefSql(),
+            ),
             sql`${tasks.ownershipEpoch} = ${taskExecutionRefs.ownershipEpoch}`,
             or(
               and(

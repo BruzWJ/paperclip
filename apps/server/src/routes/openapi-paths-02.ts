@@ -3,15 +3,12 @@ import {
   agentAdapterConfigurationTestInputSchema,
   agentAdapterConfigurationTestResultSchema,
   canonicalUuidSchema,
-  commitTaskCreatorFormSchema,
-  commitTaskOwnerFormSchema,
   createTaskSchema,
   createTaskWorkProductSchema,
   decideTaskExecutionStageSchema,
   reassignTaskSchema,
-  reopenTaskSchema,
-  selfAssignTaskWithdrawalSchema,
   updateTaskExecutionPolicySchema,
+  updateTaskStatusSchema,
   updateTaskTitleSchema,
   updateTaskWorkProductSchema,
 } from "@paperclipai/shared";
@@ -286,53 +283,17 @@ export function registerOpenApiPaths02(): void {
 
   registry.registerPath({
     method: "post",
-    path: "/api/tasks/{id}/creator-reassign",
+    path: "/api/tasks/{id}/status-update",
     tags: ["tasks"],
-    summary: "Reassign a task as its immutable named-user creator",
+    summary: "Change task lifecycle and notify one server-resolved agent recipient",
+    description:
+      "Applies one audited lifecycle transition and sends its required message to either the current task owner or the creator side.",
     request: {
       params: z.object({ id: canonicalUuidSchema }),
-      body: jsonBody(reassignTaskSchema),
+      body: jsonBody(updateTaskStatusSchema),
     },
     responses: {
       200: r.ok(),
-      201: r.ok(),
-      400: r.badRequest,
-      401: r.unauthorized,
-      403: r.forbidden,
-      404: r.notFound,
-      409: r.conflict,
-    },
-  });
-
-  registry.registerPath({
-    method: "post",
-    path: "/api/tasks/{id}/withdrawal-self-assignment",
-    tags: ["tasks"],
-    summary: "Let the immutable named-user creator self-assign for cancellation only",
-    request: {
-      params: z.object({ id: canonicalUuidSchema }),
-      body: jsonBody(selfAssignTaskWithdrawalSchema),
-    },
-    responses: {
-      200: r.ok(),
-      201: r.ok(),
-      400: r.badRequest,
-      401: r.unauthorized,
-      403: r.forbidden,
-      404: r.notFound,
-      409: r.conflict,
-    },
-  });
-
-  registry.registerPath({
-    method: "post",
-    path: "/api/task-creator-form-updates",
-    tags: ["tasks"],
-    summary: "Commit an exact authenticated named-creator form update",
-    request: {
-      body: jsonBody(commitTaskCreatorFormSchema),
-    },
-    responses: {
       201: r.ok(),
       400: r.badRequest,
       401: r.unauthorized,
@@ -340,45 +301,6 @@ export function registerOpenApiPaths02(): void {
       404: r.notFound,
       409: r.conflict,
       422: r.unprocessable,
-    },
-  });
-
-  registry.registerPath({
-    method: "post",
-    path: "/api/task-owner-form-updates",
-    tags: ["tasks"],
-    summary: "Commit a documented human escalation or withdrawal owner form update",
-    request: {
-      body: jsonBody(commitTaskOwnerFormSchema),
-    },
-    responses: {
-      201: r.ok(),
-      400: r.badRequest,
-      401: r.unauthorized,
-      403: r.forbidden,
-      404: r.notFound,
-      409: r.conflict,
-      422: r.unprocessable,
-    },
-  });
-
-  registry.registerPath({
-    method: "post",
-    path: "/api/tasks/{id}/reopen",
-    tags: ["tasks"],
-    summary: "Reopen a terminal task through the audited board command",
-    request: {
-      params: z.object({ id: canonicalUuidSchema }),
-      body: jsonBody(reopenTaskSchema),
-    },
-    responses: {
-      200: r.ok(),
-      201: r.ok(),
-      400: r.badRequest,
-      401: r.unauthorized,
-      403: r.forbidden,
-      404: r.notFound,
-      409: r.conflict,
     },
   });
 

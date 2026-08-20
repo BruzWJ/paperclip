@@ -1,6 +1,4 @@
 import type { Request, Response } from "express";
-import { and, eq } from "drizzle-orm";
-import { type Db, authUsers, companyMemberships } from "@paperclipai/db";
 import { forbidden, unauthorized } from "../errors.js";
 import { isBoardActor, type BoardActor, type RequestActor } from "../http/request-actor.js";
 
@@ -80,53 +78,7 @@ export function assertCompanyAccess(
     if (!membership || membership.status !== "active") {
       throw forbidden("User does not have active company access");
     }
-    if (membership.membershipRole === "viewer") {
-      throw forbidden("Viewer access is read-only");
-    }
   }
-}
-
-/**
- * Canonical human-steering authorization shared by run-detail and reply
- * routes. A board key is accepted only after middleware has resolved it to a
- * real Better Auth user; raw/provider identities never satisfy this shape.
- */
-export async function authorizeHumanTaskSteering(db: Db, req: Request, companyId: string): Promise<string> {
-  assertCompanyAccess(req, companyId);
-  assertBoard(req);
-  const userId = req.actor.userId;
-  if (!userId || userId.trim() !== userId) {
-    throw forbidden("Human steering requires an exact named user ID");
-  }
-  const [user, membership] = await Promise.all([
-    db
-      .select({ id: authUsers.id })
-      .from(authUsers)
-      .where(eq(authUsers.id, userId))
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
-    db
-      .select({
-        id: companyMemberships.id,
-        status: companyMemberships.status,
-        membershipRole: companyMemberships.membershipRole,
-      })
-      .from(companyMemberships)
-      .where(
-        and(
-          eq(companyMemberships.companyId, companyId),
-          eq(companyMemberships.principalType, "user"),
-          eq(companyMemberships.principalUserId, userId),
-          eq(companyMemberships.status, "active"),
-        ),
-      )
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
-  ]);
-  if (!user || !membership || membership.membershipRole === "viewer") {
-    throw forbidden("Human steering requires active comment permission");
-  }
-  return userId;
 }
 
 /**

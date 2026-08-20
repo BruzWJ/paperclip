@@ -19,11 +19,6 @@ export function createPostgresRuntimeTaskActionServicePart1(
 ) {
   const clock = options.clock ?? (() => new Date());
   const sessionAdmission = createTaskSessionAdmissionService(db, { clock });
-  const taskForms = taskAction.createTaskFormCommitRuntime(db, {
-    clock,
-    dispatchPersistedRef: options.dispatchPersistedRef,
-    taskExecutionCancellation: options.taskExecutionCancellation,
-  });
 
   return {
     async create(input) {
@@ -130,7 +125,6 @@ export function createPostgresRuntimeTaskActionServicePart1(
               ownerKind: "agent",
               ownerAgentId: targetAgentId,
               ownerUserId: null,
-              ownerAssignmentSource: null,
               ownershipEpoch: 1,
               creatorKind: "agent-execution",
               creatorAuthorityId: input.capability.taskExecutionAuthorityId,

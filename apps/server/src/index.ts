@@ -53,7 +53,6 @@ import { createPluginDomainEventPublisher } from "./services/plugin-domain-event
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createRuntimePluginToolPort } from "./services/runtime-tool-gateway.js";
-import { createTaskExecutionSteeringResultBroker } from "./services/task-execution-steering-results.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { initTelemetry } from "./telemetry.js";
 import { serverVersion } from "./version.js";
@@ -144,7 +143,6 @@ export async function startServer(): Promise<StartedServer> {
 
   const workerId = `paperclip-server:${process.pid}:${Date.now()}`;
   const causalRuntimeStartup = createStartupAssembly<CausalRuntimeStartupAssembly>();
-  const taskExecutionSteeringResults = createTaskExecutionSteeringResultBroker();
   const taskActions = createRuntimeTaskActionPort(
     createPostgresRuntimeTaskActionService(db as any, {
       async dispatchPersistedRef(refId) {
@@ -220,7 +218,6 @@ export async function startServer(): Promise<StartedServer> {
     pluginTools: promptCapabilityPluginTools,
     pluginDomainEvents,
     beforePrompt: pluginBeforePrompt,
-    steeringResults: taskExecutionSteeringResults,
     dispatchRef: (refId) => refDispatcher.dispatch?.(refId) ?? Promise.resolve(),
   });
   const dispatchPersistedRef = async (refId: string) => {
@@ -235,7 +232,6 @@ export async function startServer(): Promise<StartedServer> {
     taskExecutionCancellation: taskExecution.cancellation,
   });
   const ordinaryTasks = createOrdinaryTaskRuntime(db as any, {
-    taskExecutionRunService: taskExecution.runService,
     taskExecutionCancellation: taskExecution.cancellation,
     dispatchRef: dispatchPersistedRef,
   });
@@ -304,17 +300,12 @@ export async function startServer(): Promise<StartedServer> {
     const escalations = await systemEscalations.reconcile();
     const prepared = await composition.reconcilePersistedRefs(taskExecution.dispatcher);
     const dispatchable = await taskExecution.dispatcher.reconcilePersistedRefs();
-    // Expired-attempt recovery above establishes the attempt/lease settlement
-    // fence. Feed only then-recoverable durable steering sources back through
-    // their one canonical continuation path.
-    const steering = await taskExecution.runService.reconcilePendingSteering();
     if (
       cancellations.length > 0 ||
       escalations.terminalized > 0 ||
       escalations.ensured > 0 ||
       prepared.discovered > 0 ||
-      dispatchable.discovered > 0 ||
-      steering.discovered > 0
+      dispatchable.discovered > 0
     ) {
       logger.info(
         {
@@ -322,7 +313,6 @@ export async function startServer(): Promise<StartedServer> {
           systemEscalations: escalations,
           prepared,
           dispatchable,
-          steering,
         },
         "persisted task-execution recovery reconciled refs",
       );

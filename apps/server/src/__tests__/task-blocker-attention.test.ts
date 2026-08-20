@@ -29,7 +29,6 @@ function taskListRow(overrides: Record<string, unknown> = {}) {
     ownerKind: "board",
     ownerAgentId: null,
     ownerUserId: null,
-    ownerAssignmentSource: null,
     ownershipEpoch: 1,
     creatorKind: "user/board",
     creatorUserId: "board-user",

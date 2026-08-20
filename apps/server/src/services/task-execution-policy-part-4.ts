@@ -29,7 +29,6 @@ export function assertUnchangedTaskOwnership(patch: Record<string, unknown>) {
     "ownerKind",
     "ownerAgentId",
     "ownerUserId",
-    "ownerAssignmentSource",
     "ownershipEpoch",
   ];
   const emitted = forbiddenKeys.filter((key) => Object.prototype.hasOwnProperty.call(patch, key));

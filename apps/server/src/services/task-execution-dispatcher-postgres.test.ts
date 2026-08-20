@@ -48,38 +48,6 @@ describe("expired prompt durable closure classification", () => {
     });
   });
 
-  it("keeps steering cancellation open until ACPX closes it exactly", () => {
-    expect(
-      classifyExpiredPromptClosure({
-        owner: owner({ promptTransmissionPhase: "transmitted" }),
-        capability: capability("active_run_steering", {
-          activatedAt: new Date(revokedAt.getTime() - 1),
-          targetSessionCorrelationId: "correlation-id",
-        }),
-      }),
-    ).toEqual({ kind: "open" });
-    expect(
-      classifyExpiredPromptClosure({
-        owner: owner({
-          promptTransmissionPhase: "transmitted",
-          outcome: "cancelled",
-          protocolSettlementState: "incomplete",
-          settlementVersion: 1,
-          settledAt: revokedAt,
-        }),
-        capability: capability("active_run_steering", {
-          activatedAt: new Date(revokedAt.getTime() - 1),
-          targetSessionCorrelationId: "correlation-id",
-        }),
-      }),
-    ).toEqual({
-      kind: "terminal",
-      outcome: "cancelled",
-      reason: "active_run_steering",
-      protocolSettled: false,
-    });
-  });
-
   it("treats persisted not-sent and incomplete outcomes as terminal", () => {
     expect(
       classifyExpiredPromptClosure({
@@ -219,6 +187,7 @@ function baseOperation(input: {
             ...contextDial,
             carry_context: input.carry ?? true,
           },
+          readOnly: false,
         };
       },
     } as never,
@@ -235,10 +204,7 @@ function baseOperation(input: {
         consultExecutionId: ref.consultExecutionId,
         runId: "run-1",
       } as never,
-      promptKind: "base",
       ref,
-      refOrdinal: 0,
-      segmentOrdinal: 0,
     },
   );
 }
@@ -280,7 +246,11 @@ function operationScenario(input: {
           [{ instruction: input.instruction ?? null }],
           ...(input.carry === false ? [] : [[...(input.correlation ? [{ id: "carry-1" }] : [])]]),
         ];
-  return baseOperation({ ref, selects: [grouped, ...tail], carry: input.carry });
+  return baseOperation({
+    ref,
+    selects: [grouped, ...tail],
+    carry: input.carry,
+  });
 }
 
 describe("base prompt ACPX session operation", () => {
@@ -305,6 +275,16 @@ describe("base prompt ACPX session operation", () => {
         ref: { ownershipEpoch: 2, previousOwnershipEpoch: 1, sourceKind: "task_reassignment" },
       },
       "new",
+    ],
+    [
+      "task update keeps the exact existing session",
+      {
+        kind: "ordinary",
+        instruction: "Lead delivery.",
+        correlation: true,
+        ref: { sourceKind: "task_update", laneOrdinal: 8 },
+      },
+      "resume",
     ],
   ] as const)("selects %s", async (_name, input, expected) => {
     await expect(operationScenario(input)).resolves.toBe(expected);

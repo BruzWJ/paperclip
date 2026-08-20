@@ -6,7 +6,6 @@ import {
   TaskExecutionFinalizationPromptDependency,
   TaskExecutionFinalizationUpdateDependency,
   TaskExecutionLease,
-  TaskExecutionPromptSegment,
   TaskExecutionRunControl,
   TaskExecutionRunLivenessFactRow,
   TaskExecutionRunRef,
@@ -58,30 +57,6 @@ export interface TaskExecutionRuntimeReadinessBinding extends TaskExecutionRunId
   readonly acpConfiguration: unknown;
 }
 
-export interface ResumedAgentSteeringLivenessSource {
-  readonly companyId: string;
-  readonly taskId: string;
-  readonly ownershipEpoch: number;
-  readonly runId: string;
-  readonly refId: string;
-  readonly segmentOrdinal: number;
-  readonly committedAt: Date;
-}
-
-export type ResumedAgentSteeringLivenessSearch =
-  | {
-      readonly companyId: string;
-      readonly taskId: string;
-      readonly ownershipEpoch: number;
-      readonly sourceRunId: string;
-    }
-  | {
-      readonly companyId: string;
-      readonly taskId: string;
-      readonly ownershipEpoch: number;
-      readonly committedAfter: Date;
-    };
-
 export interface PurgeCompanyTaskExecutionRunsInput {
   readonly companyId: string;
 }
@@ -89,39 +64,6 @@ export interface PurgeCompanyTaskExecutionRunsInput {
 export interface PurgedCompanyTaskExecutionRuns {
   readonly companyId: string;
   readonly deletedRunCount: number;
-}
-
-/**
- * The exact active productive/consult envelope exposed to steering. Prompt
- * membership and settlement remain in their dedicated run-ref/control rows.
- */
-export interface SteerableTaskExecutionRun extends TaskExecutionRunIdentity {
-  readonly sessionId: string;
-  readonly executionScopeId: string;
-  readonly kind: "productive" | "consult";
-  readonly status: "running";
-  readonly ownershipEpoch: number;
-  readonly targetAgentId: string;
-  readonly adapterConfigRevisionId: string;
-  readonly executionWorkspaceBindingId: string;
-  readonly executionMode: "owner" | "consult";
-  readonly taskExecutionAuthorityId: string | null;
-  readonly consultExecutionId: string | null;
-  readonly currentAttemptId: string;
-  readonly currentLeaseId: string;
-  readonly cancellationIntentId: string | null;
-  readonly terminalFinalizationId: null;
-  readonly startedAt: Date;
-  readonly finishedAt: null;
-}
-
-export interface ReboundSteerableTaskExecutionRun extends Omit<
-  SteerableTaskExecutionRun,
-  "currentAttemptId" | "currentLeaseId" | "cancellationIntentId"
-> {
-  readonly currentAttemptId: null;
-  readonly currentLeaseId: null;
-  readonly cancellationIntentId: null;
 }
 
 export class TaskExecutionRunInvariantViolation extends Error {
@@ -316,7 +258,6 @@ export interface JoinedTaskExecutionRunDetail {
   readonly run: TaskExecutionRunEnvelope;
   readonly control: TaskExecutionRunControl | null;
   readonly refs: BoundedTaskExecutionRunRecords<TaskExecutionRunRef>;
-  readonly segments: BoundedTaskExecutionRunRecords<TaskExecutionPromptSegment>;
   readonly sessionEvents: BoundedTaskExecutionRunRecords<RedactedTaskExecutionSessionEvent>;
   readonly sessionMessages: BoundedTaskExecutionRunRecords<RedactedTaskExecutionSessionMessage>;
   readonly attempts: BoundedTaskExecutionRunRecords<TaskExecutionAttempt>;

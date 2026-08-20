@@ -9,25 +9,6 @@ export function createTaskServiceRelationOperations(
   context: ReturnType<typeof taskShared.taskServiceContext>,
 ) {
   const { db } = context;
-  async function assertValidLabelIds(companyId: string, labelIds: string[], dbOrTx: any = db) {
-    if (labelIds.length === 0) return;
-    const existing = await dbOrTx
-      .select({ id: d.labels.id })
-      .from(d.labels)
-      .where(d.and(d.eq(d.labels.companyId, companyId), d.inArray(d.labels.id, labelIds)));
-    if (existing.length !== new Set(labelIds).size) {
-      throw d.unprocessable("One or more labels are invalid for this company");
-    }
-  }
-
-  async function syncTaskLabels(taskId: string, companyId: string, labelIds: string[], dbOrTx: any = db) {
-    const deduped = [...new Set(labelIds)];
-    await assertValidLabelIds(companyId, deduped, dbOrTx);
-    await dbOrTx.delete(d.taskLabels).where(d.eq(d.taskLabels.taskId, taskId));
-    if (deduped.length === 0) return;
-    await dbOrTx.insert(d.taskLabels).values(deduped.map((labelId) => ({ taskId, labelId, companyId })));
-  }
-
   async function getTaskRelationSummaryMap(
     companyId: string,
     taskIds: string[],
@@ -111,92 +92,8 @@ export function createTaskServiceRelationOperations(
     return empty;
   }
 
-  async function assertNoBlockingCycles(
-    companyId: string,
-    taskId: string,
-    blockerTaskIds: string[],
-    dbOrTx: taskShared.DbReader = db,
-  ) {
-    if (blockerTaskIds.length === 0) return;
-    const rows = await dbOrTx
-      .select({
-        blockerTaskId: d.taskRelations.taskId,
-        blockedTaskId: d.taskRelations.relatedTaskId,
-      })
-      .from(d.taskRelations)
-      .where(d.and(d.eq(d.taskRelations.companyId, companyId), d.eq(d.taskRelations.type, "blocks")));
-    const adjacency = new Map<string, string[]>();
-    for (const row of rows) {
-      const list = adjacency.get(row.blockerTaskId) ?? [];
-      list.push(row.blockedTaskId);
-      adjacency.set(row.blockerTaskId, list);
-    }
-    for (const blockerTaskId of blockerTaskIds) {
-      const queue = [...(adjacency.get(taskId) ?? [])];
-      const visited = new Set<string>([taskId]);
-      while (queue.length > 0) {
-        const current = queue.shift()!;
-        if (current === blockerTaskId) {
-          throw d.unprocessable("Blocking relations cannot contain cycles");
-        }
-        if (visited.has(current)) continue;
-        visited.add(current);
-        queue.push(...(adjacency.get(current) ?? []));
-      }
-    }
-  }
-
-  async function syncBlockedByTaskIds(
-    taskId: string,
-    companyId: string,
-    blockedByTaskIds: string[],
-    actor: { agentId?: string | null; userId?: string | null } = {},
-    dbOrTx: any = db,
-  ) {
-    const deduped = [...new Set(blockedByTaskIds)];
-    if (deduped.some((candidate) => candidate === taskId)) {
-      throw d.unprocessable("Task cannot be blocked by itself");
-    }
-    if (deduped.length > 0) {
-      const lockedTaskIds = [taskId, ...deduped].sort();
-      await dbOrTx.execute(d.sql`SELECT ${d.tasks.id} FROM ${d.tasks} WHERE ${d.and(d.eq(d.tasks.companyId, companyId), d.inArray(d.tasks.id, lockedTaskIds))}
-            ORDER BY ${d.tasks.id} FOR UPDATE`);
-      const relatedTasks = await dbOrTx
-        .select({ id: d.tasks.id })
-        .from(d.tasks)
-        .where(d.and(d.eq(d.tasks.companyId, companyId), d.inArray(d.tasks.id, deduped)));
-      if (relatedTasks.length !== deduped.length) {
-        throw d.unprocessable("Blocked-by tasks must belong to the same company");
-      }
-      await assertNoBlockingCycles(companyId, taskId, deduped, dbOrTx);
-    }
-    await dbOrTx
-      .delete(d.taskRelations)
-      .where(
-        d.and(
-          d.eq(d.taskRelations.companyId, companyId),
-          d.eq(d.taskRelations.relatedTaskId, taskId),
-          d.eq(d.taskRelations.type, "blocks"),
-        ),
-      );
-    if (deduped.length === 0) return;
-    await dbOrTx.insert(d.taskRelations).values(
-      deduped.map((blockerTaskId) => ({
-        companyId,
-        taskId: blockerTaskId,
-        relatedTaskId: taskId,
-        type: "blocks",
-        createdByAgentId: actor.agentId ?? null,
-        createdByUserId: actor.userId ?? null,
-      })),
-    );
-  }
   return {
-    assertValidLabelIds,
-    syncTaskLabels,
     getTaskRelationSummaryMap,
-    assertNoBlockingCycles,
-    syncBlockedByTaskIds,
   };
 }
 

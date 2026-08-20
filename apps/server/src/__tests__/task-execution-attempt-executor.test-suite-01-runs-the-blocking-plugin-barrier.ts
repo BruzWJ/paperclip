@@ -82,7 +82,7 @@ describe("canonical productive/consult ACP attempt executor", () => {
       name: "paperclip",
     });
     expect(harness.protectedValues).toHaveLength(1);
-    expect(prompt.activationCorrelationScope.purpose).toBe("active_run_steering");
+    expect(prompt.activationCorrelationScope.laneKind).toBe("owner");
     expect(harness.order).toEqual([
       "mint:1",
       "activate:1",
@@ -106,6 +106,39 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(JSON.stringify(harness.eventBoundaries)).not.toContain("secret-bearer-1");
   });
 
+  it.each([
+    ["new", resolvedPrompt({ carryContext: false, readOnly: true }), [{ kind: "new" }]],
+    [
+      "resumed",
+      resolvedPrompt({
+        carryContext: true,
+        readOnly: true,
+        stored: storedCorrelation(),
+      }),
+      [{ kind: "resume", sessionId: "opaque-resume-session" }],
+    ],
+  ] as const)("applies response-only access to each %s turn", async (_label, prompt, starts) => {
+    const beforePrompt = vi.fn(async () => "Plugin text that must not run");
+    const harness = createHarness({ prompt, beforePrompt });
+
+    await expect(executeAttempt(harness, prompt)).resolves.toMatchObject({
+      kind: "terminal",
+      outcome: "succeeded",
+    });
+
+    expect(harness.starts).toEqual(starts);
+    expect(harness.messages[0]).toContain("[Paperclip access: response-only for this turn");
+    expect(harness.messages[0]).toContain("expires after this response");
+    expect(harness.messages[0]).toContain(prompt.sourceText);
+    expect(harness.messages[0]).not.toContain("done or cancelled");
+    expect(harness.launches[0]).toMatchObject({
+      permissionMode: "approve-reads",
+      nonInteractivePermissions: "deny",
+    });
+    expect(beforePrompt).not.toHaveBeenCalled();
+    expect(harness.order).not.toContain("beforePrompt");
+  });
+
   it("allows an exact frozen new operation without a correlation", async () => {
     const prompt = resolvedPrompt({
       carryContext: true,
@@ -122,7 +155,7 @@ describe("canonical productive/consult ACP attempt executor", () => {
   it("resumes an exact eligible true-carry correlation without Paperclip history", async () => {
     const prompt = resolvedPrompt({
       carryContext: true,
-      stored: storedCorrelation({ purpose: "carry" }),
+      stored: storedCorrelation(),
     });
     const harness = createHarness({ prompt });
 
@@ -130,14 +163,14 @@ describe("canonical productive/consult ACP attempt executor", () => {
 
     expect(harness.starts).toEqual([{ kind: "resume", sessionId: "opaque-resume-session" }]);
     expect(harness.messages).toEqual([prompt.sourceText]);
-    expect(prompt.activationCorrelationScope.purpose).toBe("carry");
+    expect(prompt.activationCorrelationScope.laneKind).toBe("owner");
   });
 
   it("resumes the exact bootstrap predecessor before false-carry work", async () => {
     const prompt = resolvedPrompt({
       carryContext: false,
       sessionOperation: "resume",
-      stored: storedCorrelation({ purpose: "active_run_steering" }),
+      stored: storedCorrelation(),
       bootstrapPredecessor: {
         runId: "run-1",
         refId: "ref-1",
@@ -148,53 +181,6 @@ describe("canonical productive/consult ACP attempt executor", () => {
     await executeAttempt(harness, prompt);
     expect(harness.starts).toEqual([{ kind: "resume", sessionId: "opaque-resume-session" }]);
     expect(harness.messages).toEqual([prompt.sourceText]);
-  });
-
-  it.each([
-    ["owner", "carry", false, "active_run_steering"],
-    ["consult", "carry", false, "active_run_steering"],
-    ["owner", "active_run_steering", true, "carry"],
-    ["consult", "active_run_steering", true, "carry"],
-  ] as const)(
-    "resumes the pinned %s steering source across %s carry transition",
-    async (laneKind, sourcePurpose, carryContext, destinationPurpose) => {
-      const prompt = resolvedPrompt({
-        carryContext,
-        promptKind: "steering",
-        laneKind,
-        stored: storedCorrelation({ purpose: sourcePurpose, laneKind }),
-      });
-      const harness = createHarness({ prompt });
-
-      await executeAttempt(harness, prompt);
-
-      expect(prompt.sessionOperation).toBe("steer_resume");
-      expect(harness.starts).toEqual([{ kind: "resume", sessionId: "opaque-resume-session" }]);
-      expect(harness.messages).toEqual([prompt.sourceText]);
-      expect(prompt.activationCorrelationScope.purpose).toBe(destinationPurpose);
-    },
-  );
-
-  it("rejects a steering source that crossed the run-pinned adapter revision", async () => {
-    const original = storedCorrelation({ purpose: "active_run_steering" });
-    const prompt = resolvedPrompt({
-      carryContext: false,
-      promptKind: "steering",
-      stored: {
-        ...original,
-        scope: {
-          ...original.scope,
-          adapterConfigIdentity: "revision-2",
-        },
-      },
-    });
-    const harness = createHarness({ prompt });
-
-    await expect(executeAttempt(harness, prompt)).rejects.toThrow(
-      "stored ACP correlation crossed the canonical prompt or generation",
-    );
-    expect(harness.starts).toEqual([]);
-    expect(harness.order).toEqual([]);
   });
 
   it("rejects a later true-carry prompt whose mapping is missing", async () => {
@@ -215,7 +201,7 @@ describe("canonical productive/consult ACP attempt executor", () => {
   it("fails a frozen resume setup without retrying or starting a new session", async () => {
     const prompt = resolvedPrompt({
       carryContext: true,
-      stored: storedCorrelation({ purpose: "carry" }),
+      stored: storedCorrelation(),
     });
     const harness = createHarness({
       prompt,
@@ -264,34 +250,6 @@ describe("canonical productive/consult ACP attempt executor", () => {
         },
       },
     ]);
-  });
-
-  it("rejects false-carry steering that lost its active target", async () => {
-    const prompt = resolvedPrompt({
-      carryContext: false,
-      promptKind: "steering",
-      stored: null,
-    });
-    const harness = createHarness({ prompt });
-
-    await expect(executeAttempt(harness, prompt)).rejects.toThrow(
-      "ACP session operation crossed carry policy or stored correlation",
-    );
-    expect(harness.starts).toEqual([]);
-  });
-
-  it("rejects true-carry steering that lost its pinned source", async () => {
-    const prompt = resolvedPrompt({
-      carryContext: true,
-      promptKind: "steering",
-      stored: null,
-    });
-    const harness = createHarness({ prompt });
-
-    await expect(executeAttempt(harness, prompt)).rejects.toThrow(
-      "ACP session operation crossed carry policy or stored correlation",
-    );
-    expect(harness.starts).toEqual([]);
   });
 
   it("closes a pre-start failure and redacts the capability before persistence", async () => {

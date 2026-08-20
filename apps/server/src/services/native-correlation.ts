@@ -7,7 +7,7 @@ import {
   type AcpSessionStart,
 } from "@paperclipai/adapter-utils/acpx-runtime";
 
-interface AcpCorrelationScopeBase {
+export interface AcpCorrelationScope {
   readonly companyId: string;
   readonly taskId: string;
   readonly ownershipEpoch: number;
@@ -16,23 +16,9 @@ interface AcpCorrelationScopeBase {
   readonly workspaceIdentity: string;
   readonly targetFingerprint: string;
   readonly correlationGeneration: number;
-}
-
-export interface AcpCarryCorrelationScope extends AcpCorrelationScopeBase {
-  readonly purpose: "carry";
   readonly laneKind: "owner" | "consult";
   readonly authorizedContextExposureDigest: string;
 }
-
-export interface AcpActiveRunSteeringCorrelationScope extends AcpCorrelationScopeBase {
-  readonly purpose: "active_run_steering";
-  readonly runId: string;
-  readonly currentRefId: string;
-  readonly currentRefOrdinal: number;
-  readonly currentSegmentOrdinal: number;
-}
-
-export type AcpCorrelationScope = AcpCarryCorrelationScope | AcpActiveRunSteeringCorrelationScope;
 
 export interface ProtectedAcpSessionCorrelation {
   readonly envelopeVersion: typeof ACP_SESSION_CORRELATION_ENVELOPE_VERSION;
@@ -47,7 +33,7 @@ export interface ProtectedAcpSessionCorrelation {
  */
 export interface StoredAcpSessionCorrelation extends ProtectedAcpSessionCorrelation {
   readonly id: string;
-  readonly state: "eligible" | "current";
+  readonly state: "eligible";
   readonly scope: AcpCorrelationScope;
 }
 
@@ -102,37 +88,18 @@ export function validateAcpCorrelationScope(scope: AcpCorrelationScope): void {
   ) {
     throw new NativeCorrelationRejected("correlation epoch and generation must be positive integers");
   }
-  if (scope.purpose === "carry") {
-    exactDigest(scope.authorizedContextExposureDigest, "correlation context exposure digest");
-    return;
-  }
-  exactIdentity(scope.runId, "steering correlation run id");
-  exactIdentity(scope.currentRefId, "steering correlation current ref id");
-  if (
-    !Number.isSafeInteger(scope.currentRefOrdinal) ||
-    scope.currentRefOrdinal < 0 ||
-    !Number.isSafeInteger(scope.currentSegmentOrdinal) ||
-    scope.currentSegmentOrdinal < 0
-  ) {
-    throw new NativeCorrelationRejected(
-      "steering correlation ref and segment ordinals must be nonnegative integers",
-    );
-  }
+  exactDigest(scope.authorizedContextExposureDigest, "correlation context exposure digest");
 }
 
-function validateStoredCorrelation(
-  stored: StoredAcpSessionCorrelation,
-  expectedPurpose: AcpCorrelationScope["purpose"],
-): void {
+function validateStoredCorrelation(stored: StoredAcpSessionCorrelation): void {
   exactIdentity(stored.id, "stored correlation id");
   validateAcpCorrelationScope(stored.scope);
   if (
-    stored.scope.purpose !== expectedPurpose ||
     stored.envelopeVersion !== ACP_SESSION_CORRELATION_ENVELOPE_VERSION ||
     stored.codecKind !== ACP_SESSION_CORRELATION_KIND ||
-    (expectedPurpose === "carry" ? stored.state !== "eligible" : stored.state !== "current")
+    stored.state !== "eligible"
   ) {
-    throw new NativeCorrelationRejected("stored ACP correlation has the wrong purpose or state");
+    throw new NativeCorrelationRejected("stored ACP correlation is not eligible");
   }
   exactIdentity(stored.ciphertext, "stored correlation ciphertext");
   exactDigest(stored.digest, "stored correlation digest");
@@ -144,21 +111,12 @@ export function createNativeCorrelationService(options: {
   return {
     /** Opens the exact eligible encrypted row for one frozen resume. */
     async resolveResume(input: {
-      readonly promptKind: "base" | "steering";
-      readonly carryContext: boolean;
-      readonly bootstrapHandoff: boolean;
       readonly stored: StoredAcpSessionCorrelation | null;
     }): Promise<ResolvedAcpSessionResume> {
-      if (!input.carryContext && input.promptKind === "base" && !input.bootstrapHandoff) {
-        throw new NativeCorrelationRejected("false-carry base prompt cannot resolve an ACP resume");
-      }
-
       if (!input.stored) {
         throw new NativeCorrelationRejected("frozen ACP resume operation lost its exact stored correlation");
       }
-      const expectedPurpose =
-        input.promptKind === "steering" || input.bootstrapHandoff ? input.stored.scope.purpose : "carry";
-      validateStoredCorrelation(input.stored, expectedPurpose);
+      validateStoredCorrelation(input.stored);
       const raw = await options.protector.open(input.stored, input.stored.scope);
       let parsed: AcpSessionCorrelation;
       try {

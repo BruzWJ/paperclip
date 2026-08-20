@@ -53,7 +53,6 @@ export function createAuthorizationCore(db: Db) {
       db
         .select({
           companyId: companyMemberships.companyId,
-          membershipRole: companyMemberships.membershipRole,
           status: companyMemberships.status,
         })
         .from(companyMemberships)

@@ -7,6 +7,27 @@ export interface PluginDomainEventPublisher {
   publish(event: PluginEvent): Promise<void>;
 }
 
+export function publishBoardCommentCreated(
+  publisher: PluginDomainEventPublisher,
+  input: { companyId: string; taskId: string; commentId: string; actorUserId: string },
+): Promise<void> {
+  return publisher.publish({
+    eventId: input.commentId,
+    eventType: "task.board.comment.created",
+    occurredAt: new Date().toISOString(),
+    actorId: input.actorUserId,
+    actorType: "user",
+    entityId: input.commentId,
+    entityType: "task_comment",
+    companyId: input.companyId,
+    payload: {
+      companyId: input.companyId,
+      taskId: input.taskId,
+      commentId: input.commentId,
+    },
+  });
+}
+
 /**
  * Bind the process event bus to the explicit publisher passed to domain
  * producers. Delivery is awaited, but remains best-effort: a plugin failure is

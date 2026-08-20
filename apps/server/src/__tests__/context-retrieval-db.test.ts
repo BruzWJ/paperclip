@@ -54,11 +54,9 @@ describe("context retrieval DB projection", () => {
 
     const traceQuery = statements.at(-1)!;
     expect(traceQuery).not.toContain("and )");
-    expect(
-      traceQuery.match(/prompt_transmission_phase = 'transmitted'/g),
-    ).toHaveLength(2);
+    expect(traceQuery.match(/prompt_transmission_phase = 'transmitted'/g)).toHaveLength(1);
     expect(traceQuery).toContain("source_ref.source_message_id");
-    expect(traceQuery).toContain("segment.source_message_id");
+    expect(traceQuery).not.toContain("segment.source_message_id");
   });
 
   it("maps the exact four comment-author shapes and fails closed otherwise", () => {

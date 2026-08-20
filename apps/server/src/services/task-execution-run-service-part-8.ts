@@ -10,7 +10,6 @@ import {
   taskExecutionFinalizationUpdateDependencies,
   taskExecutionFinalizations,
   taskExecutionLeases,
-  taskExecutionPromptSegments,
   taskExecutionRunControls,
   taskExecutionRunLivenessFacts,
   taskExecutionRunRefs,
@@ -21,82 +20,11 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import * as runContracts from "./task-execution-run-service-part-1-section-1.js";
 import {
   TaskExecutionRunInvariantViolation,
-  type SteerableTaskExecutionRun,
-  type TaskExecutionRunIdentity,
 } from "./task-execution-run-service-part-1-section-1.js";
 import { readTaskExecutionRun } from "./task-execution-run-service-part-2-section-1.js";
 import { assertJoinedRunShape, boundedRecords } from "./task-execution-run-service-part-7.js";
-import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 import { redactTaskSessionPublicationValue } from "./task-session/publication.js";
 import type { TaskSessionStore } from "./task-session/store.js";
-
-/** Locks and validates the sole active run envelope before prompt steering. */
-export async function lockSteerableRunInTransaction(
-  transaction: TaskSessionDbTransaction,
-  input: TaskExecutionRunIdentity & {
-    readonly ownershipEpoch: number;
-    readonly targetAgentId: string;
-  },
-): Promise<SteerableTaskExecutionRun> {
-  const rows = await transaction
-    .select()
-    .from(taskExecutionRuns)
-    .where(
-      and(
-        eq(taskExecutionRuns.id, input.runId),
-        eq(taskExecutionRuns.companyId, input.companyId),
-        eq(taskExecutionRuns.taskId, input.taskId),
-      ),
-    )
-    .limit(1)
-    .for("update");
-  const run = rows[0];
-  if (
-    !run ||
-    run.status !== "running" ||
-    run.ownershipEpoch !== input.ownershipEpoch ||
-    run.targetAgentId !== input.targetAgentId ||
-    run.currentAttemptId === null ||
-    run.currentLeaseId === null ||
-    run.terminalFinalizationId !== null ||
-    run.startedAt === null ||
-    run.finishedAt !== null ||
-    (run.kind === "productive" &&
-      (run.executionMode !== "owner" ||
-        run.taskExecutionAuthorityId === null ||
-        run.consultExecutionId !== null)) ||
-    (run.kind === "consult" &&
-      (run.executionMode !== "consult" ||
-        run.taskExecutionAuthorityId !== null ||
-        run.consultExecutionId === null))
-  ) {
-    throw new TaskExecutionRunInvariantViolation(
-      "Selected run is not the exact active steerable task execution",
-    );
-  }
-  return {
-    companyId: run.companyId,
-    taskId: run.taskId,
-    runId: run.id,
-    sessionId: run.sessionId,
-    executionScopeId: run.executionScopeId,
-    kind: run.kind,
-    status: run.status,
-    ownershipEpoch: run.ownershipEpoch,
-    targetAgentId: run.targetAgentId,
-    adapterConfigRevisionId: run.adapterConfigRevisionId,
-    executionWorkspaceBindingId: run.executionWorkspaceBindingId,
-    executionMode: run.executionMode,
-    taskExecutionAuthorityId: run.taskExecutionAuthorityId,
-    consultExecutionId: run.consultExecutionId,
-    currentAttemptId: run.currentAttemptId,
-    currentLeaseId: run.currentLeaseId,
-    cancellationIntentId: run.cancellationIntentId,
-    terminalFinalizationId: null,
-    startedAt: run.startedAt,
-    finishedAt: null,
-  };
-}
 
 /**
  * One bounded canonical join for REST, activity, and audit
@@ -116,7 +44,6 @@ export async function readJoinedTaskExecutionRunDetail(
   const [
     controlRows,
     refRows,
-    segmentRows,
     sessionEventPage,
     sessionMessagePage,
     attemptRows,
@@ -145,18 +72,6 @@ export async function readJoinedTaskExecutionRunDetail(
         ),
       )
       .orderBy(asc(taskExecutionRunRefs.refOrdinal))
-      .limit(input.limit + 1),
-    database
-      .select()
-      .from(taskExecutionPromptSegments)
-      .where(
-        and(
-          eq(taskExecutionPromptSegments.companyId, input.companyId),
-          eq(taskExecutionPromptSegments.taskId, input.taskId),
-          eq(taskExecutionPromptSegments.runId, input.runId),
-        ),
-      )
-      .orderBy(asc(taskExecutionPromptSegments.refOrdinal), asc(taskExecutionPromptSegments.segmentOrdinal))
       .limit(input.limit + 1),
     taskSessionStore.pageEvents(
       {
@@ -396,7 +311,6 @@ export async function readJoinedTaskExecutionRunDetail(
     run,
     control: controlRows[0] ?? null,
     refs,
-    segments: boundedRecords(segmentRows, input.limit),
     sessionEvents: {
       items: redactedEvents,
       truncated: sessionEventPage.nextCursor !== null,

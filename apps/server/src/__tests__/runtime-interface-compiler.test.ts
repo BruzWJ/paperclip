@@ -187,6 +187,40 @@ describe("runtime interface compiler", () => {
     ]);
   });
 
+  it("exposes only read-only Paperclip tools and no plugin tools for a response-only turn", () => {
+    const result = compileRuntimeInterface(
+      compileInput({
+        readOnly: true,
+        contextDial: resolveContextDial({
+          agent: Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, true])),
+        }).effective,
+        actionGrants: { task_create: true },
+        pluginTools: [
+          {
+            installationId: "plugin-installation-1",
+            manifestIdentity: "manifest-1",
+            name: "acme.search__lookup_task",
+            toolName: "lookup_task",
+            title: "Look up task",
+            description: "Query the external task index",
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+    );
+
+    expect(result.descriptors).not.toHaveLength(0);
+    expect(
+      result.descriptors.every(
+        (tool) =>
+          tool.source === "paperclip" &&
+          PAPERCLIP_MANAGED_TOOL_METADATA[tool.name as keyof typeof PAPERCLIP_MANAGED_TOOL_METADATA].readOnly,
+      ),
+    ).toBe(true);
+    expect(result.byName.has("task_update")).toBe(false);
+    expect(result.byName.has("acme.search__lookup_task")).toBe(false);
+  });
+
   it("compiles one canonical owner-or-creator update ABI with automatic counterpart mention", () => {
     const descriptor = compileRuntimeInterface(
       compileInput({

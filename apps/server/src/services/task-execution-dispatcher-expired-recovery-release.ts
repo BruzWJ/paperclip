@@ -4,9 +4,8 @@ import {
   taskExecutionCancellationIntents,
   taskExecutionLeases,
   taskExecutionPromptCapabilities,
-  taskExecutionPromptSegments,
 } from "@paperclipai/db";
-import { and, eq, inArray, isNull, lte, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte } from "drizzle-orm";
 import { TaskConsultChainInvalid, lockAndValidateTaskConsultChain } from "./task-consult-chain-postgres.js";
 import { settleNonProtocolPromptInTransaction } from "./task-execution-prompt-cycle-postgres.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
@@ -34,29 +33,15 @@ export async function releaseExpiredRunRecoveryAttempt(
   const { idFactory } = context;
   const {
     cancellation,
-    steeringCancellation,
-    nonSteeringCancellation,
     member,
-    segment,
     attempt,
-    promptOwner,
     lease,
-    pendingSteeringSegment,
     nonProtocolPromptOwner,
     capabilities,
     capability,
     closureDecision,
     promptTransmitted,
   } = state;
-  if (steeringCancellation !== null && closureDecision.kind === "retry") {
-    reject("steering cancellation cannot own a retry prompt closure");
-  }
-  const steeringCancellationRecovery =
-    steeringCancellation === null
-      ? null
-      : closureDecision.kind === "open" && promptTransmitted
-        ? "fail_run"
-        : "continue_source";
   let consultChainRemainsLive = false;
   if (run.executionMode === "consult") {
     try {
@@ -77,12 +62,7 @@ export async function releaseExpiredRunRecoveryAttempt(
         .filter((id): id is string => id !== null),
     ),
   ];
-  const capabilityAlreadyRevokedForSteering =
-    capability?.state === "revoked" && capability.revocationReason === "active_run_steering";
-  if (steeringCancellation !== null && !capabilityAlreadyRevokedForSteering) {
-    reject("expired steering cancellation lost its revoked capability");
-  }
-  if (closureDecision.kind === "open" && !capabilityAlreadyRevokedForSteering) {
+  if (closureDecision.kind === "open") {
     const revoked = await transaction
       .update(taskExecutionPromptCapabilities)
       .set({
@@ -106,10 +86,9 @@ export async function releaseExpiredRunRecoveryAttempt(
     }
   }
   if (
-    (nonSteeringCancellation !== null && closureDecision.kind !== "terminal") ||
-    (steeringCancellationRecovery === "continue_source" && closureDecision.kind === "open")
+    cancellation !== null && closureDecision.kind !== "terminal"
   ) {
-    const incomplete = nonSteeringCancellation !== null && promptTransmitted;
+    const incomplete = promptTransmitted;
     await settleNonProtocolPromptInTransaction(
       transaction,
       nonProtocolPromptOwner,
@@ -129,7 +108,7 @@ export async function releaseExpiredRunRecoveryAttempt(
     );
   }
   const attemptTerminalState =
-    nonSteeringCancellation !== null
+    cancellation !== null
       ? ("cancelled" as const)
       : closureDecision.kind === "terminal"
         ? closureDecision.outcome === "succeeded"
@@ -150,7 +129,7 @@ export async function releaseExpiredRunRecoveryAttempt(
     await transaction
       .update(taskExecutionLeases)
       .set({
-        state: nonSteeringCancellation === null ? "expired" : "revoked",
+        state: cancellation === null ? "expired" : "revoked",
         releasedAt: at,
       })
       .where(
@@ -166,7 +145,6 @@ export async function releaseExpiredRunRecoveryAttempt(
     "expired lease lost its exact compare-and-set fence",
   );
   const completeCancellation = async (intent: CancellationIntentRow): Promise<void> => {
-    const steering = intent.reasonKind === "steering";
     exactlyOne(
       await transaction
         .update(taskExecutionCancellationIntents)
@@ -183,20 +161,14 @@ export async function releaseExpiredRunRecoveryAttempt(
             eq(taskExecutionCancellationIntents.runId, run.runId),
             eq(taskExecutionCancellationIntents.attemptId, attempt.id),
             eq(taskExecutionCancellationIntents.leaseId, lease.id),
-            steering
-              ? eq(taskExecutionCancellationIntents.reasonKind, "steering")
-              : ne(taskExecutionCancellationIntents.reasonKind, "steering"),
             inArray(taskExecutionCancellationIntents.state, ["requested", "acknowledged"]),
-            steering ? isNull(taskExecutionCancellationIntents.nativeCancellationSettledAt) : undefined,
             isNull(taskExecutionCancellationIntents.completedAt),
             isNull(taskExecutionCancellationIntents.failedAt),
             isNull(taskExecutionCancellationIntents.failureCode),
           ),
         )
         .returning({ id: taskExecutionCancellationIntents.id }),
-      steering
-        ? "expired transmitted steering orphan could not complete its request"
-        : "expired cancellation could not complete its exact intent",
+      "expired cancellation could not complete its exact intent",
     );
     await options.runService.detachCancellation(transaction, {
       companyId: run.companyId,
@@ -206,50 +178,7 @@ export async function releaseExpiredRunRecoveryAttempt(
       at,
     });
   };
-  if (steeringCancellationRecovery === "continue_source") {
-    // The old prompt is now durably closed and the exact attempt/lease is
-    // terminal, but the run attachment and positive segment remain owned by
-    // the steering intent. The source continuation performs the sole rebind.
-    return { kind: "complete" as const, result: { kind: "current", run } };
-  }
-  if (steeringCancellationRecovery === "fail_run") {
-    if (cancellation === null || pendingSteeringSegment === null) {
-      reject("expired transmitted steering orphan lost its durable request");
-    }
-    exactlyOne(
-      await transaction
-        .update(taskExecutionPromptSegments)
-        .set({
-          steeringState: "protocol_settled",
-          outcome: "released_unsent",
-          outcomeReferenceId: idFactory(),
-          protocolSettlementState: "not_sent",
-          settlementVersion: 1,
-          settledAt: at,
-        })
-        .where(
-          and(
-            eq(taskExecutionPromptSegments.companyId, pendingSteeringSegment.companyId),
-            eq(taskExecutionPromptSegments.taskId, pendingSteeringSegment.taskId),
-            eq(taskExecutionPromptSegments.runId, run.runId),
-            eq(taskExecutionPromptSegments.refId, member.ref.id),
-            eq(taskExecutionPromptSegments.refOrdinal, member.row.refOrdinal),
-            eq(taskExecutionPromptSegments.segmentOrdinal, pendingSteeringSegment.segmentOrdinal),
-            eq(taskExecutionPromptSegments.cancellationIntentId, cancellation.id),
-            inArray(taskExecutionPromptSegments.steeringState, ["requested", "sent"]),
-            eq(taskExecutionPromptSegments.promptTransmissionPhase, "not_transmitted"),
-            isNull(taskExecutionPromptSegments.attemptId),
-            isNull(taskExecutionPromptSegments.capabilityConnectionId),
-            isNull(taskExecutionPromptSegments.capabilityGeneration),
-            isNull(taskExecutionPromptSegments.protocolSettlementState),
-          ),
-        )
-        .returning({ runId: taskExecutionPromptSegments.runId }),
-      "expired transmitted steering orphan could not release its request",
-    );
-  }
-  const cancellationToComplete =
-    nonSteeringCancellation ?? (steeringCancellationRecovery === "fail_run" ? cancellation : null);
+  const cancellationToComplete = cancellation;
   if (cancellationToComplete !== null) {
     await completeCancellation(cancellationToComplete);
   }
@@ -287,10 +216,8 @@ export async function releaseExpiredRunRecoveryAttempt(
   return {
     ...state,
     kind: "continue" as const,
-    steeringCancellationRecovery,
     consultChainRemainsLive,
     correlationIds,
-    capabilityAlreadyRevokedForSteering,
     attemptTerminalState,
     completeCancellation,
     cancellationToComplete,

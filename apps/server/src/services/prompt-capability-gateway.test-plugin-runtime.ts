@@ -12,6 +12,7 @@ import { capability, now } from "./prompt-capability-gateway.test-fixtures.js";
 export function compileInput(): RuntimeInterfaceCompileInput {
   return {
     mode: "owner" as const,
+    readOnly: false,
     turn: "work",
     contextDial: resolveContextDial({ agent: {} }).effective,
     actionGrants: {},

@@ -20,7 +20,6 @@ describe("task execution dispatcher", () => {
       const dispatcher = createTaskExecutionDispatcher({
         repository: current.repository,
         executor: { execute },
-        steeringResults: { publish: vi.fn() },
         workerId: "worker",
       });
       await expect(dispatcher.notifyPersistedRef("ref")).resolves.toBe(outcome);
@@ -33,7 +32,6 @@ describe("task execution dispatcher", () => {
     const dispatcher = createTaskExecutionDispatcher({
       repository: invalidated.repository,
       executor: { execute: vi.fn() },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
     await expect(dispatcher.notifyPersistedRef("ref")).rejects.toThrow(/Invalidated refs/);
@@ -87,7 +85,6 @@ describe("task execution dispatcher", () => {
     const dispatcher = createTaskExecutionDispatcher({
       repository,
       executor: { execute: vi.fn() },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
       now: () => recoveredAt,
     });
@@ -137,7 +134,6 @@ describe("task execution dispatcher", () => {
           });
         },
       },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
     await expect(dispatcher.notifyPersistedRef("ref")).resolves.toBe("notified");
@@ -232,7 +228,6 @@ describe("task execution dispatcher", () => {
           });
         },
       },
-      steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
 

@@ -350,7 +350,6 @@ describe("task-execution target lanes", () => {
     const dispatcher = createTaskExecutionDispatcher({
       repository,
       workerId: "worker",
-      steeringResults: { publish: vi.fn() },
       executor: {
         async execute(current, _signal, settle) {
           const target = current.ref.targetAgentId;

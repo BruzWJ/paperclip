@@ -378,6 +378,7 @@ export function taskTreeControlServiceGroup2(
               reason: "task_tree_cancelled",
               actor: treeControl.cancellationActorForHold(createdHold),
               now,
+              nativeContinuity: "preserve_carry",
             }),
           );
         }

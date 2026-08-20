@@ -98,12 +98,7 @@ export async function admitTaskExecutionInTransaction(input: {
       .limit(2)
       .for("update"),
   ]);
-  if (
-    agentRows.length !== 1 ||
-    taskRows.length !== 1 ||
-    bindingRows.length !== 1 ||
-    laneRows.length > 1
-  ) {
+  if (agentRows.length !== 1 || taskRows.length !== 1 || bindingRows.length !== 1 || laneRows.length > 1) {
     throw new Error("Task execution target lost its canonical admission scope");
   }
   const nextLaneOrdinal = laneRows[0]?.nextOrdinal ?? 0;
@@ -116,6 +111,7 @@ export async function admitTaskExecutionInTransaction(input: {
     task: taskRows[0]!,
     contextGrantKeys: contextRows.map((row) => row.key),
   });
+  const targetFingerprint = localExecutionCorrelationFingerprint(work.adapterConfigRevisionId);
   const carry = contextDial.carry_context
     ? await input.transaction
         .select({ id: taskExecutionSessions.id })
@@ -128,11 +124,7 @@ export async function admitTaskExecutionInTransaction(input: {
             eq(taskExecutionSessions.targetAgentId, work.targetAgentId),
             eq(taskExecutionSessions.adapterConfigIdentity, work.adapterConfigRevisionId),
             eq(taskExecutionSessions.workspaceIdentity, bindingRows[0]!.id),
-            eq(
-              taskExecutionSessions.targetFingerprint,
-              localExecutionCorrelationFingerprint(work.adapterConfigRevisionId),
-            ),
-            eq(taskExecutionSessions.purpose, "carry"),
+            eq(taskExecutionSessions.targetFingerprint, targetFingerprint),
             eq(taskExecutionSessions.state, "eligible"),
             eq(taskExecutionSessions.laneKind, work.mode),
             eq(taskExecutionSessions.authorizedContextExposureDigest, contextDialDigest(contextDial)),

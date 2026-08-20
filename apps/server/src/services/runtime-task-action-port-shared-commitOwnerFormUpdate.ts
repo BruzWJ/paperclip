@@ -1,5 +1,6 @@
-import { taskCreatorEdgeReceivability, taskUpdates, tasks } from "@paperclipai/db";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { taskCreatorEdgeReceivability, taskUpdates, tasks, type Db } from "@paperclipai/db";
+import { and, eq, sql } from "drizzle-orm";
+import { persistActivityLog, publishCommittedActivity } from "./activity-log.js";
 import { type PaperclipManagedAgentMessage } from "./paperclip-agent-message.js";
 import {
   RuntimeTaskActionConflict,
@@ -26,14 +27,17 @@ import {
 } from "./runtime-task-action-port-shared-part-6.js";
 import {
   assertLifecycleTransition,
-  assertTaskNonterminal,
   boardPresentationStatusFor,
   canonicalJson,
   deterministicUuid,
   lockOwnerUpdateRecipient,
+  lockTaskMentionRecipient,
   terminalStatus,
 } from "./runtime-task-action-port-shared-part-2.js";
-import { lockRuntimeToolAuthority } from "./runtime-task-action-port-shared-part-3.js";
+import {
+  assertTargetAdapterRevision,
+  lockRuntimeToolAuthority,
+} from "./runtime-task-action-port-shared-part-3.js";
 import { taskUpdateActor, updateCounterpart } from "./runtime-task-action-port-shared-part-5.js";
 import {
   applyTaskExecutionPolicyTransition,
@@ -69,16 +73,6 @@ export async function commitOwnerFormUpdateImplementation(
   ) {
     throw new RuntimeTaskActionConflict("structuredResult must be omitted rather than undefined");
   }
-  if (
-    ownerAuthority.kind === "user-creator-withdrawal" &&
-    (input.status !== "cancelled" || Object.hasOwn(input, "structuredResult"))
-  ) {
-    throw new RuntimeTaskActionDenied(
-      "A named-user withdrawal owner may only cancel with a message",
-      "user_withdrawal_cancel_only",
-    );
-  }
-
   const companyId = authorityCompanyId(ownerAuthority);
   const gatewayInvocationId = ownerGatewayInvocationId(ownerAuthority);
   const disposition =
@@ -94,12 +88,7 @@ export async function commitOwnerFormUpdateImplementation(
     let task: TaskRow;
     let authorizedRuntime: AuthorizedRuntimeAction | null = null;
     if (ownerAuthority.kind === "agent-execution") {
-      authorizedRuntime = await lockRuntimeToolAuthority(
-        tx,
-        ownerAuthority.capability,
-        "task_update",
-        now,
-      );
+      authorizedRuntime = await lockRuntimeToolAuthority(tx, ownerAuthority.capability, "task_update", now);
       if (
         taskId !== ownerAuthority.capability.taskId ||
         !ownerAuthority.capability.taskExecutionAuthorityId ||
@@ -123,29 +112,6 @@ export async function commitOwnerFormUpdateImplementation(
       if (!locked || !locked.ownershipEpoch) {
         throw new RuntimeTaskActionDenied("Owner-form task target does not exist", "owner_target_missing");
       }
-      const escalationOwner =
-        locked.creatorKind === "system" &&
-        locked.escalatedFromAffectedTaskId !== null &&
-        ((locked.ownerKind === "user" && locked.ownerUserId === ownerAuthority.actorUserId) ||
-          locked.ownerKind === "board");
-      const withdrawalOwner =
-        locked.creatorKind === "user/board" &&
-        locked.creatorUserId === ownerAuthority.actorUserId &&
-        locked.ownerKind === "user" &&
-        locked.ownerUserId === ownerAuthority.actorUserId &&
-        locked.ownerAssignmentSource === "user_creator_withdrawal";
-      if (
-        (ownerAuthority.kind === "system-escalation-human" && !escalationOwner) ||
-        (ownerAuthority.kind === "user-creator-withdrawal" && !withdrawalOwner)
-      ) {
-        throw new RuntimeTaskActionDenied(
-          "Authenticated user is not the documented human owner",
-          "owner_authority_invalid",
-        );
-      }
-      // A named Board principal is already authenticated at ingress and is
-      // the control-plane owner. It intentionally does not inherit either
-      // narrow human-form relationship check above.
       task = locked;
     }
 
@@ -167,11 +133,19 @@ export async function commitOwnerFormUpdateImplementation(
           "owner task_update invocation was retried with different immutable arguments",
         );
       }
-      return { ...retry, cancellations: null };
+      return { ...retry, task, cancellations: null, committedActivity: null };
     }
 
-    assertTaskNonterminal(task);
     const previousStatus = task.lifecycleStatus;
+    if (terminalStatus(previousStatus) && ownerAuthority.kind !== "board") {
+      throw new RuntimeTaskActionDenied(
+        "Only Board task_update may continue a terminal task",
+        "owner_authority_invalid",
+      );
+    }
+    if (terminalStatus(previousStatus) && input.status === undefined) {
+      throw new RuntimeTaskActionConflict("A terminal task update must continue the task");
+    }
     if (input.status !== undefined) {
       assertLifecycleTransition(task.lifecycleStatus, input.status);
     }
@@ -212,6 +186,16 @@ export async function commitOwnerFormUpdateImplementation(
     if (!edge) {
       throw new RuntimeTaskActionConflict("Current ownership epoch has no eager creator edge");
     }
+    if (
+      ownerAuthority.kind === "board" &&
+      ownerAuthority.recipient === "creator" &&
+      (edge.endpointKind !== "agent-execution" || !edge.endpointId)
+    ) {
+      throw new RuntimeTaskActionDenied(
+        "Task creator is not an invokable agent execution",
+        "board_status_recipient_unavailable",
+      );
+    }
     const runSequence = source.runId === null ? 0 : await nextRunUpdateSequence(tx, companyId, source.runId);
     const updateId = deterministicUuid("task-update", gatewayInvocationId);
     const humanSessionState =
@@ -223,7 +207,49 @@ export async function commitOwnerFormUpdateImplementation(
       ownerAuthority.kind === "agent-execution"
         ? ownerAuthority.capability.sessionId
         : humanSessionState!.session.id;
-    const target = await lockOwnerUpdateRecipient(tx, companyId, task, edge);
+    const target =
+      ownerAuthority.kind === "board" && ownerAuthority.recipient === "owner"
+        ? await lockTaskMentionRecipient(tx, companyId, task.id)
+        : await lockOwnerUpdateRecipient(tx, companyId, task.id, edge);
+    if (ownerAuthority.kind === "board" && target.kind !== "agent") {
+      throw new RuntimeTaskActionDenied(
+        "Selected status-update recipient is not an invokable agent",
+        "board_status_recipient_unavailable",
+      );
+    }
+    if (ownerAuthority.kind === "board" && target.kind === "agent") {
+      const revisionId = await assertTargetAdapterRevision(tx, companyId, target.target.agentId);
+      if (revisionId !== target.target.adapterConfigRevisionId) {
+        throw new RuntimeTaskActionDenied(
+          "Selected status-update recipient changed runtime configuration",
+          "board_status_recipient_unavailable",
+        );
+      }
+    }
+    const effectiveStatus = input.status === undefined || gated ? previousStatus : input.status;
+    const crossesTerminalBoundary = terminalStatus(previousStatus) !== terminalStatus(effectiveStatus);
+    const cancellations = crossesTerminalBoundary
+      ? await options.taskExecutionCancellation.requestScopeCancellationsInTransaction(tx, {
+          companyId,
+          taskId: task.id,
+          selector: {
+            kind: "ownership_epoch",
+            ownershipEpoch: task.ownershipEpoch!,
+          },
+          reason:
+            effectiveStatus === "cancelled"
+              ? "task_cancelled"
+              : effectiveStatus === "done"
+                ? "task_completed"
+                : "task_reactivated",
+          actor:
+            ownerAuthority.kind === "agent-execution"
+              ? { kind: "agent", agentId: ownerAuthority.capability.targetAgentId }
+              : { kind: "user", userId: ownerAuthority.actorUserId },
+          now,
+          nativeContinuity: "preserve_carry",
+        })
+      : null;
     const updateDelivery = {
       toolName: "task_update",
       body: input.message,
@@ -233,7 +259,7 @@ export async function commitOwnerFormUpdateImplementation(
         from: taskUpdateMessageActor(ownerAuthority, authorizedRuntime),
         sourceRole: "task owner",
         previousStatus,
-        effectiveStatus: input.status === undefined || gated ? previousStatus : input.status,
+        effectiveStatus,
         ...(gated ? { pendingReview: true } : {}),
       },
     } satisfies PaperclipManagedAgentMessage<"task_update">;
@@ -257,6 +283,46 @@ export async function commitOwnerFormUpdateImplementation(
     });
     if (!admission.comment) {
       throw new RuntimeTaskActionConflict("Owner update projector did not create its comment-of-record");
+    }
+    const updatedTask =
+      input.status === undefined
+        ? await tx
+            .select()
+            .from(tasks)
+            .where(
+              and(
+                eq(tasks.companyId, companyId),
+                eq(tasks.id, task.id),
+                eq(tasks.ownershipEpoch, task.ownershipEpoch!),
+                eq(tasks.lifecycleStatus, previousStatus),
+              ),
+            )
+            .limit(1)
+            .then((rows) => rows[0] ?? null)
+        : await tx
+            .update(tasks)
+            .set({
+              ...executionPolicyPatch,
+              lifecycleStatus: effectiveStatus,
+              boardPresentationStatus:
+                executionPolicyPatch.boardPresentationStatus ?? boardPresentationStatusFor(input.status),
+              disposition: gated ? null : disposition,
+              completedAt: effectiveStatus === "done" ? now : null,
+              cancelledAt: effectiveStatus === "cancelled" ? now : null,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(tasks.companyId, companyId),
+                eq(tasks.id, task.id),
+                eq(tasks.ownershipEpoch, task.ownershipEpoch!),
+                eq(tasks.lifecycleStatus, previousStatus),
+              ),
+            )
+            .returning()
+            .then((rows) => rows[0] ?? null);
+    if (!updatedTask) {
+      throw new RuntimeTaskActionConflict("Task lifecycle changed during owner update");
     }
     const update = await tx
       .insert(taskUpdates)
@@ -285,79 +351,49 @@ export async function commitOwnerFormUpdateImplementation(
     if (!update) {
       throw new RuntimeTaskActionConflict("Owner update ledger row was not persisted");
     }
-    const updatedTask =
-      input.status === undefined
-        ? await tx
-            .select()
-            .from(tasks)
-            .where(
-              and(
-                eq(tasks.companyId, companyId),
-                eq(tasks.id, task.id),
-                eq(tasks.ownershipEpoch, task.ownershipEpoch!),
-                inArray(tasks.lifecycleStatus, ["open", "blocked"]),
-              ),
-            )
-            .limit(1)
-            .then((rows) => rows[0] ?? null)
-        : await tx
-            .update(tasks)
-            .set({
-              ...executionPolicyPatch,
-              lifecycleStatus: gated ? task.lifecycleStatus : input.status,
-              boardPresentationStatus:
-                executionPolicyPatch.boardPresentationStatus ?? boardPresentationStatusFor(input.status),
-              disposition: gated ? null : disposition,
-              completedAt: !gated && input.status === "done" ? now : null,
-              cancelledAt: !gated && input.status === "cancelled" ? now : null,
-              updatedAt: now,
-            })
-            .where(
-              and(
-                eq(tasks.companyId, companyId),
-                eq(tasks.id, task.id),
-                eq(tasks.ownershipEpoch, task.ownershipEpoch!),
-                inArray(tasks.lifecycleStatus, ["open", "blocked"]),
-              ),
-            )
-            .returning()
-            .then((rows) => rows[0] ?? null);
-    if (!updatedTask) {
-      throw new RuntimeTaskActionConflict("Task lifecycle changed during owner update");
-    }
-    const cancellations =
-      !gated && input.status === "cancelled"
-        ? await options.taskExecutionCancellation.requestScopeCancellationsInTransaction(tx, {
-            companyId,
-            taskId: task.id,
-            selector: {
-              kind: "ownership_epoch",
-              ownershipEpoch: task.ownershipEpoch!,
+    const committedActivity =
+      ownerAuthority.kind === "board" && input.status !== undefined
+        ? await persistActivityLog(
+            tx as unknown as Db,
+            {
+              companyId,
+              actorType: "user",
+              actorId: ownerAuthority.actorUserId,
+              action: "task.updated",
+              entityType: "task",
+              entityId: task.id,
+              details: {
+                contract: "board-task-status-update/v1",
+                identifier: task.identifier,
+                status: updatedTask.boardPresentationStatus,
+                lifecycleStatus: updatedTask.lifecycleStatus,
+                recipient: ownerAuthority.recipient,
+                commentId: admission.comment.id,
+                _previous: {
+                  status: task.boardPresentationStatus,
+                  lifecycleStatus: previousStatus,
+                },
+              },
             },
-            reason: "task_cancelled",
-            actor:
-              ownerAuthority.kind === "agent-execution"
-                ? {
-                    kind: "agent",
-                    agentId: ownerAuthority.capability.targetAgentId,
-                  }
-                : {
-                    kind: "user",
-                    userId: ownerAuthority.actorUserId,
-                  },
-            now,
-          })
+            {
+              id: deterministicUuid("board-task-status-update-activity", gatewayInvocationId),
+              createdAt: now,
+            },
+          )
         : null;
     return {
       task: updatedTask,
       update,
       comment: admission.comment,
       ref: admission.ref,
-      gated,
       cancellations,
+      committedActivity,
       retried: false as const,
     };
   });
+  if (committed.committedActivity) {
+    publishCommittedActivity(committed.committedActivity);
+  }
   if (committed.ref) {
     await options.dispatchPersistedRef(committed.ref.id);
   }
@@ -368,6 +404,6 @@ export async function commitOwnerFormUpdateImplementation(
         // The durable cancellation-intent reconciler retries this signal.
       });
   }
-  const { cancellations: _, ...result } = committed;
+  const { cancellations: _, committedActivity: _committedActivity, ...result } = committed;
   return result;
 }

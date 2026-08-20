@@ -93,11 +93,7 @@ export function createPostgresTaskExecutionFinalizationWriter(options: {
         .for("update"),
       "Productive or consult run lost its current-prompt control",
     );
-    if (
-      control.currentRefId !== null ||
-      control.currentOrdinal !== null ||
-      control.currentSegmentOrdinal !== null
-    ) {
+    if (control.currentRefId !== null || control.currentOrdinal !== null) {
       throw new finalizationCore.PostgresTaskExecutionFinalizationRejected(
         "Run cannot finalize while a prompt is current",
       );
@@ -308,10 +304,8 @@ export function createPostgresTaskExecutionFinalizationWriter(options: {
         runId: input.runId,
         finalizationId,
         dependencyOrdinal: dependency.dependencyOrdinal,
-        promptKind: dependency.kind,
         refId: dependency.refId,
         refOrdinal: dependency.refOrdinal,
-        segmentOrdinal: dependency.segmentOrdinal,
         protocolSettlementState: dependency.protocolSettlementState,
         settlementVersion: dependency.settlementVersion,
         accountingId: dependency.accountingId,

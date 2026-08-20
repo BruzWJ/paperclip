@@ -151,7 +151,10 @@ function boardTaskRow() {
   };
 }
 
-function setupBoard(options: { lifecycle?: () => Promise<unknown> } = {}) {
+function setupBoard(options: {
+  lifecycle?: () => Promise<unknown>;
+  reassignment?: () => Promise<unknown>;
+} = {}) {
   const db = createMockDb({ select: [[boardTaskRow()], [], []] });
   const commitOwnerFormUpdate = vi.fn(
     options.lifecycle ?? (async () => ({
@@ -160,9 +163,10 @@ function setupBoard(options: { lifecycle?: () => Promise<unknown> } = {}) {
       retried: false,
     })),
   );
+  const boardReassign = vi.fn(options.reassignment);
   const ordinaryTasks = {
+    boardReassign,
     commitOwnerFormUpdate,
-    boardReopen: vi.fn(),
     userComment: vi.fn(),
   } as unknown as OrdinaryTaskRuntime;
   const publish = vi.fn();
@@ -173,13 +177,44 @@ function setupBoard(options: { lifecycle?: () => Promise<unknown> } = {}) {
     retrieval: () => ({} as never),
     pluginDomainEvents: { publish } as never,
   });
-  return { db, commitOwnerFormUpdate, publish, router };
+  return { boardReassign, db, commitOwnerFormUpdate, publish, router };
 }
 
 describe("Board MCP managed-tool routing", () => {
+  it("returns a terminal ownership-only reassignment without inventing an execution ref", async () => {
+    const reassignment = {
+      task: { id: taskId, lifecycleStatus: "done", ownerAgentId },
+      ref: null,
+      auditId: "reassignment-audit",
+      retried: false,
+    };
+    const { router, boardReassign } = setupBoard({
+      reassignment: async () => reassignment,
+    });
+
+    await expect(
+      router.routeExecution(
+        parseBoardManagedTool("task_assign", { companyId, taskId, ownerAgentId }),
+        { authority: boardAuthority },
+      ),
+    ).resolves.toEqual({
+      task: reassignment.task,
+      executionRefId: null,
+      auditId: reassignment.auditId,
+      retried: false,
+    });
+    expect(boardReassign).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        taskId,
+        ownerAgentId,
+        actorUserId: userId,
+      }),
+    );
+  });
+
   it("uses the canonical owner-form lifecycle transaction and plugin event", async () => {
     const { router, commitOwnerFormUpdate, publish } = setupBoard();
-    const structuredResult = { artifact: "report.json" };
 
     const result = await router.routeExecution(
       parseBoardManagedTool("task_update", {
@@ -187,30 +222,27 @@ describe("Board MCP managed-tool routing", () => {
         taskId,
         status: "done",
         message: "The Board verified the result.",
-        structuredResult,
+        recipient: "owner",
       }),
       { authority: boardAuthority },
     );
 
     expect(result).toEqual({
-      taskId,
-      lifecycle: {
-        task: { id: taskId },
-        comment: { id: "00000000-0000-4000-8000-000000000004" },
-        retried: false,
-      },
+      task: { id: taskId },
+      comment: { id: "00000000-0000-4000-8000-000000000004" },
+      retried: false,
     });
     expect(commitOwnerFormUpdate).toHaveBeenCalledWith(
       taskId,
       {
         status: "done",
         message: "The Board verified the result.",
-        structuredResult,
       },
       expect.objectContaining({
         kind: "board",
         companyId,
         actorUserId: userId,
+        recipient: "owner",
         gatewayInvocationId: expect.stringContaining(
           "paperclip-tool:task_update:",
         ),
@@ -228,13 +260,55 @@ describe("Board MCP managed-tool routing", () => {
     expect(() => parseBoardManagedTool("task_update", {
       companyId,
       taskId,
-      title: "This must not be persisted",
       status: "blocked",
-    })).toThrow("A lifecycle status update requires a message");
+      recipient: "owner",
+    })).toThrow();
+    expect(() => parseBoardManagedTool("task_update", {
+      companyId,
+      taskId,
+      title: "Generic title updates are not accepted",
+      message: "This must remain one comment/status command.",
+    })).toThrow();
     expect(commitOwnerFormUpdate).not.toHaveBeenCalled();
   });
 
-  it("does not update a title when the lifecycle transition rejects", async () => {
+  it("requires one explicit lifecycle status and recipient", () => {
+    expect(() => parseBoardManagedTool("task_update", {
+      companyId,
+      taskId,
+      message: "Waiting on input.",
+      recipient: "owner",
+    })).toThrow();
+    expect(() => parseBoardManagedTool("task_update", {
+      companyId,
+      taskId,
+      status: "blocked",
+      message: "Waiting on input.",
+    })).toThrow();
+  });
+
+  it("represents terminal continuation as status open on the same task_update path", async () => {
+    const { router, commitOwnerFormUpdate } = setupBoard();
+
+    await router.routeExecution(
+      parseBoardManagedTool("task_update", {
+        companyId,
+        taskId,
+        status: "open",
+        message: "Continue with the Board follow-up.",
+        recipient: "owner",
+      }),
+      { authority: boardAuthority },
+    );
+
+    expect(commitOwnerFormUpdate).toHaveBeenCalledWith(
+      taskId,
+      { status: "open", message: "Continue with the Board follow-up." },
+      expect.objectContaining({ kind: "board", recipient: "owner" }),
+    );
+  });
+
+  it("does not perform a second mutation when the lifecycle transition rejects", async () => {
     const { db, router, commitOwnerFormUpdate } = setupBoard({
       lifecycle: async () => {
         throw new Error("Task lifecycle transition is invalid");
@@ -245,9 +319,9 @@ describe("Board MCP managed-tool routing", () => {
       parseBoardManagedTool("task_update", {
         companyId,
         taskId,
-        title: "This must not be persisted",
         status: "done",
         message: "Attempt a terminal transition.",
+        recipient: "creator",
       }),
       { authority: boardAuthority },
     )).rejects.toThrow("Task lifecycle transition is invalid");

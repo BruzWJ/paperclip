@@ -277,6 +277,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
       readonly selector: dispatcherCore.TaskExecutionAuthorityFenceSelector;
       readonly reason: string;
       readonly at: Date;
+      readonly nativeContinuity: "revoke" | "preserve_carry";
     },
   ) => Promise<dispatcherCore.FencedTaskExecutionAuthority>;
 } {
@@ -336,6 +337,7 @@ export function createPostgresTaskExecutionDispatcherRepository(
         selector: dispatcherCore.TaskExecutionAuthorityFenceSelector;
         reason: string;
         at: Date;
+        nativeContinuity: "revoke" | "preserve_carry";
       },
     ): Promise<dispatcherCore.FencedTaskExecutionAuthority>;
   };

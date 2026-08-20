@@ -17,7 +17,7 @@ export const canonicalJson = canonicalJsonImport;
 const hoistedMocks = vi.hoisted(() => ({
   sessions: {
     admitExecutionSource: vi.fn(),
-    admitSteeringComment: vi.fn(),
+    admitExecutionSourceBatch: vi.fn(),
     appendNonDispatchUserComment: vi.fn(),
   },
   taskForms: {
@@ -25,9 +25,11 @@ const hoistedMocks = vi.hoisted(() => ({
     commitCreatorFormUpdate: vi.fn(),
   },
   resolveInvokableOwner: vi.fn(),
+  reserveWorkspace: vi.fn(),
+  persistActivity: vi.fn(),
+  publishActivity: vi.fn(),
+  revokeOwnership: vi.fn(),
   dispatchRef: vi.fn(),
-  requestSteering: vi.fn(),
-  continuePendingSteeringForSource: vi.fn(),
   requestCancellations: vi.fn(),
   reconcileCancellations: vi.fn(),
 }));
@@ -46,6 +48,7 @@ vi.mock("../services/runtime-task-action-port.js", async (importActual) => {
   return {
     ...actual,
     createTaskFormCommitRuntime: vi.fn(() => hoistedMocks.taskForms),
+    revokeOutgoingOwnershipEpoch: hoistedMocks.revokeOwnership,
   };
 });
 
@@ -56,6 +59,17 @@ vi.mock("../services/agent-invokability.js", async (importActual) => {
     resolveInvokableTaskOwnerInTransaction: hoistedMocks.resolveInvokableOwner,
   };
 });
+
+vi.mock("../services/execution-workspaces.js", async (importActual) => ({
+  ...(await importActual<typeof import("../services/execution-workspaces.js")>()),
+  reserveTaskExecutionWorkspaceBinding: hoistedMocks.reserveWorkspace,
+}));
+
+vi.mock("../services/activity-log.js", async (importActual) => ({
+  ...(await importActual<typeof import("../services/activity-log.js")>()),
+  persistActivityLog: hoistedMocks.persistActivity,
+  publishCommittedActivity: hoistedMocks.publishActivity,
+}));
 
 export const COMPANY_ID = "company-1";
 export const TASK_ID = "task-1";
@@ -68,10 +82,6 @@ export function identityDigest(value: unknown): string {
 export function createRuntime(harness: MockDbHarness) {
   return createOrdinaryTaskRuntime(harness.db, {
     clock: () => NOW,
-    taskExecutionRunService: {
-      requestSteeringInTransaction: mocks.requestSteering,
-      continuePendingSteeringForSource: mocks.continuePendingSteeringForSource,
-    },
     taskExecutionCancellation: {
       requestScopeCancellationsInTransaction: mocks.requestCancellations,
       reconcileRequestedCancellations: mocks.reconcileCancellations,
@@ -105,9 +115,10 @@ beforeEach(() => {
   mocks.resolveInvokableOwner.mockResolvedValue({
     revisionId: "revision-owner",
   });
+  mocks.reserveWorkspace.mockResolvedValue({ contextEpochGeneration: 4 });
+  mocks.persistActivity.mockResolvedValue({ row: { id: "reassignment-audit" }, taskId: TASK_ID });
+  mocks.revokeOwnership.mockResolvedValue({ escalationDispatchRefIds: [], cancellations: null });
   mocks.dispatchRef.mockResolvedValue(undefined);
-  mocks.requestSteering.mockResolvedValue(undefined);
-  mocks.continuePendingSteeringForSource.mockResolvedValue(undefined);
   mocks.requestCancellations.mockResolvedValue(null);
   mocks.reconcileCancellations.mockResolvedValue(undefined);
 });

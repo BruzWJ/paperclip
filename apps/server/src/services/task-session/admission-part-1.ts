@@ -99,10 +99,6 @@ export type TaskSessionExecutionSource =
       actor: UserOrBoardExecutionActor | AgentExecutionActor | PluginExecutionActor;
     }
   | {
-      sourceKind: "task_reopen";
-      actor: UserOrBoardExecutionActor;
-    }
-  | {
       sourceKind: "routine_dispatch";
       actor: RoutineExecutionActor;
     }
@@ -117,10 +113,6 @@ export type TaskSessionExecutionSource =
   | {
       sourceKind: "system_nudge";
       actor: SystemExecutionActor;
-    }
-  | {
-      sourceKind: "human_comment";
-      actor: UserOrBoardExecutionActor;
     };
 
 export type TaskSessionAgentCommentAuthor = Extract<TaskSessionCommentAuthor, { kind: "agent" }>;
@@ -135,13 +127,6 @@ export type TaskSessionNonAgentCommentAuthor = Exclude<TaskSessionCommentAuthor,
 interface TaskSessionProjectedCommentThreading {
   /** The only reply field accepted from an admission caller. */
   replyToCommentId?: string | null;
-  /** Internal attribution for a response produced by positive steering. */
-  steeringSegment?: {
-    steeringTargetRunId: string;
-    refId: string;
-    refOrdinal: number;
-    segmentOrdinal: number;
-  } | null;
 }
 
 export type TaskSessionProjectedCommentAttribution = (
@@ -156,7 +141,8 @@ export type TaskSessionProjectedCommentAttribution = (
       author: TaskSessionNonAgentCommentAuthor;
       producingRun: null;
     }
-) & TaskSessionProjectedCommentThreading;
+) &
+  TaskSessionProjectedCommentThreading;
 
 /** Exact Board-visible text plus its canonical author attribution. */
 export type TaskSessionProjectedCommentSource = TaskSessionProjectedCommentAttribution & {
@@ -186,10 +172,7 @@ export type DispatchingExecutionSourceInput =
         previousOwnershipEpoch: number;
       })
   | (DispatchingExecutionSourceBase &
-      Exclude<
-        TaskSessionExecutionSource,
-        { sourceKind: "task_reassignment" } | { sourceKind: "human_comment" }
-      > & {
+      Exclude<TaskSessionExecutionSource, { sourceKind: "task_reassignment" }> & {
         previousOwnershipEpoch?: never;
       });
 
@@ -207,23 +190,8 @@ export interface NonDispatchUserComment extends TaskSessionSourceIdentity {
   companyId: string;
   taskId: string;
   sessionId: string;
-  delivery?: "queue";
   comment: TaskSessionUserProjectedCommentSource;
 }
-
-/**
- * Human-authored input admitted for one already-selected active run. It owns
- * a canonical Session inbox row and comment but deliberately creates no
- * TaskExecutionRef: the run service binds that input to one positive prompt
- * segment in the same transaction.
- */
-export type SteeringComment = TaskSessionSourceIdentity & {
-  companyId: string;
-  taskId: string;
-  sessionId: string;
-} & Extract<TaskSessionExecutionSource, { sourceKind: "human_comment" }> & {
-    comment: TaskSessionUserProjectedCommentSource;
-  };
 
 export interface NonDispatchControlNotice extends TaskSessionSourceIdentity {
   companyId: string;
@@ -234,7 +202,7 @@ export interface NonDispatchControlNotice extends TaskSessionSourceIdentity {
   counterpartAuthorityId?: string | null;
   counterpartOwnershipEpoch?: number | null;
   comment: TaskSessionProjectedCommentSource | null;
-  allowTerminal?: boolean;
+  allowTerminal: boolean;
 }
 
 export interface NonDispatchSyntheticComment extends TaskSessionSourceIdentity {
@@ -284,7 +252,6 @@ export interface TaskSessionAdmissionHooks {
     transaction: TaskSessionDbTransaction,
     input:
       | DispatchingExecutionSourceInput
-      | SteeringComment
       | NonDispatchUserComment
       | NonDispatchControlNotice
       | NonDispatchSyntheticComment,
@@ -302,10 +269,6 @@ export interface TaskSessionAdmissionService {
   ): Promise<TaskSessionAdmissionResult[]>;
   appendNonDispatchUserComment(
     input: NonDispatchUserComment,
-    transaction?: TaskSessionDbTransaction,
-  ): Promise<TaskSessionAdmissionResult>;
-  admitSteeringComment(
-    input: SteeringComment,
     transaction?: TaskSessionDbTransaction,
   ): Promise<TaskSessionAdmissionResult>;
   appendNonDispatchControlNotice(

@@ -1,12 +1,12 @@
 import { createTaskUserCommentSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { OrdinaryTaskRuntimeRejected } from "../services/index.js";
-import { authorizeHumanTaskSteering, getAccessibleResource } from "./authz.js";
+import { publishBoardCommentCreated } from "../services/plugin-domain-event-publisher.js";
+import { getAccessibleResource } from "./authz.js";
 import type { TaskRouteContext } from "./task-route-context.js";
 
 type TaskCommentRoutesContext = Pick<
   TaskRouteContext,
-  | "db"
   | "opts"
   | "router"
   | "svc"
@@ -20,7 +20,6 @@ type TaskCommentRoutesContext = Pick<
 
 export function registerTaskCommentRoutes(context: TaskCommentRoutesContext): void {
   const {
-    db,
     opts,
     router,
     svc,
@@ -92,9 +91,6 @@ export function registerTaskCommentRoutes(context: TaskCommentRoutesContext): vo
     if (!existing) return;
 
     try {
-      if (req.body.replyToCommentId) {
-        await authorizeHumanTaskSteering(db, req, existing.companyId);
-      }
       const result = await ordinaryTasks.userComment({
         companyId: existing.companyId,
         taskId: existing.id,
@@ -111,21 +107,14 @@ export function registerTaskCommentRoutes(context: TaskCommentRoutesContext): vo
           "board_comment_projection_missing",
         );
       }
-      await opts.pluginDomainEvents.publish({
-        eventId: comment.id,
-        eventType: "task.board.comment.created",
-        occurredAt: new Date().toISOString(),
-        actorId: actorUserId,
-        actorType: "user",
-        entityId: comment.id,
-        entityType: "task_comment",
-        companyId: existing.companyId,
-        payload: {
+      if (!result.retried) {
+        await publishBoardCommentCreated(opts.pluginDomainEvents, {
           companyId: existing.companyId,
           taskId: existing.id,
           commentId: comment.id,
-        },
-      });
+          actorUserId,
+        });
+      }
       res.status(result.retried ? 200 : 201).json({
         comment,
         retried: result.retried,

@@ -1,25 +1,27 @@
 import {
-  commitTaskCreatorFormSchema,
-  commitTaskOwnerFormSchema,
   reassignTaskSchema,
-  reopenTaskSchema,
-  selfAssignTaskWithdrawalSchema,
+  updateTaskStatusSchema,
   updateTaskTitleSchema,
 } from "@paperclipai/shared";
-import { randomUUID } from "node:crypto";
-import { forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/index.js";
+import { publishBoardCommentCreated } from "../services/plugin-domain-event-publisher.js";
 import { assertBoard, getAccessibleResource } from "./authz.js";
 import type { TaskRouteContext } from "./task-route-context.js";
 
 type TaskMutationRoutesContext = Pick<
   TaskRouteContext,
-  "db" | "router" | "svc" | "ordinaryTasks" | "requireNamedBoardUser" | "canonicalTaskMutationError"
+  | "db"
+  | "opts"
+  | "router"
+  | "svc"
+  | "ordinaryTasks"
+  | "requireNamedBoardUser"
+  | "canonicalTaskMutationError"
 >;
 
 export function registerTaskMutationRoutes(context: TaskMutationRoutesContext): void {
-  const { db, router, svc, ordinaryTasks, requireNamedBoardUser, canonicalTaskMutationError } = context;
+  const { db, opts, router, svc, ordinaryTasks, requireNamedBoardUser, canonicalTaskMutationError } = context;
 
   router.patch("/tasks/:id", validate(updateTaskTitleSchema), async (req, res) => {
     assertBoard(req);
@@ -70,131 +72,32 @@ export function registerTaskMutationRoutes(context: TaskMutationRoutesContext): 
     }
   });
 
-  router.post("/tasks/:id/creator-reassign", validate(reassignTaskSchema), async (req, res) => {
+  router.post("/tasks/:id/status-update", validate(updateTaskStatusSchema), async (req, res) => {
     const actorUserId = requireNamedBoardUser(req);
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
     if (!existing) return;
-
-    try {
-      const result = await ordinaryTasks.reassign({
-        companyId: existing.companyId,
-        taskId: existing.id,
-        ownerAgentId: req.body.ownerAgentId,
-        idempotencyKey: req.body.idempotencyKey,
-        creator: { kind: "user/board", userId: actorUserId },
-      });
-      res.status(result.retried ? 200 : 201).json(result);
-    } catch (error) {
-      canonicalTaskMutationError(error);
-    }
-  });
-
-  router.post(
-    "/tasks/:id/withdrawal-self-assignment",
-    validate(selfAssignTaskWithdrawalSchema),
-    async (req, res) => {
-      const actorUserId = requireNamedBoardUser(req);
-      const id = req.params.id as string;
-      const existing = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
-      if (!existing) return;
-
-      try {
-        const result = await ordinaryTasks.userCreatorWithdrawalSelfAssign({
-          companyId: existing.companyId,
-          taskId: existing.id,
-          actorUserId,
-          idempotencyKey: req.body.idempotencyKey,
-        });
-        res.status(result.retried ? 200 : 201).json(result);
-      } catch (error) {
-        canonicalTaskMutationError(error);
-      }
-    },
-  );
-
-  router.post("/task-creator-form-updates", validate(commitTaskCreatorFormSchema), async (req, res) => {
-    const actorUserId = requireNamedBoardUser(req);
-    const existing = await getAccessibleResource(req, res, svc.getById(req.body.taskId), "Task not found");
-    if (!existing) return;
-
-    try {
-      const result = await ordinaryTasks.commitCreatorFormUpdate(existing.id, req.body.message, {
-        kind: "user/board",
-        companyId: existing.companyId,
-        userId: actorUserId,
-        gatewayInvocationId: `human-creator-form:${existing.companyId}:${randomUUID()}`,
-      });
-      res.status(201).json(result);
-    } catch (error) {
-      canonicalTaskMutationError(error);
-    }
-  });
-
-  router.post("/task-owner-form-updates", validate(commitTaskOwnerFormSchema), async (req, res) => {
-    const actorUserId = requireNamedBoardUser(req);
-    const existing = await getAccessibleResource(req, res, svc.getById(req.body.taskId), "Task not found");
-    if (!existing) return;
-
-    const ownerAuthority =
-      existing.creatorKind === "system" &&
-      existing.escalatedFromAffectedTaskId &&
-      ((existing.ownerKind === "user" && existing.ownerUserId === actorUserId) ||
-        existing.ownerKind === "board")
-        ? ({
-            kind: "system-escalation-human",
-            companyId: existing.companyId,
-            actorUserId,
-            gatewayInvocationId: `human-owner-form:${existing.companyId}:${randomUUID()}`,
-          } as const)
-        : existing.creatorKind === "user/board" &&
-            existing.creatorUserId === actorUserId &&
-            existing.ownerKind === "user" &&
-            existing.ownerUserId === actorUserId &&
-            existing.ownerAssignmentSource === "user_creator_withdrawal"
-          ? ({
-              kind: "user-creator-withdrawal",
-              companyId: existing.companyId,
-              actorUserId,
-              gatewayInvocationId: `human-owner-form:${existing.companyId}:${randomUUID()}`,
-            } as const)
-          : null;
-    if (!ownerAuthority) {
-      throw forbidden("Only a documented human escalation or withdrawal owner may use the owner form");
-    }
 
     try {
       const result = await ordinaryTasks.commitOwnerFormUpdate(
         existing.id,
+        { message: req.body.message, status: req.body.status },
         {
-          message: req.body.message,
-          ...(req.body.status === undefined ? {} : { status: req.body.status }),
-          ...(Object.hasOwn(req.body, "structuredResult")
-            ? { structuredResult: req.body.structuredResult }
-            : {}),
+          kind: "board",
+          companyId: existing.companyId,
+          actorUserId,
+          recipient: req.body.recipient,
+          gatewayInvocationId: `board-status-update:${existing.companyId}:${req.body.idempotencyKey}`,
         },
-        ownerAuthority,
       );
-      res.status(201).json(result);
-    } catch (error) {
-      canonicalTaskMutationError(error);
-    }
-  });
-
-  router.post("/tasks/:id/reopen", validate(reopenTaskSchema), async (req, res) => {
-    const actorUserId = requireNamedBoardUser(req);
-    const id = req.params.id as string;
-    const existing = await getAccessibleResource(req, res, svc.getById(id), "Task not found");
-    if (!existing) return;
-
-    try {
-      const result = await ordinaryTasks.boardReopen({
-        companyId: existing.companyId,
-        taskId: existing.id,
-        actorUserId,
-        reason: req.body.reason,
-        idempotencyKey: req.body.idempotencyKey,
-      });
+      if (!result.retried) {
+        await publishBoardCommentCreated(opts.pluginDomainEvents, {
+          companyId: existing.companyId,
+          taskId: existing.id,
+          commentId: result.comment.id,
+          actorUserId,
+        });
+      }
       res.status(result.retried ? 200 : 201).json(result);
     } catch (error) {
       canonicalTaskMutationError(error);

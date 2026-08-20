@@ -3,7 +3,6 @@ import {
   agentAdapterConfigRevisions,
   taskExecutionAttempts,
   taskExecutionAttemptRetrySchedules,
-  taskExecutionPromptSegments,
   taskExecutionRunRefs,
   taskExecutionRuns,
   type TaskExecutionAttempt,
@@ -64,11 +63,9 @@ function attemptRow(
     sessionId: "session-1",
     runId: "run-1",
     runKind: "productive",
-    promptKind: "base",
     sessionOperation: "resume",
     refId: "ref-1",
     refOrdinal: 0,
-    segmentOrdinal: 0,
     attemptGeneration: 3,
     state: "failed",
     startedAt: createdAt,
@@ -168,10 +165,7 @@ function createTransaction(input: {
             }
             return [state.attempts[0]!];
           }
-          if (
-            table === taskExecutionRunRefs ||
-            table === taskExecutionPromptSegments
-          ) {
+          if (table === taskExecutionRunRefs) {
             return [state.promptOwner];
           }
           throw new Error("unexpected fake select table");
@@ -288,7 +282,7 @@ describe("canonical PostgreSQL attempt retry schedules", () => {
         retryAt,
         at: scheduledAt,
       }),
-    ).rejects.toThrow("base prompt was transmitted, settled, or rebound");
+    ).rejects.toThrow("retry predecessor prompt was transmitted, settled, or rebound");
     expect(harness.state.inserts).toEqual([]);
     expect(harness.state.run.status).toBe("running");
   });
@@ -320,7 +314,6 @@ describe("canonical PostgreSQL attempt retry schedules", () => {
       id: "attempt-2",
       attemptGeneration: 4,
       sessionOperation: predecessor.sessionOperation,
-      promptKind: predecessor.promptKind,
       state: "pending",
     });
     expect(claimed.schedule).toMatchObject({

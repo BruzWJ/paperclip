@@ -1,6 +1,10 @@
 import { logActivity } from "./activity-log.js";
 import { listCompanyAgentGraphDescendants } from "./agent-org-graph-lock.js";
-import { type PaperclipManagedToolCommand } from "./paperclip-managed-tool-registry.js";
+import { publishBoardCommentCreated } from "./plugin-domain-event-publisher.js";
+import {
+  type AgentManagedToolCommand,
+  type BoardManagedToolCommand,
+} from "./paperclip-managed-tool-registry.js";
 import { RuntimeToolUnavailable } from "./runtime-tool-errors.js";
 import {
   PaperclipManagedToolError,
@@ -18,20 +22,10 @@ export function buildPaperclipManagedToolRouterPaperclipManagedAuthorityExecutio
   scope: PaperclipManagedToolRouterContext &
     ReturnType<typeof buildPaperclipManagedToolRouterPaperclipManagedBoardTools>,
 ) {
-  const {
-    dependencies,
-    tasks,
-    agents,
-    runtimeAgents,
-    taskInBoardScope,
-    agentInBoardScope,
-    publishBoardComment,
-    boardComment,
-    boardLifecycleUpdate,
-  } = scope;
+  const { dependencies, tasks, agents, runtimeAgents, taskInBoardScope, agentInBoardScope } = scope;
 
   function executeAgentRun(
-    command: PaperclipManagedToolCommand,
+    command: AgentManagedToolCommand,
     authority: AgentRunToolAuthority,
   ): Promise<unknown> {
     switch (command.name) {
@@ -61,7 +55,7 @@ export function buildPaperclipManagedToolRouterPaperclipManagedAuthorityExecutio
   }
 
   async function executeBoardUser(
-    command: PaperclipManagedToolCommand,
+    command: BoardManagedToolCommand,
     authority: BoardUserToolAuthority,
   ): Promise<unknown> {
     switch (command.name) {
@@ -112,75 +106,37 @@ export function buildPaperclipManagedToolRouterPaperclipManagedAuthorityExecutio
         });
         return {
           task: result.task,
-          executionRefId: result.ref.id,
+          executionRefId: result.ref?.id ?? null,
           auditId: result.auditId,
           retried: result.retried,
         };
       }
       case "task_update": {
-        const lifecycleUpdate = boardLifecycleUpdate(command);
         const existing = await taskInBoardScope(command.companyId, command.taskId);
-        const result: Record<string, unknown> = { taskId: existing.id };
-        if (command.reopen) {
-          result.reopen = await dependencies.ordinaryTasks().boardReopen({
+        const lifecycle = await dependencies.ordinaryTasks().commitOwnerFormUpdate(
+          existing.id,
+          { message: command.message, status: command.status },
+          {
+            kind: "board",
             companyId: command.companyId,
-            taskId: command.taskId,
             actorUserId: authority.userId,
-            reason: command.message!,
-            idempotencyKey: toolInvocationKey({
+            recipient: command.recipient,
+            gatewayInvocationId: toolInvocationKey({
               authority,
               name: command.name,
               payload: command,
-              suffix: "reopen",
             }),
-          });
-        } else if (lifecycleUpdate) {
-          const lifecycle = await dependencies
-            .ordinaryTasks()
-            .commitOwnerFormUpdate(command.taskId, lifecycleUpdate, {
-              kind: "board",
-              companyId: command.companyId,
-              actorUserId: authority.userId,
-              gatewayInvocationId: toolInvocationKey({
-                authority,
-                name: command.name,
-                payload: command,
-                suffix: "lifecycle",
-              }),
-            });
-          result.lifecycle = lifecycle;
-          if (!lifecycle.retried) {
-            await publishBoardComment(authority, {
-              companyId: command.companyId,
-              taskId: command.taskId,
-              commentId: lifecycle.comment.id,
-            });
-          }
-        } else if (command.message !== undefined) {
-          result.comment = await boardComment(command, authority, command.message);
-        }
-        if (command.title !== undefined) {
-          const task = await tasks.updateTitle(existing.id, command.title);
-          if (!task) {
-            throw new PaperclipManagedToolError("task_not_found", "Task not found");
-          }
-          await logActivity(dependencies.db, {
+          },
+        );
+        if (!lifecycle.retried) {
+          await publishBoardCommentCreated(dependencies.pluginDomainEvents, {
             companyId: command.companyId,
-            actorType: "user",
-            actorId: authority.userId,
-            action: "task.title_updated",
-            entityType: "task",
-            entityId: task.id,
-            details: {
-              source: "board_mcp",
-              identifier: task.identifier,
-              title: task.title,
-              _previous: { title: existing.title },
-            },
+            taskId: existing.id,
+            commentId: lifecycle.comment.id,
+            actorUserId: authority.userId,
           });
-          result.task = task;
         }
-        return result;
+        return lifecycle;
       }
       case "mention_agent": {
         const task = await taskInBoardScope(command.companyId, command.taskId);
@@ -207,10 +163,11 @@ export function buildPaperclipManagedToolRouterPaperclipManagedAuthorityExecutio
           );
         }
         if (!result.retried) {
-          await publishBoardComment(authority, {
+          await publishBoardCommentCreated(dependencies.pluginDomainEvents, {
             companyId: command.companyId,
             taskId: command.taskId,
             commentId: comment.id,
+            actorUserId: authority.userId,
           });
         }
         return {
@@ -297,11 +254,6 @@ export function buildPaperclipManagedToolRouterPaperclipManagedAuthorityExecutio
         });
         return { agent, configuration };
       }
-      case "mention_board":
-        throw new PaperclipManagedToolError(
-          "tool_unavailable",
-          `Paperclip managed tool is unavailable: ${command.name}`,
-        );
       default:
         throw new PaperclipManagedToolError("tool_unavailable", "Paperclip managed tool is unavailable");
     }

@@ -38,33 +38,15 @@ export async function createTaskExecutionPromptActivationScope(
   transaction: TaskSessionDbTransaction,
   input: {
     readonly identity: TaskExecutionPromptIdentity;
-    readonly carryContext: boolean;
     readonly effectiveContextExposureDigest: string;
     readonly targetFingerprint: string;
   },
 ): Promise<AcpCorrelationScope> {
-  const { identity, carryContext, effectiveContextExposureDigest, targetFingerprint } = input;
+  const { identity, effectiveContextExposureDigest, targetFingerprint } = input;
   const correlationGeneration = await nextCorrelationGeneration(transaction, {
     identity,
-    carryContext,
   });
-  if (carryContext) {
-    return {
-      purpose: "carry",
-      companyId: identity.companyId,
-      taskId: identity.taskId,
-      ownershipEpoch: identity.ownershipEpoch,
-      targetAgentId: identity.targetAgentId,
-      adapterConfigIdentity: identity.adapterConfigRevisionId,
-      workspaceIdentity: identity.executionWorkspaceBindingId,
-      targetFingerprint,
-      correlationGeneration,
-      laneKind: identity.laneKind,
-      authorizedContextExposureDigest: effectiveContextExposureDigest,
-    };
-  }
   return {
-    purpose: "active_run_steering",
     companyId: identity.companyId,
     taskId: identity.taskId,
     ownershipEpoch: identity.ownershipEpoch,
@@ -73,9 +55,7 @@ export async function createTaskExecutionPromptActivationScope(
     workspaceIdentity: identity.executionWorkspaceBindingId,
     targetFingerprint,
     correlationGeneration,
-    runId: identity.runId,
-    currentRefId: identity.refId,
-    currentRefOrdinal: identity.refOrdinal,
-    currentSegmentOrdinal: identity.segmentOrdinal,
+    laneKind: identity.laneKind,
+    authorizedContextExposureDigest: effectiveContextExposureDigest,
   };
 }

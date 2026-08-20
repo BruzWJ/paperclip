@@ -37,21 +37,11 @@ export interface AcpPromptSettlementCommonIdentity {
   readonly adapterConfigRevisionId: string;
 }
 
-export type AcpProductivePromptSettlementIdentity =
-  | (AcpPromptSettlementCommonIdentity & {
-      readonly runKind: "productive" | "consult";
-      readonly promptKind: "base";
-      readonly refId: string;
-      readonly runOrdinal: number;
-      readonly segmentOrdinal: 0;
-    })
-  | (AcpPromptSettlementCommonIdentity & {
-      readonly runKind: "productive" | "consult";
-      readonly promptKind: "steering";
-      readonly refId: string;
-      readonly runOrdinal: number;
-      readonly segmentOrdinal: number;
-    });
+export type AcpProductivePromptSettlementIdentity = AcpPromptSettlementCommonIdentity & {
+  readonly runKind: "productive" | "consult";
+  readonly refId: string;
+  readonly runOrdinal: number;
+};
 
 export type AcpPromptSettlementIdentity = AcpProductivePromptSettlementIdentity;
 
@@ -142,15 +132,6 @@ export function assertSettlementInput(input: SettleAcpPromptInTransactionInput):
   const identity = input.identity;
   if (!Number.isSafeInteger(identity.runOrdinal) || identity.runOrdinal < 0) {
     reject("ACP prompt run ordinal must be a nonnegative safe integer");
-  }
-  if (identity.promptKind === "base" && identity.segmentOrdinal !== 0) {
-    reject("ACP base prompt must use segment ordinal zero");
-  }
-  if (
-    identity.promptKind === "steering" &&
-    (!Number.isSafeInteger(identity.segmentOrdinal) || identity.segmentOrdinal <= 0)
-  ) {
-    reject("ACP steering prompt must use a positive safe segment ordinal");
   }
   if (input.settlement.kind !== "protocol_settled") {
     reject("Only a protocol-settled ACP prompt may enter accounting");
@@ -274,10 +255,8 @@ export function sourceIdentityDigest(input: {
         sessionId: input.identity.sessionId,
         runId: input.identity.runId,
         runKind: input.identity.runKind,
-        promptKind: input.identity.promptKind,
         refId: input.identity.refId,
         runOrdinal: input.identity.runOrdinal,
-        segmentOrdinal: input.identity.segmentOrdinal,
         promptSettlementReferenceId: input.promptSettlementReferenceId,
         accountingId: input.accountingId,
         costEventId: input.costEventId,

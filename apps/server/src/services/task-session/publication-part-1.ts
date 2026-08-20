@@ -71,7 +71,6 @@ export const COMMENT_PROJECTION_KEYS = new Set([
   "sourceKind",
   "sourceId",
   "messageId",
-  "steeringSegment",
   "comment",
 ]);
 
@@ -103,13 +102,6 @@ export const COMMENT_SOURCE_KINDS = new Set([
   "run_progress",
   "task_update",
   "plugin_withdrawal",
-]);
-
-export const STEERING_SEGMENT_KEYS = new Set([
-  "steeringTargetRunId",
-  "refId",
-  "refOrdinal",
-  "segmentOrdinal",
 ]);
 
 export const INPUT_BINDING_KEYS = new Set(["sourceRefId", "dispositionId"]);

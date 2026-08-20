@@ -140,7 +140,6 @@ export async function createPortableCanonicalTask(db: Db, input: PortableCanonic
           ownerKind: "agent",
           ownerAgentId: owner.id,
           ownerUserId: null,
-          ownerAssignmentSource: null,
           ownershipEpoch: 1,
           creatorKind: "user/board",
           creatorUserId: input.creatorUserId,

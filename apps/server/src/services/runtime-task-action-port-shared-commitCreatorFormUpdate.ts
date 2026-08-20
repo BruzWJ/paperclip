@@ -158,8 +158,6 @@ export async function commitCreatorFormUpdateImplementation(
             task.creatorKind === "agent-execution" &&
             task.creatorAuthorityId === creatorAuthority.capability.taskExecutionAuthorityId
           );
-        case "user/board":
-          return task.creatorKind === "user/board" && task.creatorUserId === creatorAuthority.userId;
         case "plugin":
           return (
             task.creatorKind === "plugin" &&
@@ -248,7 +246,7 @@ export async function commitCreatorFormUpdateImplementation(
           "creator task_update invocation was retried with different immutable arguments",
         );
       }
-      return { ...retry, cancellations: null };
+      return { ...retry, task, cancellations: null };
     }
 
     // Idempotent retries must be recognized before checking the current
@@ -394,7 +392,6 @@ export async function commitCreatorFormUpdateImplementation(
       update,
       comment: admission.comment,
       ref: admission.ref,
-      gated: false,
       cancellations: null,
       retried: false as const,
     };

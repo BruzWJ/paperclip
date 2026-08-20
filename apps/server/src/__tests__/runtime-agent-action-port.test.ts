@@ -98,6 +98,7 @@ function replayingExecutor(
     const compileInput = {
       mode: "owner",
       turn: "work",
+      readOnly: false,
       contextDial: resolveContextDial({ agent: {} }).effective,
       actionGrants: { agent_hire: true, agent_configure: true },
       isCurrentOwner: true,

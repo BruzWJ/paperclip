@@ -9,7 +9,6 @@ const base = {
   kind: "base" as const,
   refId: "ref-1",
   refOrdinal: 0,
-  segmentOrdinal: 0 as const,
 };
 
 function productive(

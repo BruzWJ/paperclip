@@ -59,14 +59,6 @@ export function createTaskExecutionCancellationServiceGroup3(
       runId: intent.runId,
     });
     if (!run) reject("cancellation intent lost its canonical run");
-    if (intent.reasonKind === "steering") {
-      return {
-        runId: run.runId,
-        alreadyTerminal: false,
-        cancellationIntentId: intent.id,
-        state: intent.state,
-      };
-    }
     const [attemptRows, leaseRows] = await Promise.all([
       options.database
         .select()

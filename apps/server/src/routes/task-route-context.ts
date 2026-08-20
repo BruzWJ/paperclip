@@ -18,6 +18,7 @@ import {
 } from "../services/index.js";
 import type { PluginDomainEventPublisher } from "../services/plugin-domain-event-publisher.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
+import type { TaskExecutionCancellationService } from "../services/task-execution-cancellation.js";
 import { taskExecutionPolicyControlService } from "../services/task-execution-policy.js";
 import type { StorageService } from "../storage/types.js";
 import * as diagnostics from "./task-route-diagnostics.js";
@@ -318,12 +319,18 @@ export function createTaskRouteBaseContext(
     taskListDiagnostics?: listcache.TaskListDiagnostics;
     ordinaryTasks: OrdinaryTaskRuntime;
     pluginDomainEvents: PluginDomainEventPublisher;
+    taskExecutionCancellation: Pick<
+      TaskExecutionCancellationService,
+      "requestScopeCancellationsInTransaction" | "reconcileRequestedCancellations"
+    >;
   },
 ) {
   const router = Router({ caseSensitive: true, strict: true });
   const svc = taskService(db);
   const ordinaryTasks = opts.ordinaryTasks;
-  const executionPolicyControl = taskExecutionPolicyControlService(db);
+  const executionPolicyControl = taskExecutionPolicyControlService(db, {
+    taskExecutionCancellation: opts.taskExecutionCancellation,
+  });
   const access = accessService(db);
   const companiesSvc = companyService(db);
   let searchSvc = opts.searchService ?? null;

@@ -222,6 +222,7 @@ export function createTaskExecutionCancellationServiceGroup1(
       selector: { kind: fenceKind, agentIds },
       reason,
       at,
+      nativeContinuity: "revoke",
     });
     const runRows = await options.runService.lockActiveRunsForAgentsInTransaction(transaction, {
       companyId: input.companyId,

@@ -64,6 +64,7 @@ describe("Paperclip managed-tool registry", () => {
     const compiled = compileRuntimeInterface({
       mode: "owner",
       turn: "work",
+      readOnly: false,
       contextDial: fullContextDial,
       actionGrants: {
         task_create: true,

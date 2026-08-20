@@ -9,7 +9,6 @@ export const capability: PromptCapabilityBinding = Object.freeze({
   runBatchDigest: "a".repeat(64),
   refId: "00000000-0000-4000-8000-000000000004",
   refOrdinal: 1,
-  segmentOrdinal: 0,
   attemptId: "00000000-0000-4000-8000-000000000005",
   leaseId: "00000000-0000-4000-8000-000000000006",
   leaseGeneration: 2,

@@ -122,7 +122,6 @@ export async function beginPromptPublication(
               input.prompt.runId,
               input.prompt.refId,
               input.prompt.refOrdinal,
-              input.prompt.segmentOrdinal,
               input.prompt.attemptId,
               input.capability.capabilityConnectionId,
               input.capability.capabilityGeneration,

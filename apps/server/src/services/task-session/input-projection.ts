@@ -36,13 +36,11 @@ function promptProjection(event: DurableEvent) {
     sessionID: string;
     timestamp: number;
     prompt: Record<string, unknown>;
-    delivery: "steer" | "queue";
   };
   return {
     id: data.messageID,
     sessionId: data.sessionID,
     prompt: data.prompt,
-    delivery: data.delivery,
     timestamp: new Date(data.timestamp),
     seq: event.durable.seq,
   };
@@ -55,7 +53,6 @@ function sameInput(
   return (
     row.id === input.id &&
     row.sessionId === input.sessionId &&
-    row.delivery === input.delivery &&
     canonicalTaskSessionJson(row.prompt) === canonicalTaskSessionJson(input.prompt) &&
     row.timeCreated.getTime() === input.timestamp.getTime()
   );
@@ -149,7 +146,6 @@ export async function projectTaskSessionInput(
         taskId: input.taskId,
         sessionId: projection.sessionId,
         prompt: projection.prompt,
-        delivery: projection.delivery,
         admittedSeq: projection.seq,
         promotedSeq: null,
         timeCreated: projection.timestamp,
@@ -195,7 +191,6 @@ export async function projectTaskSessionInput(
       taskId: input.taskId,
       sessionId: projection.sessionId,
       prompt: projection.prompt,
-      delivery: projection.delivery,
       admittedSeq: projection.seq,
       promotedSeq: projection.seq,
       timeCreated: projection.timestamp,

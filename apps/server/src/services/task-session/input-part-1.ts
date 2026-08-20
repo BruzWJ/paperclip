@@ -9,19 +9,6 @@ import {
 
 import { canonicalTaskSessionJson } from "./store.js";
 
-export interface TaskSessionInputScope {
-  companyId: string;
-  taskId: string;
-  sessionId: string;
-  activeRefId: string;
-  runId: string;
-  ownershipEpoch: number;
-  executionLineageId: string;
-  adapterConfigRevisionId: string;
-  historyViewId: string;
-  contextGeneration: number;
-}
-
 export interface TaskSessionPreparedInputScope {
   companyId: string;
   taskId: string;
@@ -34,11 +21,6 @@ export interface TaskSessionPreparedInputScope {
   contextGeneration: number;
 }
 
-export interface TaskSessionPendingState {
-  steer: boolean;
-  queue: boolean;
-}
-
 export type TaskSessionInputRecord = typeof taskSessionInputs.$inferSelect;
 
 export interface TaskSessionInputService {
@@ -47,18 +29,6 @@ export interface TaskSessionInputService {
    * leased. Returns false when the locked ref needs no promotion.
    */
   promotePreparedInput(scope: TaskSessionPreparedInputScope): Promise<boolean>;
-  /**
-   * Captures the canonical event boundary for a completed provider turn.
-   * Inputs admitted after this value must not be promoted at that boundary.
-   */
-  latestSequence(scope: TaskSessionInputScope): Promise<number>;
-  hasPending(scope: TaskSessionInputScope): Promise<TaskSessionPendingState>;
-  promoteSteers(scope: TaskSessionInputScope, cutoffSeq: number): Promise<TaskSessionInputRecord[]>;
-  /**
-   * Promotes one FIFO queue input only when no eligible steer is pending.
-   * Returning null never licenses an empty provider turn.
-   */
-  promoteNextQueued(scope: TaskSessionInputScope): Promise<TaskSessionInputRecord | null>;
 }
 
 export type RefRow = typeof taskExecutionRefs.$inferSelect;
@@ -80,7 +50,8 @@ export interface PendingCandidate {
   view: ViewRow;
 }
 
-export interface ValidatedExecutionScope extends Omit<TaskSessionInputScope, "runId"> {
+export interface ValidatedExecutionScope extends Omit<TaskSessionPreparedInputScope, "refId"> {
+  activeRefId: string;
   runId: string | null;
 }
 

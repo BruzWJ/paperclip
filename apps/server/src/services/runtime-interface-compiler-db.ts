@@ -44,6 +44,7 @@ export interface RuntimeInterfaceCompilerSnapshot {
   turn: RuntimeToolTurn;
   task: {
     companyId: string;
+    lifecycleStatus: string | null;
     ownerKind: string | null;
     ownerAgentId: string | null;
     ownershipEpoch: number | null;
@@ -69,7 +70,10 @@ export interface PostgresPromptCapabilityCompiler {
   resolve(capability: PromptCapabilityCompileScope): Promise<RuntimeInterfaceCompileInput>;
 }
 
-type RuntimeContextTask = RuntimeInterfaceCompilerSnapshot["task"];
+type RuntimeContextTask = Pick<
+  RuntimeInterfaceCompilerSnapshot["task"],
+  "ownerKind" | "ownerAgentId" | "executionPolicy"
+>;
 
 /** Resolves the context identity shared by admission and prompt compilation. */
 export function resolveRuntimeContextDial(input: {
@@ -178,6 +182,7 @@ export function buildRuntimeInterfaceCompileInput(
 
   return {
     mode: capability.executionMode,
+    readOnly: task.lifecycleStatus === "done" || task.lifecycleStatus === "cancelled",
     turn: snapshot.turn,
     contextDial,
     actionGrants,

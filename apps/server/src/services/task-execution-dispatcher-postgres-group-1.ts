@@ -51,7 +51,6 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup1(
     const loaded = await loadExpiredRunRecoveryPrompt(context, transaction, run, at);
     if (loaded.kind === "complete") return loaded.result as ExpiredRunRecovery;
     const released = await releaseExpiredRunRecoveryAttempt(context, transaction, run, at, loaded);
-    if (released.kind === "complete") return released.result as ExpiredRunRecovery;
     const branched = await finalizeExpiredRunRecoveryBranches(context, transaction, run, at, released);
     if (branched.kind === "complete") return branched.result as ExpiredRunRecovery;
     const {
@@ -169,14 +168,12 @@ export function createPostgresTaskExecutionDispatcherRepositoryGroup1(
         .set({
           currentRefId: null,
           currentOrdinal: null,
-          currentSegmentOrdinal: null,
         })
         .where(
           and(
             eq(taskExecutionRunControls.runId, run.runId),
             eq(taskExecutionRunControls.currentRefId, member.ref.id),
             eq(taskExecutionRunControls.currentOrdinal, member.row.refOrdinal),
-            eq(taskExecutionRunControls.currentSegmentOrdinal, control.currentSegmentOrdinal!),
           ),
         )
         .returning({ runId: taskExecutionRunControls.runId }),

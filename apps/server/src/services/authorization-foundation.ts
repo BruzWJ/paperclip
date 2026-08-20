@@ -103,7 +103,6 @@ export type ResponsibleUserSnapshot = {
   userExists: boolean;
   activeMembership: {
     companyId: string;
-    membershipRole?: string | null;
     status?: string;
   } | null;
 };
@@ -228,7 +227,6 @@ export function activeResponsibleUserCanAuthorizeAgentChange(
   if (
     !membership ||
     membership.status !== "active" ||
-    membership.membershipRole === "viewer" ||
     !agentDecision.allowed
   ) {
     return false;

@@ -150,9 +150,10 @@ export function projectPaperclipManagedTools(
   input: PaperclipManagedToolRuntimeProjectionInput,
 ): readonly ProjectedPaperclipManagedToolDescriptor[] {
   return PAPERCLIP_MANAGED_TOOL_NAMES.flatMap((name) => {
+    const metadata = PAPERCLIP_MANAGED_TOOL_METADATA[name];
+    if (input.readOnly && !metadata.readOnly) return [];
     const projected = projectRuntimeTool(name, input);
     if (!projected) return [];
-    const metadata = PAPERCLIP_MANAGED_TOOL_METADATA[name];
     return [
       {
         name,

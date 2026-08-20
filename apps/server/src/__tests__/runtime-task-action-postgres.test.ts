@@ -11,7 +11,7 @@ import {
   agentRunManagedActionInvocation,
   type AgentRunToolAuthority,
 } from "../services/paperclip-managed-tool-router.js";
-import type { PaperclipManagedToolCommandFor } from "../services/paperclip-managed-tool-registry.js";
+import type { AgentManagedToolCommandFor } from "../services/paperclip-managed-tool-registry.js";
 import type { PromptCapabilityBinding } from "../services/prompt-capability-gateway.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
@@ -29,7 +29,6 @@ const capability: PromptCapabilityBinding = {
   runBatchDigest: "batch-digest",
   refId: "00000000-0000-4000-8000-000000000707",
   refOrdinal: 0,
-  segmentOrdinal: 0,
   attemptId: "00000000-0000-4000-8000-000000000708",
   leaseId: "00000000-0000-4000-8000-000000000709",
   leaseGeneration: 1,
@@ -84,7 +83,7 @@ function actionAuthority(
 }
 
 function runtimeInvocation<Name extends RuntimeTaskCommandName>(
-  command: PaperclipManagedToolCommandFor<Name>,
+  command: AgentManagedToolCommandFor<Name>,
   capabilityBinding: PromptCapabilityBinding = capability,
   invocationId = "invocation-1",
 ) {
@@ -219,20 +218,6 @@ describe("runtime task action contracts", () => {
     });
   });
 
-  it("fails closed when a forged command has lost canonical target intent", async () => {
-    const port = createRuntimeTaskActionPort(service);
-    const forged = {
-      name: "task_update",
-      companyId: capability.companyId,
-      taskId: capability.taskId,
-      message: "Unexpected target intent",
-    } as unknown as PaperclipManagedToolCommandFor<"task_update">;
-
-    await expect(port.taskUpdate(runtimeInvocation(forged)))
-      .rejects.toBeInstanceOf(RuntimeTaskActionConflict);
-    expect(service.update).not.toHaveBeenCalled();
-  });
-
   it("validates canonical owner and creator forms before opening a transaction", async () => {
     const harness = createMockDb();
     const runtime = createTaskFormCommitRuntime(harness.db, {
@@ -242,32 +227,28 @@ describe("runtime task action contracts", () => {
         reconcileRequestedCancellations: vi.fn(),
       },
     });
-    const humanAuthority = {
-      kind: "system-escalation-human" as const,
+    const boardAuthority = {
+      kind: "board" as const,
       companyId: capability.companyId,
       actorUserId: "board-user",
-      gatewayInvocationId: "human-owner-1",
+      gatewayInvocationId: "board-owner-1",
+      recipient: "owner" as const,
     };
 
     await expect(runtime.commitOwnerFormUpdate(
       capability.taskId,
       { message: "" },
-      humanAuthority,
+      boardAuthority,
     )).rejects.toBeInstanceOf(RuntimeTaskActionConflict);
     await expect(runtime.commitOwnerFormUpdate(
       capability.taskId,
       { message: "Nonterminal result", structuredResult: { invalid: true } } as never,
-      humanAuthority,
+      boardAuthority,
     )).rejects.toBeInstanceOf(RuntimeTaskActionConflict);
     await expect(runtime.commitCreatorFormUpdate(
       capability.taskId,
       "   ",
-      {
-        kind: "user/board",
-        companyId: capability.companyId,
-        userId: "board-user",
-        gatewayInvocationId: "human-creator-1",
-      },
+      { kind: "agent-execution", capability, invocationId: "creator-blank-1" },
     )).rejects.toBeInstanceOf(RuntimeTaskActionConflict);
     await expect(runtime.commitCreatorFormUpdate(
       capability.taskId,
@@ -282,43 +263,6 @@ describe("runtime task action contracts", () => {
       },
     )).rejects.toMatchObject<Partial<RuntimeTaskActionDenied>>({
       reason: "creator_terminal_status_forbidden",
-    });
-    expect(harness.calls).toEqual([]);
-  });
-
-  it("limits withdrawal ownership to message-only cancellation", async () => {
-    const harness = createMockDb();
-    const runtime = createTaskFormCommitRuntime(harness.db, {
-      dispatchPersistedRef: vi.fn(async () => undefined),
-      taskExecutionCancellation: {
-        requestScopeCancellationsInTransaction: vi.fn(),
-        reconcileRequestedCancellations: vi.fn(),
-      },
-    });
-    const withdrawalAuthority = {
-      kind: "user-creator-withdrawal" as const,
-      companyId: capability.companyId,
-      actorUserId: "creator-user",
-      gatewayInvocationId: "withdrawal-1",
-    };
-
-    await expect(runtime.commitOwnerFormUpdate(
-      capability.taskId,
-      { message: "Cannot finish", status: "done" },
-      withdrawalAuthority,
-    )).rejects.toMatchObject<Partial<RuntimeTaskActionDenied>>({
-      reason: "user_withdrawal_cancel_only",
-    });
-    await expect(runtime.commitOwnerFormUpdate(
-      capability.taskId,
-      {
-        message: "Cannot attach a result",
-        status: "cancelled",
-        structuredResult: { invalid: true },
-      },
-      withdrawalAuthority,
-    )).rejects.toMatchObject<Partial<RuntimeTaskActionDenied>>({
-      reason: "user_withdrawal_cancel_only",
     });
     expect(harness.calls).toEqual([]);
   });

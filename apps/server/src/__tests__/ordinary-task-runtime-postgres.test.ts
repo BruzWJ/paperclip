@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createOrdinaryTaskRuntime,
-  OrdinaryTaskRuntimeRejected,
-} from "../services/ordinary-task-runtime.js";
+import { createOrdinaryTaskRuntime, OrdinaryTaskRuntimeRejected } from "../services/ordinary-task-runtime.js";
 import { InvokableTaskOwnerRejected } from "../services/agent-invokability.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
@@ -85,10 +82,6 @@ function options(dispatchRef = vi.fn(async () => undefined)) {
   return {
     clock: () => now,
     dispatchRef,
-    taskExecutionRunService: {
-      requestSteeringInTransaction: vi.fn(),
-      continuePendingSteeringForSource: vi.fn(),
-    },
     taskExecutionCancellation: {
       requestScopeCancellationsInTransaction: vi.fn(),
       reconcileRequestedCancellations: vi.fn(),
@@ -116,8 +109,7 @@ function freshCreateDb(instruction: string | null = null) {
       [],
       [company],
       [{ instruction }],
-      [{ companyId, ownerKind: "agent", ownerAgentId, ownershipEpoch: 1,
-        executionPolicy: null }],
+      [{ companyId, ownerKind: "agent", ownerAgentId, ownershipEpoch: 1, executionPolicy: null }],
       [{ id: "00000000-0000-4000-8000-000000000209" }],
       [],
       [{ nextOrdinal: 0 }],
@@ -153,19 +145,11 @@ describe("ordinary task runtime ingress", () => {
     });
     const dispatchRef = vi.fn(async () => undefined);
     mocks.resolveOwner.mockRejectedValueOnce(
-      new InvokableTaskOwnerRejected(
-        "Owner has no selected adapter revision",
-        "owner_revision_missing",
-      ),
+      new InvokableTaskOwnerRejected("Owner has no selected adapter revision", "owner_revision_missing"),
     );
-    const runtime = createOrdinaryTaskRuntime(
-      harness.db,
-      options(dispatchRef),
-    );
+    const runtime = createOrdinaryTaskRuntime(harness.db, options(dispatchRef));
 
-    await expect(runtime.create(createInput())).rejects.toMatchObject<
-      Partial<OrdinaryTaskRuntimeRejected>
-    >({
+    await expect(runtime.create(createInput())).rejects.toMatchObject<Partial<OrdinaryTaskRuntimeRejected>>({
       code: "ordinary_task_runtime_rejected",
       reason: "owner_revision_missing",
     });
@@ -181,16 +165,15 @@ describe("ordinary task runtime ingress", () => {
     const harness = freshCreateDb();
     const dispatchRef = vi.fn(async () => undefined);
     const correlate = vi.fn(async () => undefined);
-    const runtime = createOrdinaryTaskRuntime(
-      harness.db,
-      options(dispatchRef),
-    );
+    const runtime = createOrdinaryTaskRuntime(harness.db, options(dispatchRef));
 
-    const result = await runtime.create(createInput({
-      priority: "high",
-      originKind: "manual",
-      correlate,
-    }));
+    const result = await runtime.create(
+      createInput({
+        priority: "high",
+        originKind: "manual",
+        correlate,
+      }),
+    );
 
     expect(result).toMatchObject({
       task: { id: taskId, request: "Preserve these exact bytes.\n" },
@@ -261,16 +244,11 @@ describe("ordinary task runtime ingress", () => {
       revision,
       revisionId,
     });
-    mocks.admitExecutionSourceBatch.mockResolvedValueOnce([
-      { ref: bootstrapRef },
-      { ref },
-    ]);
+    mocks.admitExecutionSourceBatch.mockResolvedValueOnce([{ ref: bootstrapRef }, { ref }]);
     const dispatchRef = vi.fn(async () => undefined);
     const harness = freshCreateDb("You are the engineering lead.");
 
-    await createOrdinaryTaskRuntime(harness.db, options(dispatchRef)).create(
-      createInput(),
-    );
+    await createOrdinaryTaskRuntime(harness.db, options(dispatchRef)).create(createInput());
 
     expect(mocks.admitExecutionSource).not.toHaveBeenCalled();
     expect(mocks.admitExecutionSourceBatch).toHaveBeenCalledWith(
@@ -320,18 +298,10 @@ describe("ordinary task runtime ingress", () => {
     };
     const harness = createMockDb({
       execute: [[]],
-      select: [
-        [{ task: existing }],
-        [{ id: sessionId }],
-        [{ id: authorityId }],
-        [ref],
-      ],
+      select: [[{ task: existing }], [{ id: sessionId }], [{ id: authorityId }], [ref]],
     });
     const dispatchRef = vi.fn(async () => undefined);
-    const runtime = createOrdinaryTaskRuntime(
-      harness.db,
-      options(dispatchRef),
-    );
+    const runtime = createOrdinaryTaskRuntime(harness.db, options(dispatchRef));
 
     await expect(runtime.create(createInput())).resolves.toMatchObject({
       task: existing,
@@ -371,10 +341,7 @@ describe("ordinary task runtime ingress", () => {
       select: [[{ task: existing }]],
     });
     const dispatchRef = vi.fn(async () => undefined);
-    const runtime = createOrdinaryTaskRuntime(
-      harness.db,
-      options(dispatchRef),
-    );
+    const runtime = createOrdinaryTaskRuntime(harness.db, options(dispatchRef));
 
     await expect(runtime.create(createInput())).rejects.toMatchObject({
       reason: "create_idempotency_conflict",
@@ -382,5 +349,4 @@ describe("ordinary task runtime ingress", () => {
     expect(dispatchRef).not.toHaveBeenCalled();
     expect(harness.remaining("select")).toBe(0);
   });
-
 });

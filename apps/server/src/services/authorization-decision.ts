@@ -138,19 +138,6 @@ export async function decideAuthorizationBase(
         });
       }
 
-      const requiresNonViewer =
-        input.action === "task:comment" ||
-        input.action === "task:mutate" ||
-        input.action === "runtime:manage" ||
-        input.action === "secrets:read";
-      if (requiresNonViewer && membership.membershipRole === "viewer") {
-        return authz.deny({
-          action: input.action,
-          reason: "deny_missing_grant",
-          explanation: `Viewer membership does not grant ${input.action}.`,
-        });
-      }
-
       if (
         input.action === "agent:read" ||
         input.action === "company_scope:read" ||

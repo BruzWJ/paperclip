@@ -45,12 +45,6 @@ export interface TaskSessionCommentProjectionInput {
   sourceKind: ProjectionSourceKind;
   sourceId: string;
   messageId: string;
-  steeringSegment?: {
-    steeringTargetRunId: string;
-    refId: string;
-    refOrdinal: number;
-    segmentOrdinal: number;
-  } | null;
   comment: {
     id: string;
     body: string;

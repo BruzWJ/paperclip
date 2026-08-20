@@ -22,7 +22,6 @@ const capability: PromptCapabilityBinding = {
   runBatchDigest: "run-batch-digest",
   refId: "00000000-0000-4000-8000-000000000307",
   refOrdinal: 0,
-  segmentOrdinal: 0,
   attemptId: "00000000-0000-4000-8000-000000000308",
   leaseId: "00000000-0000-4000-8000-000000000309",
   leaseGeneration: 1,

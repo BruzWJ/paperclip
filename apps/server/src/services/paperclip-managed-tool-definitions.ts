@@ -1,10 +1,10 @@
 import {
   PAPERCLIP_RUNTIME_ACTION_KEYS,
-  addValidationDetail,
   canonicalUuidSchema,
   createTaskSchema,
   runtimeAgentCreateConfigurationSchema,
   runtimeAgentUpdateConfigurationSchema,
+  updateTaskStatusSchema,
 } from "@paperclipai/shared";
 import { z } from "zod";
 
@@ -67,7 +67,7 @@ export const PAPERCLIP_MANAGED_TOOL_METADATA = {
   },
   task_update: {
     title: "Update task",
-    description: "Update a task or add a canonical task comment.",
+    description: "Change task lifecycle and notify one explicit recipient.",
     readOnly: false,
   },
   mention_agent: {
@@ -133,74 +133,13 @@ export const page = {
   limit: z.number().int().min(1).max(100).optional(),
 };
 
-export const boardTaskUpdateSchema = z
-  .object({
+export const boardTaskUpdateSchema = updateTaskStatusSchema
+  .omit({ idempotencyKey: true })
+  .extend({
     companyId: canonicalUuidSchema,
     taskId: canonicalUuidSchema,
-    title: exactTitle.nullable().optional(),
-    message: nonBlankMessage.optional(),
-    replyToCommentId: canonicalUuidSchema.optional(),
-    reopen: z.boolean().optional(),
-    status: z.enum(["open", "blocked", "done", "cancelled"]).optional(),
-    structuredResult: z.unknown().optional(),
   })
-  .strict()
-  .superRefine((value, ctx) => {
-    if (value.title === undefined && value.message === undefined && value.status === undefined) {
-      addValidationDetail(ctx, {
-        message: "Provide title, message, or status",
-      });
-    }
-    if (value.reopen && value.message === undefined) {
-      addValidationDetail(ctx, {
-        message: "Reopening requires a message that explains why",
-        path: ["message"],
-      });
-    }
-    if (value.reopen && value.replyToCommentId !== undefined) {
-      addValidationDetail(ctx, {
-        message: "A reopen cannot be a reply to a run comment",
-        path: ["replyToCommentId"],
-      });
-    }
-    if (value.reopen && value.status !== undefined) {
-      addValidationDetail(ctx, {
-        message: "A reopen cannot include status",
-        path: ["status"],
-      });
-    }
-    if (value.reopen && Object.hasOwn(value, "structuredResult")) {
-      addValidationDetail(ctx, {
-        message: "A reopen cannot include structuredResult",
-        path: ["structuredResult"],
-      });
-    }
-    if (value.status !== undefined && value.message === undefined) {
-      addValidationDetail(ctx, {
-        message: "A lifecycle status update requires a message",
-        path: ["message"],
-      });
-    }
-    if (value.status !== undefined && value.replyToCommentId !== undefined) {
-      addValidationDetail(ctx, {
-        message: "A lifecycle status update cannot reply to a run comment",
-        path: ["replyToCommentId"],
-      });
-    }
-    const terminal = value.status === "done" || value.status === "cancelled";
-    if (Object.hasOwn(value, "structuredResult") && !terminal) {
-      addValidationDetail(ctx, {
-        message: "structuredResult is accepted only for done or cancelled",
-        path: ["structuredResult"],
-      });
-    }
-    if (terminal && Object.hasOwn(value, "structuredResult") && value.structuredResult === undefined) {
-      addValidationDetail(ctx, {
-        message: "structuredResult must be omitted rather than undefined",
-        path: ["structuredResult"],
-      });
-    }
-  });
+  .strict();
 
 export const boardTaskCreateSchema = createTaskSchema
   .omit({ idempotencyKey: true, title: true })
@@ -295,21 +234,44 @@ export const boardMcpInputSchemas = {
     .strict(),
 } satisfies Record<BoardManagedToolName, z.ZodTypeAny>;
 
-export type ManagedToolPayload<Name extends PaperclipManagedToolName> = Name extends "mention_board"
-  ? { companyId: string; taskId: string; message: string }
-  : Name extends BoardManagedToolName
-    ? z.infer<(typeof boardMcpInputSchemas)[Name]>
+type AgentTaskUpdateCommand = {
+  name: "task_update";
+  companyId: string;
+  taskId: string;
+  taskTarget: "active" | "explicit";
+  message: string;
+  status?: "open" | "blocked" | "done" | "cancelled";
+  structuredResult?: unknown;
+};
+
+export type BoardManagedToolCommandFor<Name extends BoardManagedToolName> =
+  Name extends BoardManagedToolName
+    ? { name: Name } & z.infer<(typeof boardMcpInputSchemas)[Name]>
     : never;
+
+export type AgentManagedToolCommandFor<Name extends PaperclipManagedToolName> =
+  Name extends "task_update"
+    ? AgentTaskUpdateCommand
+    : Name extends "mention_board"
+      ? { name: Name; companyId: string; taskId: string; message: string }
+      : Name extends BoardManagedToolName
+        ? BoardManagedToolCommandFor<Name>
+        : never;
 
 export type PaperclipManagedToolCommandFor<Name extends PaperclipManagedToolName> =
-  Name extends PaperclipManagedToolName
-    ? { name: Name } & ManagedToolPayload<Name> &
-        (Name extends "task_update" ? { taskTarget?: "active" | "explicit" } : object)
-    : never;
+  Name extends "task_update"
+    ? BoardManagedToolCommandFor<"task_update"> | AgentTaskUpdateCommand
+    : AgentManagedToolCommandFor<Name>;
 
-export type PaperclipManagedToolCommand = {
-  [Name in PaperclipManagedToolName]: PaperclipManagedToolCommandFor<Name>;
+export type BoardManagedToolCommand = {
+  [Name in BoardManagedToolName]: BoardManagedToolCommandFor<Name>;
+}[BoardManagedToolName];
+
+export type AgentManagedToolCommand = {
+  [Name in PaperclipManagedToolName]: AgentManagedToolCommandFor<Name>;
 }[PaperclipManagedToolName];
+
+export type PaperclipManagedToolCommand = BoardManagedToolCommand | AgentManagedToolCommand;
 
 export interface BoardManagedToolDefinition {
   name: BoardManagedToolName;
@@ -334,7 +296,7 @@ export const BOARD_MANAGED_TOOLS: readonly BoardManagedToolDefinition[] = Object
 export function parseBoardManagedTool<Name extends BoardManagedToolName>(
   name: Name,
   payload: unknown,
-): PaperclipManagedToolCommandFor<Name> {
+): BoardManagedToolCommandFor<Name> {
   const parsed = boardMcpInputSchemas[name].parse(payload);
-  return { name, ...parsed } as PaperclipManagedToolCommandFor<Name>;
+  return { name, ...parsed } as BoardManagedToolCommandFor<Name>;
 }

@@ -1,16 +1,8 @@
-import {
-  taskComments,
-  taskExecutionPromptSegments,
-  taskExecutionRuns,
-  taskSessionEvents,
-  type Db,
-} from "@paperclipai/db";
+import { taskExecutionRuns, type Db } from "@paperclipai/db";
 import { TASK_EXECUTION_RUN_STATUSES, type TaskExecutionRunStatus } from "@paperclipai/shared";
-import { and, asc, eq, gt, isNotNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import {
-  type ResumedAgentSteeringLivenessSearch,
-  type ResumedAgentSteeringLivenessSource,
   type TaskExecutionRunEnvelope,
   type TaskExecutionRunIdentity,
   RUN_STATUS_FILTER_VALUES,
@@ -137,94 +129,6 @@ export function projectRunEnvelope(row: typeof taskExecutionRuns.$inferSelect): 
   };
   assertRunEnvelopeInvariant(run);
   return run;
-}
-
-/**
- * Shared select/join base for the two steering-liveness lookups below. The
- * caller chains its own where/orderBy/limit/for tail.
- */
-export function steeringLivenessBaseQuery(transaction: TaskSessionDbTransaction) {
-  return transaction
-    .select({
-      companyId: taskExecutionRuns.companyId,
-      taskId: taskExecutionRuns.taskId,
-      ownershipEpoch: taskExecutionRuns.ownershipEpoch,
-      runId: taskExecutionPromptSegments.runId,
-      refId: taskExecutionPromptSegments.refId,
-      segmentOrdinal: taskExecutionPromptSegments.segmentOrdinal,
-      committedAt: taskExecutionPromptSegments.resumedAt,
-    })
-    .from(taskExecutionPromptSegments)
-    .innerJoin(
-      taskExecutionRuns,
-      and(
-        eq(taskExecutionRuns.companyId, taskExecutionPromptSegments.companyId),
-        eq(taskExecutionRuns.taskId, taskExecutionPromptSegments.taskId),
-        eq(taskExecutionRuns.id, taskExecutionPromptSegments.runId),
-      ),
-    )
-    .innerJoin(taskComments, eq(taskComments.id, taskExecutionPromptSegments.sourceCommentId))
-    .innerJoin(
-      taskSessionEvents,
-      and(
-        eq(taskSessionEvents.companyId, taskComments.companyId),
-        eq(taskSessionEvents.taskId, taskComments.taskId),
-        eq(taskSessionEvents.sessionId, taskComments.sessionId),
-        eq(taskSessionEvents.sourceId, taskComments.canonicalSourceId),
-      ),
-    )
-    .$dynamic();
-}
-
-export async function listResumedAgentSteeringLivenessActionsInTransaction(
-  transaction: TaskSessionDbTransaction,
-  input: ResumedAgentSteeringLivenessSearch,
-): Promise<readonly ResumedAgentSteeringLivenessSource[]> {
-  assertExactRunIdentifier(input.companyId, "steering liveness company id");
-  assertExactRunIdentifier(input.taskId, "steering liveness task id");
-  if (!Number.isSafeInteger(input.ownershipEpoch) || input.ownershipEpoch < 1) {
-    throw new TaskExecutionRunInvariantViolation("steering liveness ownership epoch must be positive");
-  }
-  if ("sourceRunId" in input) {
-    assertExactRunIdentifier(input.sourceRunId, "steering source run id");
-  } else if (!(input.committedAfter instanceof Date) || !Number.isFinite(input.committedAfter.getTime())) {
-    throw new TaskExecutionRunInvariantViolation("steering liveness admission time is invalid");
-  }
-  const rows = await steeringLivenessBaseQuery(transaction)
-    .where(
-      and(
-        eq(taskExecutionPromptSegments.companyId, input.companyId),
-        eq(taskExecutionPromptSegments.taskId, input.taskId),
-        eq(taskExecutionRuns.ownershipEpoch, input.ownershipEpoch),
-        isNotNull(taskExecutionPromptSegments.resumedAt),
-        "sourceRunId" in input
-          ? eq(taskComments.runId, input.sourceRunId)
-          : gt(taskExecutionPromptSegments.resumedAt, input.committedAfter),
-        eq(taskComments.authorType, "agent"),
-      ),
-    )
-    .orderBy(
-      asc(taskExecutionPromptSegments.resumedAt),
-      asc(taskExecutionPromptSegments.runId),
-      asc(taskExecutionPromptSegments.segmentOrdinal),
-    );
-  return Object.freeze(
-    rows.flatMap((row) =>
-      row.committedAt
-        ? [
-            Object.freeze({
-              companyId: row.companyId,
-              taskId: row.taskId,
-              ownershipEpoch: row.ownershipEpoch,
-              runId: row.runId,
-              refId: row.refId,
-              segmentOrdinal: row.segmentOrdinal,
-              committedAt: row.committedAt,
-            }),
-          ]
-        : [],
-    ),
-  );
 }
 
 /**

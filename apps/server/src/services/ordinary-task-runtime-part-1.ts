@@ -13,10 +13,8 @@ import {
   allocateCanonicalTaskIdentityInTx,
   persistCanonicalTaskAggregateInTx,
 } from "./canonical-task-aggregate.js";
-import { createOrdinaryTaskReassignmentCommitter } from "./ordinary-task-runtime-reassignment.js";
 import * as runtime from "./ordinary-task-runtime-shared.js";
 import { assertPluginPermittedTaskOwnerInTransaction } from "./plugin-task-authorization.js";
-import { createTaskFormCommitRuntime } from "./runtime-task-action-port.js";
 import { admitTaskExecutionInTransaction } from "./task-execution-initial-start-admission.js";
 import { createTaskSessionAdmissionService } from "./task-session/admission.js";
 import type {
@@ -28,20 +26,10 @@ import type {
 export function createOrdinaryTaskRuntimePart1(db: Db, options: OrdinaryTaskRuntimeOptions) {
   const clock = options.clock ?? (() => new Date());
   const sessions = createTaskSessionAdmissionService(db, { clock });
-  const taskForms = createTaskFormCommitRuntime(db, {
-    clock,
-    dispatchPersistedRef: options.dispatchRef,
-    taskExecutionCancellation: options.taskExecutionCancellation,
-  });
 
   async function dispatch(refId: string): Promise<void> {
     await options.dispatchRef(refId);
   }
-  const commitAgentOwnerReassignmentInTransaction = createOrdinaryTaskReassignmentCommitter({
-    options,
-    clock,
-    sessions,
-  });
 
   return {
     dispatchRef: dispatch,
@@ -205,7 +193,6 @@ export function createOrdinaryTaskRuntimePart1(db: Db, options: OrdinaryTaskRunt
               ownerKind: "agent",
               ownerAgentId: owner.id,
               ownerUserId: null,
-              ownerAssignmentSource: null,
               ownershipEpoch: 1,
               ...runtime.creatorColumns(input.creator),
               responsibleUserId: input.responsibleUserId ?? null,

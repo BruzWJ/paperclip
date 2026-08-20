@@ -2,11 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   assertBoardOrgAccess,
   assertCompanyAccess,
-  authorizeHumanTaskSteering,
   getAccessibleResource,
   hasBoardOrgAccess,
 } from "../routes/authz.js";
-import { testBoardKeyActor, testBoardSessionActor } from "./helpers/request-actor.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 function makeReq(input: {
   method?: string;
@@ -31,19 +30,6 @@ function makeReq(input: {
   } as Express.Request;
 }
 
-function steeringDb(responses: readonly (readonly Record<string, unknown>[])[]) {
-  let selectIndex = 0;
-  return {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve(responses[selectIndex++] ?? []),
-        }),
-      }),
-    }),
-  } as never;
-}
-
 describe("assertCompanyAccess", () => {
   it("allows viewer memberships to read", () => {
     const req = makeReq({
@@ -60,7 +46,7 @@ describe("assertCompanyAccess", () => {
     expect(() => assertCompanyAccess(req, "company-1")).not.toThrow();
   });
 
-  it("rejects viewer memberships for writes", () => {
+  it("allows active viewer memberships to write", () => {
     const req = makeReq({
       method: "PATCH",
       actor: testBoardSessionActor({
@@ -72,7 +58,7 @@ describe("assertCompanyAccess", () => {
       }),
     });
 
-    expect(() => assertCompanyAccess(req, "company-1")).toThrow("Viewer access is read-only");
+    expect(() => assertCompanyAccess(req, "company-1")).not.toThrow();
   });
 
   it("rejects writes when membership details are present but omit the target company", () => {
@@ -256,93 +242,4 @@ describe("assertBoardOrgAccess", () => {
     expect(hasBoardOrgAccess(req)).toBe(false);
     expect(() => assertBoardOrgAccess(req)).toThrow("Company membership or instance admin access required");
   });
-});
-
-describe("authorizeHumanTaskSteering", () => {
-  const operator = {
-    companyId: "company-1",
-    membershipRole: "operator" as const,
-    status: "active" as const,
-  };
-
-  it("authorizes a Better Auth session only when its user and active write membership persist", async () => {
-    const req = makeReq({
-      method: "POST",
-      actor: testBoardSessionActor({
-        userId: "user-1",
-        companyIds: ["company-1"],
-        memberships: [operator],
-      }),
-    });
-
-    await expect(authorizeHumanTaskSteering(
-      steeringDb([
-        [{ id: "user-1" }],
-        [{ id: "membership-1", status: "active", membershipRole: "operator" }],
-      ]),
-      req,
-      "company-1",
-    )).resolves.toBe("user-1");
-  });
-
-  it("applies the same persisted-human predicate to derivative board keys", async () => {
-    const req = makeReq({
-      method: "POST",
-      actor: testBoardKeyActor({
-        userId: "user-1",
-        companyIds: ["company-1"],
-        memberships: [operator],
-      }),
-    });
-
-    await expect(authorizeHumanTaskSteering(
-      steeringDb([
-        [{ id: "user-1" }],
-        [{ id: "membership-1", status: "active", membershipRole: "operator" }],
-      ]),
-      req,
-      "company-1",
-    )).resolves.toBe("user-1");
-  });
-
-  it("rejects a board identity whose canonical Better Auth user is absent", async () => {
-    const req = makeReq({
-      method: "POST",
-      actor: testBoardSessionActor({
-        userId: "deleted-user",
-        companyIds: ["company-1"],
-        memberships: [operator],
-      }),
-    });
-
-    await expect(authorizeHumanTaskSteering(
-      steeringDb([
-        [],
-        [{ id: "membership-1", status: "active", membershipRole: "operator" }],
-      ]),
-      req,
-      "company-1",
-    )).rejects.toThrow("Human steering requires active comment permission");
-  });
-
-  it("rejects persisted viewer membership even when the request snapshot claims write access", async () => {
-    const req = makeReq({
-      method: "POST",
-      actor: testBoardSessionActor({
-        userId: "user-1",
-        companyIds: ["company-1"],
-        memberships: [operator],
-      }),
-    });
-
-    await expect(authorizeHumanTaskSteering(
-      steeringDb([
-        [{ id: "user-1" }],
-        [{ id: "membership-1", status: "active", membershipRole: "viewer" }],
-      ]),
-      req,
-      "company-1",
-    )).rejects.toThrow("Human steering requires active comment permission");
-  });
-
 });

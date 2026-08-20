@@ -1,6 +1,5 @@
 import {
   taskExecutionPromptCapabilities,
-  taskExecutionPromptSegments,
   taskExecutionRunRefs,
   taskExecutionSessions,
 } from "@paperclipai/db";
@@ -40,15 +39,6 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart3(
         );
         const currentCapability = await promptCycle.lockCapability(transaction, prompt.identity, capability);
         const scope = prompt.activationCorrelationScope;
-        const continuityFenceGeneration = await promptCycle.lockBoardReopenContinuityFence(
-          transaction,
-          prompt.identity,
-        );
-        if (scope.correlationGeneration <= continuityFenceGeneration) {
-          promptCycle.reject(
-            "prompt activation correlation does not clear the latest board-reopen continuity fence",
-          );
-        }
         const timestamp = await promptCycle.transactionClockTimestamp(transaction, "prompt activation time");
         if (
           lease.expiresAt <= timestamp ||
@@ -77,7 +67,6 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart3(
                   eq(taskExecutionSessions.targetAgentId, prompt.identity.targetAgentId),
                   eq(taskExecutionSessions.adapterConfigIdentity, prompt.identity.adapterConfigRevisionId),
                   eq(taskExecutionSessions.workspaceIdentity, prompt.identity.executionWorkspaceBindingId),
-                  eq(taskExecutionSessions.purpose, "carry"),
                   eq(taskExecutionSessions.state, "eligible"),
                   eq(taskExecutionSessions.laneKind, prompt.identity.laneKind),
                 ),
@@ -116,18 +105,12 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart3(
           companyId: prompt.identity.companyId,
           taskId: prompt.identity.taskId,
           ownershipEpoch: prompt.identity.ownershipEpoch,
-          purpose: scope.purpose,
-          state: scope.purpose === "carry" ? "eligible" : "current",
+          state: "eligible",
           targetAgentId: prompt.identity.targetAgentId,
           adapterConfigIdentity: prompt.identity.adapterConfigRevisionId,
           workspaceIdentity: prompt.identity.executionWorkspaceBindingId,
-          laneKind: scope.purpose === "carry" ? scope.laneKind : null,
-          runId: scope.purpose === "active_run_steering" ? scope.runId : null,
-          currentRefId: scope.purpose === "active_run_steering" ? scope.currentRefId : null,
-          currentRefOrdinal: scope.purpose === "active_run_steering" ? scope.currentRefOrdinal : null,
-          currentSegmentOrdinal: scope.purpose === "active_run_steering" ? scope.currentSegmentOrdinal : null,
-          authorizedContextExposureDigest:
-            scope.purpose === "carry" ? scope.authorizedContextExposureDigest : null,
+          laneKind: scope.laneKind,
+          authorizedContextExposureDigest: scope.authorizedContextExposureDigest,
           envelopeVersion: correlation.envelopeVersion,
           codecKind: correlation.codecKind,
           acpWireProtocolVersion: 1,
@@ -138,7 +121,6 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart3(
           lastProtocolSettledRunId: oldCursor?.lastProtocolSettledRunId ?? null,
           lastProtocolSettledRefId: oldCursor?.lastProtocolSettledRefId ?? null,
           lastProtocolSettledRefOrdinal: oldCursor?.lastProtocolSettledRefOrdinal ?? null,
-          lastProtocolSettledSegmentOrdinal: oldCursor?.lastProtocolSettledSegmentOrdinal ?? null,
           costCursorState: oldCursor?.costCursorState ?? "unanchored",
           costCursorAmount: oldCursor?.costCursorAmount ?? null,
           costCursorCurrency: oldCursor?.costCursorCurrency ?? null,
@@ -164,33 +146,6 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart3(
             capabilityConnectionId: taskExecutionPromptCapabilities.capabilityConnectionId,
           });
         if (activated.length !== 1) promptCycle.reject("prompt activation lost its capability");
-        if (prompt.identity.promptKind === "steering") {
-          const updated = await transaction
-            .update(taskExecutionPromptSegments)
-            .set({
-              targetSessionGeneration: scope.correlationGeneration,
-              resumedAt: sql`coalesce(
-                ${taskExecutionPromptSegments.resumedAt},
-                greatest(
-                  ${sql.param(timestamp, taskExecutionPromptSegments.resumedAt)},
-                  ${taskExecutionPromptSegments.createdAt} + interval '1 millisecond'
-                )
-              )`,
-            })
-            .where(
-              and(
-                eq(taskExecutionPromptSegments.runId, prompt.identity.runId),
-                eq(taskExecutionPromptSegments.refId, prompt.identity.refId),
-                eq(taskExecutionPromptSegments.refOrdinal, prompt.identity.refOrdinal),
-                eq(taskExecutionPromptSegments.segmentOrdinal, prompt.identity.segmentOrdinal),
-                eq(taskExecutionPromptSegments.attemptId, prompt.identity.attemptId),
-              ),
-            )
-            .returning({
-              runId: taskExecutionPromptSegments.runId,
-            });
-          if (updated.length !== 1) promptCycle.reject("steering activation lost its segment");
-        }
       });
     },
     async beginPromptTransmission({ prompt, capability }) {
@@ -213,37 +168,20 @@ export function createPostgresTaskExecutionPromptCycleRepositoryPart3(
         ) {
           promptCycle.reject("prompt transmission requires one active capability");
         }
-        const changed =
-          prompt.identity.promptKind === "base"
-            ? await transaction
-                .update(taskExecutionRunRefs)
-                .set({ promptTransmissionPhase: "transmitted" })
-                .where(
-                  and(
-                    eq(taskExecutionRunRefs.runId, prompt.identity.runId),
-                    eq(taskExecutionRunRefs.refId, prompt.identity.refId),
-                    eq(taskExecutionRunRefs.refOrdinal, prompt.identity.refOrdinal),
-                    eq(taskExecutionRunRefs.attemptId, prompt.identity.attemptId),
-                    eq(taskExecutionRunRefs.promptTransmissionPhase, "not_transmitted"),
-                    sql`${taskExecutionRunRefs.protocolSettlementState} is null`,
-                  ),
-                )
-                .returning({ runId: taskExecutionRunRefs.runId })
-            : await transaction
-                .update(taskExecutionPromptSegments)
-                .set({ promptTransmissionPhase: "transmitted" })
-                .where(
-                  and(
-                    eq(taskExecutionPromptSegments.runId, prompt.identity.runId),
-                    eq(taskExecutionPromptSegments.refId, prompt.identity.refId),
-                    eq(taskExecutionPromptSegments.refOrdinal, prompt.identity.refOrdinal),
-                    eq(taskExecutionPromptSegments.segmentOrdinal, prompt.identity.segmentOrdinal),
-                    eq(taskExecutionPromptSegments.attemptId, prompt.identity.attemptId),
-                    eq(taskExecutionPromptSegments.promptTransmissionPhase, "not_transmitted"),
-                    sql`${taskExecutionPromptSegments.protocolSettlementState} is null`,
-                  ),
-                )
-                .returning({ runId: taskExecutionPromptSegments.runId });
+        const changed = await transaction
+          .update(taskExecutionRunRefs)
+          .set({ promptTransmissionPhase: "transmitted" })
+          .where(
+            and(
+              eq(taskExecutionRunRefs.runId, prompt.identity.runId),
+              eq(taskExecutionRunRefs.refId, prompt.identity.refId),
+              eq(taskExecutionRunRefs.refOrdinal, prompt.identity.refOrdinal),
+              eq(taskExecutionRunRefs.attemptId, prompt.identity.attemptId),
+              eq(taskExecutionRunRefs.promptTransmissionPhase, "not_transmitted"),
+              sql`${taskExecutionRunRefs.protocolSettlementState} is null`,
+            ),
+          )
+          .returning({ runId: taskExecutionRunRefs.runId });
         if (changed.length !== 1) promptCycle.reject("prompt transmission was not monotonic");
       });
     },

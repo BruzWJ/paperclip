@@ -140,7 +140,7 @@ export async function truncateRevertProjection(
       and(
         eq(taskExecutionSessions.companyId, eventRow.companyId),
         eq(taskExecutionSessions.taskId, eventRow.taskId),
-        inArray(taskExecutionSessions.state, ["eligible", "current"]),
+        eq(taskExecutionSessions.state, "eligible"),
       ),
     );
   await transaction.execute(sql`

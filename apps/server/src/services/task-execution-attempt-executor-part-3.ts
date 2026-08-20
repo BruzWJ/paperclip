@@ -30,22 +30,26 @@ export function createTaskExecutionAttemptExecutor(options: {
   readonly events: executorCore.TaskExecutionAcpEventSink;
 }): executorCore.TaskExecutionAttemptExecutor {
   async function composeWorkPrompt(prompt: executorCore.ResolvedTaskExecutionPrompt): Promise<string> {
-    return options.beforePrompt.dispatch({
-      companyId: prompt.identity.companyId,
-      taskId: prompt.identity.taskId,
-      sessionId: prompt.identity.sessionId,
-      runId: prompt.identity.runId,
-      agentId: prompt.identity.targetAgentId,
-      sourceText: prompt.sourceText,
-      promptKind: prompt.identity.promptKind,
-      sessionOperation: prompt.sessionOperation,
-      refId: prompt.identity.refId,
-      refOrdinal: prompt.identity.refOrdinal,
-      segmentOrdinal: prompt.identity.segmentOrdinal,
-      sourceMessageId: prompt.sourceMessageId,
-      sourceMessageSeq: prompt.sourceMessageSeq,
-      contextAccess: prompt.contextAccess,
-    });
+    if (!prompt.readOnly) {
+      return options.beforePrompt.dispatch({
+        companyId: prompt.identity.companyId,
+        taskId: prompt.identity.taskId,
+        sessionId: prompt.identity.sessionId,
+        runId: prompt.identity.runId,
+        agentId: prompt.identity.targetAgentId,
+        sourceText: prompt.sourceText,
+        sessionOperation: prompt.sessionOperation,
+        refId: prompt.identity.refId,
+        refOrdinal: prompt.identity.refOrdinal,
+        sourceMessageId: prompt.sourceMessageId,
+        sourceMessageSeq: prompt.sourceMessageSeq,
+        contextAccess: prompt.contextAccess,
+      });
+    }
+    return [
+      "[Paperclip access: response-only for this turn; expires after this response. Read and answer only—no mutations, plugins, or workspace changes.]",
+      prompt.sourceText,
+    ].join("\n\n");
   }
 
   async function runCycle(input: {
@@ -111,8 +115,8 @@ export function createTaskExecutionAttemptExecutor(options: {
         message: input.message,
         configSelections: input.prompt.acpConfiguration.sessionConfigSelections,
         // Board approval gates are already settled for this exact execution.
-        permissionMode: "approve-all",
-        nonInteractivePermissions: "fail",
+        permissionMode: input.prompt.readOnly ? "approve-reads" : "approve-all",
+        nonInteractivePermissions: input.prompt.readOnly ? "deny" : "fail",
         mcpServers: Object.freeze([
           createPaperclipRunToolsMcpServer({
             nodeExecutable: prepared.targetNodeExecutable,
@@ -319,9 +323,6 @@ export function createTaskExecutionAttemptExecutor(options: {
             start = { kind: "new" };
           } else {
             const resolvedStart = await options.sessionCorrelations.resolveResume({
-              promptKind: prompt.identity.promptKind,
-              carryContext: prompt.carryContext,
-              bootstrapHandoff: prompt.bootstrapPredecessor !== null,
               stored: prompt.storedCorrelation,
             });
             start = resolvedStart.start;

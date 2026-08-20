@@ -3,13 +3,12 @@ import {
   companySessionLifecycleOperations,
   taskConsultExecutions,
   taskExecutionHistoryViews,
-  taskExecutionPromptSegments,
   taskExecutionSessions,
   taskSessions,
   tasks,
 } from "@paperclipai/db";
 import type { TaskExecutionSessionOperation } from "@paperclipai/shared";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { type PostgresPromptCapabilityCompiler } from "./runtime-interface-compiler-db.js";
 import { TaskConsultChainInvalid, lockAndValidateTaskConsultChain } from "./task-consult-chain-postgres.js";
 import { type RefRow, type RunRow, exactlyOne, reject } from "./task-execution-dispatcher-postgres-part-1.js";
@@ -17,6 +16,7 @@ import { compileCarryContext } from "./task-execution-dispatcher-postgres-part-2
 import { resolveInitialPromptCycleInTransaction } from "./task-execution-prompt-cycle-postgres.js";
 import { isTaskExecutionRefDeliveryEligible } from "./task-execution-ref-delivery.js";
 import { lockTaskExecutionRunIfPresentInTransaction } from "./task-execution-run-service-part-3-section-1.js";
+import { lifecycleAcceptsExecution, terminalExecutionRef } from "./task-execution-terminal-eligibility.js";
 import type { TaskSessionDbTransaction } from "./task-session/event-store.js";
 
 /** @internal Freezes the sole ACPX session operation for one exact prompt. */
@@ -25,17 +25,11 @@ export async function selectSessionOperation(
   compiler: Pick<PostgresPromptCapabilityCompiler, "resolve">,
   input: {
     readonly run: RunRow;
-    readonly promptKind: "base" | "steering";
     readonly ref: RefRow;
-    readonly refOrdinal: number;
-    readonly segmentOrdinal: number;
   },
 ): Promise<TaskExecutionSessionOperation> {
   const run = input.run;
-  const { carryContext, exposureDigest, carrySourceExposureDigest } = await compileCarryContext(
-    compiler,
-    run,
-  );
+  const { carryContext, exposureDigest } = await compileCarryContext(compiler, run);
   const common = and(
     eq(taskExecutionSessions.companyId, run.companyId),
     eq(taskExecutionSessions.taskId, run.taskId),
@@ -44,60 +38,6 @@ export async function selectSessionOperation(
     eq(taskExecutionSessions.adapterConfigIdentity, run.adapterConfigRevisionId),
     eq(taskExecutionSessions.workspaceIdentity, run.executionWorkspaceBindingId),
   );
-  if (input.promptKind === "steering") {
-    const segment = exactlyOne(
-      await transaction
-        .select({
-          resumeSourceCorrelationId: taskExecutionPromptSegments.resumeSourceCorrelationId,
-        })
-        .from(taskExecutionPromptSegments)
-        .where(
-          and(
-            eq(taskExecutionPromptSegments.companyId, run.companyId),
-            eq(taskExecutionPromptSegments.taskId, run.taskId),
-            eq(taskExecutionPromptSegments.runId, run.runId),
-            eq(taskExecutionPromptSegments.refId, input.ref.id),
-            eq(taskExecutionPromptSegments.refOrdinal, input.refOrdinal),
-            eq(taskExecutionPromptSegments.segmentOrdinal, input.segmentOrdinal),
-            eq(taskExecutionPromptSegments.steeringState, "resumed"),
-            isNull(taskExecutionPromptSegments.protocolSettlementState),
-          ),
-        )
-        .limit(2)
-        .for("update"),
-      "steering attempt lost its immutable resume source",
-    );
-    const sources = await transaction
-      .select()
-      .from(taskExecutionSessions)
-      .where(and(common, eq(taskExecutionSessions.id, segment.resumeSourceCorrelationId)))
-      .limit(2)
-      .for("update");
-    if (sources.length > 1) reject("steering resume source is ambiguous");
-    const source = sources[0] ?? null;
-    const exactCarrySource =
-      source !== null &&
-      source.purpose === "carry" &&
-      source.state === "eligible" &&
-      source.laneKind === run.executionMode &&
-      source.runId === null &&
-      source.currentRefId === null &&
-      source.currentRefOrdinal === null &&
-      source.currentSegmentOrdinal === null &&
-      source.authorizedContextExposureDigest === carrySourceExposureDigest;
-    const exactActiveRunSource =
-      source !== null &&
-      source.purpose === "active_run_steering" &&
-      source.state === "current" &&
-      source.laneKind === null &&
-      source.runId === run.runId &&
-      source.currentRefId === input.ref.id &&
-      source.currentRefOrdinal === input.refOrdinal &&
-      source.currentSegmentOrdinal === input.segmentOrdinal - 1 &&
-      source.authorizedContextExposureDigest === null;
-    if (exactCarrySource || exactActiveRunSource) return "steer_resume";
-    reject("steering attempt lost its exact native resume source");
-  }
   const initialCycle = await resolveInitialPromptCycleInTransaction(transaction, {
     currentRef: input.ref,
     executionWorkspaceBindingId: run.executionWorkspaceBindingId,
@@ -117,7 +57,6 @@ export async function selectSessionOperation(
         .where(
           and(
             common,
-            eq(taskExecutionSessions.purpose, "carry"),
             eq(taskExecutionSessions.state, "eligible"),
             eq(taskExecutionSessions.laneKind, run.executionMode),
             eq(taskExecutionSessions.authorizedContextExposureDigest, exposureDigest),
@@ -204,11 +143,16 @@ export async function assertRefDispatchable(
         task.ownerAgentId === ref.targetAgentId &&
         ref.taskExecutionAuthorityId !== null
       : ref.consultExecutionId !== null;
+  const terminalEligible = terminalExecutionRef({
+    sourceKind: ref.sourceKind,
+    messageKind: ref.messageKind,
+    mode: ref.mode,
+  });
   if (
     company.status !== "active" ||
     company.integrity !== "ready" ||
     lifecycleRows.length !== 0 ||
-    !["open", "blocked"].includes(task.lifecycleStatus) ||
+    !lifecycleAcceptsExecution({ lifecycleStatus: task.lifecycleStatus, terminalEligible }) ||
     task.ownershipEpoch !== ref.ownershipEpoch ||
     !ownerValid ||
     session.integrityState !== "ready" ||

@@ -15,8 +15,11 @@ import {
   evaluateAgentInvokability,
   resolveInvokableTaskOwnerInTransaction,
 } from "./agent-invokability.js";
+import {
+  PAPERCLIP_MANAGED_TOOL_METADATA,
+  type PaperclipManagedToolName,
+} from "./paperclip-managed-tool-definitions.js";
 import { lockActivePromptCapabilityBinding } from "./prompt-capability-gateway-postgres.js";
-import { type PaperclipManagedToolName } from "./paperclip-managed-tool-registry.js";
 import { createPostgresRuntimeInterfaceCompiler } from "./runtime-interface-compiler-db.js";
 import {
   resolveRuntimeToolDescriptor,
@@ -43,6 +46,7 @@ export async function lockRuntimeToolAuthority(
 ): Promise<AuthorizedRuntimeAction> {
   await lockRuntimeActionHierarchy(tx, capability, now, {
     additionalLaneTargetAgentId: options.additionalLaneTargetAgentId,
+    terminalEligible: PAPERCLIP_MANAGED_TOOL_METADATA[toolName].readOnly,
   });
   // Run transitions own their attempt and lease projections. The canonical
   // hierarchy/Session lock above matches every lifecycle producer; the run

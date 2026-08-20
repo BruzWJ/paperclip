@@ -6,10 +6,8 @@ import { testBoardSessionActor } from "./helpers/request-actor.js";
 vi.unmock("http");
 vi.unmock("node:http");
 
-// Tests that verify the write-path membership/role checks restored by Fix 1.
-// `assertCompanyAccess` (in authz.ts) must reject viewer-role users and
-// inactive members on non-safe HTTP methods (POST/PUT/PATCH/DELETE), after
-// the canonical accessible-resource gate folds cross-company lookups to 404.
+// Active company membership grants Board control. Inactive members remain
+// denied on writes after the company boundary has been checked.
 
 const companyId = "11111111-1111-4111-8111-111111111111";
 const goalId = "22222222-2222-4222-8222-222222222222";
@@ -117,7 +115,7 @@ function resetMocks() {
   mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
 }
 
-describe.sequential("write-path membership checks (viewer / inactive)", () => {
+describe.sequential("write-path membership checks", () => {
   beforeAll(async () => {
     await loadRouteModules();
   });
@@ -126,7 +124,7 @@ describe.sequential("write-path membership checks (viewer / inactive)", () => {
     resetMocks();
   });
 
-  describe("viewer role", () => {
+  describe("active membership", () => {
     const viewerActor = testBoardSessionActor({
       userId: "viewer-user",
       companyIds: [companyId],
@@ -136,50 +134,24 @@ describe.sequential("write-path membership checks (viewer / inactive)", () => {
       ],
     });
 
-    it("rejects PATCH on a goal with 403 'Viewer access is read-only'", async () => {
+    it("allows every goal write method for an active viewer membership", async () => {
       const app = await createApp(viewerActor);
-      const res = await requestApp(app, (baseUrl) =>
+      const patch = await requestApp(app, (baseUrl) =>
         request(baseUrl).patch(`/api/goals/${goalId}`).send({ title: "New title" }),
       );
-
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe("Viewer access is read-only");
-      expect(mockGoalService.update).not.toHaveBeenCalled();
-    });
-
-    it("rejects DELETE on a goal with 403 'Viewer access is read-only'", async () => {
-      const app = await createApp(viewerActor);
-      const res = await requestApp(app, (baseUrl) =>
+      const remove = await requestApp(app, (baseUrl) =>
         request(baseUrl).delete(`/api/goals/${goalId}`),
       );
-
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe("Viewer access is read-only");
-      expect(mockGoalService.remove).not.toHaveBeenCalled();
-    });
-
-    it("rejects POST (create) on a company's goals with 403 'Viewer access is read-only'", async () => {
-      const app = await createApp(viewerActor);
-      const res = await requestApp(app, (baseUrl) =>
+      const create = await requestApp(app, (baseUrl) =>
         request(baseUrl)
           .post(`/api/companies/${companyId}/goals`)
           .send({ level: "company", title: "New goal" }),
       );
 
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe("Viewer access is read-only");
-      expect(mockGoalService.create).not.toHaveBeenCalled();
-    });
-
-    it("still permits GET on the same goal (read-only access is preserved)", async () => {
-      const app = await createApp(viewerActor);
-      const res = await requestApp(app, (baseUrl) =>
-        request(baseUrl).get(`/api/goals/${goalId}`),
-      );
-
-      expect(res.status).toBe(200);
-      expect(res.body.id).toBe(goalId);
-      expect(mockGoalService.getById).toHaveBeenCalledWith(goalId);
+      expect([patch.status, remove.status, create.status]).toEqual([200, 200, 201]);
+      expect(mockGoalService.update).toHaveBeenCalledOnce();
+      expect(mockGoalService.remove).toHaveBeenCalledOnce();
+      expect(mockGoalService.create).toHaveBeenCalledOnce();
     });
   });
 
@@ -229,24 +201,4 @@ describe.sequential("write-path membership checks (viewer / inactive)", () => {
     });
   });
 
-  describe("active editor (sanity check)", () => {
-    const editorActor = testBoardSessionActor({
-      userId: "editor-user",
-      companyIds: [companyId],
-      isInstanceAdmin: false,
-      memberships: [
-        { companyId, status: "active", membershipRole: "editor" },
-      ],
-    });
-
-    it("allows PATCH on a goal", async () => {
-      const app = await createApp(editorActor);
-      const res = await requestApp(app, (baseUrl) =>
-        request(baseUrl).patch(`/api/goals/${goalId}`).send({ title: "New title" }),
-      );
-
-      expect(res.status).toBe(200);
-      expect(mockGoalService.update).toHaveBeenCalledWith(goalId, { title: "New title" });
-    });
-  });
 });

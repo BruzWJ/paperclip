@@ -44,10 +44,10 @@ export function validatePrompt(prompt: ResolvedTaskExecutionPrompt): void {
   }
   exactDigest(identity.runBatchDigest, "run batch digest");
   exactDigest(prompt.effectiveContextExposureDigest, "effective context exposure digest");
-  exactDigest(prompt.carrySourceExposureDigest, "carry source exposure digest");
   exactDigest(prompt.effectiveToolsDigest, "effective tools digest");
   if (
     prompt.sourceText.length === 0 ||
+    typeof prompt.readOnly !== "boolean" ||
     (prompt.turn !== "bootstrap" && prompt.turn !== "work") ||
     !Number.isSafeInteger(prompt.sourceMessageSeq) ||
     prompt.sourceMessageSeq < 0 ||
@@ -56,11 +56,8 @@ export function validatePrompt(prompt: ResolvedTaskExecutionPrompt): void {
     identity.leaseGeneration < 1 ||
     identity.attemptGeneration < 1 ||
     identity.refOrdinal < 0 ||
-    identity.segmentOrdinal < 0 ||
     !Number.isSafeInteger(prompt.leaseRenewalIntervalMs) ||
     prompt.leaseRenewalIntervalMs < 1 ||
-    (identity.promptKind === "base" && identity.segmentOrdinal !== 0) ||
-    (identity.promptKind === "steering" && identity.segmentOrdinal < 1) ||
     identity.runKind !== (identity.laneKind === "owner" ? "productive" : "consult") ||
     (identity.laneKind === "owner"
       ? !identity.taskExecutionAuthorityId || identity.consultExecutionId !== null
@@ -77,15 +74,8 @@ export function validatePrompt(prompt: ResolvedTaskExecutionPrompt): void {
     scope.adapterConfigIdentity !== identity.adapterConfigRevisionId ||
     scope.workspaceIdentity !== identity.executionWorkspaceBindingId ||
     scope.targetFingerprint !== localExecutionCorrelationFingerprint(identity.adapterConfigRevisionId) ||
-    (prompt.carryContext
-      ? scope.purpose !== "carry" ||
-        scope.laneKind !== identity.laneKind ||
-        scope.authorizedContextExposureDigest !== prompt.effectiveContextExposureDigest
-      : scope.purpose !== "active_run_steering" ||
-        scope.runId !== identity.runId ||
-        scope.currentRefId !== identity.refId ||
-        scope.currentRefOrdinal !== identity.refOrdinal ||
-        scope.currentSegmentOrdinal !== identity.segmentOrdinal)
+    scope.laneKind !== identity.laneKind ||
+    scope.authorizedContextExposureDigest !== prompt.effectiveContextExposureDigest
   ) {
     throw new TaskExecutionAttemptRejected("ACP correlation activation scope crossed the resolved prompt");
   }
@@ -111,27 +101,9 @@ export function validatePrompt(prompt: ResolvedTaskExecutionPrompt): void {
       storedScope.adapterConfigIdentity === identity.adapterConfigRevisionId &&
       storedScope.workspaceIdentity === identity.executionWorkspaceBindingId &&
       storedScope.targetFingerprint === scope.targetFingerprint &&
-      (identity.promptKind === "base"
-        ? prompt.bootstrapPredecessor === null
-          ? storedScope.purpose === "carry" &&
-            sameCorrelationLogicalKey(storedScope, scope) &&
-            storedScope.correlationGeneration + 1 === scope.correlationGeneration
-          : storedScope.purpose === "carry" ||
-            (storedScope.runId === prompt.bootstrapPredecessor.runId &&
-              storedScope.currentRefId === prompt.bootstrapPredecessor.refId &&
-              storedScope.currentRefOrdinal === prompt.bootstrapPredecessor.refOrdinal &&
-              storedScope.currentSegmentOrdinal === 0)
-        : storedScope.purpose === "carry"
-          ? storedScope.laneKind === identity.laneKind &&
-            storedScope.authorizedContextExposureDigest === prompt.carrySourceExposureDigest &&
-            (scope.purpose !== "carry" ||
-              storedScope.correlationGeneration + 1 === scope.correlationGeneration)
-          : storedScope.runId === identity.runId &&
-            storedScope.currentRefId === identity.refId &&
-            storedScope.currentRefOrdinal === identity.refOrdinal &&
-            storedScope.currentSegmentOrdinal === identity.segmentOrdinal - 1 &&
-            (scope.purpose !== "active_run_steering" ||
-              storedScope.correlationGeneration + 1 === scope.correlationGeneration)));
+      (prompt.bootstrapPredecessor !== null ||
+        (sameCorrelationLogicalKey(storedScope, scope) &&
+          storedScope.correlationGeneration + 1 === scope.correlationGeneration)));
   if (!storedScopeMatchesPrompt) {
     throw new TaskExecutionAttemptRejected(
       "stored ACP correlation crossed the canonical prompt or generation",
@@ -140,8 +112,7 @@ export function validatePrompt(prompt: ResolvedTaskExecutionPrompt): void {
   const bootstrapPredecessor = prompt.bootstrapPredecessor;
   if (
     bootstrapPredecessor !== null &&
-    (identity.promptKind !== "base" ||
-      prompt.sessionOperation !== "resume" ||
+    (prompt.sessionOperation !== "resume" ||
       prompt.storedCorrelation === null ||
       bootstrapPredecessor.runId.length === 0 ||
       bootstrapPredecessor.refId.length === 0 ||
@@ -153,13 +124,11 @@ export function validatePrompt(prompt: ResolvedTaskExecutionPrompt): void {
   const operation = prompt.sessionOperation;
   const operationIsValid =
     (operation === "new" &&
-      identity.promptKind === "base" &&
       bootstrapPredecessor === null &&
       prompt.storedCorrelation === null) ||
     (operation === "resume" &&
-      ((prompt.carryContext && prompt.storedCorrelation?.scope.purpose === "carry") ||
-        bootstrapPredecessor !== null)) ||
-    (operation === "steer_resume" && identity.promptKind === "steering" && prompt.storedCorrelation !== null);
+      prompt.storedCorrelation !== null &&
+      (prompt.carryContext || bootstrapPredecessor !== null));
   if (!operationIsValid) {
     throw new TaskExecutionAttemptRejected(
       "ACP session operation crossed carry policy or stored correlation",

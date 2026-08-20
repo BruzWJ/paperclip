@@ -175,7 +175,7 @@ export function canonicalTaskMutationError(error: unknown): never {
   if (error.reason === "creator_authority_mismatch") {
     throw forbidden(error.message, details);
   }
-  if (error.reason === "owner_authority_invalid" || error.reason === "user_withdrawal_cancel_only") {
+  if (error.reason === "owner_authority_invalid") {
     throw forbidden(error.message, details);
   }
   if (
@@ -184,9 +184,7 @@ export function canonicalTaskMutationError(error: unknown): never {
     error.reason === "task_form_conflict" ||
     error.reason === "reassignment_owner_unchanged" ||
     error.reason === "reassignment_target_invalid" ||
-    error.reason === "board_reopen_target_invalid" ||
-    error.reason === "human_mention_scope_invalid" ||
-    error.reason === "withdrawal_self_assignment_target_invalid"
+    error.reason === "human_mention_scope_invalid"
   ) {
     throw conflict(error.message, details);
   }

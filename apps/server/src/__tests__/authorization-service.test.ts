@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeResponsibleUserCanAuthorizeAgentChange,
   authorizationService,
   type AuthorizationAction,
   type AuthorizationResource,
@@ -54,33 +55,39 @@ describe("authorization service canonical boundaries", () => {
     })).resolves.toMatchObject({ allowed: true, reason: "allow_board_mcp" });
   });
 
-  it("preserves board reads while requiring non-viewer membership for board task mutation", async () => {
+  it("grants generic Board control to every active company member", async () => {
     const viewerId = "viewer-user";
-    const operatorId = "operator-user";
+    const actions: Array<{ action: AuthorizationAction; resource: AuthorizationResource }> = [
+      { action: "task:comment", resource: { type: "task", companyId, taskId: targetId } },
+      { action: "task:mutate", resource: { type: "task", companyId, taskId: targetId } },
+      { action: "runtime:manage", resource: { type: "company", companyId } },
+      { action: "secrets:read", resource: { type: "company", companyId } },
+    ];
     const { db } = createMockDb({
-      select: [
-        [{ id: viewerId }], [], [membership("viewer")],
-        [{ id: viewerId }], [], [membership("viewer")],
-        [{ id: operatorId }], [], [membership("operator")],
-      ],
+      select: actions.flatMap(() => [[{ id: viewerId }], [], [membership("viewer")]]),
     });
     const authorization = authorizationService(db);
 
-    await expect(authorization.decide({
-      actor: testBoardSessionActor({ userId: viewerId }),
-      action: "task:read",
-      resource: { type: "task", companyId, taskId: targetId },
-    })).resolves.toMatchObject({ allowed: true });
-    await expect(authorization.decide({
-      actor: testBoardSessionActor({ userId: viewerId }),
-      action: "task:mutate",
-      resource: { type: "task", companyId, taskId: targetId },
-    })).resolves.toMatchObject({ allowed: false, reason: "deny_missing_grant" });
-    await expect(authorization.decide({
-      actor: testBoardSessionActor({ userId: operatorId }),
-      action: "task:mutate",
-      resource: { type: "task", companyId, taskId: targetId },
-    })).resolves.toMatchObject({ allowed: true });
+    for (const entry of actions) {
+      await expect(authorization.decide({
+        actor: testBoardSessionActor({ userId: viewerId }),
+        ...entry,
+      })).resolves.toMatchObject({ allowed: true, reason: "allow_simple_company_member" });
+    }
+  });
+
+  it("treats an active responsible viewer like every other Board member", () => {
+    expect(activeResponsibleUserCanAuthorizeAgentChange(
+      "agent_config:update",
+      membership("viewer"),
+      {
+        allowed: true,
+        action: "agent_config:update",
+        reason: "allow_self",
+        explanation: "Agent may update itself.",
+      },
+      actorId,
+    )).toBe(true);
   });
 
   it("denies every generic REST content/control action to a same-company agent", async () => {

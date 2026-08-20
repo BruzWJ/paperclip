@@ -4,7 +4,6 @@ import { readTaskExecutionRun } from "../task-execution-run-service.js";
 import type {
   DispatchExecutionScope,
   DispatchingExecutionSourceInput,
-  SteeringComment,
   TaskSessionExecutionActor,
   TaskSessionProjectedCommentAttribution,
   TaskSessionProjectedCommentSource,
@@ -85,14 +84,12 @@ export function projectionInput(input: {
   body: string;
   author: TaskSessionCommentAuthor;
   reply: admissionProjection.TaskCommentReplyProjection;
-  steeringSegment?: TaskSessionProjectedCommentSource["steeringSegment"];
 }): TaskSessionCommentProjectionInput {
   return {
     phase: input.phase,
     sourceKind: input.sourceKind,
     sourceId: input.sourceId,
     messageId: input.messageId,
-    ...(input.steeringSegment === undefined ? {} : { steeringSegment: input.steeringSegment }),
     comment: {
       id: input.commentId,
       ...admissionProjection.commentInsert(input.author, input.body),
@@ -126,7 +123,7 @@ export function assertProjectedCommentSourceShape(comment: TaskSessionProjectedC
 }
 
 export function assertExecutionSourceCommentProvenance(
-  input: DispatchingExecutionSourceInput | SteeringComment,
+  input: DispatchingExecutionSourceInput,
   messageKind = admissionProjection.v2MessageKindForExecutionSource(input),
 ): void {
   if (!input.comment) {

@@ -16,6 +16,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 
 import { evaluateAgentInvokability } from "../agent-invokability.js";
+import { lifecycleAcceptsExecution, terminalExecutionRef } from "../task-execution-terminal-eligibility.js";
 
 import { type TaskSessionDbTransaction } from "./event-store.js";
 
@@ -197,7 +198,14 @@ export async function validateActiveExecution(
     company.hardDeleteFencedAt !== null ||
     !task ||
     task.hiddenAt !== null ||
-    (task.lifecycleStatus !== "open" && task.lifecycleStatus !== "blocked") ||
+    !lifecycleAcceptsExecution({
+      lifecycleStatus: task.lifecycleStatus,
+      terminalEligible: terminalExecutionRef({
+        sourceKind: ref.sourceKind,
+        messageKind: ref.messageKind,
+        mode: ref.mode,
+      }),
+    }) ||
     task.ownershipEpoch !== scope.ownershipEpoch ||
     !session ||
     session.integrityState !== "ready" ||

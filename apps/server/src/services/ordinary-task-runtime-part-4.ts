@@ -10,7 +10,6 @@ import {
   resolveOrdinaryTaskOwner,
 } from "./ordinary-task-runtime-shared.js";
 import { assertPluginPermittedTaskOwnerInTransaction } from "./plugin-task-authorization.js";
-import { createTaskFormCommitRuntime } from "./runtime-task-action-port.js";
 import { createTaskSessionAdmissionService } from "./task-session/admission.js";
 import type {
   OrdinaryTaskBoardReassignInput,
@@ -20,15 +19,10 @@ import type {
 export function createOrdinaryTaskRuntimePart4(db: Db, options: OrdinaryTaskRuntimeOptions) {
   const clock = options.clock ?? (() => new Date());
   const sessions = createTaskSessionAdmissionService(db, { clock });
-  const taskForms = createTaskFormCommitRuntime(db, {
-    clock,
-    dispatchPersistedRef: options.dispatchRef,
-    taskExecutionCancellation: options.taskExecutionCancellation,
-  });
   async function dispatch(refId: string): Promise<void> {
     await options.dispatchRef(refId);
   }
-  const commitAgentOwnerReassignmentInTransaction = createOrdinaryTaskReassignmentCommitter({
+  const commitOwnerReassignmentInTransaction = createOrdinaryTaskReassignmentCommitter({
     options,
     clock,
     sessions,
@@ -42,16 +36,13 @@ export function createOrdinaryTaskRuntimePart4(db: Db, options: OrdinaryTaskRunt
         await tx.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${`${input.companyId}:${input.taskId}`}, 0))`,
         );
-        const pluginOwnerResolution =
-          input.creator.kind === "plugin"
-            ? await assertPluginPermittedTaskOwnerInTransaction(tx, {
-                companyId: input.companyId,
-                pluginInstallationId: input.creator.pluginInstallationId,
-                pluginKey: input.creator.pluginKey,
-                operation: "tasks.update",
-                ownerAgentId,
-              })
-            : null;
+        const ownerResolution = await assertPluginPermittedTaskOwnerInTransaction(tx, {
+          companyId: input.companyId,
+          pluginInstallationId: input.creator.pluginInstallationId,
+          pluginKey: input.creator.pluginKey,
+          operation: "tasks.update",
+          ownerAgentId,
+        });
         const priorRef = await tx
           .select()
           .from(taskExecutionRefs)
@@ -105,65 +96,44 @@ export function createOrdinaryTaskRuntimePart4(db: Db, options: OrdinaryTaskRunt
           );
         }
         const creatorMatches =
-          input.creator.kind === "user/board"
-            ? task.creatorKind === "user/board" && task.creatorUserId === input.creator.userId
-            : task.creatorKind === "plugin" &&
-              task.creatorPluginInstallationId === input.creator.pluginInstallationId &&
-              task.creatorPluginKey === input.creator.pluginKey;
+          task.creatorKind === "plugin" &&
+          task.creatorPluginInstallationId === input.creator.pluginInstallationId &&
+          task.creatorPluginKey === input.creator.pluginKey;
         if (!creatorMatches) {
           throw new OrdinaryTaskRuntimeRejected(
             "Creator identity does not match this task",
             "creator_authority_mismatch",
           );
         }
-        const ownerResolution =
-          input.creator.kind === "plugin"
-            ? pluginOwnerResolution!
-            : await resolveOrdinaryTaskOwner(tx, input.companyId, ownerAgentId);
-        return commitAgentOwnerReassignmentInTransaction(tx, {
+        const reassigned = await commitOwnerReassignmentInTransaction(tx, {
           task,
           ownerAgentId,
           idempotencyKey,
-          sourceAuthorityId:
-            input.creator.kind === "plugin" ? input.creator.pluginInstallationId : input.creator.userId,
-          cancellationActor:
-            input.creator.kind === "user/board"
-              ? {
-                  kind: "user",
-                  userId: input.creator.userId,
-                }
-              : { kind: "system" },
-          comment:
-            input.creator.kind === "plugin"
-              ? {
-                  author: {
-                    kind: "plugin",
-                    pluginInstallationId: input.creator.pluginInstallationId,
-                    pluginKey: input.creator.pluginKey,
-                  },
-                  producingRun: null,
-                }
-              : {
-                  author: {
-                    kind: "user",
-                    userId: input.creator.userId,
-                  },
-                  producingRun: null,
-                },
-          provenanceUserId: input.creator.kind === "user/board" ? input.creator.userId : null,
-          sourceActor:
-            input.creator.kind === "user/board"
-              ? {
-                  kind: "user/board",
-                  userId: input.creator.userId,
-                }
-              : {
-                  kind: "plugin",
-                  pluginInstallationId: input.creator.pluginInstallationId,
-                  pluginKey: input.creator.pluginKey,
-                },
+          sourceAuthorityId: input.creator.pluginInstallationId,
+          cancellationActor: { kind: "system" },
+          comment: {
+            author: {
+              kind: "plugin",
+              pluginInstallationId: input.creator.pluginInstallationId,
+              pluginKey: input.creator.pluginKey,
+            },
+            producingRun: null,
+          },
+          provenanceUserId: null,
+          sourceActor: {
+            kind: "plugin",
+            pluginInstallationId: input.creator.pluginInstallationId,
+            pluginKey: input.creator.pluginKey,
+          },
           ownerResolution,
         });
+        if (!reassigned.ref) {
+          throw new OrdinaryTaskRuntimeRejected(
+            "Nonterminal reassignment did not persist an owner execution ref",
+            "reassignment_ref_missing",
+          );
+        }
+        return { ...reassigned, ref: reassigned.ref };
       });
       if (result.cancellations) {
         await options.taskExecutionCancellation.reconcileRequestedCancellations(result.cancellations);
@@ -186,46 +156,70 @@ export function createOrdinaryTaskRuntimePart4(db: Db, options: OrdinaryTaskRunt
         await tx.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${`${input.companyId}:board-reassign:${idempotencyKey}`}, 0))`,
         );
-        const priorRef = await tx
+        const priorAudit = await tx
           .select()
-          .from(taskExecutionRefs)
-          .where(
-            and(
-              eq(taskExecutionRefs.companyId, input.companyId),
-              eq(taskExecutionRefs.sourceKind, "task_reassignment"),
-              eq(taskExecutionRefs.deliveryIdempotencyKey, idempotencyKey),
-            ),
-          )
-          .limit(1)
+          .from(activityLog)
+          .where(eq(activityLog.id, auditId))
           .then((rows) => rows[0] ?? null);
-        if (priorRef) {
-          if (priorRef.taskId !== input.taskId || priorRef.targetAgentId !== ownerAgentId) {
+        if (priorAudit) {
+          const auditDetails = priorAudit.details;
+          if (
+            priorAudit.companyId !== input.companyId ||
+            priorAudit.entityId !== input.taskId ||
+            priorAudit.actorId !== actorUserId ||
+            priorAudit.action !== "task.board_reassigned" ||
+            auditDetails?.contract !== "board-task-reassignment/v1" ||
+            auditDetails.idempotencyKey !== idempotencyKey ||
+            auditDetails.ownerAgentId !== ownerAgentId
+          ) {
             throw new OrdinaryTaskRuntimeRejected(
               "Board reassignment idempotency key changed immutable input",
               "reassignment_idempotency_conflict",
             );
           }
-          const [task, audit] = await Promise.all([
-            tx
-              .select()
-              .from(tasks)
-              .where(and(eq(tasks.companyId, input.companyId), eq(tasks.id, input.taskId)))
-              .then((rows) => rows[0] ?? null),
-            tx
-              .select()
-              .from(activityLog)
-              .where(eq(activityLog.id, auditId))
-              .then((rows) => rows[0] ?? null),
-          ]);
-          if (!task || !audit || audit.actorId !== actorUserId || audit.action !== "task.board_reassigned") {
+          const executionRefId = auditDetails.executionRefId;
+          if (executionRefId !== null && typeof executionRefId !== "string") {
             throw new OrdinaryTaskRuntimeRejected(
-              "Accepted board reassignment is missing its audit record",
+              "Accepted board reassignment has an invalid audit record",
+              "reassignment_audit_missing",
+            );
+          }
+          const task = await tx
+            .select()
+            .from(tasks)
+            .where(and(eq(tasks.companyId, input.companyId), eq(tasks.id, input.taskId)))
+            .then((rows) => rows[0] ?? null);
+          if (!task) {
+            throw new OrdinaryTaskRuntimeRejected(
+              "Accepted board reassignment lost its task",
+              "reassignment_audit_missing",
+            );
+          }
+          const ref =
+            executionRefId === null
+              ? null
+              : await tx
+                  .select()
+                  .from(taskExecutionRefs)
+                  .where(eq(taskExecutionRefs.id, executionRefId))
+                  .then((rows) => rows[0] ?? null);
+          if (
+            executionRefId !== null &&
+            (!ref ||
+              ref.companyId !== input.companyId ||
+              ref.taskId !== input.taskId ||
+              ref.targetAgentId !== ownerAgentId ||
+              ref.sourceKind !== "task_reassignment" ||
+              ref.deliveryIdempotencyKey !== idempotencyKey)
+          ) {
+            throw new OrdinaryTaskRuntimeRejected(
+              "Accepted board reassignment is missing its execution ref",
               "reassignment_audit_missing",
             );
           }
           return {
             task,
-            ref: priorRef,
+            ref,
             auditId,
             committedActivity: null,
             escalationDispatchRefIds: [] as string[],
@@ -248,7 +242,7 @@ export function createOrdinaryTaskRuntimePart4(db: Db, options: OrdinaryTaskRunt
         const ownerResolution = await resolveOrdinaryTaskOwner(tx, input.companyId, ownerAgentId);
         const previousOwnerAgentId = task.ownerAgentId;
         const previousOwnershipEpoch = task.ownershipEpoch;
-        const reassigned = await commitAgentOwnerReassignmentInTransaction(tx, {
+        const reassigned = await commitOwnerReassignmentInTransaction(tx, {
           task,
           ownerAgentId,
           idempotencyKey,
@@ -284,7 +278,7 @@ export function createOrdinaryTaskRuntimePart4(db: Db, options: OrdinaryTaskRunt
               previousOwnershipEpoch,
               ownerAgentId,
               ownershipEpoch: reassigned.task.ownershipEpoch,
-              executionRefId: reassigned.ref.id,
+              executionRefId: reassigned.ref?.id ?? null,
             },
           },
           { id: auditId, createdAt: clock() },
@@ -300,7 +294,7 @@ export function createOrdinaryTaskRuntimePart4(db: Db, options: OrdinaryTaskRunt
       for (const refId of result.escalationDispatchRefIds) {
         await dispatch(refId);
       }
-      await dispatch(result.ref.id);
+      if (result.ref) await dispatch(result.ref.id);
       const { committedActivity: _committedActivity, ...publicResult } = result;
       return publicResult;
     },
