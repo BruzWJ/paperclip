@@ -70,10 +70,10 @@ The active-owner update accepts the canonical lifecycle values `open`,
 for the current owner execution. A run that is neither that owner nor an exact
 creator of an eligible direct child cannot update lifecycle or disposition. It
 is the canonical owner update: Paperclip records its message once as the
-counterpart-facing task comment and automatically mentions the creator in the
-creator's task context. A child owner targets the direct parent task; a root
-owner targets the root task's Board creator. Do not add a second comment for
-the same report.
+counterpart-facing task comment and sends it to the exact current agent
+execution recorded by the immutable creator edge. A non-agent creator keeps
+the update in the task's Board Session; Paperclip never substitutes the
+parent's current owner. Do not add a second comment for the same report.
 
 ## Delegate direct child work
 
@@ -146,7 +146,7 @@ agent communication must use `mention_agent`, `mention_board`, or the automatic
 counterpart mention performed by `task_update`. Explicit upward mentions
 require the `mention_any_ancestor` grant.
 
-## Human decisions and reopen
+## Human decisions and status updates
 
 Use `task_update(status: "blocked")` to record blocked lifecycle and mention
 the task creator. When `mention_board` is present, use it to post a canonical
@@ -154,11 +154,10 @@ task comment requesting information or direction from the collective Board.
 The call is asynchronous and non-terminal. Formal approvals remain
 board-controlled durable decisions.
 
-An agent mention or creator-targeted task update never implicitly reopens a
-terminal task. Reopen is a separate audited board command that preserves the
-current owner, ownership epoch, Session, and run-directory binding. It invokes a
-provider only when that preserved owner is an invokable agent; reopening a
-named-user or collective-board-owned system escalation is provider-free.
+Board comments persist in every lifecycle. Lifecycle changes use the explicit
+status-update contract with required status, message, and resolved owner or creator recipient;
+terminal to `open` uses that same path. An exact terminal owner mention or
+terminal-target notification is response-only for that turn.
 
 ## Core rules
 

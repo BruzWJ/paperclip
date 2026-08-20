@@ -43,8 +43,8 @@ history, and native compaction. ACPX owns provider-process and temporary
 runtime state. Paperclip owns task admission, request-scoped tools, exact
 prompt authority, cancellation requests, structured event projection, and an
 opaque scoped correlation. ACPX setup and resume failures are ordinary
-pre-transmission errors. A frozen resume or steering resume fails terminal
-without falling back to a new provider session; only an exact initial `new` setup may
+pre-transmission errors. A frozen resume fails terminal without falling back
+to a new provider session; only an exact initial `new` setup may
 receive a bounded transport retry. Paperclip does not automatically reconstruct
 or inject history. An observed ACPX `cancelled` result with usage is settled and
 accounted; without usage it remains truthfully `cancelled` and `incomplete`.

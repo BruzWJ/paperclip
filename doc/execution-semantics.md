@@ -35,22 +35,22 @@ creator-targeted child updates target the current owner in the child. A nontermi
 creator-targeted update
 admits that current owner’s follow-up execution.
 
-`blocked` is nonterminal: it records that the owner cannot currently complete the task, but it does not freeze the task execution graph. Existing or newly admitted mentions may run while the task remains blocked, and a mention never changes it back to `open` implicitly. `cancelled` is terminal: the transition atomically fences pending refs and requests cancellation of every active run in the ownership epoch. Reopening never revives those fenced refs.
+`blocked` is nonterminal; `done` and `cancelled` fence pending refs and
+cancel active epoch runs. Board status updates require `status`, `message`,
+and resolved `owner | creator` recipient. Every transition—including terminal
+to `open`—shares one transaction, ref, and response; notifications delivered
+on a terminal target are response-only per turn.
 
 Neither relationship path can alter request, title, owner, dependencies, or
 metadata. Both use the same canonical update/comment and neither has a separate
 agent comment path.
 
-Board reopen is a separate audited command. Under the task lock it changes a terminal task to `open`, clears disposition, preserves request/owner/epoch/session/run-directory binding, re-applies the native-continuity fence, and materializes or re-evaluates the current epoch's creator edge. A preserved invokable agent commits and dispatches exactly one new ref. A named-user or collective-board-owned system escalation commits the provider-free `board_only` branch with no ref or run. Every other owner is rejected. Reopen never revives an old terminal edge or acts as a fresh-session reset.
-
 ## Request and title
 
 `request` is immutable and byte-preserved. For managed `task_create` and
 `task_assign`, it is the unchanged body of the owner's canonical
-`[Paperclip task assignment]` source message. Other creation and
-invokable-agent reopen sources retain their own exact request contract. A
-board-only system-escalation reopen sends no provider message. Clarification
-uses the chronological thread; no actor rewrites the request.
+`[Paperclip task assignment]` source message. Clarification uses the
+chronological thread; no actor rewrites the request.
 
 `title` is optional board-editable display metadata with no routing, authority, or provider-input meaning.
 
@@ -104,12 +104,14 @@ A task-tree pause is not a task status. It is a board execution control checked 
 
 ## Input ordering and continuity
 
-The task-session input inbox preserves causal admission order. Eligible
-true-carry steers coalesce only at copied safe turn boundaries. False-carry
-refs, new epochs, reset generations, adapter revisions, or any
+The task-session input inbox preserves causal admission order. Every
+dispatching source receives one ordinary execution ref. False-carry refs, new
+epochs, reset generations, adapter revisions, or any
 agent/lane/run-directory/context mismatch use independent fresh views. A consult
 may resume only that recipient's own exact compatible true-carry correlation;
 it never joins or inherits the caller's native carrier.
+
+Access is compiled per turn and never affects native-session selection.
 
 A fresh execution lowers:
 
@@ -119,10 +121,14 @@ The optional composition is nothing, the chronological thread, or full structure
 
 ## Comments and mentions
 
-Every accepted human/board comment is a typed user input and durable chronological comment.
+Every Board comment persists as chronological user input in every lifecycle.
 
-- no typed mention: non-dispatching, valid even on a terminal task, never reopens
-- typed mention: may target only the exact current agent owner and ownership epoch on a nonterminal task
+- no typed mention: persists without dispatch
+- typed mention: targets only the exact current agent owner and ownership epoch
+
+Terminal owner mentions create a new response-only ref without changing state.
+That turn exposes reads only and denies mutations, plugins, and non-interactive
+writes. Its prompt carries a compact turn-scoped notice.
 
 Paperclip never parses prose for names, mentions, assignments, approvals, or lifecycle. Document annotations and other freeform activity are evidence only; they do not create provider work.
 
@@ -133,9 +139,6 @@ approval, review, or lifecycle transition. Delegation uses a direct child
 task. Creation, reassignment, owner reports, and creator-targeted child updates
 all use these canonical mention primitives; no generic comment tool or automatic
 final-response relay exists for providers.
-
-A terminal transition suppresses unresolved Board mentions. Reopen does not
-revive a Board request or execution reference from the prior terminal lifetime.
 
 ## Run directory
 

@@ -79,6 +79,10 @@ Board MCP exposes the Board projection of Paperclip's managed-tool registry:
 - Tasks: `task_create`, `task_assign`, `task_update`, `mention_agent`
 - Agents: `agent_hire`, `agent_configure`, `list_agents`, `agent_read`
 
+Board `task_update` is the lifecycle command: `status`, `message`, and
+`recipient` (`owner` or `creator`) are all required. Ordinary Board comments
+use the task comment API instead.
+
 `mention_board` is omitted because this interface already acts as the Board.
 Board authority does not use provider-agent grants, context dials, or mention
 reach. Company tenancy, exact identifiers, canonical task lifecycle rules,

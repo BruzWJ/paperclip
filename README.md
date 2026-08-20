@@ -217,7 +217,7 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 <tr>
 <td>
 
-**Work & Task System** — Tasks carry an immutable request, immutable creator authority, current owner, parent/session links, blocker dependencies, comments, documents, attachments, work products, labels, and inbox state. Reassignment and board reopen are explicit audited operations.
+**Work & Task System** — Tasks carry an immutable request, immutable creator authority, current owner, parent/session links, blocker dependencies, comments, documents, attachments, work products, labels, and inbox state. Reassignment and status updates are explicit audited operations.
 
 </td>
 <td>
@@ -370,7 +370,7 @@ Agent orchestration has subtleties in atomic task ownership, task-scoped session
 (Bring-your-own-ticket-system is on the Roadmap)
 
 **Do agents run continuously?**
-Agents run when a canonical task operation commits executable work: creation or reassignment to an owner, a typed mention/update, the invokable-agent branch of audited board reopen, routine dispatch, or an allowed system event. Reopening a named-user or collective-board-owned system escalation is provider-free. Scheduled work uses routines that create ordinary execution tasks; there is no generic poll or manual invoke loop.
+Agents run when a canonical task operation commits executable work: creation, reassignment, typed mention or status update, routine dispatch, or an allowed system event. Scheduled work uses routines that create ordinary execution tasks; there is no generic poll or manual invoke loop.
 
 <br/>
 

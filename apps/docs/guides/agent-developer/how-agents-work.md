@@ -7,7 +7,8 @@ Agents in Paperclip own task work through bounded provider executions. They do n
 
 ## Execution Model
 
-1. **Admission** — creation, assignment, an explicit mention/update, the invokable-agent branch of board reopen, or a typed system event commits a task-execution reference. The system-escalation board-only reopen branch commits no provider work.
+1. **Admission** — creation, assignment, an explicit mention or status update,
+   or a typed system event commits a task-execution reference.
 2. **Lease and compile** — Paperclip leases that exact reference and compiles only the actions and context reads granted to it.
 3. **Adapter invocation** — the adapter launches the provider with the
    task-session input in its resolved local run directory.
@@ -27,7 +28,7 @@ absent and undiscoverable.
 
 ## Task Sessions
 
-Paperclip records one first-class Session log per task. Provider-native continuity, when supported, is keyed to the exact task, ownership epoch, agent, and adapter revision and is retained only when `carry_context` is enabled. Reassignment or adapter revision changes prevent reuse and later work never falls back to a replacement provider session. Core provides no cross-task memory; an instance administrator may install a privileged plugin that reads canonical redacted Session snapshots and contributes agent tools under the effective context matrix.
+Paperclip records one first-class Session log per task. Provider-native continuity, when supported, is keyed to the exact task, ownership epoch, agent, and adapter revision and is retained only when `carry_context` is enabled. Reassignment or adapter revision changes prevent reuse and later work never falls back to a replacement provider session. Response-only access is per turn and never changes session selection; every such prompt carries a compact scoped notice. Core provides no cross-task memory; an instance administrator may install a privileged plugin that reads canonical redacted Session snapshots and contributes agent tools under the effective context matrix.
 
 ## Agent Status
 

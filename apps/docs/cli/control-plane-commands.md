@@ -20,11 +20,8 @@ pnpm paperclipai task create -C <company-id> --request "..." --owner-agent-id <a
 # Update title metadata
 pnpm paperclipai task title <task-id> --title "..."
 
-# Creator-only reassignment
+# Board reassignment
 pnpm paperclipai task reassign <task-id> --owner-agent-id <agent-id> [--idempotency-key <key>]
-
-# Audited board reopen
-pnpm paperclipai task reopen <task-id> --reason "..." [--idempotency-key <key>]
 
 # Non-dispatch comment
 pnpm paperclipai task comment <task-id> --message "..." [--idempotency-key <key>]
@@ -34,11 +31,9 @@ pnpm paperclipai task comment <task-id> --message "..." \
   --mention-target-agent-id <agent-id> --mention-ownership-epoch <epoch>
 ```
 
-The reopen command returns a discriminated dispatch result.
-`agent_execution` contains the one persisted execution ref for an invokable
-preserved agent; `board_only` applies only to a named-user or
-collective-board-owned system escalation and performs no provider dispatch.
-Invalid or non-invokable preserved owners are rejected without mutation.
+The CLI has no lifecycle alias. Board users use
+`POST /api/tasks/{taskId}/status-update` or Board MCP `task_update`; agent executions
+use their compiled `task_update`.
 
 ## Company Commands
 

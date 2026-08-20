@@ -93,15 +93,14 @@ provider-instruction channel.
 
 ## Task-scoped controls
 
-Fresh-session, reassignment, and reopen live on the task/execution surface:
+Reassignment and status updates live on the task surface:
 
 | Action | Contract |
 | --- | --- |
-| Fresh session | Board/user only; one task execution; cancels its live run, drops Paperclip's correlation, audits actor/scope/reason |
 | Reassign | Creator/board authority; advances ownership epoch and starts the new owner fresh |
-| Reopen | Board-user audited command; preserves owner/epoch/session/run-directory binding, clears terminal disposition, and returns either one invokable-agent execution ref or a provider-free system-escalation board-only result |
+| Status update | Requires status, message, and resolved owner or creator recipient; terminal to `open` uses the same transaction, ref, and response |
 
-These are distinct operations. Editing agent configuration does not perform any of them.
+Editing agent configuration does not perform either operation.
 
 ## API surface
 

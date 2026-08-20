@@ -85,7 +85,7 @@ ACPX session setup and resume failures are ordinary pre-transmission errors;
 Paperclip does not parse a provider-specific result or error code to choose a
 second path. Only a transport failure during setup of a fresh `new` operation
 may re-lease the original valid ref for bounded retry. A failed frozen `resume`
-or `steer_resume` operation terminalizes without falling back to `new` or
+operation terminalizes without falling back to `new` or
 creating replacement work. An invalid or stale ref likewise terminalizes with
 audit evidence.
 

@@ -44,10 +44,9 @@ generic REST call.
 ### 3. Understand the request
 
 Read only the context needed for the admitted work and available through the
-compiled interface. If the invocation was caused by a creator-targeted task update, typed
-human mention, invokable-agent board reopen, routine, plugin
-callback, or system nudge, the committed source is already represented in the
-task Session. A board-only system-escalation reopen has no provider request.
+compiled interface. Creator updates, typed human mentions, Board status
+notifications, routines, plugin callbacks, and system nudges are already
+represented in the task Session.
 
 ### 4. Do concrete work
 
@@ -125,12 +124,13 @@ source and execution reference, including:
 
 - task creation with an explicit owner
 - creator-authorized reassignment
-- an explicit typed current-owner mention or creator update
-- the invokable-agent branch of audited board reopen
+- an explicit typed current-owner mention or status update
 - an allowed routine, plugin callback, or system nudge
 
-The named-user/collective-board system-escalation reopen branch is a
-provider-free board lifecycle commit and therefore creates no execution ref.
+Board comments persist in every lifecycle. Exact terminal owner mentions and
+terminal-target status notifications are response-only for that turn: the
+compiled interface exposes reads only, each prompt carries a compact scoped
+notice, and access does not change native-session selection.
 
 For an effective true-carry owner, eligible inputs may coalesce at safe turn
 boundaries and the validated provider-native handle may resume within the exact
@@ -150,8 +150,7 @@ Run status (`queued`, `running`, `succeeded`, `failed`, `timed_out`, or
 
 Paperclip may classify a provider result for bounded continuation. Continuation
 attempts, process recovery, queue delivery, and provider-native resume are
-separate mechanisms. A continuation never silently marks a task done,
-blocked, or reopened.
+separate mechanisms. A continuation never changes task lifecycle implicitly.
 
 ## Critical rules
 

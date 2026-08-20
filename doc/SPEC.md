@@ -65,18 +65,16 @@ An ordinary task has:
 Creation requires exact request bytes, an explicit eligible owner, and an
 idempotency key. Reassignment is a creator/board operation, advances the
 ownership epoch, revokes the former engagement, and starts the new owner fresh.
-A board reopen is a separate audited command: it preserves request, owner,
-epoch, and Session while re-applying the native-continuity fence, clearing the
-terminal disposition, and re-evaluating creator
-receivability. The preserved
-invokable-agent branch commits exactly one ref; the named-user or
-collective-board-owned system-escalation branch is provider-free and commits no
-ref or run. Other owner shapes are rejected without mutation.
+The board changes lifecycle through one status update with required status,
+message, and resolved owner or creator recipient. Every transition, including
+terminal to `open`, commits the same update, comment, execution ref, and
+response. Board comments persist in every lifecycle; exact terminal owner
+mentions and terminal-target notifications are response-only for that turn.
+Response-only access never changes native-session selection, and every such
+prompt carries a compact turn-scoped notice.
 
-The board may edit title metadata, reassign, reopen, and request a fresh
-execution through distinct audited operations. No generic task
-status/description/assignee patch, checkout/release protocol, comment-driven
-reopen, or freeform text routing exists.
+Title edits, reassignment, and status updates are distinct audited operations.
+There is no generic task patch, checkout/release protocol, or freeform routing.
 
 ## Context dial
 
@@ -201,18 +199,15 @@ Explicit typed Board and agent-to-agent mentions share the canonical
 An agent with the explicit `mention_board` action grant may publish a canonical
 comment to collective Board Attention. It atomically commits its non-terminal
 acknowledgement with that request. It does not change task lifecycle or create
-an approval, review, or execution reference. A later typed Board comment mention to that exact owner
-and ownership epoch supplies the response in a fresh run and removes the request
-from Board Attention. A terminal task hides the request, and a later reopen
-does not revive it.
+an approval, review, or execution reference. A later typed Board mention to
+that exact owner and epoch supplies the response and removes the request from
+Board Attention; terminal delivery is response-only for that turn.
 
-Provider-producing sources—creation, reassignment, the invokable-agent branch
-of audited reopen, typed mention/update, routine/plugin creation, and typed
-system nudge—atomically persist their source, Session input, and
-`TaskExecutionRef` before dispatch. The provider-free reopen branch is valid
-only for a named-user or collective-board-owned system escalation and persists
-no ref or run. The internal dispatcher leases only a still-valid persisted
-reference. Worker loss or transient retry re-leases that reference; it never
+Provider-producing sources—creation, reassignment, status update, typed
+mention, routine/plugin creation, and typed system nudge—atomically persist
+their source, Session input, and `TaskExecutionRef` before dispatch. The
+internal dispatcher leases only a still-valid persisted reference. Worker loss
+or transient retry re-leases that reference; it never
 fabricates a wake, prompt, Session, or idempotency identity.
 
 There is no generic manual invoke, timer ping, arbitrary wake queue,

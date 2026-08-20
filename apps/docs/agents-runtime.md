@@ -1,7 +1,7 @@
 # Agent Runtime Guide
 
 Status: User-facing guide
-Last updated: 2026-08-10
+Last updated: 2026-08-20
 Audience: Operators setting up and running agents in Paperclip
 
 ## 1. What this system does
@@ -11,7 +11,7 @@ durable, task-scoped runs in Paperclip's existing server + worker topology.
 
 For each productive prompt, the worker:
 
-1. selects one current persisted task-execution ref or steering segment;
+1. selects one current persisted task-execution ref;
 2. resolves its ownership epoch, immutable adapter revision, execution
    server-resolved run directory, context dial, configurable action grants, and relationship
    authority;
@@ -35,20 +35,13 @@ and execution ref:
 
 - task creation with an explicit owner;
 - creator-authorized reassignment;
-- an explicit mention or creator/owner update;
-- the `agent_execution` branch of audited board reopen for an invokable agent
-  owner;
+- an explicit mention or canonical status update;
 - an allowed routine or plugin-created task;
-- a human owner mention or typed system nudge.
+- a typed system nudge.
 
 There is no generic manual invoke, provider-visible wake API, or model-producing
 readiness probe. A retry may redeliver the same ref only when Paperclip can prove
 that no prompt bytes were sent.
-
-The other accepted reopen branch is `board_only`: it applies only to a
-named-user or collective-board-owned system escalation and creates no ref,
-run, adapter check, or provider dispatch. Every other preserved owner is
-rejected without mutation.
 
 ## 3. What to configure per agent
 
@@ -166,11 +159,10 @@ Paperclip records one canonical Session log per task. Each exact
 Instruction, or its first work run when it does not. An instructed lane's
 immediately following work turn resumes the bootstrap's exact provider session.
 
-Every later base turn must resume one eligible exact-scope correlation with
-effective `carry_context`; otherwise it fails closed before ACPX launch.
-Steering likewise requires its exact active source. Paperclip never substitutes
-`session/new`, replays the canonical Session log, or injects reconstructed
-history when a correlation is absent or rejected.
+Every later turn must resume eligible exact-scope carry or fail before ACPX
+launch. Access is a per-turn projection, never a correlation key. Paperclip
+does not replay the Session log or inject reconstructed history when carry is
+unavailable.
 
 ACPX session setup and resume failures are ordinary pre-transmission errors;
 Paperclip does not inspect provider result or error codes to choose a recovery
@@ -196,13 +188,13 @@ Provider-native session state stays opaque and provider-owned. Paperclip keeps
 only an encrypted task/epoch/agent/target-scoped ACP correlation and never
 exposes its id through REST, UI, CLI, logs, tools, or environment variables.
 
-## 5. Tools and steering
+## 5. Tools and follow-up messages
 
-Every productive prompt gets a distinct request-scoped Paperclip runtime-tool
-capability. Its exact turn projection is compiled from that run's effective
-context dial, configurable action grants, owner/creator relationship authority,
-current target catalogs, and ready plugin tools. It never
-accumulates a prior request's authority.
+Every prompt gets a distinct capability compiled from its context, grants,
+relationship authority, targets, and ready plugins. A response-only turn keeps
+only authorized read tools and denies mutations, plugins, and non-interactive
+writes. Its prompt includes a compact turn-scoped notice; no turn inherits a
+prior projection.
 
 An instruction bootstrap exposes only plugin tools declared `bootstrapEnabled`.
 The work turn exposes its dynamically authorized managed tools and all ready
@@ -214,20 +206,18 @@ Paperclip owns and audits only the dynamically supplied prompt-capability
 interface. A tool-free productive prompt still receives an isolated Paperclip
 MCP server whose list is empty.
 
-An authorized reply to an active run-progress comment steers that exact run.
-Paperclip revokes the old capability, requests cancellation through ACPX,
-settles the current prompt, then invokes the frozen ACPX operation for the new
-exact message. ACPX decides whether that operation can resume the opaque
-provider backend session; failed `steer_resume` setup is terminal and never
-falls back to a new session. The UI uses the comment's producing run; users
-never select or see a provider session id.
+A Board comment is always admitted as an ordinary durable comment. An explicit
+agent mention creates the target agent's ordinary execution ref under current
+task authority; it does not rewrite or interrupt an in-flight prompt. Provider
+session selection then follows the same exact-scope `new` or `resume` rule as
+every other execution ref. Users never select or see a provider session id.
 
 ## 6. Logs, status, and run history
 
 For each task-execution run, Paperclip exposes a joined read over:
 
 - the typed `task_execution_runs` control envelope;
-- canonical task Session messages and events stamped with that run/ref/segment;
+- canonical task Session messages and events stamped with that run/ref;
 - typed attempt, lease, cancellation, accounting, cost, tool-decision,
   execution and audit records; and
 - the run's one stable progress comment projection.
@@ -254,6 +244,11 @@ top-level stable progress comment. A non-empty terminal assistant response
 becomes that same run's comment unless a same-task `task_update` already wrote
 the run's canonical message. Cross-task updates leave the response on the current task.
 Neither run is represented as a reply to the other.
+
+Board comments always persist. Lifecycle changes use one status-update command
+with required `status`, `message`, and resolved `owner | creator` recipient;
+terminal-to-`open` uses the same transaction, ref, and response. Exact terminal
+owner mentions and terminal-target notifications are response-only per turn.
 
 No tool-free final closes a task or invokes another agent. The current owner
 must call `task_update` with `done` or `cancelled` and a final message to close
@@ -317,7 +312,7 @@ bounded ACPX runtime and sends exactly one queued prompt. An instructed target
 lane begins with a bootstrap run followed by a work run on the same provider
 session. Setup and resume failures remain ordinary pre-transmission errors.
 Only fresh `new` setup may receive a bounded transport retry; frozen `resume`
-and `steer_resume` failures are terminal and never switch to a new session.
+failures are terminal and never switch to a new session.
 
 ## 10. Minimal setup checklist
 

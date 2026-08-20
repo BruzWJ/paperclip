@@ -44,9 +44,9 @@ Recursive subtree assignment and manager overrides do not exist.
 
 - choose the initial owner and submit the exact request;
 - approve explicit hire and configuration actions when required;
-- reassign or reopen through audited commands, recognizing that only the
-  invokable-agent reopen branch dispatches provider work;
-- resolve board-owned system escalations;
+- reassign or change status through audited commands; status updates require a
+  message and resolved owner or creator recipient;
+- reassign Board-owned system escalations to agents before status updates;
 - monitor task comments, runs, budgets, and attention surfaces.
 
 ## When work stops

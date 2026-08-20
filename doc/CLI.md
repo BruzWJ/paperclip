@@ -155,18 +155,17 @@ pnpm paperclipai task get <task-id>
 pnpm paperclipai task create --company-id <company-id> --request "..." --owner-agent-id <agent-id> [--title "..."] [--priority high]
 pnpm paperclipai task title <task-id> --title "..."
 pnpm paperclipai task reassign <task-id> --owner-agent-id <agent-id>
-pnpm paperclipai task reopen <task-id> --reason "..."
 pnpm paperclipai task comment <task-id> --message "..."
 pnpm paperclipai task comments <task-id> [--limit 50]
 pnpm paperclipai task comment:get <task-id> <comment-id>
 pnpm paperclipai task runs <task-id>
 ```
 
-Task creation requires an immutable request and an explicit agent owner. Title is
-board-editable display metadata; reassignment and reopen are audited commands.
-Reopen returns `agent_execution` with one ref for an invokable preserved agent,
-or `board_only` with no ref/run for a named-user or collective-board-owned
-system escalation; invalid preserved owners fail without mutation.
+Task creation requires an immutable request and explicit owner. Title and
+reassignment remain dedicated commands. Lifecycle changes use the Board
+`POST /api/tasks/{taskId}/status-update` or MCP `task_update` contract with required
+status, message, and resolved owner or creator recipient; agent executions use
+their compiled `task_update`.
 Provider-side task context and lifecycle actions are available only through the
 run-scoped compiled interface, not these generic CLI routes.
 

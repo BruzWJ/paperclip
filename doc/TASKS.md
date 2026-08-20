@@ -34,13 +34,13 @@ contract.
 
 - Every ordinary task has one invokable agent owner when it is created or
   reassigned.
-- The only non-agent owner cases are the explicitly recorded system-escalation
-  and named-user creator-withdrawal paths.
+- A system escalation may be Board-owned until explicitly reassigned to an
+  invokable agent.
 - Request and creator never change.
 - Reassignment locks the task, advances `ownershipEpoch`, revokes stale
   authority/native correlation, and records the new owner execution.
 - A new owner or epoch cannot inherit a previous owner's provider session.
-- Terminal tasks reject further owner/creator updates.
+- Terminal tasks reject further agent relationship updates.
 - Parent and child tasks never imply blocker or escalation relationships.
 - A provider invocation cannot exist without a persisted `TaskExecutionRef`.
 
@@ -65,13 +65,11 @@ The board has distinct audited operations for:
 
 - editing title/presentation metadata;
 - reassigning ownership;
-- reopening a terminal task through either the exact invokable-agent ref
-  branch or the provider-free system-escalation board branch;
-- requesting a fresh execution lineage;
-- applying the same validated owner lifecycle transition where a non-agent
-  escalation owner must act.
+- updating status with required `status`, `message`, and resolved recipient;
+- posting comments, optionally mentioning the exact current agent owner.
 
-These are not a generic task patch endpoint.
+Terminal-to-`open` uses the same status-update transaction, ref, and response.
+These commands are not a generic task patch endpoint.
 
 ### Relationship-derived `task_update`
 
@@ -105,10 +103,9 @@ structured results remain current-owner-only.
 
 ### Comments and mentions
 
-Board comments are human-visible Session inputs. A comment starts provider work
-only through a legal, typed mention or another explicit canonical source.
-Comments do not silently reopen tasks, rewrite requests, or select owners from
-free-form text.
+Board comments persist in every lifecycle and dispatch only through a typed
+mention. Exact terminal owner mentions and terminal-target notifications are
+response-only per turn; free-form text never selects owners or changes state.
 
 ## Task Execution
 
@@ -124,7 +121,8 @@ Provider-native continuity is a separate protected envelope scoped to:
 ```
 
 It is read and written only when effective `carry_context` is true. Paperclip
-never uses an agent-wide conversational-session key.
+never uses an agent-wide conversational-session key. Full and response-only
+turns use the same native-session selection; access is not a correlation key.
 
 ## Run directory
 
@@ -162,6 +160,9 @@ direct-child `task_assign`; `task_update` is derived automatically from the
 current owner or exact creator relationship and canonically mentions the
 counterpart. `mention_agent` compiles dynamically from reachable targets and
 does not require a persisted grant.
+
+Response-only prompts expose reads only, deny non-interactive writes, and carry
+a compact turn-scoped notice.
 
 For the full contract, see [SPEC.md](./SPEC.md) and
 [execution-semantics.md](./execution-semantics.md).

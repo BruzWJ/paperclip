@@ -59,6 +59,10 @@ operation that advances the ownership epoch, revokes the old execution
 authority, and starts the new owner cleanly. There is no checkout, claim,
 release, or singleton run pointer on the task.
 
+Board comments persist in every lifecycle. Board status changes require one
+status, message, and resolved owner or creator recipient; terminal to `open`
+uses the same transaction and response as every other transition.
+
 ## Delegation
 
 Delegation follows authenticated task edges:
@@ -86,11 +90,9 @@ server binds it to the task, epoch, owner, immutable adapter revision, mode,
 effective grants, and compiled interface before a provider attempt starts.
 
 Refs are admitted only by enumerated task events such as creation, assignment,
-an invokable-agent board reopen, an authorized comment or mention, a
-counterpart update, or a typed system nudge. The system-escalation board-only
-reopen branch intentionally admits no ref. Routines use the same path by
-creating ordinary tasks. Schedules, approval resolution, plugins, and users
-cannot invoke an agent or enqueue a generic wake outside a task.
+status update, authorized mention, counterpart update, or typed system nudge.
+Routines use the same path by creating ordinary tasks. Nothing can invoke an
+agent or enqueue a generic wake outside a task.
 
 ## Context and Prompt Capabilities
 
@@ -102,6 +104,9 @@ resolves the effective context for the current run and compiles the
 `paperclip.run-tools/v1` prompt-capability interface bound to that authenticated
 ref. An unavailable action is absent and undiscoverable.
 
+Terminal owner mentions and notifications are response-only per turn. They
+receive read tools plus a compact notice without changing session selection.
+
 ACPX is the sole provider communication and execution contract. Paperclip does
 not maintain a parallel provider-instruction channel. A fresh request-scoped
 MCP server set supplied through ACPX is its only tool-injection boundary.
@@ -111,10 +116,10 @@ MCP server set supplied through ACPX is its only tool-injection boundary.
 The human board can:
 
 - configure, pause, resume, adopt, or terminate agents;
-- choose initial task owners and perform audited reassign/reopen operations;
+- choose task owners and perform audited reassign/status-update operations;
 - review formal hire, budget, and explicit board approvals;
 - inspect task Sessions, comments, runs, costs, and audit history;
-- resolve board-owned system escalation tasks.
+- reassign Board-owned system escalations to agents before status updates.
 
 Approval decisions remain durable control-plane records. Resolving one does not
 create a provider interaction card or directly wake an agent. Every provider

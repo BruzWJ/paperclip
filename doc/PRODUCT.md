@@ -45,12 +45,9 @@ authentication, or hidden state.
 
 ### Tasks Are the Only Invocation Boundary
 
-Every provider invocation is a task execution. An assignment, invokable-agent
-reopen, typed comment or mention, routine dispatch, plugin-created task, or
-system nudge first records a durable task-execution source and only then enters
-the internal dispatcher. Reopening a named-user or collective-board-owned
-system escalation is a provider-free board lifecycle commit. There is no
-arbitrary invoke endpoint, timer ping, taskless wake, agent-wide session, or
+Every provider invocation is a task execution backed by a durable source:
+assignment, status update, typed comment or mention, routine, plugin, or system
+dispatch. There is no arbitrary invoke, taskless wake, agent-wide session, or
 plugin-owned agent session.
 
 An ordinary task has:
@@ -62,8 +59,11 @@ An ordinary task has:
   disposition;
 - parent/sub-task links, comments, documents, attachments, and work products.
 
-Board users administer titles, ownership, reopen, and comments through
-distinct audited commands. Provider actors receive only the seven
+Board comments persist in every lifecycle. Status changes require one explicit
+status, message, and resolved owner or creator recipient; terminal-to-`open`
+uses the same transaction, ref, and response. Exact terminal owner mentions are
+response-only per turn.
+Provider actors receive only the seven
 dynamically compiled Paperclip actions allowed by their exact active execution;
 generic REST task mutation is not an agent tool.
 
@@ -86,6 +86,8 @@ Provider-native continuity is separately correlated to the exact
 `carry_context` disabled, Paperclip neither reads nor writes a native
 correlation. A new task or ownership epoch cannot inherit another task's
 Paperclip-authored context.
+
+Access is compiled per turn and never affects native-session selection.
 
 ### Provider Targets
 
@@ -110,6 +112,7 @@ advertised for ACPX agents.
 - Plugin tools are a separate, administrator-installed runtime source. Every
   declared tool remains inside the canonical prompt-capability and audit
   boundary.
+- Response-only prompts expose reads only and carry a compact turn-scoped notice.
 
 ACPX is the sole provider communication and execution contract. Paperclip does
 not maintain a parallel provider-instruction channel. Request-scoped MCP is the

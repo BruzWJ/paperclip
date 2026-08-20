@@ -89,7 +89,7 @@ source causes terminal rejection.
 
 ACPX session setup and resume failures are ordinary pre-transmission errors;
 Paperclip does not parse provider result or error codes to select a recovery
-path. A failed frozen `resume` or `steer_resume` operation is terminal and never
+path. A failed frozen `resume` operation is terminal and never
 falls back to a new provider session. Only transport failure while setting up a
 fresh `new` operation may enter the bounded retry path. Paperclip never
 automatically replays, summarizes, or injects history into a replacement work

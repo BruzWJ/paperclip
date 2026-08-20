@@ -1,6 +1,6 @@
 ---
 title: Tasks
-summary: Canonical board task creation, title metadata, reassignment, reopen, comments, and artifacts
+summary: Canonical board task creation, reassignment, status updates, comments, and artifacts
 ---
 
 Tasks are the unit of work in Paperclip. Board REST is a board-facing control
@@ -16,12 +16,12 @@ GET /api/companies/{companyId}/tasks
 
 Query parameters:
 
-| Param | Description |
-|-------|-------------|
-| `status` | Filter by status (comma-separated: `todo,in_progress`) |
-| `ownerAgentId` | Filter by agent owner |
-| `ownerUserId` | Filter by user owner |
-| `projectId` | Filter by project |
+| Param          | Description                                            |
+| -------------- | ------------------------------------------------------ |
+| `status`       | Filter by status (comma-separated: `todo,in_progress`) |
+| `ownerAgentId` | Filter by agent owner                                  |
+| `ownerUserId`  | Filter by user owner                                   |
+| `projectId`    | Filter by project                                      |
 
 Results sorted by priority.
 
@@ -79,34 +79,33 @@ POST /api/tasks/{taskId}/reassign
 }
 ```
 
-The authenticated named board user must be the task's immutable creator.
-Reassignment runs through the ordinary task runtime, advances ownership
-authority, and starts the new owner from the stored immutable request.
+Any authenticated Board user with access to the task's company may reassign
+it. Reassignment runs through the ordinary task runtime, advances ownership
+authority, and revokes the previous agent owner's epoch when present. A
+nonterminal reassignment starts the new owner from the stored immutable
+request. A terminal reassignment preserves the terminal status and returns
+`ref: null` without invoking the new owner; use the explicit status update
+command to continue the task and notify that owner.
 
-## Audited Reopen
+## Update Status
 
 ```http
-POST /api/tasks/{taskId}/reopen
+POST /api/tasks/{taskId}/status-update
 {
-  "reason": "New evidence requires another pass.",
+  "status": "open",
+  "message": "New evidence requires another pass.",
+  "recipient": "owner",
   "idempotencyKey": "{stableRetryKey}"
 }
 ```
 
-Reopen is separate from comments and metadata updates. It preserves the current
-owner, ownership epoch, Session, and run-directory binding; clears the terminal
-disposition; re-evaluates the creator edge; and returns exactly one branch:
-
-- `dispatch.kind = "agent_execution"` contains the one canonical persisted
-  `executionRef` for a preserved, invokable agent owner and dispatches it after
-  commit.
-- `dispatch.kind = "board_only"` applies only to a named-user or
-  collective-board-owned task with exact system-escalation provenance. It
-  creates no ref, run, adapter/readiness fact, or provider dispatch.
-
-A user-withdrawal owner, invalid system provenance, or unavailable agent is
-rejected without mutation. Idempotent replay returns the originally committed
-branch.
+`status`, `message`, `recipient`, and `idempotencyKey` are required.
+`recipient` is the server-resolved `owner` or `creator` relationship, not
+an agent id. Every lifecycle transition—including terminal to `open`—uses
+this same transaction, execution ref, and response contract. A notification
+delivered on a terminal target is response-only for that turn. Board can select
+`creator` only when the immutable creator edge is an agent execution; the
+current owner of a parent task is never substituted.
 
 ## Comments
 
@@ -130,10 +129,10 @@ POST /api/tasks/{taskId}/comments
 }
 ```
 
-`mention` is optional. Without it, the comment is recorded without dispatch.
-When present, the tuple must name the exact current agent owner and ownership
-epoch. The server never parses prose for mentions, and a comment never
-implicitly reopens or otherwise changes lifecycle.
+`mention` is optional. Every accepted comment persists in every lifecycle.
+Without a mention, it does not dispatch. A mention must name the exact current
+agent owner and ownership epoch. On a terminal task it admits a response-only
+turn without changing lifecycle. The server never parses prose for mentions.
 
 ## Decisions and Questions
 
@@ -216,7 +215,6 @@ DELETE /api/attachments/{attachmentId}
 
 ## Task Lifecycle
 
-Owner lifecycle changes are available only through the compiled named runtime
-interface. Board REST has no generic status patch, checkout, release, delete,
-resume, interrupt, or comment-reopen endpoint. The one board lifecycle command
-is the audited reopen route above.
+Agents use relationship-authorized `task_update`; Board REST uses the explicit
+status-update command above. There is no generic lifecycle patch, checkout,
+release, delete, resume, or interrupt endpoint.

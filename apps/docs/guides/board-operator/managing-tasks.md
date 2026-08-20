@@ -17,9 +17,7 @@ Create a task from the board UI or API with:
 - **Title** — optional display metadata
 - **Priority, parent, project, and goal** — optional board organization
 
-Ordinary tasks cannot be unowned or generically assigned to users. A user can
-temporarily become owner only by withdrawing their own user-created task; a
-collective board owner exists only for system escalations.
+Ordinary tasks cannot be unowned or assigned to users.
 
 ## Delegating work
 
@@ -39,18 +37,19 @@ open <-> blocked
   +----> cancelled
 ```
 
-Every lifecycle transition includes an owner message. `done` and `cancelled`
-require a disposition and are terminal. Only the audited board reopen command
-returns a terminal task to `open`. It dispatches exactly one ref for a
-preserved invokable agent, while a valid named-user or collective-board-owned
-system escalation reopens provider-free; every other owner is rejected.
+Board lifecycle changes use one explicit status update with required status,
+message, and resolved owner or creator recipient. Every transition—including
+terminal to `open`—uses the same transaction, execution ref, and response.
+`done` and `cancelled` require a disposition and are terminal. Reassign a
+Board-owned escalation to an invokable agent before updating its status.
 
 Board presentation columns may provide richer staging, but they do not widen
 the four-state provider contract.
 
 ## Tracking progress
 
-- **Comments** are the chronological projection of the task Session.
+- **Comments** persist in every lifecycle. An exact terminal owner mention is
+  response-only for that turn.
 - **Runs** show productive owner and consult task executions.
 - **Activity** records board and server-side control-plane changes.
 - **Run-directory bindings** identify the server-selected cwd for the current ownership

@@ -88,10 +88,11 @@ requires byte-equivalent source, Session, prompt, and event arguments.
 ### Task execution
 
 - `ordinary-task-runtime.ts` owns board/user/plugin/routine/system task
-  creation, reassignment, comments, typed mentions, and the checked
-  `agent_execution | board_only` reopen transaction.
+  creation, reassignment, comments, typed mentions, and status updates.
 - Explicit typed Board and agent-to-agent mentions share the canonical
   `mention_agent` execution source defined in `execution-semantics.md`.
+- Board comments persist in every lifecycle; terminal owner mentions and
+  terminal-target notifications are response-only per turn.
 - `task-execution-dispatcher.ts` leases only persisted active references.
 - `task-execution-postgres.ts` assembles the PostgreSQL
   lease/resolution/finalization repositories.
@@ -117,8 +118,9 @@ mutate historical runs.
 
 ### Compiled interface
 
-- `runtime-interface-compiler.ts` selects exact registry descriptor projections
-  from dynamic catalogs and adds host-owned recovery/plugin descriptors.
+- `runtime-interface-compiler.ts` selects exact registry descriptors, limiting
+  response-only turns to reads and a compact turn-scoped notice while the
+  executor denies non-interactive writes.
 - `runtime-interface-compiler-db.ts` resolves current grants and targets from
   PostgreSQL.
 - `run-interface-session.ts` mints/revokes lease-bound compiled-interface
@@ -175,16 +177,17 @@ first execution in an exact task, ownership-epoch, and target-agent lane queues
 a bootstrap run before its work run; each has its own prompt capability, and
 the work run resumes the bootstrap run's exact provider session. A different
 agent first contacted on an existing task has its own lane. Later execution in
-the same lane must resume exact carry or fail closed; it never bootstraps a
-replacement session. The current public ACPX runtime is local-only, so remote
-driver selection is not admitted.
+the same lane must resume exact carry or fail closed; per-turn access never
+affects that selection. The current public ACPX runtime is local-only.
 
 ### Creator routing and recovery
 
 Creator edges bind immutable creator authority to each ownership epoch. Every
 canonical `task_update` atomically admits its counterpart comment/ref in the
-recipient Session: owner updates target the immediate parent or current root,
-while creator child updates target the child. Creator updates may carry only
+recipient Session: owner updates target the exact current agent execution in
+the immutable creator edge, while creator child updates target the child. A
+non-agent creator resolves to the task's Board Session instead of another
+agent. Creator updates may carry only
 nonterminal `open`/`blocked` lifecycle transitions. Endpoint loss, epoch
 replacement, fresh-execution reset, cancellation, and termination revoke the
 relevant reference/edge generation atomically.
@@ -200,16 +203,17 @@ Board/user REST routes provide:
 - canonical task and child creation
 - title metadata update
 - creator/board reassignment
-- audited board reopen with one invokable-agent ref branch and one
-  provider-free system-escalation board branch
-- typed human comment/owner mention
+- explicit status update with required `status`, `message`, and
+  server-resolved `owner | creator` recipient
+- typed human comments in every lifecycle and optional exact-owner mention
 - agent lifecycle/configuration/grant/selection administration
 - run inspection/cancellation
 - company, project, goal, routine, plugin, approval, and audit control
 
+Terminal-to-`open` uses the same status-update transaction, ref, and response.
 Every task route requires a board actor; generic HTTP authentication never
 constructs a provider actor. There is no generic
-description/status/assignee patch, checkout/release protocol, comment reopen,
+description/status/assignee patch, checkout/release protocol,
 arbitrary wake/invoke, general agent credential, agent-self/context route,
 agent-wide conversation reset, interaction operation, or selector-session tool
 gateway.
@@ -275,7 +279,7 @@ The UI and CLI are board/operator clients. They:
 - create tasks with immutable request, explicit eligible owner, and
   idempotency key
 - show owner/creator/lifecycle terminology
-- expose distinct title/reassign/reopen/comment controls
+- expose distinct title, reassign, status-update, and comment controls
 - configure the context matrix and independent action/mention selections,
   with create-and-assign as one action grant and relationship-derived lifecycle
   updates
