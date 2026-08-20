@@ -116,8 +116,8 @@ function WaitingOnLiveWorkNotice({
       <AlertTitle>Waiting on live work</AlertTitle>
       <AlertDescription className="gap-2">
         <p>
-          Queued behind {total} {queuedNoun} being worked in order. This task resumes automatically when the
-          chain is done. An explicit @mention can queue the responsible agent for questions or triage.
+          Waiting for {total} linked {queuedNoun} being worked in order. Use Update status to change this task
+          when it is ready, or select Notify owner on a comment for questions or triage.
         </p>
 
         <div className="w-full space-y-1" data-testid="task-blocked-notice-progress">
@@ -146,7 +146,7 @@ function WaitingOnLiveWorkNotice({
               <Circle aria-hidden  data-icon="inline-start"/>
             </ItemMedia>
             <ItemContent>
-              <ItemDescription>This task — resumes automatically when the chain is done</ItemDescription>
+              <ItemDescription>This task — update its status explicitly when it is ready</ItemDescription>
             </ItemContent>
           </Item>
         </ItemGroup>
@@ -184,14 +184,12 @@ export function TaskBlockedNotice({
   allBlockers,
   liveTaskIds,
   blockerAttention,
-  agentName,
 }: {
   taskStatus?: string;
   blockers: TaskRelationTaskSummary[];
   allBlockers?: TaskRelationTaskSummary[];
   liveTaskIds?: ReadonlySet<string>;
   blockerAttention?: TaskBlockerAttention | null;
-  agentName?: string | null;
 }) {
   if (taskStatus === "done" || taskStatus === "cancelled") return null;
   if (blockers.length === 0 && taskStatus !== "blocked") return null;
@@ -239,32 +237,6 @@ export function TaskBlockedNotice({
   })();
   const showStalledRow = isStalled && stalledLeafBlockers.length > 0;
 
-  const responsibleName = agentName ?? "the responsible agent";
-  const reopenSuppressed = taskStatus === "blocked" && !isStalled && blockers.length > 0;
-  const unresolvedLeafBlockers = (() => {
-    if (!reopenSuppressed) return [] as TaskRelationTaskSummary[];
-    const seen = new Set<string>();
-    const collected: TaskRelationTaskSummary[] = [];
-    for (const blocker of blockers) {
-      const terminals = (blocker.terminalBlockers ?? []).filter(
-        (leaf) => leaf.boardPresentationStatus !== "done" && leaf.boardPresentationStatus !== "cancelled",
-      );
-      const leaves = terminals.length > 0 ? terminals : [blocker];
-      for (const leaf of leaves) {
-        if (seen.has(leaf.id)) continue;
-        seen.add(leaf.id);
-        collected.push(leaf);
-      }
-    }
-    return collected;
-  })();
-  const reopenSuppressedLeaf = unresolvedLeafBlockers[0] ?? null;
-  const reopenSuppressedLeafId = reopenSuppressedLeaf ? reopenSuppressedLeaf.identifier : null;
-  const reopenSuppressedLeafStatus = reopenSuppressedLeaf
-    ? reopenSuppressedLeaf.boardPresentationStatus.replace(/_/g, " ")
-    : null;
-  const reopenSuppressedOtherCount = Math.max(unresolvedLeafBlockers.length - 1, 0);
-
   const liveIds = liveTaskIds ?? EMPTY_LIVE_IDS;
   const chainBlockers = allBlockers ?? blockers;
   const hasLiveWaitingBlocker = [...chainBlockers, ...terminalBlockers].some((blocker) =>
@@ -294,53 +266,16 @@ export function TaskBlockedNotice({
           <>
             <p className="leading-5">
               {blockers.length > 0 ? (
-                isStalled ? (
-                  stalledLeafBlockers.length > 1 ? (
-                    <>
-                      Work on this task is blocked by {blockerLabel}, but the chain is stalled in review
-                      without a clear next step. Resolve the stalled reviews below or remove them as blockers.
-                    </>
-                  ) : (
-                    <>
-                      Work on this task is blocked by {blockerLabel}, but the chain is stalled in review
-                      without a clear next step. Resolve the stalled review below or remove it as a blocker.
-                    </>
-                  )
-                ) : reopenSuppressed ? (
-                  <>
-                    A message won&rsquo;t move this back to todo yet — it stays blocked by {blockerLabel}{" "}
-                    until {blockers.length === 1 ? "it is" : "they are"} done, then it reopens automatically.
-                    An explicit @mention can queue {responsibleName} for questions or triage in the meantime.
-                  </>
-                ) : (
-                  <>
-                    Work on this task is blocked by {blockerLabel} until{" "}
-                    {blockers.length === 1 ? "it is" : "they are"} complete. An explicit @mention can queue
-                    the responsible agent for questions or triage.
-                  </>
-                )
-              ) : (
                 <>
-                  Work on this task is blocked until it is moved back to todo. An explicit @mention can queue
-                  the responsible agent for questions or triage.
+                  Work on this task is blocked by {blockerLabel} until{" "}
+                  {blockers.length === 1 ? "it is" : "they are"} complete.
                 </>
-              )}
+              ) : (
+                <>This task is marked blocked.</>
+              )}{" "}
+              Use Update status to change it when ready, or select Notify owner on a comment for questions or
+              triage.
             </p>
-            {reopenSuppressed && reopenSuppressedLeafId ? (
-              <p
-                data-testid="task-blocked-notice-reopen-suppressed"
-                className="text-xs font-medium leading-5"
-              >
-                Still blocked by <span className="font-mono">{reopenSuppressedLeafId}</span>
-                {reopenSuppressedLeafStatus ? <> ({reopenSuppressedLeafStatus})</> : null}
-                {reopenSuppressedOtherCount > 0
-                  ? ` and ${reopenSuppressedOtherCount} other ${
-                      reopenSuppressedOtherCount === 1 ? "task" : "tasks"
-                    }`
-                  : null}
-                .
-              </p>
-            ) : null}
             {blockers.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 {blockers.map((blocker) => (

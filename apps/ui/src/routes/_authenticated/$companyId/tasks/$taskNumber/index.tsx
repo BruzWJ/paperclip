@@ -7,10 +7,7 @@ import { ApiError } from "@/api/client";
 import { tasksApi } from "@/api/tasks";
 import { ImageGalleryModal } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-ImageGalleryModal";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useDialogActions } from "@/context/DialogContext";
 import { usePanel } from "@/context/PanelContext";
@@ -145,8 +142,6 @@ export function useTaskDetailController() {
   const coreMutations = useTaskDetailCoreMutations({
     companyId,
     taskId,
-    task,
-    currentUserId: queryData.currentUserId,
     cacheActions,
   });
   const executeTreeControl = useTaskDetailTreeMutation({
@@ -170,12 +165,10 @@ export function useTaskDetailController() {
     ...actionMutations,
     ...localState,
     companyId,
-    taskId,
     task,
     isMobile,
     isFromInbox,
     setMobileToolbar,
-    cacheActions,
   });
 
   const treeDerived = useTaskDetailTreeDerived({
@@ -285,44 +278,6 @@ function TaskDetail() {
           onOpenChange={controller.setGalleryOpen}
         />
         <TaskTreeControlDialog />
-        <FormDialog
-          open={controller.reopenDialogOpen}
-          onOpenChange={(open) => {
-            controller.setReopenDialogOpen(open);
-            if (!open) controller.setReopenReason("");
-          }}
-          title="Reopen this task"
-          description="This audited command preserves the owner and execution session, clears the terminal disposition, and invokes the owner with the stored immutable request."
-          footer={
-            <>
-              {controller.reopenTask.isPending ? (
-                <p role="status" className="sr-only">
-                  Reopening task…
-                </p>
-              ) : null}
-              <Button type="button" variant="outline" onClick={() => controller.setReopenDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                disabled={!controller.reopenReason.trim() || controller.reopenTask.isPending}
-                onClick={() => controller.reopenTask.mutate(controller.reopenReason)}
-              >
-                {controller.reopenTask.isPending ? "Reopening..." : "Reopen task"}
-              </Button>
-            </>
-          }
-        >
-          <LabeledFormField label="Reason">
-            <Textarea
-              aria-label="Reason"
-              value={controller.reopenReason}
-              onChange={(event) => controller.setReopenReason(event.target.value)}
-              rows={4}
-              placeholder="Why should this task be reopened?"
-            />
-          </LabeledFormField>
-        </FormDialog>
         <TaskDetailInspectorSheet />
         <TaskDocumentWorkspaceDialog />
       </>

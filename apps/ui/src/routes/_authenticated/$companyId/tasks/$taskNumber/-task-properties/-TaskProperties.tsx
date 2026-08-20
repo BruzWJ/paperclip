@@ -1,25 +1,29 @@
-import type { Task } from "@paperclipai/shared";
+import type { Task, UpdateTaskStatus } from "@paperclipai/shared";
 import { TaskPropertiesView } from "./-TaskPropertiesView";
-import { useTaskLabelProperties } from "./-useTaskLabelProperties";
-import { useTaskProjectProperties } from "./-useTaskProjectProperties";
 import { useTaskPropertiesData } from "./-useTaskPropertiesData";
 import { useTaskPropertiesMonitor } from "./-useTaskPropertiesMonitor";
 import { useTaskPropertiesOwnership } from "./-useTaskPropertiesOwnership";
 import { useTaskPropertiesState } from "./-useTaskPropertiesState";
-import { useTaskRelationProperties } from "./-useTaskRelationProperties";
 
 interface TaskPropertiesProps {
   task: Task;
   childTasks?: Task[];
-  onUpdate: (data: Record<string, unknown>) => void;
+  onUpdate: (data: TaskPropertiesUpdate) => void;
+  onStatusUpdate: (input: UpdateTaskStatus) => Promise<unknown>;
+  statusUpdatePending: boolean;
   inline?: boolean;
   hasActiveRun?: boolean;
 }
+
+export type TaskPropertiesUpdate =
+  { ownerAgentId: string } | { executionPolicy: NonNullable<Task["executionPolicy"]> | null };
 
 function useTaskPropertiesController({
   task,
   childTasks = [],
   onUpdate,
+  onStatusUpdate,
+  statusUpdatePending,
   inline,
   hasActiveRun = false,
 }: TaskPropertiesProps) {
@@ -28,6 +32,8 @@ function useTaskPropertiesController({
     task,
     childTasks,
     onUpdate,
+    onStatusUpdate,
+    statusUpdatePending,
     inline,
     hasActiveRun,
     state,
@@ -35,11 +41,8 @@ function useTaskPropertiesController({
   const data = useTaskPropertiesData(base);
   const context = { ...base, data };
   const monitor = useTaskPropertiesMonitor(context);
-  const labels = useTaskLabelProperties(context);
   const ownership = useTaskPropertiesOwnership(context);
-  const project = useTaskProjectProperties(context);
-  const relations = useTaskRelationProperties(context);
-  return { ...base, ...data, ...monitor, ...labels, ...ownership, ...project, ...relations };
+  return { ...base, ...data, ...monitor, ...ownership };
 }
 
 export type TaskPropertiesController = ReturnType<typeof useTaskPropertiesController>;

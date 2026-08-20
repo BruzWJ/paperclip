@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import type { Task } from "@paperclipai/shared";
+import type { Task, TaskExecutionMonitorPolicy } from "@paperclipai/shared";
 import { Clock } from "lucide-react";
 import { tasksApi } from "@/api/tasks";
 import { queryKeys } from "@/lib/queryKeys";
@@ -20,13 +20,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import type { TaskPropertiesUpdate } from "./-TaskProperties";
 import type { TaskPropertiesData } from "./-useTaskPropertiesData";
 import type { TaskPropertiesState } from "./-useTaskPropertiesState";
 import { FormDialog, LabeledFormField } from "@/components/patterns/FormPatterns";
 
 interface UseTaskPropertiesMonitorOptions {
   task: Task;
-  onUpdate: (data: Record<string, unknown>) => void;
+  onUpdate: (data: TaskPropertiesUpdate) => void;
   inline?: boolean;
   state: TaskPropertiesState;
   data: TaskPropertiesData;
@@ -94,13 +95,7 @@ export function useTaskPropertiesMonitor({
     decideExecutionStage.mutate({ outcome: decision.outcome, body });
     setExecutionDecision(null);
   };
-  const updateMonitor = (
-    nextMonitor: Task["executionPolicy"] extends infer T
-      ? T extends { monitor?: infer M | null } | null | undefined
-        ? M | null
-        : never
-      : never,
-  ) => {
+  const updateMonitor = (nextMonitor: TaskExecutionMonitorPolicy | null) => {
     const basePolicy = buildExecutionPolicy({
       existingPolicy: task.executionPolicy ?? null,
       reviewerValues: data.reviewerValues,

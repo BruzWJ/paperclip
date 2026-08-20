@@ -143,7 +143,7 @@ export function useTaskDetailActionMutations({
     },
     onSettled: (_result, _error, variables) => {
       invalidateTaskThreadLazily();
-      if (variables.mention || variables.replyToCommentId) {
+      if (variables.mention) {
         invalidateTaskRunState();
       }
     },

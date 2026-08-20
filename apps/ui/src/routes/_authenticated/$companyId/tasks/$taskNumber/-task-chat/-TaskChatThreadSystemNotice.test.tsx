@@ -72,7 +72,9 @@ afterEach(() => {
 
 function renderThread(comments: TaskChatComment[]) {
   act(() => {
-    root.render(<TaskChatThread comments={comments} onAdd={async () => {}} showComposer={false} />);
+    root.render(
+      <TaskChatThread comments={comments} mentionIsResponseOnly={false} onAdd={async () => {}} />,
+    );
   });
 }
 

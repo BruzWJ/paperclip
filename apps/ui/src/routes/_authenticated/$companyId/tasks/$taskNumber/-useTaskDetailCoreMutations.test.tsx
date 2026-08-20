@@ -30,7 +30,7 @@ describe("useTaskDetailCoreMutations", () => {
       invalidateTaskRunState: vi.fn(),
       upsertCommentInCache: vi.fn(),
       invalidateTaskCollections: vi.fn(),
-      applyOptimisticTaskCacheUpdate: vi.fn(),
+      applyOptimisticTaskTitleUpdate: vi.fn(),
       mergeTaskResponseIntoCaches: vi.fn(),
     };
     let panelEffectRuns = 0;
@@ -40,8 +40,6 @@ describe("useTaskDetailCoreMutations", () => {
       const { handleTaskPropertiesUpdate } = useTaskDetailCoreMutations({
         companyId: "company-1",
         taskId: "task-1",
-        task: undefined,
-        currentUserId: null,
         cacheActions,
       });
 

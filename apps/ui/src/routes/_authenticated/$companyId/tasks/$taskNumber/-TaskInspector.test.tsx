@@ -49,6 +49,8 @@ function inspectorProps(overrides: Partial<TaskInspectorProps> = {}): TaskInspec
     activeTab: "details",
     onTabChange: vi.fn(),
     onUpdateTask: vi.fn(),
+    onStatusUpdate: vi.fn(async () => undefined),
+    statusUpdatePending: false,
     hasActiveRun: false,
     task,
     childTasks: [],
@@ -144,6 +146,7 @@ describe("TaskInspector", () => {
       setInspectorTab: vi.fn(),
       setMobileInspectorOpen: vi.fn(),
       task,
+      updateTaskStatus: { isPending: false, mutateAsync: vi.fn(async () => undefined) },
       workProducts: [],
     });
 

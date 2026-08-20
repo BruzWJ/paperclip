@@ -102,6 +102,14 @@ function TaskPropertiesScenario({ inline = false }: { inline?: boolean }) {
       inline={inline}
       hasActiveRun
       onUpdate={(patch) => setTask((current) => applyTaskPatch(current, patch))}
+      onStatusUpdate={async (input) => {
+        setTask((current) => ({
+          ...current,
+          lifecycleStatus: input.status,
+          boardPresentationStatus: input.status === "open" ? "in_progress" : input.status,
+        }));
+      }}
+      statusUpdatePending={false}
     />
   );
 }

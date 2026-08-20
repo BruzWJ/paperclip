@@ -1,17 +1,16 @@
 import { tasksApi } from "@/api/tasks";
 import { toast } from "sonner";
 import { queryKeys } from "@/lib/queryKeys";
-import type { Task } from "@paperclipai/shared";
+import type { Task, UpdateTaskStatus } from "@paperclipai/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 
+import type { TaskPropertiesUpdate } from "./-task-properties/-TaskProperties";
 import type { useTaskDetailCacheActions } from "./-useTaskDetailEffects";
 
 interface TaskDetailCoreMutationsOptions {
   companyId: string;
   taskId: string;
-  task: Task | undefined;
-  currentUserId: string | null;
   cacheActions: ReturnType<typeof useTaskDetailCacheActions>;
 }
 
@@ -19,21 +18,17 @@ interface TaskDetailCoreMutationsOptions {
 export function useTaskDetailCoreMutations({
   companyId,
   taskId,
-  task,
-  currentUserId,
   cacheActions,
 }: TaskDetailCoreMutationsOptions) {
   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const queryClient = useQueryClient();
-  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
-  const [reopenReason, setReopenReason] = useState("");
   const {
     invalidateTaskDetail,
     invalidateTaskThreadLazily,
     invalidateTaskRunState,
     upsertCommentInCache,
     invalidateTaskCollections,
-    applyOptimisticTaskCacheUpdate,
+    applyOptimisticTaskTitleUpdate,
     mergeTaskResponseIntoCaches,
   } = cacheActions;
 
@@ -65,7 +60,7 @@ export function useTaskDetailCoreMutations({
       });
       const previousTask = queryClient.getQueryData<Task>(queryKeys.tasks.detail(taskId));
       const previousList = queryClient.getQueryData<Task[]>(queryKeys.tasks.list(companyId));
-      applyOptimisticTaskCacheUpdate(taskId, { title });
+      applyOptimisticTaskTitleUpdate(taskId, title);
       return { previousTask, previousList, companyId };
     },
     onSuccess: (nextTask) => {
@@ -108,11 +103,10 @@ export function useTaskDetailCoreMutations({
       });
     },
   });
-  const { mutate: mutateTaskTitle } = updateTaskTitle;
   const { mutate: mutateTaskExecutionPolicy } = updateTaskExecutionPolicy;
   const reassignTask = useMutation({
     mutationFn: (ownerAgentId: string) =>
-      tasksApi.creatorReassign(taskId, {
+      tasksApi.boardReassign(taskId, {
         ownerAgentId,
         idempotencyKey: crypto.randomUUID(),
       }),
@@ -128,124 +122,39 @@ export function useTaskDetailCoreMutations({
       });
     },
   });
-  const commitHumanOwnerStatus = useMutation({
-    mutationFn: (input: { status: "open" | "blocked" | "done" | "cancelled"; message: string }) =>
-      tasksApi.commitOwnerFormUpdate({
-        taskId,
-        message: input.message,
-        status: input.status,
-      }),
+  const updateTaskStatus = useMutation({
+    mutationFn: (input: UpdateTaskStatus) => tasksApi.updateStatus(taskId, input),
     onSuccess: (result) => {
+      mergeTaskResponseIntoCaches(result.task);
       upsertCommentInCache(result.comment);
-      invalidateTaskDetail();
-      invalidateTaskRunState();
-      invalidateTaskCollections();
-    },
-    onError: (error) => {
-      toast.error("Owner update failed", {
-        description: error instanceof Error ? error.message : "Unable to update this task",
-      });
-    },
-  });
-  const withdrawAndCancelTask = useMutation({
-    mutationFn: async () => {
-      if (!task) throw new Error("Task is still loading");
-      let withdrawalTask = task;
-      if (task.ownerKind === "agent" && task.ownerAgentId) {
-        const assigned = await tasksApi.selfAssignForWithdrawal(task.id, {
-          idempotencyKey: crypto.randomUUID(),
-        });
-        withdrawalTask = assigned.task;
-        mergeTaskResponseIntoCaches(assigned.task);
-      }
-      if (
-        withdrawalTask.ownerKind !== "user" ||
-        withdrawalTask.ownerUserId !== currentUserId ||
-        withdrawalTask.ownerAssignmentSource !== "user_creator_withdrawal"
-      ) {
-        throw new Error("Only the named creator can cancel an agent-owned task");
-      }
-      return tasksApi.commitOwnerFormUpdate({
-        taskId: task.id,
-        message: "Cancelled by the named creator after withdrawal.",
-        status: "cancelled",
-      });
-    },
-    onSuccess: (result) => {
-      upsertCommentInCache(result.comment);
-      invalidateTaskDetail();
-      invalidateTaskRunState();
-      invalidateTaskCollections();
-      toast.success("Task cancelled");
-    },
-    onError: (error) => {
-      invalidateTaskDetail();
-      toast.error("Cancellation failed", {
-        description: error instanceof Error ? error.message : "Unable to cancel this task",
-      });
-    },
-  });
-  const reopenTask = useMutation({
-    mutationFn: (reason: string) =>
-      tasksApi.reopen(taskId, {
-        reason,
-        idempotencyKey: crypto.randomUUID(),
-      }),
-    onSuccess: ({ task: nextTask }) => {
-      mergeTaskResponseIntoCaches(nextTask);
-      setReopenDialogOpen(false);
-      setReopenReason("");
       invalidateTaskDetail();
       invalidateTaskThreadLazily();
       invalidateTaskRunState();
       invalidateTaskCollections();
-      toast.success("Task reopened");
+      toast.success("Status updated and recipient notified");
     },
     onError: (error) => {
-      toast.error("Reopen failed", {
-        description: error instanceof Error ? error.message : "Unable to reopen this task",
+      toast.error("Status update failed", {
+        description: error instanceof Error ? error.message : "Unable to update this task",
       });
     },
   });
+  const { mutate: mutateReassignTask } = reassignTask;
   const handleTaskPropertiesUpdate = useCallback(
-    (data: Record<string, unknown>) => {
-      const keys = Object.keys(data);
-      if (
-        keys.length === 1 &&
-        keys[0] === "title" &&
-        (typeof data.title === "string" || data.title === null)
-      ) {
-        mutateTaskTitle(data.title);
+    (data: TaskPropertiesUpdate) => {
+      if ("ownerAgentId" in data) {
+        mutateReassignTask(data.ownerAgentId);
         return;
       }
-      if (
-        keys.length === 1 &&
-        keys[0] === "executionPolicy" &&
-        (data.executionPolicy === null ||
-          (typeof data.executionPolicy === "object" && !Array.isArray(data.executionPolicy)))
-      ) {
-        mutateTaskExecutionPolicy(data.executionPolicy as NonNullable<Task["executionPolicy"]> | null);
-        return;
-      }
-      toast.error("Property is read-only", {
-        description:
-          "The board can edit title and execution-policy controls. Lifecycle changes belong to the owner runtime.",
-      });
+      mutateTaskExecutionPolicy(data.executionPolicy);
     },
-    [mutateTaskExecutionPolicy, mutateTaskTitle],
+    [mutateReassignTask, mutateTaskExecutionPolicy],
   );
 
   return {
-    reopenDialogOpen,
-    reopenReason,
-    reopenTask,
-    setReopenDialogOpen,
-    setReopenReason,
     markTaskRead,
     updateTaskTitle,
-    reassignTask,
-    commitHumanOwnerStatus,
-    withdrawAndCancelTask,
+    updateTaskStatus,
     handleTaskPropertiesUpdate,
   };
 }

@@ -2,7 +2,6 @@ import type { CompanyUserProfile } from "@/lib/company-members";
 import type { TaskChatMessage } from "@/lib/task-chat-messages";
 import { timeAgo } from "@/lib/timeAgo";
 import { formatShortDate } from "@/lib/utils";
-import type { CommentOwnerChange } from "../-task-detail-model";
 
 export const DRAFT_DEBOUNCE_MS = 800;
 export const COMPOSER_FOCUS_SCROLL_PADDING_PX = 96;
@@ -30,12 +29,6 @@ export function clearDraft(draftKey: string) {
   } catch {
     // Draft persistence must never block composing.
   }
-}
-
-export function parseOwnerChange(target: string): CommentOwnerChange | null {
-  if (!target.startsWith("agent:")) return null;
-  const ownerAgentId = target.slice("agent:".length);
-  return ownerAgentId ? { ownerAgentId } : null;
 }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;

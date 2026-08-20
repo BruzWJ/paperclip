@@ -2,11 +2,6 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { TaskRelationTaskSummary } from "@paperclipai/shared";
 import { TaskBlockedNotice } from "@/routes/_authenticated/$companyId/tasks/-TaskBlockedNotice";
 
-// Rule C (PAP-13554): when a human comment on a `blocked` task does not reopen
-// it, the blocked notice must state why and name the unresolved blocker leaf.
-// These stories exercise the reopen-suppressed copy and its neighbours so the
-// notice copy can be reviewed at a glance.
-
 function blocker(
   overrides: Partial<TaskRelationTaskSummary> &
     Pick<
@@ -41,7 +36,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Blocked/recovery notice on the task thread. Rule C: a `blocked` task with a genuinely unresolved (not-done) blocker tells the human that a message won't reopen it yet and names the unresolved leaf with its status. Done-but-pending-finalize blockers are `done`, so they fall into the Rule B reopen path and are NOT shown as reopen-suppressed.",
+          "Blocked-task context with one explicit action model: use Update status for lifecycle changes and Notify owner when a response is needed.",
       },
     },
   },
@@ -51,13 +46,12 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const RuleCSingleBlocker: Story = {
-  name: "Rule C · single unresolved blocker",
+export const UnresolvedBlocker: Story = {
+  name: "Unresolved blocker",
   render: () => (
-    <Frame label="Blocked · one in-progress blocker — a message won't reopen it yet">
+    <Frame label="Blocked · one in-progress blocker">
       <TaskBlockedNotice
         taskStatus="blocked"
-        agentName="CodexCoder"
         blockers={[
           blocker({
             id: "dddddddd-dddd-4ddd-8ddd-ddddddddd023",
@@ -71,77 +65,21 @@ export const RuleCSingleBlocker: Story = {
   ),
 };
 
-export const RuleCChainNamesLeaf: Story = {
-  name: "Rule C · chain names the deepest leaf",
+export const BlockedWithoutLinkedTask: Story = {
+  name: "Blocked without linked task",
   render: () => (
-    <Frame label="Blocked · direct blocker in review, ultimately waiting on an in-progress leaf">
-      <TaskBlockedNotice
-        taskStatus="blocked"
-        agentName="CodexCoder"
-        blockers={[
-          blocker({
-            id: "dddddddd-dddd-4ddd-8ddd-ddddddddd023",
-            identifier: "PAP-600",
-            title: "Waiting in review",
-            boardPresentationStatus: "in_review",
-            terminalBlockers: [
-              blocker({
-                id: "dddddddd-dddd-4ddd-8ddd-ddddddddd025",
-                identifier: "PAP-777",
-                title: "Actual work",
-                boardPresentationStatus: "in_progress",
-                ownerAgentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5",
-              }),
-            ],
-          }),
-        ]}
-      />
-    </Frame>
-  ),
-};
-
-export const RuleCMultipleBlockers: Story = {
-  name: "Rule C · several unresolved blockers",
-  render: () => (
-    <Frame label="Blocked · two unresolved blockers — count is summarized">
-      <TaskBlockedNotice
-        taskStatus="blocked"
-        agentName="CodexCoder"
-        blockers={[
-          blocker({
-            id: "dddddddd-dddd-4ddd-8ddd-ddddddddd023",
-            identifier: "PAP-501",
-            title: "First dependency",
-            boardPresentationStatus: "in_progress",
-          }),
-          blocker({
-            id: "dddddddd-dddd-4ddd-8ddd-ddddddddd024",
-            identifier: "PAP-502",
-            title: "Second dependency",
-            boardPresentationStatus: "todo",
-          }),
-        ]}
-      />
-    </Frame>
-  ),
-};
-
-export const BlockedNoUnresolvedBlockers: Story = {
-  name: "Rule B path · blocked, no unresolved blockers",
-  render: () => (
-    <Frame label="Blocked · all blocker edges done/absent — a message WILL move it back to todo">
-      <TaskBlockedNotice taskStatus="blocked" agentName="CodexCoder" blockers={[]} />
+    <Frame label="Blocked · no linked task">
+      <TaskBlockedNotice taskStatus="blocked" blockers={[]} />
     </Frame>
   ),
 };
 
 export const InProgressWithBlocker: Story = {
-  name: "In progress · blocker edge (not a reopen case)",
+  name: "In progress · blocker edge",
   render: () => (
-    <Frame label="In progress · has a blocker edge — no reopen framing">
+    <Frame label="In progress · has a blocker edge">
       <TaskBlockedNotice
         taskStatus="in_progress"
-        agentName="CodexCoder"
         blockers={[
           blocker({
             id: "dddddddd-dddd-4ddd-8ddd-ddddddddd023",

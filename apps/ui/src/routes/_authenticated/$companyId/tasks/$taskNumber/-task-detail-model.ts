@@ -12,10 +12,6 @@ import {
 } from "@paperclipai/shared";
 import { type QueryClient } from "@tanstack/react-query";
 
-export type CommentOwnerChange = {
-  ownerAgentId: string;
-};
-
 export const TASK_COMMENT_PAGE_SIZE = 50;
 
 export const TASK_COMMENT_AUTOLOAD_LIMIT = TASK_COMMENT_PAGE_SIZE * 3;

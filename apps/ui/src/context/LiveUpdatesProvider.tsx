@@ -121,10 +121,6 @@ function describeTaskUpdate(details: Record<string, unknown> | null): string | n
   ) {
     changes.push("owner changed");
   }
-  if (details.reopened === true) {
-    const from = readString(details.reopenedFrom);
-    changes.push(from ? `reopened from ${from.replace(/_/g, " ")}` : "reopened");
-  }
   if (typeof details.title === "string") changes.push("title changed");
   if (changes.length > 0) return changes.join(", ");
   return null;
@@ -205,28 +201,13 @@ function buildActivityNotification(
 
   const commentId = readString(details?.commentId);
   const bodySnippet = readString(details?.bodySnippet);
-  const reopened = details?.reopened === true;
   const updated = details?.updated === true;
-  const reopenedFrom = readString(details?.reopenedFrom);
-  const reopenedLabel = reopened
-    ? reopenedFrom
-      ? `reopened from ${reopenedFrom.replace(/_/g, " ")}`
-      : "reopened"
-    : null;
-  const title = reopened
-    ? `${actor} reopened and commented on ${task.ref}`
-    : updated
-      ? `${actor} commented and updated ${task.ref}`
-      : `${actor} commented on ${task.ref}`;
+  const title = updated
+    ? `${actor} commented and updated ${task.ref}`
+    : `${actor} commented on ${task.ref}`;
   const body = bodySnippet
-    ? reopenedLabel
-      ? `${reopenedLabel} - ${bodySnippet.replace(/^#+\s*/m, "").replace(/\n/g, " ")}`
-      : bodySnippet.replace(/^#+\s*/m, "").replace(/\n/g, " ")
-    : reopenedLabel
-      ? task.title
-        ? `${reopenedLabel} - ${task.title}`
-        : reopenedLabel
-      : (task.title ?? undefined);
+    ? bodySnippet.replace(/^#+\s*/m, "").replace(/\n/g, " ")
+    : (task.title ?? undefined);
   return {
     title,
     description: body ? truncate(body, 96) : undefined,

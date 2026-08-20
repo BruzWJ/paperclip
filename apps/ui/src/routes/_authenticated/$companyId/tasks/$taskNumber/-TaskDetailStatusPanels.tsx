@@ -63,8 +63,8 @@ export function TaskDetailStatusPanels() {
               <AlertDescription>
                 <p>
                   {childTasks.length === 0
-                    ? "Task execution is held until resume. Only an explicit @mention can queue owner triage."
-                    : "Root and descendant execution is held until resume. Only explicit @mentions can queue owner triage."}
+                    ? "Task execution is held until resume. Notify owner can still queue triage."
+                    : "Root and descendant execution is held until resume. Notify owner can still queue triage."}
                 </p>
                 <p>
                   {childTasks.length === 0

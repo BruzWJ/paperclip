@@ -190,7 +190,6 @@ describe("AgentRunTranscript canonical messages", () => {
     await flush();
 
     expect(container.textContent).toContain("Synthetic input");
-    expect(container.textContent).not.toContain("Steering input");
     const pendingInput = container.querySelector('[data-tool-pending-input="raw"] pre');
     expect(pendingInput?.textContent).toBe(rawInput);
     expect(pendingInput?.getAttribute("data-language")).toBe("log");

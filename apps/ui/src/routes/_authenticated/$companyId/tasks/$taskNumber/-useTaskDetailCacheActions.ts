@@ -2,10 +2,10 @@ import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import {
-  applyOptimisticTaskFieldUpdate,
-  applyOptimisticTaskFieldUpdateToCollection,
   matchesTaskId,
   type ClientTaskComment,
+  withOptimisticTaskTitle,
+  withOptimisticTaskTitleInCollection,
 } from "@/lib/optimistic-task-comments";
 import type { Task } from "@paperclipai/shared";
 
@@ -49,13 +49,13 @@ export function useTaskDetailCacheActions(companyId: string, taskId: string) {
       queryKey: queryKeys.sidebarBadges(companyId),
     });
   }, [queryClient, companyId]);
-  const applyOptimisticTaskCacheUpdate = useCallback(
-    (canonicalTaskId: string, data: Record<string, unknown>) => {
+  const applyOptimisticTaskTitleUpdate = useCallback(
+    (canonicalTaskId: string, title: string | null) => {
       queryClient.setQueryData<Task>(queryKeys.tasks.detail(canonicalTaskId), (cached) =>
-        cached ? applyOptimisticTaskFieldUpdate(cached, data) : cached,
+        withOptimisticTaskTitle(cached, title),
       );
       queryClient.setQueryData<Task[] | undefined>(queryKeys.tasks.list(companyId), (cached) =>
-        applyOptimisticTaskFieldUpdateToCollection(cached, canonicalTaskId, data),
+        withOptimisticTaskTitleInCollection(cached, canonicalTaskId, title),
       );
     },
     [queryClient, companyId],
@@ -78,7 +78,7 @@ export function useTaskDetailCacheActions(companyId: string, taskId: string) {
     invalidateTaskRunState,
     upsertCommentInCache,
     invalidateTaskCollections,
-    applyOptimisticTaskCacheUpdate,
+    applyOptimisticTaskTitleUpdate,
     mergeTaskResponseIntoCaches,
   };
 }

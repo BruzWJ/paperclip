@@ -4,17 +4,20 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import type { UpdateTaskStatus } from "@paperclipai/shared";
 
 import { useTaskDetailPage } from "./-TaskDetailPageContext";
 import { TaskResources, type TaskResourcesProps } from "./-TaskResources";
-import { TaskProperties } from "./-task-properties/-TaskProperties";
+import { TaskProperties, type TaskPropertiesUpdate } from "./-task-properties/-TaskProperties";
 
 export type TaskInspectorTab = "details" | "resources";
 
 export interface TaskInspectorProps extends TaskResourcesProps {
   activeTab: TaskInspectorTab;
   onTabChange: (tab: TaskInspectorTab) => void;
-  onUpdateTask: (data: Record<string, unknown>) => void;
+  onUpdateTask: (data: TaskPropertiesUpdate) => void;
+  onStatusUpdate: (input: UpdateTaskStatus) => Promise<unknown>;
+  statusUpdatePending: boolean;
   hasActiveRun: boolean;
   inline?: boolean;
 }
@@ -23,6 +26,8 @@ export function TaskInspector({
   activeTab,
   onTabChange,
   onUpdateTask,
+  onStatusUpdate,
+  statusUpdatePending,
   hasActiveRun,
   inline = false,
   ...resourceProps
@@ -53,6 +58,8 @@ export function TaskInspector({
           task={resourceProps.task}
           childTasks={resourceProps.childTasks}
           onUpdate={onUpdateTask}
+          onStatusUpdate={onStatusUpdate}
+          statusUpdatePending={statusUpdatePending}
           inline={inline}
           hasActiveRun={hasActiveRun}
         />
@@ -91,6 +98,7 @@ export function TaskDetailInspectorSheet() {
     setInspectorTab,
     setMobileInspectorOpen,
     task,
+    updateTaskStatus,
     workProducts,
   } = useTaskDetailPage();
 
@@ -129,6 +137,8 @@ export function TaskDetailInspectorSheet() {
               setMobileInspectorOpen(false);
             }}
             onUpdateTask={handleTaskPropertiesUpdate}
+            onStatusUpdate={updateTaskStatus.mutateAsync}
+            statusUpdatePending={updateTaskStatus.isPending}
             hasActiveRun={resolvedHasActiveRun}
             inline
           />

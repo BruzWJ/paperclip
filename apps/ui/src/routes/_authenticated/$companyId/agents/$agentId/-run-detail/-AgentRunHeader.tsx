@@ -94,10 +94,6 @@ export function AgentRunHeader({
                   <span className="text-muted-foreground">Observation</span>
                   <span>{accountingObservationLabel}</span>
                 </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Prompt</span>
-                  <span className="capitalize">{accounting.promptKind}</span>
-                </div>
                 {accounting.selectedModelId ? (
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-muted-foreground">Model</span>

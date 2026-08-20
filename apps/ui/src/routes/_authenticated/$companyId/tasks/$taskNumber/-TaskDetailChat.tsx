@@ -19,16 +19,13 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
     approvalDecision,
     activeTaskRuns,
     commentComposerRef,
-    commentOwnerOptions,
     commentsLoadingOlder,
     composerHint,
-    currentOwnerValue,
     currentUserId,
     handleChatAdd,
     handleChatImageClick,
     handleCommentAttachFile,
     hasOlderComments,
-    isUserCreatorWithdrawalOwner,
     liveTaskIds,
     loadMoreCommentGroup,
     loadOlderComments,
@@ -54,17 +51,10 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
     (approval) => approval.status === "pending" || approval.status === "revision_requested",
   );
   const interruptibleTaskRun = resolveInterruptibleTaskRun(activeTaskRuns);
-  const activeRunIds = useMemo(
-    () => new Set(activeTaskRuns.map((run) => run.id)),
-    [activeTaskRuns],
-  );
+  const activeRunIds = useMemo(() => new Set(activeTaskRuns.map((run) => run.id)), [activeTaskRuns]);
+  const isTerminalTask = task.lifecycleStatus === "done" || task.lifecycleStatus === "cancelled";
   const mentionTarget = useMemo(() => {
-    if (
-      (task.lifecycleStatus !== "open" && task.lifecycleStatus !== "blocked") ||
-      !task.ownerAgentId ||
-      !Number.isInteger(task.ownershipEpoch) ||
-      task.ownershipEpoch < 1
-    ) {
+    if (!task.ownerAgentId || !Number.isInteger(task.ownershipEpoch) || task.ownershipEpoch < 1) {
       return null;
     }
     const owner = taskOwnerCatalog?.find((candidate) => candidate.id === task.ownerAgentId);
@@ -75,7 +65,7 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
       name: owner.name,
       icon: owner.icon ?? null,
     };
-  }, [task.lifecycleStatus, task.ownerAgentId, task.ownershipEpoch, taskOwnerCatalog]);
+  }, [task.ownerAgentId, task.ownershipEpoch, taskOwnerCatalog]);
   const commentsWithQueueState = useMemo(() => {
     return comments.map((comment) => {
       const queuedTargetRunId = locallyQueuedCommentRunIds.get(comment.id) ?? null;
@@ -122,14 +112,9 @@ export const TaskDetailChat = memo(function TaskDetailChat() {
       currentUserId={currentUserId}
       userProfileMap={userProfileMap}
       draftKey={`paperclip:task-comment-draft:${task.id}`}
-      ownerOptions={commentOwnerOptions}
-      currentOwnerValue={currentOwnerValue}
+      ownerAgentId={task.ownerAgentId}
       mentionTarget={mentionTarget}
-      composerDisabledReason={
-        isUserCreatorWithdrawalOwner
-          ? "Cancellation is incomplete. Finish it from Work controls before commenting."
-          : null
-      }
+      mentionIsResponseOnly={isTerminalTask}
       composerHint={composerHint}
       onAdd={handleChatAdd}
       onLoadMoreCommentGroup={loadMoreCommentGroup}

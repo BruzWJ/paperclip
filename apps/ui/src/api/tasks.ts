@@ -4,8 +4,6 @@ import type {
   BoardTaskCommentGroupPage,
   BoardTaskCommentThreadPage,
   CompactTask,
-  CommitTaskCreatorForm,
-  CommitTaskOwnerForm,
   CreateTask,
   CreateTaskUserComment,
   CreateTaskTreeHold,
@@ -16,7 +14,6 @@ import type {
   TaskComment,
   TaskStatus,
   TaskExecutionDecision,
-  TaskBoardReopenDispatch,
   TaskDocument,
   TaskLabel,
   TaskTreeControlPreview,
@@ -25,9 +22,8 @@ import type {
   PreviewTaskTreeControl,
   ReassignTask,
   ReleaseTaskTreeHold,
-  ReopenTask,
-  SelfAssignTaskWithdrawal,
   UpdateTaskExecutionPolicy,
+  UpdateTaskStatus,
   DecideTaskExecutionStage,
   UpdateTaskTitle,
   UpsertTaskDocument,
@@ -44,29 +40,15 @@ export type TaskInboxArchiveResponse = Pick<Task, "id" | "archivedAt">;
 
 export type TaskReassignmentResponse = {
   task: Task;
-  ref: TaskExecutionRefSummary;
-  retried: boolean;
-};
-
-export type TaskFormCommitResponse = {
-  update: Record<string, unknown>;
-  comment: TaskComment;
-  delivery: Record<string, unknown>;
   ref: TaskExecutionRefSummary | null;
   retried: boolean;
 };
 
-export type TaskWithdrawalSelfAssignmentResponse = {
+export type TaskStatusUpdateResponse = {
   task: Task;
-  auditId: string;
-  retried: boolean;
-};
-
-export type TaskReopenResponse = {
-  task: Task;
-  edge: Record<string, unknown>;
-  command: Record<string, unknown>;
-  dispatch: TaskBoardReopenDispatch;
+  update: Record<string, unknown>;
+  comment: TaskComment;
+  ref: TaskExecutionRefSummary | null;
   retried: boolean;
 };
 
@@ -172,15 +154,10 @@ export const tasksApi = {
     api.put<Task>(`/tasks/${id}/execution-policy`, data),
   decideExecutionStage: (id: string, data: DecideTaskExecutionStage) =>
     api.post<TaskExecutionPolicyDecisionResponse>(`/tasks/${id}/execution-policy/decisions`, data),
-  creatorReassign: (id: string, data: ReassignTask) =>
-    api.post<TaskReassignmentResponse>(`/tasks/${id}/creator-reassign`, data),
-  commitCreatorFormUpdate: (data: CommitTaskCreatorForm) =>
-    api.post<TaskFormCommitResponse>("/task-creator-form-updates", data),
-  commitOwnerFormUpdate: (data: CommitTaskOwnerForm) =>
-    api.post<TaskFormCommitResponse>("/task-owner-form-updates", data),
-  selfAssignForWithdrawal: (id: string, data: SelfAssignTaskWithdrawal) =>
-    api.post<TaskWithdrawalSelfAssignmentResponse>(`/tasks/${id}/withdrawal-self-assignment`, data),
-  reopen: (id: string, data: ReopenTask) => api.post<TaskReopenResponse>(`/tasks/${id}/reopen`, data),
+  boardReassign: (id: string, data: ReassignTask) =>
+    api.post<TaskReassignmentResponse>(`/tasks/${id}/reassign`, data),
+  updateStatus: (id: string, data: UpdateTaskStatus) =>
+    api.post<TaskStatusUpdateResponse>(`/tasks/${id}/status-update`, data),
   previewTreeControl: (id: string, data: PreviewTaskTreeControl) =>
     api.post<TaskTreeControlPreview>(`/tasks/${id}/tree-control/preview`, data),
   createTreeHold: (id: string, data: CreateTaskTreeHold) =>

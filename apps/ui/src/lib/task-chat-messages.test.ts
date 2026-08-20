@@ -163,7 +163,7 @@ describe("buildTaskChatMessages", () => {
       comments: [
         comment({
           id: "reply-2",
-          body: "Second steering reply",
+          body: "Second agent reply",
           boardEntryKind: "comment",
           boardGroupRootId: "root",
           boardOrder: 4,
@@ -193,7 +193,7 @@ describe("buildTaskChatMessages", () => {
         }),
         comment({
           id: "reply-1",
-          body: "First steering reply",
+          body: "First agent reply",
           boardEntryKind: "comment",
           boardGroupRootId: "root",
           boardOrder: 3,

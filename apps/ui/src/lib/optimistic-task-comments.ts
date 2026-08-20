@@ -261,65 +261,23 @@ export function shouldAutoloadOlderTaskComments(params: {
   return params.loadedCommentCount < params.autoLoadLimit;
 }
 
-export function applyOptimisticTaskFieldUpdate(task: Task | undefined, data: Record<string, unknown>) {
+export function withOptimisticTaskTitle(task: Task | undefined, title: string | null) {
   if (!task) return task;
-
-  const nextTask: Task = {
+  return {
     ...task,
+    title,
     updatedAt: new Date(),
   };
-  const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(data, key);
-  const assign = <K extends keyof Task>(key: K) => {
-    if (hasOwn(key)) {
-      nextTask[key] = data[key] as Task[K];
-    }
-  };
-
-  assign("boardPresentationStatus");
-  assign("priority");
-  assign("ownerAgentId");
-  assign("ownerUserId");
-  assign("ownerKind");
-  assign("ownerAssignmentSource");
-  assign("ownershipEpoch");
-  assign("projectId");
-  assign("parentId");
-  assign("hiddenAt");
-
-  if (hasOwn("labelIds") && Array.isArray(data.labelIds)) {
-    const nextLabelIds = data.labelIds.filter((value): value is string => typeof value === "string");
-    nextTask.labelIds = nextLabelIds;
-    if (task.labels) {
-      nextTask.labels = task.labels.filter((label) => nextLabelIds.includes(label.id));
-    }
-  }
-
-  if (hasOwn("blockedByTaskIds") && Array.isArray(data.blockedByTaskIds) && task.blockedBy) {
-    const nextBlockedByIds = new Set(
-      data.blockedByTaskIds.filter((value): value is string => typeof value === "string"),
-    );
-    nextTask.blockedBy = task.blockedBy.filter((relation) => nextBlockedByIds.has(relation.id));
-  }
-
-  if (hasOwn("projectId")) {
-    nextTask.project = task.project?.id === nextTask.projectId ? task.project : null;
-  }
-
-  if (hasOwn("parentId")) {
-    nextTask.ancestors = undefined;
-  }
-
-  return nextTask;
 }
 
 export function matchesTaskId(task: Pick<Task, "id">, taskId: string) {
   return task.id === taskId;
 }
 
-export function applyOptimisticTaskFieldUpdateToCollection(
+export function withOptimisticTaskTitleInCollection(
   tasks: Task[] | undefined,
   taskId: string,
-  data: Record<string, unknown>,
+  title: string | null,
 ) {
   if (!tasks) return tasks;
 
@@ -327,7 +285,7 @@ export function applyOptimisticTaskFieldUpdateToCollection(
   const nextTasks = tasks.map((task) => {
     if (!matchesTaskId(task, taskId)) return task;
     changed = true;
-    return applyOptimisticTaskFieldUpdate(task, data) ?? task;
+    return withOptimisticTaskTitle(task, title) ?? task;
   });
 
   return changed ? nextTasks : tasks;

@@ -10,7 +10,6 @@ type StorybookTaskOverrides = Partial<
     | "ownerKind"
     | "ownerAgentId"
     | "ownerUserId"
-    | "ownerAssignmentSource"
     | "ownershipEpoch"
     | "creatorKind"
     | "creatorAuthorityId"
@@ -46,20 +45,17 @@ export function createTask(overrides: StorybookTaskOverrides = {}): Task {
           ownerKind: "agent" as const,
           ownerAgentId: owner.agentId,
           ownerUserId: null,
-          ownerAssignmentSource: null,
         }
       : owner.kind === "user"
         ? {
             ownerKind: "user" as const,
             ownerAgentId: null,
             ownerUserId: owner.userId,
-            ownerAssignmentSource: "user_creator_withdrawal" as const,
           }
         : {
             ownerKind: "board" as const,
             ownerAgentId: null,
             ownerUserId: null,
-            ownerAssignmentSource: null,
           };
 
   return {

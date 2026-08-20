@@ -7,8 +7,7 @@ export type TestTaskOverrides = {
 type TestTaskOwnerKey =
   | "ownerKind"
   | "ownerAgentId"
-  | "ownerUserId"
-  | "ownerAssignmentSource";
+  | "ownerUserId";
 
 type TestTaskCreatorKey =
   | "creatorKind"
@@ -71,7 +70,6 @@ function ownerFields(overrides: TestTaskOverrides): TestTaskOwner {
       ownerKind: "agent",
       ownerAgentId: overrides.ownerAgentId,
       ownerUserId: null,
-      ownerAssignmentSource: null,
     };
   }
   if (overrides.ownerUserId) {
@@ -79,16 +77,12 @@ function ownerFields(overrides: TestTaskOverrides): TestTaskOwner {
       ownerKind: "user",
       ownerAgentId: null,
       ownerUserId: overrides.ownerUserId,
-      ownerAssignmentSource: overrides.ownerAssignmentSource === "user_creator_withdrawal"
-        ? "user_creator_withdrawal"
-        : null,
     };
   }
   return {
     ownerKind: "board",
     ownerAgentId: null,
     ownerUserId: null,
-    ownerAssignmentSource: null,
   };
 }
 

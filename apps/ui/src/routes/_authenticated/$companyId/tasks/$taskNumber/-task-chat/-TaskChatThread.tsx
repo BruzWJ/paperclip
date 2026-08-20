@@ -80,8 +80,8 @@ function TaskChatContext({
       <TaskContent>
         {hasBacklogOwner ? (
           <TaskItem>
-            {ownerAgent?.name ?? "The current user owner"} is parked. Ordinary messages remain comments; an
-            explicit agent mention can still queue triage.
+            {ownerAgent?.name ?? "The current user owner"} is parked. Ordinary messages remain comments;
+            Notify owner can still queue triage.
           </TaskItem>
         ) : null}
         {unresolvedBlockers.length > 0 ? (
@@ -119,17 +119,15 @@ export function TaskChatThread({
   onLoadMoreCommentGroup,
   onAttachFile,
   draftKey,
-  ownerOptions,
-  currentOwnerValue = "",
   mentionTarget = null,
-  composerDisabledReason = null,
+  mentionIsResponseOnly,
   composerHint = null,
-  showComposer = true,
   footer,
   onImageClick,
   composerRef,
   composerAccessory,
   onRefreshLatestComments,
+  ownerAgentId = null,
   ownerUserId = null,
   hasOlderComments = false,
   commentsLoadingOlder = false,
@@ -170,9 +168,7 @@ export function TaskChatThread({
       blocker.boardPresentationStatus !== "done" && blocker.boardPresentationStatus !== "cancelled",
   );
 
-  const ownerAgent = currentOwnerValue.startsWith("agent:")
-    ? (agentMap?.get(currentOwnerValue.slice("agent:".length)) ?? null)
-    : null;
+  const ownerAgent = ownerAgentId ? (agentMap?.get(ownerAgentId) ?? null) : null;
 
   const chatCtx = useMemo<TaskChatMessageContext>(
     () => ({
@@ -228,35 +224,31 @@ export function TaskChatThread({
           </Conversation>
         </TaskChatErrorBoundary>
 
-        {showComposer ? (
-          <div className="mt-4 space-y-3">
-            <TaskChatContext
-              taskStatus={taskStatus}
-              ownerAgent={ownerAgent}
-              ownerUserId={ownerUserId}
-              unresolvedBlockers={unresolvedBlockers}
-              liveTaskIds={liveTaskIds}
-              composerAccessory={composerAccessory}
-            />
-            <TaskChatComposer
-              ref={composerRef}
-              onSubmit={onAdd}
-              onAttachFile={onAttachFile}
-              draftKey={draftKey}
-              ownerOptions={ownerOptions}
-              currentOwnerValue={currentOwnerValue}
-              mentionTarget={mentionTarget}
-              composerDisabledReason={composerDisabledReason}
-              composerHint={composerHint}
-              replyTarget={replyTarget}
-              onClearReply={() => {
-                if (!replyPending) setReplyTarget(null);
-              }}
-              onReplySubmitted={() => setReplyTarget(null)}
-              onReplyPendingChange={setReplyPending}
-            />
-          </div>
-        ) : null}
+        <div className="mt-4 space-y-3">
+          <TaskChatContext
+            taskStatus={taskStatus}
+            ownerAgent={ownerAgent}
+            ownerUserId={ownerUserId}
+            unresolvedBlockers={unresolvedBlockers}
+            liveTaskIds={liveTaskIds}
+            composerAccessory={composerAccessory}
+          />
+          <TaskChatComposer
+            ref={composerRef}
+            onSubmit={onAdd}
+            onAttachFile={onAttachFile}
+            draftKey={draftKey}
+            mentionTarget={mentionTarget}
+            mentionIsResponseOnly={mentionIsResponseOnly}
+            composerHint={composerHint}
+            replyTarget={replyTarget}
+            onClearReply={() => {
+              if (!replyPending) setReplyTarget(null);
+            }}
+            onReplySubmitted={() => setReplyTarget(null)}
+            onReplyPendingChange={setReplyPending}
+          />
+        </div>
 
         {footer ? (
           <Task defaultOpen className="mt-4">

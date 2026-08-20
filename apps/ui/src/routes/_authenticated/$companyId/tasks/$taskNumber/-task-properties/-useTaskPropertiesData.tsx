@@ -1,14 +1,11 @@
-// Empty collections render dedicated UI when data.length === 0.
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { deriveOriginatingActor, type Task, type TaskLabel } from "@paperclipai/shared";
+import { deriveOriginatingActor, type Task } from "@paperclipai/shared";
 import { accessApi } from "@/api/access";
 import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
-import { projectsApi } from "@/api/projects";
-import { tasksApi, type CreateTaskLabelInput } from "@/api/tasks";
+import { tasksApi } from "@/api/tasks";
 import { useCompanyRouteId } from "@/hooks/useCompanyRouteId";
-import { useProjectOrder } from "@/hooks/useProjectOrder";
 import {
   buildCompanyUserInlineOptions,
   buildCompanyUserLabelMap,
@@ -19,33 +16,23 @@ import { invalidateInboxTaskQueries } from "@/lib/inboxArchiveCache";
 import { describeOwnerChangeInterrupt } from "@/lib/owner-transition";
 import { queryKeys } from "@/lib/queryKeys";
 import { getRecentAssigneeIds, sortAgentsByRecency } from "@/lib/recent-assignees";
-import { getRecentProjectIds } from "@/lib/recent-projects";
 import { buildExecutionPolicy, stageParticipantValues } from "@/lib/task-execution-policy";
 import { formatOwnerUserLabel, formatUserLabel } from "@/lib/task-owners";
 import type { OwnerChipResolvers } from "../-owner-transition/-OwnerTransitionViews";
+import type { TaskPropertiesUpdate } from "./-TaskProperties";
 import type { TaskPropertiesState } from "./-useTaskPropertiesState";
-
-const TASK_BLOCKER_SEARCH_LIMIT = 50;
 
 interface UseTaskPropertiesDataOptions {
   task: Task;
-  childTasks: Task[];
-  onUpdate: (data: Record<string, unknown>) => void;
+  onUpdate: (data: TaskPropertiesUpdate) => void;
   hasActiveRun: boolean;
   state: TaskPropertiesState;
 }
 
-export function useTaskPropertiesData({
-  task,
-  childTasks,
-  onUpdate,
-  hasActiveRun,
-  state,
-}: UseTaskPropertiesDataOptions) {
+export function useTaskPropertiesData({ task, onUpdate, hasActiveRun, state }: UseTaskPropertiesDataOptions) {
   // Async pending contract: disabled={isPending} aria-busy={isPending} role="status" {isPending ? "Saving" : "Save"}
   const companyId = useCompanyRouteId();
   const queryClient = useQueryClient();
-  const normalizedBlockedBySearch = state.blockedBySearch.trim();
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
@@ -65,57 +52,6 @@ export function useTaskPropertiesData({
     queryKey: queryKeys.access.companyUserDirectory(companyId!),
     queryFn: () => accessApi.listUserDirectory(companyId!),
     enabled: !!companyId,
-  });
-  const { data: projects } = useQuery({
-    queryKey: queryKeys.projects.list(companyId!),
-    queryFn: () => projectsApi.list(companyId!),
-    enabled: !!companyId,
-  });
-  const activeProjects = useMemo(
-    () => (projects ?? []).filter((project) => !project.archivedAt || project.id === task.projectId),
-    [projects, task.projectId],
-  );
-  const { orderedProjects } = useProjectOrder({
-    projects: activeProjects,
-    companyId,
-    userId: currentUserId,
-  });
-  const { data: labels } = useQuery({
-    queryKey: queryKeys.tasks.labels(companyId!),
-    queryFn: () => tasksApi.listLabels(companyId!),
-    enabled: !!companyId,
-  });
-  const { data: allTasks, isFetching: isFetchingTaskPickerTasks } = useQuery({
-    queryKey: queryKeys.tasks.list(companyId!),
-    queryFn: () => tasksApi.list(companyId!),
-    enabled:
-      !!companyId && (state.parentOpen || (state.blockedByOpen && normalizedBlockedBySearch.length === 0)),
-  });
-  const { data: searchedBlockedByTasks, isFetching: isFetchingSearchedBlockedByTasks } = useQuery({
-    queryKey: companyId
-      ? queryKeys.tasks.search(companyId, normalizedBlockedBySearch, undefined, TASK_BLOCKER_SEARCH_LIMIT)
-      : ["tasks", "blocker-search", normalizedBlockedBySearch, TASK_BLOCKER_SEARCH_LIMIT],
-    queryFn: () =>
-      tasksApi.list(companyId!, {
-        q: normalizedBlockedBySearch,
-        limit: TASK_BLOCKER_SEARCH_LIMIT,
-      }),
-    enabled: !!companyId && state.blockedByOpen && normalizedBlockedBySearch.length > 0,
-  });
-  const createLabel = useMutation({
-    mutationFn: (data: CreateTaskLabelInput) => tasksApi.createLabel(companyId!, data),
-    onSuccess: async (created) => {
-      queryClient.setQueryData<TaskLabel[] | undefined>(queryKeys.tasks.labels(companyId!), (current) => {
-        if (!current) return [created];
-        if (current.some((label) => label.id === created.id)) return current;
-        return [...current, created];
-      });
-      onUpdate({ labelIds: [...(task.labelIds ?? []), created.id] });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.labels(companyId!),
-      });
-      state.setNewLabelName("");
-    },
   });
   const unarchiveFromInbox = useMutation({
     mutationFn: () => tasksApi.unarchiveFromInbox(task.id),
@@ -146,34 +82,11 @@ export function useTaskPropertiesData({
       );
     },
   });
-  const toggleLabel = (labelId: string) => {
-    const ids = task.labelIds ?? [];
-    const next = ids.includes(labelId) ? ids.filter((id) => id !== labelId) : [...ids, labelId];
-    onUpdate({ labelIds: next });
-  };
   const agentName = (id: string | null) => {
     if (!id || !agents) return null;
     const agent = agents.find((candidate) => candidate.id === id);
     return agent?.name ?? id.slice(0, 8);
   };
-  const projectName = (id: string | null) => {
-    if (!id) return id?.slice(0, 8) ?? "None";
-    const project = orderedProjects.find((candidate) => candidate.id === id);
-    return project?.name ?? id.slice(0, 8);
-  };
-  const relatedTasks = useMemo(() => {
-    const excluded = new Set<string>();
-    const addExcluded = (candidate: { id: string; identifier: string }) => {
-      excluded.add(candidate.id);
-      excluded.add(candidate.identifier);
-    };
-    for (const blocker of task.blockedBy ?? []) addExcluded(blocker);
-    for (const blocked of task.blocks ?? []) addExcluded(blocked);
-    for (const child of childTasks) addExcluded(child);
-    return (task.relatedWork?.outbound.map((item) => item.task) ?? []).filter(
-      (referenced) => !excluded.has(referenced.id) && !excluded.has(referenced.identifier),
-    );
-  }, [childTasks, task.blockedBy, task.blocks, task.relatedWork?.outbound]);
   const recentOwnerAgentIds = useMemo(() => getRecentAssigneeIds(), [state.ownerOpen]);
   const sortedAgents = useMemo(
     () => sortAgentsByRecency((agents ?? []).filter(isAgentTaskTarget), recentOwnerAgentIds),
@@ -183,7 +96,6 @@ export function useTaskPropertiesData({
     () => sortAgentsByRecency(taskOwnerCatalog ?? [], recentOwnerAgentIds),
     [taskOwnerCatalog, recentOwnerAgentIds],
   );
-  const recentProjectIds = useMemo(() => getRecentProjectIds(), [state.projectOpen]);
   const userLabelMap = useMemo(
     () => buildCompanyUserLabelMap(companyMembers?.users),
     [companyMembers?.users],
@@ -201,9 +113,6 @@ export function useTaskPropertiesData({
     [companyMembers?.users, creatorUserId, currentUserId],
   );
   const ownerAgent = task.ownerAgentId ? agents?.find((agent) => agent.id === task.ownerAgentId) : null;
-  const selectedProject = task.projectId
-    ? (projects?.find((project) => project.id === task.projectId) ?? null)
-    : null;
   const reviewerValues = stageParticipantValues(task.executionPolicy, "review");
   const approverValues = stageParticipantValues(task.executionPolicy, "approval");
   const userLabel = (userId: string | null | undefined) =>
@@ -306,30 +215,16 @@ export function useTaskPropertiesData({
   return {
     companyId,
     queryClient,
-    normalizedBlockedBySearch,
     currentUserId,
     agents,
-    projects,
-    orderedProjects,
-    labels,
-    allTasks,
-    isFetchingTaskPickerTasks,
-    searchedBlockedByTasks,
-    isFetchingSearchedBlockedByTasks,
-    createLabel,
     unarchiveFromInbox,
-    toggleLabel,
     agentName,
-    projectName,
-    relatedTasks,
     recentOwnerAgentIds,
     sortedAgents,
     sortedTaskOwners,
-    recentProjectIds,
     creatorUserId,
     otherUserOptions,
     ownerAgent,
-    selectedProject,
     reviewerValues,
     approverValues,
     userLabel,

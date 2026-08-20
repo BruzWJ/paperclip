@@ -1,21 +1,56 @@
-import { TASK_PRIORITIES, TASK_STATUSES } from "@paperclipai/shared";
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, ListChecks, Workflow } from "lucide-react";
 
 import { DomainStatus } from "@/components/patterns/DomainStatus";
 import { Accordion } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { taskValueLabel } from "@/lib/task-blockers";
 import { cn } from "@/lib/utils";
 import { TaskPropertiesRelationships } from "./-relation-controls";
 import type { TaskPropertiesController } from "./-TaskProperties";
 import { TaskPropertiesAbout } from "./-TaskPropertiesAbout";
 import { TaskPropertiesSection, TaskPropertyPicker, TaskPropertyRow } from "./-TaskPropertyPrimitives";
+import { TaskStatusUpdateDialog, type StatusRecipientOption } from "./-TaskStatusUpdateDialog";
+
+export function taskCreatorStatusRecipientOption(
+  task: Pick<TaskPropertiesController["task"], "creatorKind">,
+): StatusRecipientOption {
+  const available = task.creatorKind === "agent-execution";
+  return {
+    value: "creator",
+    label: available ? "Task creator · agent" : "Task creator · unavailable",
+    disabled: !available,
+  };
+}
+
+function TaskLabels({ task }: Pick<TaskPropertiesController, "task">) {
+  const labels = task.labels ?? [];
+  if (labels.length === 0) return <span className="text-muted-foreground">None</span>;
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {labels.map((label) => (
+        <Badge
+          key={label.id}
+          variant="outline"
+          title={label.name}
+          style={{
+            borderColor: label.color,
+            backgroundColor: `${label.color}22`,
+            color: pickTextColorForPillBg(label.color, 0.13),
+          }}
+        >
+          {label.name}
+        </Badge>
+      ))}
+    </span>
+  );
+}
 
 export function TaskPropertiesView(props: TaskPropertiesController) {
-  const { task, onUpdate, inline = false, companyId } = props;
+  const { task, inline = false, companyId } = props;
   const s = props.state;
   const reviewerContent = props.executionParticipantsContent(
     "review",
@@ -31,6 +66,27 @@ export function TaskPropertiesView(props: TaskPropertiesController) {
     s.setApproverSearch,
     () => props.updateExecutionPolicy(props.reviewerValues, []),
   );
+  const staticValueClass = cn(
+    "flex min-h-8 min-w-0 flex-1 items-center gap-1.5 px-2 text-sm",
+    inline && "min-h-11",
+  );
+  const invokableOwner =
+    task.ownerKind === "agent"
+      ? (props.sortedTaskOwners.find((owner) => owner.id === task.ownerAgentId) ?? null)
+      : null;
+  const ownerAvailable = invokableOwner !== null;
+  const statusRecipients: readonly StatusRecipientOption[] = [
+    {
+      value: "owner",
+      label: invokableOwner
+        ? `Task owner · ${invokableOwner.name}`
+        : task.ownerKind === "agent"
+          ? `Task owner · ${props.ownerAgent?.name ?? "unavailable agent"} (unavailable)`
+          : "Task owner · Board/user (unavailable)",
+      disabled: !ownerAvailable,
+    },
+    taskCreatorStatusRecipientOption(task),
+  ];
 
   return (
     <>
@@ -48,50 +104,21 @@ export function TaskPropertiesView(props: TaskPropertiesController) {
         >
           <FieldGroup className="gap-0">
             <TaskPropertyRow label="Status">
-              <Select value={task.boardPresentationStatus} onValueChange={(status) => onUpdate({ status })}>
-                <SelectTrigger
-                  size={inline ? "default" : "sm"}
-                  className={cn("w-full min-w-0 shadow-none", inline && "min-h-11")}
-                  aria-label="Status"
-                >
-                  <SelectValue>
-                    <DomainStatus status={task.boardPresentationStatus}>
-                      {taskValueLabel(task.boardPresentationStatus)}
-                    </DomainStatus>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent position="popper" align="end">
-                  {TASK_STATUSES.map((status) => (
-                    <SelectItem
-                      key={status}
-                      value={status}
-                      textValue={taskValueLabel(status)}
-                      className={inline ? "min-h-11" : undefined}
-                    >
-                      <DomainStatus status={status}>{taskValueLabel(status)}</DomainStatus>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2">
+                <DomainStatus status={task.boardPresentationStatus}>
+                  {taskValueLabel(task.boardPresentationStatus)}
+                </DomainStatus>
+                <TaskStatusUpdateDialog
+                  task={task}
+                  recipients={statusRecipients}
+                  pending={props.statusUpdatePending}
+                  onSubmit={props.onStatusUpdate}
+                />
+              </div>
             </TaskPropertyRow>
 
             <TaskPropertyRow label="Priority">
-              <Select value={task.priority} onValueChange={(priority) => onUpdate({ priority })}>
-                <SelectTrigger
-                  size={inline ? "default" : "sm"}
-                  className={cn("w-full min-w-0 shadow-none", inline && "min-h-11")}
-                  aria-label="Priority"
-                >
-                  <SelectValue>{taskValueLabel(task.priority)}</SelectValue>
-                </SelectTrigger>
-                <SelectContent position="popper" align="end">
-                  {TASK_PRIORITIES.map((priority) => (
-                    <SelectItem key={priority} value={priority} className={inline ? "min-h-11" : undefined}>
-                      {taskValueLabel(priority)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className={staticValueClass}>{taskValueLabel(task.priority)}</div>
             </TaskPropertyRow>
 
             <TaskPropertyRow label="Owner">
@@ -107,85 +134,70 @@ export function TaskPropertiesView(props: TaskPropertiesController) {
                 }}
                 ariaLabel="Change task owner"
                 trigger={props.ownerTrigger}
-                trailing={
-                  props.ownerAgent ? (
-                    <Button
-                      asChild
-                      type="button"
-                      variant="ghost"
-                      size={inline ? "icon-lg" : "icon-sm"}
-                      className={inline ? "size-11!" : undefined}
-                      aria-label={`Open ${props.ownerAgent.name} agent`}
-                    >
-                      <Link
-                        to="/$companyId/agents/$agentId"
-                        params={{ companyId, agentId: props.ownerAgent.id }}
-                        aria-label={`Open ${props.ownerAgent.name} agent`}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <ArrowUpRight  data-icon="inline-end"/>
-                      </Link>
-                    </Button>
-                  ) : null
-                }
                 popoverClassName="w-64"
               >
                 {props.ownerContent}
               </TaskPropertyPicker>
+              {props.ownerAgent ? (
+                <Button
+                  asChild
+                  type="button"
+                  variant="ghost"
+                  size={inline ? "icon-lg" : "icon-sm"}
+                  className={inline ? "size-11!" : undefined}
+                  aria-label={`Open ${props.ownerAgent.name} agent`}
+                >
+                  <Link
+                    to="/$companyId/agents/$agentId"
+                    params={{ companyId, agentId: props.ownerAgent.id }}
+                    aria-label={`Open ${props.ownerAgent.name} agent`}
+                  >
+                    <ArrowUpRight data-icon="inline-end" />
+                  </Link>
+                </Button>
+              ) : null}
             </TaskPropertyRow>
 
             <TaskPropertyRow label="Project">
-              <TaskPropertyPicker
-                inline={inline}
-                open={s.projectOpen}
-                onOpenChange={(open) => {
-                  s.setProjectOpen(open);
-                  if (!open) s.setProjectSearch("");
-                }}
-                ariaLabel="Change task project"
-                trigger={props.projectTrigger}
-                trailing={
-                  props.selectedProject ? (
-                    <Button
-                      asChild
-                      type="button"
-                      variant="ghost"
-                      size={inline ? "icon-lg" : "icon-sm"}
-                      className={inline ? "size-11!" : undefined}
-                      aria-label={`Open ${props.selectedProject.name} project`}
-                    >
-                      <Link
-                        to="/$companyId/projects/$projectId"
-                        params={{ companyId, projectId: props.selectedProject.id }}
-                        aria-label={`Open ${props.selectedProject.name} project`}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <ArrowUpRight  data-icon="inline-end"/>
-                      </Link>
-                    </Button>
-                  ) : null
-                }
-                popoverClassName="w-64"
-              >
-                {props.projectContent}
-              </TaskPropertyPicker>
+              <div className={staticValueClass}>
+                {task.project ? (
+                  <>
+                    <span
+                      className="size-3 shrink-0 rounded-sm"
+                      style={{ backgroundColor: task.project.color ?? "var(--project-seed)" }}
+                    />
+                    <span className="min-w-0 truncate" title={task.project.name}>
+                      {task.project.name}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">None</span>
+                )}
+              </div>
+              {task.project ? (
+                <Button
+                  asChild
+                  type="button"
+                  variant="ghost"
+                  size={inline ? "icon-lg" : "icon-sm"}
+                  className={inline ? "size-11!" : undefined}
+                  aria-label={`Open ${task.project.name} project`}
+                >
+                  <Link
+                    to="/$companyId/projects/$projectId"
+                    params={{ companyId, projectId: task.project.id }}
+                    aria-label={`Open ${task.project.name} project`}
+                  >
+                    <ArrowUpRight data-icon="inline-end" />
+                  </Link>
+                </Button>
+              ) : null}
             </TaskPropertyRow>
 
             <TaskPropertyRow label="Labels">
-              <TaskPropertyPicker
-                inline={inline}
-                open={s.labelsOpen}
-                onOpenChange={(open) => {
-                  s.setLabelsOpen(open);
-                  if (!open) s.setLabelSearch("");
-                }}
-                ariaLabel="Edit task labels"
-                trigger={props.labelsTrigger}
-                trailing={props.labelsExtra}
-                popoverClassName="w-72"
-              >
-                {props.labelsContent}
-              </TaskPropertyPicker>
+              <div className={staticValueClass}>
+                <TaskLabels task={task} />
+              </div>
             </TaskPropertyRow>
           </FieldGroup>
         </TaskPropertiesSection>

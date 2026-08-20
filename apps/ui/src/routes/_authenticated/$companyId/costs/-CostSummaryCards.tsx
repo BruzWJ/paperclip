@@ -143,7 +143,7 @@ export function CostEventRows({ events }: { events: CostEvent[] }) {
               {event.kind === "known" ? "Known cost" : "Cost unavailable"}
             </ItemTitle>
             <ItemDescription>
-              {formatDateTime(event.occurredAt)} · {event.promptKind}
+              {formatDateTime(event.occurredAt)}
             </ItemDescription>
           </ItemContent>
           <ItemActions className="font-mono text-sm tabular-nums">

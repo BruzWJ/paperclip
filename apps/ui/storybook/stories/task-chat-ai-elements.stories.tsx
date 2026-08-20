@@ -179,6 +179,8 @@ const meta = {
   },
   args: {
     comments,
+    taskId: TASK_ID,
+    mentionIsResponseOnly: false,
     onAdd: async () => undefined,
   },
 } satisfies Meta<typeof TaskChatThread>;
@@ -198,30 +200,14 @@ export const FullConversation: Story = {
         composerAccessory={
           <TaskChatConfirmation approval={approval} requesterAgent={agent} onDecision={() => undefined} />
         }
-        ownerOptions={[{ id: `agent:${AGENT_ID}`, label: agent.name }]}
-        currentOwnerValue={`agent:${AGENT_ID}`}
+        ownerAgentId={AGENT_ID}
         mentionTarget={{
           targetAgentId: AGENT_ID,
           ownershipEpoch: 1,
           name: agent.name,
           icon: agent.icon ?? null,
         }}
-        onAdd={async () => undefined}
-      />
-    </div>
-  ),
-};
-
-export const CompactSenderLayout: Story = {
-  render: () => (
-    <div className="mx-auto max-w-md p-3">
-      <TaskChatThread
-        comments={comments}
-        taskId={TASK_ID}
-        agentMap={agentMap}
-        currentUserId={USER_ID}
-        userProfileMap={userProfileMap}
-        showComposer={false}
+        mentionIsResponseOnly={false}
         onAdd={async () => undefined}
       />
     </div>
@@ -231,7 +217,12 @@ export const CompactSenderLayout: Story = {
 export const EmptyConversation: Story = {
   render: () => (
     <div className="mx-auto max-w-4xl p-6">
-      <TaskChatThread comments={[]} taskId={TASK_ID} onAdd={async () => undefined} />
+      <TaskChatThread
+        comments={[]}
+        taskId={TASK_ID}
+        mentionIsResponseOnly={false}
+        onAdd={async () => undefined}
+      />
     </div>
   ),
 };

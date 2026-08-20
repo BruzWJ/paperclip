@@ -17,15 +17,9 @@ export function useTaskPropertiesState(task: Task) {
     label: string;
     track?: () => void;
   } | null>(null);
-  const [projectOpen, setProjectOpen] = useState(false);
-  const [projectSearch, setProjectSearch] = useState("");
-  const [blockedByOpen, setBlockedByOpen] = useState(false);
-  const [blockedBySearch, setBlockedBySearch] = useState("");
   const [blockedByExpanded, setBlockedByExpanded] = useState(false);
   const [blockingExpanded, setBlockingExpanded] = useState(false);
   const [relatedTasksExpanded, setRelatedTasksExpanded] = useState(false);
-  const [parentOpen, setParentOpen] = useState(false);
-  const [parentSearch, setParentSearch] = useState("");
   const [reviewersOpen, setReviewersOpen] = useState(false);
   const [reviewerSearch, setReviewerSearch] = useState("");
   const [approversOpen, setApproversOpen] = useState(false);
@@ -39,10 +33,6 @@ export function useTaskPropertiesState(task: Task) {
   const [monitorServiceInput, setMonitorServiceInput] = useState(
     task.executionPolicy?.monitor?.serviceName ?? "",
   );
-  const [labelsOpen, setLabelsOpen] = useState(false);
-  const [labelSearch, setLabelSearch] = useState("");
-  const [newLabelName, setNewLabelName] = useState("");
-  const [newLabelColor, setNewLabelColor] = useState("#6366f1");
   const [unarchiveErrorMessage, setUnarchiveErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,24 +58,12 @@ export function useTaskPropertiesState(task: Task) {
     setOwnerSearch,
     pendingOwner,
     setPendingOwner,
-    projectOpen,
-    setProjectOpen,
-    projectSearch,
-    setProjectSearch,
-    blockedByOpen,
-    setBlockedByOpen,
-    blockedBySearch,
-    setBlockedBySearch,
     blockedByExpanded,
     setBlockedByExpanded,
     blockingExpanded,
     setBlockingExpanded,
     relatedTasksExpanded,
     setRelatedTasksExpanded,
-    parentOpen,
-    setParentOpen,
-    parentSearch,
-    setParentSearch,
     reviewersOpen,
     setReviewersOpen,
     reviewerSearch,
@@ -104,14 +82,6 @@ export function useTaskPropertiesState(task: Task) {
     setMonitorNotesInput,
     monitorServiceInput,
     setMonitorServiceInput,
-    labelsOpen,
-    setLabelsOpen,
-    labelSearch,
-    setLabelSearch,
-    newLabelName,
-    setNewLabelName,
-    newLabelColor,
-    setNewLabelColor,
     unarchiveErrorMessage,
     setUnarchiveErrorMessage,
   };

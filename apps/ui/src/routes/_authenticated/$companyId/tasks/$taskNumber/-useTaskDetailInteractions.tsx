@@ -1,4 +1,3 @@
-import { tasksApi } from "@/api/tasks";
 import type { GalleryMediaItem } from "@/routes/_authenticated/$companyId/tasks/$taskNumber/-ImageGalleryModal";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,15 +23,11 @@ import { Link } from "@tanstack/react-router";
 import { Archive, ArrowLeft, Copy, MoreVertical, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from "react";
 
-import type { CommentOwnerChange } from "./-task-detail-model";
 import type { TaskChatAgentMention } from "./-task-chat/-TaskChatShared";
 import type { useTaskDetailActionMutations } from "./-useTaskDetailActionMutations";
-import type { useTaskDetailCacheActions } from "./-useTaskDetailEffects";
-import type { useTaskDetailCoreMutations } from "./-useTaskDetailCoreMutations";
 
 interface TaskDetailInteractionsOptions {
   companyId: string;
-  taskId: string;
   task: Task | undefined;
   attachments?: TaskAttachment[];
   attachmentsLoading: boolean;
@@ -43,11 +38,6 @@ interface TaskDetailInteractionsOptions {
   archiveFromInbox: ReturnType<typeof useTaskDetailActionMutations>["archiveFromInbox"];
   addComment: ReturnType<typeof useTaskDetailActionMutations>["addComment"];
   uploadAttachment: ReturnType<typeof useTaskDetailActionMutations>["uploadAttachment"];
-  reassignTask: ReturnType<typeof useTaskDetailCoreMutations>["reassignTask"];
-  cacheActions: ReturnType<typeof useTaskDetailCacheActions>;
-  isNamedUserCreator: boolean;
-  isSystemEscalationHumanOwner: boolean;
-  isUserCreatorWithdrawalOwner: boolean;
   setCopied: Dispatch<SetStateAction<boolean>>;
   setMobileInspectorOpen: Dispatch<SetStateAction<boolean>>;
   setGalleryOpen: Dispatch<SetStateAction<boolean>>;
@@ -55,25 +45,11 @@ interface TaskDetailInteractionsOptions {
 }
 
 export function validateTaskChatAgentMentionSubmission(input: {
-  task: Pick<Task, "lifecycleStatus" | "ownerAgentId" | "ownershipEpoch"> | undefined;
-  ownerChange?: CommentOwnerChange;
+  task: Pick<Task, "ownerAgentId" | "ownershipEpoch"> | undefined;
   mention?: TaskChatAgentMention;
-  replyToCommentId?: string;
 }): TaskChatAgentMention | undefined {
-  const { task, ownerChange, mention, replyToCommentId } = input;
-  if (replyToCommentId && ownerChange) {
-    throw new Error("A reply cannot change the task owner.");
-  }
+  const { task, mention } = input;
   if (!mention) return undefined;
-  if (replyToCommentId) {
-    throw new Error("A reply cannot also mention an agent.");
-  }
-  if (ownerChange) {
-    throw new Error("A comment cannot change the owner and mention an agent at the same time.");
-  }
-  if (task?.lifecycleStatus !== "open" && task?.lifecycleStatus !== "blocked") {
-    throw new Error("Only an open or blocked task can notify its agent owner.");
-  }
   if (task?.ownerAgentId !== mention.targetAgentId || task.ownershipEpoch !== mention.ownershipEpoch) {
     throw new Error("The task owner changed. Select the current owner again before sending.");
   }
@@ -83,7 +59,6 @@ export function validateTaskChatAgentMentionSubmission(input: {
 /** Owns gallery, clipboard, mobile-toolbar, and chat interaction handlers. */
 export function useTaskDetailInteractions({
   companyId,
-  taskId,
   task,
   attachments,
   attachmentsLoading,
@@ -94,19 +69,11 @@ export function useTaskDetailInteractions({
   archiveFromInbox,
   addComment,
   uploadAttachment,
-  reassignTask,
-  cacheActions,
-  isNamedUserCreator,
-  isSystemEscalationHumanOwner,
-  isUserCreatorWithdrawalOwner,
   setCopied,
   setMobileInspectorOpen,
   setGalleryOpen,
   setGalleryIndex,
 }: TaskDetailInteractionsOptions) {
-  const { invalidateTaskDetail, invalidateTaskRunState, upsertCommentInCache, invalidateTaskCollections } =
-    cacheActions;
-
   const promotedOutputAttachmentIds = useMemo(
     () => getPromotedOutputAttachmentIds(workProducts),
     [workProducts],
@@ -290,74 +257,19 @@ export function useTaskDetailInteractions({
   }, [showInboxToolbar, companyId, task?.id, taskHidden, archivePending, setMobileToolbar]);
 
   const handleChatAdd = useCallback(
-    async (
-      body: string,
-      ownerChange?: CommentOwnerChange,
-      mention?: TaskChatAgentMention,
-      replyToCommentId?: string,
-    ) => {
+    async (body: string, mention?: TaskChatAgentMention, replyToCommentId?: string) => {
       const validatedMention = validateTaskChatAgentMentionSubmission({
         task,
-        ownerChange,
         mention,
-        replyToCommentId,
       });
-      if (validatedMention) {
-        await addComment.mutateAsync({
-          message: body,
-          idempotencyKey: crypto.randomUUID(),
-          mention: validatedMention,
-          replyToCommentId: null,
-        });
-        return;
-      }
-      if (ownerChange) {
-        await reassignTask.mutateAsync(ownerChange.ownerAgentId);
-      }
-      if (isUserCreatorWithdrawalOwner) {
-        throw new Error("A withdrawn task accepts only the creator's cancellation");
-      }
-      if (isNamedUserCreator && !replyToCommentId) {
-        const result = await tasksApi.commitCreatorFormUpdate({
-          taskId,
-          message: body,
-        });
-        upsertCommentInCache(result.comment);
-        invalidateTaskDetail();
-        invalidateTaskRunState();
-        invalidateTaskCollections();
-        return;
-      }
-      if (isSystemEscalationHumanOwner && !replyToCommentId) {
-        const result = await tasksApi.commitOwnerFormUpdate({
-          taskId,
-          message: body,
-        });
-        upsertCommentInCache(result.comment);
-        invalidateTaskDetail();
-        invalidateTaskCollections();
-        return;
-      }
       await addComment.mutateAsync({
         message: body,
         idempotencyKey: crypto.randomUUID(),
-        mention: null,
+        mention: validatedMention ?? null,
         replyToCommentId: replyToCommentId ?? null,
       });
     },
-    [
-      addComment,
-      invalidateTaskCollections,
-      invalidateTaskDetail,
-      invalidateTaskRunState,
-      isNamedUserCreator,
-      isSystemEscalationHumanOwner,
-      isUserCreatorWithdrawalOwner,
-      task,
-      taskId,
-      reassignTask,
-      upsertCommentInCache,
-    ],
+    [addComment, task],
   );
   const handleCommentImageUpload = useCallback(
     async (file: File) => {

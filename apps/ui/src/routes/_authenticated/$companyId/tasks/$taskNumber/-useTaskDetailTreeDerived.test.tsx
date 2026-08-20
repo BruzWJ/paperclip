@@ -30,9 +30,6 @@ const baseOptions: Omit<TreeDerivedOptions, "activeRootPauseHolds" | "activeCanc
   treeControlCancelConfirmed: false,
   uploadAttachment: { mutateAsync: vi.fn() } as unknown as TreeDerivedOptions["uploadAttachment"],
   importMarkdownDocument: { mutateAsync: vi.fn() } as unknown as TreeDerivedOptions["importMarkdownDocument"],
-  isNamedUserCreator: false,
-  isSystemEscalationHumanOwner: false,
-  isUserCreatorWithdrawalOwner: false,
 };
 
 let container: HTMLDivElement;

@@ -1,84 +1,91 @@
-import type { Task } from "@paperclipai/shared";
-import { GitFork, X } from "lucide-react";
+import type { TaskRelationTaskSummary, TaskStatus } from "@paperclipai/shared";
+import { GitFork } from "lucide-react";
 
-import { ConfirmActionDialog } from "@/components/patterns/ConfirmActionDialog";
 import { DomainStatus } from "@/components/patterns/DomainStatus";
-import { TaskLinkQuicklook } from "@/routes/_authenticated/$companyId/-TaskLinkQuicklook";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
-import { Card } from "@/components/ui/card";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { FieldGroup } from "@/components/ui/field";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { taskDisplayTitle, taskReferenceLabel } from "@/lib/task-display";
 import { cn } from "@/lib/utils";
+import { TaskLinkQuicklook } from "@/routes/_authenticated/$companyId/-TaskLinkQuicklook";
 import type { TaskPropertiesController } from "./-TaskProperties";
-import { TaskPropertiesSection, TaskPropertyPicker, TaskPropertyRow } from "./-TaskPropertyPrimitives";
+import { TaskPropertiesSection, TaskPropertyRow } from "./-TaskPropertyPrimitives";
 
-function RemovableTaskReferencePill({
-  task,
-  onRemove,
-  inline = false,
-}: {
-  task: NonNullable<Task["blockedBy"]>[number];
-  onRemove: (taskId: string) => void;
-  inline?: boolean;
-}) {
-  const taskLabel = taskReferenceLabel(task);
-  const displayTitle = taskDisplayTitle(task);
-  const confirmLabel =
-    task.identifier && task.identifier !== displayTitle
-      ? `${task.identifier}: ${displayTitle}`
-      : displayTitle;
-  const removeLabel = `Remove ${taskLabel} as blocker`;
+const PREVIEW_COUNT = 5;
 
+interface TaskReferenceShape {
+  id: string;
+  taskNumber: number;
+  identifier: string;
+  title: string | null;
+  boardPresentationStatus: TaskStatus;
+}
+
+function TaskReference({ task, inline }: { task: TaskReferenceShape; inline: boolean }) {
   return (
-    <ButtonGroup className="max-w-full">
-      <Button
-        asChild
-        variant="outline"
-        size={inline ? "default" : "xs"}
-        className={cn("min-w-0", inline && "min-h-11")}
+    <Button
+      asChild
+      variant="outline"
+      size={inline ? "default" : "xs"}
+      className={cn("min-w-0", inline && "min-h-11")}
+    >
+      <TaskLinkQuicklook
+        taskId={task.id}
+        taskNumber={task.taskNumber}
+        title={taskDisplayTitle(task)}
+        aria-label={`Task ${taskReferenceLabel(task)}: ${taskDisplayTitle(task)}`}
       >
-        <TaskLinkQuicklook
-          taskId={task.id}
-          taskNumber={task.taskNumber}
-          data-mention-kind="task"
-          title={displayTitle}
-          aria-label={`Task ${taskLabel}: ${displayTitle}`}
+        <DomainStatus status={task.boardPresentationStatus} className="shrink-0" />
+        <span className="truncate">{taskReferenceLabel(task)}</span>
+      </TaskLinkQuicklook>
+    </Button>
+  );
+}
+
+function RelationList({
+  tasks,
+  expanded,
+  onExpandedChange,
+  inline,
+}: {
+  tasks: readonly TaskRelationTaskSummary[];
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  inline: boolean;
+}) {
+  const visible = expanded ? tasks : tasks.slice(0, PREVIEW_COUNT);
+  const hiddenCount = tasks.length - visible.length;
+  if (tasks.length === 0) return <span className="text-sm text-muted-foreground">None</span>;
+  return (
+    <>
+      {visible.map((task) => (
+        <TaskReference key={task.id} task={task} inline={inline} />
+      ))}
+      {expanded || hiddenCount > 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          size={inline ? "default" : "xs"}
+          className={inline ? "min-h-11" : undefined}
+          onClick={() => onExpandedChange(!expanded)}
         >
-          <DomainStatus status={task.boardPresentationStatus} className="shrink-0" />
-          <span className="truncate">{taskLabel}</span>
-        </TaskLinkQuicklook>
-      </Button>
-      <ConfirmActionDialog
-        triggerAsChild
-        trigger={
-          <Button
-            type="button"
-            variant="outline"
-            size={inline ? "icon-lg" : "icon-xs"}
-            className={inline ? "size-11!" : undefined}
-            aria-label={removeLabel}
-            title={removeLabel}
-          >
-            <X data-icon="inline-start" />
-          </Button>
-        }
-        title="Remove blocker?"
-        description={<>Remove {confirmLabel} as a blocker for this task.</>}
-        confirmLabel="Remove blocker"
-        variant="destructive"
-        onConfirm={() => onRemove(task.id)}
-      />
-    </ButtonGroup>
+          {expanded ? "Show less" : `Show ${hiddenCount} more`}
+        </Button>
+      ) : null}
+    </>
   );
 }
 
 export function TaskPropertiesRelationships(props: TaskPropertiesController) {
-  const { inline = false } = props;
-  const s = props.state;
-  const hasVisibleBlockers = props.visibleBlockedByRelations.length > 0;
+  const { task, childTasks, inline = false, state } = props;
+  const excludedIds = new Set([
+    ...(task.blockedBy ?? []).map((item) => item.id),
+    ...(task.blocks ?? []).map((item) => item.id),
+    ...childTasks.map((item) => item.id),
+  ]);
+  const relatedTasks = (task.relatedWork?.outbound ?? [])
+    .map((item) => item.task)
+    .filter((item) => !excludedIds.has(item.id));
+  const parent = task.ancestors?.[0] ?? null;
 
   return (
     <TaskPropertiesSection
@@ -88,179 +95,40 @@ export function TaskPropertiesRelationships(props: TaskPropertiesController) {
       icon={GitFork}
     >
       <FieldGroup className="gap-0">
-        {inline ? (
-          <Collapsible
-            className="contents"
-            open={s.blockedByOpen}
-            onOpenChange={(open) => {
-              s.setBlockedByOpen(open);
-              if (!open) s.setBlockedBySearch("");
-            }}
-          >
-            <TaskPropertyRow label="Blocked by">
-              {props.visibleBlockedByRelations.map((relation) => (
-                <RemovableTaskReferencePill
-                  key={relation.id}
-                  task={relation}
-                  onRemove={props.removeBlockedBy}
-                  inline
-                />
-              ))}
-              {!hasVisibleBlockers ? <span className="text-sm text-muted-foreground">None</span> : null}
-              {s.blockedByExpanded || props.hiddenBlockedByCount > 0 ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="default"
-                  className="min-h-11"
-                  onClick={() => s.setBlockedByExpanded((expanded) => !expanded)}
-                  aria-label={
-                    s.blockedByExpanded ? "Show fewer items" : `Show ${props.hiddenBlockedByCount} more items`
-                  }
-                >
-                  {s.blockedByExpanded ? "Show less" : `Show ${props.hiddenBlockedByCount} more`}
-                </Button>
-              ) : null}
-              <CollapsibleTrigger asChild>{props.renderAddBlockedByButton()}</CollapsibleTrigger>
-              <CollapsibleContent className="basis-full">
-                <Card className="mt-2 w-full gap-0 rounded-lg p-2 shadow-none">{props.blockedByContent}</Card>
-              </CollapsibleContent>
-            </TaskPropertyRow>
-          </Collapsible>
-        ) : (
-          <TaskPropertyRow label="Blocked by">
-            {props.visibleBlockedByRelations.map((relation) => (
-              <RemovableTaskReferencePill
-                key={relation.id}
-                task={relation}
-                onRemove={props.removeBlockedBy}
-              />
-            ))}
-            {!hasVisibleBlockers ? <span className="text-sm text-muted-foreground">None</span> : null}
-            {s.blockedByExpanded || props.hiddenBlockedByCount > 0 ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                onClick={() => s.setBlockedByExpanded((expanded) => !expanded)}
-                aria-label={
-                  s.blockedByExpanded ? "Show fewer items" : `Show ${props.hiddenBlockedByCount} more items`
-                }
-              >
-                {s.blockedByExpanded ? "Show less" : `Show ${props.hiddenBlockedByCount} more`}
-              </Button>
-            ) : null}
-            <Popover
-              open={s.blockedByOpen}
-              onOpenChange={(open) => {
-                s.setBlockedByOpen(open);
-                if (!open) s.setBlockedBySearch("");
-              }}
-            >
-              <PopoverTrigger asChild>{props.renderAddBlockedByButton()}</PopoverTrigger>
-              <PopoverContent className="w-72 p-1" align="end">
-                {props.blockedByContent}
-              </PopoverContent>
-            </Popover>
-          </TaskPropertyRow>
-        )}
-
-        <TaskPropertyRow label="Parent">
-          <TaskPropertyPicker
+        <TaskPropertyRow label="Blocked by">
+          <RelationList
+            tasks={task.blockedBy ?? []}
+            expanded={state.blockedByExpanded}
+            onExpandedChange={state.setBlockedByExpanded}
             inline={inline}
-            open={s.parentOpen}
-            onOpenChange={(open) => {
-              s.setParentOpen(open);
-              if (!open) s.setParentSearch("");
-            }}
-            ariaLabel="Change parent task"
-            trigger={props.parentTrigger}
-            trailing={props.parentLink}
-            popoverClassName="w-72"
-          >
-            {props.parentContent}
-          </TaskPropertyPicker>
+          />
         </TaskPropertyRow>
 
-        <TaskPropertyRow label="Blocking">
-          {props.blockingTasks.length > 0 ? (
-            <>
-              {props.visibleBlockingTasks.map((relation) => (
-                <Button
-                  key={relation.id}
-                  asChild
-                  variant="outline"
-                  size={inline ? "default" : "xs"}
-                  className={inline ? "min-h-11" : undefined}
-                >
-                  <TaskLinkQuicklook
-                    taskId={relation.id}
-                    taskNumber={relation.taskNumber}
-                    title={taskDisplayTitle(relation)}
-                  >
-                    <DomainStatus status={relation.boardPresentationStatus} />
-                    {taskReferenceLabel(relation)}
-                  </TaskLinkQuicklook>
-                </Button>
-              ))}
-              {s.blockingExpanded || props.hiddenBlockingTaskCount > 0 ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size={inline ? "default" : "xs"}
-                  className={inline ? "min-h-11" : undefined}
-                  onClick={() => s.setBlockingExpanded((expanded) => !expanded)}
-                  aria-label={
-                    s.blockingExpanded
-                      ? "Show fewer items"
-                      : `Show ${props.hiddenBlockingTaskCount} more items`
-                  }
-                >
-                  {s.blockingExpanded ? "Show less" : `Show ${props.hiddenBlockingTaskCount} more`}
-                </Button>
-              ) : null}
-            </>
+        <TaskPropertyRow label="Parent">
+          {parent ? (
+            <TaskReference task={parent} inline={inline} />
           ) : (
-            <span className="text-sm text-muted-foreground">None</span>
+            <span className="px-2 text-sm text-muted-foreground">None</span>
           )}
         </TaskPropertyRow>
 
-        {props.relatedTasks.length > 0 ? (
+        <TaskPropertyRow label="Blocking">
+          <RelationList
+            tasks={task.blocks ?? []}
+            expanded={state.blockingExpanded}
+            onExpandedChange={state.setBlockingExpanded}
+            inline={inline}
+          />
+        </TaskPropertyRow>
+
+        {relatedTasks.length > 0 ? (
           <TaskPropertyRow label="Related">
-            {props.visibleRelatedTasks.map((related) => (
-              <Button
-                key={related.id}
-                asChild
-                variant="outline"
-                size={inline ? "default" : "xs"}
-                className={inline ? "min-h-11" : undefined}
-              >
-                <TaskLinkQuicklook
-                  taskId={related.id}
-                  taskNumber={related.taskNumber}
-                  title={taskDisplayTitle(related)}
-                >
-                  <DomainStatus status={related.boardPresentationStatus} />
-                  {taskReferenceLabel(related)}
-                </TaskLinkQuicklook>
-              </Button>
-            ))}
-            {s.relatedTasksExpanded || props.hiddenRelatedTaskCount > 0 ? (
-              <Button
-                type="button"
-                variant="outline"
-                size={inline ? "default" : "xs"}
-                className={inline ? "min-h-11" : undefined}
-                onClick={() => s.setRelatedTasksExpanded((expanded) => !expanded)}
-                aria-label={
-                  s.relatedTasksExpanded
-                    ? "Show fewer items"
-                    : `Show ${props.hiddenRelatedTaskCount} more items`
-                }
-              >
-                {s.relatedTasksExpanded ? "Show less" : `Show ${props.hiddenRelatedTaskCount} more`}
-              </Button>
-            ) : null}
+            <RelationList
+              tasks={relatedTasks}
+              expanded={state.relatedTasksExpanded}
+              onExpandedChange={state.setRelatedTasksExpanded}
+              inline={inline}
+            />
           </TaskPropertyRow>
         ) : null}
       </FieldGroup>

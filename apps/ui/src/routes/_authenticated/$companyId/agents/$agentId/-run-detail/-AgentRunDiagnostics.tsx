@@ -54,21 +54,13 @@ function PromptProtocolFields({
   transmission,
   settlement,
   outcome,
-  steering,
 }: {
   transmission: string;
   settlement: string | null;
   outcome: string | null;
-  steering?: string;
 }) {
   return (
     <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-      {steering ? (
-        <div className="flex gap-1">
-          <dt className="text-muted-foreground">Steering</dt>
-          <dd className="capitalize">{humanizeRunValue(steering)}</dd>
-        </div>
-      ) : null}
       <div className="flex gap-1">
         <dt className="text-muted-foreground">Transmission</dt>
         <dd className="capitalize">{humanizeRunValue(transmission)}</dd>
@@ -86,18 +78,18 @@ function PromptProtocolFields({
 }
 
 function PromptSettlement({ detail }: { detail: TaskExecutionRunJoinedDetail }) {
-  const count = detail.refs.items.length + detail.segments.items.length;
+  const count = detail.refs.items.length;
   return (
     <Task defaultOpen={false}>
       <TaskTrigger title={`Prompt settlement · ${count} prompt${count === 1 ? "" : "s"}`} />
       <TaskContent>
-        {detail.refs.truncated || detail.segments.truncated ? (
+        {detail.refs.truncated ? (
           <TaskItem>Prompt records are bounded and may be partial.</TaskItem>
         ) : null}
         {detail.refs.items.map((ref) => (
           <TaskItem key={`${ref.refId}-${ref.refOrdinal}`} className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">Base</Badge>
+              <Badge variant="outline">Prompt</Badge>
               <span>ref {ref.refOrdinal}</span>
             </div>
             <PromptProtocolFields
@@ -106,21 +98,6 @@ function PromptSettlement({ detail }: { detail: TaskExecutionRunJoinedDetail }) 
               outcome={ref.outcome}
             />
             <TaskItemFile>{ref.refId}</TaskItemFile>
-          </TaskItem>
-        ))}
-        {detail.segments.items.map((segment) => (
-          <TaskItem key={`${segment.refId}-${segment.segmentOrdinal}`} className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">Steering</Badge>
-              <span>segment {segment.segmentOrdinal}</span>
-            </div>
-            <PromptProtocolFields
-              steering={segment.steeringState}
-              transmission={segment.promptTransmissionPhase}
-              settlement={segment.protocolSettlementState}
-              outcome={segment.outcome}
-            />
-            <TaskItemFile>{segment.sourceCommentId}</TaskItemFile>
           </TaskItem>
         ))}
       </TaskContent>
@@ -146,7 +123,7 @@ function AccountingAndCost({ detail }: { detail: TaskExecutionRunJoinedDetail })
             <TaskItem key={record.id} className="space-y-1 rounded-lg border p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <CoinsIcon className="size-4"  data-icon="inline-start"/>
-                <span className="font-medium capitalize">{record.promptKind} prompt</span>
+                <span className="font-medium">Prompt</span>
                 {record.selectedModelId ? (
                   <Badge
                     variant="outline"
@@ -161,8 +138,7 @@ function AccountingAndCost({ detail }: { detail: TaskExecutionRunJoinedDetail })
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                ref {record.runOrdinal ?? "—"} · segment {record.segmentOrdinal ?? "—"} · settled{" "}
-                {formatDateTime(record.settledAt)}
+                ref {record.runOrdinal ?? "—"} · settled {formatDateTime(record.settledAt)}
               </p>
               {cost ? (
                 <p className="text-xs">
@@ -262,11 +238,7 @@ export function AgentRunDiagnostics({
         <div className="flex flex-wrap gap-2">
           <BoundedLabel truncated={detail.sessionEvents.truncated} />
           <Badge variant="outline">
-            {detail.refs.items.length} base prompt{detail.refs.items.length === 1 ? "" : "s"}
-          </Badge>
-          <Badge variant="outline">
-            {detail.segments.items.length} steering prompt
-            {detail.segments.items.length === 1 ? "" : "s"}
+            {detail.refs.items.length} prompt{detail.refs.items.length === 1 ? "" : "s"}
           </Badge>
           <Badge variant="outline">
             {detail.activity.items.length} audit record{detail.activity.items.length === 1 ? "" : "s"}

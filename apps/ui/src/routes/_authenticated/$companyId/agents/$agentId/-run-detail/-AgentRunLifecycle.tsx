@@ -54,19 +54,10 @@ function PromptSources({
   const sources = [
     ...detail.refs.items.map((ref) => ({
       id: ref.refId,
-      title: `Base prompt · ref ${ref.refOrdinal} · transmission ${humanizeRunValue(
+      title: `Prompt · ref ${ref.refOrdinal} · transmission ${humanizeRunValue(
         ref.promptTransmissionPhase,
       )} · settlement ${promptSettlementLabel(ref.protocolSettlementState)}`,
       href: `/${companyId}/tasks/${task.taskNumber}`,
-    })),
-    ...detail.segments.items.map((segment) => ({
-      id: `${segment.refId}-${segment.segmentOrdinal}`,
-      title: `Steering prompt · segment ${segment.segmentOrdinal} · steering ${humanizeRunValue(
-        segment.steeringState,
-      )} · transmission ${humanizeRunValue(
-        segment.promptTransmissionPhase,
-      )} · settlement ${promptSettlementLabel(segment.protocolSettlementState)}`,
-      href: `/${companyId}/tasks/${task.taskNumber}#comment-${segment.sourceCommentId}`,
     })),
   ];
   if (sources.length === 0) return null;
@@ -108,14 +99,13 @@ function AttemptQueue({ detail }: { detail: TaskExecutionRunJoinedDetail }) {
                   <div className="flex items-center gap-2">
                     <QueueItemIndicator completed={TERMINAL_ATTEMPT_STATES.has(attempt.state)} />
                     <QueueItemContent>
-                      <span className="capitalize">{humanizeRunValue(attempt.promptKind)} prompt</span>
+                      <span>Prompt</span>
                       <span className="ml-2 font-mono text-xs">generation {attempt.attemptGeneration}</span>
                     </QueueItemContent>
                     <DomainStatus status={attempt.state} />
                   </div>
                   <QueueItemDescription>
-                    {humanizeRunValue(attempt.sessionOperation)} · ref {attempt.refOrdinal ?? "—"} · segment{" "}
-                    {attempt.segmentOrdinal ?? "—"}
+                    {humanizeRunValue(attempt.sessionOperation)} · ref {attempt.refOrdinal ?? "—"}
                     {duration !== null ? ` · ${formatDurationMs(duration)}` : ""}
                     {lease ? ` · lease ${lease.leaseGeneration} ${lease.state}` : ""}
                     {cancellation ? ` · cancellation ${cancellation.state}` : ""}
@@ -173,7 +163,6 @@ export function AgentRunLifecycle({
   const bounded =
     [
       detail.refs,
-      detail.segments,
       detail.attempts,
       detail.retrySchedules,
       detail.leases,
@@ -204,8 +193,7 @@ export function AgentRunLifecycle({
             <span>Control pointer</span>
             <TaskItemFile>{detail.control.currentRefId ?? "No current ref"}</TaskItemFile>
             <span>
-              ordinal {detail.control.currentOrdinal ?? "—"} · segment{" "}
-              {detail.control.currentSegmentOrdinal ?? "—"}
+              ordinal {detail.control.currentOrdinal ?? "—"}
             </span>
           </TaskItem>
         ) : null}

@@ -52,7 +52,6 @@ export interface TaskExecutionRunControlRecord {
   runId: string;
   currentRefId: string | null;
   currentOrdinal: number | null;
-  currentSegmentOrdinal: number | null;
 }
 
 interface TaskExecutionPromptRecord {
@@ -82,20 +81,6 @@ export interface TaskExecutionRunRefRecord extends TaskExecutionPromptRecord {
   inputId: string | null;
 }
 
-export interface TaskExecutionPromptSegmentRecord extends TaskExecutionPromptRecord {
-  segmentOrdinal: number;
-  sourceCommentId: string;
-  sourceRefId: string | null;
-  sourceMessageId: string;
-  sourceInputId: string | null;
-  resumeSourceCorrelationId: string;
-  targetSessionGeneration: number | null;
-  cancellationIntentId: string | null;
-  steeringState: "requested" | "sent" | "protocol_settled" | "rebound" | "resumed";
-  terminalSessionMessageId: string | null;
-  resumedAt: string | null;
-}
-
 export interface TaskExecutionSessionEventRecord {
   id: string;
   seq: number;
@@ -121,12 +106,9 @@ export interface TaskExecutionAttemptRecord {
   sessionId: string;
   runId: string;
   runKind: TaskExecutionRunKind;
-  promptKind: "base" | "steering";
   sessionOperation: TaskExecutionSessionOperation;
   refId: string | null;
   refOrdinal: number | null;
-  segmentOrdinal: number | null;
-  steeringSegmentOrdinal: number | null;
   attemptGeneration: number;
   state: "pending" | "leased" | "running" | "settled" | "failed" | "cancelled";
   startedAt: string | null;
@@ -172,7 +154,7 @@ export interface TaskExecutionCancellationRecord {
   runId: string;
   attemptId: string;
   leaseId: string | null;
-  reasonKind: "lifecycle" | "authority" | "timeout" | "lease_expired" | "steering";
+  reasonKind: "lifecycle" | "authority" | "timeout" | "lease_expired";
   actorKind: "system" | "user" | "agent";
   actorUserId: string | null;
   actorAgentId: string | null;
@@ -194,10 +176,8 @@ export interface AcpPromptAccountingRecord {
   agentId: string;
   runId: string;
   runKind: TaskExecutionRunKind;
-  promptKind: "base" | "steering";
   refId: string | null;
   runOrdinal: number | null;
-  segmentOrdinal: number | null;
   attemptId: string;
   adapterConfigRevisionId: string;
   selectedModelId: string | null;
@@ -253,10 +233,8 @@ export interface TaskExecutionFinalizationPromptDependencyRecord {
   runId: string;
   finalizationId: string;
   dependencyOrdinal: number;
-  promptKind: "base" | "steering";
   refId: string | null;
   refOrdinal: number | null;
-  segmentOrdinal: number | null;
   protocolSettlementState: TaskExecutionProtocolSettlementState;
   settlementVersion: number;
   accountingId: string | null;
@@ -282,7 +260,6 @@ export interface TaskExecutionRunJoinedDetail {
   run: TaskExecutionRunEnvelopeRecord;
   control: TaskExecutionRunControlRecord | null;
   refs: BoundedRunRecords<TaskExecutionRunRefRecord>;
-  segments: BoundedRunRecords<TaskExecutionPromptSegmentRecord>;
   sessionEvents: BoundedRunRecords<TaskExecutionSessionEventRecord>;
   sessionMessages: BoundedRunRecords<TaskExecutionSessionMessageRecord>;
   attempts: BoundedRunRecords<TaskExecutionAttemptRecord>;

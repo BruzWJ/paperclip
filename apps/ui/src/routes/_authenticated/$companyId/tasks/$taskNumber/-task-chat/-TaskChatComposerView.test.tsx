@@ -27,8 +27,8 @@ function renderComposer(props: Partial<TaskChatComposerProps> = {}) {
     root.render(
       <TooltipProvider>
         <TaskChatComposer
-          currentOwnerValue={`agent:${target.targetAgentId}`}
           mentionTarget={target}
+          mentionIsResponseOnly={false}
           onSubmit={onSubmit}
           {...props}
         />
@@ -76,73 +76,69 @@ afterEach(() => {
 });
 
 describe("TaskChatComposer agent mentions", () => {
-  it("opens the current owner suggestion from the compact @ action", () => {
-    renderComposer();
-    const textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task message"]')!;
-    const mentionButton = container.querySelector<HTMLButtonElement>('button[aria-label="Mention task owner"]')!;
-
-    act(() => mentionButton.click());
-
-    expect(textarea.value).toBe("@");
-    expect(textarea.getAttribute("aria-expanded")).toBe("true");
-    expect(document.body.querySelector('[aria-label="Agent mention suggestions"]')).not.toBeNull();
-  });
-
-  it("selects the current owner from @ autocomplete before Enter can submit", async () => {
+  it("notifies the current owner only after the explicit toggle is selected", async () => {
     const onSubmit = renderComposer();
-    const textarea = await changeTextarea("Ask @res");
+    const notifyButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Notify Research agent"]',
+    )!;
 
-    expect(document.body.textContent).toContain("@Research agent");
-    expect(document.body.textContent).toContain("Current task owner");
-    const listbox = document.body.querySelector<HTMLElement>('[role="listbox"]')!;
-    const option = document.body.querySelector<HTMLElement>('[role="option"]')!;
-    expect(textarea.getAttribute("aria-controls")).toBe(listbox.id);
-    expect(textarea.getAttribute("aria-activedescendant")).toBe(option.id);
+    expect(notifyButton.getAttribute("aria-pressed")).toBe("false");
+    act(() => notifyButton.click());
+    expect(notifyButton.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      "Research agent will receive your message.",
+    );
 
-    await pressKey(textarea, "Enter");
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(textarea.value).toBe("Ask @Research agent ");
-    expect(textarea.value).not.toContain("agent://");
-
+    const textarea = await changeTextarea("Please share another update");
     await pressKey(textarea, "Enter");
     expect(onSubmit).toHaveBeenCalledWith(
-      `Ask [@Research agent](${buildAgentMentionHref(target.targetAgentId, target.icon)}) `,
-      undefined,
+      `[@Research agent](${buildAgentMentionHref(target.targetAgentId, target.icon)}) Please share another update`,
       { targetAgentId: target.targetAgentId, ownershipEpoch: target.ownershipEpoch },
       undefined,
     );
   });
 
-  it("never downgrades a selected mention after the ownership epoch changes", async () => {
+  it("lets the board turn owner notification back off before sending", async () => {
     const onSubmit = renderComposer();
-    const textarea = await changeTextarea("Ask @res");
+    const notifyButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Notify Research agent"]',
+    )!;
+
+    act(() => notifyButton.click());
+    act(() => notifyButton.click());
+    expect(notifyButton.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector('[role="status"]')).toBeNull();
+
+    const textarea = await changeTextarea("A note for the task history");
     await pressKey(textarea, "Enter");
+
+    expect(onSubmit).toHaveBeenCalledWith("A note for the task history", undefined, undefined);
+  });
+
+  it("clears notification intent when the ownership epoch changes", async () => {
+    const onSubmit = renderComposer();
+    const notifyButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Notify Research agent"]',
+    )!;
+    act(() => notifyButton.click());
 
     renderComposer({
       onSubmit,
       mentionTarget: { ...target, ownershipEpoch: target.ownershipEpoch + 1 },
     });
+
+    const refreshedNotifyButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Notify Research agent"]',
+    )!;
+    expect(refreshedNotifyButton.getAttribute("aria-pressed")).toBe("false");
+
+    const textarea = await changeTextarea("Follow-up after reassignment");
     await pressKey(textarea, "Enter");
 
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("task owner changed");
+    expect(onSubmit).toHaveBeenCalledWith("Follow-up after reassignment", undefined, undefined);
   });
 
-  it("links only the exact occurrence selected from autocomplete", async () => {
-    const onSubmit = renderComposer();
-    const textarea = await changeTextarea("Literal @Research agent then @res");
-    await pressKey(textarea, "Enter");
-    await pressKey(textarea, "Enter");
-
-    expect(onSubmit).toHaveBeenCalledWith(
-      `Literal @Research agent then [@Research agent](${buildAgentMentionHref(target.targetAgentId, target.icon)}) `,
-      undefined,
-      { targetAgentId: target.targetAgentId, ownershipEpoch: target.ownershipEpoch },
-      undefined,
-    );
-  });
-
-  it("requires a fresh selection for a mention restored from a draft", async () => {
+  it("does not infer notification intent from mention-looking draft text", async () => {
     const draftKey = "task-comment-draft";
     localStorage.setItem(
       draftKey,
@@ -152,32 +148,15 @@ describe("TaskChatComposer agent mentions", () => {
     const textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task message"]')!;
 
     expect(textarea.value).toBe("Ask @Research agent");
+    expect(
+      container.querySelector('button[aria-label="Notify Research agent"]')?.getAttribute("aria-pressed"),
+    ).toBe("false");
     await pressKey(textarea, "Enter");
 
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("from the suggestions");
+    expect(onSubmit).toHaveBeenCalledWith("Ask @Research agent", undefined, undefined);
   });
 
-  it("removes selected mention intent when switching into reply mode", async () => {
-    const onSubmit = renderComposer();
-    const textarea = await changeTextarea("Ask @res");
-    await pressKey(textarea, "Enter");
-
-    renderComposer({
-      onSubmit,
-      replyTarget: {
-        commentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-        authorLabel: "Maya",
-        preview: "Original comment",
-      },
-    });
-
-    expect(textarea.value).toBe("Ask ");
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("mention was removed");
-    expect(textarea.getAttribute("role")).toBeNull();
-  });
-
-  it("suppresses mention controls in replies and submits @ text as an ordinary reply", async () => {
+  it("can explicitly notify the owner from a reply", async () => {
     const onSubmit = renderComposer({
       replyTarget: {
         commentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -185,18 +164,48 @@ describe("TaskChatComposer agent mentions", () => {
         preview: "Original comment",
       },
     });
+    const notifyButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Notify Research agent"]',
+    )!;
+    act(() => notifyButton.click());
+
     const textarea = await changeTextarea("Reply to @Research agent");
 
-    expect(container.querySelector('[aria-label="Mention task owner"]')).toBeNull();
-    expect(document.body.querySelector('[aria-label="Agent mention suggestions"]')).toBeNull();
-    expect(textarea.getAttribute("role")).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Notify Research agent"]')?.getAttribute("aria-pressed"),
+    ).toBe("true");
 
     await pressKey(textarea, "Enter");
     expect(onSubmit).toHaveBeenCalledWith(
-      "Reply to @Research agent",
-      undefined,
-      undefined,
+      `[@Research agent](${buildAgentMentionHref(target.targetAgentId, target.icon)}) Reply to @Research agent`,
+      { targetAgentId: target.targetAgentId, ownershipEpoch: target.ownershipEpoch },
       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    );
+  });
+
+  it("explains terminal response-only access before notifying the owner", async () => {
+    const onSubmit = renderComposer({ mentionIsResponseOnly: true });
+    const notifyButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Notify Research agent"]',
+    )!;
+
+    act(() => notifyButton.click());
+
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      "Research agent can read and answer but cannot make changes. The task status will not change.",
+    );
+    const submitButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Send message and notify owner"]',
+    )!;
+    expect(submitButton.textContent).toContain("Send & notify");
+
+    const textarea = await changeTextarea("Please continue with the requested changes");
+    await pressKey(textarea, "Enter");
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      `[@Research agent](${buildAgentMentionHref(target.targetAgentId, target.icon)}) Please continue with the requested changes`,
+      { targetAgentId: target.targetAgentId, ownershipEpoch: target.ownershipEpoch },
+      undefined,
     );
   });
 
@@ -209,17 +218,5 @@ describe("TaskChatComposer agent mentions", () => {
     act(() => button.click());
 
     expect(click).toHaveBeenCalledOnce();
-  });
-
-  it("disables all composer tools when comments are unavailable", () => {
-    renderComposer({
-      composerDisabledReason: "Comments are unavailable.",
-      ownerOptions: [{ id: `agent:${target.targetAgentId}`, label: target.name }],
-      onAttachFile: async () => undefined,
-    });
-
-    expect(container.querySelector('[aria-label="Attach files"]')).toBeNull();
-    expect(container.querySelector('[aria-label="Mention task owner"]')).toBeNull();
-    expect(container.querySelector<HTMLButtonElement>('[aria-label="Owner"]')?.disabled).toBe(true);
   });
 });

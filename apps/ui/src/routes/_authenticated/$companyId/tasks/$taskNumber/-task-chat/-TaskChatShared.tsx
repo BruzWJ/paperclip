@@ -10,8 +10,6 @@ import type {
 import { createContext, type ReactNode, type RefObject } from "react";
 import type { CompanyUserProfile } from "@/lib/company-members";
 import { type TaskChatComment, type TaskChatMessage } from "@/lib/task-chat-messages";
-import type { EntityOption } from "@/lib/entity-selector";
-import type { CommentOwnerChange } from "../-task-detail-model";
 
 /** Returns the plain-text content used by message copy and reply previews. */
 export function getThreadMessageCopyText(message: TaskChatMessage): string {
@@ -93,7 +91,6 @@ export interface TaskChatMentionTarget extends TaskChatAgentMention {
 
 type TaskChatSubmit = (
   body: string,
-  ownerChange?: CommentOwnerChange,
   mention?: TaskChatAgentMention,
   replyToCommentId?: string,
 ) => Promise<void>;
@@ -102,10 +99,8 @@ export interface TaskChatComposerProps {
   onSubmit: TaskChatSubmit;
   onAttachFile?: (file: File) => Promise<TaskAttachment | void>;
   draftKey?: string;
-  ownerOptions?: EntityOption[];
-  currentOwnerValue?: string;
   mentionTarget?: TaskChatMentionTarget | null;
-  composerDisabledReason?: string | null;
+  mentionIsResponseOnly: boolean;
   composerHint?: string | null;
   replyTarget?: TaskChatReplyTarget | null;
   onClearReply?: () => void;
@@ -122,6 +117,7 @@ export type TaskChatThreadProps = Omit<
   blockedBy?: TaskRelationTaskSummary[];
   /** Company-wide set of task ids with a live (queued/running) run. */
   liveTaskIds?: ReadonlySet<string>;
+  ownerAgentId?: string | null;
   ownerUserId?: string | null;
   taskStatus?: string;
   agentMap?: Map<string, Agent>;
@@ -129,7 +125,6 @@ export type TaskChatThreadProps = Omit<
   userProfileMap?: ReadonlyMap<string, CompanyUserProfile> | null;
   onAdd: TaskChatSubmit;
   onLoadMoreCommentGroup?: (rootCommentId: string) => Promise<void> | void;
-  showComposer?: boolean;
   hasOlderComments?: boolean;
   commentsLoadingOlder?: boolean;
   onLoadOlderComments?: () => Promise<unknown> | void;

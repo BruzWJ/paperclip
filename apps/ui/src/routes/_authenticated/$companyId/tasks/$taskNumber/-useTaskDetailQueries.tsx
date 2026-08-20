@@ -15,10 +15,7 @@ import {
 } from "@/lib/company-members";
 import { collectLiveTaskIds } from "@/lib/liveTaskIds";
 import {
-  applyOptimisticTaskFieldUpdate,
-  applyOptimisticTaskFieldUpdateToCollection,
   mergeTaskComments,
-  matchesTaskId,
   type ClientTaskComment,
   type OptimisticTaskComment,
 } from "@/lib/optimistic-task-comments";
@@ -39,7 +36,7 @@ import type {
   TaskTreeControlMode,
   TaskWorkProduct,
 } from "@paperclipai/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 interface TaskDetailQueriesOptions {
@@ -271,7 +268,6 @@ interface TaskDetailDerivedDataOptions {
   task: Task | undefined;
   agents?: Agent[];
   companyMembers?: Awaited<ReturnType<typeof accessApi.listUserDirectory>>;
-  taskOwnerCatalog?: Awaited<ReturnType<typeof agentsApi.listInvokableTaskOwners>>;
   orderedProjects: Project[];
   mentionTasks: Task[];
   rawChildTasks: Task[];
@@ -280,7 +276,6 @@ interface TaskDetailDerivedDataOptions {
   siblingTasksLoading: boolean;
   siblingTasksError: boolean;
   companyRunPage?: TaskExecutionRunListPageRecord;
-  currentUserId: string | null;
   comments: ClientTaskComment[];
   optimisticComments: OptimisticTaskComment[];
   openNewTask: (defaults: ReturnType<typeof buildSubTaskDefaultsForViewer>) => void;
@@ -291,7 +286,6 @@ export function useTaskDetailDerivedData({
   task,
   agents,
   companyMembers,
-  taskOwnerCatalog,
   orderedProjects,
   mentionTasks,
   rawChildTasks,
@@ -300,7 +294,6 @@ export function useTaskDetailDerivedData({
   siblingTasksLoading,
   siblingTasksError,
   companyRunPage,
-  currentUserId,
   comments,
   optimisticComments,
   openNewTask,
@@ -349,26 +342,6 @@ export function useTaskDetailDerivedData({
     openNewTask(buildSubTaskDefaultsForViewer(task));
   }, [task, openNewTask]);
 
-  const isNamedUserCreator =
-    task?.creatorKind === "user/board" && Boolean(currentUserId) && task.creatorUserId === currentUserId;
-  const isSystemEscalationHumanOwner =
-    task?.creatorKind === "system" &&
-    Boolean(task.escalatedFromAffectedTaskId) &&
-    (task.ownerKind === "board" ||
-      (task.ownerKind === "user" && Boolean(currentUserId) && task.ownerUserId === currentUserId));
-  const isUserCreatorWithdrawalOwner =
-    isNamedUserCreator &&
-    task?.ownerKind === "user" &&
-    task.ownerUserId === currentUserId &&
-    task.ownerAssignmentSource === "user_creator_withdrawal";
-
-  const commentOwnerOptions = useMemo(() => {
-    if (!isNamedUserCreator || task?.ownerKind !== "agent") return [];
-    return [...(taskOwnerCatalog ?? [])]
-      .sort((left, right) => left.name.localeCompare(right.name))
-      .map((agent) => ({ id: `agent:${agent.id}`, label: agent.name }));
-  }, [isNamedUserCreator, task?.ownerKind, taskOwnerCatalog]);
-  const currentOwnerValue = task?.ownerAgentId ? `agent:${task.ownerAgentId}` : "";
   const threadComments = useMemo(
     () => mergeTaskComments(comments, optimisticComments),
     [comments, optimisticComments],
@@ -386,11 +359,6 @@ export function useTaskDetailDerivedData({
     panelChildTasks,
     siblingNavigation,
     openNewSubTask,
-    isNamedUserCreator,
-    isSystemEscalationHumanOwner,
-    isUserCreatorWithdrawalOwner,
-    commentOwnerOptions,
-    currentOwnerValue,
     threadComments,
   };
 }

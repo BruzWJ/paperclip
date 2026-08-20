@@ -57,7 +57,8 @@ interface TaskDetailEffectsOptions {
   openDocumentsWorkspace: () => void;
   resolvedHasActiveRun: boolean;
   openNewSubTask: () => void;
-  handleTaskPropertiesUpdate: (data: Record<string, unknown>) => void;
+  handleTaskPropertiesUpdate: TaskInspectorProps["onUpdateTask"];
+  updateTaskStatus: ReturnType<typeof useTaskDetailCoreMutations>["updateTaskStatus"];
   openPanel: ReturnType<typeof usePanel>["openPanel"];
   closePanel: ReturnType<typeof usePanel>["closePanel"];
   setPanelVisible: ReturnType<typeof usePanel>["setPanelVisible"];
@@ -105,6 +106,7 @@ export function useTaskDetailEffects({
   resolvedHasActiveRun,
   openNewSubTask,
   handleTaskPropertiesUpdate,
+  updateTaskStatus,
   openPanel,
   closePanel,
   setPanelVisible,
@@ -201,6 +203,8 @@ export function useTaskDetailEffects({
         onPreviewOutput: openOutputInGallery,
         onOpenDocuments: openDocumentsWorkspace,
         onUpdateTask: handleTaskPropertiesUpdate,
+        onStatusUpdate: updateTaskStatus.mutateAsync,
+        statusUpdatePending: updateTaskStatus.isPending,
         hasActiveRun: resolvedHasActiveRun,
       }),
       { title: "Task details", headerMode: "content" },
@@ -231,6 +235,8 @@ export function useTaskDetailEffects({
     resolvedHasActiveRun,
     setInspectorTab,
     taskLinkState,
+    updateTaskStatus.isPending,
+    updateTaskStatus.mutateAsync,
     workProducts,
   ]);
   useEffect(() => () => closePanel(), [closePanel]);

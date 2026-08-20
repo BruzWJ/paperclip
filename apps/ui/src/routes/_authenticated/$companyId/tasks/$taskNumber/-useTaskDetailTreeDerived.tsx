@@ -24,9 +24,6 @@ interface TaskDetailTreeDerivedOptions {
   treeControlCancelConfirmed: boolean;
   uploadAttachment: ReturnType<typeof useTaskDetailActionMutations>["uploadAttachment"];
   importMarkdownDocument: ReturnType<typeof useTaskDetailActionMutations>["importMarkdownDocument"];
-  isNamedUserCreator: boolean;
-  isSystemEscalationHumanOwner: boolean;
-  isUserCreatorWithdrawalOwner: boolean;
 }
 
 /** Computes task-tree presentation and attachment/lifecycle controls. */
@@ -44,9 +41,6 @@ export function useTaskDetailTreeDerived({
   treeControlCancelConfirmed,
   uploadAttachment,
   importMarkdownDocument,
-  isNamedUserCreator,
-  isSystemEscalationHumanOwner,
-  isUserCreatorWithdrawalOwner,
 }: TaskDetailTreeDerivedOptions) {
   const treePreviewAffectedTasks = useMemo(
     () => (treeControlPreview?.tasks ?? []).filter((candidate) => !candidate.skipped),
@@ -150,19 +144,9 @@ export function useTaskDetailTreeDerived({
             : "Resume subtree";
   const pausedComposerHint = activePauseHold
     ? task?.ownerAgentId
-      ? `Use @ to mention ${agentMap.get(task.ownerAgentId)?.name ?? "the owner"} if you want to queue triage while the subtree remains paused. Ordinary comments do not dispatch.`
-      : "Assign an agent owner before mentioning one. Ordinary comments do not dispatch."
+      ? `Select Notify ${agentMap.get(task.ownerAgentId)?.name ?? "owner"} to queue triage while the subtree remains paused. Ordinary comments do not dispatch.`
+      : "Assign an agent owner before using Notify owner. Ordinary comments do not dispatch."
     : null;
-  const humanLifecycleMode =
-    !task || isTerminalTask
-      ? null
-      : isSystemEscalationHumanOwner
-        ? ("system" as const)
-        : isNamedUserCreator && (task.ownerKind === "agent" || isUserCreatorWithdrawalOwner)
-          ? isUserCreatorWithdrawalOwner
-            ? ("withdrawal" as const)
-            : ("creator" as const)
-          : null;
   const canApplyTreeControl =
     Boolean(treeControlPreview) &&
     !treeControlPreviewLoading &&
@@ -189,7 +173,6 @@ export function useTaskDetailTreeDerived({
     previewAffectedTaskCount,
     treeControlPrimaryButtonLabel,
     composerHint: pausedComposerHint,
-    humanLifecycleMode,
     canApplyTreeControl,
     attachmentUploadPending,
   };
